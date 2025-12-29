@@ -1,0 +1,52 @@
+// PERFORMANCE TEST: Loop Optimization - Basic Checker Event Pattern
+// Goal: Prove compiler detects checker event pattern and transforms to native loop
+// Pattern: Checker event (two branches: continue/done) + label loop with recursive jump
+// Baseline: Hand-written Zig for loop
+// Threshold: 1.05x (5% overhead max)
+//
+// This tests the CORE loop optimization:
+// - Detect checker event with if/else returning continue vs done
+// - Detect label loop with recursive jump that increments counter
+// - Transform to NativeLoop IR node
+// - Emit as native for loop with inlined body
+
+const std = @import("std");
+
+// Checker event: Two branches (continue/done), proc with if/else
+~event loop_step { i: u64, limit: u64, sum: u64 }
+| continue { i: u64, sum: u64 }
+| done { result: u64 }
+
+~proc loop_step {
+    if (i < limit) {
+        const new_sum = sum + i;
+        return .{ .continue = .{ .i = i, .sum = new_sum } };
+    } else {
+        return .{ .done = .{ .result = sum } };
+    }
+}
+
+// Print result
+~event print { result: u64 }
+| done {}
+
+~proc print {
+    std.debug.print("Sum: {}\n", .{result});
+    return .{ .done = .{} };
+}
+
+// Main flow: Label loop with recursive jump
+// Pattern the optimizer should detect:
+// - Initial call: loop_step(i: 0, ...)
+// - Continue branch: @loop(i: i + 1, ...) - RECURSIVE JUMP with increment
+// - Done branch: Exit loop
+//
+// Expected transformation:
+// for (0..10_000_000) |i| {
+//     sum += i;
+// }
+
+~#main_loop loop_step(i: 0, limit: 10_000_000, sum: 0)
+| continue c |> @main_loop(i: c.i + 1, limit: 10_000_000, sum: c.sum)
+| done d |> print(result: d.result)
+    | done |> _

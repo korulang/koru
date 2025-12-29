@@ -1,0 +1,37 @@
+// Test 162: Cross-Module Type Reference (Basic)
+//
+// Tests referencing a Zig struct type from an imported module.
+// The syntax module:Type should resolve to the type defined in that module.
+//
+// Structure:
+//   test_lib/
+//     user.kz  -> defines User struct and test_lib.user:create event
+//
+// Key Test: Can we reference test_lib.user:User in an event signature?
+//
+// Expected behavior:
+//   - The compiler should recognize test_lib.user:User as a valid type
+//   - Generated Zig code should properly namespace the type reference
+//   - The event should successfully use the imported type
+
+const std = @import("std");
+
+~import "$app/test_lib"
+
+// This event takes a User from the imported module as a parameter
+// KEY TEST: app.test_lib.user:User should resolve to the User struct in test_lib/user.kz
+~pub event register_user {
+    user_data: app.test_lib.user:User,
+}
+| registered { success: bool }
+
+~proc register_user {
+    // Print the user's information
+    std.debug.print("Registering user: {s}, age {d}\n", .{user_data.name, user_data.age});
+    return .{ .registered = .{ .success = true }};
+}
+
+// Create a user using the imported event
+~app.test_lib.user:create(name: "Alice", age: 30)
+| created c |> register_user(user_data: c.user)
+    | registered r |> _

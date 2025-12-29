@@ -1,0 +1,26 @@
+// Nested domain user module
+const std = @import("std");
+
+// Define a domain-specific user type
+pub const DomainUser = struct {
+    email: []const u8,
+    role: []const u8,
+    permissions: u32,
+};
+
+// Event that creates a domain user
+~pub event create {
+    email: []const u8,
+    role: []const u8,
+    permissions: u32,
+}
+| created { user: DomainUser }
+
+~proc create {
+    const user = DomainUser{
+        .email = e.email,
+        .role = e.role,
+        .permissions = e.permissions,
+    };
+    return .{ .created = .{ .user = user }};
+}

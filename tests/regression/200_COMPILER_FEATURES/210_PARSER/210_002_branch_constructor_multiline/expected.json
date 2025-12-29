@@ -1,0 +1,251 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_002_branch_constructor_multiline/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_002_branch_constructor_multiline/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_002_branch_constructor_multiline/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_002_branch_constructor_multiline/input.kz",
+                "line": 4,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_002_branch_constructor_multiline/input.kz",
+                "line": 5,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "validate",
+            "path": ["validate"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "val",
+                        "type": "i32",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "positive",
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "val",
+                                "type": "i32",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "negative",
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "val",
+                                "type": "i32",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "zero",
+                    "payload": {
+                        "fields": [
+
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_002_branch_constructor_multiline/input.kz",
+                "line": 11,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "compute",
+            "path": ["compute"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "value",
+                        "type": "i32",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "result",
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "doubled",
+                                "type": "i32",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false
+                            }
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_002_branch_constructor_multiline/input.kz",
+                "line": 14,
+                "col": 0
+            }
+        },
+        {
+            "type": "proc_decl",
+            "event_name": "compute",
+            "path": ["compute"],
+            "module": "input",
+            "target": "zig",
+            "inline_flows": [
+                {
+                    "invocation": {
+                        "event": ["validate"],
+                        "args": [
+                            {
+                                "name": "val",
+                                "value": "value"
+                            }
+                        ]
+                    },
+                    "continuations": [
+                        {
+                            "branch": "positive",
+                            "binding": "p",
+                            "binding_type": "branch_payload",
+                            "step":                             {
+                                "type": "branch_constructor",
+                                "branch_constructor": {
+                                    "branch_name": "result",
+                                    "fields": [
+                                        {
+                                            "name": "doubled",
+                                            "type": "auto",
+                                            "expression_str": "p.val * 2"
+                                        }
+                                    ],
+                                    "has_expressions": true
+                                }
+                            },
+                            "continuations": [
+
+                            ]
+                        },
+                        {
+                            "branch": "negative",
+                            "binding": null,
+                            "binding_type": "branch_payload",
+                            "step":                             {
+                                "type": "branch_constructor",
+                                "branch_constructor": {
+                                    "branch_name": "result",
+                                    "fields": [
+                                        {
+                                            "name": "doubled",
+                                            "type": "auto",
+                                            "expression_str": "0"
+                                        }
+                                    ],
+                                    "has_expressions": true
+                                }
+                            },
+                            "continuations": [
+
+                            ]
+                        },
+                        {
+                            "branch": "zero",
+                            "binding": null,
+                            "binding_type": "branch_payload",
+                            "step":                             {
+                                "type": "branch_constructor",
+                                "branch_constructor": {
+                                    "branch_name": "result",
+                                    "fields": [
+                                        {
+                                            "name": "doubled",
+                                            "type": "auto",
+                                            "expression_str": "0"
+                                        }
+                                    ],
+                                    "has_expressions": true
+                                }
+                            },
+                            "continuations": [
+
+                            ]
+                        }
+                    ],
+                    "pre_label": null,
+                    "post_label": null,
+                    "location": {
+                        "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_002_branch_constructor_multiline/input.kz",
+                        "line": 6,
+                        "col": 0
+                    }
+                }
+            ],
+            "is_pure": false,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_002_branch_constructor_multiline/input.kz",
+                "line": 25,
+                "col": 0
+            }
+        }
+    ]
+}

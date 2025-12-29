@@ -1,0 +1,80 @@
+// Test 912: Actual generic ring type in event shape
+//
+// Now let's try with REAL generics: MpmcRing(T, N)
+// This is what we actually want for beist-rings integration!
+
+const std = @import("std");
+
+// Generic ring buffer (Zig function returning type)
+pub fn Ring(comptime T: type, comptime size: usize) type {
+    return struct {
+        const Self = @This();
+
+        data: [size]T,
+        head: usize,
+        tail: usize,
+
+        pub fn init() Self {
+            return .{
+                .data = undefined,
+                .head = 0,
+                .tail = 0,
+            };
+        }
+
+        pub fn tryEnqueue(self: *Self, value: T) bool {
+            if ((self.tail + 1) % size == self.head) {
+                return false;
+            }
+            self.data[self.tail] = value;
+            self.tail = (self.tail + 1) % size;
+            return true;
+        }
+
+        pub fn tryDequeue(self: *Self) ?T {
+            if (self.head == self.tail) {
+                return null;
+            }
+            const value = self.data[self.head];
+            self.head = (self.head + 1) % size;
+            return value;
+        }
+    };
+}
+
+// Use the generic to create a concrete type
+const MyRing = Ring(u32, 1024);
+
+// Can we use the GENERIC TYPE in an event shape?
+~event ring.enqueue { ring: *Ring(u32, 1024), value: u32 }
+| enqueued {}
+| full {}
+
+~proc ring.enqueue {
+    if (ring.tryEnqueue(value)) {
+        std.debug.print("Enqueued!\n", .{});
+        return .{ .enqueued = .{} };
+    }
+    return .{ .full = .{} };
+}
+
+~event ring.dequeue { ring: *Ring(u32, 1024) }
+| value { data: u32 }
+| empty {}
+
+~proc ring.dequeue {
+    if (ring.tryDequeue()) |data| {
+        std.debug.print("Got: {}\n", .{data});
+        return .{ .value = .{ .data = data } };
+    }
+    return .{ .empty = .{} };
+}
+
+// Test with the generic type
+var my_ring = MyRing.init();
+
+~ring.enqueue(ring: &my_ring, value: 42)
+| enqueued |> ring.dequeue(ring: &my_ring)
+    | value v |> _
+    | empty |> _
+| full |> _

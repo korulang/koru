@@ -1,0 +1,7 @@
+// Test: Keyword collision - two modules define same keyword
+// This should produce an error at ~process() usage
+~import "$lib_a"
+~import "$lib_b"
+
+// Using ~process without qualification - should error because both lib_a and lib_b define it
+~process()

@@ -1,0 +1,68 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 007: Multiple branches in events
+// Tests that events can have multiple branches and procs can return different ones
+const std = @import("std");
+
+~event check { value: i32 }
+| positive { n: i32 }
+| zero {}
+| negative { n: i32 }
+
+~proc check {
+    if (value > 0) return .{ .positive = .{ .n = value } };
+    if (value < 0) return .{ .negative = .{ .n = value } };
+    return .{ .zero = .{} };
+}
+
+~event handle_positive { n: i32 }
+| done {}
+
+~proc handle_positive {
+    std.debug.print("Positive branch works: {}\n", .{n});
+    return .{ .done = .{} };
+}
+
+~event handle_zero {}
+| done {}
+
+~proc handle_zero {
+    std.debug.print("Zero branch works\n", .{});
+    return .{ .done = .{} };
+}
+
+~event handle_negative { n: i32 }
+| done {}
+
+~proc handle_negative {
+    std.debug.print("Negative branch works: {}\n", .{n});
+    return .{ .done = .{} };
+}
+
+// Test 1: Positive value (42)
+~check(value: 42)
+| positive p |> handle_positive(n: p.n)
+    | done |> _
+| zero |> handle_zero()
+    | done |> _
+| negative n |> handle_negative(n: n.n)
+    | done |> _
+
+// Test 2: Zero value (0)
+~check(value: 0)
+| positive p |> handle_positive(n: p.n)
+    | done |> _
+| zero |> handle_zero()
+    | done |> _
+| negative n |> handle_negative(n: n.n)
+    | done |> _
+
+// Test 3: Negative value (-7)
+~check(value: -7)
+| positive p |> handle_positive(n: p.n)
+    | done |> _
+| zero |> handle_zero()
+    | done |> _
+| negative n |> handle_negative(n: n.n)
+    | done |> _

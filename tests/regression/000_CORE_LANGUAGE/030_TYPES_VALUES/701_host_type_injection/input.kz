@@ -1,0 +1,15 @@
+// Test 701: HostTypeDecl infrastructure
+// This test verifies that the AST, emitter, and serializer support HostTypeDecl
+// Actual injection of host types will be tested in Phase 2
+const std = @import("std");
+
+~event test_pass {}
+| done {}
+
+~proc test_pass {
+    std.debug.print("HostTypeDecl infrastructure ready\n", .{});
+    return .{ .done = .{} };
+}
+
+~test_pass()
+| done |> _

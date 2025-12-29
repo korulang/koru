@@ -1,0 +1,38 @@
+// Test basic subflow inlining
+const std = @import("std");
+
+~event file.read { path: []const u8 }
+| success { contents: []const u8 }
+| failure { errno: u8 }
+
+~event file.print { contents: []const u8 }
+| success {}
+| failure { errno: u8 }
+
+// Void event - no branches
+~event proc.exit { errno: u8 }
+
+// Define a subflow that wraps file reading with error handling
+~read_and_print (path) = file.read (path: path)
+| success s |> file.print (contents: s.contents)
+  | success |> proc.exit (errno: 0) |> _
+  | failure |> proc.exit (errno: 1) |> _
+| failure f |> proc.exit (errno: f.errno) |> _
+
+// Use the subflow
+~read_and_print ("input.txt")
+
+// Proc implementations
+~proc file.read {
+    // Simple test implementation - just return success with dummy data
+    return .{ .@"success" = .{ .contents = "test file contents" } };
+}
+
+~proc file.print {
+    std.debug.print("PRINT: {s}\n", .{e.contents});
+    return .{ .@"success" = .{} };
+}
+
+~proc proc.exit {
+    std.process.exit(e.errno);
+}

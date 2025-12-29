@@ -1,0 +1,46 @@
+// Test 918: Optional Branches - Basic |? Catch-All
+//
+// This test demonstrates:
+// 1. Event with required and optional branches
+// 2. Handler uses |? to catch all optional branches generically
+// 3. Execution continues when optional branches fire (caught by |?)
+
+const std = @import("std");
+
+// Event with both required and optional branches
+~event process { value: u32 }
+| success { result: u32 }        // REQUIRED: must be handled explicitly
+| ?warning { msg: []const u8 }   // OPTIONAL: can be caught by |?
+| ?debug { details: []const u8 } // OPTIONAL: can be caught by |?
+
+~proc process {
+    const doubled = value * 2;
+
+    // When value > 100, return optional warning branch
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Value is large" } };
+    }
+
+    // When value is odd, return optional debug branch
+    if (value % 2 == 1) {
+        return .{ .debug = .{ .details = "Value is odd" } };
+    }
+
+    // Otherwise return required success branch
+    std.debug.print("Success: {}\n", .{doubled});
+    return .{ .success = .{ .result = doubled } };
+}
+
+// Handler with |? catch-all for optional branches
+// This allows execution to continue when warning or debug branches fire
+~process(value: 10)   // Even value < 100 → success (handled explicitly)
+| success { result } |> std.debug.print("Got success: {}\n", .{result})
+|? |> std.debug.print("Got optional branch (caught by |?)\n", .{})
+
+~process(value: 150)  // Value > 100 → warning (caught by |?)
+| success { result } |> std.debug.print("Got success: {}\n", .{result})
+|? |> std.debug.print("Got optional branch (caught by |?)\n", .{})
+
+~process(value: 7)    // Odd value → debug (caught by |?)
+| success { result } |> std.debug.print("Got success: {}\n", .{result})
+|? |> std.debug.print("Got optional branch (caught by |?)\n", .{})

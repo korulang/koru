@@ -1,0 +1,2 @@
+This test must fail with phantom state mismatch errors.
+All three errors should be reported in a single compilation pass.

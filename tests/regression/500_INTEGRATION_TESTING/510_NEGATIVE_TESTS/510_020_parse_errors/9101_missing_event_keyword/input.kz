@@ -1,0 +1,2 @@
+// This should fail: malformed event syntax with missing closing brace
+~event broken_syntax { x: i32  | done { result: i32 }

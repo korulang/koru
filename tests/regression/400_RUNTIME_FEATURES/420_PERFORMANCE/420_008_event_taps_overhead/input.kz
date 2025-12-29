@@ -1,0 +1,57 @@
+// PERFORMANCE TEST: Event taps overhead vs manual instrumentation
+// Goal: Prove taps have same cost as manual function calls
+// Loop 1 million times with 5 tap points
+// Baseline: Zig with manual function calls at same points
+// Threshold: 1.05x (5% slower max)
+
+const std = @import("std");
+
+// Counter for tap calls (verify taps actually run)
+var tap_count: u64 = 0;
+
+// Event for loop iteration
+~event count { i: u64 }
+| next { i: u64 }
+| done {}
+
+~proc count {
+    if (i < 1_000_000) {
+        return .{ .next = .{ .i = i + 1 } };
+    } else {
+        return .{ .done = .{} };
+    }
+}
+
+// Tap target - simulates logging/metrics
+~event tap_point { i: u64 }
+| done {}
+
+~proc tap_point {
+    tap_count += 1;
+    // Touch parameter to avoid unused warning
+    if (i > 999_999_999) {
+        std.debug.print("Impossible\n", .{});
+    }
+    return .{ .done = .{} };
+}
+
+// Print result
+~event print_result {}
+| done {}
+
+~proc print_result {
+    std.debug.print("Taps called: {}\n", .{tap_count});
+    return .{ .done = .{} };
+}
+
+// Taps: Observe every 5th iteration (5 tap points)
+~count -> * | next n where n.i % 200_000 == 0 |> tap_point(i: n.i) | done |> _
+~count -> * | next n where n.i % 200_001 == 0 |> tap_point(i: n.i) | done |> _
+~count -> * | next n where n.i % 200_002 == 0 |> tap_point(i: n.i) | done |> _
+~count -> * | next n where n.i % 200_003 == 0 |> tap_point(i: n.i) | done |> _
+~count -> * | next n where n.i % 200_004 == 0 |> tap_point(i: n.i) | done |> _
+
+// Main loop
+~#loop count(i: 0)
+| next n |> @loop(i: n.i)
+| done |> print_result() | done |> _

@@ -1,0 +1,6 @@
+Setup: count=1
+Process: count=1
+Process: count=2
+Process: count=3
+Cleanup: count=1
+Void events work correctly

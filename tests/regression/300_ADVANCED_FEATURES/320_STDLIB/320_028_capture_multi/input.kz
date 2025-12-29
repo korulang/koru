@@ -1,0 +1,34 @@
+// Test: ~capture with multiple accumulated fields
+//
+// This demonstrates the power of struct accumulators:
+// - One pass through the data
+// - Multiple values captured simultaneously
+// - Pure semantics (compute entire next state at once)
+// - Efficient generated code
+//
+// Compare to Haskell:
+//   fold (\(sum, max) x -> (sum + x, max `max` x)) (0, -inf) items
+//
+// Koru is MORE READABLE with the same purity guarantees!
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+~event compute_stats {}
+| result { sum: i32, max: i32 }
+
+// Compute sum and max in one pass
+// Values: 3, 1, 4, 1, 5 -> sum=14, max=5
+~compute_stats = capture(init: { sum: @as(i32, 0), max: @as(i32, 0) })
+| as c |>
+  for(&[_]i32{ 3, 1, 4, 1, 5 })
+  | each val |> captured {
+      sum: c.sum + val,
+      max: if (val > c.max) val else c.max
+    }
+| done final |> result { sum: final.sum, max: final.max }
+
+~compute_stats()
+| result r |> std.io:println(text: "done")

@@ -1,0 +1,49 @@
+// Test 919: Dead Code Elimination for Optional Branches
+//
+// This test verifies that the compiler ELIMINATES code paths
+// for optional branches that are not handled by any flow.
+
+const std = @import("std");
+
+// Event with optional branches that have complex logic
+~event analyze { data: []const u8 }
+| success { result: u32 }           // REQUIRED
+| ?warning { code: u32, msg: []const u8 }  // OPTIONAL - expensive validation
+| ?debug { trace: []const u8 }      // OPTIONAL - detailed logging
+
+~proc analyze {
+    const len = data.len;
+
+    // This expensive validation should be ELIMINATED
+    // if no flow handles the warning branch
+    if (len > 1000) {
+        var i: usize = 0;
+        var bad_chars: u32 = 0;
+        while (i < len) : (i += 1) {
+            if (data[i] > 127) {
+                bad_chars += 1;
+            }
+        }
+        if (bad_chars > 0) {
+            const msg = std.fmt.allocPrint(std.heap.page_allocator,
+                "Found {d} non-ASCII chars", .{bad_chars}) catch unreachable;
+            return .{ .warning = .{ .code = bad_chars, .msg = msg } };
+        }
+    }
+
+    // This debug tracing should be ELIMINATED
+    // if no flow handles the debug branch
+    if (len < 10) {
+        const trace = std.fmt.allocPrint(std.heap.page_allocator,
+            "Short input: {s}", .{data}) catch unreachable;
+        return .{ .debug = .{ .trace = trace } };
+    }
+
+    std.debug.print("Analyzed: {d} bytes\n", .{len});
+    return .{ .success = .{ .result = @intCast(len) } };
+}
+
+// Flow that ONLY handles success
+// The warning and debug code paths should be eliminated!
+~analyze(data: "hello")
+| success |> _

@@ -1,0 +1,43 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 206: Label scope errors
+// Tests that labels are flow-scoped and cannot be accessed across flows
+// Expected to fail compilation with "Unknown label 'loop'" error
+// ============================================================================
+
+const std = @import("std");
+
+// Simple counter event
+~event counter { n: i32 }
+| next { value: i32 }
+| done { final: i32 }
+
+~proc counter {
+    std.debug.print("Count: {}\n", .{n});
+
+    if (n < 3) {
+        return .{ .next = .{ .value = n + 1 } };
+    } else {
+        return .{ .done = .{ .final = n } };
+    }
+}
+
+// Start event
+~event start {}
+| ready {}
+
+~proc start {
+    std.debug.print("Starting...\n", .{});
+    return .{ .ready = .{} };
+}
+
+// Flow 1 with a label
+~start()
+| ready |> #loop counter(n: 1)
+    | next c |> @loop(n: c.value)
+    | done d |> _
+
+// Flow 2 trying to jump to Flow 1's label (should error!)
+~start()
+| ready |> @loop(n: 1)  // ERROR: 'loop' is not in scope here

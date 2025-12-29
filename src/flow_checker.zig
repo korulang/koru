@@ -1,0 +1,420 @@
+const std = @import("std");
+const ast = @import("ast");
+const errors = @import("errors");
+const branch_checker = @import("branch_checker");
+
+/// The flow checker validates control flow properties:
+/// 1. When-clause exhaustiveness (exactly one continuation without `when` per branch)
+/// 2. When-clause determinism (no ambiguous else cases)
+/// 3. Branch coverage (all required branches must be handled)
+/// 4. Optional branches (can be skipped, |? catch-all is optional)
+
+pub const FlowChecker = struct {
+    allocator: std.mem.Allocator,
+    reporter: *errors.ErrorReporter,
+    ast_items: ?[]const ast.Item,  // Full AST for event lookups
+
+    pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) !FlowChecker {
+        return FlowChecker{
+            .allocator = allocator,
+            .reporter = reporter,
+            .ast_items = null,
+        };
+    }
+
+    pub fn deinit(self: *FlowChecker) void {
+        _ = self;
+        // No resources to clean up yet
+    }
+
+    /// Check an entire source file for control flow validity
+    pub fn checkSourceFile(self: *FlowChecker, source_file: *const ast.Program) !void {
+        // Store AST for event lookups
+        self.ast_items = source_file.items;
+
+        // Walk all flows and validate control flow
+        for (source_file.items) |*item| {
+            switch (item.*) {
+                .flow => |*flow| {
+                    try self.validateFlow(flow, flow.location);
+                },
+                .proc_decl => |*proc| {
+                    // Check inline flows in proc declarations for duplicate branch handlers
+                    for (proc.inline_flows) |*inline_flow| {
+                        try self.checkDuplicateBranchHandlers(inline_flow.continuations, inline_flow.location);
+                    }
+                },
+                .module_decl => |*module| {
+                    // Validate flows in imported modules
+                    for (module.items) |*module_item| {
+                        switch (module_item.*) {
+                            .flow => |*flow| {
+                                try self.validateFlow(flow, flow.location);
+                            },
+                            .proc_decl => |*proc| {
+                                for (proc.inline_flows) |*inline_flow| {
+                                    try self.checkDuplicateBranchHandlers(inline_flow.continuations, inline_flow.location);
+                                }
+                            },
+                            else => {},
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+
+        // Check if any errors were reported
+        if (self.reporter.hasErrors()) {
+            return error.FlowValidationFailed;
+        }
+    }
+
+    fn validateFlow(self: *FlowChecker, flow: *const ast.Flow, location: errors.SourceLocation) !void {
+        // Skip validation for flows with inline_body or preamble_code (transformed flows)
+        // These don't need traditional branch coverage since their code is handled specially
+        if (flow.inline_body != null or flow.preamble_code != null) {
+            return;
+        }
+
+        // Validate when-clause exhaustiveness for all continuations
+        try self.validateWhenClauseExhaustiveness(flow.continuations, location);
+
+        // Validate branch coverage (all required branches must be handled)
+        try self.validateBranchCoverage(flow, location);
+
+        // Recursively validate nested continuations
+        for (flow.continuations) |*cont| {
+            try self.validateContinuationWhenClauses(cont, location);
+        }
+    }
+
+    fn validateContinuationWhenClauses(self: *FlowChecker, cont: *const ast.Continuation, location: errors.SourceLocation) !void {
+        // Validate when-clauses in nested continuations
+        if (cont.continuations.len > 0) {
+            try self.validateWhenClauseExhaustiveness(cont.continuations, location);
+
+            // Recursively validate deeper nesting
+            for (cont.continuations) |*nested| {
+                try self.validateContinuationWhenClauses(nested, location);
+            }
+        }
+    }
+
+    fn validateWhenClauseExhaustiveness(self: *FlowChecker, continuations: []const ast.Continuation, location: errors.SourceLocation) !void {
+        if (continuations.len == 0) return;
+
+        // Group continuations by branch name
+        var branch_groups = std.StringHashMap(std.ArrayList(*const ast.Continuation)).init(self.allocator);
+        defer {
+            var it = branch_groups.iterator();
+            while (it.next()) |entry| {
+                entry.value_ptr.deinit(self.allocator);
+            }
+            branch_groups.deinit();
+        }
+
+        for (continuations) |*cont| {
+            const entry = try branch_groups.getOrPut(cont.branch);
+            if (!entry.found_existing) {
+                entry.value_ptr.* = std.ArrayList(*const ast.Continuation){ .items = &.{}, .capacity = 0 };
+            }
+            try entry.value_ptr.append(self.allocator, cont);
+        }
+
+        // Validate each branch group
+        var it = branch_groups.iterator();
+        while (it.next()) |entry| {
+            const branch_name = entry.key_ptr.*;
+            const branch_continuations = entry.value_ptr.items;
+
+            // If only one continuation for this branch, no validation needed
+            if (branch_continuations.len == 1) continue;
+
+            // Multiple continuations for same branch - validate when-clause exhaustiveness
+            var else_count: usize = 0;
+            for (branch_continuations) |cont| {
+                if (cont.condition == null) {
+                    else_count += 1;
+                }
+            }
+
+            if (else_count == 0) {
+                // ERROR: Not exhaustive - missing else case
+                std.debug.print("ERROR: Branch '{s}' has {d} when-clauses but no else case (non-exhaustive)\n",
+                    .{branch_name, branch_continuations.len});
+                try self.reporter.addError(
+                    .KORU050,
+                    location.line,
+                    location.column,
+                    "branch '{s}' has multiple when-clauses but no else case - add one continuation without 'when'",
+                    .{branch_name}
+                );
+            } else if (else_count > 1) {
+                // ERROR: Ambiguous - multiple else cases
+                std.debug.print("ERROR: Branch '{s}' has {d} else cases (ambiguous)\n",
+                    .{branch_name, else_count});
+                try self.reporter.addError(
+                    .KORU051,
+                    location.line,
+                    location.column,
+                    "branch '{s}' has {d} continuations without 'when' (ambiguous) - only one else case allowed",
+                    .{branch_name, else_count}
+                );
+            }
+            // else: exactly one else case - valid!
+        }
+    }
+
+    /// Validate branch coverage: all required branches must be handled
+    fn validateBranchCoverage(self: *FlowChecker, flow: *const ast.Flow, location: errors.SourceLocation) !void {
+        // Find the event definition for this flow
+        const event_decl = self.findEventDecl(&flow.invocation.path) orelse {
+            // Event not found - this is a shape checker error, not flow checker
+            // Just skip branch coverage validation
+            return;
+        };
+
+        // Convert AST branches to BranchChecker format
+        var declared = try std.ArrayList(branch_checker.BranchChecker.DeclaredBranch).initCapacity(
+            self.allocator,
+            event_decl.branches.len,
+        );
+        defer declared.deinit(self.allocator);
+
+        for (event_decl.branches) |branch| {
+            try declared.append(self.allocator, .{
+                .name = branch.name,
+                .is_optional = branch.is_optional,
+            });
+        }
+
+        // Convert continuations to BranchChecker format
+        var handled = try std.ArrayList(branch_checker.BranchChecker.HandledBranch).initCapacity(
+            self.allocator,
+            flow.continuations.len,
+        );
+        defer handled.deinit(self.allocator);
+
+        for (flow.continuations) |*cont| {
+            // Skip empty branch names - these are void event chains (|> event())
+            // where branches are not explicitly handled
+            if (cont.branch.len == 0) continue;
+
+            try handled.append(self.allocator, .{
+                .name = cont.branch,
+                .has_when_guard = cont.condition != null,
+                .is_catchall = cont.is_catchall,
+            });
+        }
+
+        // Validate using pure BranchChecker
+        var result = try branch_checker.BranchChecker.validate(
+            self.allocator,
+            declared.items,
+            handled.items,
+        );
+        defer branch_checker.BranchChecker.freeResult(self.allocator, &result);
+
+        // Report errors for missing branches
+        if (result.missing_branches.len > 0) {
+            const event_name = if (event_decl.path.segments.len > 0)
+                event_decl.path.segments[event_decl.path.segments.len - 1]
+            else
+                "(unknown)";
+
+            for (result.missing_branches) |branch_name| {
+                std.debug.print("ERROR: Required branch '{s}' not handled in flow invoking '{s}'\n",
+                    .{branch_name, event_name});
+                try self.reporter.addError(
+                    .KORU022,
+                    location.line,
+                    location.column,
+                    "required branch '{s}' not handled - event '{s}' requires this branch",
+                    .{branch_name, event_name},
+                );
+            }
+        }
+
+        // Report errors for unknown branches
+        for (result.unknown_branches) |branch_name| {
+            std.debug.print("ERROR: Unknown branch '{s}' - event has no such branch\n", .{branch_name});
+            try self.reporter.addError(
+                .KORU021,
+                location.line,
+                location.column,
+                "unknown branch '{s}' - event has no such branch",
+                .{branch_name},
+            );
+        }
+    }
+
+    /// Find an event declaration by path
+    fn findEventDecl(self: *FlowChecker, path: *const ast.DottedPath) ?*const ast.EventDecl {
+        const items = self.ast_items orelse return null;
+
+        const wanted_module = path.module_qualifier;
+
+        // Helper to check if module qualifiers match
+        const modulesMatch = struct {
+            fn check(wanted: ?[]const u8, event_module: ?[]const u8) bool {
+                // If no module qualifier was specified in the lookup, match any
+                const w = wanted orelse return true;
+                const e = event_module orelse return false;
+                return std.mem.eql(u8, w, e);
+            }
+        }.check;
+
+        // Helper to check if ALL path segments match (not just the last one)
+        const pathsMatch = struct {
+            fn check(wanted_segs: []const []const u8, event_segs: []const []const u8) bool {
+                if (wanted_segs.len != event_segs.len) return false;
+                for (wanted_segs, event_segs) |w, e| {
+                    if (!std.mem.eql(u8, w, e)) return false;
+                }
+                return true;
+            }
+        }.check;
+
+        for (items) |*item| {
+            switch (item.*) {
+                .event_decl => |*event| {
+                    // Check if FULL path matches AND module qualifiers match
+                    if (pathsMatch(path.segments, event.path.segments) and
+                        modulesMatch(wanted_module, event.path.module_qualifier))
+                    {
+                        return event;
+                    }
+                },
+                .module_decl => |*module| {
+                    // Search in imported modules
+                    for (module.items) |*module_item| {
+                        switch (module_item.*) {
+                            .event_decl => |*event| {
+                                // Check FULL path match AND module qualifier
+                                if (pathsMatch(path.segments, event.path.segments) and
+                                    modulesMatch(wanted_module, event.path.module_qualifier))
+                                {
+                                    return event;
+                                }
+                            },
+                            else => {},
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+
+        return null;
+    }
+
+    /// Check for duplicate branch handlers at the same level (indentation error)
+    /// This catches patterns like:
+    ///   | done sum |> multiply(...)
+    ///   | done product |> done { ... }
+    /// Where both | done are at the same indent but the second should be nested under the first.
+    fn checkDuplicateBranchHandlers(self: *FlowChecker, continuations: []const ast.Continuation, location: errors.SourceLocation) !void {
+        // Check for duplicates at this level
+        for (continuations, 0..) |cont, i| {
+            for (continuations[i + 1 ..]) |other| {
+                if (std.mem.eql(u8, cont.branch, other.branch)) {
+                    // Found duplicate branch at same level - this is an error
+                    try self.reporter.addError(
+                        .SHAPE002,
+                        location.line,
+                        location.column,
+                        "duplicate handler for branch '{s}' at same indentation level - if the second handles a chained event's result, indent it further",
+                        .{cont.branch},
+                    );
+                    return error.DuplicateBranchHandler;
+                }
+            }
+        }
+
+        // Recursively check nested continuations
+        for (continuations) |cont| {
+            if (cont.continuations.len > 0) {
+                try self.checkDuplicateBranchHandlers(cont.continuations, location);
+            }
+        }
+    }
+};
+
+// Tests
+test "when-clause exhaustiveness - single continuation" {
+    const allocator = std.testing.allocator;
+    var reporter = try errors.ErrorReporter.init(allocator, "test.kz", "");
+    defer reporter.deinit();
+
+    var checker = try FlowChecker.init(allocator, &reporter);
+    defer checker.deinit();
+
+    const continuations = [_]ast.Continuation{
+        .{ .branch = "high", .binding = null, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
+    };
+
+    const location = errors.SourceLocation{ .file = "test.kz", .line = 1, .column = 1 };
+    try checker.validateWhenClauseExhaustiveness(&continuations, location);
+
+    try std.testing.expect(!reporter.hasErrors());
+}
+
+test "when-clause exhaustiveness - valid with else" {
+    const allocator = std.testing.allocator;
+    var reporter = try errors.ErrorReporter.init(allocator, "test.kz", "");
+    defer reporter.deinit();
+
+    var checker = try FlowChecker.init(allocator, &reporter);
+    defer checker.deinit();
+
+    const continuations = [_]ast.Continuation{
+        .{ .branch = "high", .binding = null, .condition = "h.x > 10", .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
+        .{ .branch = "high", .binding = null, .condition = "h.x > 5", .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
+        .{ .branch = "high", .binding = null, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
+    };
+
+    const location = errors.SourceLocation{ .file = "test.kz", .line = 1, .column = 1 };
+    try checker.validateWhenClauseExhaustiveness(&continuations, location);
+
+    try std.testing.expect(!reporter.hasErrors());
+}
+
+test "when-clause exhaustiveness - missing else" {
+    const allocator = std.testing.allocator;
+    var reporter = try errors.ErrorReporter.init(allocator, "test.kz", "");
+    defer reporter.deinit();
+
+    var checker = try FlowChecker.init(allocator, &reporter);
+    defer checker.deinit();
+
+    const continuations = [_]ast.Continuation{
+        .{ .branch = "high", .binding = null, .condition = "h.x > 10", .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
+        .{ .branch = "high", .binding = null, .condition = "h.x > 5", .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
+    };
+
+    const location = errors.SourceLocation{ .file = "test.kz", .line = 1, .column = 1 };
+    try checker.validateWhenClauseExhaustiveness(&continuations, location);
+
+    try std.testing.expect(reporter.hasErrors());
+}
+
+test "when-clause exhaustiveness - ambiguous else" {
+    const allocator = std.testing.allocator;
+    var reporter = try errors.ErrorReporter.init(allocator, "test.kz", "");
+    defer reporter.deinit();
+
+    var checker = try FlowChecker.init(allocator, &reporter);
+    defer checker.deinit();
+
+    const continuations = [_]ast.Continuation{
+        .{ .branch = "high", .binding = null, .condition = "h.x > 10", .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
+        .{ .branch = "high", .binding = null, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
+        .{ .branch = "high", .binding = null, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
+    };
+
+    const location = errors.SourceLocation{ .file = "test.kz", .line = 1, .column = 1 };
+    try checker.validateWhenClauseExhaustiveness(&continuations, location);
+
+    try std.testing.expect(reporter.hasErrors());
+}

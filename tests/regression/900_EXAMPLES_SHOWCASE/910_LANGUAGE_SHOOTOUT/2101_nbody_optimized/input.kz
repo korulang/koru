@@ -1,0 +1,219 @@
+// LANGUAGE SHOOTOUT: N-body Gravitational Simulation
+// HONEST VERSION: Uses Koru ~for for the hot loops
+//
+// This is the REAL test - can ~for match Zig's loop performance?
+
+const std = @import("std");
+
+~import "$std/control"
+
+const PI = 3.141592653589793;
+const SOLAR_MASS = 4 * PI * PI;
+const DAYS_PER_YEAR = 365.24;
+
+const Body = struct {
+    x: f64,
+    y: f64,
+    z: f64,
+    vx: f64,
+    vy: f64,
+    vz: f64,
+    mass: f64,
+};
+
+// ============================================================================
+// Event: Initialize planetary bodies
+// ============================================================================
+
+~event initialize_bodies {}
+| initialized { bodies: [5]Body }
+
+~proc initialize_bodies {
+    const bodies_data = [_]Body{
+        .{ .x = 0, .y = 0, .z = 0, .vx = 0, .vy = 0, .vz = 0, .mass = SOLAR_MASS },
+        .{
+            .x = 4.84143144246472090e+00,
+            .y = -1.16032004402742839e+00,
+            .z = -1.03622044471123109e-01,
+            .vx = 1.66007664274403694e-03 * DAYS_PER_YEAR,
+            .vy = 7.69901118419740425e-03 * DAYS_PER_YEAR,
+            .vz = -6.90460016972063023e-05 * DAYS_PER_YEAR,
+            .mass = 9.54791938424326609e-04 * SOLAR_MASS,
+        },
+        .{
+            .x = 8.34336671824457987e+00,
+            .y = 4.12479856412430479e+00,
+            .z = -4.03523417114321381e-01,
+            .vx = -2.76742510726862411e-03 * DAYS_PER_YEAR,
+            .vy = 4.99852801234917238e-03 * DAYS_PER_YEAR,
+            .vz = 2.30417297573763929e-05 * DAYS_PER_YEAR,
+            .mass = 2.85885980666130812e-04 * SOLAR_MASS,
+        },
+        .{
+            .x = 1.28943695621391310e+01,
+            .y = -1.51111514016986312e+01,
+            .z = -2.23307578892655734e-01,
+            .vx = 2.96460137564761618e-03 * DAYS_PER_YEAR,
+            .vy = 2.37847173959480950e-03 * DAYS_PER_YEAR,
+            .vz = -2.96589568540237556e-05 * DAYS_PER_YEAR,
+            .mass = 4.36624404335156298e-05 * SOLAR_MASS,
+        },
+        .{
+            .x = 1.53796971148509165e+01,
+            .y = -2.59193146099879641e+01,
+            .z = 1.79258772950371181e-01,
+            .vx = 2.68067772490389322e-03 * DAYS_PER_YEAR,
+            .vy = 1.62824170038242295e-03 * DAYS_PER_YEAR,
+            .vz = -9.51592254519715870e-05 * DAYS_PER_YEAR,
+            .mass = 5.15138902046611451e-05 * SOLAR_MASS,
+        },
+    };
+    return .{ .initialized = .{ .bodies = bodies_data } };
+}
+
+// ============================================================================
+// Event: Process ONE body pair - the atomic unit of computation
+// ============================================================================
+
+~event process_pair { bodies: []Body, i: usize, j: usize, dt: f64 }
+| done {}
+
+~proc process_pair {
+    const dx = bodies[i].x - bodies[j].x;
+    const dy = bodies[i].y - bodies[j].y;
+    const dz = bodies[i].z - bodies[j].z;
+    const distance = @sqrt(dx * dx + dy * dy + dz * dz);
+    const mag = dt / (distance * distance * distance);
+
+    bodies[i].vx -= dx * bodies[j].mass * mag;
+    bodies[i].vy -= dy * bodies[j].mass * mag;
+    bodies[i].vz -= dz * bodies[j].mass * mag;
+
+    bodies[j].vx += dx * bodies[i].mass * mag;
+    bodies[j].vy += dy * bodies[i].mass * mag;
+    bodies[j].vz += dz * bodies[i].mass * mag;
+
+    return .{ .done = .{} };
+}
+
+// ============================================================================
+// Event: Update ONE body position - atomic unit
+// ============================================================================
+
+~event update_position { body: *Body, dt: f64 }
+| done {}
+
+~proc update_position {
+    body.x += dt * body.vx;
+    body.y += dt * body.vy;
+    body.z += dt * body.vz;
+    return .{ .done = .{} };
+}
+
+// ============================================================================
+// Other events (same as before)
+// ============================================================================
+
+~event offset_momentum { bodies: []Body }
+| adjusted {}
+
+~proc offset_momentum {
+    var px: f64 = 0.0;
+    var py: f64 = 0.0;
+    var pz: f64 = 0.0;
+
+    for (bodies) |body| {
+        px += body.vx * body.mass;
+        py += body.vy * body.mass;
+        pz += body.vz * body.mass;
+    }
+
+    bodies[0].vx = -px / SOLAR_MASS;
+    bodies[0].vy = -py / SOLAR_MASS;
+    bodies[0].vz = -pz / SOLAR_MASS;
+
+    return .{ .adjusted = .{} };
+}
+
+~event calculate_energy { bodies: []const Body }
+| result { energy: f64 }
+
+~proc calculate_energy {
+    var e: f64 = 0.0;
+
+    for (bodies, 0..) |body, i| {
+        e += 0.5 * body.mass * (body.vx * body.vx + body.vy * body.vy + body.vz * body.vz);
+
+        var j = i + 1;
+        while (j < bodies.len) : (j += 1) {
+            const dx = body.x - bodies[j].x;
+            const dy = body.y - bodies[j].y;
+            const dz = body.z - bodies[j].z;
+            const distance = @sqrt(dx * dx + dy * dy + dz * dz);
+            e -= (body.mass * bodies[j].mass) / distance;
+        }
+    }
+
+    return .{ .result = .{ .energy = e } };
+}
+
+~event print_energy { energy: f64 }
+| done {}
+
+~proc print_energy {
+    std.debug.print("{d:.9}\n", .{energy});
+    return .{ .done = .{} };
+}
+
+~event parse_args {}
+| parsed { n: u32 }
+
+~proc parse_args {
+    const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
+    defer std.process.argsFree(std.heap.page_allocator, args);
+
+    if (args.len < 2) {
+        std.debug.print("Usage: {s} <iterations>\n", .{args[0]});
+        unreachable;
+    }
+
+    const n = std.fmt.parseInt(u32, args[1], 10) catch unreachable;
+    return .{ .parsed = .{ .n = n } };
+}
+
+// ============================================================================
+// Main flow: Using Koru ~for for the HOT LOOPS
+// ============================================================================
+
+// Start simple: just test the outer simulation loop with ~for
+// The body loops are still in process_all_pairs for now
+
+~event process_all_pairs { bodies: []Body, dt: f64 }
+| done {}
+
+// This uses Koru ~for for the OUTER loop
+~process_all_pairs = for(0..5)
+| each i |> for(i.val+1..5)
+    | each j |> process_pair(bodies: bodies, i: i.val, j: j.val, dt: dt)
+        | done |> _
+| done |> done {}
+
+~event update_all_positions { bodies: []Body, dt: f64 }
+| done {}
+
+~update_all_positions = for(0..5)
+| each k |> update_position(body: &bodies[k.val], dt: dt)
+    | done |> _
+| done |> done {}
+
+~parse_args()
+| parsed p |> initialize_bodies()
+    | initialized init[mutable] |> offset_momentum(bodies: init.bodies[0..])
+        | adjusted |> calculate_energy(bodies: init.bodies[0..])
+            | result r1 |> print_energy(energy: r1.energy)
+                | done |> for(0..p.n)
+                    | each sim |> process_all_pairs(bodies: init.bodies[0..], dt: 0.01)
+                        | done |> update_all_positions(bodies: init.bodies[0..], dt: 0.01)
+                    | done |> calculate_energy(bodies: init.bodies[0..])
+                        | result r2 |> print_energy(energy: r2.energy)
+                            | done |> _

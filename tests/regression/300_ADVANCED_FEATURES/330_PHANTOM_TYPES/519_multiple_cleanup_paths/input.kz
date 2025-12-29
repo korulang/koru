@@ -1,0 +1,14 @@
+// Test 519: Multiple cleanup paths
+// Tests that multiple disposal events can coexist
+//
+// Key points:
+// - fs module provides TWO disposal events: close and flush_close
+// - Both accept *File[!opened] (both consume obligation)
+// - User explicitly chooses flush_close
+// - Obligation is satisfied regardless of which path is chosen
+
+~import "$app/fs"
+
+~app.fs:open(path: "test.txt")
+| opened f |> app.fs:flush_close(file: f.file)  // Explicit choice of cleanup path
+    | flushed |> _

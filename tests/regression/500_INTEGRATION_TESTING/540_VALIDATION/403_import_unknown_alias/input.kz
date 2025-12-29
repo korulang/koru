@@ -1,0 +1,14 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 403: Unknown import aliases must produce clear errors
+// Only $std, $lib, and $root are valid aliases
+
+~import "$unknown/module"
+
+// This should never compile
+const std = @import("std");
+
+pub fn main() void {
+    std.debug.print("This should fail at import resolution\n", .{});
+}

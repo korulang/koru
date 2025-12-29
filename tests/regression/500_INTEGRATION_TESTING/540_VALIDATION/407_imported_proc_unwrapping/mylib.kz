@@ -1,0 +1,22 @@
+// Simple library that uses input parameters in proc body
+const std = @import("std");
+
+~pub event double { value: i32 }
+| result { doubled: i32 }
+
+~proc double {
+    // This proc body references 'value' directly
+    // The compiler SHOULD generate: const value = value;
+    return .{ .result = .{ .doubled = value * 2 } };
+}
+
+~pub event add { a: i32, b: i32 }
+| sum { total: i32 }
+
+~proc add {
+    // This proc body references both 'a' and 'b' directly
+    // The compiler SHOULD generate:
+    //   const a = a;
+    //   const b = b;
+    return .{ .sum = .{ .total = a + b } };
+}

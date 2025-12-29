@@ -1,0 +1,30 @@
+// ============================================================================
+// Regression test: annotations may appear on a line separate from the construct
+// This tests flow calls, event declarations, and proc definitions
+// ============================================================================
+
+~import "$std/build"
+
+// Flow call with annotation on separate line
+~[default]
+std.build:step(name: "compile") [sh]{
+    zig build
+}
+
+// Flow call with compound annotation on separate line
+~[default, depends_on("compile")]
+std.build:step(name: "run") [sh]{
+    ./zig-out/bin/main
+}
+
+// Event definition with annotation on separate line
+~[comptime|norun]
+pub event test.signal {
+    value: i32
+}
+
+// Proc definition with annotation on separate line
+~[raw]
+proc test.handler {
+    const x = 42;
+}

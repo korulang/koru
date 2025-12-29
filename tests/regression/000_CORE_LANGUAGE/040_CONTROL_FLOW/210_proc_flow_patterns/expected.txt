@@ -1,0 +1,3 @@
+✅ Pattern 1 (proc as expression): 42
+✅ Pattern 2 (implicit return): 100
+✅ Pattern 3 (explicit return): 201

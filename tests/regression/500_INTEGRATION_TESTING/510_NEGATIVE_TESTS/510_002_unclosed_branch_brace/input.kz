@@ -1,0 +1,7 @@
+// Test 902: Unclosed branch payload brace
+// Parser should reject with clear error about missing '}'
+
+~event process { value: i32 }
+| success {
+    result: u32
+| failure {}

@@ -1,0 +1,58 @@
+// Test subflows implementing event interfaces with branch constructors
+const std = @import("std");
+
+// Define the interface
+~event transform.data { input: u32 }
+| success { output: u32, status: []const u8 }
+| error { code: u32, message: []const u8 }
+
+// Implement it with a subflow using branch constructors
+~transform_impl (input) = validate.input (value: input)
+| valid v |> process.value (data: v.value)
+  | done d |> success { output: d.result, status: "completed" }
+  | failed f |> error { code: f.error_code, message: f.reason }
+| invalid i |> error { code: 400, message: i.msg }
+
+// Helper events
+~event validate.input { value: u32 }
+| valid { value: u32 }
+| invalid { msg: []const u8 }
+
+~event process.value { data: u32 }
+| done { result: u32 }
+| failed { error_code: u32, reason: []const u8 }
+
+// Test using the subflow
+~transform_impl (42)
+| success s |> log.info (msg: s.status)
+| error e |> log.error (code: e.code, message: e.message)
+
+// Logging events
+~event log.info { msg: []const u8 }
+
+~event log.error { code: u32, message: []const u8 }
+
+// Procs
+~proc validate.input {
+    if (e.value > 0 and e.value < 1000) {
+        return .{ .@"valid" = .{ .value = e.value } };
+    } else {
+        return .{ .@"invalid" = .{ .msg = "Value out of range" } };
+    }
+}
+
+~proc process.value {
+    if (e.data % 2 == 0) {
+        return .{ .@"done" = .{ .result = e.data * 2 } };
+    } else {
+        return .{ .@"failed" = .{ .error_code = 500, .reason = "Odd numbers not supported" } };
+    }
+}
+
+~proc log.info {
+    std.debug.print("INFO: {s}\n", .{e.msg});
+}
+
+~proc log.error {
+    std.debug.print("ERROR {}: {s}\n", .{ e.code, e.message });
+}

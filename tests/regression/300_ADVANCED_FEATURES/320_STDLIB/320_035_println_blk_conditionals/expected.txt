@@ -1,0 +1,4 @@
+=== Report ===
+[DEBUG MODE]
+Total: 100
+==============

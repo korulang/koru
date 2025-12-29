@@ -1,0 +1,53 @@
+// NOTE: This module is marked ~[comptime|runtime] because its types need to be
+// available both at comptime (for compiler passes in backend_output_emitted.zig)
+// and runtime (for user programs that reference CompilerContext).
+~[comptime|runtime]
+
+// Dummy event to prevent auto-injection of compiler import (which would create circular dependency)
+~event __compiler_types_marker {} | done {}
+
+const std = @import("std");
+
+// Import AST types (we'll use ast.Program and ast.Item directly to avoid conflicts)
+const ast = @import("ast");
+
+// ============================================================
+// SHARED COMPILER TYPES - Used by both compiler and build
+// ============================================================
+// These types are extracted to avoid circular dependencies:
+// - compiler.kz needs to import build.kz (for build:collect)
+// - build.kz needs CompilerContext type
+// - Solution: Both import compiler_types.kz
+
+pub const SourceLocation = struct {
+    file: []const u8,
+    line: u32,
+    column: u32,
+};
+
+pub const CompilerError = struct {
+    message: []const u8,
+    location: SourceLocation,
+};
+
+pub const CompilerWarning = struct {
+    message: []const u8,
+    location: SourceLocation,
+};
+
+pub const ErrorPolicy = enum {
+    abort_on_first,
+    collect_all,
+};
+
+pub const CompilerContext = struct {
+    ast: *const ast.Program,
+    original_ast: *const ast.Program,  // Unfiltered AST for metadata queries (TypeRegistry, etc.)
+    allocator: std.mem.Allocator,
+    errors: std.ArrayList(CompilerError),
+    warnings: std.ArrayList(CompilerWarning),
+    error_policy: ErrorPolicy,
+    current_pass: ?[]const u8,
+    passes_completed: u32,
+    tap_registry: ?*@import("tap_registry").TapRegistry,
+};

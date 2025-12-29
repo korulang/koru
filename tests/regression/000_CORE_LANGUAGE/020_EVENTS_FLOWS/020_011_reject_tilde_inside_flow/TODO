@@ -1,0 +1,2 @@
+Parser should reject ~ (tilde) inside continuation pipelines with clear error message
+Currently produces garbage: "koru_~std.io.println_event" - tilde becomes part of identifier

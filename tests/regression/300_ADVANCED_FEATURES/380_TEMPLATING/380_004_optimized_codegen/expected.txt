@@ -1,0 +1,1 @@
+4x4 identity created, 3x3 determinant = 1

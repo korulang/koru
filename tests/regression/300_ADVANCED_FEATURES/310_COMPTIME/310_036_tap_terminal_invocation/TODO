@@ -1,0 +1,11 @@
+Taps don't fire for terminal invocations (event at end of pipeline)
+
+When an event is the LAST thing in a flow (no destination), tap lookups
+don't happen. The tap transformer only inserts taps at continuation
+boundaries where there's a transition FROM source TO destination.
+
+To fix: tap transformer needs to also check for taps on terminal
+invocations where destination is null/terminal.
+
+Related: The `-> *` pattern should probably match "to any destination
+INCLUDING terminal" not just "to any concrete destination event".

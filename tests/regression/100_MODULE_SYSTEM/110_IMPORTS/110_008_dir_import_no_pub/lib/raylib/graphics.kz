@@ -1,0 +1,17 @@
+// Graphics module for raylib
+
+const std = @import("std");
+
+~event render { width: i32, height: i32 }
+| drawn { pixels: i32 }
+
+~event clear { color: i32 }
+| cleared {}
+
+~proc render {
+    return .{ .@"drawn" = .{ .pixels = width * height } };
+}
+
+~proc clear {
+    return .{ .@"cleared" = .{} };
+}

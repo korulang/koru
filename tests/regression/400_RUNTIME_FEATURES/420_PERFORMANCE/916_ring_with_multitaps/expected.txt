@@ -1,0 +1,5 @@
+Produced 3 values
+Processing x 1: 0
+Processing x 1: 1
+Processing x 1: 2
+Processing x 2: 4

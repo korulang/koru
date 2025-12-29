@@ -1,0 +1,3 @@
+This test must fail because bad_subflow opens a file with cleanup obligation
+but returns without documenting the obligation in its return signature.
+The obligation is lost at the flow boundary.

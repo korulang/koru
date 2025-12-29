@@ -1,0 +1,31 @@
+// Test: Escaped field names (keywords as field names)
+// This test documents a KNOWN BUG: parser crashes on f.@"error"
+// Features: fields named after Zig keywords need escaping
+
+~event data.process { input: i32 }
+| success { return: i32 }  // 'return' is a keyword
+| failure { error: []const u8 }  // 'error' is a keyword
+
+~proc data.process {
+    if (e.input < 0) {
+        return .{ .@"failure" = .{ .@"error" = "negative value" } };
+    }
+    return .{ .@"success" = .{ .@"return" = e.input * 2 } };
+}
+
+// Test field access with names that are Zig keywords:
+~data.process(input: -5)  
+| success s |> doSomething(value: s.return) |> _
+| failure f |> logError(msg: f.error) |> _
+
+~event doSomething { value: i32 }
+| done {}
+
+~proc doSomething {
+    return .{ .@"done" = .{} };
+}
+
+~event logError { msg: []const u8 }
+~proc logError {
+    // Void event
+}

@@ -1,0 +1,7 @@
+// Root index module - automatically imported when any $testlib/* module is imported
+// This is where stdlib-wide utilities and keywords would live
+
+~pub event root_hello {}
+
+~proc root_hello {
+}

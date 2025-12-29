@@ -1,0 +1,34 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: [backend] annotation prevents runtime emission
+// Feature: ~[backend]event declares events that only exist at compile-time
+// Verifies: Backend-only events appear in backend.zig but NOT in output_emitted.zig
+// ============================================================================
+
+const std = @import("std");
+
+~import "$std/compiler"
+
+// Define a custom backend-only event
+// This should NOT appear in output_emitted.zig (runtime code)
+~[backend]event custom_comptime_pass { ast: ProgramAST }
+| transformed { ast: ProgramAST }
+
+~proc custom_comptime_pass {
+    // This proc would only be called at compile-time
+    return .{ .transformed = .{ .ast = ast } };
+}
+
+// Regular event for comparison
+// This SHOULD appear in output_emitted.zig
+~event runtime_event { x: i32 }
+| done { value: i32 }
+
+~proc runtime_event {
+    return .{ .done = .{ .value = x * 2 } };
+}
+
+// Test the runtime event
+~runtime_event(x: 5)
+| done d |> _

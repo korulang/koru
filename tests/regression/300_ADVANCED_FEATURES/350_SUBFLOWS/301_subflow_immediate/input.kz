@@ -1,0 +1,20 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Immediate subflow with field mapping
+// Feature: ~event_name = branch { output_field: input_field }
+// Verifies: Input fields are accessible and mapped to output correctly
+// ============================================================================
+
+~import "$std/io"
+
+// Event: takes a name, produces a greeting message
+~event greet { name: []const u8 }
+| greeting { message: []const u8 }
+
+// Subflow implementation: maps input field 'name' to output field 'message'
+~greet = greeting { message: name }
+
+// Test: call greet with "World" and print the resulting message
+~greet(name: "World")
+| greeting g |> std.io:print(text: g.message)

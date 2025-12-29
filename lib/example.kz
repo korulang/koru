@@ -1,0 +1,11 @@
+// Example library module for testing $lib alias
+const std = @import("std");
+
+~event greet { name: []const u8 }
+| greeted { message: []const u8 }
+
+~proc greet {
+    const msg = "Hello from lib!";
+    std.debug.print("{s} {s}\n", .{msg, e.name});
+    return .{ .greeted = .{ .message = msg } };
+}

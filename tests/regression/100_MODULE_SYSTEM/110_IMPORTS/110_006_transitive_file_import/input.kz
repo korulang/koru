@@ -1,0 +1,21 @@
+// Test 155: Transitive File Import
+//
+// Tests that A -> B -> C import chain works:
+// - input.kz imports helper.kz
+// - helper.kz imports base.kz
+// - input.kz uses helper, helper uses base
+//
+// KEY TEST: Does the compiler correctly handle transitive imports?
+// Does base.kz get emitted even though input.kz doesn't directly import it?
+
+const std = @import("std");
+
+// Import helper (which itself imports base)
+~import "$app/helper"
+
+// Use helper's quadruple event (which uses base's double event internally)
+~app.helper:quadruple(x: 5)
+| done d |> _
+
+// Expected: 5 * 4 = 20
+// (quadruple calls double twice: 5 -> 10 -> 20)

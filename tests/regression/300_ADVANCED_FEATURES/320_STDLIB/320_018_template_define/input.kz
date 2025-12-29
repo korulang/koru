@@ -1,0 +1,28 @@
+// Test: ~std.template:define parses and stores template in AST
+//
+// This test verifies that template definitions:
+// 1. Parse correctly (no syntax errors)
+// 2. The [norun] event stores data without executing
+// 3. Template source with ${} placeholders is preserved
+//
+// The template itself is not "executed" - it's just stored for later lookup.
+// Source parameters use implicit blocks { ... } not string args.
+
+~import "$std/template"
+
+// Define a simple template using implicit Source block syntax
+~std.template:define(name: "test_simple") {
+    hello ${name}
+}
+
+// Define a template with continuation placeholders
+~std.template:define(name: "test_if") {
+    if (${cond}) { ${| then |} } else { ${| else |} }
+}
+
+// If we get here without errors, the templates parsed correctly
+const std = @import("std");
+
+pub fn main() void {
+    std.debug.print("Templates defined successfully\n", .{});
+}

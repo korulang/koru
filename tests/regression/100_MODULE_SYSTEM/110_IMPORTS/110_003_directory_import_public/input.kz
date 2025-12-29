@@ -1,0 +1,33 @@
+// Test 831b: Directory Import with Public Events
+//
+// Tests importing PUBLIC events from a directory of .kz files.
+// Each file becomes a sub-namespace under the directory name.
+// All events are marked ~pub, so they should be importable.
+//
+// Structure:
+//   test_lib/
+//     graphics.kz  -> test_lib.graphics: (~pub events)
+//     audio.kz     -> test_lib.audio: (~pub events)
+//
+// Expected behavior: SUCCESS
+//   ~import "test_lib"
+//   ~app.test_lib.graphics:init()
+//   ~app.test_lib.audio:play(sound: "beep")
+//
+// See test 831 for the FAILURE case (non-public events)
+
+const std = @import("std");
+
+~import "$app/test_lib"
+
+// Initialize graphics subsystem
+~app.test_lib.graphics:init()
+
+// Initialize audio subsystem
+~app.test_lib.audio:init()
+
+// Render a frame
+~app.test_lib.graphics:render(frame: 42)
+
+// Play a sound
+~app.test_lib.audio:play(sound: "explosion.wav")

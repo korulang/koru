@@ -1,0 +1,67 @@
+// Test demonstrates the concept of mixed implementations
+// In a real scenario with multiple procs for same event,
+// if ANY proc is impure, the event should be marked impure
+
+const std = @import("std");
+
+// Pure event
+~event pure_op { x: i32 }
+| done { result: i32 }
+
+~[pure]proc pure_op {
+    return .{ .done = .{ .result = x * 2 } };
+}
+
+// Impure event
+~event impure_op { x: i32 }
+| done { result: i32 }
+
+~proc impure_op {
+    std.debug.print("[IMPURE] Processing {}\n", .{x});
+    return .{ .done = .{ .result = x * 2 } };
+}
+
+// Event that could have multiple implementations in theory
+// This demonstrates that purity is per-event, not per-proc
+~event mixed { x: i32 }
+| done { result: i32 }
+
+// Single implementation - but the concept is that
+// if this event HAD multiple procs, some pure and some impure,
+// the event itself would be impure
+~proc mixed {
+    // Calls impure operation - taints this proc
+    const result = impure_op_event.handler(.{ .x = x });
+
+    switch (result) {
+        .done => |d| {
+            return .{ .done = .{ .result = d.result } };
+        },
+    }
+}
+
+~event print_number { n: i32 }
+| done {}
+
+~proc print_number {
+    std.debug.print("Result: {}\n", .{n});
+    return .{ .done = .{} };
+}
+
+~event main {}
+| done {}
+
+~proc main {
+    const result = mixed_event.handler(.{ .x = 21 });
+
+    switch (result) {
+        .done => |d| {
+            _ = print_number_event.handler(.{ .n = d.result });
+        },
+    }
+
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

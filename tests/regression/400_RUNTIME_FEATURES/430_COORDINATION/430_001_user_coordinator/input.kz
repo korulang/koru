@@ -1,0 +1,12 @@
+// Test 615: Minimal User Coordinator Override
+// THE most minimal possible test - just return an error branch
+// This proves the infrastructure works: bootstrap detection + backend integration
+
+~import "$std/compiler"
+
+// Absolute minimal user coordinator - just return error branch!
+~compiler.coordinate = error { message: "Testing!" }
+
+// Some test code (doesn't matter - coordinator will error immediately)
+~event test {} | done {}
+~proc test { return .{ .done = .{} }; }

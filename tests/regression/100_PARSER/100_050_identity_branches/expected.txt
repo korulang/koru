@@ -1,0 +1,2 @@
+Got number: 42
+Hello from identity branch!

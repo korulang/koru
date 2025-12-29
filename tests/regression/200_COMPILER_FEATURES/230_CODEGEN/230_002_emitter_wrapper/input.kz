@@ -1,0 +1,26 @@
+// Test: Emitter wrapper import and handler generation
+// This verifies that:
+// 1. $std/emitter module exists
+// 2. emit.program event can be imported
+// 3. Handler code generates without errors
+// 4. Backend compiles successfully with emitter wrapper
+//
+// NOTE: This is a COMPILE-ONLY test. Runtime usage requires ~build.requires
+// See test 995 for the runtime usage pattern (documents missing ~build.requires feature)
+
+~import "$std/emitter"
+
+const std = @import("std");
+
+// We don't actually call emit.program here - just verify it exists and compiles
+// The import itself proves the wrapper is available and generates valid code
+
+~event main {}
+| done {}
+
+~proc main {
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

@@ -1,0 +1,32 @@
+// Test 058: Parse Tap with Nested Continuation
+// MUST_COMPILE_ONLY
+//
+// This test verifies that the parser correctly nests continuations
+// based on indentation, not flattening them into a single array.
+//
+// When we write:
+//   ~source -> * | Transition t |> log() | done |> _
+//
+// The parser should create:
+//   tap.continuations[0] = { branch: "Transition", nested: [...] }
+//   tap.continuations[0].nested[0] = { branch: "done", ... }
+//
+// NOT:
+//   tap.continuations[0] = { branch: "Transition", ... }
+//   tap.continuations[1] = { branch: "done", ... }  // WRONG - should be nested!
+
+const std = @import("std");
+
+~event log { data: ?[]const u8 }
+| done {}
+
+~proc log {
+    return .{ .done = .{} };
+}
+
+// THE TAP TO ANALYZE:
+// This has a nested continuation: | Transition |> log() | done |> _
+// The | done |> line is INDENTED, so it should be NESTED under Transition
+~* -> *
+| Profile p |> log(data: p.destination)
+    | done |> _

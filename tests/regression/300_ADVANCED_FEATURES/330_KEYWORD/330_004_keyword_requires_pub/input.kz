@@ -1,0 +1,8 @@
+// Test: [keyword] on private event should error
+// [keyword] requires pub because private events can't be imported
+
+~[keyword] event private_thing {}
+
+~proc private_thing {
+    // This should never run - the error is at parse time
+}

@@ -1,0 +1,13 @@
+[AST DUMP: post-frontend]
+  Items: 7
+  Passes completed: 2
+
+[AST DUMP: post-analysis]
+  Items: 7
+  Passes completed: 4
+
+[AST DUMP: post-optimization]
+  Items: 7
+  Passes completed: 5
+
+Sum: 4950

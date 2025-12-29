@@ -1,0 +1,39 @@
+// Test recursion detection in subflows
+// This file demonstrates that Koru detects and prevents recursive subflows
+// to ensure compile-time expansion is always possible
+
+~event test.ping { count: u32 }
+| pong { count: u32 }
+| done { }
+
+// Direct recursion - will be caught
+~countdown_recursive (n) = countdown_recursive (n)
+| pong p |> pong { count: p.count }
+| done d |> done { }
+
+// Mutual recursion - will also be caught
+~mutual_a (n) = mutual_b (n)
+| pong p |> pong { count: p.count }
+| done d |> done { }
+
+~mutual_b (n) = mutual_a (n)  
+| pong p |> pong { count: p.count }
+| done d |> done { }
+
+// Valid non-recursive subflow - this works fine
+~countdown_valid (n) = test.ping (count: n)
+| pong p |> pong { count: p.count }
+| done d |> done { }
+
+// Test the subflows - these will show recursion errors in generated code
+~countdown_recursive (10)
+| pong p |> _
+| done d |> _
+
+~mutual_a (5)
+| pong p |> _
+| done d |> _
+
+~countdown_valid (3)
+| pong p |> _
+| done d |> _

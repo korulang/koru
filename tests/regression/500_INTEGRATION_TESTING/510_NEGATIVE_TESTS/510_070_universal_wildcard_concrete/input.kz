@@ -1,0 +1,33 @@
+// Test 190: Universal Wildcard + Concrete Branch (INVALID - MUST FAIL)
+//
+// Pattern: ~*:* -> * | result r |>
+//
+// This is INVALID because:
+// - Source is universal wildcard (*:*) - matches ALL events
+// - Branch is concrete (result) - requires specific branch shape
+// - Type error: Not all events have .result branch!
+// - Cannot guarantee type safety at compile time
+//
+// Expected error: "Cannot use concrete branch 'result' with wildcard source pattern"
+
+const std = @import("std");
+
+~import "$app/test_lib/logger"
+
+~event compute { x: i32 }
+| result { value: i32 }
+
+~event format { value: i32 }
+| formatted { text: []const u8 }
+
+~proc compute {
+    return .{ .result = .{ .value = x * 2 } };
+}
+
+~proc format {
+    return .{ .formatted = .{ .text = "formatted" } };
+}
+
+~compute(x: 42)
+| result r |> format(value: r.value)
+    | formatted f |> _

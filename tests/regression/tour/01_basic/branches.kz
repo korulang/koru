@@ -1,0 +1,27 @@
+// Tour 01: Multiple Branches
+// Events can have multiple output branches for different outcomes
+
+~event divide { numerator: i32, denominator: i32 }
+| success { result: f64 }
+| div_by_zero { }
+| overflow { }
+
+~proc divide {
+    if (e.denominator == 0) {
+        return .{ .div_by_zero = .{} };
+    }
+    
+    // Check for overflow (simplified)
+    if (e.numerator == -2147483648 and e.denominator == -1) {
+        return .{ .overflow = .{} };
+    }
+    
+    const result = @intToFloat(f64, e.numerator) / @intToFloat(f64, e.denominator);
+    return .{ .success = .{ .result = result } };
+}
+
+// Handle all branches
+~divide(numerator: 10, denominator: 3)
+| success s |> _
+| div_by_zero |> _
+| overflow |> _

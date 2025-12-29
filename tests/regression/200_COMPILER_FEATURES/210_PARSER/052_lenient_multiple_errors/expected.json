@@ -1,0 +1,170 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "valid_before",
+            "path": ["valid_before"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "x",
+                        "type": "i32",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "ok",
+                    "payload": {
+                        "fields": [
+
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 9,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 10,
+                "col": 0
+            }
+        },
+        {
+            "type": "parse_error",
+            "code": "PARSE004",
+            "message": "unmatched '{' in event shape",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 11,
+                "col": 0
+            },
+            "raw_text": "~event broken_event {\n    value: i32\n| success {}\n\n// This event is valid - should still be parsed\n"
+        },
+        {
+            "type": "event_decl",
+            "name": "valid_after",
+            "path": ["valid_after"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "y",
+                        "type": "i32",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "done",
+                    "payload": {
+                        "fields": [
+
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 20,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 21,
+                "col": 0
+            }
+        },
+        {
+            "type": "parse_error",
+            "code": "PARSE003",
+            "message": "invalid line in vertical annotation block - expected '-' bullet or ']'",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 23,
+                "col": 1
+            },
+            "raw_text": "    z: i32\n}\n| result {}\n\n// One more valid event to verify recovery\n"
+        },
+        {
+            "type": "event_decl",
+            "name": "final_valid",
+            "path": ["final_valid"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "data",
+                        "type": "[]const u8",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "complete",
+                    "payload": {
+                        "fields": [
+
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 32,
+                "col": 0
+            }
+        }
+    ]
+}

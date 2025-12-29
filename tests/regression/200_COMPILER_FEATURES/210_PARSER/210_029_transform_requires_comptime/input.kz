@@ -1,0 +1,17 @@
+// Test 110: Transform Annotation Requires Comptime (MUST_FAIL)
+// Tests that [transform] annotation without [comptime] fails compilation
+//
+// Expected Error: "Event 'badTransform' has [transform] annotation but is missing [comptime]"
+//
+// Design Rationale:
+// - [comptime] controls WHERE (emits to backend_output_emitted.zig)
+// - [transform] controls WHAT (declares transformation intent)
+// - BOTH are required for transforms to work
+// - Without [comptime], the transform won't be available and will fail silently
+// - This validation catches the mistake immediately
+
+~[transform]event badTransform { count: i32 } -> (result: i32)
+
+~proc badTransform {
+    return .{ .result = count * 2 };
+}

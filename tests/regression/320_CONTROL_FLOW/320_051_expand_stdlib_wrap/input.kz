@@ -1,0 +1,46 @@
+// Test: [expand] for stdlib wrapping with Zig's @TypeOf generics
+//
+// This demonstrates the pattern for wrapping Zig stdlib functions:
+// 1. Define a template with ${} placeholders
+// 2. Use Zig's @TypeOf for "free generics" - no Koru type system complexity
+// 3. Declare [norun|expand] event - implementation comes from template
+//
+// Result: Zero-cost, type-safe stdlib wrappers with clean Koru syntax.
+
+~import "$std/template"
+
+const std = @import("std");
+
+// Template uses @TypeOf to infer element type from the array itself
+// This gives us generics "for free" - Zig figures out the types!
+~std.template:define(name: "sort") {
+    std.mem.sort(@TypeOf(${arr}[0]), ${arr}, {}, std.sort.asc(@TypeOf(${arr}[0])));
+}
+
+// [norun] = no proc needed, event just stores shape
+// [expand] = transform replaces invocation with template expansion
+~[norun|expand]pub event sort { arr: Expression }
+
+// Test data
+var numbers = [_]i32{ 5, 2, 8, 1, 9, 3 };
+
+// Use it! The ~ makes it a Koru flow, [expand] inlines the template
+~sort(arr: numbers[0..])
+
+// Verify it worked
+~event verify {}
+
+~proc verify {
+    // Check sorted order
+    var prev: i32 = numbers[0];
+    for (numbers[1..]) |n| {
+        if (n < prev) {
+            std.debug.print("FAIL: {d} < {d}\n", .{ n, prev });
+            return;
+        }
+        prev = n;
+    }
+    std.debug.print("PASS: array sorted correctly\n", .{});
+}
+
+~verify()

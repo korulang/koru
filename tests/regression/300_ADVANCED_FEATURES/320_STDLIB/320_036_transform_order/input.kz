@@ -1,0 +1,22 @@
+// Test: Verify transforms are invoked DEPTH-FIRST
+// Both outer and inner if are in pipelines (not top-level transforms)
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+~event start {}
+| done {}
+
+~proc start {
+    return .{ .done = .{} };
+}
+
+// Nested if: both in pipeline steps
+~start()
+| done |> if(true)
+    | then |> if(true)
+        | then |> std.io:print.ln("inner-then")
+        | else |> std.io:print.ln("inner-else")
+    | else |> std.io:print.ln("outer-else")

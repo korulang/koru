@@ -1,0 +1,2 @@
+Success: divided
+Error: division by zero

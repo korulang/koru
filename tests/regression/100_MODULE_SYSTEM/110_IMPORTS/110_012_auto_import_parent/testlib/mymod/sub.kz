@@ -1,0 +1,6 @@
+// Submodule - this is what we explicitly import
+
+~pub event sub_hello {}
+
+~proc sub_hello {
+}

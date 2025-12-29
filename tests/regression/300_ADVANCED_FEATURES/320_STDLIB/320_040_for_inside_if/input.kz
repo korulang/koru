@@ -1,0 +1,22 @@
+// Test: for inside if - depth-first transform ordering
+// Inner for should transform before outer if
+
+~import "$std/control"
+
+const std = @import("std");
+
+~event start {}
+| done {}
+
+~proc start {
+    return .{ .done = .{} };
+}
+
+// If contains for loop
+// Both should transform to native Zig constructs
+~start()
+| done |> if(true)
+    | then |> for(&[_]i32{1, 2, 3})
+        | each item |> _
+        | done |> _
+    | else |> _

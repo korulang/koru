@@ -1,0 +1,7 @@
+{
+    "paths": {
+        "std": "../../../../../koru_std",
+        "lib_a": "./lib_a.kz",
+        "lib_b": "./lib_b.kz"
+    }
+}

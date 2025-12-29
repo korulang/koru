@@ -1,0 +1,43 @@
+// Test transition meta-type - universal observer with metadata
+// Shows both non-terminal (hello->goodbye) and terminal (goodbye->null) transitions
+const std = @import("std");
+
+~event hello {}
+| done {}
+
+~event goodbye {}
+| done {}
+
+~[comptime|runtime] event logger { source: []const u8, branch: []const u8, destination: ?[]const u8 }
+| done {}
+
+~proc hello {
+    std.debug.print("Hello executed\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc goodbye {
+    std.debug.print("Goodbye executed\n", .{});
+    return .{ .done = .{} };
+}
+
+~[comptime|runtime] proc logger {
+    if (destination) |dest| {
+        std.debug.print("Transition: {s}.{s} -> {s}\n", .{source, branch, dest});
+    } else {
+        std.debug.print("Transition: {s}.{s} -> terminal\n", .{source, branch});
+    }
+    return .{ .done = .{} };
+}
+
+// Universal tap using transition meta-type
+// Captures source event, branch, and destination (next event in original flow)
+// NOTE: Transition uses enum-based fields, so we convert to strings for logging
+// [comptime|runtime] annotation makes this tap observe BOTH compiler events and user events
+~[comptime|runtime]* -> *
+| Transition t |> logger(source: taps.eventToString(t.source), branch: taps.branchToString(t.branch), destination: if (t.destination) |d| taps.eventToString(d) else null)
+    | done |> _
+
+~hello()
+| done |> goodbye()
+    | done |> _

@@ -1,0 +1,46 @@
+// package.kz - Package manager integration for Koru
+//
+// This module provides events for declaring external package dependencies
+// from various package managers (npm, cargo, go, pip).
+//
+// Usage:
+//   ~std.package:requires.npm {
+//       "@koru/graphics": "^1.0.0",
+//       "lodash": "^4.17.21"
+//   }
+//
+// When compiling with --install-packages, the compiler will:
+//   1. Collect all package:requires.* invocations
+//   2. Generate appropriate package files (package.json, Cargo.toml, etc.)
+//   3. Run package managers to install dependencies
+
+~[comptime]
+
+// npm packages (JavaScript/TypeScript via Node Package Manager)
+~[comptime|norun]pub event requires.npm { source: Source }
+
+~proc requires.npm {
+    // Void event - no return value needed
+    // The compiler collects these during post-semantic analysis
+}
+
+// Rust crates (via Cargo)
+~[comptime|norun]pub event requires.cargo { source: Source }
+
+~proc requires.cargo {
+    // Void event - collected by compiler
+}
+
+// Go modules
+~[comptime|norun]pub event requires.go { source: Source }
+
+~proc requires.go {
+    // Void event - collected by compiler
+}
+
+// Python packages (via pip)
+~[comptime|norun]pub event requires.pip { source: Source }
+
+~proc requires.pip {
+    // Void event - collected by compiler
+}

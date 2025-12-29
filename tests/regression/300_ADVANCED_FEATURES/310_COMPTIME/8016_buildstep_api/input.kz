@@ -1,0 +1,149 @@
+// Test 816: BuildStep API for polyglot build coordination
+// Demonstrates how compiler passes declare build requirements
+//
+// This test shows the complete BuildStep API defined in src/ast.zig
+// See docs/KORU-BUILD.md for architecture details
+const std = @import("std");
+
+// ================================================================
+// BuildStep Types (imported from AST in real usage)
+// ================================================================
+// In actual compiler passes, these come from @import("ast")
+// Here we demonstrate the API shape
+
+const BuildStep = union(enum) {
+    system_command: SystemCommand,
+    link_library: LinkLibrary,
+    runtime_file: RuntimeFile,
+    include_path: IncludePath,
+    compile_flag: CompileFlag,
+};
+
+const SystemCommand = struct {
+    program: []const u8,
+    args: []const []const u8,
+    cwd: ?[]const u8,
+};
+
+const LinkLibrary = struct {
+    name: []const u8,
+    optional: bool,
+};
+
+const RuntimeFile = struct {
+    source: []const u8,
+    dest: []const u8,
+};
+
+const IncludePath = struct {
+    path: []const u8,
+    system: bool,
+};
+
+const CompileFlag = struct {
+    flag: []const u8,
+};
+
+// ================================================================
+// Compiler Pass Event (what coordinator invokes)
+// ================================================================
+
+~pub event compile.proc_target {
+    target_name: []const u8,
+    body: []const u8,
+}
+| compiled {
+    code: []const u8,
+    build_steps: []const BuildStep,
+}
+| unsupported { reason: []const u8 }
+
+// ================================================================
+// Example GPU Compiler Pass
+// ================================================================
+// This demonstrates how a real compiler pass would use BuildSteps
+
+~proc compile.proc_target {
+    const allocator = std.heap.page_allocator;
+
+    // Example: If target is "gpu", generate GPU build steps
+    if (std.mem.eql(u8, target_name, "gpu")) {
+        // Create build steps for GPU compilation
+        var steps = try allocator.alloc(BuildStep, 4);
+
+        // Step 1: Compile GLSL to SPIR-V
+        steps[0] = BuildStep{ .system_command = SystemCommand{
+            .program = "glslangValidator",
+            .args = &[_][]const u8{ "-V", "-o", "shader.spv", "shader.glsl" },
+            .cwd = null,
+        } };
+
+        // Step 2: Link Vulkan library (optional for graceful degradation)
+        steps[1] = BuildStep{ .link_library = LinkLibrary{
+            .name = "vulkan",
+            .optional = true,
+        } };
+
+        // Step 3: Bundle compiled shader
+        steps[2] = BuildStep{ .runtime_file = RuntimeFile{
+            .source = "shader.spv",
+            .dest = "shaders/",
+        } };
+
+        // Step 4: Add Vulkan include path
+        steps[3] = BuildStep{ .include_path = IncludePath{
+            .path = "vendor/vulkan/include",
+            .system = true,
+        } };
+
+        // Generate Zig wrapper code
+        const wrapper =
+            \\const vk = @import("vulkan");
+            \\pub fn gpu_compute() !void {
+            \\    const shader = @embedFile("shaders/shader.spv");
+            \\    // Vulkan dispatch code...
+            \\}
+            \\
+        ;
+
+        return .{ .compiled = .{
+            .code = wrapper,
+            .build_steps = steps,
+        } };
+    }
+
+    // Example: If target is "js", generate JavaScript build steps
+    if (std.mem.eql(u8, target_name, "js")) {
+        var steps = try allocator.alloc(BuildStep, 2);
+
+        // Step 1: Link V8
+        steps[0] = BuildStep{ .link_library = LinkLibrary{
+            .name = "v8",
+            .optional = false,
+        } };
+
+        // Step 2: Add compile flag
+        steps[1] = BuildStep{ .compile_flag = CompileFlag{
+            .flag = "-DV8_ENABLED",
+        } };
+
+        const wrapper =
+            \\const v8 = @import("v8");
+            \\pub fn js_eval() !void {
+            \\    const isolate = v8.Isolate.global();
+            \\    // V8 evaluation code...
+            \\}
+            \\
+        ;
+
+        return .{ .compiled = .{
+            .code = wrapper,
+            .build_steps = steps,
+        } };
+    }
+
+    // Unsupported target
+    return .{ .unsupported = .{
+        .reason = "Unknown target - only 'gpu' and 'js' supported",
+    } };
+}

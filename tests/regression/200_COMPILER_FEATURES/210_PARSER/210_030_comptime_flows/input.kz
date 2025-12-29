@@ -1,0 +1,55 @@
+// Test 111: Comptime Flow Emission
+// Tests that [comptime] events are emitted as comptime_flowN() and comptime_main()
+// and that they execute during backend compilation
+
+const std = @import("std");
+
+// Test 1: Comptime event that executes during compilation
+~[comptime] event validateConventions {}
+| validated {}
+
+~proc validateConventions {
+    // This code executes at compile time!
+    // We can't print, but we can do comptime-safe operations
+    const conventions_valid = true;
+    _ = conventions_valid;
+    return .{ .validated = .{} };
+}
+
+// Test 2: Comptime event with literal string parameter
+~[comptime] event bundleAssets {
+    dir: []const u8
+}
+| bundled { count: i32 }
+
+~proc bundleAssets {
+    // Comptime asset bundling - executes during compilation
+    const asset_count = dir.len; // Can operate on comptime strings
+    _ = asset_count;
+    return .{ .bundled = .{ .count = 42 } };
+}
+
+// Test 3: Comptime event with error branch
+~[comptime] event preprocessMipmaps {
+    inputDir: []const u8
+}
+| ok { processed: i32 }
+| err { message: []const u8 }
+
+~proc preprocessMipmaps {
+    // Comptime mipmap preprocessing
+    const dir_len = inputDir.len;
+    _ = dir_len;
+    return .{ .ok = .{ .processed = 10 } };
+}
+
+// Top-level comptime flows (execute during backend compilation!)
+~[comptime] validateConventions()
+| validated |> _
+
+~[comptime] bundleAssets(dir: "assets/textures")
+| bundled |> _
+
+~[comptime] preprocessMipmaps(inputDir: "assets/images")
+| ok |> _
+| err e |> _

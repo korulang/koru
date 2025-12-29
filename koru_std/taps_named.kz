@@ -1,0 +1,33 @@
+// Koru Standard Library: Named Expression Taps (TEST VARIANT)
+//
+// This variant uses NAMED Expression parameters instead of a single implicit expr.
+// Currently BROKEN - demonstrates bug in Expression parameter capture.
+//
+// Working: ~tap(hello -> *)           <- single implicit Expression
+// Broken:  ~tap_named(source: hello, dest: *)  <- named Expression parameters
+
+~[comptime]
+
+const std = @import("std");
+
+~[keyword|comptime|transform]pub event tap_named {
+    source: Expression,
+    dest: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc tap_named {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // Debug: Print what we received
+    std.debug.print("[tap_named] source='{s}' dest='{s}'\n", .{ source, dest });
+
+    // For now, just return the program unchanged
+    // The bug is that we never even get here - Expression capture fails
+    return .{ .transformed = .{ .program = program } };
+}

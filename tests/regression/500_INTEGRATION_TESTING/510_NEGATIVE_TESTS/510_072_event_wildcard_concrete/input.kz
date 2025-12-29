@@ -1,0 +1,25 @@
+// Test 192: Event Wildcard + Concrete Branch (INVALID - MUST FAIL)
+//
+// Pattern: ~*:compute -> * | result r |>
+//
+// This is INVALID because:
+// - Source is event wildcard (*:compute) - matches compute in ALL modules
+// - Branch is concrete (result) - requires specific branch shape
+// - Type error: compute in different modules may have different branches!
+// - input:compute might have .result, but app:compute might have .output
+//
+// Expected error: "Cannot use concrete branch 'result' with wildcard source pattern '*:compute'"
+
+const std = @import("std");
+
+~import "$app/test_lib/logger"
+
+~event compute { x: i32 }
+| result { value: i32 }
+
+~proc compute {
+    return .{ .result = .{ .value = x * 2 } };
+}
+
+~compute(x: 42)
+| result r |> _

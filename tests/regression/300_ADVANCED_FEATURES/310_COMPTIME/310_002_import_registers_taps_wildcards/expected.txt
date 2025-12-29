@@ -1,0 +1,5 @@
+compute(42)
+[TAP] Intercepted event: compute
+format(84)
+[TAP] Intercepted event: format
+Final: formatted

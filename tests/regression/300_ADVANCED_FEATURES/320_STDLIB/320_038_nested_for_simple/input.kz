@@ -1,0 +1,22 @@
+// Test: nested for loops - depth-first transform ordering
+// Inner for should transform before outer for
+
+~import "$std/control"
+
+const std = @import("std");
+
+~event start {}
+| done {}
+
+~proc start {
+    return .{ .done = .{} };
+}
+
+// Outer for contains inner for
+// Both should transform to Zig for loops
+~start()
+| done |> for(&[_]i32{1, 2})
+    | each outer |> for(&[_]i32{10, 20})
+        | each inner |> _
+        | done |> _
+    | done |> _

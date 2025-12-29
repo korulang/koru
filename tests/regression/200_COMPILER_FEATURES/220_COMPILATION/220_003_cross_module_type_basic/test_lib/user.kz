@@ -1,0 +1,23 @@
+// User module - defines User type and related events
+const std = @import("std");
+
+// Define a plain Zig struct
+pub const User = struct {
+    name: []const u8,
+    age: u32,
+};
+
+// Event that creates a user
+~pub event create {
+    name: []const u8,
+    age: u32,
+}
+| created { user: User }
+
+~proc create {
+    const t_user = User{
+        .name = name,
+        .age = age,
+    };
+    return .{ .created = .{ .user = t_user }};
+}

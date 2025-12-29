@@ -1,0 +1,28 @@
+// TEST: kernel.pairwise basic iteration
+//
+// k comes from the continuation binding | kernel k |>
+// k.X refers to kernel_k[i]
+// k.other.X refers to kernel_k[j]
+
+~import "$std/kernel"
+
+// This needs to be module scoped
+~std.kernel:shape(Body) {
+    x: f64,
+    y: f64,
+    mass: f64,
+}
+
+// Pairwise: each body accumulates mass from its "other" pair
+// Pairs: (0,1), (0,2), (1,2)
+// Body 0: 1 + 2 + 3 = 6
+// Body 1: 2 + 3 = 5
+// Body 2: 3 (unchanged)
+~std.kernel:init(Body) {
+    { x: 0.0, y: 0.0, mass: 1.0 },
+    { x: 1.0, y: 0.0, mass: 2.0 },
+    { x: 2.0, y: 0.0, mass: 3.0 },
+} | kernel k |> std.kernel:pairwise { k.mass += k.other.mass }
+    | kernel s |> std.io:print.blk {
+        mass[0]={{s[0].mass}} mass[1]={{s[1].mass}} mass[2]={{s[2].mass}}
+    }

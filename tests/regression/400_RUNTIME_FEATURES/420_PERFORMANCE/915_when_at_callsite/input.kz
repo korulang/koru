@@ -1,0 +1,34 @@
+// Test 915: VERIFY when clause is at CALL SITE, not inside tap
+//
+// The ONLY way to verify this is to CHECK THE GENERATED CODE
+// This test expects a specific pattern in output_emitted.zig
+
+const std = @import("std");
+
+~event produce { value: u32 }
+| done { result: u32 }
+
+~proc produce {
+    const result = value * 2;
+    std.debug.print("Produced: {}\n", .{result});
+    return .{ .done = .{ .result = result } };
+}
+
+~event log { result: u32 }
+| done {}
+
+~proc log {
+    std.debug.print("Logging: {}\n", .{result});
+    return .{ .done = .{} };
+}
+
+// Tap with when clause
+~produce -> *
+| done d when d.result > 50 |> log(result: d.result)
+    | done |> _
+
+~produce(value: 10)
+| done |> _
+
+~produce(value: 30)
+| done |> _

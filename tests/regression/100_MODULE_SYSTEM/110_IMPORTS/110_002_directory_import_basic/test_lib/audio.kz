@@ -1,0 +1,15 @@
+// Audio module for test_lib
+
+const std = @import("std");
+
+~event init {}
+
+~event play { sound: []const u8 }
+
+~proc init {
+    std.debug.print("Audio initialized\n", .{});
+}
+
+~proc play {
+    std.debug.print("Playing sound: {s}\n", .{sound});
+}

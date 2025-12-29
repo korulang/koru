@@ -1,0 +1,15 @@
+// ============================================================================
+// Test 210_043: Inline continuation rejected
+// Continuations (|) must start on a new line with proper indentation.
+// Single-line flows like `~event() | branch |> _` are NOT valid Koru.
+// ============================================================================
+
+~event greet { name: []const u8 }
+| done { message: []const u8 }
+
+~proc greet {
+    return .{ .done = .{ .message = "Hello!" } };
+}
+
+// INVALID: continuation on same line as invocation
+~greet(name: "World") | done d |> _

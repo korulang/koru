@@ -1,0 +1,53 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 207: Arbitrary label jumps across nested scopes
+// Tests that labels support jumping from inner scopes back to outer scopes
+// ============================================================================
+
+const std = @import("std");
+
+// Outer loop event
+~event outer { x: i32, max: i32 }
+| next_outer { x: i32, max: i32 }
+| done_outer { }
+
+~proc outer {
+    if (x > max) {
+        return .{ .done_outer = .{} };
+    }
+
+    std.debug.print("Outer: x={}\n", .{x});
+    return .{ .next_outer = .{ .x = x, .max = max } };
+}
+
+// Inner loop event
+~event inner { x: i32, y: i32, max: i32 }
+| next_inner { x: i32, y: i32, max: i32 }
+| done_inner { x: i32 }
+
+~proc inner {
+    if (y > max) {
+        return .{ .done_inner = .{ .x = x } };
+    }
+
+    std.debug.print("  Inner: x={}, y={}\n", .{x, y});
+    return .{ .next_inner = .{ .x = x, .y = y, .max = max } };
+}
+
+// Start event
+~event start { }
+| ready { }
+
+~proc start {
+    std.debug.print("Starting nested loops...\n", .{});
+    return .{ .ready = .{} };
+}
+
+// Flow with nested labels - tests arbitrary jumps!
+~start()
+| ready |> #outer_loop outer(x: 1, max: 3)
+    | next_outer o |> #inner_loop inner(x: o.x, y: 1, max: 2)
+        | next_inner i |> @inner_loop(x: i.x, y: i.y + 1, max: i.max)  // Loop within inner
+        | done_inner d |> @outer_loop(x: d.x + 1, max: o.max)          // Jump back to outer!
+    | done_outer |> _

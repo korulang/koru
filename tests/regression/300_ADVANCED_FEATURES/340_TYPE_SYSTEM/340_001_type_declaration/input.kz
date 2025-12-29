@@ -1,0 +1,21 @@
+// Test 340_001: Type Declaration
+//
+// Validates that std.types:struct declarations parse correctly.
+
+~import "$std/types"
+~import "$std/io"
+
+// Declare a simple struct
+~std.types:struct(Player) {
+    age: i32,
+    name: []const u8,
+}
+
+// Declare a public struct
+~[pub]std.types:struct(Position) {
+    x: f32,
+    y: f32,
+}
+
+// Prove compilation works
+~std.io:println(text: "Type declarations parsed successfully")

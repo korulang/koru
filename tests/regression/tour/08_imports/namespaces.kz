@@ -1,0 +1,105 @@
+// Tour 08: Namespace Management
+// Advanced namespace patterns for organizing imported events
+
+const std = @import("std");
+
+// NAMESPACE CONFLICTS
+// When importing multiple modules that may have similar event names,
+// use explicit namespaces to avoid confusion
+
+~import "math_utils.kz" => math    // Mathematical operations
+~import "logger.kz" => log         // Logging functionality
+~import "file_ops.kz" => fs        // File system operations
+
+// NAMESPACE ALIASING
+// You can give any import a custom namespace to:
+// 1. Shorten long module names
+// 2. Create semantic groupings
+// 3. Match existing conventions
+
+// Example: If you had a module with a long name
+// ~import "database_connection_manager.kz" => db
+// ~import "application_configuration.kz" => cfg
+
+~event demo.namespaces {}
+| complete { message: []const u8 }
+
+~proc demo.namespaces {
+    // Using short, clear namespaces makes code readable
+
+    // Math operations with 'math' namespace
+    ~math:add(a: 100, b: 200)
+    | sum s |> {
+        ~log:info(message: "Sum calculated")
+    }
+
+    // File operations with 'fs' namespace
+    ~fs:exists(path: "/tmp/test")
+    | exists |> {
+        ~log:info(message: "File exists")
+    }
+    | not_exists |> {
+        ~log:info(message: "File not found")
+    }
+
+    // Logging with 'log' namespace
+    ~log:debug(message: "Debug info", data: .{})
+
+    return .{ .complete = .{
+        .message = "Namespace management demonstrated"
+    }};
+}
+
+// NAMESPACE PATTERNS
+
+// Pattern 1: Domain Grouping
+// Group related functionality under semantic namespaces
+// ~import "authentication.kz" => auth
+// ~import "permissions.kz" => perms
+// ~import "session_manager.kz" => session
+
+// Pattern 2: Version Management
+// Handle different versions of the same module
+// ~import "api_v1.kz" => v1
+// ~import "api_v2.kz" => v2
+
+// Pattern 3: Environment Specific
+// Different implementations for different environments
+// ~import "dev_logger.kz" => dev
+// ~import "prod_logger.kz" => prod
+
+~event demo.namespace_patterns {}
+| done {}
+
+~proc demo.namespace_patterns {
+    // Clear namespace usage prevents ambiguity
+
+    // Without namespaces, you might have:
+    // - math_utils.divide
+    // - file_ops.divide  (if it had one)
+    // - some_other.divide
+
+    // With namespaces, it's always clear:
+    ~math:divide(numerator: 10.0, denominator: 2.0)
+    | success s |> {
+        std.debug.print("Result: {}\n", .{s.quotient});
+    }
+    | error e |> {
+        ~log:error(message: e.message, code: 400)
+    }
+
+    return .{ .done = .{} };
+}
+
+// BEST PRACTICES
+// 1. Use short but descriptive namespace names (2-4 characters ideal)
+// 2. Be consistent across your codebase
+// 3. Document namespace conventions in your project
+// 4. Avoid single-letter namespaces unless very clear (like 'fs' for filesystem)
+
+// Main flow
+~demo.namespaces()
+| complete c |> {
+    ~demo.namespace_patterns()
+    | done |> _
+}

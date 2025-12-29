@@ -1,0 +1,13 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 502: Void event with no branch handlers
+// Tests that shape checker allows void events without branch handlers
+// Demonstrates: Events with no output branches work correctly
+
+~import "$std/io"
+
+// Void events have no output branches, so no branch handling required
+~std.io:println(text: "First line")
+~std.io:println(text: "Second line")
+~std.io:println(text: "Third line")

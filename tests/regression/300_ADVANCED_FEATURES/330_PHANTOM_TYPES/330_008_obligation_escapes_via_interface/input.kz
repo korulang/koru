@@ -1,0 +1,16 @@
+// Test 517: Obligation escapes via interface
+// Tests that obligations can escape through return signatures
+//
+// Key points:
+// - my_subflow internally opens a file
+// - my_subflow returns *File[opened!] in its signature
+// - This documents that the obligation escapes
+// - The CALLER receives the obligation and must handle it
+// - Caller closes the file, satisfying the obligation
+
+~import "$app/fs"
+~import "$app/subflow"
+
+~app.subflow:my_subflow()
+| file_opened f |> app.fs:close(file: f.file)
+    | closed |> _

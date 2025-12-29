@@ -1,0 +1,3 @@
+From std.io
+Observed: std.io:println
+Local print

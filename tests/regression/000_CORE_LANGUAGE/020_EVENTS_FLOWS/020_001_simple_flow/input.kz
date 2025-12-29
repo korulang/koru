@@ -1,0 +1,12 @@
+// Test 003: Simple flow execution
+// This should compile, run, and output "Flow executed"
+const std = @import("std");
+
+~event hello {}
+
+~proc hello {
+    std.debug.print("Flow executed\n", .{});
+}
+
+// Top-level flow - should execute
+~hello()

@@ -1,0 +1,10 @@
+Subflow Invalid Branch Validation Test
+
+This test MUST FAIL to verify that the shape checker validates subflow continuations.
+
+Expected behavior:
+- Subflow invokes `double` which only has a `doubled` branch
+- Subflow has a continuation for `tripled` which doesn't exist
+- Shape checker should reject this with "Event 'double' has no branch 'tripled'"
+
+This validates that the shape checker properly checks subflow continuation branches.

@@ -1,0 +1,5 @@
+// Koru Standard Library: Root
+// Auto-imported when any $std/* module is imported
+// Transitively imports control to make keywords (like ~if, ~for) available
+
+~import "$std/control"

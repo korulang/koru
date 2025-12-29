@@ -1,0 +1,18 @@
+// Test: Basic event declaration and proc implementation
+// Features: event declaration, proc body, correct union syntax
+
+~event basic.compute { value: i32 }
+| success { result: i32 }
+| failure { msg: []const u8 }
+
+~proc basic.compute {
+    if (e.value > 0) {
+        return .{ .@"success" = .{ .result = e.value * 2 } };
+    }
+    return .{ .@"failure" = .{ .msg = "Value must be positive" } };
+}
+
+// Single main flow
+~basic.compute(value: 10)
+| success s |> _
+| failure f |> _

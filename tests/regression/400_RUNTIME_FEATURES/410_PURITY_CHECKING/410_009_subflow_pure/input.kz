@@ -1,0 +1,20 @@
+// Test: Subflow calling pure proc should be transitively pure
+// Pure proc → Subflow calls it → Subflow should be transitively pure
+
+const std = @import("std");
+
+// Pure math operation
+~event double { x: i32 }
+| done { result: i32 }
+
+~[pure]proc double {
+    return .{ .done = .{ .result = x * 2 } };
+}
+
+// Main entry using subflow
+~event main {}
+| done {}
+
+// Subflow that calls pure event - result unused
+~double(x: 21)
+| done |> _

@@ -1,0 +1,67 @@
+// PERFORMANCE TEST: Loop Optimization - Nested Loops (Triangular Pattern)
+// Goal: Prove compiler detects nested loop patterns and transforms both levels
+// Pattern: Outer checker event + inner checker event (like nbody calculate_interactions)
+// Baseline: Hand-written nested Zig while loops
+// Threshold: 1.05x (5% overhead max)
+//
+// This tests NESTED loop optimization:
+// - Outer loop: i from 0 to limit
+// - Inner loop: j from i+1 to limit (triangular pattern - depends on outer var!)
+// - Both transformed to native loops
+
+const std = @import("std");
+
+// Inner loop checker: j from start to limit
+~event inner_step { i: u64, j: u64, limit: u64, sum: u64 }
+| continue { i: u64, j: u64, sum: u64 }
+| done { i: u64, sum: u64 }
+
+~proc inner_step {
+    if (j < limit) {
+        // Triangular sum: add i*limit + j
+        const new_sum = sum + (i * limit + j);
+        return .{ .continue = .{ .i = i, .j = j, .sum = new_sum } };
+    } else {
+        return .{ .done = .{ .i = i, .sum = sum } };
+    }
+}
+
+// Outer loop checker: i from 0 to limit
+~event outer_step { i: u64, limit: u64, sum: u64 }
+| continue { i: u64, limit: u64, sum: u64 }
+| done { result: u64 }
+
+~proc outer_step {
+    if (i < limit) {
+        return .{ .continue = .{ .i = i, .limit = limit, .sum = sum } };
+    } else {
+        return .{ .done = .{ .result = sum } };
+    }
+}
+
+// Print result
+~event print { result: u64 }
+| done {}
+
+~proc print {
+    std.debug.print("Sum: {}\n", .{result});
+    return .{ .done = .{} };
+}
+
+// Main flow: Nested label loops
+// Outer loop: i from 0 to 5000
+// Inner loop: j from i+1 to 5000 (triangular - depends on i!)
+//
+// Expected transformation:
+// for (0..5000) |i| {
+//     for (i+1..5000) |j| {
+//         sum += i * 5000 + j;
+//     }
+// }
+
+~#outer outer_step(i: 0, limit: 5000, sum: 0)
+| continue c_outer |> #inner inner_step(i: c_outer.i, j: c_outer.i + 1, limit: c_outer.limit, sum: c_outer.sum)
+    | continue c_inner |> @inner(i: c_inner.i, j: c_inner.j + 1, limit: c_outer.limit, sum: c_inner.sum)
+    | done d_inner |> @outer(i: d_inner.i + 1, limit: c_outer.limit, sum: d_inner.sum)
+| done d_outer |> print(result: d_outer.result)
+    | done |> _

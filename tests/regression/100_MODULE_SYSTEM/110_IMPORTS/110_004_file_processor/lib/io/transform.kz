@@ -1,0 +1,11 @@
+// Transform module
+
+const std = @import("std");
+
+~event uppercase { text: []const u8 }
+| transformed { result: []const u8 }
+
+~proc uppercase {
+    // Stub implementation for test
+    return .{ .@"transformed" = .{ .result = "" } };
+}

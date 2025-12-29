@@ -1,0 +1,20 @@
+// Test: Nested ~capture - outer capture's `captured` inside inner capture's continuation
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+~event print_int { value: i32 }
+
+~proc print_int {
+    std.debug.print("{d}\n", .{value});
+}
+
+// Outer capture wraps inner capture
+// The outer's `captured { outer: ... }` is inside the inner's `| done |>` continuation
+~capture(expr: { outer: @as(i32, 0) })
+| as o |> capture(expr: { inner: @as(i32, 0) })
+    | as i |> captured { inner: 42 }
+    | done result |> captured { outer: result.inner }
+| done final |> print_int(value: final.outer)

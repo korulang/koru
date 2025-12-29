@@ -1,0 +1,34 @@
+// Tour 09: Simple AST Transformation
+// Shows compile-time AST access
+
+const std = @import("std");
+
+// Event that processes the AST
+~event analyze_ast { ast: ProgramAST }
+| analyzed { event_count: usize }
+
+~proc analyze_ast {
+    comptime {
+        // Count events in the AST at compile-time
+        var count: usize = 0;
+        for (e.ast.items) |item| {
+            switch (item) {
+                .event_decl => count += 1,
+                else => {},
+            }
+        }
+        // Return the count (simplified - would normally transform AST)
+        return .{ .analyzed = .{ .event_count = count }};
+    }
+}
+
+// Simple test event
+~event hello { name: []const u8 }
+| greeted { msg: []const u8 }
+
+~proc hello {
+    return .{ .greeted = .{ .msg = "Hello!" }};
+}
+
+// This would normally be called by compiler.coordinate
+// For now, just showing we can access ProgramAST

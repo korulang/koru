@@ -1,0 +1,44 @@
+// Tour 08: Circular Import Example - Module A
+// This module imports module B, which imports this module back
+
+const std = @import("std");
+
+// Circular import - B also imports A
+~import "circular_b.kz" => b
+
+// Public events from module A
+~pub event a.process { value: i32 }
+| result { processed: i32 }
+
+~pub event a.validate { data: []const u8 }
+| valid {}
+| invalid { reason: []const u8 }
+
+// Implementation that uses module B
+~proc a.process {
+    // Process locally first
+    const processed = e.value * 2;
+
+    // Then send to B for further processing
+    ~b:transform(input: processed)
+    | transformed t |> {
+        return .{ .result = .{ .processed = t.output } };
+    }
+    | error err |> {
+        return .{ .result = .{ .processed = processed } };
+    }
+}
+
+~proc a.validate {
+    if (e.data.len == 0) {
+        return .{ .invalid = .{ .reason = "Empty data" } };
+    }
+    
+    // Could also call b.check here if needed
+    return .{ .valid = .{} };
+}
+
+// Note: Circular imports work because:
+// 1. Events are just declarations (no runtime initialization)
+// 2. Procs are evaluated lazily when events fire
+// 3. The import graph is resolved at compile time

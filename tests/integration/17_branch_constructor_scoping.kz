@@ -1,0 +1,48 @@
+// Test branch constructor variable scoping with new unified model
+const std = @import("std");
+
+// Simple event for testing
+~event test.data { value: i32 }
+| success { data: i32 }
+| error { code: i32, message: []const u8 }
+
+~event io.print { msg: []const u8 }
+
+// Define event for transformation
+~event transform { input: i32 }
+| done { result: i32, original: i32 }
+
+// Implement with subflow - 'input' is available as binding
+~transform = test.data (value: input)
+| success s |> done { result: s.data, original: input }
+| error e |> done { result: e.code, original: input }
+
+// Test shorthand in nested contexts
+~event process.nested { value: i32, status: []const u8 }
+| complete { value: i32, status: []const u8, doubled: i32 }
+
+~process.nested = test.data (value)  // Shorthand!
+| success s |> complete { value, status, doubled: s.data }
+| error e |> complete { value, status: e.message, doubled: 0 }
+
+// Main flow that tests nested scoping
+~test.data (value: 21)
+| success s |> transform (input: s.data)
+  | done d |> io.print (msg: "Done") |> _
+| error e |> transform (input: e.code) 
+  | done d |> io.print (msg: e.message) |> _
+
+// Test the nested one would be here (removed - only one main flow allowed)
+
+// Proc implementations
+~proc test.data {
+    if (e.value > 0) {
+        return .{ .@"success" = .{ .data = e.value * 2 } };
+    } else {
+        return .{ .@"error" = .{ .code = -1, .message = "Invalid value" } };
+    }
+}
+
+~proc io.print {
+    std.debug.print("{s}\n", .{e.msg});
+}

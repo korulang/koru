@@ -1,0 +1,34 @@
+// ============================================================================
+// Test 065: Optional Branches Are Truly Optional
+// Tests that optional branches can be COMPLETELY IGNORED (no |? catch-all needed)
+// This is the killer feature - they're truly optional!
+// ============================================================================
+
+const std = @import("std");
+
+// Event with required and optional branches
+~event process { value: u32 }
+| success { result: u32 }        // REQUIRED - must be handled
+| ?warning { msg: []const u8 }   // OPTIONAL - can be ignored!
+| ?debug { details: []const u8 } // OPTIONAL - can be ignored!
+
+// Proc that can return any branch
+~proc process {
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Large value" } };
+    }
+    if (value % 2 == 1) {
+        return .{ .debug = .{ .details = "Odd value" } };
+    }
+    std.debug.print("Success: {}\n", .{value * 2});
+    return .{ .success = .{ .result = value * 2 } };
+}
+
+// Flow that ONLY handles required branch - optional branches are ignored!
+// This should compile and run - warning/debug branches are silently ignored
+~process(value: 10)
+| success s |> _
+// NO |? catch-all needed!
+// NO | warning w |> needed!
+// NO | debug d |> needed!
+// They're truly optional - silent no-op if they fire!

@@ -1,0 +1,2 @@
+This test must fail because it opens TWO files but only closes ONE.
+The second file (f.file2) still has a cleanup obligation at the terminator.

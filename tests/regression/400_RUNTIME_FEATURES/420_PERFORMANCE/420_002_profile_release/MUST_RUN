@@ -1,0 +1,2 @@
+Profile metatype in RELEASE mode - demonstrates nanosecond-level execution speed
+NOTE: To see true release performance, compile backend with: zig build --build-file temp_build.zig -Doptimize=ReleaseFast

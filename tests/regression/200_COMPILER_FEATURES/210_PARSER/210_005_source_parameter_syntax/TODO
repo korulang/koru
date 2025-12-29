@@ -1,0 +1,17 @@
+Outdated Source syntax - needs update to Source[FORMAT]
+
+This test uses bare `Source` type without the phantom format annotation:
+  ~event compile { code: Source }
+
+Modern syntax uses Source[FORMAT] to indicate the source format:
+  ~event compile { code: Source[KORU] }
+
+The generated code also has issues - it expects .source but params are named
+'code' and 'template'. We should be able to support arbitrarily named `Source`-parameter
+names, but the syntax for filling it out when invoking is different from the inline implicit 
+Source-parameter syntax. 
+
+Related: Test 210_021 (source_phantom_syntax) is also broken.
+
+Fix: Update to use proper Source[FORMAT] syntax or delete if redundant with
+other Source tests in the suite.

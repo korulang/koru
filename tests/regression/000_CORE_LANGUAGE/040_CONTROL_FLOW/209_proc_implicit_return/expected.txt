@@ -1,0 +1,1 @@
+✅ Terminal flow implicit return works: 5 → 20

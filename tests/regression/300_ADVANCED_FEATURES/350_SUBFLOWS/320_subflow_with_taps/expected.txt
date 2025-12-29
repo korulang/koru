@@ -1,0 +1,3 @@
+add_five: 10 + 5 = 15
+TAP FIRED: add_five -> result transition observed!
+Final: 15

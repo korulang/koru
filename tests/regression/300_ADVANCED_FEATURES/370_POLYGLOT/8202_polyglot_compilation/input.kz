@@ -1,0 +1,156 @@
+// Test 817: Polyglot Variant Architecture
+//
+// Demonstrates the complete pattern for polyglot compilation using |variant syntax.
+// This test proves the architecture WITHOUT modifying compiler_bootstrap.kz!
+//
+// KEY CONCEPTS (see docs/KORU-BUILD.md):
+//
+// 1. VARIANTS (|gpu, |js, |zig) - Semantically equivalent implementations
+//    - Same algorithm, different execution platform
+//    - Permanent, version-controlled
+//    - Testably equivalent (property tests)
+//    - Compiler selects based on platform/benchmarks
+//
+// 2. MOCKS (for testing) - Use subflow syntax, NOT variants!
+//    - ~event.path = branch { fake_data }
+//    - Scoped to individual tests
+//    - Applied via compile-time AST substitution
+//    - See TESTING-STORY.md
+//
+// 3. COMPILER PASSES - Transform AST before emission
+//    - Walk AST looking for procs with .target field
+//    - Invoke ~compile.target event (proc-based compiler pass)
+//    - Replace proc.body with generated Zig wrapper
+//    - Happens in compiler.coordinate pipeline, NOT in emitter!
+//
+// This test demonstrates:
+// ✅ Coordinator override mechanism (subflow)
+// ✅ compile.target event interface
+// ✅ Proc-based compiler passes
+// ✅ Architecture is sound and composable
+//
+// Phase 2 (not in this test):
+// - Add compiler.passes.compile_polyglot pass
+// - Walk AST, transform procs with .target
+// - Insert pass into compiler.coordinate pipeline
+
+const std = @import("std");
+
+// ================================================================
+// Compiler Pass Interface (would come from koru-gpu package)
+// ================================================================
+
+~pub event compile.target {
+    target_name: []const u8,
+    body: []const u8,
+    path: []const []const u8,
+}
+| compiled { code: []const u8 }
+| unsupported { reason: []const u8 }
+
+// ================================================================
+// Mock Compiler Passes (simplified for testing)
+// ================================================================
+
+~proc compile.target {
+    const allocator = std.heap.page_allocator;
+
+    // GPU target: Wrap GLSL code in Zig wrapper
+    if (std.mem.eql(u8, target_name, "gpu")) {
+        // In real implementation, would:
+        // - Extract GLSL code
+        // - Validate syntax
+        // - Generate proper Vulkan wrapper
+        // - Return BuildSteps for glslangValidator
+
+        // For this test, just return a simple wrapper
+        const wrapper =
+            \\// GPU implementation (GLSL shader compiled to SPIR-V)
+            \\// Original shader embedded as comment:
+            \\//
+        ;
+
+        var result = try std.ArrayList(u8).initCapacity(allocator, wrapper.len + body.len + 100);
+        try result.appendSlice(wrapper);
+
+        // Comment out the GLSL code
+        var i: usize = 0;
+        while (i < body.len) : (i += 1) {
+            if (i == 0 or body[i-1] == '\n') {
+                try result.appendSlice("// ");
+            }
+            try result.append(body[i]);
+        }
+
+        try result.appendSlice("\n//\n// Zig wrapper that loads compiled shader:\nreturn .{ .done = .{} };\n");
+
+        return .{ .compiled = .{ .code = result.items } };
+    }
+
+    // JavaScript target: Wrap JS code for V8
+    if (std.mem.eql(u8, target_name, "js")) {
+        const wrapper =
+            \\// JavaScript implementation (V8 embedded)
+            \\// Original JS embedded as string:
+            \\const js_code =
+        ;
+
+        var result = try std.ArrayList(u8).initCapacity(allocator, wrapper.len + body.len + 100);
+        try result.appendSlice(wrapper);
+        try result.appendSlice("\n    \\\\");
+
+        // Embed JS as multiline string
+        var i: usize = 0;
+        while (i < body.len) : (i += 1) {
+            try result.append(body[i]);
+            if (body[i] == '\n' and i + 1 < body.len) {
+                try result.appendSlice("    \\\\");
+            }
+        }
+
+        try result.appendSlice("\n;\n// TODO: Call V8 engine with js_code\nreturn .{ .done = .{} };\n");
+
+        return .{ .compiled = .{ .code = result.items } };
+    }
+
+    // Unsupported target
+    const msg = try std.fmt.allocPrint(allocator, "Target '{s}' not supported - only 'gpu' and 'js' available", .{target_name});
+    return .{ .unsupported = .{ .reason = msg } };
+}
+
+// ================================================================
+// Custom Compiler Coordinator (demonstrates override mechanism)
+// ================================================================
+// By defining compiler.coordinate as a SUBFLOW, we can completely
+// replace the compilation pipeline! Real polyglot coordinator would:
+//
+// ~compiler.coordinate =
+//     compiler.passes.evaluate_comptime(ast: ast)
+//     | evaluated ev |> compiler.check.structure(ast: ev.ast)
+//     | valid v |> compiler.passes.compile_polyglot(ast: v.ast)  ← NEW!
+//     | transformed t |> compiler.check.phantom.semantic(ast: t.ast)
+//     | valid v2 |> compiler.emit.zig(ast: v2.ast)
+//     | emitted em |> coordinated { ... }
+//
+// The compiler.passes.compile_polyglot pass would:
+// 1. Walk AST for procs with .target field
+// 2. For each, invoke ~compile.target event (defined above)
+// 3. Replace proc.body with returned wrapper code
+// 4. Set proc.target = null (now it's pure Zig!)
+//
+// For this test, we just delegate to default:
+
+~compiler.coordinate =
+    compiler.coordinate.default(ast: ast)
+    | coordinated c |> c
+
+// ================================================================
+// Simple Test Event (verifies basic compilation works)
+// ================================================================
+
+~pub event greet { }
+| done { }
+
+~proc greet {
+    return .{ .done = .{} };
+}

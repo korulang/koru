@@ -1,0 +1,8 @@
+// A library with a [keyword] event that can be called unqualified
+
+~[keyword]pub event greet { name: []const u8 }
+
+~proc greet {
+    const std = @import("std");
+    std.debug.print("Hello, {s}!\n", .{name});
+}

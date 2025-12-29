@@ -1,0 +1,18 @@
+// Array Library - Common array operations wrapped for Koru
+//
+// Uses [expand] annotation for zero-cost template expansion.
+// Zig's @TypeOf provides "free generics" - no Koru type complexity needed.
+
+~import "$std/template"
+
+const std = @import("std");
+
+// Sort template - uses Zig's @TypeOf for element type inference
+// Template name must match event name (module prefix comes from import path)
+~std.template:define(name: "sort") {
+    std.mem.sort(@TypeOf(${arr}[0]), ${arr}, {}, std.sort.asc(@TypeOf(${arr}[0])));
+}
+
+// Sort an array in-place (ascending order)
+// arr: Expression - any slice, Zig figures out the element type
+~[norun|expand]pub event sort { arr: Expression }

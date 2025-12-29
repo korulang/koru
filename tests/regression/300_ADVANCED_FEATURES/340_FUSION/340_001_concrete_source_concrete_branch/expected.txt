@@ -1,0 +1,2 @@
+compute(42)
+[TAP] Concrete source + concrete branch: compute.result

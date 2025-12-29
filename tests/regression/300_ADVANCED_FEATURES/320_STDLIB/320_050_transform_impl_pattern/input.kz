@@ -1,0 +1,48 @@
+const std = @import("std");
+const ast = @import("ast");
+const Program = ast.Program;
+const Item = ast.Item;
+
+~[keyword|comptime|transform]pub event sample_transform {
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~[norun]pub event sample_impl {}
+
+~proc sample_transform {
+    // Deriving flow from item as in io.kz
+    const flow = if (item.* == .flow)
+        &item.flow
+    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
+        &item.subflow_impl.body.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    const segments = allocator.alloc([]const u8, 1) catch unreachable;
+    segments[0] = "sample_impl";
+    
+    var new_inv = flow.invocation;
+    new_inv.path = ast.DottedPath{
+        .segments = segments,
+        .module_qualifier = "input"
+    };
+    new_inv.annotations = &[_][]const u8{ "@pass_ran(\"transform\")" };
+
+    const transformed_flow = ast.Flow{
+        .invocation = new_inv,
+        .continuations = flow.continuations,
+        .inline_body = "    // lowered\n",
+        .location = flow.location,
+        .module = flow.module,
+    };
+    const ast_functional = @import("ast_functional");
+    const new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, .{ .flow = transformed_flow }) catch unreachable;
+    const result_ptr = allocator.create(ast.Program) catch unreachable;
+    result_ptr.* = new_program.?;
+    return .{ .transformed = .{ .program = result_ptr } };
+}
+
+~sample_transform()

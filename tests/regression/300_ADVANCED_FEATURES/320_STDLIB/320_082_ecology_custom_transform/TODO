@@ -1,0 +1,2 @@
+ECOLOGY: User-defined transforms should work like stdlib
+Reason: Transform mechanism should be general, not special-cased for std.control

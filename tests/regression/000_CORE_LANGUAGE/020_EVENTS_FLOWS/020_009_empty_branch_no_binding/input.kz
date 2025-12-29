@@ -1,0 +1,23 @@
+// Test: Empty branch {} rejects binding attempts
+//
+// NEGATIVE TEST - This should fail shape checking
+//
+// When a branch is declared with {} (empty), it means "no payload to bind"
+// Attempting to bind with `| done x |>` should be a shape checker error
+//
+// This is the counterpart to 020_008 which tests { * } allowing bindings
+
+~import "$std/io"
+
+// Event with empty payload - nothing to bind
+~event signal_done {}
+| done {}
+
+~proc signal_done {
+    return .{ .done = .{} };
+}
+
+// INVALID: trying to bind `x` to a {} branch
+// Shape checker should reject this
+~signal_done()
+| done x |> std.io:println(text: "should not compile")

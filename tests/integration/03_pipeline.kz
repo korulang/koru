@@ -1,0 +1,29 @@
+// Test: Simple pipeline
+// Features: pipeline operator, binding propagation, terminal marker
+
+const std = @import("std");
+
+~event calc.double { val: i32 }
+| result { value: i32 }
+
+~proc calc.double {
+    return .{ .@"result" = .{ .value = e.val * 2 } };
+}
+
+~event calc.add { a: i32, b: i32 }
+| sum { total: i32 }
+
+~proc calc.add {
+    return .{ .@"sum" = .{ .total = e.a + e.b } };
+}
+
+~event io.display { num: i32 }
+
+~proc io.display {
+    std.debug.print("Result: {}\n", .{e.num});
+}
+
+// Pipeline test
+~calc.double(val: 5)
+| result r |> calc.add(a: r.value, b: 10)
+  | sum s |> io.display(num: s.total) |> _

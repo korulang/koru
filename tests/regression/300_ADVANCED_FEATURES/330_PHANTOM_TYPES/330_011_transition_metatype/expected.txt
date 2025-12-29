@@ -1,0 +1,6 @@
+Transition: start.done -> terminal
+Hello executed
+Transition: hello.done -> goodbye
+Goodbye executed
+Transition: goodbye.done -> terminal
+Transition: end.done -> terminal

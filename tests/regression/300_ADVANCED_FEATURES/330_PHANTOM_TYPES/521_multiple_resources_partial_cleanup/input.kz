@@ -1,0 +1,14 @@
+// Test 521: Multiple resources - partial cleanup (MUST FAIL)
+// Tests that the compiler catches when only ONE of TWO resources is cleaned
+//
+// Key points:
+// - open_two() returns TWO files, each with [opened!]
+// - We only close ONE file (file1)
+// - ERROR: file2 still has cleanup obligation
+// - This verifies each obligation is tracked independently
+
+~import "$app/fs"
+
+~app.fs:open_two(path1: "test1.txt", path2: "test2.txt")
+| opened f |> app.fs:close(file: f.file1)  // Close first file only
+    | closed |> _  // ERROR: f.file2 still uncleaned!

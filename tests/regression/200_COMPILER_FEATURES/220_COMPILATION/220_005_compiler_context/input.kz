@@ -1,0 +1,176 @@
+// Test 630: CompilerContext via Service Locator
+// Documents obtaining CompilerContext through service locator pattern
+//
+// CompilerContext provides:
+// - Error reporting (ctx.error, ctx.warning, ctx.info)
+// - Error policy control (abort vs continue on error)
+// - Metrics tracking (pass counting, timing)
+// - Compilation state queries
+//
+// KEY DESIGN:
+// - Source, Expression = syntax constructs (implicit)
+// - CompilerContext = service (explicit acquisition via service locator)
+// - Dependencies visible in Source (analyzable, mockable)
+
+~[comptime]
+
+// Example: Validator using service locator pattern (as subflow)
+~validate =
+    std.compiler:get_compiler_context()
+    | compiler_context ctx |> std.compiler:begin_pass(ctx, name: "validate_data")
+        | compiler_pass pass |> validate_work(ctx, pass, data)
+            | valid |> std.compiler:end_pass(ctx, pass)
+                | compiler_pass _ |> valid {}
+            | invalid err |> std.compiler:end_pass(ctx, pass, error: err.message)
+                | compiler_pass _ |> invalid {}
+
+// Worker proc that does actual validation
+~pub event validate_work { ctx: CompilerContext, pass: CompilerPass, data: []const u8 }
+| valid {}
+| invalid { message: []const u8 }
+
+~proc validate_work {
+    if (data.len == 0) {
+        // Report error to compiler
+        ctx.error(
+            message: "Empty data not allowed",
+            location: @source_location()
+        );
+
+        // Check if we should abort or continue
+        if (ctx.should_abort()) {
+            return .{ .invalid = .{ .message = "Empty data" } };
+        }
+    }
+
+    if (contains_deprecated_syntax(data)) {
+        // Warnings don't affect validation result
+        ctx.warning(
+            message: "Using deprecated syntax",
+            location: @source_location()
+        );
+    }
+
+    ctx.info(message: "Validation complete");
+    return .{ .valid = .{} };
+}
+
+// Example: Build collector using service locator (as subflow)
+~collect_builds =
+    std.compiler:get_compiler_context()
+    | compiler_context ctx |> std.compiler:begin_pass(ctx, name: "collect_build_requirements")
+        | compiler_pass pass |> collect_builds_work(ctx, pass, ast)
+            | collected stats |> std.compiler:end_pass(ctx, pass)
+                | compiler_pass _ |> collected { stats: stats }
+            | failed err |> std.compiler:end_pass(ctx, pass, error: err.message, stop: true)
+                | compiler_pass _ |> failed { error: err }
+
+// Worker proc that does actual collection
+~pub event collect_builds_work { ctx: CompilerContext, pass: CompilerPass, ast: ProgramAST }
+| collected { requirement_count: u32, error_count: u32 }
+| failed { message: []const u8 }
+
+~proc collect_builds_work {
+    var requirement_count: u32 = 0;
+    var error_count: u32 = 0;
+
+    for (ast.items) |item| {
+        if (item.event == "build:requires") {
+            const source = item.params.source;
+
+            // Validate before collecting
+            if (!is_valid_zig_syntax(source)) {
+                ctx.error(
+                    message: "Invalid Zig syntax in build requirement",
+                    location: item.source_location
+                );
+                error_count += 1;
+
+                // Continue collecting to find all errors
+                if (!ctx.should_abort()) {
+                    continue;
+                } else {
+                    return .{ .failed = .{ .message = "Aborting due to errors" } };
+                }
+            }
+
+            requirement_count += 1;
+        }
+    }
+
+    ctx.info(message: std.fmt.format(
+        "Collected {} requirements, {} errors",
+        .{requirement_count, error_count}
+    ));
+
+    return .{ .collected = .{
+        .requirement_count = requirement_count,
+        .error_count = error_count
+    } };
+}
+
+// Example: Conditional optimization using service locator
+~optimize =
+    std.compiler:get_compiler_context()
+    | compiler_context ctx |> check_can_optimize(ctx)
+        | can_optimize |> std.compiler:begin_pass(ctx, name: "inline_optimization")
+            | compiler_pass pass |> optimize_work(ctx, pass, ast)
+                | optimized |> std.compiler:end_pass(ctx, pass)
+                    | compiler_pass _ |> optimized {}
+        | skip reason |> skip { reason: reason }
+
+// Check if we should optimize
+~pub event check_can_optimize { ctx: CompilerContext }
+| can_optimize {}
+| skip { reason: []const u8 }
+
+~proc check_can_optimize {
+    const has_errors = ctx.error_count() > 0;
+
+    if (has_errors) {
+        ctx.warning(message: "Skipping optimization due to previous errors");
+        return .{ .skip = .{ .reason = "Previous errors" } };
+    }
+
+    const current_pass = ctx.pass_count();
+    ctx.info(message: std.fmt.format("Running optimization (pass {})", .{current_pass}));
+
+    return .{ .can_optimize = .{} };
+}
+
+// Worker proc that does actual optimization
+~pub event optimize_work { ctx: CompilerContext, pass: CompilerPass, ast: ProgramAST }
+| optimized {}
+
+~proc optimize_work {
+    // ... perform optimization ...
+    return .{ .optimized = .{} };
+}
+
+// Example: Testing with flow substitution (NOT YET IMPLEMENTED)
+// Shows how service locator pattern enables natural mocking
+//
+// ~test(name: "Validation with mock context") {
+//     // Substitute the service locator in test Source
+//     ~std.compiler:get_compiler_context = compiler_context { ctx: MockContext }
+//
+//     // Now when validate runs, it gets MockContext
+//     ~validate(data: "test data")
+//     | valid |> assert_success()
+//     | invalid |> assert_failure()
+// }
+//
+// Event purity observable from mock coverage:
+// - More mocks = unit test (pure, isolated)
+// - Fewer mocks = integration test (real services)
+// - Source analysis can measure test purity!
+
+~event main {}
+| done {}
+
+~proc main {
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

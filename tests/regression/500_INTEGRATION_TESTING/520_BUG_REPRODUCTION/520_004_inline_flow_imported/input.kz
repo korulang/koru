@@ -1,0 +1,72 @@
+// Test 996: Inline flow to imported event bug
+//
+// BUG: Inline flows to IMPORTED events don't generate __inline_flow functions
+//
+// This test demonstrates the issue:
+// - Inline flows to LOCAL events work correctly (generate __inline_flow_N)
+// - Inline flows to IMPORTED events FAIL (emit literal Koru syntax in Zig)
+//
+// EXPECTED: Both should generate __inline_flow_N functions
+// ACTUAL: Only local inline flows work; imported ones emit ~event() syntax
+
+~import "$std/parser"
+
+const std = @import("std");
+
+// Local helper event (this WORKS with inline flows)
+~event local_helper {
+    value: i32
+}
+| ok { result: i32 }
+
+~proc local_helper {
+    return .{ .ok = .{ .result = value * 2 } };
+}
+
+// Test event using inline flow to LOCAL event
+~event test_local {}
+| success {}
+
+~proc test_local {
+    // This WORKS - inline flow to local event generates __inline_flow function
+    const result = ~local_helper(value: 42)
+    | ok r |> ok { result: r.result };
+
+    std.debug.print("Local inline flow: {}\n", .{result.ok.result});
+    return .{ .success = .{} };
+}
+
+// Test event using inline flow to IMPORTED event
+~event test_imported {}
+| success {}
+| failed {}
+
+~proc test_imported {
+    const allocator = std.heap.page_allocator;
+
+    // This FAILS - inline flow to imported event emits literal Koru syntax
+    // Should generate: __inline_flow_1 function that calls parse.source_event.handler()
+    // Actually generates: ~parse.source(...) literal in Zig code
+    _ = ~parse.source(
+        source: "~event test {}\n| done {}",
+        file_name: "inline_test.kz",
+        allocator: allocator
+    )
+    | parsed p |> {
+        std.debug.print("Parsed OK with {} items\n", .{p.ast.ast.items.len});
+        return .{ .success = .{} };
+    }
+    | parse_error e |> {
+        std.debug.print("Parse error: {s}\n", .{e.message});
+        return .{ .failed = .{} };
+    };
+}
+
+// Run both tests
+~test_local()
+| success |> _
+
+// This will cause backend compile error due to literal Koru syntax
+~test_imported()
+| success |> _
+| failed |> _

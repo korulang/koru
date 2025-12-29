@@ -1,0 +1,13 @@
+Requires ~build.requires to make parser module available at runtime
+
+The parser COMPILES correctly into backend.zig, but when output_emitted.zig
+tries to @import("parser"), it fails because the output build doesn't include
+the parser module.
+
+SOLUTION: Implement ~build.requires("parser") to inject module dependencies
+into the generated build.zig for the final output.
+
+This test documents that:
+1. Parser.init signature is now fixed (5 args)
+2. Parser wrapper imports work at compile time
+3. Runtime usage needs ~build.requires feature

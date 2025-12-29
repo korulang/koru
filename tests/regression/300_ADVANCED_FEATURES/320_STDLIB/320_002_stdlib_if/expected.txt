@@ -1,0 +1,2 @@
+Greater than 10
+Small is 10 or less

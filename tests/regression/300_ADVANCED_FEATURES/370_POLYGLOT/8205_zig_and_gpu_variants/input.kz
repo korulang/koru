@@ -1,0 +1,45 @@
+// Test 820: Zig and GPU Variants Together
+//
+// Tests the fallback pattern: provide both Zig and GPU implementations.
+// Emitter should emit the Zig variant and skip the GPU variant.
+//
+// This demonstrates graceful degradation:
+// - If GPU compiler pass runs → Use GPU
+// - If GPU compiler pass doesn't run → Use Zig fallback
+//
+// What this tests:
+// ✅ Emitter emits compute|zig variant
+// ✅ Emitter skips compute|gpu variant
+// ✅ Both variants can coexist
+// ✅ Zig variant provides working fallback
+
+const std = @import("std");
+
+~pub event compute {
+    value: f32,
+}
+| done { result: f32 }
+
+// Zig implementation - always works
+~proc compute|zig {
+    return .{ .done = .{ .result = value * 2.0 } };
+}
+
+// GPU implementation - requires compiler pass
+~proc compute|gpu {
+    #version 450
+
+    layout(local_size_x = 1) in;
+
+    layout(binding = 0) buffer Input {
+        float value;
+    } input_data;
+
+    layout(binding = 1) buffer Output {
+        float result;
+    } output_data;
+
+    void main() {
+        output_data.result = input_data.value * 2.0;
+    }
+}

@@ -1,0 +1,50 @@
+// Tour 09: AST Transformation
+// Transform the program AST at compile-time!
+
+const std = @import("std");
+
+// A simple event to transform
+~event compute { x: i32, y: i32 }
+| result { value: i32 }
+
+~proc compute {
+    return .{ .result = .{ .value = e.x + e.y }};
+}
+
+// The transformer event - takes ProgramAST and transforms it
+~event transform_doubles { ast: ProgramAST }
+| transformed { ast: ProgramAST }
+
+~proc transform_doubles {
+    comptime {
+        // At compile-time, we have access to the entire program AST!
+        var new_ast = e.ast;
+        
+        // Walk through all items in the AST
+        for (new_ast.items) |*item| {
+            switch (item.*) {
+                .proc_decl => |*proc| {
+                    // Find the compute proc
+                    if (proc.path.len == 1 and std.mem.eql(u8, proc.path[0], "compute")) {
+                        // Modify its body to double the result!
+                        proc.body = 
+                            \\
+                            \\    // TRANSFORMED AT COMPILE TIME!
+                            \\    return .{ .result = .{ .value = (e.x + e.y) * 2 }};
+                            ;
+                    }
+                },
+                else => {},
+            }
+        }
+        
+        return .{ .transformed = .{ .ast = new_ast }};
+    }
+}
+
+// Override compiler.coordinate to apply our transformation!
+~compiler.coordinate = coordinated { ast: e.ast, metrics: "Using default compiler" }
+
+// Test it - should compute 2 * (3 + 4) = 14 instead of 7!
+~compute(x: 3, y: 4)
+| result r |> _

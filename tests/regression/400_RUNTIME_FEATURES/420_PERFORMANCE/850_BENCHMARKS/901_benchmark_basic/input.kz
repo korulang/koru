@@ -1,0 +1,91 @@
+// Test 901: Benchmark - Basic Infrastructure
+// Tests that basic benchmark infrastructure works correctly
+
+const std = @import("std");
+
+// Benchmark comptime event (will be in koru_std/benchmark.kz)
+~event benchmark {
+    name: []const u8,
+    iterations: u32,
+    flow: FlowAST,
+    warmup_iterations: ?u32
+}
+| results {
+    name: []const u8,
+    comparisons: []Comparison
+}
+
+pub const Comparison = struct {
+    label: []const u8,
+    avg_ns: u64,
+    median_ns: u64,
+    min_ns: u64,
+    max_ns: u64,
+    std_dev: f64,
+    vs_baseline_percent: ?f64,
+};
+
+~proc benchmark {
+    // TODO: Comptime implementation
+    // For now, return placeholder results to test structure
+    const results_array = [_]Comparison{
+        .{
+            .label = "simple_add",
+            .avg_ns = 1,
+            .median_ns = 1,
+            .min_ns = 1,
+            .max_ns = 2,
+            .std_dev = 0.1,
+            .vs_baseline_percent = null,
+        },
+    };
+
+    return .{ .results = .{
+        .name = name,
+        .comparisons = &results_array,
+    }};
+}
+
+// Simple test event
+~event simple_add {}
+| done { result: i32 }
+
+~proc simple_add {
+    const result = 40 + 2;
+    return .{ .done = .{ .result = result } };
+}
+
+~event log { message: []const u8 }
+| done {}
+
+~proc log {
+    std.debug.print("{s}\n", .{message});
+    return .{ .done = .{} };
+}
+
+// Test basic benchmark
+~event test_run {}
+| done {}
+
+~proc test_run {
+    // Run benchmark
+    ~benchmark(name: "Basic Test", iterations: 1000, warmup_iterations: 100) {
+        ~simple_add()
+        | done |> _
+    }
+    | results r |> {
+        // Verify we got results
+        if (r.comparisons.len > 0) {
+            ~log(message: "Benchmark completed")
+            | done |> _
+        } else {
+            ~log(message: "Benchmark failed - no results")
+            | done |> _
+        }
+    }
+
+    return .{ .done = .{} };
+}
+
+~test_run()
+| done |> _

@@ -1,0 +1,9 @@
+// Test 002: Event and proc declaration without flow
+// This should compile but not produce any output
+const std = @import("std");
+
+~event hello {}
+
+~proc hello {
+    std.debug.print("Event executed\n", .{});
+}

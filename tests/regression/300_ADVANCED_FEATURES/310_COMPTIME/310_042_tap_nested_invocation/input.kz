@@ -1,0 +1,45 @@
+// Test 310_042: Tap Nested Invocation
+//
+// CRITICAL: Taps must work on NESTED invocations, not just top-level flows.
+// This is essential for profiling/observability - you want to tap ALL calls
+// to an event, regardless of where they appear in the call graph.
+//
+// Structure:
+//   ~hello() | tap_target |> goodbye() | tap_target |> _
+//
+// The tap on 'goodbye' should fire even though goodbye() is nested
+// inside hello()'s continuation, not a top-level flow.
+
+const std = @import("std");
+~import "$std/taps"
+
+~event hello {}
+| tap_target {}
+
+~event goodbye {}
+| tap_target {}
+
+~event observer {}
+
+~proc hello {
+    std.debug.print("hello\n", .{});
+    return .{ .tap_target = .{} };
+}
+
+~proc goodbye {
+    std.debug.print("goodbye\n", .{});
+    return .{ .tap_target = .{} };
+}
+
+~proc observer {
+    std.debug.print("TAP FIRED!\n", .{});
+}
+
+// Tap on goodbye - should fire even when goodbye is nested
+~tap(goodbye -> *)
+| tap_target |> observer()
+
+// hello is top-level, goodbye is NESTED in hello's continuation
+~hello()
+| tap_target |> goodbye()
+    | tap_target |> _

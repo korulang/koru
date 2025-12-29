@@ -1,0 +1,3 @@
+Processed: 20
+Processed: 60
+Alert: High value detected! Result was: 60

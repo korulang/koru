@@ -1,0 +1,44 @@
+// Tour 08: Circular Import Example - Module B
+// This module imports module A, creating a circular dependency
+
+const std = @import("std");
+
+// Circular import - A also imports B
+~import "circular_a.kz" => a
+
+// Public events from module B
+~pub event b.transform { input: i32 }
+| transformed { output: i32 }
+| error { message: []const u8 }
+
+~pub event b.check { content: []const u8 }
+| passed {}
+| failed { issue: []const u8 }
+
+// Implementation that uses module A
+~proc b.transform {
+    // Transform the input
+    const output = e.input + 10;
+
+    // Could validate using A if needed
+    ~a:validate(data: "check")
+    | valid |> {
+        return .{ .transformed = .{ .output = output } };
+    }
+    | invalid i |> {
+        return .{ .error = .{ .message = i.reason } };
+    }
+}
+
+~proc b.check {
+    if (e.content.len > 100) {
+        return .{ .failed = .{ .issue = "Content too long" } };
+    }
+    
+    return .{ .passed = .{} };
+}
+
+// Note: This creates a valid circular dependency because:
+// - Import resolution happens at compile time
+// - Events are just type declarations
+// - No initialization code runs during import

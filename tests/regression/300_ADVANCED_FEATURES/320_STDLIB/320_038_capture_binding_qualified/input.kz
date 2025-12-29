@@ -1,0 +1,28 @@
+// Test: Binding-qualified capture field syntax
+//
+// When captures are nested, both may have the SAME field name.
+// Use binding.field syntax to explicitly target which capture to update:
+//   captured { outer.count: outer.count + 1 }
+//   captured { inner.count: inner.count + 1 }
+//
+// This makes data flow EXPLICIT - no ambiguity about which capture owns what!
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+~event print_results { outer_count: i32, inner_count: i32 }
+
+~proc print_results {
+    std.debug.print("outer={d}, inner={d}\n", .{outer_count, inner_count});
+}
+
+// BOTH captures have a field called 'count'
+// Without qualification, this would be ambiguous!
+// With qualification: outer.count targets outer, inner.count targets inner
+~capture(init: { count: @as(i32, 0) })
+| as outer |> capture(init: { count: @as(i32, 0) })
+    | as inner |> captured { inner.count: inner.count + 10 }
+    | done inner_result |> captured { outer.count: outer.count + inner_result.count }
+| done final |> print_results(outer_count: final.count, inner_count: 10)

@@ -1,0 +1,22 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 008: Shorthand syntax for parameters
+// When a variable name matches a parameter name, can use shorthand
+// This test will likely FAIL as the feature may not be implemented
+const std = @import("std");
+
+~event greet { name: []const u8 }
+| greeted {}
+
+~proc greet {
+    std.debug.print("Hello, {s}!\n", .{name});
+    return .{ .greeted = .{} };
+}
+
+// Test shorthand in flow invocation
+const name = "World";
+
+// Shorthand form - should expand to greet(name: name)
+~greet(name)  
+| greeted |> _

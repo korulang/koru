@@ -1,0 +1,54 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Subflow with multiple chained continuations
+// Feature: ~event = first(...) | b1 |> second(...) | b2 |> third(...) | b3 |> result
+// Verifies: Subflows can chain multiple invocations through continuation pipelines
+// ============================================================================
+
+const std = @import("std");
+
+~import "$std/io"
+
+// Helper event: triples a number
+~event triple { value: i32 }
+| tripled { value: i32 }
+
+~proc triple {
+    return .{ .tripled = .{ .value = value * 3 } };
+}
+
+// Helper event: doubles a number
+~event double { value: i32 }
+| doubled { value: i32 }
+
+~proc double {
+    return .{ .doubled = .{ .value = value * 2 } };
+}
+
+// Event to test
+~event process { input: i32 }
+| final { output: i32 }
+
+// Multi-continuation subflow: chains triple -> double -> final
+~process = triple(value: input)
+| tripled t |> double(value: t.value)
+    | doubled d |> final { output: d.value }
+
+// Helper to verify and print the result
+~event verify_and_print { value: i32 }
+| done {}
+
+~proc verify_and_print {
+    if (value == 30) {
+        std.debug.print("30\n", .{});
+    } else {
+        std.debug.print("ERROR: Expected 30, got {}\n", .{value});
+    }
+    return .{ .done = .{} };
+}
+
+// Test: 5 * 3 * 2 = 30
+~process(input: 5)
+| final f |> verify_and_print(value: f.output)
+    | done |> _

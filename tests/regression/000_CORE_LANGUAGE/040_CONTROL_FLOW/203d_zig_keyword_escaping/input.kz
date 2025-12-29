@@ -1,0 +1,22 @@
+// Test 203d: Zig keyword escaping - simplified test
+//
+// This test verifies that branch names that are Zig keywords get escaped.
+
+const std = @import("std");
+
+// Event with branch name "error" (Zig keyword)
+~event check { value: i32 }
+| error { msg: []const u8 }
+| ok { result: i32 }
+
+~proc check {
+    if (value < 0) {
+        return .{ .@"error" = .{ .msg = "negative" } };
+    }
+    return .{ .ok = .{ .result = value } };
+}
+
+// Simple flow
+~check(value: -1)
+| error e |> _
+| ok r |> _

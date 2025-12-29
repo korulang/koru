@@ -1,0 +1,33 @@
+// Test 815: Polyglot multi-target compilation
+// Tests |variant syntax for language-specific implementations
+const std = @import("std");
+
+// Event: Pure interface (no variant)
+~pub event compute { }
+| done { }
+
+// GPU implementation (body is opaque to parser)
+~proc compute|gpu {
+    // In real usage, this would be GLSL/CUDA code
+    // For this test, we just verify the syntax is accepted
+    return .{ .done = .{} };
+}
+
+// JavaScript implementation
+~proc compute|js {
+    // In real usage, this would be JavaScript code
+    return .{ .done = .{} };
+}
+
+// Zig explicit target
+~proc compute|zig {
+    return .{ .done = .{} };
+}
+
+// Test default proc without variant (should still work)
+~pub event greet { }
+| done { }
+
+~proc greet {
+    return .{ .done = .{} };
+}

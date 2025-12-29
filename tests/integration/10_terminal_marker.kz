@@ -1,0 +1,37 @@
+// Test: Terminal flow marker (_) edge cases
+// Expected: Terminal marker should end flows without generating unused captures
+// This tests our "smart" terminal marker handling
+
+~event test.simple {}
+| ok {}
+
+~proc test.simple {
+    return .{ .@"ok" = .{} };
+}
+
+~event test.withData { value: i32 }
+| result { num: i32 }
+
+~proc test.withData {
+    return .{ .@"result" = .{ .num = e.value * 2 } };
+}
+
+// Test 1: Simple terminal
+// ~test.simple()
+// | ok |> _
+
+// Test 2: Terminal after pipeline
+// ~test.simple()
+// | ok |> test.withData(value: 42)
+//   | result r |> _
+
+// Test 3: Terminal without binding (ACTIVE)
+// Correct: no binding if not used
+~test.withData(value: 10)
+| result |> _
+
+// Test 4: Multiple terminals in nested continuations
+// ~test.simple()
+// | ok |> test.withData(value: 5)
+//   | result |> test.simple()
+//     | ok |> _

@@ -1,0 +1,19 @@
+// Logger with INVALID tap: module wildcard + concrete branch
+
+const std = @import("std");
+
+~pub event log { text: []const u8 }
+| done {}
+
+~proc log {
+    std.debug.print("[TAP] Got text: {s}\n", .{text});
+    return .{ .done = .{} };
+}
+
+// INVALID: Module wildcard (input:*) + concrete branch (formatted)
+// This should fail compilation with clear error message
+// Error: Cannot use concrete branch 'formatted' with wildcard source pattern 'input:*'
+//        Wildcard sources only support metatypes (Transition, Profile, Audit)
+~input:* -> *
+| formatted f |> log(text: f.text)
+    | done |> _

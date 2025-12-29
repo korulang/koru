@@ -1,0 +1,69 @@
+// Loop Optimization Pass - GENERAL recursive event pattern → native for loops
+// ==============================================================================
+// Transforms ANY code using checker events + label jumps into native loops.
+// This is backend-agnostic: creates IR nodes that emit to Zig, GLSL, JS, etc.
+//
+// Pattern Detected (GENERAL, not nbody-specific!):
+//   ~event loop_step { i: usize, limit: usize, ... }
+//   | continue { i: usize, ... }
+//   | done { ... }
+//
+//   ~proc loop_step {
+//       if (i < limit) {
+//           return .{ .continue = .{ .i = i, ... } };
+//       } else {
+//           return .{ .done = ... };
+//       }
+//   }
+//
+//   ~some_event = loop_step(i: 0, limit: n, ...)
+//   | continue c |> #loop work_event(i: c.i, ...)
+//       | result |> @loop(i: c.i + 1, ...)
+//   | done |> finished {}
+//
+// Transformation:
+//   SubflowImpl{ .body = .flow } → NativeLoop IR node
+//
+// Status: Phase 1 - Infrastructure (pass-through)
+// Next: Detect loop patterns and create NativeLoop nodes
+
+const std = @import("std");
+
+// Event: Run loop optimization on AST
+~pub event compiler.optimize.loops { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+
+~proc compiler.optimize.loops {
+    // Phase 1: Detect checker events
+    // A checker event has:
+    // - Event with two branches: continue_X and done_X
+    // - Proc with if/else: if (var < expr) return continue else return done
+
+    // Phase 2: Detect loop subflows
+    // - Subflow that calls checker with init value (i: 0)
+    // - Has label with recursive jump that increments (i: i + 1)
+
+    // Phase 3: Transform to NativeLoop IR nodes
+    // - Extract: variable, init, limit, work event
+    // - Create NativeLoop with inlined body
+    // - Replace SubflowImpl with NativeLoop in AST
+
+    // For now: pass through (infrastructure already working!)
+    var updated_ctx = ctx;
+    updated_ctx.passes_completed += 1;
+
+    std.debug.print("🔄 Loop optimization pass (pattern detection not yet implemented)\n", .{});
+    std.debug.print("   Hint: Looking for checker events like:\n", .{});
+    std.debug.print("   ~event loop_step {{ i: usize, limit: usize }}\n", .{});
+    std.debug.print("   | continue {{ i: usize }}\n", .{});
+    std.debug.print("   | done {{}}\n", .{});
+
+    return .{ .continued = .{ .ctx = updated_ctx } };
+}
+
+// TODO: Helper functions for detection (to be implemented):
+// - fn isCheckerEvent(event: *const EventDecl) bool
+// - fn isCheckerProc(proc: *const ProcDecl, event: *const EventDecl) bool
+// - fn detectLoopSubflow(subflow: *const SubflowImpl) ?LoopMetadata
+// - fn createNativeLoopNode(metadata: LoopMetadata) NativeLoop
+// - fn transformAST(ctx: CompilerContext, transformations: []Transformation) *Program

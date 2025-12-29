@@ -1,0 +1,22 @@
+COMPILER BUG: Transitive purity cannot see .handler() calls
+
+Test 1005 identifies that transitive purity analysis cannot see into Zig proc bodies
+that use .handler() calls.
+
+Expected:
+- compute_with_logging: is_pure=true, is_transitively_pure=FALSE (calls impure log via .handler())
+
+Actual:
+- compute_with_logging: is_pure=true, is_transitively_pure=TRUE (WRONG!)
+
+Root cause:
+- The purity checker's buildCallGraph() only looks at inline_flows inside procs
+- It cannot parse Zig code to find .handler() calls
+- When no call graph entry exists, it assumes pure (line 151-155 in purity_checker.zig)
+
+This is different from test 1009, which tests subflows (top-level flows) and WORKS correctly.
+
+Fix needed:
+- Option 1: Parse Zig proc bodies to extract .handler() calls (hard)
+- Option 2: Default to impure when no call graph exists (safe but conservative)
+- Option 3: Require explicit ~[pure] only on procs with no event calls

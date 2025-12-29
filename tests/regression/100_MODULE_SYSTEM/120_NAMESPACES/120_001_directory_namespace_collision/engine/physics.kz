@@ -1,0 +1,15 @@
+// Physics subsystem
+
+const std = @import("std");
+
+~event init {}
+
+~event shutdown {}
+
+~proc init {
+    std.debug.print("Physics initialized\n", .{});
+}
+
+~proc shutdown {
+    std.debug.print("Physics shutdown\n", .{});
+}

@@ -1,0 +1,15 @@
+// Simple test - no for loop
+~import "$std/io"
+
+const std = @import("std");
+
+~event greet { name: []const u8 }
+| done {}
+
+~proc greet {
+    std.debug.print("Hello, {s}!\n", .{name});
+    return .{ .done = .{} };
+}
+
+~greet(name: "World")
+| done |> std.io:print.ln("Done greeting")

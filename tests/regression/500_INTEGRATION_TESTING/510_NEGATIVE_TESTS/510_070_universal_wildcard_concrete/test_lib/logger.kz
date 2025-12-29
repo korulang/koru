@@ -1,0 +1,19 @@
+// Logger with INVALID tap: universal wildcard + concrete branch
+
+const std = @import("std");
+
+~pub event log { value: i32 }
+| done {}
+
+~proc log {
+    std.debug.print("[TAP] Got value: {d}\n", .{value});
+    return .{ .done = .{} };
+}
+
+// INVALID: Universal wildcard (*:*) + concrete branch (result)
+// This should fail compilation with clear error message
+// Error: Cannot use concrete branch 'result' with wildcard source pattern '*:*'
+//        Wildcard sources only support metatypes (Transition, Profile, Audit)
+~*:* -> *
+| result r |> log(value: r.value)
+    | done |> _

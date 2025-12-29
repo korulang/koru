@@ -1,0 +1,6 @@
+// Module B - imports module A (creating a cycle)
+
+~import "$app/input"
+
+~pub event from_b {}
+| done { msg: []const u8 }

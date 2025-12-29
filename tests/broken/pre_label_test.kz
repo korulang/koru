@@ -1,0 +1,27 @@
+const std = @import("std");
+
+~event test.run { input: i32 }
+| ok { value: i32 }  
+| retry { value: i32 }
+
+~proc test.run {
+    if (e.input < 5) {
+        return .@"retry"(.{ .value = e.input + 1 });
+    }
+    return .@"ok"(.{ .value = e.input });
+}
+
+~event io.log { msg: []const u8 }
+| done {}
+
+~proc io.log {
+    std.debug.print("{s}\n", .{e.msg});
+    return .@"done"(.{});
+}
+
+// Pre-invocation label test: retry with different input
+// The #attempt label anchors before the test.run call, expecting its INPUT shape
+// When we jump with @attempt, we need to provide new input
+~#attempt test.run (input: 0)
+| ok o |> io.log (msg: "Success!") |> _
+| retry r |> test.run (input: r.value) @attempt  // Jump with new input value

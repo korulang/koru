@@ -1,0 +1,228 @@
+// Koru Standard Library: GPU Compilation Support
+//
+// Provides compiler pass for compiling GLSL shaders to SPIR-V
+// and generating Zig wrappers for Vulkan dispatch.
+//
+// This implements the compile.target event for "gpu" target.
+
+const std = @import("std");
+
+// ================================================================
+// Compiler Pass Event Interface
+// ================================================================
+
+~pub event compile.target {
+    target_name: []const u8,
+    body: []const u8,
+    path: []const []const u8,
+}
+| compiled {
+    code: []const u8,
+    build_steps: []const BuildStep,
+}
+| unsupported { reason: []const u8 }
+
+// BuildStep types (should match src/ast.zig)
+const BuildStep = union(enum) {
+    system_command: SystemCommand,
+    link_library: LinkLibrary,
+    runtime_file: RuntimeFile,
+};
+
+const SystemCommand = struct {
+    program: []const u8,
+    args: []const []const u8,
+    cwd: ?[]const u8 = null,
+};
+
+const LinkLibrary = struct {
+    name: []const u8,
+    optional: bool = false,
+};
+
+const RuntimeFile = struct {
+    source: []const u8,
+    dest: []const u8,
+};
+
+// ================================================================
+// GPU Compiler Pass Implementation
+// ================================================================
+
+~proc compile.target {
+    const allocator = std.heap.page_allocator;
+
+    // Only handle "gpu" target
+    if (!std.mem.eql(u8, target_name, "gpu")) {
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "gpu.kz only handles 'gpu' target, got '{s}'",
+            .{target_name}
+        );
+        return .{ .unsupported = .{ .reason = msg } };
+    }
+
+    // ================================================================
+    // Step 1: Extract GLSL shader code from proc body
+    // ================================================================
+
+    // The body contains GLSL code starting with "#version"
+    // We need to extract it and write to a temp file
+
+    const shader_code = try extractGLSL(allocator, body);
+
+    // Generate unique shader filename based on event path
+    const shader_name = try generateShaderName(allocator, path);
+    const glsl_path = try std.fmt.allocPrint(
+        allocator,
+        "zig-cache/shaders/{s}.glsl",
+        .{shader_name}
+    );
+    const spv_path = try std.fmt.allocPrint(
+        allocator,
+        "zig-cache/shaders/{s}.spv",
+        .{shader_name}
+    );
+
+    // Write GLSL to file (build system will do this)
+    // For now, we just record it in the wrapper
+
+    // ================================================================
+    // Step 2: Generate Zig wrapper code
+    // ================================================================
+
+    const wrapper = try generateWrapper(
+        allocator,
+        shader_name,
+        shader_code,
+        path
+    );
+
+    // ================================================================
+    // Step 3: Create BuildSteps
+    // ================================================================
+
+    var steps = try allocator.alloc(BuildStep, 3);
+
+    // Step 1: Compile GLSL → SPIR-V
+    steps[0] = BuildStep{ .system_command = SystemCommand{
+        .program = "glslangValidator",
+        .args = &[_][]const u8{
+            "-V",                 // Vulkan/SPIR-V output
+            "-S", "comp",         // Compute shader
+            glsl_path,
+            "-o", spv_path,
+        },
+        .cwd = null,
+    } };
+
+    // Step 2: Install SPIR-V binary as runtime file
+    steps[1] = BuildStep{ .runtime_file = RuntimeFile{
+        .source = spv_path,
+        .dest = try std.fmt.allocPrint(
+            allocator,
+            "shaders/{s}.spv",
+            .{shader_name}
+        ),
+    } };
+
+    // Step 3: Link Vulkan library (optional for graceful degradation)
+    steps[2] = BuildStep{ .link_library = LinkLibrary{
+        .name = "vulkan",
+        .optional = true,  // Don't fail if Vulkan not available
+    } };
+
+    return .{ .compiled = .{
+        .code = wrapper,
+        .build_steps = steps,
+    } };
+}
+
+// ================================================================
+// Helper Functions
+// ================================================================
+
+fn extractGLSL(allocator: std.mem.Allocator, body: []const u8) ![]const u8 {
+    // Find start of GLSL code ("#version")
+    const version_idx = std.mem.indexOf(u8, body, "#version") orelse {
+        return error.NoGLSLFound;
+    };
+
+    // Extract everything from #version to end
+    // Trim leading/trailing whitespace
+    var glsl = body[version_idx..];
+
+    // Trim trailing whitespace
+    while (glsl.len > 0 and std.ascii.isWhitespace(glsl[glsl.len - 1])) {
+        glsl = glsl[0..glsl.len - 1];
+    }
+
+    return try allocator.dupe(u8, glsl);
+}
+
+fn generateShaderName(allocator: std.mem.Allocator, path: []const []const u8) ![]const u8 {
+    // Convert path like ["blur"] to "blur"
+    // Or ["imaging", "blur"] to "imaging_blur"
+
+    if (path.len == 0) return try allocator.dupe(u8, "shader");
+    if (path.len == 1) return try allocator.dupe(u8, path[0]);
+
+    // Calculate total length
+    var total_len: usize = path[0].len;
+    for (path[1..]) |segment| {
+        total_len += 1 + segment.len; // underscore + segment
+    }
+
+    // Build name
+    var result = try allocator.alloc(u8, total_len);
+    var pos: usize = 0;
+
+    @memcpy(result[pos..pos + path[0].len], path[0]);
+    pos += path[0].len;
+
+    for (path[1..]) |segment| {
+        result[pos] = '_';
+        pos += 1;
+        @memcpy(result[pos..pos + segment.len], segment);
+        pos += segment.len;
+    }
+
+    return result;
+}
+
+fn generateWrapper(
+    allocator: std.mem.Allocator,
+    shader_name: []const u8,
+    glsl_code: []const u8,
+    path: []const []const u8,
+) ![]const u8 {
+    _ = path; // TODO: Use for better error messages
+
+    // Generate Zig code that embeds the SPIR-V binary
+    const template =
+        \\// GPU implementation compiled from GLSL
+        \\// Shader: {s}
+        \\//
+        \\// Original GLSL (compiled to SPIR-V):
+        \\/*
+        \\{s}
+        \\*/
+        \\
+        \\// Embed compiled SPIR-V binary
+        \\const shader_spv = @embedFile("shaders/{s}.spv");
+        \\
+        \\// TODO: Implement Vulkan dispatch
+        \\// For now, this is compile-only (proves the pipeline works)
+        \\
+        \\// Placeholder handler (doesn't actually execute on GPU yet)
+        \\_ = shader_spv;  // Reference it so compiler doesn't optimize away
+        \\return .{{ .done = .{{ .result = &[_]f32{{}} }} }};
+        \\
+    ;
+
+    return try std.fmt.allocPrint(
+        allocator,
+        template,
+        .{shader_name, glsl_code, shader_name}
+    );
+}

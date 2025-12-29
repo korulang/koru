@@ -1,0 +1,9 @@
+// hello-world - Main entry point
+//
+// This is your application's entry point. The top-level flow
+// starts execution automatically.
+
+~import "$std/io"
+
+// Main application flow
+~io:println(text: "Hello from hello-world!")

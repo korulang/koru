@@ -1,0 +1,51 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Chained subflows (subflow calling subflow)
+// Feature: Subflow A calls Event B, where B is implemented by Subflow C
+// Verifies: Subflow composition works - subflows can call other subflows
+// ============================================================================
+
+const std = @import("std");
+
+~import "$std/io"
+
+// Base proc: adds 5 to a number
+~event add_five { value: i32 }
+| result { sum: i32 }
+
+~proc add_five {
+    return .{ .result = .{ .sum = value + 5 } };
+}
+
+// Event that will be implemented as a subflow
+~event double { value: i32 }
+| result { doubled: i32 }
+
+// Subflow 1: double calls add_five and maps the result
+~double = add_five(value: value)
+| result r |> result { doubled: r.sum }
+
+// Event that will call the subflow
+~event process { input: i32 }
+| final { output: i32 }
+
+// Subflow 2: process calls double (which is itself a subflow)
+~process = double(value: input)
+| result r |> final { output: r.doubled }
+
+// Helper to print i32
+~event print_result { value: i32 }
+| done {}
+
+~proc print_result {
+    std.debug.print("{}\n", .{value});
+    return .{ .done = .{} };
+}
+
+// Test: 21 + 5 = 26
+// Chain: process (subflow) → double (subflow) → add_five (proc)
+// This tests that a subflow can call another subflow successfully
+~process(input: 21)
+| final f |> print_result(value: f.output)
+    | done |> _

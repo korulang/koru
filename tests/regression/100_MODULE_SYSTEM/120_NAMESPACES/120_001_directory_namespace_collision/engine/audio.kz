@@ -1,0 +1,15 @@
+// Audio subsystem
+
+const std = @import("std");
+
+~event init {}
+
+~event shutdown {}
+
+~proc init {
+    std.debug.print("Audio initialized\n", .{});
+}
+
+~proc shutdown {
+    std.debug.print("Audio shutdown\n", .{});
+}

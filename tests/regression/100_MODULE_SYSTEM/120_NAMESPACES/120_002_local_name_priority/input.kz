@@ -1,0 +1,27 @@
+// Test 169: Local Name Resolution Priority
+// CRITICAL: Unqualified names MUST resolve to local events FIRST
+// Even when imported modules have events with the same name
+//
+// Bug being tested: Emitter was resolving unqualified ~print() to
+// koru_std.io.print_event instead of main_module.print_event
+
+~import "$std/io"
+
+// Local print event - same name as $std.io:print
+// This MUST take priority for unqualified invocations
+~event print {}
+| done {}
+
+~proc print {
+    const std = @import("std");
+    std.debug.print("Local print called\n", .{});
+    return .{ .done = .{} };
+}
+
+// Unqualified invocation - MUST resolve to local main_module.print_event
+// NOT to koru_std.io.print_event
+~print()
+| done |> _
+
+// Explicit qualification still works for imported version
+~std.io:println(text: "Imported println works too")

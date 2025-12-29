@@ -1,0 +1,30 @@
+// Test taps on imported module events
+// SKIP: Module system not fully implemented yet
+const std = @import("std");
+
+// TODO: This would import a module with events
+~import "$test/events"
+
+~event main_event {}
+| done {}
+
+~pub event observer {}
+| done {}
+
+~proc main_event {
+    std.debug.print("Main event executed\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc observer {
+    std.debug.print("Observer fired!\n", .{});
+    return .{ .done = .{} };
+}
+
+// TODO: This should observe an event from the imported module
+// ~utils:some_event -> *
+// | done |> observer()
+//     | done |> _
+
+~main_event()
+| done |> _

@@ -1,0 +1,23 @@
+const std = @import("std");
+const File = struct { handle: i32 };
+
+~event open_two { path1: []const u8, path2: []const u8 }
+| opened { file1: *File[opened!], file2: *File[opened!] }  // TWO obligations!
+
+~proc open_two {
+    std.debug.print("Opening two files: {s}, {s}\n", .{path1, path2});
+    const allocator = std.heap.page_allocator;
+    const f1 = allocator.create(File) catch unreachable;
+    const f2 = allocator.create(File) catch unreachable;
+    f1.* = File{ .handle = 42 };
+    f2.* = File{ .handle = 43 };
+    return .{ .opened = .{ .file1 = f1, .file2 = f2 } };
+}
+
+~event close { file: *File[!opened] }  // Consumes one obligation
+| closed {}
+
+~proc close {
+    std.debug.print("Closing file\n", .{});
+    return .{ .closed = .{} };
+}

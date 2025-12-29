@@ -1,0 +1,25 @@
+// Test conditional imports - ~[flag]import syntax
+//
+// This test verifies that conditional imports are deadstripped when flags are not set.
+// Since we run WITHOUT --profile or --test flags, both conditional imports below
+// are skipped by the parser (not present in AST at all).
+//
+// See test 052_conditional_imports for parser-level validation of this behavior.
+const std = @import("std");
+
+// This import requires --profile flag (NOT SET - will be deadstripped)
+~[profile]import "$std/debug"
+
+// This import requires --test flag (NOT SET - will be deadstripped)
+~[test]import "$std/testing"
+
+~event hello {}
+| done {}
+
+~proc hello {
+    std.debug.print("Hello from conditional import test!\n", .{});
+    return .{ .done = .{} };
+}
+
+~hello()
+| done |> _

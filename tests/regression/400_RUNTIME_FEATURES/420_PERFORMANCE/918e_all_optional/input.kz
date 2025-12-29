@@ -1,0 +1,42 @@
+// Test 918e: Optional Branches - All Branches Optional with |? (EDGE CASE)
+//
+// This test demonstrates:
+// 1. Event with NO required branches - all optional
+// 2. Handler uses ONLY |? to catch everything
+// 3. Verifies edge case: zero required branches + only catch-all handler
+// 4. Tests that system doesn't break when everything is optional
+
+const std = @import("std");
+
+// Event with ONLY optional branches - no required ones!
+// This is an edge case but should be valid
+~event process { value: u32 }
+| ?success { result: u32 }        // OPTIONAL
+| ?warning { msg: []const u8 }    // OPTIONAL
+| ?error { msg: []const u8 }      // OPTIONAL
+
+~proc process {
+    // Return different branches based on value
+    if (value == 0) {
+        return .{ .error = .{ .msg = "Zero value" } };
+    }
+
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Large value" } };
+    }
+
+    const doubled = value * 2;
+    return .{ .success = .{ .result = doubled } };
+}
+
+// Handler with ONLY |? - no explicit branch handling
+// This is valid because ALL branches are optional (zero required)
+// Edge case: Can a handler have ONLY |? with no explicit branches?
+~process(value: 10)
+|? |> std.debug.print("Optional branch fired\n", .{})
+
+~process(value: 150)
+|? |> std.debug.print("Optional branch fired\n", .{})
+
+~process(value: 0)
+|? |> std.debug.print("Optional branch fired\n", .{})

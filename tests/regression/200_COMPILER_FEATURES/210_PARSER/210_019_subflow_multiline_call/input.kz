@@ -1,0 +1,57 @@
+// ============================================================================
+// PARSER BUG: Multi-line function calls in subflows break continuation parsing
+// ============================================================================
+//
+// The parser fails to recognize continuation lines after multi-line function
+// calls in subflow expressions. After the closing ')' of a multi-line call,
+// the next '|' is treated as a "stray continuation line" instead of being
+// recognized as part of the subflow.
+//
+// Expected: Parser should handle multi-line calls and continue parsing the flow
+// Actual: Parser loses track of subflow context after ')'
+//
+// This bug was discovered while implementing benchmark 2101b_nbody_granular,
+// which needed to pass multiple arguments to assemble_solar_system() across
+// multiple lines.
+//
+// ============================================================================
+
+const std = @import("std");
+
+~event step_a { x: i32 }
+| done { result: i32 }
+
+~proc step_a {
+    return .{ .done = .{ .result = x + 1 } };
+}
+
+~event step_b { a: i32, b: i32, c: i32 }
+| done { result: i32 }
+
+~proc step_b {
+    return .{ .done = .{ .result = a + b + c } };
+}
+
+~event step_c { x: i32 }
+| done { result: i32 }
+
+~proc step_c {
+    return .{ .done = .{ .result = x * 2 } };
+}
+
+// This subflow should work but currently fails
+~event test_multiline_call {}
+| final { result: i32 }
+
+~test_multiline_call = step_a(x: 10)
+| done a |> step_b(
+    a: a.result,
+    b: 20,
+    c: 30
+)
+    | done b |> step_c(x: b.result)
+        | done c |> final { result: c.result }
+
+// Main flow
+~test_multiline_call()
+| final f |> _

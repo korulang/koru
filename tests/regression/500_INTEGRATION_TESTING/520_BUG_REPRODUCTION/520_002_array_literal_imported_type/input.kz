@@ -1,0 +1,44 @@
+// ============================================================================
+// BUG 991: Array Literals with Imported Types Use Invalid Syntax
+// ============================================================================
+//
+// Issue: When creating array literals in flows using types from imported
+// modules, the generated Zig uses `:` syntax which is invalid.
+//
+// Expected Zig:  &[_]koru_mylib.Handle{ h1, h2 }
+// Actual Zig:    &[_]mylib:Handle{ h1, h2 }    ❌ INVALID! (':' is not Zig)
+//
+// This affects creating arrays/slices of imported types in flow arguments.
+//
+// Discovered while building $std/threading library (test 2006)
+// ============================================================================
+
+const std = @import("std");
+~import $std/threading
+
+// Create some handles
+~event makeHandle { id: u64 }
+| made { handle: threading:WorkerHandle }
+
+~proc makeHandle {
+    // Create a dummy handle (just for testing codegen)
+    const handle = threading:WorkerHandle{
+        .thread = undefined,
+        .result_ptr = undefined,
+    };
+    return .{ .made = .{ .handle = handle } };
+}
+
+// Event that accepts array of handles
+~event joinHandles { handles: []const threading:WorkerHandle }
+| joined {}
+
+~proc joinHandles {
+    return .{ .joined = .{} };
+}
+
+// Try to use array literal with imported type
+~makeHandle(id: 1)
+| made h1 |> makeHandle(id: 2)
+    | made h2 |> joinHandles(handles: &[_]threading:WorkerHandle{ h1.handle, h2.handle })
+        | joined |> _

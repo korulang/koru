@@ -1,0 +1,30 @@
+// Test 052: Lenient parsing with multiple errors
+// Parser should continue past errors and create parse_error nodes
+
+~event valid_before {
+    x: i32
+}
+| ok {}
+
+// This event has an unclosed brace - should create parse_error node
+~event broken_event {
+    value: i32
+| success {}
+
+// This event is valid - should still be parsed
+~event valid_after {
+    y: i32
+}
+| done {}
+
+// Another broken event - unclosed annotation
+~[unclosed annotation event another_broken {
+    z: i32
+}
+| result {}
+
+// One more valid event to verify recovery
+~event final_valid {
+    data: []const u8
+}
+| complete {}

@@ -1,0 +1,19 @@
+// Test 408: Field name that shadows event name
+//
+// BUG: When an input field has the same name as the event,
+// the unwrapping code `const window = e.window;` shadows the
+// event struct `pub const window = struct`.
+
+const std = @import("std");
+
+~event window { window: i32 }
+| success { size: i32 }
+
+~proc window {
+    std.debug.print("Window size: {d}\n", .{window});
+    return .{ .success = .{ .size = window * 2 } };
+}
+
+// Invoke the event
+~window(window: 42)
+| success |>

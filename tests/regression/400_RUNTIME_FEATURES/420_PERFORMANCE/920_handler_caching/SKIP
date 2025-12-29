@@ -1,0 +1,8 @@
+Phase 5: Handler caching and specialization not yet implemented
+
+This test requires the compiler to:
+1. Track which branch subset each flow uses
+2. Generate specialized handlers per unique branch subset
+3. Reuse cached handlers when multiple flows use the same subset
+
+See tests/regression/918_optional_branches/IMPLEMENTATION_ROADMAP.md Phase 5

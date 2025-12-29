@@ -1,0 +1,34 @@
+// Test inline branch constructors
+
+~event process.data { value: u32 }
+| success { result: u32 }
+| error { msg: []const u8 }
+
+// Test simple branch constructor (field mapping only)
+~process.data (value: 42)
+| success s |> success { result: s.result }
+| error e |> error { msg: e.msg }
+
+// Test branch constructor in subflow (field mapping only)
+~map_result (v) = process.data (value: v)
+| success s |> success { result: s.result }
+| error e |> error { msg: e.msg }
+
+// Use the subflow
+~map_result (100)
+| success s |> done { output: s.result }
+| error e |> failed { reason: e.msg }
+
+// Test branch constructor with multiple fields (literals and field mapping)
+~process.data (value: 10)
+| success s |> complete { value: s.result, timestamp: 1234567890, status: "ok" }
+| error e |> failed { reason: e.msg, code: 500 }
+
+// Proc implementation
+~proc process.data {
+    if (e.value > 50) {
+        return .{ .@"success" = .{ .result = e.value } };
+    } else {
+        return .{ .@"error" = .{ .msg = "Value too small" } };
+    }
+}

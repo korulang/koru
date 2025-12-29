@@ -1,0 +1,12 @@
+// Test: print.ln with {% if %} conditionals
+
+~import "$std/io"
+
+const debug = true;
+const verbose = false;
+
+// When debug is true, should print "[DEBUG] Hello!"
+~std.io:print.ln("{% if debug %}[DEBUG] {% endif %}Hello!")
+
+// When verbose is false, should print "Status: OK"
+~std.io:print.ln("Status: {% if verbose %}VERBOSE {% endif %}OK")

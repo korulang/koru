@@ -1,0 +1,195 @@
+// Chrome Tracing Profiler - Proof-of-Concept Timeline Profiler
+// ==================================================================
+// Usage:
+//   ~[profile]import "$std/profiler"
+//   koruc my_app.kz --profile
+//
+// Result: Program generates /tmp/koru_profile.json in Chrome Tracing Format
+// View in Chrome: chrome://tracing
+//
+// Architecture:
+// - Uses meta-events (koru:start, koru:end) for file lifecycle
+// - Universal tap (~* -> *) captures all event transitions
+// - Zero-cost when disabled (dead-strips at compile time)
+// - Self-governing: requires both import AND --PROFILE flag
+//
+// CURRENT STATUS: Single-threaded proof-of-concept
+// ------------------------------------------------
+// ✅ WORKS: Sequential event flows, timeline visualization
+// ❌ TODO: Thread safety (needs mutex for concurrent transitions)
+// ❌ TODO: Per-thread buffering for zero-contention profiling
+// ❌ TODO: Dynamic pid/tid tracking for multi-threaded programs
+//
+// This is a WORKING proof-of-concept that demonstrates:
+// 1. Meta-events (koru:start, koru:end) fire correctly
+// 2. Universal taps (~* -> *) capture all transitions
+// 3. Chrome Tracing format visualization works
+// 4. Duration tracking shows time between events
+//
+// For production use, add proper thread synchronization!
+
+~[comptime|runtime]
+
+const std = @import("std");
+
+// File handle state - mutable globals for profiler state
+// WARNING: NOT THREAD-SAFE! Will corrupt with concurrent writes.
+var profile_file: ?std.fs.File = null;
+var first_event: bool = true;
+var previous_timestamp_ns: i128 = 0;
+var previous_event_name: []const u8 = "";
+
+// Event: Write Chrome Tracing header
+~[comptime|runtime] event write_header {}
+| done {}
+
+~proc write_header {
+    // Create profile file
+    profile_file = std.fs.cwd().createFile("/tmp/koru_profile.json", .{}) catch {
+        std.debug.print("ERROR: Failed to create profile file\n", .{});
+        return .{ .done = .{} };
+    };
+
+    // Write Chrome Tracing JSON header
+    const header = "{\"traceEvents\":[\n";
+    _ = profile_file.?.write(header) catch {
+        std.debug.print("ERROR: Failed to write profile header\n", .{});
+        return .{ .done = .{} };
+    };
+
+    // Reset profiler state for new trace
+    first_event = true;
+    previous_timestamp_ns = 0;
+    previous_event_name = "";
+    return .{ .done = .{} };
+}
+
+// Event: Write a profile event
+~[comptime|runtime] event write_event {
+    source: []const u8,
+    timestamp_ns: i128,
+}
+| done {}
+
+~proc write_event {
+    const file = profile_file orelse return .{ .done = .{} };
+
+    // First event: just buffer it, don't write yet
+    if (previous_timestamp_ns == 0) {
+        previous_timestamp_ns = timestamp_ns;
+        previous_event_name = source;
+        return .{ .done = .{} };
+    }
+
+    // We have a previous event buffered - write it now with duration to current event
+    const duration_ns = timestamp_ns - previous_timestamp_ns;
+    const start_us = @divFloor(previous_timestamp_ns, 1000);
+    const duration_us = @divFloor(duration_ns, 1000);
+
+    // Build JSON manually (fast, no allocations)
+    var buffer: [8192]u8 = undefined;
+    var pos: usize = 0;
+
+    // Add comma separator if not first event
+    if (!first_event) {
+        buffer[pos] = ',';
+        pos += 1;
+        buffer[pos] = '\n';
+        pos += 1;
+    }
+    first_event = false;
+
+    // Build JSON: Complete event (ph: "X") with duration
+    // Format: {"name":"event","cat":"transition","ph":"X","ts":start,"dur":duration,"pid":0,"tid":0}
+    // - ph: "X" = complete event (shows as horizontal bar with duration)
+    // - ts: when the PREVIOUS event fired
+    // - dur: how long from previous event until THIS event
+    // - name: the PREVIOUS event name
+    // This shows "time spent in previous state" and makes all bars visible!
+    const json = std.fmt.bufPrint(buffer[pos..],
+        "{{\"name\":\"{s}\",\"cat\":\"transition\",\"ph\":\"X\",\"ts\":{d},\"dur\":{d},\"pid\":0,\"tid\":0}}",
+        .{previous_event_name, start_us, duration_us}
+    ) catch return .{ .done = .{} };
+    pos += json.len;
+
+    _ = file.write(buffer[0..pos]) catch {
+        std.debug.print("ERROR: Failed to write profile event\n", .{});
+    };
+
+    // Buffer current event for next write
+    previous_timestamp_ns = timestamp_ns;
+    previous_event_name = source;
+
+    return .{ .done = .{} };
+}
+
+// Event: Write Chrome Tracing footer and close file
+~[comptime|runtime] event write_footer {}
+| done {}
+
+~proc write_footer {
+    const file = profile_file orelse return .{ .done = .{} };
+
+    // Write the final buffered event (if any) with small duration
+    if (previous_timestamp_ns != 0) {
+        var buffer: [8192]u8 = undefined;
+        var pos: usize = 0;
+
+        // Add comma separator if not first event
+        if (!first_event) {
+            buffer[pos] = ',';
+            pos += 1;
+            buffer[pos] = '\n';
+            pos += 1;
+        }
+
+        // Emit final event with 1 microsecond duration (tiny but visible)
+        const start_us = @divFloor(previous_timestamp_ns, 1000);
+        const json = std.fmt.bufPrint(buffer[pos..],
+            "{{\"name\":\"{s}\",\"cat\":\"transition\",\"ph\":\"X\",\"ts\":{d},\"dur\":1,\"pid\":0,\"tid\":0}}",
+            .{previous_event_name, start_us}
+        ) catch {
+            std.debug.print("ERROR: Failed to format final event\n", .{});
+            return .{ .done = .{} };
+        };
+        pos += json.len;
+
+        _ = file.write(buffer[0..pos]) catch {
+            std.debug.print("ERROR: Failed to write final event\n", .{});
+        };
+    }
+
+    // Write closing bracket for events array and closing brace for JSON
+    const footer = "\n]}\n";
+    _ = file.write(footer) catch {
+        std.debug.print("ERROR: Failed to write profile footer\n", .{});
+    };
+
+    file.close();
+
+    // Reset profiler state
+    profile_file = null;
+    first_event = true;
+    previous_timestamp_ns = 0;
+    previous_event_name = "";
+
+    return .{ .done = .{} };
+}
+
+// TAP: Program start - write header
+// [opaque] prevents other taps from observing profiler's own transitions
+~[opaque]koru:start -> *
+| done |> write_header()
+    | done |> _
+
+// TAP: Every transition - write event
+// [opaque] prevents infinite recursion (profiler won't observe itself)
+~[opaque]* -> *
+| Profile p |> write_event(source: p.source, timestamp_ns: p.timestamp_ns)
+    | done |> _
+
+// TAP: Program end - write footer and close
+// [opaque] prevents other taps from observing profiler's own transitions
+~[opaque]koru:end -> *
+| done |> write_footer()
+    | done |> _

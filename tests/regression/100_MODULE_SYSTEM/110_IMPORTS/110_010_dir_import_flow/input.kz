@@ -1,0 +1,26 @@
+// Test 836: Complex multi-module flow with directory imports
+//
+// Tests realistic HTTP server pattern using multiple modules from same package
+// Demonstrates: net.tcp:server.listen() → net.tcp:connection.read() → net.http:request.parse()
+
+const std = @import("std");
+
+~import "$app/lib/net"
+
+// HTTP server flow using multiple modules from 'net' package
+~app.lib.net.tcp:server.listen(port: 8080)
+| listening l |> app.lib.net.tcp:server.accept(server_id: l.server_id)
+    | connection c |> app.lib.net.tcp:connection.read(conn_id: c.conn_id)
+        | data d |> app.lib.net.http:request.parse(bytes: d.bytes)
+            | request r |> app.lib.net.http:response.build(status: 200, body: "OK")
+                | response resp |> app.lib.net.tcp:connection.write(conn_id: c.conn_id, data: resp.bytes)
+                    | sent s |> _
+                    | failed f |> _
+            | invalid i |> app.lib.net.http:response.build(status: 400, body: "Bad Request")
+                | response resp |> app.lib.net.tcp:connection.write(conn_id: c.conn_id, data: resp.bytes)
+                    | sent s |> _
+                    | failed f |> _
+        | closed |> _
+        | failed |> _
+    | failed f |> _
+| failed f |> _

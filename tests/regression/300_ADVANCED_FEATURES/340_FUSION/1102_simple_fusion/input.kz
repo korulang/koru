@@ -1,0 +1,48 @@
+// Test: Simple Fusion Transformation (add -> multiply)
+// This tests that fusion can transform a chain of pure events into an optimized variant
+
+const std = @import("std");
+
+// Pure arithmetic events
+~event add { x: i32, y: i32 }
+| done { result: i32 }
+
+~[pure]proc add {
+    return .{ .done = .{ .result = x + y } };
+}
+
+~event multiply { x: i32, factor: i32 }
+| done { result: i32 }
+
+~[pure]proc multiply {
+    return .{ .done = .{ .result = x * factor } };
+}
+
+// Test event that should be fused
+~event calculate { a: i32, b: i32, c: i32 }
+| done { result: i32 }
+
+~proc calculate {
+    // This chain of pure events should be fusable
+    const sum = add_event.handler(.{ .x = a, .y = b });
+    const product = multiply_event.handler(.{ .x = sum.done.result, .factor = c });
+    return .{ .done = .{ .result = product.done.result } };
+}
+
+// Main test (void event - no output needed)
+~event main {}
+
+~proc main {
+    const result = calculate_event.handler(.{ .a = 10, .b = 20, .c = 3 });
+
+    std.debug.print("Result: {}\n", .{result.done.result});
+    std.debug.print("Expected: {}\n", .{(10 + 20) * 3});
+
+    if (result.done.result == 90) {
+        std.debug.print("✅ Calculation correct\n", .{});
+    } else {
+        std.debug.print("❌ Calculation incorrect\n", .{});
+    }
+}
+
+~main()

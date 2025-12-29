@@ -1,0 +1,15 @@
+// Test 516: Use-after-disposal error
+// Tests that using a resource after disposal is caught
+//
+// Key points:
+// - open() returns *File[opened!]
+// - close() accepts *File[!opened] and marks it as disposed
+// - use_file() expects *File[opened]
+// - ERROR: Cannot use f.file after it was disposed by close()
+
+~import "$app/fs"
+
+~app.fs:open(path: "test.txt")
+| opened f |> app.fs:close(file: f.file)
+    | closed |> app.fs:use_file(file: f.file)  // ERROR: f.file was disposed!
+        | used |> _

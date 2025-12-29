@@ -1,0 +1,67 @@
+// Koru Event Taps - 5 Observers
+// Tests: How does tap overhead scale with subscriber count?
+// Answer: It doesn't. All taps fused at compile time.
+
+const std = @import("std");
+
+const MESSAGES: u64 = 10_000_000;
+
+var sum1: u64 = 0;
+var sum2: u64 = 0;
+var sum3: u64 = 0;
+var sum4: u64 = 0;
+var sum5: u64 = 0;
+
+~event count { i: u64 }
+| next { value: u64 }
+| done {}
+
+~proc count {
+    if (i >= MESSAGES) {
+        return .{ .done = .{} };
+    }
+    return .{ .next = .{ .value = i } };
+}
+
+// 5 Observers
+~event accumulate1 { value: u64 }
+~proc accumulate1 { sum1 += value; }
+
+~event accumulate2 { value: u64 }
+~proc accumulate2 { sum2 += value; }
+
+~event accumulate3 { value: u64 }
+~proc accumulate3 { sum3 += value; }
+
+~event accumulate4 { value: u64 }
+~proc accumulate4 { sum4 += value; }
+
+~event accumulate5 { value: u64 }
+~proc accumulate5 { sum5 += value; }
+
+~event validate {}
+~proc validate {
+    const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
+    if (sum1 == expected and sum2 == expected and sum3 == expected and sum4 == expected and sum5 == expected) {
+        std.debug.print("Koru (5 taps): Validated {} messages (checksum: {})\n", .{ MESSAGES, sum1 });
+    } else {
+        std.debug.print("Koru (5 taps): CHECKSUM MISMATCH!\n", .{});
+    }
+}
+
+~event start {} | ready {}
+~proc start { return .{ .ready = .{} }; }
+
+// 5 TAPS - ALL fused at compile time
+~count -> * | next v |> accumulate1(value: v.value)
+~count -> * | next v |> accumulate2(value: v.value)
+~count -> * | next v |> accumulate3(value: v.value)
+~count -> * | next v |> accumulate4(value: v.value)
+~count -> * | next v |> accumulate5(value: v.value)
+
+~count -> * | done |> validate()
+
+~start()
+| ready |> #loop count(i: 0)
+    | next n |> @loop(i: n.value + 1)
+    | done |> _

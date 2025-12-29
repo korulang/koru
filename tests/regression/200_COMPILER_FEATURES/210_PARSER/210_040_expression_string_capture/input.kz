@@ -1,0 +1,24 @@
+// Test 210_040: Expression String Capture
+// Validates that Expression parameters correctly capture strings with special chars
+
+const std = @import("std");
+
+~[comptime|transform]event test.expr { expr: Expression, program: *const Program, allocator: std.mem.Allocator }
+| transformed { program: *const Program }
+
+~proc test.expr {
+    std.debug.print("Captured expression: '{s}'\n", .{expr});
+    return .{ .transformed = .{ .program = program } };
+}
+
+// Test 1: Simple string with comma inside
+~test.expr("Hello, world")
+| transformed program |> _
+
+// Test 2: String with multiple commas
+~test.expr("one, two, three")
+| transformed program |> _
+
+// Test 3: Escaped quotes - works!
+~test.expr("Hello \"world\"")
+| transformed program |> _

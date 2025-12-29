@@ -1,0 +1,147 @@
+// Koru Standard Library: Liquid Templating
+// =========================================
+//
+// Provides Liquid template rendering for code generation.
+// The first argument is the template, additional args become context.
+//
+// Syntax:
+//   {{ variable }}              - Output value from context
+//   {% if key %}...{% endif %}  - Conditional block
+//   {% unless key %}...{% endunless %} - Inverted conditional
+//
+// Usage:
+//   ~emit("Hello {{ name }}!", name: "Alice")
+//
+// Output: Hello Alice!
+
+~[comptime|runtime]
+
+const std = @import("std");
+
+// Emit template output at runtime (prints rendered template)
+// First positional arg is the template string, named args are context
+~[keyword|comptime|transform]pub event emit {
+    expr: Expression,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+// Internal event for shape checking (never runs)
+~[norun]pub event emit.impl {
+    text: []const u8,
+}
+
+~proc emit {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+    const liquid = @import("liquid");
+
+    // Get the flow from the item
+    const flow = if (item.* == .flow)
+        &item.flow
+    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
+        &item.subflow_impl.body.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    // Build Liquid context from named event arguments (skip expr)
+    var ctx = liquid.Context.init(allocator);
+
+    for (flow.invocation.args) |arg| {
+        // Skip the expr argument (template)
+        if (std.mem.eql(u8, arg.name, "expr")) continue;
+
+        // Strip quotes from string values
+        var value = arg.value;
+        if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') {
+            value = value[1 .. value.len - 1];
+        }
+        ctx.put(arg.name, .{ .string = value }) catch continue;
+    }
+
+    // Get template from expr (strip quotes)
+    var tpl = expr;
+    if (tpl.len >= 2 and tpl[0] == '"' and tpl[tpl.len - 1] == '"') {
+        tpl = tpl[1 .. tpl.len - 1];
+    }
+
+    // Render the Liquid template
+    const rendered = liquid.render(allocator, tpl, &ctx) catch |err| {
+        std.debug.print("Liquid template error: {}\n", .{err});
+        return .{ .transformed = .{ .program = program } };
+    };
+
+    // Escape the rendered output for use in a Zig string literal
+    var escaped = std.ArrayList(u8).initCapacity(allocator, rendered.len * 2) catch unreachable;
+    for (rendered) |c| {
+        switch (c) {
+            '"' => escaped.appendSlice(allocator, "\\\"") catch unreachable,
+            '\\' => escaped.appendSlice(allocator, "\\\\") catch unreachable,
+            '\n' => escaped.appendSlice(allocator, "\\n") catch unreachable,
+            '\r' => escaped.appendSlice(allocator, "\\r") catch unreachable,
+            '\t' => escaped.appendSlice(allocator, "\\t") catch unreachable,
+            else => escaped.append(allocator, c) catch unreachable,
+        }
+    }
+
+    // Generate inline print code
+    const inline_code = std.fmt.allocPrint(
+        allocator,
+        "@import(\"std\").debug.print(\"{s}\\n\", .{{}});",
+        .{escaped.items}
+    ) catch unreachable;
+
+    // Create impl path for shape checking
+    const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
+    impl_segments[0] = allocator.dupe(u8, "emit") catch unreachable;
+    impl_segments[1] = allocator.dupe(u8, "impl") catch unreachable;
+    const impl_path = ast.DottedPath{
+        .module_qualifier = flow.invocation.path.module_qualifier,
+        .segments = impl_segments,
+    };
+
+    // Build new invocation with @pass_ran annotation
+    const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+    for (flow.invocation.annotations, 0..) |ann, idx| {
+        new_inv_annotations[idx] = ann;
+    }
+    new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const new_invocation = ast.Invocation{
+        .path = impl_path,
+        .args = flow.invocation.args,
+        .annotations = new_inv_annotations,
+        .inserted_by_tap = flow.invocation.inserted_by_tap,
+        .from_opaque_tap = flow.invocation.from_opaque_tap,
+    };
+
+    const transformed_flow = ast.Flow{
+        .invocation = new_invocation,
+        .continuations = flow.continuations,
+        .annotations = flow.annotations,
+        .pre_label = flow.pre_label,
+        .post_label = flow.post_label,
+        .super_shape = flow.super_shape,
+        .inline_body = inline_code,
+        .is_pure = flow.is_pure,
+        .is_transitively_pure = flow.is_transitively_pure,
+        .location = flow.location,
+        .module = flow.module,
+    };
+
+    const new_item = if (item.* == .subflow_impl) blk: {
+        var new_subflow = item.subflow_impl;
+        new_subflow.body = .{ .flow = transformed_flow };
+        break :blk ast.Item{ .subflow_impl = new_subflow };
+    } else ast.Item{ .flow = transformed_flow };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    return .{ .transformed = .{ .program = program } };
+}

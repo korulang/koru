@@ -1,0 +1,23 @@
+// Test 105: Basic Inline Flow - Single Event Call
+// Tests the simplest inline flow: proc defined as a single event invocation
+const std = @import("std");
+
+~event add { x: i32, y: i32 }
+| done { result: i32 }
+
+~proc add = done { result: x + y }
+
+~event calculate { a: i32, b: i32 }
+| done { result: i32 }
+
+// Inline flow: just call add and pass through its result
+~proc calculate = add(x: a, y: b)
+| done d |> done { result: d.result }
+
+~event main {}
+~proc main {
+    const result = calculate_event.handler(.{ .a = 10, .b = 20 });
+    std.debug.print("Result: {}\n", .{result.done.result});
+}
+
+~main()

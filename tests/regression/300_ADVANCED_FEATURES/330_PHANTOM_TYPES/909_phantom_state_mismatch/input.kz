@@ -1,0 +1,31 @@
+// Test 909: Phantom State Mismatch Detection
+//
+// Validates that the compiler REJECTS flows where phantom states don't match.
+//
+// This test deliberately creates a state mismatch:
+// - open_file returns *File[open]
+// - close_file expects *File[closed]
+// - Trying to pass [open] to event expecting [closed] should FAIL
+
+const std = @import("std");
+
+~event open_file {}
+| opened { file: *std.fs.File[open] }
+
+~proc open_file {
+    const allocator = std.heap.page_allocator;
+    const f = allocator.create(std.fs.File) catch unreachable;
+    return .{ .opened = .{ .file = f } };
+}
+
+~event close_file { file: *std.fs.File[closed] }
+| done {}
+
+~proc close_file {
+    return .{ .done = .{} };
+}
+
+// This flow should FAIL: trying to pass [open] to event expecting [closed]
+~open_file()
+| opened o |> close_file(file: o.file)
+    | done |> _

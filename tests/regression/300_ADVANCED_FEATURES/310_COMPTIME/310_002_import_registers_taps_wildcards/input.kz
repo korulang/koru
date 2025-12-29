@@ -1,0 +1,53 @@
+// Test 168: Import Registers Taps Automatically
+//
+// Tests that importing a module automatically registers any taps defined in it.
+// This is the mechanism that makes `~[profile]import "$std/profiler"` work -
+// the import adds the module's universal taps to the tap registry, enabling
+// full-program instrumentation with a single line.
+//
+// Structure:
+//   test_lib/
+//     logger.kz  → Defines a universal tap ~* -> * that logs all events
+//
+// Expected: The logger's tap fires for ALL events, even though we didn't
+//          explicitly write the tap pattern in this file.
+//
+// This demonstrates "ambient" behavior - importing makes taps active.
+
+const std = @import("std");
+
+// Import the logger module (which defines universal taps)
+~import "$app/test_lib/logger"
+
+// Define some events to test with
+~event compute { x: i32 }
+| result { value: i32 }
+
+~event format { value: i32 }
+| formatted { text: []const u8 }
+
+~event display { text: []const u8 }
+| done {}
+
+~proc compute {
+    std.debug.print("compute({d})\n", .{x});
+    return .{ .result = .{ .value = x * 2 } };
+}
+
+~proc format {
+    std.debug.print("format({d})\n", .{value});
+    // Allocate temporary string for testing
+    const text = "formatted";
+    return .{ .formatted = .{ .text = text } };
+}
+
+~proc display {
+    std.debug.print("Final: {s}\n", .{text});
+    return .{ .done = .{} };
+}
+
+// Call events - the logger's universal tap should intercept them!
+~compute(x: 42)
+| result r |> format(value: r.value)
+    | formatted f |> display(text: f.text)
+        | done |> _

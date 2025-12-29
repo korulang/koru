@@ -1,0 +1,8 @@
+// This module ALSO defines "build" (no default marker)
+// This creates ambiguity - which one should be used?
+
+~import "$std/build"
+
+~std.build:step(name: "build") {
+    echo "Build from build_config - AMBIGUOUS!"
+}

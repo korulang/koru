@@ -1,0 +1,35 @@
+// Test 202b: Shadowing behavior - compiler forbids duplicate binding names
+// This test confirms that Koru does NOT allow binding shadowing.
+//
+// Expected: This should compile and run successfully with unique binding names.
+// If this test passes, it proves shadowing is forbidden (changing 'd' to 'r' breaks it).
+
+const std = @import("std");
+
+~event first { value: i32 }
+| result { num: i32 }
+
+~proc first {
+    return .{ .result = .{ .num = value * 2 } };
+}
+
+~event second { value: i32 }
+| data { num: i32 }
+
+~proc second {
+    return .{ .data = .{ .num = value * 3 } };
+}
+
+~event show { outer_val: i32, inner_val: i32 }
+| done {}
+
+~proc show {
+    std.debug.print("Outer: {}, Inner: {}\n", .{outer_val, inner_val});
+    return .{ .done = .{} };
+}
+
+// Test: Use unique binding names (r and d)
+~first(value: 10)
+| result r |> second(value: r.num)
+    | data d |> show(outer_val: r.num, inner_val: d.num)
+        | done |> _

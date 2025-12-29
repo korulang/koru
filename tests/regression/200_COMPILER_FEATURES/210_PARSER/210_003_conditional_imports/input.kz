@@ -1,0 +1,20 @@
+// Test conditional imports with annotations
+//
+// This test verifies that conditional imports are DEADSTRIPPED when their
+// flags are not set. Since we run without --profile, --test, or --debug flags,
+// all conditional imports below should be completely absent from the AST.
+//
+// The unconditional import should be parsed normally.
+
+// Unconditional import (baseline) - should appear in AST
+~import "$std/compiler"
+
+// Conditional imports - should NOT appear in AST (deadstripped)
+~[profile]import "$std/profiler"
+
+~[test]import "$std/testing"
+
+~[debug|trace]import "$std/debug"
+
+~event hello {}
+| done {}

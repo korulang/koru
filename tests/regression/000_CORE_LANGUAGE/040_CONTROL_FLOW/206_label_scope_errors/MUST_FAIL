@@ -1,0 +1,10 @@
+Label Scope Validation Test
+
+This test MUST FAIL to verify that labels are flow-scoped.
+
+Expected behavior:
+- Flow 1 defines label 'loop'
+- Flow 2 tries to jump to 'loop' which is out of scope
+- Shape checker should reject this with "Unknown label 'loop'"
+
+This validates that label scope checking is working correctly in the backend.

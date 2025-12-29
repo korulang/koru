@@ -1,0 +1,76 @@
+// Test 829: Multi-event chain (realistic composition)
+//
+// Real programs chain multiple events together with deep nesting.
+// This tests that the compiler can handle:
+// - 5+ events in a chain
+// - 3+ levels of nested continuations
+// - Data flowing through multiple stages
+// - Error handling at multiple levels
+
+const std = @import("std");
+
+// Stage 1: Parse input
+~event parse { input: []const u8 }
+| parsed { value: i32 }
+| invalid { msg: []const u8 }
+
+~proc parse {
+    const value = std.fmt.parseInt(i32, input, 10) catch {
+        return .{ .@"invalid" = .{ .msg = "Not a number" } };
+    };
+    return .{ .@"parsed" = .{ .value = value } };
+}
+
+// Stage 2: Validate
+~event validate { value: i32 }
+| valid { value: i32 }
+| invalid { msg: []const u8 }
+
+~proc validate {
+    if (value < 0 or value > 100) {
+        return .{ .@"invalid" = .{ .msg = "Out of range" } };
+    }
+    return .{ .@"valid" = .{ .value = value } };
+}
+
+// Stage 3: Transform
+~event transform { value: i32 }
+| transformed { result: i32 }
+
+~proc transform {
+    return .{ .@"transformed" = .{ .result = value * 2 } };
+}
+
+// Stage 4: Format
+~event format { value: i32 }
+| formatted { text: []const u8 }
+
+~proc format {
+    const allocator = std.heap.page_allocator;
+    const text = std.fmt.allocPrint(allocator, "Result: {}", .{value}) catch {
+        return .{ .@"formatted" = .{ .text = "Error formatting" } };
+    };
+    return .{ .@"formatted" = .{ .text = text } };
+}
+
+// Stage 5: Display
+~event display { text: []const u8 }
+| done {}
+
+~proc display {
+    std.debug.print("{s}\n", .{text});
+    return .{ .@"done" = .{} };
+}
+
+// The chain: parse -> validate -> transform -> format -> display
+// With error handling at each stage
+~parse(input: "42")
+| parsed p |> validate(value: p.value)
+    | valid v |> transform(value: v.value)
+        | transformed t |> format(value: t.result)
+            | formatted f |> display(text: f.text)
+                | done |> _
+    | invalid i |> display(text: i.msg)
+        | done |> _
+| invalid i |> display(text: i.msg)
+    | done |> _

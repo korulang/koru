@@ -1,0 +1,62 @@
+// AoC 2024 Day 1 - Historian Hysteria
+~import "$std/fs"
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+// Storage for the two columns
+var left_list: [1000]i32 = undefined;
+var right_list: [1000]i32 = undefined;
+var count: usize = 0;
+
+~event parse_line { text: []const u8 }
+
+~proc parse_line {
+    // Parse "3   4" -> left=3, right=4
+    var iter = std.mem.tokenizeAny(u8, text, " \t");
+    if (iter.next()) |left_str| {
+        if (iter.next()) |right_str| {
+            left_list[count] = std.fmt.parseInt(i32, left_str, 10) catch 0;
+            right_list[count] = std.fmt.parseInt(i32, right_str, 10) catch 0;
+            count += 1;
+        }
+    }
+}
+
+~event solve {}
+
+~proc solve {
+    // Sort both lists
+    std.mem.sort(i32, left_list[0..count], {}, std.sort.asc(i32));
+    std.mem.sort(i32, right_list[0..count], {}, std.sort.asc(i32));
+
+    // Sum absolute differences
+    var total: i32 = 0;
+    for (0..count) |i| {
+        const diff = left_list[i] - right_list[i];
+        total += if (diff < 0) -diff else diff;
+    }
+
+    std.debug.print("Part 1: {d}\n", .{total});
+
+    // Part 2: Similarity score
+    var similarity: i64 = 0;
+    for (0..count) |i| {
+        const left_val = left_list[i];
+        var occurrences: i64 = 0;
+        for (0..count) |j| {
+            if (right_list[j] == left_val) occurrences += 1;
+        }
+        similarity += left_val * occurrences;
+    }
+
+    std.debug.print("Part 2: {d}\n", .{similarity});
+}
+
+// Read lines, parse each, then solve
+~std.fs:read_lines(path: "../data/input.txt")
+| lines data |> for(data)
+    | each line |> parse_line(text: line)
+    | done |> solve()
+| failed |> std.io:print.ln("Error reading file")

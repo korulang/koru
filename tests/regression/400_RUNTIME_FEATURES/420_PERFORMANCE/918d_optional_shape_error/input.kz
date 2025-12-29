@@ -1,0 +1,30 @@
+// Test 918d: Optional Branches - Shape Validation Error (NEGATIVE TEST)
+//
+// This test demonstrates:
+// 1. Optional branches are STILL subject to shape checking
+// 2. Handler that uses wrong payload shape on optional branch
+// 3. Should FAIL compilation with shape mismatch error
+// 4. Proves that "optional" means "can be omitted", NOT "can be misused"
+
+const std = @import("std");
+
+// Event with required + optional branches
+~event process { value: u32 }
+| success { result: u32 }        // REQUIRED
+| ?warning { msg: []const u8 }   // OPTIONAL - has 'msg' field
+
+~proc process {
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Value too large" } };
+    }
+    const doubled = value * 2;
+    return .{ .success = .{ .result = doubled } };
+}
+
+// Handler with WRONG payload binding on optional branch
+// warning branch has 'msg: []const u8' but handler tries to access 'result: u32'
+// This should ERROR even though warning is optional!
+~process(value: 150)
+| success { result } |> std.debug.print("Success: {}\n", .{result})
+| warning { result } |> std.debug.print("Warning: {}\n", .{result})
+//           ^^^^^^ ERROR: warning branch has 'msg', not 'result'!

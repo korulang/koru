@@ -1,0 +1,19 @@
+// Debug test: Check how tap continuations are parsed
+// Run: koruc --ast-json tap_continuation_debug.kz
+// NO IMPORTS - pure parser test
+
+~event source { x: i32 }
+| value { data: i32 }
+
+~event log { data: i32 }
+| done {}
+
+~proc log {
+    return .{ .done = .{} };
+}
+
+// Tap with nested continuation
+// Question: Is "done" in tap.continuations[1] or tap.continuations[0].nested[0]?
+~* -> *
+| value v |> log(data: v.data)
+    | done |> _

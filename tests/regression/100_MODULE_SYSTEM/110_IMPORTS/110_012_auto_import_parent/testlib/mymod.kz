@@ -1,0 +1,6 @@
+// Parent module - should be auto-imported when importing mymod/sub
+
+~pub event parent_hello {}
+
+~proc parent_hello {
+}

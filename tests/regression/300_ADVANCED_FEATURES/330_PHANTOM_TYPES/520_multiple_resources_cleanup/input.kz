@@ -1,0 +1,15 @@
+// Test 520: Multiple resources with cleanup obligations
+// Tests that the compiler tracks EACH resource separately
+//
+// Key points:
+// - open_two() returns TWO files, each with [opened!]
+// - We must close BOTH files
+// - Each obligation is tracked separately by binding.field path
+// - f.file1 and f.file2 are separate obligations
+
+~import "$app/fs"
+
+~app.fs:open_two(path1: "test1.txt", path2: "test2.txt")
+| opened f |> app.fs:close(file: f.file1)  // Close first file
+    | closed |> app.fs:close(file: f.file2)  // Close second file
+        | closed |> _  // Both cleaned up!

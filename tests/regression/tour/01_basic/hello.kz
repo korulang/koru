@@ -1,0 +1,25 @@
+// Tour 01: Basic Events and Procs
+// This is the simplest Koru program - a hello world!
+
+const std = @import("std");
+
+// Declare an event with input and output branches
+~event greet { name: []const u8 }
+| welcomed { message: []const u8 }
+
+// Implement the event with a proc
+~proc greet {
+    // Simple version - just return a message based on the name
+    if (std.mem.eql(u8, e.name, "World")) {
+        return .{ .welcomed = .{ .message = "Hello, World!" }};
+    } else if (std.mem.eql(u8, e.name, "Koru")) {
+        return .{ .welcomed = .{ .message = "Hello, Koru!" }};
+    } else {
+        // For any other name, just greet generically
+        return .{ .welcomed = .{ .message = "Hello there!" }};
+    }
+}
+
+// Top-level flow that executes
+~greet(name: "Koru Tour")
+| welcomed w |> _  // Terminal marker ends the flow

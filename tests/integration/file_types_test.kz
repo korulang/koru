@@ -1,0 +1,63 @@
+// Test: File vs EmbedFile types
+// Features: Compile-time file reading vs runtime embedding
+
+// Test data files (would be actual files in practice)
+// Using string literals for testing
+
+// Event using File type (compile-time only)
+~event transpiler { 
+    source: File  // Should not be embedded in binary
+}
+| transpiled { 
+    output: []const u8 
+}
+
+// Event using EmbedFile type (runtime embedding)
+~event assets {
+    icon: EmbedFile  // Should be embedded in binary
+}
+| loaded {
+    data: []const u8
+}
+
+// Event using both types
+~event builder {
+    config: File,        // Compile-time only
+    template: File,      // Compile-time only
+    resource: EmbedFile  // Runtime embedded
+}
+| built {
+    result: []const u8
+}
+
+// Test implementations
+~proc transpiler {
+    // Process file at compile-time
+    // In real usage, would parse/transform the source
+    return .{ .transpiled = .{ .output = "transpiled" } };
+}
+
+~proc assets {
+    // Return embedded file data
+    return .{ .loaded = .{ .data = e.icon } };
+}
+
+~proc builder {
+    // Use config and template at compile-time
+    // Resource available at runtime
+    return .{ .built = .{ .result = "built" } };
+}
+
+// Test flows
+~transpiler(source: "test.txt")
+| transpiled t |> _
+
+~assets(icon: "icon.png")
+| loaded l |> _
+
+~builder(
+    config: "config.json",
+    template: "template.kz", 
+    resource: "data.bin"
+)
+| built b |> _

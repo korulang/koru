@@ -1,0 +1,86 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 208: Simple server-style flow with nested labels
+// A simplified synthetic example inspired by tcp-echo for flow visualization
+// ============================================================================
+
+const std = @import("std");
+
+// Server events
+~event listen { port: u16 }
+| ready { server: u32 }
+| failed { msg: []const u8 }
+
+~proc listen {
+    std.debug.print("Listening on port {}\n", .{port});
+    if (port == 0) {
+        return .{ .failed = .{ .msg = "Invalid port" } };
+    }
+    return .{ .ready = .{ .server = port } };
+}
+
+~event accept { server: u32 }
+| connected { conn: u32, server: u32 }
+| failed { server: u32 }
+
+~proc accept {
+    std.debug.print("Accepting connection\n", .{});
+    if (server == 9999) {
+        return .{ .failed = .{ .server = server } };
+    }
+    return .{ .connected = .{ .conn = server + 1, .server = server } };
+}
+
+~event process { conn: u32 }
+| done { conn: u32 }
+| retry { conn: u32 }
+| error { conn: u32, msg: []const u8 }
+
+~proc process {
+    std.debug.print("Processing connection {}\n", .{conn});
+    if (conn % 3 == 0) {
+        return .{ .error = .{ .conn = conn, .msg = "Processing error" } };
+    }
+    if (conn % 2 == 0) {
+        return .{ .done = .{ .conn = conn } };
+    }
+    return .{ .retry = .{ .conn = conn } };
+}
+
+~event close { conn: u32 }
+| closed { }
+
+~proc close {
+    std.debug.print("Closed connection {}\n", .{conn});
+    return .{ .closed = .{} };
+}
+
+~event log_error { conn: u32, msg: []const u8 }
+| logged { conn: u32 }
+
+~proc log_error {
+    std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
+    return .{ .logged = .{ .conn = conn } };
+}
+
+~event cleanup { conn: u32 }
+| cleaned { }
+
+~proc cleanup {
+    std.debug.print("Cleaning up connection {}\n", .{conn});
+    return .{ .cleaned = .{} };
+}
+
+// Main flow with nested labels
+~listen(port: 8080)
+| ready s |> #accept_loop accept(server: s.server)
+    | connected c |> #process_loop process(conn: c.conn)
+        | done d |> close(conn: d.conn)
+            | closed |> @accept_loop(server: c.server)
+        | retry r |> @process_loop(conn: r.conn)
+        | error e |> log_error(conn: e.conn, msg: e.msg)
+            | logged l |> cleanup(conn: l.conn)
+                | cleaned |> @accept_loop(server: c.server)
+    | failed f |> @accept_loop(server: f.server)
+| failed |> _

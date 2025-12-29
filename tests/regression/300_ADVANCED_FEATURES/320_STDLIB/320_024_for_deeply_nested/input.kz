@@ -1,0 +1,34 @@
+// Test: ~for deeply nested in continuation hierarchy
+//
+// This tests the case where ~for is several levels deep in nested continuations,
+// like in the nbody benchmark:
+//   | result1 |> event1() | done |> event2() | result2 |> for(...) | each |> ...
+//
+// The transform must search RECURSIVELY through nested continuations.
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+// Event chain to create deep nesting
+~event step1 {}
+| done {}
+
+~proc step1 {
+    return .{ .done = .{} };
+}
+
+~event step2 {}
+| done {}
+
+~proc step2 {
+    return .{ .done = .{} };
+}
+
+// Main flow: for is nested 2 levels deep
+~step1()
+| done |> step2()
+    | done |> for(0..3)
+        | each i |> std.io:println(text: "iteration")
+        | done |> std.io:println(text: "done")

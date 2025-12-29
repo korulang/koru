@@ -1,0 +1,12 @@
+// Test: End-of-line comments with //
+// Koru should support // comments anywhere on a line
+
+const std = @import("std"); // This is an EOL comment
+
+~event greet {} // Event with EOL comment
+
+~proc greet {
+    std.debug.print("Hello!\n", .{}); // Print with comment
+}
+
+~greet() // Invoke with comment

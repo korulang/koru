@@ -1,0 +1,33 @@
+// Test 107: Inline Flow with Binding Usage
+// Tests that bindings capture results and can be used in expressions
+const std = @import("std");
+
+~event double { value: i32 }
+| done { result: i32 }
+
+~proc double = done { result: value * 2 }
+
+~event format { number: i32 }
+| done { message: []const u8 }
+
+~proc format {
+    // Allocate message (simplified for test)
+    const msg = "Value";
+    return .{ .done = .{ .message = msg } };
+}
+
+~event process { input: i32 }
+| done { output: []const u8 }
+
+// Binding captures double's result, then uses it in format
+~proc process = double(value: input)
+| done doubled |> format(number: doubled.result)
+    | done formatted |> done { output: formatted.message }
+
+~event main {}
+~proc main {
+    const result = process_event.handler(.{ .input = 21 });
+    std.debug.print("Output: {s}\n", .{result.done.output});
+}
+
+~main()

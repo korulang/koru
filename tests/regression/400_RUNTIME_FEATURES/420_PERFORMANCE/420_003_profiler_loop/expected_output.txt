@@ -1,0 +1,8 @@
+Starting nested loops...
+Outer: 1
+  Inner: 1, 1
+  Inner: 1, 2
+Outer: 2
+  Inner: 2, 1
+  Inner: 2, 2
+Outer: 3

@@ -1,0 +1,15 @@
+// Test 380_003: Source Metadata in Templates
+//
+// Templates have access to source location metadata:
+//   {{ source.file }}   - file path
+//   {{ source.line }}   - line number
+//   {{ source.module }} - module name
+//
+// This enables rich debug logging, tracing, and error messages
+// with zero manual annotation.
+
+~import "$std/template"
+
+~std.template:emit {
+    Called from {{ source.file }}:{{ source.line }}
+}

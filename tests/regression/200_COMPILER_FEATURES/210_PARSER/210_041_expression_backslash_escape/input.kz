@@ -1,0 +1,18 @@
+// Test 210_041: Expression Backslash Escape
+// BUG: Strings with escaped backslashes fail to parse correctly
+//
+// This test captures a known limitation in Expression string capture.
+// Strings like "path\\to\\file" contain \t and \f which get misinterpreted.
+
+const std = @import("std");
+
+~[comptime|transform]event test.expr { expr: Expression, program: *const Program, allocator: std.mem.Allocator }
+| transformed { program: *const Program }
+
+~proc test.expr {
+    std.debug.print("Captured expression: '{s}'\n", .{expr});
+    return .{ .transformed = .{ .program = program } };
+}
+
+// This should work but currently fails with "Zig code not allowed in flows"
+~test.expr("path\\to\\file")

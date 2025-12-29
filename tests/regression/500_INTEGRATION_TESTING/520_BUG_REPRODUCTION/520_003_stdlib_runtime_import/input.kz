@@ -1,0 +1,53 @@
+// Test 995: User programs cannot import stdlib modules at runtime yet
+//
+// BUG: User programs SHOULD be able to import stdlib modules like $std/parser
+//      and use them at runtime, but can't because ~build.requires isn't implemented
+//
+// CURRENT: Backend compiles output_emitted.zig with bare `zig build-exe`
+//          This doesn't set up module imports, so @import("parser") fails
+//
+// EXPECTED: Once ~build.requires is implemented:
+//   1. User declares: ~build.requires { ... set up parser module ... }
+//   2. Backend generates build.zig with module configuration
+//   3. Final compilation has modules available
+//   4. User code can actually call parser.source_event.handler()
+//
+// Related: docs/BUILD_REQUIRES.md
+
+~import "$std/parser"
+
+const std = @import("std");
+
+~event test_parser_runtime {}
+| success {}
+
+~proc test_parser_runtime {
+    const allocator = std.heap.page_allocator;
+
+    // This code is CORRECT but won't work until ~build.requires is implemented
+    const test_source =
+        \\~event hello {}
+        \\| done {}
+    ;
+
+    // Call parser at USER RUNTIME (not comptime)
+    const result = parser.source_event.handler(.{
+        .source = test_source,
+        .file_name = "test.kz",
+        .allocator = allocator,
+    });
+
+    switch (result) {
+        .parsed => |p| {
+            std.debug.print("SUCCESS! Parsed {} items at runtime\n", .{p.ast.ast.items.len});
+        },
+        .parse_error => |e| {
+            std.debug.print("Parse error: {s}\n", .{e.message});
+        },
+    }
+
+    return .{ .success = .{} };
+}
+
+~test_parser_runtime()
+| success |> _

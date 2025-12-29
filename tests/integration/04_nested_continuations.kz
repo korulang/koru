@@ -1,0 +1,39 @@
+// Test: Nested continuations  
+// Features: indented continuation lines for pipeline branches
+
+const std = @import("std");
+
+~event data.validate { input: i32 }
+| valid { value: i32 }
+| invalid { }
+
+~proc data.validate {
+    if (e.input >= 0 and e.input <= 100) {
+        return .{ .@"valid" = .{ .value = e.input } };
+    }
+    return .{ .@"invalid" = .{} };
+}
+
+~event data.process { val: i32 }
+| done { result: i32 }
+| failed { }
+
+~proc data.process {
+    if (e.val != 0) {
+        return .{ .@"done" = .{ .result = @divTrunc(100, e.val) } };
+    }
+    return .{ .@"failed" = .{} };
+}
+
+~event io.report { msg: []const u8 }
+
+~proc io.report {
+    std.debug.print("{s}\n", .{e.msg});
+}
+
+// Nested continuations in pipeline
+~data.validate(input: 50)
+| valid v |> data.process(val: v.value)
+  | done d |> io.report(msg: "Success") |> _
+  | failed |> io.report(msg: "Process failed") |> _
+| invalid |> io.report(msg: "Invalid input") |> _

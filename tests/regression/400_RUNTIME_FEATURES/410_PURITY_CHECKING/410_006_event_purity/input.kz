@@ -1,0 +1,64 @@
+// Test event purity computation
+// Event purity is computed from ALL proc implementations
+// If ALL procs are pure -> event is pure
+// If ANY proc is impure -> event is impure
+
+const std = @import("std");
+
+// Event with single pure implementation -> pure event
+~event pure_add { x: i32, y: i32 }
+| done { result: i32 }
+
+~[pure]proc pure_add {
+    return .{ .done = .{ .result = x + y } };
+}
+
+// Event with single impure implementation -> impure event
+~event impure_log { msg: []const u8 }
+| done {}
+
+~proc impure_log {
+    std.debug.print("[LOG] {s}\n", .{msg});
+    return .{ .done = .{} };
+}
+
+// Use both events
+~event compute { a: i32, b: i32 }
+| done { result: i32 }
+
+~proc compute {
+    const sum = pure_add_event.handler(.{ .x = a, .y = b });
+
+    switch (sum) {
+        .done => |d| {
+            _ = impure_log_event.handler(.{ .msg = "Computed!" });
+            return .{ .done = .{ .result = d.result } };
+        },
+    }
+}
+
+~event print_number { n: i32 }
+| done {}
+
+~proc print_number {
+    std.debug.print("Result: {}\n", .{n});
+    return .{ .done = .{} };
+}
+
+~event main {}
+| done {}
+
+~proc main {
+    const result = compute_event.handler(.{ .a = 20, .b = 22 });
+
+    switch (result) {
+        .done => |d| {
+            _ = print_number_event.handler(.{ .n = d.result });
+        },
+    }
+
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

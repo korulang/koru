@@ -1,0 +1,14 @@
+// Simplest test without compiler bootstrap
+const std = @import("std");
+
+~event hello {}
+| done {}
+
+~proc hello {
+    std.debug.print("Hello from Koru!\n", .{});
+    return .{ .done = .{} };
+}
+
+pub fn main() void {
+    _ = hello.handler(.{});
+}

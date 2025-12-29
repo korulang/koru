@@ -1,0 +1,10 @@
+// Very simple test event
+
+~pub event test.hello {}
+| done {}
+
+~proc test.hello {
+    const std = @import("std");
+    std.debug.print("Hello from Koru std!\n", .{});
+    return .{ .@"done" = .{} };
+}

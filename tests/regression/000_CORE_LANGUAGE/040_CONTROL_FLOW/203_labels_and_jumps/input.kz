@@ -1,0 +1,28 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 013: Labels and jumps (looping mechanism)
+// Tests SPEC.md lines 293-294, 332-336
+// ============================================================================
+
+const std = @import("std");
+
+// Event for counting iteration
+~event count { current: i32, target: i32 }
+| next { value: i32, target: i32 }
+| done { final: i32 }
+
+~proc count {
+    std.debug.print("Count: {}\n", .{current});
+
+    if (current < target) {
+        return .{ .next = .{ .value = current + 1, .target = target } };
+    } else {
+        return .{ .done = .{ .final = current } };
+    }
+}
+
+// Flow using labels and jumps to loop
+~#loop count(current: 1, target: 5)
+| next n |> @loop(current: n.value, target: n.target)
+| done d |> _

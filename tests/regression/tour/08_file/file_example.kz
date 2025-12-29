@@ -1,0 +1,21 @@
+// Tour 08: File Type
+// Import files at compile-time and process them!
+
+const std = @import("std");
+
+// Event that takes a file at compile-time
+~event analyze_binary { data: File }
+| analyzed { size: usize, first_byte: u8 }
+
+// Proc that processes the embedded file
+~proc analyze_binary {
+    // e.data contains the file contents as []const u8 at compile-time!
+    return .{ .analyzed = .{ 
+        .size = e.data.len,
+        .first_byte = if (e.data.len > 0) e.data[0] else 0,
+    }};
+}
+
+// Use it with any file - the file gets embedded at compile-time
+~analyze_binary(data: "file_example.kz")
+| analyzed a |> _

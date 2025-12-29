@@ -1,0 +1,26 @@
+// Test 618: Explicit Source Parameter
+// First validate that explicit source: { } syntax works
+// TODO: Test implicit syntax after this works
+// Validates that Source parameters work like Source with implicit parameter name
+
+~import "$std/io"
+
+~[comptime|transform]event capture.source {
+    source: Source,
+    item: *const Item
+}
+| transformed { item: Item }
+
+~proc capture.source {
+    // For MVP: Just return the item unchanged to prove transform machinery works
+    // TODO: Actually transform the source into inline code
+    return .{ .transformed = .{ .item = item.* } };
+}
+
+// Use explicit source parameter
+// The transform replaces this entire flow with a new AST node
+~capture.source {
+    const x = 42;
+    const y = x + 1;
+}
+| transformed item |> _

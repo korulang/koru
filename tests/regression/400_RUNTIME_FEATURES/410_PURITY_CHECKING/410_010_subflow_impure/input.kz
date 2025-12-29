@@ -1,0 +1,21 @@
+// Test: Subflow calling unmarked (impure) proc should be transitively impure
+// Unmarked proc → Subflow calls it → Subflow should be transitively IMPURE
+
+const std = @import("std");
+
+// Impure operation (unmarked, so defaults to impure)
+~event log { message: []const u8 }
+| done {}
+
+~proc log {
+    std.debug.print("LOG: {s}\n", .{message});
+    return .{ .done = .{} };
+}
+
+// Main entry using subflow
+~event main {}
+| done {}
+
+// Subflow that calls impure event - should be transitively IMPURE
+~log(message: "Hello")
+| done |> _

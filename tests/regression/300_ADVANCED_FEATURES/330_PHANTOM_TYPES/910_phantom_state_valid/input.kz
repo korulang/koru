@@ -1,0 +1,33 @@
+// Test 910: Phantom State Valid Transitions
+//
+// Validates that phantom state transitions work correctly when states match.
+//
+// This test shows the happy path:
+// - open_file returns *File[open]
+// - close_file accepts *File[open] and returns *File[closed]
+// - States match, compilation succeeds!
+
+const std = @import("std");
+
+~event open_file {}
+| opened { file: *std.fs.File[open] }
+
+~proc open_file {
+    std.debug.print("File opened\n", .{});
+    const allocator = std.heap.page_allocator;
+    const f = allocator.create(std.fs.File) catch unreachable;
+    return .{ .opened = .{ .file = f } };
+}
+
+~event close_file { file: *std.fs.File[open] }
+| closed { file: *std.fs.File[closed] }
+
+~proc close_file {
+    std.debug.print("File closed\n", .{});
+    return .{ .closed = .{ .file = file } };
+}
+
+// This flow should SUCCEED: [open] → close_file accepts [open] → returns [closed]
+~open_file()
+| opened o |> close_file(file: o.file)
+    | closed c |> _

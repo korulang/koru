@@ -1,0 +1,22 @@
+// ============================================================================
+// Test 060b: Missing Required Branch
+// Tests that flow_checker catches missing required branches
+// ============================================================================
+
+// Event with both required and optional branches
+~event process { value: u32 }
+| success { result: u32 }        // REQUIRED
+| ?warning { msg: []const u8 }   // OPTIONAL
+
+// Proc implementation that can return both branches
+~proc process {
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Large value" } };
+    }
+    return .{ .success = .{ .result = value * 2 } };
+}
+
+// This flow is INVALID - missing required 'success' branch!
+~process(value: 10)
+| warning w |> _  // Only handling optional branch
+// Missing: | success s |> ...

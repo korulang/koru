@@ -1,0 +1,10 @@
+Expression strings with escaped backslashes (\\) fail to parse
+
+Strings like "path\\to\\file" contain sequences like \t and \f that get
+misinterpreted somewhere in the parsing pipeline, causing "Zig code not
+allowed in flows" errors.
+
+Fix: Need to properly handle escape sequences in the lexer's string tracking,
+or ensure backslashes are preserved through the pipeline.
+
+Low priority - escaped quotes work, which covers most use cases.

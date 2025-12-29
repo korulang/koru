@@ -1,0 +1,33 @@
+// Universal logger using module-level event globbing
+// Demonstrates the power of wildcard patterns in taps
+
+const std = @import("std");
+
+// Define a logging event
+~pub event log { event_name: []const u8 }
+| done {}
+
+~proc log {
+    std.debug.print("[TAP] Intercepted: {s}\n", .{event_name});
+    return .{ .done = .{} };
+}
+
+// Module-level glob: Intercept ALL events from main module
+// This single pattern matches input:compute, input:format, input:display, etc.
+// Perfect for module-wide profiling or logging!
+
+// Tap for compute event (.result branch)
+// Note: Tap flows must end with void - they're observers, not transformers
+~input:* -> *
+| result r |> log(event_name: "compute")
+    | done |> _
+
+// Tap for format event (.formatted branch)
+~input:* -> *
+| formatted f |> log(event_name: "format")
+    | done |> _
+
+// Tap for display event (.done branch)
+~input:* -> *
+| done |> log(event_name: "display")
+    | done |> _

@@ -1,0 +1,9 @@
+{
+  "name": "koru",
+  "version": "0.1.0",
+  "paths": {
+    "std": "./koru_std",
+    "lib": "./lib",
+    "test": "{ENTRY}"
+  }
+}

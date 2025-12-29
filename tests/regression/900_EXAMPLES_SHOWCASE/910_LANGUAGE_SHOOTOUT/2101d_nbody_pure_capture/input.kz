@@ -1,0 +1,197 @@
+// LANGUAGE SHOOTOUT: N-body Gravitational Simulation (IDIOMATIC FLOW)
+//
+// SNAPSHOT: This version demonstrates idiomatic Koru FLOW structure:
+// - Simplified branch syntax: `| energy f64` instead of `| result { energy: f64 }`
+// - Void events (no branches) for side-effecting operations
+// - ~for for simulation loop structure
+//
+// NOTE: The COMPUTATION is still Zig in the procs. This is "wrapped Zig".
+// See 2101e_nbody_pure_scalar for the PURE KORU version using ~capture.
+//
+// BENCHMARK RESULT: Matches Zig baseline (199.2ms vs 199.8ms = 1.00x)
+
+const std = @import("std");
+
+~import "$std/control"
+
+const PI: f64 = 3.141592653589793;
+const SOLAR_MASS: f64 = 4.0 * PI * PI;
+const DAYS_PER_YEAR: f64 = 365.24;
+const DT: f64 = 0.01;
+
+const Body = struct {
+    x: f64,
+    y: f64,
+    z: f64,
+    vx: f64,
+    vy: f64,
+    vz: f64,
+    mass: f64,
+};
+
+// ============================================================================
+// Events - using new simplified branch syntax
+// ============================================================================
+
+// Returns bodies array - simplified branch!
+~event initialize_bodies {}
+| bodies [5]Body
+
+~proc initialize_bodies {
+    return .{ .bodies = [_]Body{
+        .{ .x = 0, .y = 0, .z = 0, .vx = 0, .vy = 0, .vz = 0, .mass = SOLAR_MASS },
+        .{
+            .x = 4.84143144246472090e+00,
+            .y = -1.16032004402742839e+00,
+            .z = -1.03622044471123109e-01,
+            .vx = 1.66007664274403694e-03 * DAYS_PER_YEAR,
+            .vy = 7.69901118419740425e-03 * DAYS_PER_YEAR,
+            .vz = -6.90460016972063023e-05 * DAYS_PER_YEAR,
+            .mass = 9.54791938424326609e-04 * SOLAR_MASS,
+        },
+        .{
+            .x = 8.34336671824457987e+00,
+            .y = 4.12479856412430479e+00,
+            .z = -4.03523417114321381e-01,
+            .vx = -2.76742510726862411e-03 * DAYS_PER_YEAR,
+            .vy = 4.99852801234917238e-03 * DAYS_PER_YEAR,
+            .vz = 2.30417297573763929e-05 * DAYS_PER_YEAR,
+            .mass = 2.85885980666130812e-04 * SOLAR_MASS,
+        },
+        .{
+            .x = 1.28943695621391310e+01,
+            .y = -1.51111514016986312e+01,
+            .z = -2.23307578892655734e-01,
+            .vx = 2.96460137564761618e-03 * DAYS_PER_YEAR,
+            .vy = 2.37847173959480950e-03 * DAYS_PER_YEAR,
+            .vz = -2.96589568540237556e-05 * DAYS_PER_YEAR,
+            .mass = 4.36624404335156298e-05 * SOLAR_MASS,
+        },
+        .{
+            .x = 1.53796971148509165e+01,
+            .y = -2.59193146099879641e+01,
+            .z = 1.79258772950371181e-01,
+            .vx = 2.68067772490389322e-03 * DAYS_PER_YEAR,
+            .vy = 1.62824170038242295e-03 * DAYS_PER_YEAR,
+            .vz = -9.51592254519715870e-05 * DAYS_PER_YEAR,
+            .mass = 5.15138902046611451e-05 * SOLAR_MASS,
+        },
+    } };
+}
+
+// Void event - no branches needed!
+~event offset_momentum { bodies: []Body }
+
+~proc offset_momentum {
+    var px: f64 = 0.0;
+    var py: f64 = 0.0;
+    var pz: f64 = 0.0;
+
+    for (bodies) |body| {
+        px += body.vx * body.mass;
+        py += body.vy * body.mass;
+        pz += body.vz * body.mass;
+    }
+
+    bodies[0].vx = -px / SOLAR_MASS;
+    bodies[0].vy = -py / SOLAR_MASS;
+    bodies[0].vz = -pz / SOLAR_MASS;
+}
+
+// Returns energy - simplified branch!
+~event calculate_energy { bodies: []const Body }
+| energy f64
+
+~proc calculate_energy {
+    var e: f64 = 0.0;
+
+    for (bodies, 0..) |body, i| {
+        e += 0.5 * body.mass * (body.vx * body.vx + body.vy * body.vy + body.vz * body.vz);
+
+        var j = i + 1;
+        while (j < bodies.len) : (j += 1) {
+            const dx = body.x - bodies[j].x;
+            const dy = body.y - bodies[j].y;
+            const dz = body.z - bodies[j].z;
+            const distance = @sqrt(dx * dx + dy * dy + dz * dz);
+            e -= (body.mass * bodies[j].mass) / distance;
+        }
+    }
+
+    return .{ .energy = e };
+}
+
+// Void event - advances velocities
+~event advance_velocities { bodies: []Body, dt: f64 }
+
+~proc advance_velocities {
+    var i: usize = 0;
+    while (i < 5) : (i += 1) {
+        var j: usize = i + 1;
+        while (j < 5) : (j += 1) {
+            const dx = bodies[i].x - bodies[j].x;
+            const dy = bodies[i].y - bodies[j].y;
+            const dz = bodies[i].z - bodies[j].z;
+            const dist_sq = dx * dx + dy * dy + dz * dz;
+            const distance = @sqrt(dist_sq);
+            const mag = dt / (dist_sq * distance);
+
+            bodies[i].vx -= dx * bodies[j].mass * mag;
+            bodies[i].vy -= dy * bodies[j].mass * mag;
+            bodies[i].vz -= dz * bodies[j].mass * mag;
+
+            bodies[j].vx += dx * bodies[i].mass * mag;
+            bodies[j].vy += dy * bodies[i].mass * mag;
+            bodies[j].vz += dz * bodies[i].mass * mag;
+        }
+    }
+}
+
+// Void event - advances positions
+~event advance_positions { bodies: []Body, dt: f64 }
+
+~proc advance_positions {
+    for (bodies) |*body| {
+        body.x += dt * body.vx;
+        body.y += dt * body.vy;
+        body.z += dt * body.vz;
+    }
+}
+
+// Void event - print energy (workaround for print.ln bug)
+~event print_energy { e: f64 }
+
+~proc print_energy {
+    std.debug.print("{d:.9}\n", .{e});
+}
+
+// Arg parsing - returns n
+~event parse_args {}
+| n u32
+
+~proc parse_args {
+    const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
+    defer std.process.argsFree(std.heap.page_allocator, args);
+
+    if (args.len < 2) {
+        std.debug.print("Usage: {s} <iterations>\n", .{args[0]});
+        unreachable;
+    }
+
+    return .{ .n = std.fmt.parseInt(u32, args[1], 10) catch unreachable };
+}
+
+// ============================================================================
+// Main flow - IDIOMATIC KORU
+// ============================================================================
+
+~parse_args()
+| n iterations |> initialize_bodies()
+    | bodies b[mutable] |> offset_momentum(bodies: b[0..])
+        |> calculate_energy(bodies: b[0..])
+            | energy e1 |> print_energy(e: e1)
+                |> for(0..iterations)
+                    | each step |> advance_velocities(bodies: b[0..], dt: DT)
+                        |> advance_positions(bodies: b[0..], dt: DT)
+                    | done |> calculate_energy(bodies: b[0..])
+                        | energy e2 |> print_energy(e: e2)

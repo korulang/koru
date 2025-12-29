@@ -1,0 +1,35 @@
+// Test 167: Import Depth Limit Enforcement (MUST_FAIL)
+//
+// Tests that import paths are limited to 2 segments after the alias.
+// This enforces good architectural design by forcing extraction of
+// deeply nested paths into their own koru.json aliases.
+//
+// Maximum allowed depth:
+//   ✅ ~import "$app"                  (0 segments)
+//   ✅ ~import "$app/module"           (1 segment)
+//   ✅ ~import "$app/module/sub"       (2 segments)
+//   ❌ ~import "$app/a/b/c"            (3 segments - TOO DEEP!)
+//
+// Expected: PARSE003 error with helpful message about extracting to koru.json
+
+const std = @import("std");
+
+// This import has 3 segments after $app and should FAIL
+~import "$app/test_lib/net/tcp"
+
+~event test {}
+| done {}
+
+~proc test {
+    std.debug.print("Test: optional parent\n", .{});
+    return .{ .done = .{} };
+}
+
+// Use submodule (no parent exists, that's OK!)
+~app.test_lib.net.tcp:connect(host: "localhost", port: 8080)
+| connected |> std.debug.print("TCP connected!\n", .{})
+| failed |> std.debug.print("TCP failed\n", .{})
+
+// Run test
+~test()
+| done |> _

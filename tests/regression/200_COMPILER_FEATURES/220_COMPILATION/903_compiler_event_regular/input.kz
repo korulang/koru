@@ -1,0 +1,9 @@
+// Test if a regular (non-norun) compiler event is recognized
+
+~event hello {}
+| done {}
+
+// Try to invoke a regular compiler event
+~compiler.context.create | created ctx |> _
+
+~hello() | done |> _

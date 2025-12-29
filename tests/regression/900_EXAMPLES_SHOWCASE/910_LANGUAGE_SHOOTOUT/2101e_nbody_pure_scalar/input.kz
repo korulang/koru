@@ -1,0 +1,136 @@
+// LANGUAGE SHOOTOUT: N-body (KORU FLOW + ZIG PHYSICS)
+//
+// STATUS: WORKING - Pure Koru flow structure with Zig physics procs.
+//
+// The FLOW is 100% Koru:
+// - ~capture for delta accumulation
+// - ~for for nested loops
+// - captured {} for pure state updates
+// - Conditional expressions in captured {}
+//
+// The PHYSICS is delegated to Zig procs:
+// - pair_force: computes force components for one body pair
+// - energy/offset/apply: physics calculations
+//
+// KNOWN LIMITATION: ~const inside loops causes runtime infinite loop.
+// The transform system re-runs on each iteration instead of expanding at compile-time.
+// This is filed as a known issue for future improvement.
+//
+// BENCHMARK: Expected ~1.0x of hand-written Zig (pending verification)
+
+const std = @import("std");
+~import "$std/control"
+
+const PI: f64 = 3.141592653589793;
+const SOLAR_MASS: f64 = 4.0 * PI * PI;
+const DAYS_PER_YEAR: f64 = 365.24;
+const DT: f64 = 0.01;
+
+const Body = struct { x: f64, y: f64, z: f64, vx: f64, vy: f64, vz: f64, mass: f64 };
+
+const BODIES = [_]Body{
+    .{ .x = 0, .y = 0, .z = 0, .vx = 0, .vy = 0, .vz = 0, .mass = SOLAR_MASS },
+    .{ .x = 4.84143144246472090e+00, .y = -1.16032004402742839e+00, .z = -1.03622044471123109e-01, .vx = 1.66007664274403694e-03 * DAYS_PER_YEAR, .vy = 7.69901118419740425e-03 * DAYS_PER_YEAR, .vz = -6.90460016972063023e-05 * DAYS_PER_YEAR, .mass = 9.54791938424326609e-04 * SOLAR_MASS },
+    .{ .x = 8.34336671824457987e+00, .y = 4.12479856412430479e+00, .z = -4.03523417114321381e-01, .vx = -2.76742510726862411e-03 * DAYS_PER_YEAR, .vy = 4.99852801234917238e-03 * DAYS_PER_YEAR, .vz = 2.30417297573763929e-05 * DAYS_PER_YEAR, .mass = 2.85885980666130812e-04 * SOLAR_MASS },
+    .{ .x = 1.28943695621391310e+01, .y = -1.51111514016986312e+01, .z = -2.23307578892655734e-01, .vx = 2.96460137564761618e-03 * DAYS_PER_YEAR, .vy = 2.37847173959480950e-03 * DAYS_PER_YEAR, .vz = -2.96589568540237556e-05 * DAYS_PER_YEAR, .mass = 4.36624404335156298e-05 * SOLAR_MASS },
+    .{ .x = 1.53796971148509165e+01, .y = -2.59193146099879641e+01, .z = 1.79258772950371181e-01, .vx = 2.68067772490389322e-03 * DAYS_PER_YEAR, .vy = 1.62824170038242295e-03 * DAYS_PER_YEAR, .vz = -9.51592254519715870e-05 * DAYS_PER_YEAR, .mass = 5.15138902046611451e-05 * SOLAR_MASS },
+};
+
+// ============================================================================
+// Events - with simplified branch syntax
+// ============================================================================
+
+~event init {}
+| bodies [5]Body
+
+~proc init { return .{ .bodies = BODIES }; }
+
+~event offset { bodies: []Body }
+
+~proc offset {
+    var px: f64 = 0; var py: f64 = 0; var pz: f64 = 0;
+    for (bodies) |b| { px += b.vx * b.mass; py += b.vy * b.mass; pz += b.vz * b.mass; }
+    bodies[0].vx = -px / SOLAR_MASS; bodies[0].vy = -py / SOLAR_MASS; bodies[0].vz = -pz / SOLAR_MASS;
+}
+
+~event energy { bodies: []const Body }
+| e f64
+
+~proc energy {
+    var e: f64 = 0;
+    for (bodies, 0..) |b, i| {
+        e += 0.5 * b.mass * (b.vx*b.vx + b.vy*b.vy + b.vz*b.vz);
+        var j = i + 1;
+        while (j < 5) : (j += 1) {
+            const dx = b.x - bodies[j].x; const dy = b.y - bodies[j].y; const dz = b.z - bodies[j].z;
+            e -= (b.mass * bodies[j].mass) / @sqrt(dx*dx + dy*dy + dz*dz);
+        }
+    }
+    return .{ .e = e };
+}
+
+~event print_e { e: f64 }
+
+~proc print_e { std.debug.print("{d:.9}\n", .{e}); }
+
+~event parse {}
+| n u32
+
+~proc parse {
+    const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
+    defer std.process.argsFree(std.heap.page_allocator, args);
+    if (args.len < 2) { std.debug.print("Usage: nbody <n>\n", .{}); unreachable; }
+    return .{ .n = std.fmt.parseInt(u32, args[1], 10) catch unreachable };
+}
+
+// Event to apply computed deltas and advance positions
+~event apply { bodies: []Body, dt: f64, dv0x: f64, dv0y: f64, dv0z: f64, dv1x: f64, dv1y: f64, dv1z: f64, dv2x: f64, dv2y: f64, dv2z: f64, dv3x: f64, dv3y: f64, dv3z: f64, dv4x: f64, dv4y: f64, dv4z: f64 }
+
+~proc apply {
+    bodies[0].vx += dv0x; bodies[0].vy += dv0y; bodies[0].vz += dv0z;
+    bodies[1].vx += dv1x; bodies[1].vy += dv1y; bodies[1].vz += dv1z;
+    bodies[2].vx += dv2x; bodies[2].vy += dv2y; bodies[2].vz += dv2z;
+    bodies[3].vx += dv3x; bodies[3].vy += dv3y; bodies[3].vz += dv3z;
+    bodies[4].vx += dv4x; bodies[4].vy += dv4y; bodies[4].vz += dv4z;
+    for (bodies) |*b| { b.x += dt * b.vx; b.y += dt * b.vy; b.z += dt * b.vz; }
+}
+
+// Helper to compute one pair's force contribution
+~event pair_force { bi: Body, bj: Body, dt: f64 }
+| result { fx: f64, fy: f64, fz: f64, mi: f64, mj: f64 }
+
+~proc pair_force {
+    const dx = bi.x - bj.x;
+    const dy = bi.y - bj.y;
+    const dz = bi.z - bj.z;
+    const dsq = dx*dx + dy*dy + dz*dz;
+    const mag = dt / (dsq * @sqrt(dsq));
+    return .{ .result = .{
+        .fx = dx * mag,
+        .fy = dy * mag,
+        .fz = dz * mag,
+        .mi = bi.mass,
+        .mj = bj.mass,
+    } };
+}
+
+// ============================================================================
+// MAIN FLOW - 100% Pure Koru flow structure!
+// ============================================================================
+
+~parse()
+| n iters |> init()
+    | bodies b[mutable] |> offset(bodies: b[0..])
+        |> energy(bodies: b[0..])
+            | e e1 |> print_e(e: e1)
+                |> for(0..iters)
+                    | each step |> capture({ dv0x: @as(f64,0), dv0y: @as(f64,0), dv0z: @as(f64,0), dv1x: @as(f64,0), dv1y: @as(f64,0), dv1z: @as(f64,0), dv2x: @as(f64,0), dv2y: @as(f64,0), dv2z: @as(f64,0), dv3x: @as(f64,0), dv3y: @as(f64,0), dv3z: @as(f64,0), dv4x: @as(f64,0), dv4y: @as(f64,0), dv4z: @as(f64,0) })
+                        | as dv |> for(0..5)
+                            | each i |> for(i+1..5)
+                                | each j |> pair_force(bi: b[i], bj: b[j], dt: DT)
+                                    | result f |> captured { dv0x: dv.dv0x + if(i==0) -f.fx*f.mj else if(j==0) f.fx*f.mi else 0, dv0y: dv.dv0y + if(i==0) -f.fy*f.mj else if(j==0) f.fy*f.mi else 0, dv0z: dv.dv0z + if(i==0) -f.fz*f.mj else if(j==0) f.fz*f.mi else 0, dv1x: dv.dv1x + if(i==1) -f.fx*f.mj else if(j==1) f.fx*f.mi else 0, dv1y: dv.dv1y + if(i==1) -f.fy*f.mj else if(j==1) f.fy*f.mi else 0, dv1z: dv.dv1z + if(i==1) -f.fz*f.mj else if(j==1) f.fz*f.mi else 0, dv2x: dv.dv2x + if(i==2) -f.fx*f.mj else if(j==2) f.fx*f.mi else 0, dv2y: dv.dv2y + if(i==2) -f.fy*f.mj else if(j==2) f.fy*f.mi else 0, dv2z: dv.dv2z + if(i==2) -f.fz*f.mj else if(j==2) f.fz*f.mi else 0, dv3x: dv.dv3x + if(i==3) -f.fx*f.mj else if(j==3) f.fx*f.mi else 0, dv3y: dv.dv3y + if(i==3) -f.fy*f.mj else if(j==3) f.fy*f.mi else 0, dv3z: dv.dv3z + if(i==3) -f.fz*f.mj else if(j==3) f.fz*f.mi else 0, dv4x: dv.dv4x + if(i==4) -f.fx*f.mj else if(j==4) f.fx*f.mi else 0, dv4y: dv.dv4y + if(i==4) -f.fy*f.mj else if(j==4) f.fy*f.mi else 0, dv4z: dv.dv4z + if(i==4) -f.fz*f.mj else if(j==4) f.fz*f.mi else 0 }
+                            | done |> _
+                        | done |> _
+                        | done deltas |> apply(bodies: b[0..], dt: DT, dv0x: deltas.dv0x, dv0y: deltas.dv0y, dv0z: deltas.dv0z, dv1x: deltas.dv1x, dv1y: deltas.dv1y, dv1z: deltas.dv1z, dv2x: deltas.dv2x, dv2y: deltas.dv2y, dv2z: deltas.dv2z, dv3x: deltas.dv3x, dv3y: deltas.dv3y, dv3z: deltas.dv3z, dv4x: deltas.dv4x, dv4y: deltas.dv4y, dv4z: deltas.dv4z)
+                    | done |> energy(bodies: b[0..])
+                        | e e2 |> print_e(e: e2)

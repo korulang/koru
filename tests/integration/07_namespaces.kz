@@ -1,0 +1,20 @@
+// Minimal test for namespace duplication bug
+
+~event foo.bar { x: u32 }
+| ok { result: u32 }
+
+~event foo.baz { y: u32 }  
+| done { value: u32 }
+
+~proc foo.bar {
+    return .{ .@"ok" = .{ .result = e.x + 1 } };
+}
+
+~proc foo.baz {
+    return .{ .@"done" = .{ .value = e.y * 2 } };
+}
+
+// Main flow to test namespace handling
+~foo.bar(x: 10)
+| ok r |> foo.baz(y: r.result)
+  | done d |> _

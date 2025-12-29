@@ -1,0 +1,31 @@
+// Depth 5 test: Maximum stress test (10+1+2+3+4+5 = 25)
+const std = @import("std");
+
+~event add_one { value: i32 } | done { result: i32 }
+~proc add_one = done { result: value + 1 }
+
+~event add_two { value: i32 } | done { result: i32 }
+~proc add_two = done { result: value + 2 }
+
+~event add_three { value: i32 } | done { result: i32 }
+~proc add_three = done { result: value + 3 }
+
+~event add_four { value: i32 } | done { result: i32 }
+~proc add_four = done { result: value + 4 }
+
+~event add_five { value: i32 } | done { result: i32 }
+~proc add_five = done { result: value + 5 }
+
+~event chain { start: i32 } | done { result: i32 }
+
+~proc chain = add_one(value: start)
+| done a |> add_two(value: a.result)
+    | done b |> add_three(value: b.result)
+        | done c |> add_four(value: c.result)
+            | done d |> add_five(value: d.result)
+                | done e |> done { result: e.result }
+
+pub fn main() void {
+    const result = chain_event.handler(.{ .start = 10 });
+    std.debug.print("{}\n", .{result.done.result});
+}

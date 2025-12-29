@@ -1,0 +1,15 @@
+Template-based code generation for ~if transform
+
+The template lookup system works (320_018, 320_019 pass), but using templates
+from within stdlib modules has an import resolution issue. When control.kz
+imports template.kz and then tries to use ~std.template:define, the event
+is not found in the registry.
+
+This is a deeper issue with how stdlib modules are loaded and how imports
+are resolved during parsing. The workaround for now is using hardcoded
+code generation in the transform (which test 320_020 validates).
+
+TO FIX:
+1. Investigate why ~import in stdlib modules doesn't make events available
+2. Consider defining stdlib templates in a pre-loaded location
+3. Or fix the import resolution order for nested stdlib imports

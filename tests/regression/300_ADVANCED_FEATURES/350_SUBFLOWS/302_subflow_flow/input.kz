@@ -1,0 +1,41 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Flow-based subflow calling another event
+// Feature: ~event_name = other_event(args) | branch |> result { fields }
+// Verifies: Subflow can invoke events and map their outputs
+// ============================================================================
+
+const std = @import("std");
+
+~import "$std/io"
+
+// Helper event: doubles a number
+~event double { value: i32 }
+| result { doubled: i32 }
+
+~proc double {
+    return .{ .result = .{ .doubled = value * 2 } };
+}
+
+// Event to test
+~event process { input: i32 }
+| final { output: i32 }
+
+// Subflow: calls double and maps its output
+~process = double(value: input)
+| result r |> final { output: r.doubled }
+
+// Helper to print i32
+~event print_result { value: i32 }
+| done {}
+
+~proc print_result {
+    std.debug.print("{}\n", .{value});
+    return .{ .done = .{} };
+}
+
+// Test: 21 * 2 = 42
+~process(input: 21)
+| final f |> print_result(value: f.output)
+    | done |> _

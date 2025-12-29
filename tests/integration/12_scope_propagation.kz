@@ -1,0 +1,41 @@
+// Test: Scope propagation in nested continuations
+// Expected: Parent bindings are accessible in nested continuations
+// Verifies: Lexical scoping works correctly across continuation boundaries
+
+~event user.login { username: []const u8 }
+| authenticated { user_id: i32, session: []const u8 }
+| failed { reason: []const u8 }
+
+~proc user.login {
+    const std = @import("std");
+    if (std.mem.eql(u8, e.username, "admin")) {
+        return .{ .@"authenticated" = .{ .user_id = 1, .session = "abc123" } };
+    }
+    return .{ .@"failed" = .{ .reason = "invalid user" } };
+}
+
+~event data.fetch { user_id: i32, session: []const u8 }
+| success { data: []const u8, count: i32 }
+| unauthorized {}
+
+~proc data.fetch {
+    const std = @import("std");
+    if (e.user_id == 1 and std.mem.eql(u8, e.session, "abc123")) {
+        return .{ .@"success" = .{ .data = "secret data", .count = 42 } };
+    }
+    return .{ .@"unauthorized" = .{} };
+}
+
+~event audit.log { user_id: i32, action: []const u8, details: []const u8 }
+
+~proc audit.log {
+    const std = @import("std");
+    std.debug.print("AUDIT: user={d} action={s} details={s}\n", .{ e.user_id, e.action, e.details });
+}
+
+// Test: Parent binding 'auth' accessible in nested continuations
+~user.login(username: "admin")
+| authenticated auth |> data.fetch(user_id: auth.user_id, session: auth.session)
+  | success s |> audit.log(user_id: auth.user_id, action: "data_access", details: s.data) |> _
+  | unauthorized |> audit.log(user_id: auth.user_id, action: "unauthorized_attempt", details: auth.session) |> _
+| failed |> _

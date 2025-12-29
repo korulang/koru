@@ -1,0 +1,60 @@
+const std = @import("std");
+
+~event process.item { item: []const u8 }
+| next { item: []const u8 }
+| done {}
+| error { msg: []const u8 }
+
+~proc process.item {
+    // Simulate processing
+    if (std.mem.eql(u8, e.item, "error")) {
+        return .@"error"(.{ .msg = "Processing failed" });
+    }
+    if (std.mem.eql(u8, e.item, "last")) {
+        return .@"done"(.{});
+    }
+    return .@"next"(.{ .item = "next" });
+}
+
+~event log.error { msg: []const u8 }
+| logged {}
+
+~proc log.error {
+    std.debug.print("ERROR: {s}\n", .{e.msg});
+    return .@"logged"(.{});
+}
+
+~event log.info { msg: []const u8 }
+| logged {}
+
+~proc log.info {
+    std.debug.print("INFO: {s}\n", .{e.msg});
+    return .@"logged"(.{});
+}
+
+~event std.debug.print { msg: []const u8 }
+| printed {}
+
+~proc std.debug.print {
+    std.debug.print("{s}\n", .{e.msg});
+    return .@"printed"(.{});
+}
+
+// Version 1: Standalone label declaration (top-level) 
+// Using new # syntax for label declaration
+~#handle_error
+| error e |> log.error (msg: e.msg) |> _
+| done |> log.info (msg: "Processing complete") |> _
+
+// Version 2: Post-invocation label (anchors after the call)
+// Using new # syntax for anchor, @ for jump
+~process.item (item: "first") #process_loop
+| next n |> process.item (item: n.item) @process_loop
+| done |> std.debug.print (msg: "All done!") |> _
+| error e |> std.debug.print (msg: e.msg) |> _
+
+// Version 3: Pre-invocation label (anchors before the call)
+~#retry_process process.item (item: "start")
+| next n |> process.item (item: n.item) @retry_process
+| done |> log.info (msg: "Complete") |> _
+| error e |> log.error (msg: e.msg) |> _

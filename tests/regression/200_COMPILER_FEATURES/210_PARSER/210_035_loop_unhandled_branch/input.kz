@@ -1,0 +1,37 @@
+// Test: Missing branch handler with tap and data in labeled loop
+//
+// Exact reproduction of 310_014 scenario that caused infinite loop.
+
+const std = @import("std");
+
+~event counter { n: i32 }
+| next { value: i32 }
+| done { final: i32 }
+
+~proc counter {
+    if (n < 3) {
+        return .{ .next = .{ .value = n + 1 } };
+    }
+    return .{ .done = .{ .final = n } };
+}
+
+~event log_iteration { value: i32 }
+
+~proc log_iteration {
+    std.debug.print("Iteration: {}\n", .{value});
+}
+
+// Tap that fires on counter transitions
+~counter -> * | next v |> log_iteration(value: v.value)
+
+~event start {}
+| ready {}
+
+~proc start {
+    return .{ .ready = .{} };
+}
+
+// This is the broken case: loop with tap, missing done handler
+~start()
+| ready |> #loop counter(n: 1)
+    | next v |> @loop(n: v.value)

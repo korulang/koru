@@ -1,0 +1,14 @@
+// Test 150: Basic single-file import
+//
+// Tests importing a sibling .kz file
+// File imports use simple namespace: ~module:event()
+
+const std = @import("std");
+
+// Import sibling file helper.kz
+// Makes events available as ~app.helper:event()
+~import "$app/helper"
+
+// Use event from helper module (now fully qualified with src namespace)
+~app.helper:greet(name: "World")
+| greeted g |> _

@@ -1,0 +1,40 @@
+// ============================================================================
+// Test 060: Optional Branch Catch-All |? Syntax
+// Tests that the parser accepts optional branch catch-all patterns:
+// 1. Simple |? discard: |? |> _
+// 2. With Transition meta: |? Transition t |> log(t)
+// 3. With Profile meta: |? Profile p |> log(p)
+// 4. Mix of explicit handling + catch-all
+// ============================================================================
+
+// Event with required and optional branches
+~event process { value: u32 }
+| success { result: u32 }        // Required
+| ?warning { msg: []const u8 }   // Optional
+| ?debug { details: []const u8 } // Optional
+
+// Test 1: Simple |? discard
+~process(value: 10)
+| success s |> _
+|? |> _
+
+// Test 2: |? with Transition metatype binding
+~process(value: 20)
+| success s |> _
+|? Transition t |> _
+
+// Test 3: |? with Profile metatype binding
+~process(value: 30)
+| success s |> _
+|? Profile p |> _
+
+// Test 4: Mix explicit optional handling + catch-all
+~process(value: 40)
+| success s |> _
+| warning w |> _  // Explicit handling of optional branch
+|? |> _           // Catches remaining optional branches (debug)
+
+// Test 5: |? catches ALL unhandled optional branches
+~process(value: 50)
+| success s |> _
+|? Transition t |> _  // Catches both warning and debug

@@ -1,0 +1,43 @@
+// Fusion Optimization Pass
+// ==============================================================
+// Transforms chains of pure events into optimized variants.
+//
+// Architecture:
+// - Self-governing: checks --fusion flag to enable/disable
+// - Compile-time AST transformation (not runtime instrumentation)
+// - Lives in default compiler pipeline (no user import needed)
+// - Generates |fused variants with provenance tracking
+//
+// Status: Phase 2 - Transformation with Provenance
+// Related: tests/regression/1100_FUSION/FUSION.md
+
+const std = @import("std");
+
+// Event: Run fusion optimization on AST
+// Self-governing: checks enable_fusion flag to decide whether to run
+~event optimize.fusion {
+    ast: ProgramAST,
+    enable_fusion: bool
+}
+| optimized { opportunities_count: u32 }
+| unchanged {}
+
+~proc optimize.fusion {
+    // Self-governing: Check if fusion is enabled
+    if (!enable_fusion) {
+        return .{ .unchanged = .{} };
+    }
+
+    // Phase 2: For now, just pass through unchanged
+    // TODO: Implement fusion transformation
+    // - Detect fusion opportunities (reuse existing detector logic)
+    // - Generate |fused variant procs
+    // - Set derived_from pointers
+    // - Set optimization_applied = "fusion"
+    // - Add new procs to AST
+    // Note: 'ast' is automatically available in proc scope (modern Koru)
+
+    std.debug.print("\n🔥 FUSION OPTIMIZATION: Enabled but not yet implemented\n", .{});
+
+    return .{ .unchanged = .{} };
+}

@@ -1,0 +1,23 @@
+// Test 180: Concrete Source + Concrete Branch (VALID)
+//
+// Pattern: ~input:compute -> * | result r |>
+//
+// This is VALID because:
+// - Source is concrete (input:compute) - we know exactly which event
+// - Branch is concrete (result) - we know compute has .result branch
+// - Type safe: We can verify at compile time that compute.result exists
+
+const std = @import("std");
+
+~import "$app/test_lib/logger"
+
+~event compute { x: i32 }
+| result { value: i32 }
+
+~proc compute {
+    std.debug.print("compute({d})\n", .{x});
+    return .{ .result = .{ .value = x * 2 } };
+}
+
+~compute(x: 42)
+| result |> _

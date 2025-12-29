@@ -1,0 +1,19 @@
+// Benchmark: Sum using ACTUAL ~capture + ~for syntax
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+const N: usize = 100_000_000;  // 100M
+
+~event print_result { sum: i64 }
+
+~proc print_result {
+    std.debug.print("Koru capture sum: {d}\n", .{sum});
+}
+
+~capture(init: { sum: @as(i64, 0) })
+| as acc |> for(0..N)
+    | each i |> captured { sum: acc.sum + @as(i64, @intCast(i)) + 1 }
+| done result |> print_result(sum: result.sum)

@@ -1,0 +1,9 @@
+// Generic processor that accepts data in ANY state and preserves it
+
+~event process { data: *Data[M'_] }
+| done { data: *Data[M'_] }  // Wildcard: accepts any state, preserves it
+
+~proc process {
+    // Process the data without changing its state
+    return .{ .done = .{ .data = data } };
+}

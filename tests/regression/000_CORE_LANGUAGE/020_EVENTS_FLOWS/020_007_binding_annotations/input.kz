@@ -1,0 +1,26 @@
+// Test: Binding annotations in continuations
+// Verifies parser accepts annotations on binding variables: | branch binding[annotation] |>
+
+const std = @import("std");
+
+~event get_data {}
+| result { value: i32 }
+
+~proc get_data {
+    return .{ .result = .{ .value = 42 } };
+}
+
+// This event mutates the value it receives via a pointer
+~event mutate_and_print { ptr: *i32 }
+| done {}
+
+~proc mutate_and_print {
+    ptr.* += 1;  // Mutate the value
+    std.debug.print("Value: {d}\n", .{ptr.*});
+    return .{ .done = .{} };
+}
+
+// Test: Using [mutable] annotation so we can pass a mutable pointer
+~get_data()
+| result r[mutable] |> mutate_and_print(ptr: &r.value)
+  | done |> _

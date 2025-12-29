@@ -1,0 +1,63 @@
+{
+    "module_annotations": [
+        "comptime"
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_010_module_annotations/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_010_module_annotations/input.kz",
+                "line": 4,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "event",
+            "path": ["test", "event"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "value",
+                        "type": "u32",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "result",
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "output",
+                                "type": "u32",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false
+                            }
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_010_module_annotations/input.kz",
+                "line": 7,
+                "col": 0
+            }
+        }
+    ]
+}

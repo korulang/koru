@@ -1,0 +1,2 @@
+✅ Positive: 21 * 2 = 42
+✅ Negative: -5 → doubled = 0

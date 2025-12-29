@@ -1,0 +1,3 @@
+42 is positive
+-5 is not positive
+0 is not positive

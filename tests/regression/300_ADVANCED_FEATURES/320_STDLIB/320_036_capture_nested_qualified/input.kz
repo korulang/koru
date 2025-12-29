@@ -1,0 +1,27 @@
+// Test: Nested captures with binding-qualified field assignment
+//
+// When captures are nested, field names may conflict.
+// Use the binding name to qualify which capture to update:
+//   captured { outer.count: outer.count + inner.count }
+//
+// This makes data flow EXPLICIT at the syntax level!
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+~event print_results { outer_val: i32, inner_val: i32 }
+
+~proc print_results {
+    std.debug.print("outer={d}, inner={d}\n", .{outer_val, inner_val});
+}
+
+// Outer capture owns `outer_val`, inner capture owns `inner_val`
+// First test: just nested captures WITHOUT binding qualification
+// Each captured block only updates its OWN capture's field
+~capture(init: { outer_val: @as(i32, 0) })
+| as outer |> capture(init: { inner_val: @as(i32, 0) })
+    | as inner |> captured { inner_val: inner.inner_val + 10 }
+    | done inner_result |> captured { outer_val: outer.outer_val + inner_result.inner_val }
+| done final |> print_results(outer_val: final.outer_val, inner_val: 10)

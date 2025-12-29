@@ -1,0 +1,4 @@
+Writing
+write called from: file.read
+Writing
+write called from: network.fetch

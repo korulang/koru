@@ -1,0 +1,23 @@
+// Test: Single `captured` block updates multiple captures simultaneously
+// This demonstrates that captures create a combined state space where
+// field names must be unique, and `captured { a: X, b: Y }` updates
+// ALL captures that own those fields.
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+~event print_results { outer_val: i32, inner_val: i32 }
+
+~proc print_results {
+    std.debug.print("{d},{d}\n", .{outer_val, inner_val});
+}
+
+// Outer capture owns `outer`, inner capture owns `inner`
+// A single `captured` block updates BOTH captures at once
+~capture(expr: { outer: @as(i32, 0) })
+| as o |> capture(expr: { inner: @as(i32, 0) })
+    | as i |> captured { inner: 42, outer: 99 }
+    | done result |> print_results(outer_val: o.outer, inner_val: result.inner)
+| done final |> _

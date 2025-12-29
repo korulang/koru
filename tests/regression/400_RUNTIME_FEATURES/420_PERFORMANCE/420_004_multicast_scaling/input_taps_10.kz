@@ -1,0 +1,93 @@
+// Koru Event Taps - 10 Observers
+// Tests: How does tap overhead scale with subscriber count?
+// Answer: It doesn't. All taps fused at compile time.
+
+const std = @import("std");
+
+const MESSAGES: u64 = 10_000_000;
+
+var sum1: u64 = 0;
+var sum2: u64 = 0;
+var sum3: u64 = 0;
+var sum4: u64 = 0;
+var sum5: u64 = 0;
+var sum6: u64 = 0;
+var sum7: u64 = 0;
+var sum8: u64 = 0;
+var sum9: u64 = 0;
+var sum10: u64 = 0;
+
+~event count { i: u64 }
+| next { value: u64 }
+| done {}
+
+~proc count {
+    if (i >= MESSAGES) {
+        return .{ .done = .{} };
+    }
+    return .{ .next = .{ .value = i } };
+}
+
+// 10 Observers
+~event accumulate1 { value: u64 }
+~proc accumulate1 { sum1 += value; }
+
+~event accumulate2 { value: u64 }
+~proc accumulate2 { sum2 += value; }
+
+~event accumulate3 { value: u64 }
+~proc accumulate3 { sum3 += value; }
+
+~event accumulate4 { value: u64 }
+~proc accumulate4 { sum4 += value; }
+
+~event accumulate5 { value: u64 }
+~proc accumulate5 { sum5 += value; }
+
+~event accumulate6 { value: u64 }
+~proc accumulate6 { sum6 += value; }
+
+~event accumulate7 { value: u64 }
+~proc accumulate7 { sum7 += value; }
+
+~event accumulate8 { value: u64 }
+~proc accumulate8 { sum8 += value; }
+
+~event accumulate9 { value: u64 }
+~proc accumulate9 { sum9 += value; }
+
+~event accumulate10 { value: u64 }
+~proc accumulate10 { sum10 += value; }
+
+~event validate {}
+~proc validate {
+    const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
+    if (sum1 == expected and sum2 == expected and sum3 == expected and sum4 == expected and sum5 == expected and
+        sum6 == expected and sum7 == expected and sum8 == expected and sum9 == expected and sum10 == expected) {
+        std.debug.print("Koru (10 taps): Validated {} messages (checksum: {})\n", .{ MESSAGES, sum1 });
+    } else {
+        std.debug.print("Koru (10 taps): CHECKSUM MISMATCH!\n", .{});
+    }
+}
+
+~event start {} | ready {}
+~proc start { return .{ .ready = .{} }; }
+
+// 10 TAPS - ALL fused at compile time
+~count -> * | next v |> accumulate1(value: v.value)
+~count -> * | next v |> accumulate2(value: v.value)
+~count -> * | next v |> accumulate3(value: v.value)
+~count -> * | next v |> accumulate4(value: v.value)
+~count -> * | next v |> accumulate5(value: v.value)
+~count -> * | next v |> accumulate6(value: v.value)
+~count -> * | next v |> accumulate7(value: v.value)
+~count -> * | next v |> accumulate8(value: v.value)
+~count -> * | next v |> accumulate9(value: v.value)
+~count -> * | next v |> accumulate10(value: v.value)
+
+~count -> * | done |> validate()
+
+~start()
+| ready |> #loop count(i: 0)
+    | next n |> @loop(i: n.value + 1)
+    | done |> _

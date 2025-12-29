@@ -1,0 +1,25 @@
+// Test that subflow invocations need proper continuations
+
+~event data.process { value: u32 }
+| ok { result: u32 }
+| error { msg: []const u8 }
+
+// Subflow that returns branches
+~process_data (v) = data.process (value: v)
+| ok o |> data.process (value: o.result)
+| error e |> data.process (value: 0)
+
+// This should FAIL shape checking - no continuations for subflow's output!
+~process_data (42)
+
+// This should be OK - explicit termination
+~process_data (100)
+| ok |> _
+| error |> _
+
+// This should be OK - proper handling
+~process_data (200)  
+| ok o |> data.process (value: o.result)
+| error e |> data.process (value: 0)
+  | ok |> _
+  | error |> _

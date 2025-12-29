@@ -1,0 +1,31 @@
+// Test 831: Directory Import WITHOUT Public Markers
+//
+// Tests that non-public events CANNOT be imported.
+// This test SHOULD FAIL at parse time because the events in test_lib/
+// are not marked ~pub.
+//
+// Structure:
+//   test_lib/
+//     graphics.kz  -> test_lib.graphics: (NO ~pub markers)
+//     audio.kz     -> test_lib.audio: (NO ~pub markers)
+//
+// Expected behavior: PARSE FAILURE
+//   The parser should fail because test_lib.graphics:init is not public
+//
+// See test 831b for the SUCCESS case (with ~pub events)
+
+const std = @import("std");
+
+~import "$app/test_lib"
+
+// Initialize graphics subsystem
+~app.test_lib.graphics:init()
+
+// Initialize audio subsystem
+~app.test_lib.audio:init()
+
+// Render a frame
+~app.test_lib.graphics:render(frame: 42)
+
+// Play a sound
+~app.test_lib.audio:play(sound: "explosion.wav")

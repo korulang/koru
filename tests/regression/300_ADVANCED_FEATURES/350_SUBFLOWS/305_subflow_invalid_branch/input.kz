@@ -1,0 +1,26 @@
+// ============================================================================
+// Test 305: Subflow with Invalid Branch Reference
+// ============================================================================
+// Tests that the shape checker validates subflow continuations
+// A subflow that references a non-existent branch should fail shape checking
+// ============================================================================
+
+const std = @import("std");
+
+// Event with only ONE branch
+~event double { value: i32 }
+| doubled { value: i32 }
+
+~proc double {
+    return .{ .doubled = .{ .value = value * 2 } };
+}
+
+// Event to test
+~event process { input: i32 }
+| final { output: i32 }
+
+// INVALID subflow: references 'tripled' branch but double event has no such branch!
+// This should fail shape checking with "Event 'double' has no branch 'tripled'"
+~process = double(value: input)
+| doubled d |> final { output: d.value }
+| tripled t |> final { output: t.value }  // ERROR: 'tripled' doesn't exist!

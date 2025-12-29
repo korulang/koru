@@ -1,0 +1,32 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 509: Unknown module in phantom state
+// Tests that semantic phantom checker detects unknown module references
+// Demonstrates: Module resolution in phantom type annotations
+// Expected: Should FAIL with "unknown module" error
+
+~import "$std/io"
+
+const std = @import("std");
+
+// Define a dummy File type so Zig compilation works
+const File = struct {
+    handle: i32,
+};
+
+// Reference to 'unknown' module that doesn't exist
+// The semantic checker should detect that 'unknown' is not imported
+~event check_file { file: *File[unknown:open] }
+| done {}
+
+~proc check_file {
+    return .{ .done = .{} };
+}
+
+// Try to use the event - don't actually call it since File[unknown:open] is invalid
+// Just defining it should trigger the phantom checker
+// ~check_file(file: undefined)
+// | done |> io:println(text: "This should never run")
+
+~std.io:println(text: "Test file - phantom checker should fail before this runs")

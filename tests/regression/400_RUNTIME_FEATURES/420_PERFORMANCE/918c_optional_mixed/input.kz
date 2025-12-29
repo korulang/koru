@@ -1,0 +1,48 @@
+// Test 918c: Optional Branches - Mixed Usage
+//
+// This test demonstrates:
+// 1. Event with required and MULTIPLE optional branches
+// 2. Handler handles SOME optional branches but not others
+// 3. Verifies selective handling is allowed
+// 4. Tests that shape checker allows partial optional branch coverage
+
+const std = @import("std");
+
+// Event with required + multiple optional branches
+~event analyze { value: u32 }
+| success { result: u32 }         // REQUIRED: must be handled
+| ?warning { msg: []const u8 }    // OPTIONAL: handler chooses to handle
+| ?debug { info: []const u8 }     // OPTIONAL: handler chooses to IGNORE
+| ?trace { details: []const u8 }  // OPTIONAL: handler chooses to IGNORE
+
+~proc analyze {
+    // Sometimes return debug (which handler doesn't handle)
+    if (value == 0) {
+        return .{ .debug = .{ .info = "Zero value detected" } };
+    }
+
+    // Sometimes return trace (which handler doesn't handle)
+    if (value == 1) {
+        return .{ .trace = .{ .details = "Unit value detected" } };
+    }
+
+    // Sometimes return warning (which handler DOES handle)
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Large value" } };
+    }
+
+    // Normal success
+    const doubled = value * 2;
+    return .{ .success = .{ .result = doubled } };
+}
+
+// Handler handles success + warning, but IGNORES debug and trace
+// This is valid because debug and trace are optional!
+~analyze(value: 50)
+| success { result } |> std.debug.print("Success: {}\n", .{result})
+| warning { msg } |> std.debug.print("Warning: {s}\n", .{msg})
+// Intentionally NO continuations for debug or trace - should be fine
+
+~analyze(value: 150)
+| success { result } |> std.debug.print("Success: {}\n", .{result})
+| warning { msg } |> std.debug.print("Warning: {s}\n", .{msg})

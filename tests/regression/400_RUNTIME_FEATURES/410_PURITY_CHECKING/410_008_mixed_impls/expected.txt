@@ -1,0 +1,3 @@
+[IMPURE] Processing 21
+Result: 42
+

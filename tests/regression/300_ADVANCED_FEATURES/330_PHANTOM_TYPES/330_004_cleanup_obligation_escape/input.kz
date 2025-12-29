@@ -1,0 +1,26 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 513: Cleanup obligation escape
+// Tests that semantic phantom checker detects cleanup obligations not met
+// Demonstrates: ! marker for states requiring cleanup before disposal
+// Expected: Should FAIL with "cleanup obligation not met" error
+
+~import "$std/io"
+~import "$app/fs"
+
+// Open a file with opened! state
+// The ! marker means this state requires cleanup (calling app.fs:close)
+// before the flow terminates
+~app.fs:open(path: "test.txt")
+| opened f |> _  // ERROR: Flow ends with *File[opened!] not cleaned up!
+
+// This SHOULD fail because:
+// 1. app.fs:open returns *File[opened!]
+// 2. The flow terminates (_) without calling app.fs:close
+// 3. The cleanup obligation is not met
+
+// To fix, should do:
+// ~app.fs:open(path: "test.txt")
+// | opened f |> app.fs:close(file: f.file)
+//     | closed |> std.io:println(text: "File closed properly")

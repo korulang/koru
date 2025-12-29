@@ -1,0 +1,29 @@
+// AST Dumper - Observable debugging for compiler pipeline
+// Provides void event for dumping AST state at any pipeline stage
+//
+// Usage with taps:
+// ~* compiler.coordinate.frontend -> continued
+// |> dump_ast(ctx: ctx, stage: "post-frontend")
+//
+// ~* compiler.coordinate.optimize -> continued
+// |> dump_ast(ctx: ctx, stage: "post-optimization")  // See IR nodes!
+
+const std = @import("std");
+
+// Void event: Dump AST to stderr with stage label
+~pub event dump_ast { ctx: CompilerContext, stage: []const u8 }
+
+~proc dump_ast {
+    // TODO: Use ast_serializer to generate JSON
+    // For now, just print stage marker
+    std.debug.print("\n[AST DUMP: {s}]\n", .{stage});
+    std.debug.print("  Items: {d}\n", .{ctx.ast.items.len});
+    std.debug.print("  Passes completed: {d}\n", .{ctx.passes_completed});
+
+    // TODO: Serialize ctx.ast to JSON using ast_serializer
+    // const serializer = @import("ast_serializer");
+    // var buffer: [1024*1024]u8 = undefined;
+    // var fba = std.heap.FixedBufferAllocator.init(&buffer);
+    // const json = serializer.serializeToJson(ctx.ast, fba.allocator());
+    // std.debug.print("{s}\n", .{json});
+}

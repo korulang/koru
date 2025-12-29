@@ -1,0 +1,46 @@
+// Test subflows with actual output shapes
+
+~event data.validate { value: u32 }
+| valid { result: u32 }
+| invalid { reason: []const u8 }
+
+~event data.transform { input: u32 }
+| done { output: u32 }
+| error { msg: []const u8 }
+
+// Subflow that has an output shape (returns valid/invalid)
+~validate_and_double (v) = data.validate (value: v)
+| valid x |> data.transform (input: x.result)
+  | done d |> data.validate (value: d.output)  // Returns to outer shape
+  | error e |> invalid (reason: e.msg)          // Custom branch return
+| invalid i |> invalid (reason: i.reason)       // Pass through
+
+// Now use the subflow - it should require valid/invalid continuations
+~validate_and_double (42)
+| valid v |> data.transform (input: v.result)
+  | done |> _
+  | error |> _
+| invalid i |> data.validate (value: 0)
+  | valid |> _
+  | invalid |> _
+
+// Test in a pipeline
+~data.validate (value: 100)
+| valid v |> validate_and_double (v.result)
+  | valid v2 |> data.transform (input: v2.result)
+    | done |> _
+    | error |> _
+  | invalid |> _
+| invalid |> _
+
+~proc data.validate {
+    if (e.value > 50) {
+        return .{ .@"valid" = .{ .result = e.value } };
+    } else {
+        return .{ .@"invalid" = .{ .reason = "too small" } };
+    }
+}
+
+~proc data.transform {
+    return .{ .@"done" = .{ .output = e.input * 2 } };
+}

@@ -1,0 +1,25 @@
+// Test 833: Directory Namespace Collision Handling
+//
+// Tests that multiple modules in a directory can have events
+// with the same name (e.g., "init") without colliding.
+//
+// The directory structure provides automatic namespacing:
+//   engine/graphics.kz has "init" -> engine.graphics:init()
+//   engine/audio.kz has "init"    -> engine.audio:init()
+//   engine/physics.kz has "init"  -> engine.physics:init()
+//
+// All three "init" events coexist peacefully!
+
+const std = @import("std");
+
+~import "$app/engine"
+
+// Initialize all subsystems - same event name, different namespaces!
+~app.engine.graphics:init()
+~app.engine.audio:init()
+~app.engine.physics:init()
+
+// Shutdown in reverse order
+~app.engine.physics:shutdown()
+~app.engine.audio:shutdown()
+~app.engine.graphics:shutdown()

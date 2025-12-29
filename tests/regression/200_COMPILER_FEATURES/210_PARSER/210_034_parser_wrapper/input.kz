@@ -1,0 +1,26 @@
+// Test: Parser wrapper import and handler generation
+// This verifies that:
+// 1. $std/parser module exists
+// 2. parse.source event can be imported
+// 3. Handler code generates without errors
+// 4. Backend compiles successfully with parser wrapper
+//
+// NOTE: This is a COMPILE-ONLY test. Runtime usage requires ~build.requires
+// See test 997 for the runtime usage test (documents missing ~build.requires feature)
+
+~import "$std/parser"
+
+const std = @import("std");
+
+// We don't actually call parse.source here - just verify it exists and compiles
+// The import itself proves the wrapper is available and generates valid code
+
+~event main {}
+| done {}
+
+~proc main {
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

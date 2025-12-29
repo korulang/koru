@@ -1,0 +1,123 @@
+// Koru Standard Library: Type Declarations
+// =========================================
+//
+// This module provides events for declaring Zig types that Koru can reason about.
+// All events use explicit module paths (no keywords) to keep things clear.
+//
+// Koru doesn't have a built-in type system - Zig does all the type checking.
+// But by declaring types through these events, Koru can:
+//   - Track types in a registry for transforms
+//   - Apply layout annotations like [soa], [packed]
+//   - Enable data-oriented patterns (ECS, etc.)
+//
+// USAGE:
+//   ~import "$std/types"
+//
+//   ~std.types:struct(Player) { name: []const u8, health: i32 }
+//   ~[pub]std.types:struct(Position) { x: f32, y: f32 }
+//
+//   ~std.types:enum(Color) { red, green, blue }
+//   ~[pub]std.types:enum(State) { idle, running, jumping }
+//
+//   ~std.types:union(Value) { int: i32, float: f32, none }
+//
+// Future annotations:
+//   ~[pub|soa]std.types:struct(Enemies) { hp: i32, x: f32, y: f32 }
+//   ~[packed]std.types:struct(NetworkPacket) { ... }
+//
+// NOTE: For const/var declarations, use raw Zig or ~const from control.kz
+
+~[comptime|runtime]
+
+const std = @import("std");
+
+// ============================================================================
+// TYPE DECLARATIONS
+// ============================================================================
+
+// Declare a Zig struct type
+// [pub] - emits `pub const Name = struct { ... }`
+// [soa] - (future) emits struct-of-arrays layout
+// [packed] - (future) emits packed struct
+~[comptime|transform]pub event struct {
+    expr: Expression,
+    source: Source,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~[norun]pub event struct.impl { name: []const u8 }
+
+~proc struct {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // Get the flow from the item
+    const flow = if (item.* == .flow)
+        &item.flow
+    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
+        &item.subflow_impl.body.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    // Parse type name from expr (strip quotes if present)
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+
+    // Check for [pub] annotation
+    var is_pub = false;
+    for (flow.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "pub")) {
+            is_pub = true;
+            break;
+        }
+    }
+
+    // Build the Zig struct declaration
+    // Note: source.text contains the body WITHOUT outer braces, so we add them
+    const pub_prefix = if (is_pub) "pub " else "";
+    const code = std.fmt.allocPrint(
+        allocator,
+        "{s}const {s} = struct {{ {s} }};",
+        .{ pub_prefix, type_name, source.text }
+    ) catch unreachable;
+
+    // Create an InlineCode item to replace the flow
+    // InlineCode items are emitted directly at module level (no function wrapper)
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    // Replace the flow with the inline_code item
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    return .{ .transformed = .{ .program = program } };
+}
+
+// Declare a Zig enum type
+~[comptime|norun]pub event enum { expr: Expression, source: Source }
+
+~proc enum {
+    // Emits: `pub const Name = enum { ...source... };` (or without pub)
+}
+
+// Declare a Zig union type
+~[comptime|norun]pub event union { expr: Expression, source: Source }
+
+~proc union {
+    // Emits: `pub const Name = union { ...source... };` (or without pub)
+    // Or: `pub const Name = union(EnumType) { ...source... };` for tagged unions
+}
+

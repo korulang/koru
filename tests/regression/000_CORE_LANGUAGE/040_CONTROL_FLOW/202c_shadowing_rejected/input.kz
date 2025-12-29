@@ -1,0 +1,40 @@
+// Test 202c: Shadowing validation - should be rejected by Koru compiler
+//
+// EXPECTED BEHAVIOR: Koru compiler should reject duplicate binding names
+// ACTUAL BEHAVIOR: Currently passes through to Zig, which rejects it
+//
+// This test documents that shadowing validation is currently "lazy" -
+// we rely on Zig to catch it rather than validating in Koru compiler.
+
+const std = @import("std");
+
+~event first { value: i32 }
+| result { num: i32 }
+
+~proc first {
+    return .{ .result = .{ .num = value * 2 } };
+}
+
+~event second { value: i32 }
+| data { num: i32 }
+
+~proc second {
+    return .{ .data = .{ .num = value * 3 } };
+}
+
+~event show { outer_val: i32, inner_val: i32 }
+| done {}
+
+~proc show {
+    std.debug.print("Outer: {}, Inner: {}\n", .{outer_val, inner_val});
+    return .{ .done = .{} };
+}
+
+// ERROR: Duplicate binding name 'r'
+// The outer 'r' is from | result r |>
+// The inner 'r' is from | data r |>
+// This should be caught by Koru compiler, not Zig compiler
+~first(value: 10)
+| result r |> second(value: r.num)
+    | data r |> show(outer_val: r.num, inner_val: r.num)
+        | done |> _

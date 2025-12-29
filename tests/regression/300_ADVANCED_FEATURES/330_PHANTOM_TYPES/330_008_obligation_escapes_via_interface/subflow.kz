@@ -1,0 +1,12 @@
+~import "$app/fs"
+
+// Subflow that opens a file and returns it with obligation
+~event my_subflow {}
+| file_opened { file: *File[app.fs:opened!] }  // [!] in return signature = documented escape
+
+~proc my_subflow {
+    ~app.fs:open(path: "data.txt")
+    | opened f |> file_opened { file: f.file }
+    // No error here! The obligation is documented in the signature
+    // It becomes the caller's responsibility
+}

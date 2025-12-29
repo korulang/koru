@@ -1,0 +1,32 @@
+// Test: Multiple branches with BOTH having empty payloads
+// This tests switch emission for empty union variants
+// Previously: emitter would generate |name| capture even for empty payloads
+// Fixed: emitter now generates => { without capture for empty payloads
+
+~import "$std/io"
+
+// Event with two branches, BOTH empty (no payload fields)
+~event check_value { n: i32 }
+| positive {}
+| non_positive {}
+
+~proc check_value {
+    if (n > 0) {
+        return .{ .positive = .{} };
+    } else {
+        return .{ .non_positive = .{} };
+    }
+}
+
+// Test: handle both empty branches
+~check_value(n: 42)
+    | positive |> std.io:println(text: "42 is positive")
+    | non_positive |> std.io:println(text: "42 is not positive")
+
+~check_value(n: -5)
+    | positive |> std.io:println(text: "-5 is positive")
+    | non_positive |> std.io:println(text: "-5 is not positive")
+
+~check_value(n: 0)
+    | positive |> std.io:println(text: "0 is positive")
+    | non_positive |> std.io:println(text: "0 is not positive")

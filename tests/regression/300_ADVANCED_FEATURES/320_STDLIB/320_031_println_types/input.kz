@@ -1,0 +1,15 @@
+// Test: println with different types
+
+~import "$std/io"
+
+const count: i32 = 42;
+const size: u64 = 1000000;
+const name: []const u8 = "test";
+const ratio: f64 = 3.14159;
+const flag: bool = true;
+
+~std.io:print.ln("count: {{ count:d }}")
+~std.io:print.ln("size: {{ size:d }}")
+~std.io:print.ln("name: {{ name:s }}")
+~std.io:print.ln("ratio: {{ ratio:d }}")
+~std.io:print.ln("flag: {{ flag }}")

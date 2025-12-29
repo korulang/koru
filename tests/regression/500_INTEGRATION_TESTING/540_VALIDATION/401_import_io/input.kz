@@ -1,0 +1,8 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 401: Import I/O library with $std path alias
+// This tests the import system with path aliases and module qualification
+~import "$std/io"
+
+~std.io:println(text: "Import works!")

@@ -1,0 +1,59 @@
+// Test that demonstrates flow purity concept
+// Flows compose events - they don't execute code themselves
+// This test verifies the AST structure supports purity tracking on flows
+
+const std = @import("std");
+
+// Pure event
+~event add { x: i32, y: i32 }
+| done { result: i32 }
+
+~[pure]proc add {
+    return .{ .done = .{ .result = x + y } };
+}
+
+// Event that composes other events (flow-like composition)
+~event calculate { a: i32, b: i32, c: i32 }
+| done { result: i32 }
+
+~proc calculate {
+    // Composition of pure operations - flow-like behavior
+    const step1 = add_event.handler(.{ .x = a, .y = b });
+
+    switch (step1) {
+        .done => |d1| {
+            const step2 = add_event.handler(.{ .x = d1.result, .y = c });
+            switch (step2) {
+                .done => |d2| {
+                    return .{ .done = .{ .result = d2.result } };
+                },
+            }
+        },
+    }
+}
+
+~event print_result { n: i32 }
+| done {}
+
+~proc print_result {
+    std.debug.print("Result: {}\n", .{n});
+    return .{ .done = .{} };
+}
+
+~event main {}
+| done {}
+
+~proc main {
+    const result = calculate_event.handler(.{ .a = 10, .b = 20, .c = 12 });
+
+    switch (result) {
+        .done => |d| {
+            _ = print_result_event.handler(.{ .n = d.result });
+        },
+    }
+
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

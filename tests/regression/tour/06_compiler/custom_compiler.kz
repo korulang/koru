@@ -1,0 +1,17 @@
+// Tour 06: Custom Compiler
+// Override compiler.coordinate to control your compilation!
+
+// Define your custom compiler strategy
+~compiler.coordinate = coordinated { ast: e.ast, metrics: "🚀 Custom compiler active! No optimizations applied." }
+
+// Your program continues normally
+~event hello { name: []const u8 }
+| greeted { msg: []const u8 }
+
+~proc hello {
+    return .{ .greeted = .{ .msg = "Hello from custom compiler!" } };
+}
+
+// This will be compiled with YOUR compiler strategy
+~hello(name: "Metacircular")
+| greeted g |> _

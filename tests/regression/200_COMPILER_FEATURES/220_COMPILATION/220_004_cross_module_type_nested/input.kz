@@ -1,0 +1,38 @@
+// Test 164: Cross-Module Type Reference (Nested Modules)
+//
+// Tests referencing a type from a nested module path.
+// The syntax module.submodule:Type should work for nested directory structures.
+//
+// Structure:
+//   test_lib/
+//     domain/
+//       user.kz  -> defines DomainUser struct
+//
+// Key Test: Does test_lib.domain.user:DomainUser resolve correctly?
+//
+// Expected behavior:
+//   - The compiler should handle the dotted module path
+//   - test_lib.domain.user:DomainUser should resolve to the nested type
+//   - Generated Zig code should use proper nested namespacing
+
+const std = @import("std");
+
+~import "$app/test_lib"
+
+// This event uses a type from a NESTED module
+// KEY TEST: app.test_lib.domain.user:DomainUser should resolve through nested path
+~pub event grant_access {
+    user_data: app.test_lib.domain.user:DomainUser,
+}
+| granted { success: bool }
+
+~proc grant_access {
+    std.debug.print("Granting access: {s} as {s} (perms: {d})\n",
+        .{e.user_data.email, e.user_data.role, e.user_data.permissions});
+    return .{ .granted = .{ .success = true }};
+}
+
+// Create a domain user and grant access
+~app.test_lib.domain.user:create(email: "admin@example.com", role: "administrator", permissions: 999)
+| created c |> grant_access(user_data: c.user)
+    | granted g |> _

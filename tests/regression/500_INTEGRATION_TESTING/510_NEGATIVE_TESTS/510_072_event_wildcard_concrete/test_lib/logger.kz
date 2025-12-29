@@ -1,0 +1,19 @@
+// Logger with INVALID tap: event wildcard + concrete branch
+
+const std = @import("std");
+
+~pub event log { value: i32 }
+| done {}
+
+~proc log {
+    std.debug.print("[TAP] Got value: {d}\n", .{value});
+    return .{ .done = .{} };
+}
+
+// INVALID: Event wildcard (*:compute) + concrete branch (result)
+// This should fail compilation with clear error message
+// Error: Cannot use concrete branch 'result' with wildcard source pattern '*:compute'
+//        Wildcard sources only support metatypes (Transition, Profile, Audit)
+~*:compute -> *
+| result r |> log(value: r.value)
+    | done |> _

@@ -1,0 +1,41 @@
+// Test 830: Namespace + Labels combination
+//
+// Real code uses BOTH namespaces AND labels together.
+// Example: server.accept in a loop, file.read in a retry loop, etc.
+//
+// This tests the interaction between two major features.
+
+const std = @import("std");
+
+~event server.accept {}
+| connection { id: u32 }
+| stopped {}
+
+~event server.handle { id: u32 }
+| processed {}
+| failed {}
+
+~proc server.accept {
+    std.debug.print("Accept\n", .{});
+    // Simulate accepting 2 connections then stopping
+    const static = struct {
+        var count: u32 = 0;
+    };
+    static.count += 1;
+    if (static.count <= 2) {
+        return .{ .@"connection" = .{ .id = static.count } };
+    }
+    return .{ .@"stopped" = .{} };
+}
+
+~proc server.handle {
+    std.debug.print("Handle {}\n", .{id});
+    return .{ .@"processed" = .{} };
+}
+
+// Loop with namespaced events
+~#loop server.accept()
+| connection c |> server.handle(id: c.id)
+    | processed |> @loop()
+    | failed |> @loop()
+| stopped |> _

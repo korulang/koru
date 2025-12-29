@@ -1,0 +1,3 @@
+Multi-field captured updating multiple captures: captured { inner: 42, outer: 99 }
+Depends on nested capture support (320_034)
+Each capture should extract its own fields from a single captured block

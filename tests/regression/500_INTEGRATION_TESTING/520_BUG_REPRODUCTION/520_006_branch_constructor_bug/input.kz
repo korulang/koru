@@ -1,0 +1,11 @@
+// Test 998: Branch constructor bug
+
+~import "$std/io"
+
+~event probe {}
+| ok {}
+
+~probe = ok {}
+
+~probe()
+| ok |> std.io:println(text: "Continuation: This correctly calls std.io.println.handler()")

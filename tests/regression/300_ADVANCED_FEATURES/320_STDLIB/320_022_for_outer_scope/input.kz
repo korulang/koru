@@ -1,0 +1,40 @@
+// Test: ~for loop body can access outer scope bindings
+//
+// VISION: When ~for is in a pipeline, the loop body should be able to
+// reference bindings from outer continuations (like init.data, p.count).
+//
+// This is the pattern used in nbody_optimized:
+//   ~get_data()
+//   | result init |> for(0..p.n)
+//       | each |> process(data: init.items[0..])  // <-- outer scope binding!
+//
+// BEFORE (broken): Synthetic proc can't access 'init' - scope error
+// AFTER (working): Inlined code has direct access to 'init'
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+// Event that returns data we reference in the loop
+~event get_params {}
+| result { count: u32, items: [5]i32 }
+
+~proc get_params {
+    return .{ .result = .{ .count = 3, .items = .{ 10, 20, 30, 40, 50 } } };
+}
+
+// Event to process items
+~event process_item { value: i32 }
+| done {}
+
+~proc process_item {
+    std.debug.print("Processing: {d}\n", .{value});
+    return .{ .done = .{} };
+}
+
+// The critical pattern: ~for in pipeline with outer scope reference
+~get_params()
+| result p |> for(0..p.count)
+    | each i |> process_item(value: p.items[i])
+    | done |> std.io:println(text: "All items processed")

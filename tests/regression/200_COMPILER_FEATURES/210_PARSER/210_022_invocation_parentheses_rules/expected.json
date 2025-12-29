@@ -1,0 +1,343 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 4,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "voidCall",
+            "path": ["voidCall"],
+            "module": "input",
+            "input": {
+                "fields": [
+
+                ]
+            },
+            "branches": [
+
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 6,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["voidCall"],
+                "args": [
+
+                ]
+            },
+            "continuations": [
+
+            ],
+            "pre_label": null,
+            "post_label": null,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 7,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 8,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "renderSimple",
+            "path": ["renderSimple"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "source",
+                        "type": "Source[HTML]",
+                        "is_source": true,
+                        "is_file": false,
+                        "is_embed_file": false
+                    }
+                ]
+            },
+            "branches": [
+
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 10,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["renderSimple"],
+                "args": [
+                    {
+                        "name": "source",
+                        "value": "    <h1>Hello!</h1>\n",
+                        "source_value": {
+                            "text": "    <h1>Hello!</h1>\n",
+                            "location": {
+                                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                                "line": 13,
+                                "col": 0
+                            },
+                            "scope": {
+                                "bindings": [
+
+                                ]
+                            },
+                            "phantom_type": "HTML"
+                        }
+                    }
+                ]
+            },
+            "continuations": [
+
+            ],
+            "pre_label": null,
+            "post_label": null,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 13,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 14,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "renderWithData",
+            "path": ["renderWithData"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "name",
+                        "type": "[]const u8",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    },
+                    {
+                        "name": "source",
+                        "type": "Source[HTML]",
+                        "is_source": true,
+                        "is_file": false,
+                        "is_embed_file": false
+                    }
+                ]
+            },
+            "branches": [
+
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 16,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["renderWithData"],
+                "args": [
+                    {
+                        "name": "name",
+                        "value": "\"Alice\""
+                    },
+                    {
+                        "name": "source",
+                        "value": "    <p>${name}</p>\n",
+                        "source_value": {
+                            "text": "    <p>${name}</p>\n",
+                            "location": {
+                                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                                "line": 19,
+                                "col": 0
+                            },
+                            "scope": {
+                                "bindings": [
+
+                                ]
+                            },
+                            "phantom_type": "HTML"
+                        }
+                    }
+                ]
+            },
+            "continuations": [
+
+            ],
+            "pre_label": null,
+            "post_label": null,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 19,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 20,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "stepOne",
+            "path": ["stepOne"],
+            "module": "input",
+            "input": {
+                "fields": [
+
+                ]
+            },
+            "branches": [
+
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 22,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "stepTwo",
+            "path": ["stepTwo"],
+            "module": "input",
+            "input": {
+                "fields": [
+
+                ]
+            },
+            "branches": [
+
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 23,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["stepOne"],
+                "args": [
+
+                ]
+            },
+            "continuations": [
+                {
+                    "branch": "",
+                    "binding": null,
+                    "binding_type": "branch_payload",
+                    "pipeline": [
+                        {
+                            "type": "invocation",
+                            "invocation": {
+                                "event": ["stepTwo"],
+                                "args": [
+
+                                ]
+                            }
+                        }
+                    ],
+                    "nested": [
+
+                    ]
+                }
+            ],
+            "pre_label": null,
+            "post_label": null,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 24,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 25,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 26,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 27,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
+                "line": 28,
+                "col": 0
+            }
+        }
+    ]
+}

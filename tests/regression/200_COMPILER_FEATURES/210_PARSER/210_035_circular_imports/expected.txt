@@ -1,0 +1,2 @@
+Event from module A
+hello from A

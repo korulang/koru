@@ -1,0 +1,11 @@
+// Test 997: Proc Branch constructor bug
+
+~import "$std/io"
+
+~event probe {}
+| ok {}
+
+~proc probe = ok {}
+
+~probe()
+| ok |> std.io:println(text: "Continuation: This correctly calls io.println.handler()")

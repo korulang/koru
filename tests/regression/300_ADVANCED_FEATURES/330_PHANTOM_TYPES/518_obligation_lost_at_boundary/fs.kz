@@ -1,0 +1,13 @@
+const std = @import("std");
+const File = struct { handle: i32 };
+
+~event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    std.debug.print("Opening file: {s}\n", .{path});
+    const allocator = std.heap.page_allocator;
+    const f = allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}

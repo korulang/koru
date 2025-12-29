@@ -1,0 +1,35 @@
+// Test 621: Scoped Pattern Matching
+// Validates that unqualified patterns match local events by name
+// Pattern ~file.* should match both file.read and file.write in current scope
+
+const std = @import("std");
+
+~event file.read {}
+| done {}
+
+~event file.write {}
+| done {}
+
+~event logger {}
+
+~proc file.read {
+    std.debug.print("Reading file\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc file.write {
+    std.debug.print("Writing file\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc logger {
+    std.debug.print("File operation observed!\n", .{});
+}
+
+// Scoped pattern - matches BOTH local file.* events
+~file.* -> *
+| Transition |> logger()
+
+~file.read()
+| done |> file.write()
+    | done |> _

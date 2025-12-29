@@ -1,0 +1,62 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Void events (no branches) in flows
+// Search: parseVoidEvent void_event no_branches
+// ============================================================================
+
+const std = @import("std");
+
+// Counter to verify void events actually execute
+var setup_count: i32 = 0;
+var cleanup_count: i32 = 0;
+var process_count: i32 = 0;
+
+// Void events have no output branches
+~event setup {}
+
+~proc setup {
+    setup_count += 1;
+    std.debug.print("Setup: count={}\n", .{setup_count});
+}
+
+~event cleanup {}
+
+~proc cleanup {
+    cleanup_count += 1;
+    std.debug.print("Cleanup: count={}\n", .{cleanup_count});
+}
+
+~event process {}
+
+~proc process {
+    process_count += 1;
+    std.debug.print("Process: count={}\n", .{process_count});
+}
+
+// Test void events in flows
+// Call setup once
+~setup()
+
+// Call process three times  
+~process()
+~process() |> process()
+
+// Call cleanup once
+~cleanup()
+
+// Verify with a regular event
+~event verify {}
+| done {}
+
+~proc verify {
+    if (setup_count == 1 and process_count == 3 and cleanup_count == 1) {
+        std.debug.print("Void events work correctly\n", .{});
+    } else {
+        std.debug.print("FAILED: setup={}, process={}, cleanup={}\n", .{setup_count, process_count, cleanup_count});
+    }
+    return .{ .done = .{} };
+}
+
+~verify()
+| done |> _

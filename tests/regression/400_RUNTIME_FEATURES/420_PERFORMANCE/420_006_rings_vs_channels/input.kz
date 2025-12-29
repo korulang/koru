@@ -1,0 +1,227 @@
+// ============================================================================
+// Koru Implementation: Producer/Consumer with MPMC Ring
+// ============================================================================
+// Tests idiomatic Koru concurrent programming:
+// - MPMC ring created in Koru events
+// - Producer spawned via events
+// - Consumer loop expressed as #label/@label jumps
+// - All control flow visible as event transitions
+//
+// Goal: Prove Koru's abstractions are zero-cost (match Zig baseline)
+// ============================================================================
+
+const std = @import("std");
+
+// ============================================================================
+// MPMC Ring Implementation (vendored from beist-rings)
+// ============================================================================
+
+const atomic = std.atomic;
+const BUFFER_SIZE = 1024;
+
+fn MpmcRing(comptime T: type, comptime capacity: usize) type {
+    if (capacity & (capacity - 1) != 0) {
+        @compileError("Ring capacity must be power of 2");
+    }
+
+    const CacheLine = 64;
+
+    const Slot = struct {
+        seq: atomic.Value(usize),
+        value: T,
+    };
+
+    return struct {
+        const Self = @This();
+
+        head: atomic.Value(usize) align(CacheLine),
+        _pad1: [CacheLine - @sizeOf(atomic.Value(usize))]u8 = undefined,
+
+        tail: atomic.Value(usize) align(CacheLine),
+        _pad2: [CacheLine - @sizeOf(atomic.Value(usize))]u8 = undefined,
+
+        slots: [capacity]Slot align(CacheLine),
+
+        pub fn init() Self {
+            var self = Self{
+                .head = atomic.Value(usize).init(0),
+                .tail = atomic.Value(usize).init(0),
+                .slots = undefined,
+            };
+
+            for (&self.slots, 0..) |*slot, i| {
+                slot.seq = atomic.Value(usize).init(i);
+                slot.value = undefined;
+            }
+
+            return self;
+        }
+
+        pub fn tryEnqueue(self: *Self, value: T) bool {
+            var pos = self.head.load(.monotonic);
+
+            while (true) {
+                const slot = &self.slots[pos & (capacity - 1)];
+                const seq = slot.seq.load(.acquire);
+                const dif = @as(isize, @intCast(seq)) -% @as(isize, @intCast(pos));
+
+                if (dif == 0) {
+                    if (self.head.cmpxchgWeak(
+                        pos,
+                        pos + 1,
+                        .monotonic,
+                        .monotonic,
+                    ) == null) {
+                        slot.value = value;
+                        slot.seq.store(pos + 1, .release);
+                        return true;
+                    }
+                    pos = self.head.load(.monotonic);
+                } else if (dif < 0) {
+                    return false;
+                } else {
+                    pos = self.head.load(.monotonic);
+                    std.Thread.yield() catch {};
+                }
+            }
+        }
+
+        pub fn tryDequeue(self: *Self) ?T {
+            var pos = self.tail.load(.monotonic);
+
+            while (true) {
+                const slot = &self.slots[pos & (capacity - 1)];
+                const seq = slot.seq.load(.acquire);
+                const dif = @as(isize, @intCast(seq)) -% @as(isize, @intCast(pos + 1));
+
+                if (dif == 0) {
+                    if (self.tail.cmpxchgWeak(
+                        pos,
+                        pos + 1,
+                        .monotonic,
+                        .monotonic,
+                    ) == null) {
+                        const value = slot.value;
+                        slot.seq.store(pos + capacity, .release);
+                        return value;
+                    }
+                    pos = self.tail.load(.monotonic);
+                } else if (dif < 0) {
+                    return null;
+                } else {
+                    pos = self.tail.load(.monotonic);
+                    std.Thread.yield() catch {};
+                }
+            }
+        }
+    };
+}
+
+const Ring = MpmcRing(u64, BUFFER_SIZE);
+const MESSAGES: u64 = 10_000_000;
+
+// ============================================================================
+// Koru Events - Ring Operations
+// ============================================================================
+
+~event create_ring {}
+| created { ring: *Ring }
+
+~proc create_ring {
+    // Allocate ring on heap (needs to outlive this function)
+    const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
+    ring_storage.* = Ring.init();
+    return .{ .created = .{ .ring = ring_storage } };
+}
+
+~event spawn_producer { ring: *Ring }
+| spawned {}
+
+~proc spawn_producer {
+    // Spawn producer thread
+    const producer = std.Thread.spawn(.{}, struct {
+        fn run(r: *Ring) void {
+            var i: u64 = 0;
+            while (i < MESSAGES) : (i += 1) {
+                while (!r.tryEnqueue(i)) {
+                    std.Thread.yield() catch {};
+                }
+            }
+        }
+    }.run, .{ring}) catch unreachable;
+
+    // Detach - we don't need to join
+    producer.detach();
+
+    return .{ .spawned = .{} };
+}
+
+~event dequeue { ring: *Ring }
+| some { value: u64 }
+| none {}
+
+~proc dequeue {
+    if (ring.tryDequeue()) |value| {
+        return .{ .some = .{ .value = value } };
+    } else {
+        return .{ .none = .{} };
+    }
+}
+
+~event consume_loop { ring: *Ring, sum: u64, received: u64 }
+| continue { sum: u64, received: u64 }
+| done { sum: u64 }
+
+~proc consume_loop = dequeue(ring: ring)
+| some msg |> check_if_done(sum: sum + msg.value, received: received + 1)
+    | continue s |> continue { sum: s.sum, received: s.received }
+    | done s |> done { sum: s.sum }
+| none |> yield_then_continue(sum: sum, received: received)
+    | continue s |> continue { sum: s.sum, received: s.received }
+
+~event check_if_done { sum: u64, received: u64 }
+| continue { sum: u64, received: u64 }
+| done { sum: u64 }
+
+~proc check_if_done {
+    if (received >= MESSAGES) {
+        return .{ .done = .{ .sum = sum } };
+    } else {
+        return .{ .continue = .{ .sum = sum, .received = received } };
+    }
+}
+
+~event yield_then_continue { sum: u64, received: u64 }
+| continue { sum: u64, received: u64 }
+
+~proc yield_then_continue {
+    std.Thread.yield() catch {};
+    return .{ .continue = .{ .sum = sum, .received = received } };
+}
+
+~event validate { sum: u64 }
+| valid {}
+| invalid {}
+
+~proc validate {
+    const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
+    if (sum == expected) {
+        std.debug.print("✓ Koru: Validated {} messages (checksum: {})\n", .{ MESSAGES, sum });
+        return .{ .valid = .{} };
+    } else {
+        std.debug.print("✗ Koru: CHECKSUM MISMATCH! got {}, expected {}\n", .{ sum, expected });
+        return .{ .invalid = .{} };
+    }
+}
+
+// ============================================================================
+// Main Flow - Idiomatic Koru Consumer Loop
+// ============================================================================
+
+~create_ring()
+| created r |> spawn_producer(r.ring)
+    | spawned |> #loop consume_loop(r.ring, sum: 0, received: 0)
+        | continue s |> @loop(r.ring, s.sum, s.received)
+        | done s |> validate(s.sum)
+            | valid |> _
+            | invalid |> _

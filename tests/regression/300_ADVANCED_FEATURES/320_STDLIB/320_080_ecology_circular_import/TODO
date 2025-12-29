@@ -1,0 +1,2 @@
+ECOLOGY: Circular imports should work without kludges
+Reason: compiler_requirements is special-cased - proper circular imports should just work

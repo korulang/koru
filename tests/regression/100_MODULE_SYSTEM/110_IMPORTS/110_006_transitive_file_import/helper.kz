@@ -1,0 +1,16 @@
+// Helper module - middle level in import chain
+// Imports base.kz and builds on its functionality
+
+const std = @import("std");
+
+// TRANSITIVE IMPORT: helper imports base
+~import "$app/base"
+
+// Define quadruple by calling base's double twice
+~pub event quadruple { x: i32 }
+| done { result: i32 }
+
+~quadruple =
+    app.base:double(x: x)
+    | doubled d1 |> app.base:double(x: d1.result)
+        | doubled d2 |> done { result: d2.result }

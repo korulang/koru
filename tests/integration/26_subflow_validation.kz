@@ -1,0 +1,75 @@
+// Test subflow validation rules and edge cases
+const std = @import("std");
+
+// Test 1: Subflow must implement all event branches
+~event complete.task { task_id: i32 }
+| done { message: []const u8 }
+| failed { error: []const u8 }
+
+~event db.save { id: i32 }
+| saved {}
+| error { msg: []const u8 }
+
+// This implementation covers all branches - VALID
+~complete.task = db.save (id: task_id)
+| saved |> done { message: "Task completed" }
+| error e |> failed { error: e.msg }
+
+// Test 2: Input field shadowing is not allowed
+~event process.item { item: []const u8, count: i32 }
+| processed { total: i32 }
+
+~event validate.item { name: []const u8 }
+| valid { item_name: []const u8 }
+| invalid {}
+
+// This would be an ERROR if we tried: | valid item |>
+// because 'item' would shadow the input field 'item'
+~process.item = validate.item (name: item)
+| valid v |> processed { total: count }  // 'v' is OK, doesn't shadow
+| invalid |> processed { total: 0 }
+
+// Test 3: Shorthand in complex expressions
+~event transform.user { user_id: i32, user_name: []const u8, user_email: []const u8 }
+| transformed { id: i32, name: []const u8, email: []const u8 }
+
+~event fetch.details { id: i32 }
+| found { full_name: []const u8, address: []const u8 }
+
+// Mix shorthand and explicit in same call
+~transform.user = fetch.details (id: user_id)
+| found f |> transformed { id: user_id, name: user_name, email: user_email }
+
+// Test 4: Void events (no branches) work too
+~event log.message { text: []const u8 }
+
+~log.message = db.save (id: 0)
+| saved |> _     // Just terminate
+| error |> _     // Ignore errors too
+
+// Main test flow
+~complete.task (task_id: 42)
+| done d |> _
+| failed f |> _
+
+// Proc implementations
+~proc db.save {
+    if (e.id == 0) {
+        return .{ .error = .{ .msg = "Invalid ID" } };
+    }
+    return .{ .saved = .{} };
+}
+
+~proc validate.item {
+    if (std.mem.eql(u8, e.name, "")) {
+        return .{ .invalid = .{} };
+    }
+    return .{ .valid = .{ .item_name = e.name } };
+}
+
+~proc fetch.details {
+    return .{ .found = .{ 
+        .full_name = "John Doe",
+        .address = "123 Main St"
+    } };
+}

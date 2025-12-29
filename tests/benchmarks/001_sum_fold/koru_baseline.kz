@@ -1,0 +1,21 @@
+// Baseline: Pure Zig while loop (what we should compile down to)
+
+const std = @import("std");
+
+const N: i64 = 100_000_000;
+
+pub fn main() void {
+    const timer = std.time.Timer.start() catch unreachable;
+
+    var sum: i64 = 0;
+    var i: i64 = 1;
+    while (i <= N) : (i += 1) {
+        sum += i;
+    }
+
+    const elapsed_ns = timer.read();
+    const elapsed_ms = @divFloor(elapsed_ns, 1_000_000);
+
+    std.debug.print("Zig baseline sum: {d}\n", .{sum});
+    std.debug.print("Time: {d} ms\n", .{elapsed_ms});
+}

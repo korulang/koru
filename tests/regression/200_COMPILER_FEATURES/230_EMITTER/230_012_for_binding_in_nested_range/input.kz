@@ -1,0 +1,23 @@
+// TEST: For loop binding used in nested range expression
+//
+// VERIFIES: Range-based for bindings (i, j) are direct values, NOT wrapped.
+// Use: for(i+1..5) NOT for(i.val+1..5)
+//
+// This pattern iterates over pairs where j > i
+
+const std = @import("std");
+
+~import "$std/control"
+
+~event print_pair { i: usize, j: usize }
+
+~proc print_pair {
+    std.debug.print("{},{}\n", .{i, j});
+}
+
+// This pattern: for(0..3) | each i |> for(i+1..5)
+// Should iterate over pairs (0,1), (0,2), (0,3), (0,4), (1,2), (1,3), (1,4), (2,3), (2,4)
+~for(0..3)
+| each i |> for(i+1..5)
+    | each j |> print_pair(i: i, j: j)
+| done |> _

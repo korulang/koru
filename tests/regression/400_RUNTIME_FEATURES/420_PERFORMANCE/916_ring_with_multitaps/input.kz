@@ -1,0 +1,124 @@
+// Test 913: Ring buffer with event taps - demonstrating consumer pattern
+//
+// This shows the "consumer pattern" we discovered:
+// - Labels for loops
+// - Taps for observation
+// - When clauses for filtering
+//
+// No special syntax needed - just composition of primitives!
+
+const std = @import("std");
+
+// Generic ring buffer (Zig function returning type)
+pub fn Ring(comptime T: type, comptime size: usize) type {
+    return struct {
+        const Self = @This();
+
+        data: [size]T,
+        head: usize,
+        tail: usize,
+
+        pub fn init() Self {
+            return .{
+                .data = undefined,
+                .head = 0,
+                .tail = 0,
+            };
+        }
+
+        pub fn tryEnqueue(self: *Self, value: T) bool {
+            if ((self.tail + 1) % size == self.head) {
+                return false;
+            }
+            self.data[self.tail] = value;
+            self.tail = (self.tail + 1) % size;
+            return true;
+        }
+
+        pub fn tryDequeue(self: *Self) ?T {
+            if (self.head == self.tail) {
+                return null;
+            }
+            const value = self.data[self.head];
+            self.head = (self.head + 1) % size;
+            return value;
+        }
+    };
+}
+
+const MyRing = Ring(u32, 1024);
+
+// Ring operations
+~event ring.enqueue { ring: *Ring(u32, 1024), value: u32 }
+| enqueued {}
+| full {}
+
+~proc ring.enqueue {
+    if (ring.tryEnqueue(value)) {
+        return .{ .enqueued = .{} };
+    }
+    return .{ .full = .{} };
+}
+
+~event ring.dequeue { ring: *Ring(u32, 1024) }
+| value { data: u32 }
+| empty {}
+
+~proc ring.dequeue {
+    if (ring.tryDequeue()) |data| {
+        return .{ .value = .{ .data = data } };
+    }
+    return .{ .empty = .{} };
+}
+
+// Processing event - what we do with dequeued values
+~event process { data: u32 }
+| done {}
+
+~proc process {
+    std.debug.print("Processing x 1: {}\n", .{data});
+    return .{ .done = .{} };
+}
+
+~event process_timestwo { data: u32 }
+| done {}
+
+~proc process_timestwo {
+    std.debug.print("Processing x 2: {}\n", .{data * 2});
+    return .{ .done = .{} };
+}
+
+// EVENT TAP: Watch ring.dequeue and process each value
+// This is the "consumer" - it observes dequeue events and acts on them
+~ring.dequeue -> * | value v |> process(data: v.data) 
+~ring.dequeue -> * | value v when v.data * 2 > 2 |> process_timestwo(data: v.data) | done |> _
+
+// Producer: Fill the ring with values
+~event produce { ring: *Ring(u32, 1024), count: u32 }
+| done {}
+
+~proc produce {
+    var i: u32 = 0;
+    while (i < count) : (i += 1) {
+        _ = ring.tryEnqueue(i);
+    }
+    std.debug.print("Produced {} values\n", .{count});
+    return .{ .done = .{} };
+}
+
+// Consumer loop using label + tap
+// The tap fires automatically for each dequeued value!
+~event start {}
+| ready {}
+
+~[pure]proc start {
+    return .{ .ready = .{} };
+}
+
+var my_ring = MyRing.init();
+
+~start()
+| ready |> produce(ring: &my_ring, count: 3)
+    | done |> #consume ring.dequeue(ring: &my_ring)
+        | value |> @consume
+        | empty |> _

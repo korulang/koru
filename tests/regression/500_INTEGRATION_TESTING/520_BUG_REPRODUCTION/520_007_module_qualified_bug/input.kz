@@ -1,0 +1,25 @@
+// Test 999: Module-qualified invocation bug isolation
+//
+// BUG: Module-qualified invocations work in continuations but NOT in top-level flows
+//
+// This test has TWO invocations of the SAME event (io:println):
+// 1. Top-level flow: ~io:println(...)           ← BROKEN (generates println.handler)
+// 2. Continuation:   | ok |> io:println(...)    ← WORKS (generates io.println.handler)
+//
+// Both should generate io.println.handler() but only #2 does!
+
+~import "$std/io"
+
+~event probe {}
+| ok {}
+
+~proc probe {
+    return .{ .ok = .{} };
+}
+
+// THIS SHOULD WORK (top-level flow)
+~std.io:println(text: "Top-level: This should call io.println.handler()")
+
+// THIS WORKS (continuation)
+~probe()
+| ok |> std.io:println(text: "Continuation: This correctly calls io.println.handler()")

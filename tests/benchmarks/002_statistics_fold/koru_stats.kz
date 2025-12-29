@@ -1,0 +1,50 @@
+// Benchmark: Compute 5 statistics in a single pass using ~capture
+// Computes: sum, sum_of_squares, count, min, max
+// Then derives: mean, variance
+//
+// This demonstrates the power of multi-field accumulators:
+// - 5 values captured simultaneously
+// - Conditional updates for min/max
+// - Pure semantics (compute entire next state at once)
+// - Efficient generated code
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+// Get N from command line to prevent compile-time optimization
+fn getN() usize {
+    var args = std.process.args();
+    _ = args.next(); // skip program name
+    const n_str = args.next() orelse "100000000";
+    return std.fmt.parseInt(usize, n_str, 10) catch 100000000;
+}
+
+~event print_stats { sum: i64, sum_sq: i64, count: i64, min_val: i64, max_val: i64 }
+
+~proc print_stats {
+    const mean: f64 = @as(f64, @floatFromInt(sum)) / @as(f64, @floatFromInt(count));
+    const variance: f64 = (@as(f64, @floatFromInt(sum_sq)) / @as(f64, @floatFromInt(count))) - (mean * mean);
+
+    std.debug.print("Koru capture stats:\n", .{});
+    std.debug.print("  sum:      {d}\n", .{sum});
+    std.debug.print("  count:    {d}\n", .{count});
+    std.debug.print("  min:      {d}\n", .{min_val});
+    std.debug.print("  max:      {d}\n", .{max_val});
+    std.debug.print("  mean:     {d:.6}\n", .{mean});
+    std.debug.print("  variance: {d:.6}\n", .{variance});
+}
+
+// 5-field accumulator with conditional updates
+// Note: Using literal max/min i64 values to avoid comptime issues
+~capture({ sum: @as(i64, 0), sum_sq: @as(i64, 0), count: @as(i64, 0), min_val: @as(i64, 9223372036854775807), max_val: @as(i64, -9223372036854775808) })
+| as s |> for(1..getN()+1)
+    | each i |> captured {
+        sum: s.sum + @as(i64, @intCast(i)),
+        sum_sq: s.sum_sq + @as(i64, @intCast(i)) * @as(i64, @intCast(i)),
+        count: s.count + 1,
+        min_val: if (@as(i64, @intCast(i)) < s.min_val) @as(i64, @intCast(i)) else s.min_val,
+        max_val: if (@as(i64, @intCast(i)) > s.max_val) @as(i64, @intCast(i)) else s.max_val
+      }
+| done stats |> print_stats(sum: stats.sum, sum_sq: stats.sum_sq, count: stats.count, min_val: stats.min_val, max_val: stats.max_val)

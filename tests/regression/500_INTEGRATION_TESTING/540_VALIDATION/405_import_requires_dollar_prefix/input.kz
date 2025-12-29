@@ -1,0 +1,19 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 405: Import paths must start with $ alias
+// Design: All imports must use explicit path aliases from koru.json for truly canonical module names
+// This prevents ambiguous relative imports and ensures every module has a unique global identifier
+//
+// Valid:   ~import "$std/io"    (uses $std alias)
+// Valid:   ~import "$app/utils" (uses $app alias)
+// Invalid: ~import "utils"      (no $ prefix - ambiguous!)
+// Invalid: ~import "lib/helper" (no $ prefix - where is "lib"?)
+
+const std = @import("std");
+
+// This should fail: import without $ prefix
+~import "helper"
+
+~helper:greet(name: "World")
+| greeted g |> _

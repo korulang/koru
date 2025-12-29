@@ -1,0 +1,76 @@
+// Tour 08: Circular Import Demo
+// Demonstrates how circular dependencies work in Koru
+
+const std = @import("std");
+
+// Import both modules that reference each other
+~import "circular_a.kz" => a
+~import "circular_b.kz" => b
+
+~event demo.circular {}
+| complete { message: []const u8 }
+
+~proc demo.circular {
+    // Use module A, which internally uses module B
+    ~a:process(value: 5)
+    | result r |> {
+        std.debug.print("Module A processed: {}\n", .{r.processed});
+    }
+
+    // Use module B directly
+    ~b:transform(input: 10)
+    | transformed t |> {
+        std.debug.print("Module B transformed: {}\n", .{t.output});
+    }
+    | error e |> {
+        std.debug.print("Transform error: {s}\n", .{e.message});
+    }
+
+    // Validate through A
+    ~a:validate(data: "test data")
+    | valid |> {
+        std.debug.print("Validation passed\n", .{});
+    }
+    | invalid i |> {
+        std.debug.print("Validation failed: {s}\n", .{i.reason});
+    }
+
+    return .{ .complete = .{
+        .message = "Circular imports handled successfully"
+    }};
+}
+
+// WHY CIRCULAR IMPORTS WORK IN KORU
+// 
+// 1. **Compile-Time Resolution**: Imports are resolved during compilation,
+//    not at runtime. The compiler builds a complete dependency graph.
+//
+// 2. **Event Declarations**: Events are just type declarations. They don't
+//    execute code when imported, so there's no initialization deadlock.
+//
+// 3. **Lazy Proc Evaluation**: Procs are only executed when their events
+//    fire, not when the module is imported.
+//
+// 4. **No Module Initialization**: Unlike some languages, Koru modules
+//    don't run initialization code during import.
+
+// WHEN TO USE CIRCULAR IMPORTS
+// 
+// Generally, circular dependencies suggest a design issue, but they're 
+// sometimes appropriate for:
+// - Tightly coupled subsystems that naturally reference each other
+// - Protocol implementations where both sides need to know about each other
+// - State machines with bidirectional transitions
+
+// BEST PRACTICES
+// 
+// 1. Minimize circular dependencies when possible
+// 2. Consider extracting shared events to a third module
+// 3. Document why the circular dependency exists
+// 4. Keep the circular dependency localized to related modules
+
+// Main flow
+~demo.circular()
+| complete c |> {
+    std.debug.print("{s}\n", .{c.message});
+}

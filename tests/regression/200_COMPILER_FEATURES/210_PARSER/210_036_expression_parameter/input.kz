@@ -1,0 +1,31 @@
+// Test: Expression Parameter Syntax
+// Verifies that Expression parameters are parsed correctly and generate valid Zig code
+
+const std = @import("std");
+
+// Event with Expression parameter - comptime only
+~[comptime]event log_expr { expr: Expression }
+
+// Proc that receives the expression as []const u8
+~proc log_expr {
+    std.debug.print("Expression: {s}\n", .{expr});
+}
+
+// Invoke with implicit expr parameter (named 'expr' enables implicit mapping)
+~log_expr(2 + 2)
+
+// Test function call with nested parens - inner commas should NOT split the expression
+~log_expr(foo(x, y, z))
+
+// Event with multiple Expression parameters - first is implicit 'expr', others must be named
+~[comptime]event multi_expr { expr: Expression, guard: Expression }
+
+~proc multi_expr {
+    std.debug.print("Main: {s}, Guard: {s}\n", .{expr, guard});
+}
+
+// First arg maps to implicit 'expr', second must be explicitly named
+~multi_expr(a + b, guard: x > 0)
+
+// Test with function call containing commas in both positions
+~multi_expr(compute(a, b), guard: validate(x, y))

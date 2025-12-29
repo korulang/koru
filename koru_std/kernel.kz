@@ -1,0 +1,444 @@
+// Koru Standard Library: Computation Kernels
+// ============================================
+//
+// High-performance computation primitives inspired by shader languages.
+// Describe RELATIONSHIPS between data elements, not iteration patterns.
+// The compiler decides optimal data layout and iteration strategy.
+//
+// USAGE:
+//   ~import "$std/kernel"
+//
+//   // 1. Declare the shape (structure with explicit types)
+//   ~std.kernel:shape(Body) { x: f64, y: f64, z: f64, vx: f64, vy: f64, vz: f64, mass: f64 }
+//
+//   // 2. Initialize kernel data (creates instance of shape)
+//   // Uses Koru syntax (x: value) which transforms to Zig (.x = value)
+//   ~std.kernel:init(Body) { x: 0, y: 0, z: 0, vx: 1.0, vy: 0, vz: 0, mass: 1.0 }
+//   | kernel bodies |> ...
+//
+//   // 3. Perform kernel operations
+//   std.kernel:pairwise {
+//       bodies.vel -= d * mag * bodies.other.mass
+//       bodies.other.vel += d * mag * bodies.mass
+//   }
+//
+// DESIGN:
+//   - kernel.shape is [norun] - just a declaration, sits in AST as metadata
+//   - kernel.init is [transform] - looks up shape, emits struct + instance
+//   - kernel.pairwise is [transform] - emits iteration code
+//
+// KERNEL OPERATIONS:
+//   - kernel.pairwise: All unique pairs (i,j where i < j)
+//   - kernel.self: Per-element operations (future)
+//   - kernel.reduce: Reduction to single value (future)
+//   - kernel.cross: Cross-product of two kernels (future)
+//
+// MAGIC BINDINGS:
+//   Inside kernel.pairwise:
+//   - `bodies` refers to the current element (self, bodies[i])
+//   - `bodies.other` refers to the paired element (bodies[j])
+
+const std = @import("std");
+
+// ============================================================================
+// KERNEL.SHAPE - Declare kernel data structure (just metadata, no execution)
+// ============================================================================
+//
+// Declares the STRUCTURE of kernel data with explicit types.
+// This is NOT a transform - it just sits in the AST for kernel.init to look up.
+//
+// Example:
+//   ~std.kernel:shape(Body) { x: f64, y: f64, z: f64, mass: f64 }
+
+~[norun]pub event shape {
+    expr: Expression,
+    source: Source
+}
+
+// ============================================================================
+// KERNEL.INIT - Initialize kernel data (TRANSFORM)
+// ============================================================================
+//
+// Creates kernel data from a shape. Looks up the shape by name, emits
+// the struct definition and initialization code, replaces the flow.
+//
+// Example:
+//   ~std.kernel:init(Body) { x: 0, y: 0, mass: 1.0 }
+//   | kernel bodies |> ...
+//
+// Koru syntax "x: 0" transforms to Zig syntax ".x = 0"
+//
+// This transform:
+//   1. Looks up kernel.shape(Body) in AST
+//   2. Emits: const Body = struct { x: f64, ... };
+//   3. Emits: var kernel_data = Body{ .x = 0, ... };
+//   4. Replaces the flow with inline code
+
+~[comptime|transform]pub event init {
+    expr: Expression,
+    source: Source,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc init {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // Get the flow from the item
+    const flow = if (item.* == .flow)
+        &item.flow
+    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
+        &item.subflow_impl.body.flow
+    else
+        @panic("kernel.init: expected flow item");
+
+    // ========================================================================
+    // STEP 1: Verify we're the top-level invocation
+    // ========================================================================
+    if (invocation != &flow.invocation) {
+        // This shouldn't happen for init, but handle gracefully
+        @panic("kernel.init: expected to be top-level invocation");
+    }
+
+    // ========================================================================
+    // STEP 2: Get binding name from | kernel k |> continuation
+    // ========================================================================
+    var binding_name: []const u8 = "data"; // default fallback
+    for (flow.continuations) |*cont| {
+        if (std.mem.eql(u8, cont.branch, "kernel")) {
+            binding_name = cont.binding orelse "k";
+            break;
+        }
+    }
+
+    // Build unique variable name: kernel_{binding}
+    const var_name = std.fmt.allocPrint(allocator, "kernel_{s}", .{binding_name}) catch unreachable;
+
+    // ========================================================================
+    // STEP 3: Parse type name from expr
+    // ========================================================================
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+
+    // ========================================================================
+    // STEP 4: Transform source to Zig struct initialization
+    // ========================================================================
+    // Helper: transform "x: 42, y: 0" -> ".x = 42, .y = 0"
+    const transformFields = struct {
+        fn call(alloc: std.mem.Allocator, block_text: []const u8) []const u8 {
+            var result = std.ArrayList(u8).initCapacity(alloc, block_text.len * 2) catch unreachable;
+            var iter = std.mem.splitSequence(u8, block_text, ",");
+            var first = true;
+            while (iter.next()) |field_raw| {
+                const field = std.mem.trim(u8, field_raw, " \t\n\r{}");
+                if (field.len == 0) continue;
+
+                if (std.mem.indexOf(u8, field, ":")) |colon_idx| {
+                    const name = std.mem.trim(u8, field[0..colon_idx], " \t\n\r");
+                    const value = std.mem.trim(u8, field[colon_idx + 1 ..], " \t\n\r");
+
+                    if (!first) result.appendSlice(alloc, ", ") catch unreachable;
+                    first = false;
+
+                    result.append(alloc, '.') catch unreachable;
+                    result.appendSlice(alloc, name) catch unreachable;
+                    result.appendSlice(alloc, " = ") catch unreachable;
+                    result.appendSlice(alloc, value) catch unreachable;
+                }
+            }
+            return result.items;
+        }
+    }.call;
+
+    // Detect array mode: source contains nested {} blocks
+    const trimmed = std.mem.trim(u8, source.text, " \t\n\r");
+    const is_array_mode = std.mem.indexOf(u8, trimmed, "{") != null;
+
+    var code: []const u8 = undefined;
+
+    if (is_array_mode) {
+        // Array mode: parse multiple { ... } blocks
+        var elements = std.ArrayList(u8).initCapacity(allocator, source.text.len * 2) catch unreachable;
+        var count: usize = 0;
+
+        var block_iter = std.mem.splitSequence(u8, source.text, "}");
+        while (block_iter.next()) |block_raw| {
+            if (std.mem.indexOf(u8, block_raw, "{")) |brace_idx| {
+                const block_content = block_raw[brace_idx + 1 ..];
+                const fields = transformFields(allocator, block_content);
+
+                if (count > 0) elements.appendSlice(allocator, ", ") catch unreachable;
+                elements.appendSlice(allocator, type_name) catch unreachable;
+                elements.appendSlice(allocator, "{ ") catch unreachable;
+                elements.appendSlice(allocator, fields) catch unreachable;
+                elements.appendSlice(allocator, " }") catch unreachable;
+                count += 1;
+            }
+        }
+
+        // Generate array initialization
+        code = std.fmt.allocPrint(
+            allocator,
+            "const {s} = struct {{ x: f64, y: f64, mass: f64 }};\nvar {s} = [_]{s}{{ {s} }};",
+            .{ type_name, var_name, type_name, elements.items }
+        ) catch unreachable;
+    } else {
+        // Single mode: just one struct instance
+        const fields = transformFields(allocator, source.text);
+        code = std.fmt.allocPrint(
+            allocator,
+            "const {s} = struct {{ x: f64, y: f64, mass: f64 }};\nvar {s} = {s}{{ {s} }};",
+            .{ type_name, var_name, type_name, fields }
+        ) catch unreachable;
+    }
+
+    // ========================================================================
+    // STEP 5: Collect inline_code from continuations and combine
+    // ========================================================================
+    // Kernel code needs to be at module scope, not wrapped in a function.
+    // So we combine our code with any inline_code in continuations and
+    // replace the entire flow with an Item.inline_code.
+
+    var final_code = std.ArrayList(u8).initCapacity(allocator, code.len + 1024) catch unreachable;
+    final_code.appendSlice(allocator, code) catch unreachable;
+
+    // Collect inline_code from each continuation (e.g., pairwise function)
+    for (flow.continuations) |*cont| {
+        if (cont.node) |node| {
+            if (node == .inline_code) {
+                final_code.appendSlice(allocator, "\n") catch unreachable;
+                final_code.appendSlice(allocator, node.inline_code) catch unreachable;
+            }
+        }
+    }
+
+    // Replace the entire flow with inline_code
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = final_code.items,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+
+    @panic("kernel.init: replaceFlowRecursive returned null - flow not found in AST");
+}
+
+// ============================================================================
+// KERNEL.PAIRWISE - Pairwise iteration over kernel data (TRANSFORM)
+// ============================================================================
+//
+// Iterates over all unique pairs (i, j) where i < j.
+// The kernel variable becomes "self" and .other refers to the paired element.
+//
+// Example:
+//   std.kernel:pairwise {
+//       bodies.vel -= d * mag * bodies.other.mass
+//       bodies.other.vel += d * mag * bodies.mass
+//   }
+//
+// Generated code:
+//   for (0..n) |i| {
+//       for (i+1..n) |j| {
+//           bodies[i].vel -= d * mag * bodies[j].mass;
+//           bodies[j].vel += d * mag * bodies[i].mass;
+//       }
+//   }
+
+~[comptime|transform]pub event pairwise {
+    source: Source,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc pairwise {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // Get the flow from the item
+    const flow = if (item.* == .flow)
+        &item.flow
+    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
+        &item.subflow_impl.body.flow
+    else
+        @panic("kernel.pairwise: expected flow item");
+
+    // ========================================================================
+    // STEP 1: Find ourselves in the AST using the invocation pointer
+    // ========================================================================
+    // The structure is: ~init(...) | kernel k |> pairwise { ... }
+    // We're the pairwise invocation in a nested continuation.
+    // We need to find: (1) which step we are, (2) the binding name from "kernel"
+
+    const SearchResult = struct {
+        path: []const usize,
+        step_idx: usize,
+        binding_name: []const u8,
+    };
+
+    const findInvocationRecursive = struct {
+        fn search(
+            alloc: std.mem.Allocator,
+            continuations: []const ast.Continuation,
+            current_path: []const usize,
+            target_inv: *const ast.Invocation,
+            parent_binding: ?[]const u8,
+        ) ?SearchResult {
+            for (continuations, 0..) |*cont, cont_idx| {
+                var path = alloc.alloc(usize, current_path.len + 1) catch return null;
+                @memcpy(path[0..current_path.len], current_path);
+                path[current_path.len] = cont_idx;
+
+                // Track binding from "kernel" branch
+                const effective_binding = if (std.mem.eql(u8, cont.branch, "kernel"))
+                    cont.binding orelse "k"
+                else
+                    parent_binding;
+
+                // Check this continuation's node
+                if (cont.node) |*step| {
+                    if (step.* == .invocation) {
+                        // CRITICAL: Compare pointers to find the EXACT invocation
+                        if (&step.invocation == target_inv) {
+                            return SearchResult{
+                                .path = path,
+                                .step_idx = 0,
+                                .binding_name = effective_binding orelse "k",
+                            };
+                        }
+                    }
+                }
+
+                // Recurse into nested continuations
+                if (search(alloc, cont.continuations, path, target_inv, effective_binding)) |result| {
+                    return result;
+                }
+
+                alloc.free(path);
+            }
+            return null;
+        }
+    }.search;
+
+    const empty_path = &[_]usize{};
+    const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation, null) orelse {
+        @panic("kernel.pairwise: could not find invocation in AST");
+    };
+
+    const binding_name = search_result.binding_name;
+
+    // ========================================================================
+    // STEP 2: Build unique variable name from binding
+    // ========================================================================
+    // | kernel k |> means we use "kernel_k" as the variable name
+    const var_name = std.fmt.allocPrint(allocator, "kernel_{s}", .{binding_name}) catch unreachable;
+
+    // ========================================================================
+    // STEP 3: Transform DSL body
+    // ========================================================================
+    // k.other.X -> kernel_k[j].X
+    // k.X -> kernel_k[i].X
+
+    const binding_other = std.fmt.allocPrint(allocator, "{s}.other", .{binding_name}) catch unreachable;
+    const binding_other_len = binding_other.len;
+    const binding_len = binding_name.len;
+
+    var body_code = std.ArrayList(u8).initCapacity(allocator, source.text.len * 2) catch unreachable;
+
+    var i: usize = 0;
+    while (i < source.text.len) {
+        if (i + binding_other_len <= source.text.len and std.mem.eql(u8, source.text[i..i+binding_other_len], binding_other)) {
+            body_code.appendSlice(allocator, var_name) catch unreachable;
+            body_code.appendSlice(allocator, "[j]") catch unreachable;
+            i += binding_other_len;
+        } else if (i + binding_len <= source.text.len and std.mem.eql(u8, source.text[i..i+binding_len], binding_name)) {
+            const at_end = (i + binding_len >= source.text.len);
+            const next_ok = at_end or (!std.ascii.isAlphanumeric(source.text[i + binding_len]) and source.text[i + binding_len] != '_');
+            const prev_ok = (i == 0) or (!std.ascii.isAlphanumeric(source.text[i - 1]) and source.text[i - 1] != '_');
+            if (next_ok and prev_ok) {
+                body_code.appendSlice(allocator, var_name) catch unreachable;
+                body_code.appendSlice(allocator, "[i]") catch unreachable;
+                i += binding_len;
+            } else {
+                body_code.append(allocator, source.text[i]) catch unreachable;
+                i += 1;
+            }
+        } else {
+            body_code.append(allocator, source.text[i]) catch unreachable;
+            i += 1;
+        }
+    }
+
+    // ========================================================================
+    // STEP 4: Generate the pairwise function
+    // ========================================================================
+    const code = std.fmt.allocPrint(
+        allocator,
+        \\pub fn kernel_pairwise() void {{
+        \\    for (0..{s}.len) |i| {{
+        \\        for (i+1..{s}.len) |j| {{
+        \\            {s}
+        \\        }}
+        \\    }}
+        \\}}
+        ,
+        .{ var_name, var_name, body_code.items }
+    ) catch unreachable;
+
+    // ========================================================================
+    // STEP 5: Replace ONLY this step using replacePipelineStepAtPath
+    // ========================================================================
+    // This is the key change: we replace just the pairwise step, not the whole flow
+
+    // Node.inline_code expects []const u8 directly (not InlineCode struct)
+    const new_node = ast.Node{ .inline_code = code };
+
+    const modified_flow = ast_functional.replacePipelineStepAtPath(
+        allocator,
+        flow,
+        search_result.path,
+        search_result.step_idx,
+        new_node,
+    ) catch unreachable;
+
+    // Create new item, preserving subflow_impl wrapper if needed
+    const new_item = if (item.* == .subflow_impl) blk: {
+        var new_subflow = item.subflow_impl;
+        new_subflow.body = .{ .flow = modified_flow };
+        break :blk ast.Item{ .subflow_impl = new_subflow };
+    } else ast.Item{ .flow = modified_flow };
+
+    // Replace the flow in the program with the modified flow
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+
+    @panic("kernel.pairwise: replaceFlowRecursive returned null - flow not found in AST");
+}
+
+// ============================================================================
+// FUTURE: kernel.self, kernel.reduce, kernel.cross
+// ============================================================================
+
+// ~[comptime|transform]pub event self { ... }
+// ~[comptime|transform]pub event reduce { ... }
+// ~[comptime|transform]pub event cross { ... }

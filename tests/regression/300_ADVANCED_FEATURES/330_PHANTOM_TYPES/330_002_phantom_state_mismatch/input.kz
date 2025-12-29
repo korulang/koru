@@ -1,0 +1,29 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 508: Phantom state mismatch detection
+// Tests that semantic phantom checker detects incompatible phantom states
+// Demonstrates: Type-safe phantom state validation across modules
+// Expected: Should FAIL with phantom state mismatch error
+
+~import "lib/fs"
+~import "lib/mipmap"
+
+const std = @import("std");
+
+const File = struct {
+    handle: i32,
+};
+
+// Event that expects fs:open phantom state
+~event needs_fs_file { file: *File[fs:open] }
+| processed {}
+
+~proc needs_fs_file {
+    return .{ .processed = .{} };
+}
+
+// This should FAIL: mipmap:open ≠ fs:open
+~mipmap:load(path: "texture.png")
+| loaded m |> needs_fs_file(file: m.file)
+    | processed |> _

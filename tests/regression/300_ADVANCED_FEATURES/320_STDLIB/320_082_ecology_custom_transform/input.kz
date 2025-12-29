@@ -1,0 +1,31 @@
+// ECOLOGY TEST: User-defined [transform] events should work like stdlib ones
+//
+// ISSUE: The transform mechanism shouldn't require magic. A user should be
+// able to define their own [transform] event and have it work exactly like
+// ~for, ~if, ~capture from $std/control.
+//
+// This test captures the intention that transforms are NOT special-cased
+// for stdlib - they're a general mechanism.
+
+~import "$std/io"
+
+// User-defined transform event - should work just like stdlib transforms
+~[keyword|comptime|transform]
+pub event repeat {
+    times: i32,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+}
+| done { * }
+
+// The transform proc - generates a simple loop
+~proc repeat {
+    // For now, just return unchanged - the INTENTION is that this should
+    // be able to generate code like ~for does
+    return .{ .done = .{ .program = program } };
+}
+
+// Use our custom transform
+~repeat(3)
+| done |> std.io:println(text: "Custom transform executed")

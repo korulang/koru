@@ -1,0 +1,43 @@
+// Test subflow with parameters in pipeline
+
+~event file.read { path: []const u8 }
+| success { contents: []const u8 }
+| failure { errno: u8 }
+
+~event file.print { contents: []const u8 }
+| success {}
+| failure { errno: u8 }
+
+~event proc.exit { errno: u8 }
+
+// Test subflow with parameters in pipeline
+~process_file (p) = file.read (path: p)
+| success s |> file.print (contents: s.contents)
+| failure f |> proc.exit (errno: f.errno) |> _
+
+~file.read (path: "test.txt")
+| success s |> process_file (s.contents)
+| failure |> proc.exit (errno: 1)
+
+// Proc implementations
+~proc file.read {
+    const f = std.fs.openFile(e.path, .{}) catch |err| {
+        return .{ .@"failure" = .{ .errno = @intFromError(err) } };
+    };
+    defer f.close();
+    const contents = f.readToEndAlloc(allocator, 1024 * 1024) catch |err| {
+        return .{ .@"failure" = .{ .errno = @intFromError(err) } };
+    };
+    return .{ .@"success" = .{ .contents = contents } };
+}
+
+~proc file.print {
+    std.io.getStdOut().writeAll(e.contents) catch |err| {
+        return .{ .@"failure" = .{ .errno = @intFromError(err) } };
+    };
+    return .{ .@"success" = .{} };
+}
+
+~proc proc.exit {
+    std.os.exit(e.errno);
+}

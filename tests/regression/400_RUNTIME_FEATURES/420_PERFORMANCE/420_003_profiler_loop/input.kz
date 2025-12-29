@@ -1,0 +1,57 @@
+// ============================================================================
+// Test 629: Profiler with nested loops
+// Tests that the profiler correctly captures all transitions in nested loops
+// Based on test 205 (nested labels)
+// ============================================================================
+
+const std = @import("std");
+
+~[profile]import "$std/profiler"
+
+// Outer counter event (counts outer iterations)
+~event outer { x: i32, max_inner: i32 }
+| next_outer { x: i32, max_inner: i32 }
+| done_outer {}
+
+~proc outer {
+    std.debug.print("Outer: {}\n", .{x});
+
+    if (x < 3) {
+        return .{ .next_outer = .{ .x = x, .max_inner = max_inner } };
+    } else {
+        return .{ .done_outer = .{} };
+    }
+}
+
+// Inner counter event (counts inner iterations)
+~event inner { x: i32, y: i32, max_inner: i32 }
+| next_inner { x: i32, y: i32, max_inner: i32 }
+| done_inner { x: i32, max_inner: i32 }
+
+~proc inner {
+    std.debug.print("  Inner: {}, {}\n", .{x, y});
+
+    if (y < max_inner) {
+        return .{ .next_inner = .{ .x = x, .y = y + 1, .max_inner = max_inner } };
+    } else {
+        return .{ .done_inner = .{ .x = x + 1, .max_inner = max_inner } };
+    }
+}
+
+// Start event
+~event start {}
+| ready {}
+
+~proc start {
+    std.debug.print("Starting nested loops...\n", .{});
+    return .{ .ready = .{} };
+}
+
+// Flow with nested labels
+// Both loops now have matching signatures (x: i32, max_inner: i32)
+~start()
+| ready |> #outer_loop outer(x: 1, max_inner: 2)
+    | next_outer o |> #inner_loop inner(x: o.x, y: 1, max_inner: o.max_inner)
+        | next_inner i |> @inner_loop(x: i.x, y: i.y, max_inner: i.max_inner)
+        | done_inner d |> @outer_loop(x: d.x, max_inner: d.max_inner)
+    | done_outer |> _

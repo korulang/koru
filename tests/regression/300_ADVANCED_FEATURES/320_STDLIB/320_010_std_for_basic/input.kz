@@ -1,0 +1,38 @@
+// Test 320_010: Basic ~for loop
+// Tests that ~for compiles to optimal Zig for-loop
+//
+// SEMANTICS:
+// - | each item |> runs for EACH element (N times)
+// - | done |> runs ONCE after iteration completes
+//
+// MUST emit actual Zig `for` loop, NOT while or labeled recursion
+
+const std = @import("std");
+
+~import "$std/control"
+
+// Accumulator
+var sum: i32 = 0;
+
+// Event to process each item
+~event process { value: i32 }
+
+~proc process {
+    sum += value;
+    std.debug.print("{}\n", .{value});
+}
+
+// Event to finalize
+~event finalize {}
+
+~proc finalize {
+    std.debug.print("Sum: {}\n", .{sum});
+}
+
+// Test data
+const items = [_]i32{ 1, 2, 3, 4, 5 };
+
+// The for loop - should emit optimal Zig for
+~for(&items)
+| each item |> process(value: item)
+| done |> finalize()

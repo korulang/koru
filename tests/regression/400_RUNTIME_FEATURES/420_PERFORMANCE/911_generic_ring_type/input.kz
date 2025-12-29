@@ -1,0 +1,73 @@
+// Test 911: Generic ring type in event shape
+//
+// Can we use MpmcRing(T, N) in an event shape?
+// Let's find out - starting simple!
+
+const std = @import("std");
+
+// Define a concrete ring type (no generics yet)
+pub const RingU32 = struct {
+    data: [1024]u32,
+    head: usize,
+    tail: usize,
+
+    pub fn init() RingU32 {
+        return .{
+            .data = undefined,
+            .head = 0,
+            .tail = 0,
+        };
+    }
+
+    pub fn tryEnqueue(self: *RingU32, value: u32) bool {
+        if ((self.tail + 1) % 1024 == self.head) {
+            return false;
+        }
+        self.data[self.tail] = value;
+        self.tail = (self.tail + 1) % 1024;
+        return true;
+    }
+
+    pub fn tryDequeue(self: *RingU32) ?u32 {
+        if (self.head == self.tail) {
+            return null;
+        }
+        const value = self.data[self.head];
+        self.head = (self.head + 1) % 1024;
+        return value;
+    }
+};
+
+// Now try using it in an event shape
+~event ring.enqueue { ring: *RingU32, value: u32 }
+| enqueued {}
+| full {}
+
+~proc ring.enqueue {
+    if (ring.tryEnqueue(value)) {
+        std.debug.print("Enqueued!\n", .{});
+        return .{ .enqueued = .{} };
+    }
+    return .{ .full = .{} };
+}
+
+~event ring.dequeue { ring: *RingU32 }
+| value { data: u32 }
+| empty {}
+
+~proc ring.dequeue {
+    if (ring.tryDequeue()) |data| {
+        std.debug.print("Got: {}\n", .{data});
+        return .{ .value = .{ .data = data } };
+    }
+    return .{ .empty = .{} };
+}
+
+// Simple test
+var my_ring = RingU32.init();
+
+~ring.enqueue(ring: &my_ring, value: 42)
+| enqueued |> ring.dequeue(ring: &my_ring)
+    | value v |> _
+    | empty |> _
+| full |> _

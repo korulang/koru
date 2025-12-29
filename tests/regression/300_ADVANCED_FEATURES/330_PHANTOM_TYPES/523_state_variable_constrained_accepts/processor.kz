@@ -1,0 +1,9 @@
+// Generic processor constrained to owned OR borrowed
+// Will NOT accept other states like "gc" or "static"
+
+~event process { data: *Data[M'owned|borrowed] }
+| done { data: *Data[M'owned|borrowed] }  // Preserves whichever state was passed
+
+~proc process {
+    return .{ .done = .{ .data = data } };
+}

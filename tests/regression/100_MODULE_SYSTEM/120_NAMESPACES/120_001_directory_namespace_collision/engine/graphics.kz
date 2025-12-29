@@ -1,0 +1,15 @@
+// Graphics subsystem
+
+const std = @import("std");
+
+~event init {}
+
+~event shutdown {}
+
+~proc init {
+    std.debug.print("Graphics initialized\n", .{});
+}
+
+~proc shutdown {
+    std.debug.print("Graphics shutdown\n", .{});
+}

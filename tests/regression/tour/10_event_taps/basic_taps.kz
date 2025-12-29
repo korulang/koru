@@ -1,0 +1,92 @@
+// Tour 10: Event Taps (Observer Flows)
+// Event taps observe event transitions without interfering with the main flow.
+// NOTE: Event taps are parsed and type-checked but CODE GENERATION IS NOT YET IMPLEMENTED
+
+const std = @import("std");
+
+// Define some events to observe
+~event file.read { path: []const u8 }
+| content { data: []const u8, size: usize }
+| error { code: u32, message: []const u8 }
+
+~event log.info { message: []const u8, details: anytype }
+
+~event log.error { message: []const u8, error_info: anytype }
+
+~event metrics.record { event_name: []const u8, status: []const u8 }
+
+// Implement the file.read event
+~proc file.read {
+    // Simulated file reading
+    if (std.mem.eql(u8, e.path, "/etc/passwd")) {
+        return .{ .error = .{ 
+            .code = 403,
+            .message = "Permission denied"
+        }};
+    }
+    
+    // Pretend we read a file
+    return .{ .content = .{
+        .data = "File contents here",
+        .size = 18
+    }};
+}
+
+// Simple proc implementations for logging
+~proc log.info {
+    std.debug.print("INFO: {s}\n", .{e.message});
+    return .{};
+}
+
+~proc log.error {
+    std.debug.print("ERROR: {s}\n", .{e.message});
+    return .{};
+}
+
+~proc metrics.record {
+    std.debug.print("METRIC: {s} = {s}\n", .{e.event_name, e.status});
+    return .{};
+}
+
+// OUTPUT TAPS: Observe after event completes
+// These execute after file.read finishes, observing its output
+
+// Tap to log successful file reads
+~file.read -> * | content c |> log.info(
+    message: "File read successful",
+    details: .{ .size = c.size }
+)
+
+// Tap to log file read errors
+~file.read -> * | error e |> log.error(
+    message: "File read failed",
+    error_info: .{ .code = e.code, .msg = e.message }
+)
+
+// INPUT TAPS: Observe before event executes
+// These would execute before the target event runs
+
+// Log all incoming file.read requests (if input taps were supported)
+// ~* -> file.read |> input i |> log.info(
+//     message: "Reading file",
+//     details: .{ .path = i.path }
+// )
+
+// CHAINED OBSERVATION: Observe specific event chains
+// This tap only fires when file.read flows into metrics.record
+
+~file.read -> metrics.record | content _ |> log.info(
+    message: "File read metrics recorded",
+    details: .{}
+)
+
+// Example flow that would trigger the taps
+~file.read(path: "/home/user/data.txt")
+| content c |> metrics.record(
+    event_name: "file_read",
+    status: "success"
+)
+| error e |> metrics.record(
+    event_name: "file_read", 
+    status: "error"
+)

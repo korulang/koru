@@ -1,0 +1,53 @@
+// This test verifies that the phantom semantic checker reports ALL errors in a single pass
+// rather than stopping at the first error
+
+pub const File = struct {
+    handle: usize,
+};
+
+~event open_file { path: []const u8 }
+| opened { file: *File[open] }
+
+~event close_file { file: *File[closed] }
+| done {}
+
+~event read_file { file: *File[open] }
+| done {}
+
+~event write_file { file: *File[open] }
+| done {}
+
+~proc open_file {
+    const f = File{ .handle = 42 };
+    return .{ .opened = .{ .file = &f } };
+}
+
+~proc close_file {
+    _ = file;
+    return .{ .done = .{} };
+}
+
+~proc read_file {
+    _ = file;
+    return .{ .done = .{} };
+}
+
+~proc write_file {
+    _ = file;
+    return .{ .done = .{} };
+}
+
+// Flow 1: ERROR - Passing [open] file to close_file expecting [closed]
+~open_file(path: "test1.txt")
+| opened o |> close_file(file: o.file)
+    | done |> _
+
+// Flow 2: ERROR - Passing [open] file to close_file expecting [closed]
+~open_file(path: "test2.txt")
+| opened o |> close_file(file: o.file)
+    | done |> _
+
+// Flow 3: ERROR - Passing [open] file to close_file expecting [closed]
+~open_file(path: "test3.txt")
+| opened o |> close_file(file: o.file)
+    | done |> _

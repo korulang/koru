@@ -1,0 +1,7 @@
+// Test 901: Unclosed input brace
+// Parser should reject with clear error about missing '}'
+
+~event write {
+    value: i32,
+    note: []const u8
+| success {}

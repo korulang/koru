@@ -1,0 +1,27 @@
+// Tour 01: Dynamic Hello World
+// This version shows how to concatenate strings dynamically using an allocator
+
+const std = @import("std");
+
+// Event that takes an allocator for dynamic string operations
+~event greet_dynamic { name: []const u8, allocator: std.mem.Allocator }
+| welcomed { message: []const u8 }
+| error { msg: []const u8 }
+
+// Proc that creates a dynamic greeting
+~proc greet_dynamic {
+    // Use the provided allocator to create a dynamic string
+    const message = std.fmt.allocPrint(e.allocator, "Hello, {s}!", .{e.name}) catch |err| {
+        // If allocation fails, return an error branch
+        return .{ .error = .{ .msg = "Failed to allocate greeting" }};
+    };
+    
+    return .{ .welcomed = .{ .message = message }};
+}
+
+// Note: In a real program, you'd call this with an actual allocator:
+// var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+// const allocator = gpa.allocator();
+// ~greet_dynamic(name: "World", allocator: allocator)
+// | welcomed w |> ... // Use w.message
+// | error e |> ... // Handle error

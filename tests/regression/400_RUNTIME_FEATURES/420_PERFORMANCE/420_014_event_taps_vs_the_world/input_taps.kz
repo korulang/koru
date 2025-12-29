@@ -1,0 +1,81 @@
+// ============================================================================
+// Koru Taps Implementation: Pure Event-Based Producer/Consumer
+// ============================================================================
+// Tests the RAW POWER of event taps:
+// - Simple counting loop (the "producer")
+// - Tap observes each count and accumulates (the "consumer")
+// - Tap observes completion to validate
+//
+// NO RING. NO CHANNEL. NO SHARED MEMORY STRUCTURE.
+// Just events and taps proving zero-cost observation.
+// ============================================================================
+
+const std = @import("std");
+
+const MESSAGES: u64 = 10_000_000;
+
+// Global accumulator
+var sum: u64 = 0;
+
+// ============================================================================
+// The counting loop - this is the "producer"
+// ============================================================================
+
+~event count { i: u64 }
+| next { value: u64 }
+| done {}
+
+~proc count {
+    if (i >= MESSAGES) {
+        return .{ .done = .{} };
+    }
+    return .{ .next = .{ .value = i } };
+}
+
+// ============================================================================
+// Void events for tap actions
+// ============================================================================
+
+~event accumulate { value: u64 }
+
+~proc accumulate {
+    sum += value;
+}
+
+~event validate {}
+
+~proc validate {
+    const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
+    if (sum == expected) {
+        std.debug.print("✓ Taps: Validated {} messages (checksum: {})\n", .{ MESSAGES, sum });
+    } else {
+        std.debug.print("✗ Taps: CHECKSUM MISMATCH! got {}, expected {}\n", .{ sum, expected });
+    }
+}
+
+// Starting event to kick off the loop
+~event start {}
+| ready {}
+
+~proc start {
+    return .{ .ready = .{} };
+}
+
+// ============================================================================
+// EVENT TAPS - The "consumer" pattern via observation
+// ============================================================================
+
+// TAP: Observe count, accumulate on "next"
+~count -> * | next v |> accumulate(value: v.value)
+
+// TAP: Observe count completion, validate
+~count -> * | done |> validate()
+
+// ============================================================================
+// Main Flow - Just a simple loop
+// ============================================================================
+
+~start()
+| ready |> #loop count(i: 0)
+    | next n |> @loop(i: n.value + 1)
+    | done |> _

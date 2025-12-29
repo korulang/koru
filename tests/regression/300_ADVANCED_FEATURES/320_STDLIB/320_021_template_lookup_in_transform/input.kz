@@ -1,0 +1,20 @@
+// Test: ~if uses REAL template system (lookupTemplate + interpolate)
+//
+// This test verifies that the ~if transform:
+// 1. Calls template_utils.lookupTemplate(program, "if")
+// 2. Finds the template defined in control.kz
+// 3. Interpolates with ${condition}, ${| then |}, ${| else |}
+// 4. Uses the result as inline_body
+//
+// This is ACTUAL template metaprogramming, not hardcoded string building!
+// Mom can put this on the refrigerator.
+
+~import "$std/io"
+
+const std = @import("std");
+
+const value = 42;
+
+~if(value > 10)
+| then |> std.io:println(text: "Template says: greater!")
+| else |> std.io:println(text: "Template says: not greater!")

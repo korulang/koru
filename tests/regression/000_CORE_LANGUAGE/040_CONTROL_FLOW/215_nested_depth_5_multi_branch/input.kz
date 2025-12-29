@@ -1,0 +1,64 @@
+// ============================================================================
+// CHAOS MODE: Depth 5 with Multiple Branches
+// ============================================================================
+// This tests the FULL complexity:
+// - 5 levels deep
+// - Multiple branches at each level (ok/error)
+// - Error handling propagation
+// - Should expose ALL the bootstrap bugs at once!
+// ============================================================================
+
+const std = @import("std");
+
+~event validate { value: i32 }
+| ok { result: i32 }
+| failure { msg: []const u8 }
+
+~proc validate {
+    if (value > 0) {
+        return .{ .ok = .{ .result = value } };
+    } else {
+        return .{ .failure = .{ .msg = "negative" } };
+    }
+}
+
+~event double { value: i32 }
+| ok { result: i32 }
+| failure { msg: []const u8 }
+
+~proc double {
+    if (value < 100) {
+        return .{ .ok = .{ .result = value * 2 } };
+    } else {
+        return .{ .failure = .{ .msg = "too large" } };
+    }
+}
+
+// Chain with failure handling at each level
+~event process { input: i32 }
+| success { final: i32 }
+| failed { reason: []const u8 }
+
+~process = validate(value: input)
+| ok a |> double(value: a.result)
+    | ok b |> validate(value: b.result)
+        | ok c |> double(value: c.result)
+            | ok d |> validate(value: d.result)
+                | ok final_ok |> success { final: final_ok.result }
+                | failure e_err |> failed { reason: e_err.msg }
+            | failure d_err |> failed { reason: d_err.msg }
+        | failure c_err |> failed { reason: c_err.msg }
+    | failure b_err |> failed { reason: b_err.msg }
+| failure a_err |> failed { reason: a_err.msg }
+
+~event test_process { }
+
+~proc test_process {
+    const result = process_event.handler(.{ .input = 1 });
+    switch (result) {
+        .success => |s| std.debug.print("Success: {}\n", .{s.final}),
+        .failed => |f| std.debug.print("Failed: {s}\n", .{f.reason}),
+    }
+}
+
+~test_process()

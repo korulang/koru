@@ -1,0 +1,17 @@
+// ============================================================================
+// Regression test: event input shape braces may begin on a following line
+// Also verifies branch payload shapes can span multiple lines cleanly
+// ============================================================================
+
+~event example.write
+    // intentionally keep the opening brace on the next line
+{
+    value: i32,
+    note: []const u8,
+}
+| success {
+    written: usize,
+}
+| failure {
+    message: []const u8,
+}

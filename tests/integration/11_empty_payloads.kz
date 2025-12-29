@@ -1,0 +1,40 @@
+// Test: Events with empty struct {} payloads
+// Expected: Empty branches should work correctly
+// Verifies: Empty struct handling in unions
+
+~event state.change {}
+| ready {}
+| busy {}
+| done {}
+
+~proc state.change {
+    // Just return ready for testing
+    return .{ .@"ready" = .{} };
+}
+
+~event task.run { id: u32 }
+| started {}
+| completed { result: u32 }
+| failed {}
+
+~proc task.run {
+    if (e.id == 0) {
+        return .{ .@"failed" = .{} };
+    }
+    if (e.id == 1) {
+        return .{ .@"started" = .{} };
+    }
+    return .{ .@"completed" = .{ .result = e.id * 10 } };
+}
+
+// Test empty payloads in flow
+~state.change()
+| ready |> task.run(id: 1)
+  | started |> state.change()
+    | busy |> _
+    | ready |> _
+    | done |> _
+  | completed c |> _
+  | failed |> _
+| busy |> _
+| done |> _

@@ -1,0 +1,14 @@
+// Test 380_002: Liquid Conditionals
+//
+// Tests {% if %} and {% unless %} in templates.
+// Boolean args control conditional blocks.
+//
+// Use cases:
+//   - Generate different code based on compile-time flags
+//   - Include/exclude sections based on type properties
+//   - Conditional visibility (pub/private)
+
+~import "$std/liquid_template"
+
+// When is_debug is truthy (non-empty string), the {% if %} block is included
+~emit("{% if is_debug %}[DEBUG] Player: {{ name }}{% endif %} Game started.", is_debug: "true", name: "Bob")

@@ -1,0 +1,21 @@
+// Test 645: Default Steps with Dependencies
+// Tests that ~[default, depends_on(...)] annotations work correctly
+//
+// Demonstrates the full build pipeline:
+// - compile_backend (default from stdlib)
+// - build (default from stdlib, depends on compile_backend)
+// - run (user override, depends on build)
+//
+// Expected: Steps execute in dependency order, override is applied
+
+~import "$std/build"
+
+// User overrides "run" but keeps the dependency
+~[depends_on("build")]std.build:step(name: "run") {
+    echo "USER: Running application with custom flags --verbose"
+}
+
+// User adds a new "test" step that depends on "build"
+~[depends_on("build")]std.build:step(name: "test") {
+    echo "Running test suite"
+}

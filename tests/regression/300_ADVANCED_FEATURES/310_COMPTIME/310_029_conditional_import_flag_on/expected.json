@@ -1,0 +1,78 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_029_conditional_import_flag_on/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_029_conditional_import_flag_on/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_029_conditional_import_flag_on/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_029_conditional_import_flag_on/input.kz",
+                "line": 4,
+                "col": 0
+            }
+        },
+        {
+            "type": "import_decl",
+            "path": "$std/profiler",
+            "location": {
+                "file": "tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_029_conditional_import_flag_on/input.kz",
+                "line": 7,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "test",
+            "path": ["test"],
+            "module": "input",
+            "input": {
+                "fields": [
+
+                ]
+            },
+            "branches": [
+                {
+                    "name": "done",
+                    "payload": {
+                        "fields": [
+
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_029_conditional_import_flag_on/input.kz",
+                "line": 10,
+                "col": 0
+            }
+        }
+    ]
+}

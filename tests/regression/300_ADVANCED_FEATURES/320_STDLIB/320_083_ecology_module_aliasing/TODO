@@ -1,0 +1,2 @@
+ECOLOGY: Module aliasing should not break special behavior
+Reason: Modules with hardcoded paths should track canonical path, not user alias

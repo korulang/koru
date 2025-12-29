@@ -1,0 +1,87 @@
+The point of an [opaque] proc is to have to highlight it as opaque because you're intentionally calling Koru-events FROM a Koru-event, breaking the flow. This has performance implications, and is almost ALWAYS mechanically refactoringable to returning to the calling flow, making the code easier to optimize.
+
+This isn't STRICTLY purity-related, but let's add it here for now.
+
+Prior discussion:
+
+  Point 1: [pure|opaque] Combination
+
+  You're absolutely right! The semantics should be:
+
+  // Transparent + pure = optimizer can see everything
+  ~[pure]proc compute {
+      return .{ .done = .{ .result = x * 2 } };
+  }
+
+  // Opaque + pure = optimizer can't see inside, but trusts purity
+  ~[pure|opaque]proc compute_via_pure_handlers {
+      const x = pure_math_event.handler(...); // I KNOW this is pure!
+      return x;
+  }
+
+  // Opaque + impure = optimizer can't see inside, has side effects
+  ~[opaque]proc has_side_effects {
+      const x = io_event.handler(...);
+      return x;
+  }
+
+  // Default = transparent + impure (arbitrary Zig, no handlers)
+  ~proc normal {
+      std.debug.print("...", .{});
+      return .{ .done = .{} };
+  }
+
+  So the rules become:
+  - Want handler calls? Need [opaque]
+  - Claiming those handlers are pure? Add [pure] too
+  - Compiler trusts your [pure|opaque] claim (like trusting any [pure])
+
+  Point 2: Recognizing Koru Handler Calls
+
+  Great question! We need to distinguish:
+
+  const x = foo_event.handler(...);     // ← Koru event handler (CHECK THIS!)
+  const y = my_struct.handler(...);     // ← Arbitrary Zig method (IGNORE!)
+
+  Options:
+
+  Option A: Pattern Matching (Simple)
+
+  Look for *_event.handler( pattern:
+  - multiply_event.handler( → Koru handler ✅
+  - my_struct.handler( → Not matching pattern ❌
+
+  Pros: Simple, fast, no symbol table needed
+  Cons: Convention-dependent (but we enforce _event suffix anyway)
+
+  Option B: Symbol Table Lookup (Robust)
+
+  Check if identifier is in event registry:
+  - Parse multiply_event → Look up "multiply" event → Found ✅
+  - Parse my_struct → Not an event → Ignore ❌
+
+  Pros: Accurate, not convention-dependent
+  Cons: Need symbol table during Zig code parsing
+
+  Option C: Hybrid (Best?)
+
+  1. Quick pattern check: Does it end with _event.handler(?
+  2. If yes, validate it's a real event (optional warning if not found)
+
+  What I'm leaning toward: Option A or C
+
+  The _event suffix is already our convention (enforced by the emitter), so checking for *_event.handler( is reliable. We could add a warning if someone writes
+  fake_event.handler() for something that isn't actually an event.
+
+  Which approach do you prefer?
+
+  And should the error message be:
+  - ❌ "Handler calls require [opaque] annotation"
+  - OR more helpful:
+  - ❌ "Handler call to 'multiply_event' requires [opaque] annotation. Consider refactoring to flow branches, or add [opaque] if this is intentional."
+
+  What do you think? And glad you love the plan overall! 🚀
+
+> Yes, Option C seems REALLY GOOD. But! Should we DOCUMENT the opaque-feature first with a test. It is HARDLY a MUST HAVE, it is more of a "nice to have" trying to
+get people to write better code. But we're the only ones with access to the compiler right now! So it is more important to get the purity-stuff to a level where
+we're confident about it.

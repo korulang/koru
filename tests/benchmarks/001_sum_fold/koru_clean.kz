@@ -1,0 +1,13 @@
+// Benchmark: Clean syntax version
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+const N: usize = 100_000_000;
+
+~capture({ sum: @as(i64, 0) })
+| as acc |> for(0..N)
+    | each i |> captured { sum: acc.sum + @as(i64, @intCast(i)) + 1 }
+| done result |> std.io:print.ln("${result.sum:d}")

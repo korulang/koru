@@ -1,0 +1,17 @@
+// ============================================================================
+// Test 055c: Flow checker rejects missing else case
+// Tests that the flow_checker correctly REJECTS when-clauses without an else:
+// - Multiple continuations with when-clauses but NO else case
+// - Should fail with KORU050 error (non-exhaustive)
+// ============================================================================
+
+~event check { x: i32, y: i32 }
+| high { x: i32 }
+| low { y: i32 }
+
+// Invalid: Two when-clauses but NO else case (non-exhaustive)
+~check(x: 10, y: 5)
+| high h when (h.x > 10) |> _
+| high h when (h.x > 5) |> _
+// Missing: | high h |> _ (else case)
+| low l |> _

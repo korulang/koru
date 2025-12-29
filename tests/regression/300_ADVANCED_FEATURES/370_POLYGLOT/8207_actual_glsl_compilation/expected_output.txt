@@ -1,0 +1,2 @@
+✅ GPU shader compiled successfully!
+   SPIR-V binary: /tmp/koru_test_shader.spv (880 bytes)

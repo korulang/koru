@@ -1,0 +1,36 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Nested Continuation Depth 2 (baseline)
+// Feature: Flow with 2 levels of nested continuations
+// Verifies: Basic nested continuation structure works
+// Depth: start |> level1 |> level2 → result
+// ============================================================================
+
+const std = @import("std");
+
+// Simple events that add values
+~event add_one { value: i32 }
+| done { result: i32 }
+
+~proc add_one = done { result: value + 1 }
+
+~event add_two { value: i32 }
+| done { result: i32 }
+
+~proc add_two = done { result: value + 2 }
+
+// Chain: start → add_one → add_two → result
+// Depth 2: Two nested continuations
+~event chain { start: i32 }
+| done { result: i32 }
+
+~proc chain = add_one(value: start)
+| done a |> add_two(value: a.result)
+    | done b |> done { result: b.result }
+
+// Test: 10 + 1 + 2 = 13
+pub fn main() void {
+    const result = chain_event.handler(.{ .start = 10 });
+    std.debug.print("{}\n", .{result.done.result});
+}

@@ -1,0 +1,12 @@
+// Base module - lowest level in import chain
+// Defines a simple pure operation
+
+const std = @import("std");
+
+~pub event double { x: i32 }
+| doubled { result: i32 }
+
+~proc double {
+    const result = x * 2;
+    return .{ .doubled = .{ .result = result } };
+}

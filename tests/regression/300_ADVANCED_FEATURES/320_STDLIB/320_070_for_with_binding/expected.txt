@@ -1,0 +1,4 @@
+Added 1, sum = 1
+Added 2, sum = 3
+Added 3, sum = 6
+Final sum: 6

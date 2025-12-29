@@ -1,0 +1,4 @@
+Starting computation
+Valid result
+Invalid result
+Done

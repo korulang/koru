@@ -1,0 +1,111 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_001_event_multiline_shape/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_001_event_multiline_shape/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_001_event_multiline_shape/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_001_event_multiline_shape/input.kz",
+                "line": 4,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_001_event_multiline_shape/input.kz",
+                "line": 5,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "write",
+            "path": ["example", "write"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "value",
+                        "type": "i32",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    },
+                    {
+                        "name": "note",
+                        "type": "[]const u8",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "success",
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "written",
+                                "type": "usize",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "failure",
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "message",
+                                "type": "[]const u8",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false
+                            }
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_001_event_multiline_shape/input.kz",
+                "line": 19,
+                "col": 0
+            }
+        }
+    ]
+}

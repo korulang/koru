@@ -1,0 +1,247 @@
+// LANGUAGE SHOOTOUT: N-body Gravitational Simulation
+// Tests: Float arithmetic, loop optimization, numerical computation
+// Threshold: 1.20x (within 20% of hand-optimized Zig)
+//
+// CRITICAL: This implementation uses PROPER EVENT DECOMPOSITION
+// We test Koru's event-driven architecture, NOT "can we call fast Zig code"
+//
+// Event decomposition:
+// - initialize_bodies: Create planetary system
+// - offset_momentum: Zero out system momentum (sun at rest)
+// - calculate_energy: Compute total energy (kinetic + potential)
+// - calculate_interactions: Update velocities from gravitational forces
+// - update_positions: Update positions from velocities
+// - print_energy: Output energy value
+//
+// This proves:
+// ✅ Event dispatch is zero-cost
+// ✅ Multi-event flows compile to straight-line code
+// ✅ Event composition equals direct function calls
+//
+// OPTIMIZATION: Uses slices instead of arrays to avoid copying 280 bytes per event!
+
+const std = @import("std");
+
+~import "$std/control"
+
+const PI = 3.141592653589793;
+const SOLAR_MASS = 4 * PI * PI;
+const DAYS_PER_YEAR = 365.24;
+
+const Body = struct {
+    x: f64,
+    y: f64,
+    z: f64,
+    vx: f64,
+    vy: f64,
+    vz: f64,
+    mass: f64,
+};
+
+// ============================================================================
+// Event 1: Initialize planetary bodies
+// ============================================================================
+
+~event initialize_bodies {}
+| initialized { bodies: [5]Body }
+
+~proc initialize_bodies {
+    // Sun, Jupiter, Saturn, Uranus, Neptune
+    const bodies_data = [_]Body{
+        .{ // Sun
+            .x = 0, .y = 0, .z = 0,
+            .vx = 0, .vy = 0, .vz = 0,
+            .mass = SOLAR_MASS,
+        },
+        .{ // Jupiter
+            .x = 4.84143144246472090e+00,
+            .y = -1.16032004402742839e+00,
+            .z = -1.03622044471123109e-01,
+            .vx = 1.66007664274403694e-03 * DAYS_PER_YEAR,
+            .vy = 7.69901118419740425e-03 * DAYS_PER_YEAR,
+            .vz = -6.90460016972063023e-05 * DAYS_PER_YEAR,
+            .mass = 9.54791938424326609e-04 * SOLAR_MASS,
+        },
+        .{ // Saturn
+            .x = 8.34336671824457987e+00,
+            .y = 4.12479856412430479e+00,
+            .z = -4.03523417114321381e-01,
+            .vx = -2.76742510726862411e-03 * DAYS_PER_YEAR,
+            .vy = 4.99852801234917238e-03 * DAYS_PER_YEAR,
+            .vz = 2.30417297573763929e-05 * DAYS_PER_YEAR,
+            .mass = 2.85885980666130812e-04 * SOLAR_MASS,
+        },
+        .{ // Uranus
+            .x = 1.28943695621391310e+01,
+            .y = -1.51111514016986312e+01,
+            .z = -2.23307578892655734e-01,
+            .vx = 2.96460137564761618e-03 * DAYS_PER_YEAR,
+            .vy = 2.37847173959480950e-03 * DAYS_PER_YEAR,
+            .vz = -2.96589568540237556e-05 * DAYS_PER_YEAR,
+            .mass = 4.36624404335156298e-05 * SOLAR_MASS,
+        },
+        .{ // Neptune
+            .x = 1.53796971148509165e+01,
+            .y = -2.59193146099879641e+01,
+            .z = 1.79258772950371181e-01,
+            .vx = 2.68067772490389322e-03 * DAYS_PER_YEAR,
+            .vy = 1.62824170038242295e-03 * DAYS_PER_YEAR,
+            .vz = -9.51592254519715870e-05 * DAYS_PER_YEAR,
+            .mass = 5.15138902046611451e-05 * SOLAR_MASS,
+        },
+    };
+
+    return .{ .initialized = .{ .bodies = bodies_data } };
+}
+
+// ============================================================================
+// Event 2: Offset momentum (sun at rest) - MUTATES bodies in place!
+// ============================================================================
+
+~event offset_momentum { bodies: []Body }
+| adjusted {}
+
+~proc offset_momentum {
+    var px: f64 = 0.0;
+    var py: f64 = 0.0;
+    var pz: f64 = 0.0;
+
+    for (bodies) |body| {
+        px += body.vx * body.mass;
+        py += body.vy * body.mass;
+        pz += body.vz * body.mass;
+    }
+
+    bodies[0].vx = -px / SOLAR_MASS;
+    bodies[0].vy = -py / SOLAR_MASS;
+    bodies[0].vz = -pz / SOLAR_MASS;
+
+    return .{ .adjusted = .{} };
+}
+
+// ============================================================================
+// Event 3: Calculate total energy (kinetic + potential)
+// ============================================================================
+
+~event calculate_energy { bodies: []const Body }
+| result { energy: f64 }
+
+~proc calculate_energy {
+    var e: f64 = 0.0;
+
+    for (bodies, 0..) |body, i| {
+        // Kinetic energy
+        e += 0.5 * body.mass * (body.vx * body.vx + body.vy * body.vy + body.vz * body.vz);
+
+        // Potential energy (pairwise)
+        var j = i + 1;
+        while (j < bodies.len) : (j += 1) {
+            const dx = body.x - bodies[j].x;
+            const dy = body.y - bodies[j].y;
+            const dz = body.z - bodies[j].z;
+            const distance = @sqrt(dx * dx + dy * dy + dz * dz);
+            e -= (body.mass * bodies[j].mass) / distance;
+        }
+    }
+
+    return .{ .result = .{ .energy = e } };
+}
+
+// ============================================================================
+// Event 4: Print energy value
+// ============================================================================
+
+~event print_energy { energy: f64 }
+| done {}
+
+~proc print_energy {
+    std.debug.print("{d:.9}\n", .{energy});
+    return .{ .done = .{} };
+}
+
+// ============================================================================
+// Event 5: Calculate gravitational interactions - MUTATES bodies in place!
+// Single responsibility: ONLY velocity updates from forces
+// ============================================================================
+
+~event calculate_interactions { bodies: []Body, dt: f64 }
+| updated {}
+
+~proc calculate_interactions {
+    var i: usize = 0;
+    while (i < bodies.len) : (i += 1) {
+        var j: usize = i + 1;
+        while (j < bodies.len) : (j += 1) {
+            const dx = bodies[i].x - bodies[j].x;
+            const dy = bodies[i].y - bodies[j].y;
+            const dz = bodies[i].z - bodies[j].z;
+            const distance = @sqrt(dx * dx + dy * dy + dz * dz);
+            const mag = dt / (distance * distance * distance);
+
+            bodies[i].vx -= dx * bodies[j].mass * mag;
+            bodies[i].vy -= dy * bodies[j].mass * mag;
+            bodies[i].vz -= dz * bodies[j].mass * mag;
+
+            bodies[j].vx += dx * bodies[i].mass * mag;
+            bodies[j].vy += dy * bodies[i].mass * mag;
+            bodies[j].vz += dz * bodies[i].mass * mag;
+        }
+    }
+
+    return .{ .updated = .{} };
+}
+
+// ============================================================================
+// Event 6: Update positions from velocities - MUTATES bodies in place!
+// Single responsibility: ONLY position updates
+// ============================================================================
+
+~event update_positions { bodies: []Body, dt: f64 }
+| advanced {}
+
+~proc update_positions {
+    for (bodies) |*body| {
+        body.x += dt * body.vx;
+        body.y += dt * body.vy;
+        body.z += dt * body.vz;
+    }
+
+    return .{ .advanced = .{} };
+}
+
+// ============================================================================
+// Event 7: Parse command line argument
+// ============================================================================
+
+~event parse_args {}
+| parsed { n: u32 }
+
+~proc parse_args {
+    const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
+    defer std.process.argsFree(std.heap.page_allocator, args);
+
+    if (args.len < 2) {
+        std.debug.print("Usage: {s} <iterations>\n", .{args[0]});
+        unreachable;
+    }
+
+    const n = std.fmt.parseInt(u32, args[1], 10) catch unreachable;
+    return .{ .parsed = .{ .n = n } };
+}
+
+// ============================================================================
+// Main flow: Orchestrate all events with ZERO-COPY slice passing!
+// Bodies array lives on the stack and is mutated in place through slices
+// ============================================================================
+
+~parse_args()
+| parsed p |> initialize_bodies()
+    | initialized init[mutable] |> offset_momentum(bodies: init.bodies[0..])
+        | adjusted |> calculate_energy(bodies: init.bodies[0..])
+            | result r1 |> print_energy(energy: r1.energy)
+                | done |> for(0..p.n)
+                    | each |> calculate_interactions(bodies: init.bodies[0..], dt: 0.01)
+                        | updated |> update_positions(bodies: init.bodies[0..], dt: 0.01)
+                    | done |> calculate_energy(bodies: init.bodies[0..])
+                        | result r2 |> print_energy(energy: r2.energy)
+                            | done |> _

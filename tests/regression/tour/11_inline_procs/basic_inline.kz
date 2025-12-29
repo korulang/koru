@@ -1,0 +1,150 @@
+// Tour 11: Inline Flows in Procs
+// Procs can invoke Koru events inline, mixing Zig code with flow syntax
+// This creates a unified programming model
+
+const std = @import("std");
+
+// Define validation event
+~event validate { data: []const u8 }
+| valid { clean_data: []const u8 }
+| invalid { reason: []const u8 }
+
+// Define processing event
+~event process { input: []const u8 }
+| success { output: []const u8 }
+| error { code: u32 }
+
+// Simple validation implementation
+~proc validate {
+    // Check if data is not empty and has valid format
+    if (e.data.len == 0) {
+        return .{ .invalid = .{ .reason = "Empty data" } };
+    }
+    
+    // Check for forbidden characters
+    for (e.data) |char| {
+        if (char == '<' or char == '>') {
+            return .{ .invalid = .{ .reason = "Contains HTML tags" } };
+        }
+    }
+    
+    return .{ .valid = .{ .clean_data = e.data } };
+}
+
+// Simple processing implementation
+~proc process {
+    // Transform the input
+    return .{ .success = .{ .output = e.input } };
+}
+
+// Main event that uses inline flows
+~event handle_request { payload: []const u8 }
+| ok { result: []const u8 }
+| error { message: []const u8 }
+
+// INLINE FLOWS: Mix Zig code with Koru flows
+~proc handle_request {
+    // First, validate the input using an inline flow
+    // The result is assigned to a Zig variable
+    const validated = ~validate(data: e.payload)
+    | valid v |> v.clean_data        // Extract just the clean data
+    | invalid i |> return .{          // Early return on invalid input
+        .error = .{ 
+            .message = i.reason 
+        } 
+    }
+    
+    // Now 'validated' is a regular Zig variable containing the clean data
+    std.debug.print("Validated data: {s}\n", .{validated});
+    
+    // We can use regular Zig code here
+    if (validated.len > 100) {
+        return .{ .error = .{ .message = "Data too large" } };
+    }
+    
+    // Process the validated data with another inline flow
+    const processed = ~process(input: validated)
+    | success s |> s.output
+    | error e |> return .{
+        .error = .{ 
+            .message = "Processing failed" 
+        }
+    }
+    
+    // More Zig code - combine results
+    var result_buf: [256]u8 = undefined;
+    const result = std.fmt.bufPrint(
+        &result_buf, 
+        "Processed: {s}", 
+        .{processed}
+    ) catch "Format error";
+    
+    // Return success with the final result
+    return .{ .ok = .{ .result = result } };
+}
+
+// Alternative: Inline flow without assignment (terminal flow)
+~event quick_validate { text: []const u8 }
+| accepted {}
+| rejected { why: []const u8 }
+
+~proc quick_validate {
+    // Without assignment, the inline flow returns directly from the proc
+    ~validate(data: e.text)
+    | valid _ |> .{ .accepted = .{} }
+    | invalid i |> .{ .rejected = .{ .why = i.reason } }
+    
+    // This line would be unreachable
+}
+
+// Multiple inline flows in sequence
+~event multi_step { input: []const u8 }
+| done { final_result: []const u8 }
+| failed { step: []const u8, reason: []const u8 }
+
+~proc multi_step {
+    // Step 1: Validate
+    const step1 = ~validate(data: e.input)
+    | valid v |> v.clean_data
+    | invalid i |> return .{
+        .failed = .{ 
+            .step = "validation",
+            .reason = i.reason 
+        }
+    }
+    
+    // Step 2: Process
+    const step2 = ~process(input: step1)
+    | success s |> s.output  
+    | error _ |> return .{
+        .failed = .{
+            .step = "processing",
+            .reason = "Process error"
+        }
+    }
+    
+    // Step 3: Process again (for demonstration)
+    const step3 = ~process(input: step2)
+    | success s |> s.output
+    | error _ |> return .{
+        .failed = .{
+            .step = "post-processing", 
+            .reason = "Post-process error"
+        }
+    }
+    
+    return .{ .done = .{ .final_result = step3 } };
+}
+
+// Example flows
+~handle_request(payload: "Hello, Koru!")
+| ok o |> _
+| error e |> _
+
+~quick_validate(text: "")
+| accepted |> _
+| rejected r |> _
+
+~multi_step(input: "Process this")
+| done d |> _
+| failed f |> _

@@ -1,0 +1,497 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Source Scope Capture - THE BREAKTHROUGH
+// Feature: Source parameters capture continuation bindings
+// Verifies: Continuation variables appear in source.scope.bindings
+// ============================================================================
+// This test proves that Source parameters capture lexical scope from
+// continuation pipelines, enabling true template metaprogramming where
+// comptime code can inspect runtime variable bindings!
+// ============================================================================
+
+~import "$std/io"
+
+// Event that provides user data
+~event getUserData { }
+| data { name: []const u8, age: i32 }
+
+~proc getUserData {
+    return .{ .data = .{ .name = "Alice", .age = 42 } };
+}
+
+const std = @import("std");
+
+// Event that takes Source[HTML] parameter for template rendering
+// [comptime|transform] annotation marks this as compile-time transformation
+// Transform events receive: source (user args), invocation (for type resolution), program (AST), allocator (memory)
+~[comptime|transform]event renderHTML { source: Source[HTML], invocation: *const Invocation, program: *const Program, allocator: std.mem.Allocator }
+| transformed { program: *const Program }
+| failed { error: []const u8 }
+
+~proc renderHTML {
+    // THE BREAKTHROUGH: Access captured bindings at comptime!
+    // source.scope.bindings should contain the 'u' binding from the continuation
+
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+    // NOTE: allocator is now passed as a parameter!
+
+    // First, prove we can see the bindings!
+    if (source.scope.bindings.len == 0) {
+        return .{ .failed = .{ .error = "ERROR: No bindings captured!" } };
+    }
+
+    // THE BREAKTHROUGH: We have access to the captured binding!
+    const binding = source.scope.bindings[0];
+
+    // Parse the HTML template to find $[...] interpolations and build format string
+    // THE KEY INSIGHT: Use ast_functional.resolveBindingType()!
+    // This walks the AST to find the event+branch that produced this binding,
+    // respecting transform execution order (upstream transforms have already run).
+    const resolved = ast_functional.resolveBindingType(allocator, binding, invocation, program) catch unreachable;
+
+    const type_event_name: []const u8 = resolved.event_name;
+    const type_branch_name: []const u8 = resolved.branch_name;
+    const type_fields: []const ast.Field = resolved.fields;
+    const type_module: []const u8 = resolved.module;
+
+    // Parse the HTML template to find $[...] interpolations and build format string
+    const template = source.text;
+    var format_buf: [1024]u8 = undefined;
+    var format_len: usize = 0;
+    var interpolations: [16][]const u8 = undefined;
+    var interp_count: usize = 0;
+
+    var i: usize = 0;
+    while (i < template.len) {
+        if (i + 1 < template.len and template[i] == '$' and template[i + 1] == '[') {
+            // Found interpolation start
+            const start = i + 2;
+            var end = start;
+            while (end < template.len and template[end] != ']') : (end += 1) {}
+
+            if (end < template.len) {
+                // Extract the expression (e.g., "u.name")
+                const expr = template[start..end];
+                interpolations[interp_count] = expr;
+                interp_count += 1;
+
+                // PLACEHOLDER: We'll determine format specifier after we know the field types
+                // For now, just add a marker we'll replace later
+                format_buf[format_len] = '{';
+                format_buf[format_len + 1] = '?';
+                format_buf[format_len + 2] = '}';
+                format_len += 3;
+
+                i = end + 1;
+                continue;
+            }
+        }
+
+        // Regular character - copy to format string
+        format_buf[format_len] = template[i];
+        format_len += 1;
+        i += 1;
+    }
+
+    // MOVED: Format string finalization will happen AFTER we know the field types
+
+    // Build the interpolation expression arguments
+    var args_buf: [512]u8 = undefined;
+    var args_len: usize = 0;
+    for (0..interp_count) |idx| {
+        if (idx > 0) {
+            args_buf[args_len] = ',';
+            args_buf[args_len + 1] = ' ';
+            args_len += 2;
+        }
+        const interp = interpolations[idx];
+        std.mem.copyForwards(u8, args_buf[args_len..], interp);
+        args_len += interp.len;
+    }
+    const args_str = allocator.dupe(u8, args_buf[0..args_len]) catch unreachable;
+
+    // NOTE: proc_body will be built AFTER we know format_str (after fixing format specifiers)
+
+    // Build DottedPath for renderHTML
+    const path_segments = allocator.alloc([]const u8, 1) catch unreachable;
+    path_segments[0] = allocator.dupe(u8, "renderHTML") catch unreachable;
+
+    const renderHTML_path = ast.DottedPath{
+        .module_qualifier = allocator.dupe(u8, type_module) catch unreachable,
+        .segments = path_segments,
+    };
+
+    // Create runtime EventDecl with captured binding as parameter
+    // We'll reference the derived type name (calculated later from event+branch)
+    const runtime_fields = allocator.alloc(ast.Field, 1) catch unreachable;
+    runtime_fields[0] = ast.Field{
+        .name = allocator.dupe(u8, binding.name) catch unreachable,
+        .type = allocator.dupe(u8, "__PLACEHOLDER__") catch unreachable,  // Will be replaced below
+        .module_path = null,
+        .phantom = null,
+        .is_source = false,
+        .is_file = false,
+        .is_embed_file = false,
+        .expression = null,
+        .expression_str = null,
+        .owns_expression = false,
+    };
+    var runtime_event = ast.EventDecl{
+        .path = renderHTML_path,
+        .input = ast.Shape{ .fields = runtime_fields },
+        .branches = &[_]ast.Branch{
+            ast.Branch{
+                .name = "rendered",
+                .payload = ast.Shape{ .fields = &[_]ast.Field{
+                    ast.Field{
+                        .name = "html",
+                        .type = "[]const u8",
+                        .module_path = null,
+                        .phantom = null,
+                        .is_source = false,
+                        .is_file = false,
+                        .is_embed_file = false,
+                        .expression = null,
+                        .expression_str = null,
+                        .owns_expression = false,
+                    },
+                } },
+                .is_deferred = false,
+                .is_optional = false,
+            },
+        },
+        .is_public = false,
+        .is_implicit_flow = false,
+        .is_abstract = false,
+        .annotations = &[_][]const u8{},
+        .is_pure = false,
+        .is_transitively_pure = false,
+        .location = source.location,
+        .module = allocator.dupe(u8, type_module) catch unreachable,
+    };
+
+    // Now that we have type_fields, fix the format specifiers based on ACTUAL field types
+    // Replace {?} placeholders with correct format specifiers
+    var format_idx: usize = 0;
+    var interp_idx: usize = 0;
+    while (format_idx < format_len) {
+        if (format_idx + 2 < format_len and
+            format_buf[format_idx] == '{' and
+            format_buf[format_idx + 1] == '?' and
+            format_buf[format_idx + 2] == '}') {
+            // Found a placeholder! Get the field name from the interpolation
+            const expr = interpolations[interp_idx];
+            // Expression is like "u.name" - extract field name after the dot
+            const field_name = if (std.mem.indexOf(u8, expr, ".")) |dot_idx|
+                expr[dot_idx + 1..]
+            else
+                expr;
+
+            // Look up the field type in type_fields
+            var format_spec: u8 = 'a';  // Default to {any}
+            for (type_fields) |field| {
+                if (std.mem.eql(u8, field.name, field_name)) {
+                    // Determine format spec from field type
+                    if (std.mem.eql(u8, field.type, "[]const u8")) {
+                        format_spec = 's';  // string
+                    } else if (std.mem.eql(u8, field.type, "i32") or
+                               std.mem.eql(u8, field.type, "i64") or
+                               std.mem.eql(u8, field.type, "u32") or
+                               std.mem.eql(u8, field.type, "u64")) {
+                        format_spec = 'd';  // integer
+                    }
+                    break;
+                }
+            }
+
+            // Replace the ? with the actual format specifier
+            format_buf[format_idx + 1] = format_spec;
+            interp_idx += 1;
+        }
+        format_idx += 1;
+    }
+
+    const format_str = allocator.dupe(u8, format_buf[0..format_len]) catch unreachable;
+
+    // Now we can build proc_body using the finalized format_str!
+    // Note: std is already imported at module level, so we don't redeclare it here
+    const proc_body = std.fmt.allocPrint(allocator,
+        \\const allocator = std.heap.page_allocator;
+        \\const html = std.fmt.allocPrint(allocator,
+        \\    "{s}",
+        \\    .{{{s}}}) catch unreachable;
+        \\return .{{ .rendered = .{{ .html = html }} }};
+    , .{format_str, args_str}) catch unreachable;
+
+    // Create runtime ProcDecl that implements renderHTML
+    var runtime_proc = ast.ProcDecl{
+        .path = renderHTML_path,
+        .body = proc_body,
+        .inline_flows = &[_]ast.Flow{},
+        .annotations = &[_][]const u8{},
+        .target = null,
+        .is_impl = true,
+        .is_pure = false,
+        .is_transitively_pure = false,
+        .location = source.location,
+        .module = allocator.dupe(u8, "__PLACEHOLDER__") catch unreachable,  // Will be replaced with type_module
+    };
+
+    // Derive type name from event and branch: __GetUserDataData
+    // Capitalize event name first letter
+    var event_capitalized: [256]u8 = undefined;
+    var event_len: usize = 0;
+    for (type_event_name, 0..) |ch, idx| {
+        if (idx == 0) {
+            event_capitalized[event_len] = std.ascii.toUpper(ch);
+        } else {
+            event_capitalized[event_len] = ch;
+        }
+        event_len += 1;
+    }
+
+    // Capitalize branch name first letter
+    var branch_capitalized: [256]u8 = undefined;
+    var branch_len: usize = 0;
+    for (type_branch_name, 0..) |ch, idx| {
+        if (idx == 0) {
+            branch_capitalized[branch_len] = std.ascii.toUpper(ch);
+        } else {
+            branch_capitalized[branch_len] = ch;
+        }
+        branch_len += 1;
+    }
+
+    // Combine: __EventNameBranchName (compiler-generated type)
+    const type_alias_name = std.fmt.allocPrint(allocator,
+        "__{s}{s}",
+        .{event_capitalized[0..event_len], branch_capitalized[0..branch_len]}
+    ) catch unreachable;
+
+    // Now update the runtime field type and module with derived/captured values
+    allocator.free(runtime_fields[0].type);
+    runtime_fields[0].type = allocator.dupe(u8, type_alias_name) catch unreachable;
+
+    allocator.free(runtime_event.module);
+    runtime_event.module = allocator.dupe(u8, type_module) catch unreachable;
+
+    allocator.free(runtime_proc.module);
+    runtime_proc.module = allocator.dupe(u8, type_module) catch unreachable;
+
+    // Build new Program: transform flows, filter out comptime event+proc, add runtime type+event+proc
+    // Note: +3 because we're adding a type declaration AND event AND proc (3 new items total)
+    const new_items = allocator.alloc(ast.Item, program.items.len + 3) catch unreachable;
+    var idx: usize = 0;
+
+    for (program.items) |prog_item| {
+        // Filter out comptime renderHTML event_decl
+        if (prog_item == .event_decl) {
+            const event = prog_item.event_decl;
+            if (event.path.segments.len == 1 and std.mem.eql(u8, event.path.segments[0], "renderHTML")) {
+                continue; // Skip comptime event
+            }
+
+            // Transform the captured event to use derived type instead of anonymous struct
+            if (event.path.segments.len == 1 and std.mem.eql(u8, event.path.segments[0], type_event_name)) {
+                // Create new branches array with derived type reference
+                const new_branches = allocator.alloc(ast.Branch, event.branches.len) catch unreachable;
+                for (event.branches, 0..) |branch, branch_idx| {
+                    if (std.mem.eql(u8, branch.name, type_branch_name)) {
+                        // Replace inline struct with derived type reference
+                        // Use __type_ref convention to signal a named type reference
+                        const type_ref_field = allocator.alloc(ast.Field, 1) catch unreachable;
+                        type_ref_field[0] = ast.Field{
+                            .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+                            .type = allocator.dupe(u8, type_alias_name) catch unreachable,
+                            .module_path = null,
+                            .phantom = null,
+                            .is_source = false,
+                            .is_file = false,
+                            .is_embed_file = false,
+                            .expression = null,
+                            .expression_str = null,
+                            .owns_expression = false,
+                        };
+                        new_branches[branch_idx] = ast.Branch{
+                            .name = branch.name,
+                            .payload = ast.Shape{ .fields = type_ref_field },
+                            .is_deferred = branch.is_deferred,
+                            .is_optional = branch.is_optional,
+                            .annotations = branch.annotations,
+                        };
+                    } else {
+                        new_branches[branch_idx] = branch;
+                    }
+                }
+
+                // Create transformed getUserData event
+                const transformed_event = ast.EventDecl{
+                    .path = event.path,
+                    .input = event.input,
+                    .branches = new_branches,
+                    .is_public = event.is_public,
+                    .is_implicit_flow = event.is_implicit_flow,
+                    .is_abstract = event.is_abstract,
+                    .annotations = event.annotations,
+                    .is_pure = event.is_pure,
+                    .is_transitively_pure = event.is_transitively_pure,
+                    .location = event.location,
+                    .module = event.module,
+                };
+                new_items[idx] = ast.Item{ .event_decl = transformed_event };
+                idx += 1;
+                continue;
+            }
+        }
+
+        // Filter out comptime renderHTML proc_decl
+        if (prog_item == .proc_decl) {
+            const proc = prog_item.proc_decl;
+            if (proc.path.segments.len == 1 and std.mem.eql(u8, proc.path.segments[0], "renderHTML")) {
+                continue; // Skip comptime proc
+            }
+        }
+
+        // Transform flows that have renderHTML in their continuation pipelines
+        if (prog_item == .flow) {
+            const flow = prog_item.flow;
+
+            // Check if any continuation contains renderHTML
+            var has_renderHTML = false;
+            for (flow.continuations) |cont| {
+                if (cont.node) |step| {
+                    if (step == .invocation) {
+                        const inv = step.invocation;
+                        if (inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "renderHTML")) {
+                            has_renderHTML = true;
+                            break;
+                        }
+                    }
+                }
+                if (has_renderHTML) break;
+            }
+
+            if (has_renderHTML) {
+                // Transform the flow by transforming its continuations
+                const new_continuations = allocator.alloc(ast.Continuation, flow.continuations.len) catch unreachable;
+
+                for (flow.continuations, 0..) |cont, cont_idx| {
+                    // Transform the step
+                    var new_step: ?ast.Step = null;
+
+                    if (cont.node) |step| {
+                        if (step == .invocation) {
+                            const inv = step.invocation;
+                            if (inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "renderHTML")) {
+                                // Transform this invocation - remove Source arg, add binding arg
+                                const transformed_path = ast.DottedPath{
+                                    .module_qualifier = inv.path.module_qualifier,
+                                    .segments = path_segments,
+                                };
+
+                                const new_args = allocator.alloc(ast.Arg, 1) catch unreachable;
+                                new_args[0] = ast.Arg{
+                                    .name = allocator.dupe(u8, binding.name) catch unreachable,
+                                    .value = allocator.dupe(u8, binding.value_ref) catch unreachable,
+                                    .source_value = null,
+                                };
+
+                                // Mark as already transformed to prevent infinite loops
+                                const annotations = allocator.alloc([]const u8, 1) catch unreachable;
+                                annotations[0] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+                                const new_invocation = ast.Invocation{
+                                    .path = transformed_path,
+                                    .args = new_args,
+                                    .annotations = annotations,
+                                    .inserted_by_tap = false,
+                                    .from_opaque_tap = false,
+                                };
+
+                                new_step = ast.Step{ .invocation = new_invocation };
+                            } else {
+                                // Keep step as-is
+                                new_step = step;
+                            }
+                        } else {
+                            // Keep step as-is
+                            new_step = step;
+                        }
+                    }
+
+                    // Create new continuation with transformed step
+                    new_continuations[cont_idx] = ast.Continuation{
+                        .branch = cont.branch,
+                        .binding = cont.binding,
+                        .binding_type = cont.binding_type,
+                        .is_catchall = cont.is_catchall,
+                        .catchall_metatype = cont.catchall_metatype,
+                        .condition = cont.condition,
+                        .condition_expr = cont.condition_expr,
+                        .node = new_step,
+                        .indent = cont.indent,
+                        .continuations = cont.continuations,
+                    };
+                }
+
+                // Create transformed flow with new continuations
+                const transformed_flow = ast.Flow{
+                    .invocation = flow.invocation,
+                    .continuations = new_continuations,
+                    .annotations = flow.annotations,
+                    .pre_label = flow.pre_label,
+                    .post_label = flow.post_label,
+                    .super_shape = flow.super_shape,
+                    .is_pure = flow.is_pure,
+                    .is_transitively_pure = flow.is_transitively_pure,
+                    .location = flow.location,
+                    .module = flow.module,
+                };
+
+                new_items[idx] = ast.Item{ .flow = transformed_flow };
+                idx += 1;
+                continue;
+            }
+        }
+
+        // Modules can be shared, everything else needs deep copy
+        if (prog_item == .module_decl) {
+            new_items[idx] = prog_item;
+        } else {
+            new_items[idx] = ast_functional.cloneItem(allocator, &prog_item) catch unreachable;
+        }
+        idx += 1;
+    }
+
+    // Create HostTypeDecl with the derived type name and fields
+    const user_data_type = ast.HostTypeDecl{
+        .name = type_alias_name,
+        .shape = ast.Shape{ .fields = type_fields },
+    };
+
+    // Add runtime type alias, event, and proc
+    new_items[idx] = ast.Item{ .host_type_decl = user_data_type };
+    new_items[idx + 1] = ast.Item{ .event_decl = runtime_event };
+    new_items[idx + 2] = ast.Item{ .proc_decl = runtime_proc };
+
+    const new_program = allocator.create(ast.Program) catch unreachable;
+    new_program.* = ast.Program{
+        .items = new_items,
+        .module_annotations = program.module_annotations,
+        .main_module_name = program.main_module_name,
+        .allocator = allocator,
+    };
+
+    return .{ .transformed = .{ .program = new_program } };
+}
+
+// THE BREAKTHROUGH TEST: Continuation binding + Source block
+// The 'u' from | data u |> should be captured in source.scope.bindings!
+~getUserData()
+| data u |> renderHTML [HTML]{
+        <h1>$[u.name]</h1>
+        <p>Age: $[u.age]</p>
+    }
+    | rendered h |> std.io:println(text: h.html)

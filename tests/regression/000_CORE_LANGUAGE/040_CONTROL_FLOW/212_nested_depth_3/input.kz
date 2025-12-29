@@ -1,0 +1,45 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Nested Continuation Depth 3
+// Feature: Flow with 3 levels of nested continuations
+// Verifies: Deeper nesting works (exposes bootstrap recursion limit)
+// Depth: start |> level1 |> level2 |> level3 → result
+//
+// EXPECTED BUG:
+// Bootstrap manually generates inline flow helpers and only handles 2 levels.
+// This test will likely fail for proc inline flows until bootstrap uses emitter_lib.
+// ============================================================================
+
+const std = @import("std");
+
+~event add_one { value: i32 }
+| done { result: i32 }
+
+~proc add_one = done { result: value + 1 }
+
+~event add_two { value: i32 }
+| done { result: i32 }
+
+~proc add_two = done { result: value + 2 }
+
+~event add_three { value: i32 }
+| done { result: i32 }
+
+~proc add_three = done { result: value + 3 }
+
+// Chain: start → add_one → add_two → add_three → result
+// Depth 3: Three nested continuations
+~event chain { start: i32 }
+| done { result: i32 }
+
+~proc chain = add_one(value: start)
+| done a |> add_two(value: a.result)
+    | done b |> add_three(value: b.result)
+        | done c |> done { result: c.result }
+
+// Test: 10 + 1 + 2 + 3 = 16
+pub fn main() void {
+    const result = chain_event.handler(.{ .start = 10 });
+    std.debug.print("{}\n", .{result.done.result});
+}

@@ -1,0 +1,21 @@
+// ECOLOGY TEST: @pass_ran should be added by transforms, not hardcoded externally
+//
+// ISSUE: The "@pass_ran(\"transform\")" annotation is hardcoded in multiple places.
+// Transforms should ADD this annotation themselves, and the walker should just
+// check for its presence - not have the string scattered everywhere.
+//
+// This test verifies that:
+// 1. Transforms properly add @pass_ran to prevent re-transformation
+// 2. Nested transforms don't infinite loop
+// 3. The mechanism works for user-defined transforms too
+
+~import "$std/control"
+~import "$std/io"
+
+// Use nested control flow - each should only transform ONCE
+~for(0..2)
+| each i |>
+    if(i > 0)
+    | then |> std.io:println(text: "nested transform")
+    | else |> std.io:println(text: "first iteration")
+| done |> std.io:println(text: "done")

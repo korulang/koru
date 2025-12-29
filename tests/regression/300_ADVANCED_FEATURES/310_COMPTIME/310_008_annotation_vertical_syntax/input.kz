@@ -1,0 +1,38 @@
+// Test 604: Vertical Annotation Syntax
+// Tests that vertical -bullet format produces same AST as inline |delimiter
+
+const std = @import("std");
+
+// Vertical with - bullets
+~[
+-comptime
+-runtime
+-fuseable
+] event vertical_bullets {}
+| done {}
+
+// Vertical with parameterized annotations
+~[
+-optimize(level: 3)
+-inline(threshold: 500)
+-gpu(target: "metal", precision: "half")
+] event vertical_params {}
+| done {}
+
+// Mix of simple and complex
+~[
+-comptime
+-runtime
+-optimize(level: 2)
+-profile(sample_rate: 1000)
+] event vertical_mixed {}
+| done {}
+
+// Should be equivalent to inline
+~[comptime|runtime|fuseable] event inline_equiv {}
+| done {}
+
+~proc vertical_bullets { return .{ .done = .{} }; }
+~proc vertical_params { return .{ .done = .{} }; }
+~proc vertical_mixed { return .{ .done = .{} }; }
+~proc inline_equiv { return .{ .done = .{} }; }

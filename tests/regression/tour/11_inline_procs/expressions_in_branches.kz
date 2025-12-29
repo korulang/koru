@@ -1,0 +1,227 @@
+// Tour 11: Branch Constructor Expressions in Procs
+// Inside procs, branch constructors can use full Zig expressions
+// This enables computed values, function calls, and complex transformations
+
+const std = @import("std");
+
+// Analysis event that returns raw data
+~event analyze { values: []const f64 }
+| ok { 
+    sum: f64,
+    count: usize,
+    max: f64,
+    min: f64
+}
+| error { message: []const u8 }
+
+~proc analyze {
+    if (e.values.len == 0) {
+        return .{ .error = .{ .message = "No values to analyze" } };
+    }
+    
+    var sum: f64 = 0;
+    var max = e.values[0];
+    var min = e.values[0];
+    
+    for (e.values) |val| {
+        sum += val;
+        if (val > max) max = val;
+        if (val < min) min = val;
+    }
+    
+    return .{ .ok = .{
+        .sum = sum,
+        .count = e.values.len,
+        .max = max,
+        .min = min
+    }};
+}
+
+// HTTP request event
+~event http.get { url: []const u8 }
+| ok { 
+    status_code: u32,
+    body: []const u8,
+    headers: []const u8
+}
+| timeout { after_ms: u64 }
+| error { code: u32, message: []const u8 }
+
+~proc http.get {
+    // Simulate HTTP request
+    if (std.mem.eql(u8, e.url, "/timeout")) {
+        return .{ .timeout = .{ .after_ms = 5000 } };
+    }
+    if (std.mem.eql(u8, e.url, "/error")) {
+        return .{ .error = .{ .code = 500, .message = "Internal Server Error" } };
+    }
+    return .{ .ok = .{
+        .status_code = 200,
+        .body = "Response body",
+        .headers = "Content-Type: text/plain"
+    }};
+}
+
+// EXPRESSIONS IN BRANCH CONSTRUCTORS
+~event compute_metrics { data: []const f64 }
+| metrics {
+    average: f64,
+    std_dev: f64,
+    label: []const u8,
+    timestamp: i64,
+    is_valid: bool,
+    percentile_95: f64
+}
+| empty { message: []const u8 }
+| error { reason: []const u8 }
+
+~proc compute_metrics {
+    // Use inline flow with expressions in branch constructor
+    const result = ~analyze(values: e.data)
+    | ok o |> metrics {
+        // ARITHMETIC EXPRESSIONS
+        average: o.sum / @intToFloat(f64, o.count),
+        
+        // ARITHMETIC EXPRESSION (pure computation)
+        std_dev: o.sum / @intToFloat(f64, o.count),  // Simplified - just variance
+        
+        // STRING CONCATENATION (pure)
+        label: "analysis_result",
+        
+        // LITERAL VALUE (instead of function call)
+        timestamp: 0,  // Would be set by the caller or runtime
+        
+        // BOOLEAN EXPRESSIONS
+        is_valid: o.count > 10 and o.max < 1000.0,
+        
+        // COMPUTED VALUES
+        percentile_95: o.max * 0.95
+    }
+    | error e |> error { 
+        // Even error branches can have expressions (but must be pure!)
+        reason: e.message  // Simple field access - pure expression
+    }
+    
+    return result
+}
+
+// HTTP response processing with expressions
+~event process_response { url: []const u8 }
+| success {
+    data: []const u8,
+    cached: bool,
+    process_time_ms: f64,
+    retry_count: u32
+}
+| failure {
+    error_type: []const u8,
+    should_retry: bool,
+    next_retry_ms: u64
+}
+
+~proc process_response {
+    const start_time = std.time.milliTimestamp();
+    var retry_count: u32 = 0;
+    
+    const response = ~http.get(url: e.url)
+    | ok o |> success {
+        // Extract and transform data
+        data: o.body,
+        
+        // Boolean literal (would be computed from headers in actual code)
+        cached: false,  // Pure expression - literal
+        
+        // Numeric literal (would be computed externally)
+        process_time_ms: 0.0,  // Pure expression - literal
+        
+        // Include retry count
+        retry_count: retry_count
+    }
+    | timeout t |> failure {
+        // Categorize error type
+        error_type: "timeout",
+        
+        // Determine retry logic
+        should_retry: t.after_ms < 30000,
+        
+        // Exponential backoff calculation
+        next_retry_ms: t.after_ms * 2
+    }
+    | error e |> failure {
+        // Different error handling
+        error_type: if (e.code >= 500) "server_error" else "client_error",
+        
+        // Retry on server errors
+        should_retry: e.code >= 500 and e.code < 600,
+        
+        // Fixed retry delay for errors
+        next_retry_ms: 1000
+    }
+    
+    return response
+}
+
+// Nested object construction with expressions
+~event transform_data { input: []const u8 }
+| transformed {
+    result: struct {
+        processed: []const u8,
+        metadata: struct {
+            length: usize,
+            hash: u32,
+            timestamp: i64
+        }
+    }
+}
+
+~proc transform_data {
+    const output = ~validate(data: e.input)
+    | valid v |> transformed {
+        result: .{
+            // Process the data
+            processed: v.clean_data,
+            
+            // Build nested metadata
+            metadata: .{
+                length: v.clean_data.len,  // Field access is pure
+                hash: 0,  // Would be computed externally
+                timestamp: 0  // Would be set by runtime
+            }
+        }
+    }
+    | invalid _ |> transformed {
+        result: .{
+            processed: "invalid",
+            metadata: .{
+                length: 0,
+                hash: 0,
+                timestamp: 0
+            }
+        }
+    }
+    
+    return output
+}
+
+// Helper event
+~event validate { data: []const u8 }
+| valid { clean_data: []const u8 }  
+| invalid { reason: []const u8 }
+
+~proc validate {
+    if (e.data.len > 0) {
+        return .{ .valid = .{ .clean_data = e.data } };
+    }
+    return .{ .invalid = .{ .reason = "Empty data" } };
+}
+
+// Example flows
+const test_data = [_]f64{1.0, 2.0, 3.0, 4.0, 5.0};
+~compute_metrics(data: &test_data)
+| metrics m |> _
+| empty |> _
+| error e |> _
+
+~process_response(url: "/api/data")
+| success s |> _
+| failure f |> _

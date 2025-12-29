@@ -1,0 +1,36 @@
+// Parser Wrapper - Koru Events for Parser Zig Library
+// ====================================================
+// Makes the Zig parser available as Koru events at backend runtime.
+//
+// Usage:
+//   ~import "$std/parser"
+//   ~parse.source(source: code, file_name: "test.kz", allocator: allocator)
+//   | parsed p |> use(p.ast)
+//   | error e |> handle(e.message)
+
+const std = @import("std");
+const parser_impl = @import("parser");
+
+// Parse Koru source code into AST
+~pub event parse.source {
+    source: []const u8,
+    file_name: []const u8,
+    allocator: std.mem.Allocator
+}
+| parsed { ast: parser_impl.ParseResult }
+| parse_error { message: []const u8 }
+
+~proc parse.source {
+    // Initialize parser (empty compiler flags, no resolver for standalone parsing)
+    var p = parser_impl.Parser.init(allocator, source, file_name, &[_][]const u8{}, null) catch |err| {
+        return .{ .parse_error = .{ .message = @errorName(err) } };
+    };
+    defer p.deinit();
+
+    // Parse the source
+    const result = p.parse() catch |err| {
+        return .{ .parse_error = .{ .message = @errorName(err) } };
+    };
+
+    return .{ .parsed = .{ .ast = result } };
+}

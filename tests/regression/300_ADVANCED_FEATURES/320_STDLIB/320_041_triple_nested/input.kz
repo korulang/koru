@@ -1,0 +1,24 @@
+// Test: triple nested transforms - depth-first ordering
+// Innermost should transform first, then middle, then outer
+
+~import "$std/control"
+
+const std = @import("std");
+
+~event start {}
+| done {}
+
+~proc start {
+    return .{ .done = .{} };
+}
+
+// Three levels: if -> for -> if
+// All should transform to native Zig constructs
+~start()
+| done |> if(true)
+    | then |> for(&[_]i32{1, 2})
+        | each item |> if(item > 0)
+            | then |> _
+            | else |> _
+        | done |> _
+    | else |> _

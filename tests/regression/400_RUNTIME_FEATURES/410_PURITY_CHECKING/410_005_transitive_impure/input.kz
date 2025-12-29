@@ -1,0 +1,68 @@
+// Test transitive impurity - pure calling impure = NOT transitively pure!
+// Chain: compute (pure) -> log (IMPURE) -> result
+// compute is marked ~[pure] but calls log (which does I/O)
+// Therefore compute is locally pure but NOT transitively pure
+
+const std = @import("std");
+
+// Impure logging event (no ~[pure] annotation - does I/O)
+~event log { msg: []const u8 }
+| done {}
+
+~proc log {
+    std.debug.print("[LOG] {s}\n", .{msg});
+    return .{ .done = .{} };
+}
+
+// Pure math operation
+~event multiply { x: i32, factor: i32 }
+| done { result: i32 }
+
+~[pure]proc multiply {
+    return .{ .done = .{ .result = x * factor } };
+}
+
+// Marked pure but calls impure event - TAINTED!
+~event compute_with_logging { x: i32 }
+| done { result: i32 }
+
+~[pure]proc compute_with_logging {
+    // Call impure log - this TAINTS our purity!
+    _ = log_event.handler(.{ .msg = "Computing..." });
+
+    const result = multiply_event.handler(.{ .x = x, .factor = 2 });
+
+    switch (result) {
+        .done => |d| {
+            return .{ .done = .{ .result = d.result } };
+        },
+    }
+}
+
+// Print result
+~event print_number { n: i32 }
+| done {}
+
+~proc print_number {
+    std.debug.print("Result: {}\n", .{n});
+    return .{ .done = .{} };
+}
+
+// Main
+~event main {}
+| done {}
+
+~proc main {
+    const result = compute_with_logging_event.handler(.{ .x = 21 });
+
+    switch (result) {
+        .done => |d| {
+            _ = print_number_event.handler(.{ .n = d.result });
+        },
+    }
+
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

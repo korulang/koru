@@ -1,0 +1,263 @@
+~[compiler]
+
+// Compiler Context Module
+// Provides threading state and operations for compiler passes
+// All operations are Koru events - composable, observable, overridable!
+
+// ============================================================
+// DATA STRUCTURES (Pure Zig, no methods)
+// ============================================================
+
+pub const SourceLocation = struct {
+    file: []const u8,
+    line: u32,
+    column: u32,
+};
+
+pub const CompilerError = struct {
+    message: []const u8,
+    location: SourceLocation,
+};
+
+pub const CompilerWarning = struct {
+    message: []const u8,
+    location: SourceLocation,
+};
+
+pub const ErrorPolicy = enum {
+    abort_on_first,  // Stop immediately when error is reported
+    collect_all,     // Collect all errors before stopping
+};
+
+pub const CompilerContext = struct {
+    // The AST being compiled (transformed through passes)
+    ast: ProgramAST,
+
+    // Allocator for dynamic allocations
+    allocator: std.mem.Allocator,
+
+    // Error and warning tracking
+    errors: std.ArrayList(CompilerError),
+    warnings: std.ArrayList(CompilerWarning),
+    error_policy: ErrorPolicy,
+
+    // Pass tracking and metrics
+    current_pass: ?[]const u8,
+    passes_completed: u32,
+};
+
+// ============================================================
+// CONTEXT OPERATIONS (Koru Events - composable & observable!)
+// ============================================================
+
+// Create a new compiler context
+~pub event init {
+    ast: ProgramAST,
+    allocator: std.mem.Allocator,
+    error_policy: ErrorPolicy
+}
+| created { ctx: CompilerContext }
+
+~proc init {
+    var ctx = CompilerContext{
+        .ast = ast,
+        .allocator = allocator,
+        .errors = std.ArrayList(CompilerError).init(allocator),
+        .warnings = std.ArrayList(CompilerWarning).init(allocator),
+        .error_policy = error_policy,
+        .current_pass = null,
+        .passes_completed = 0,
+    };
+
+    return .{ .created = .{ .ctx = ctx } };
+}
+
+// Begin a compilation pass (increments metrics, emits CCP events)
+~pub event begin_pass { ctx: CompilerContext, name: []const u8 }
+| continued { ctx: CompilerContext }
+
+~proc begin_pass {
+    var ctx = ctx;
+    ctx.current_pass = name;
+
+    // TODO: Emit CCP pass_started event if --ccp flag is set
+    // if (CompilerEnv.hasFlag("ccp")) {
+    //     emit_ccp_event("pass_started", .{ .pass = name });
+    // }
+
+    return .{ .continued = .{ .ctx = ctx } };
+}
+
+// End a compilation pass (increments pass counter, emits CCP events)
+~pub event end_pass { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+
+~proc end_pass {
+    var ctx = ctx;
+
+    if (ctx.current_pass != null) {
+        ctx.passes_completed += 1;
+
+        // TODO: Emit CCP pass_completed event if --ccp flag is set
+        // if (CompilerEnv.hasFlag("ccp")) {
+        //     emit_ccp_event("pass_completed", .{
+        //         .pass = ctx.current_pass.?,
+        //         .pass_number = ctx.passes_completed
+        //     });
+        // }
+    }
+
+    ctx.current_pass = null;
+    return .{ .continued = .{ .ctx = ctx } };
+}
+
+// Report a compilation error
+~pub event report_error {
+    ctx: CompilerContext,
+    message: []const u8,
+    location: SourceLocation
+}
+| continued { ctx: CompilerContext }
+
+~proc report_error {
+    var ctx = ctx;
+
+    // Append to errors list
+    ctx.errors.append(.{
+        .message = message,
+        .location = location,
+    }) catch {
+        // If we can't even record the error, print it immediately
+        std.debug.print("ERROR: {s} at {s}:{}:{}\n", .{
+            message,
+            location.file,
+            location.line,
+            location.column,
+        });
+    };
+
+    // Print the error immediately
+    std.debug.print("ERROR: {s} at {s}:{}:{}\n", .{
+        message,
+        location.file,
+        location.line,
+        location.column,
+    });
+
+    // TODO: Emit CCP error event if --ccp flag is set
+
+    return .{ .continued = .{ .ctx = ctx } };
+}
+
+// Report a compilation warning
+~pub event report_warning {
+    ctx: CompilerContext,
+    message: []const u8,
+    location: SourceLocation
+}
+| continued { ctx: CompilerContext }
+
+~proc report_warning {
+    var ctx = ctx;
+
+    // Append to warnings list
+    ctx.warnings.append(.{
+        .message = message,
+        .location = location,
+    }) catch {
+        // If we can't record the warning, just print it
+        std.debug.print("WARNING: {s} at {s}:{}:{}\n", .{
+            message,
+            location.file,
+            location.line,
+            location.column,
+        });
+    };
+
+    // Print the warning immediately
+    std.debug.print("WARNING: {s} at {s}:{}:{}\n", .{
+        message,
+        location.file,
+        location.line,
+        location.column,
+    });
+
+    // TODO: Emit CCP warning event if --ccp flag is set
+
+    return .{ .continued = .{ .ctx = ctx } };
+}
+
+// Report an informational message
+~pub event info { ctx: CompilerContext, message: []const u8 }
+| continued { ctx: CompilerContext }
+
+~proc info {
+    // TODO: Check if --verbose flag is set before printing
+    // if (CompilerEnv.hasFlag("verbose")) {
+        std.debug.print("INFO: {s}\n", .{message});
+    // }
+
+    return .{ .continued = .{ .ctx = ctx } };
+}
+
+// Check if compilation should abort due to errors
+~pub event should_abort { ctx: CompilerContext }
+| yes { ctx: CompilerContext }
+| no { ctx: CompilerContext }
+
+~proc should_abort {
+    const ctx = ctx;
+
+    const should_abort = (ctx.error_policy == .abort_on_first and ctx.errors.items.len > 0);
+
+    if (should_abort) {
+        return .{ .yes = .{ .ctx = ctx } };
+    } else {
+        return .{ .no = .{ .ctx = ctx } };
+    }
+}
+
+// Query: Get current pass count
+~pub event pass_count { ctx: CompilerContext }
+| count { ctx: CompilerContext, value: u32 }
+
+~proc pass_count {
+    return .{ .count = .{
+        .ctx = ctx,
+        .value = ctx.passes_completed
+    } };
+}
+
+// Query: Get error count
+~pub event error_count { ctx: CompilerContext }
+| count { ctx: CompilerContext, value: u32 }
+
+~proc error_count {
+    const err_count: u32 = @intCast(ctx.errors.items.len);
+    return .{ .count = .{
+        .ctx = ctx,
+        .value = err_count
+    } };
+}
+
+// Query: Get warning count
+~pub event warning_count { ctx: CompilerContext }
+| count { ctx: CompilerContext, value: u32 }
+
+~proc warning_count {
+    const warn_count: u32 = @intCast(ctx.warnings.items.len);
+    return .{ .count = .{
+        .ctx = ctx,
+        .value = warn_count
+    } };
+}
+
+// Update AST in context (used by transformation passes)
+~pub event update_ast { ctx: CompilerContext, ast: ProgramAST }
+| continued { ctx: CompilerContext }
+
+~proc update_ast {
+    var ctx = ctx;
+    ctx.ast = ast;
+    return .{ .continued = .{ .ctx = ctx } };
+}

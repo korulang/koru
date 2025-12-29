@@ -1,0 +1,41 @@
+// Test tap chains - tap invokes event that also has taps
+// This verifies TAP_FUNCTION_CONTEXT prevents infinite recursion
+const std = @import("std");
+
+~event main_flow {}
+| done {}
+
+~event logger {}
+| done {}
+
+~event metrics {}
+| done {}
+
+~proc main_flow {
+    std.debug.print("Main flow executed\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc logger {
+    std.debug.print("Logger invoked\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc metrics {
+    std.debug.print("Metrics collected\n", .{});
+    return .{ .done = .{} };
+}
+
+// Tap on main_flow that invokes logger
+~main_flow -> *
+| done |> logger()
+    | done |> _
+
+// Question: Should this tap on logger fire when logger is invoked from a tap?
+// Current design: NO - taps don't fire inside tap functions (TAP_FUNCTION_CONTEXT guard)
+~logger -> *
+| done |> metrics()
+    | done |> _
+
+~main_flow()
+| done |> _

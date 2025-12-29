@@ -1,0 +1,10 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Pure Zig code in a .kz file
+// ============================================================================
+const std = @import("std");
+
+pub fn main() void {
+    std.debug.print("Hello World\n", .{});
+}

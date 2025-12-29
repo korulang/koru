@@ -1,0 +1,56 @@
+// Test branch constructor shorthand with field access expressions
+const std = @import("std");
+
+~event fetch.order { id: i32 }
+| found { order_id: i32, customer: []const u8, total: i32 }
+| not_found {}
+
+~event process.order { order_id: i32, customer: []const u8, total: i32 }
+| approved { id: i32, name: []const u8, amount: i32 }
+| rejected { reason: []const u8 }
+
+// Test shorthand with field accesses in branch constructors
+~process.order = fetch.order (id: order_id)
+| found f |> approved { f.order_id, f.customer, f.total }
+| not_found |> rejected { reason: "Order not found" }
+
+// Test what field name is extracted
+~event validate.data { input: []const u8 }
+| valid { data: []const u8, metadata: []const u8 }
+
+~event parse.result { text: []const u8 }
+| parsed { value: []const u8, info: []const u8 }
+
+~validate.data = parse.result (text: input)
+| parsed p |> valid { p.value, metadata: p.info }
+
+// Test that binding names work too
+~event copy.fields { source: []const u8, dest: []const u8 }
+| copied { source: []const u8, dest: []const u8 }
+
+~copy.fields = parse.result (text: source)
+| parsed p |> copied { source, dest }
+
+// Main test
+~process.order (order_id: 42, customer: "Alice", total: 100)
+| approved a |> _
+| rejected r |> _
+
+// Proc implementations
+~proc fetch.order {
+    if (e.id > 0) {
+        return .{ .found = .{ 
+            .order_id = e.id,
+            .customer = "TestCustomer",
+            .total = 99
+        } };
+    }
+    return .{ .not_found = .{} };
+}
+
+~proc parse.result {
+    return .{ .parsed = .{
+        .value = e.text,
+        .info = "metadata"
+    } };
+}

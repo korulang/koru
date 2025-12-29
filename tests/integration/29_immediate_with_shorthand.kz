@@ -1,0 +1,36 @@
+// Test immediate return syntax with shorthand
+// Shows how immediate returns can be used for configuration, defaults, or testing
+const std = @import("std");
+
+// Define an event
+~event order.validate { id: i32, total: i32 }
+| valid { order_id: i32, amount: i32, status: []const u8 }  
+| invalid { reason: []const u8 }
+
+// Immediate return with explicit values
+// Could be used for default configuration or fixed business rules
+~order.validate = valid { order_id: 999, amount: 100, status: "approved" }
+
+// Test with variables from outer scope using shorthand
+const fixed_id = 42;
+const fixed_msg = "Always works!";
+
+~event test.simple { input: []const u8 }
+| done { id: i32, message: []const u8 }
+
+// Can we use variables? (This would need to be constants)
+// For now, let's use literals
+~test.simple = done { id: 42, message: "Fixed response" }
+
+// Declare output event
+~event io.output { text: []const u8 }
+
+~proc io.output {
+    const std = @import("std");
+    std.debug.print("{s}\n", .{e.text});
+}
+
+// Use the mocked events - only one main flow allowed
+~order.validate(id: 1, total: 50)
+| valid v |> io.output(text: "Order validated") |> _
+| invalid i |> io.output(text: "Invalid order") |> _

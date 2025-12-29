@@ -1,0 +1,17 @@
+// Test 613: CCP Full Activation (Import + Flag)
+// Verifies that BOTH import AND --ccp flag are needed for CCP injection
+
+~import "$std/ccp"
+
+const std = @import("std");
+
+~event greet { name: []const u8 }
+| greeting { msg: []const u8 }
+
+~proc greet {
+    std.debug.print("Hello, {s}!\n", .{name});
+    return .{ .greeting = .{ .msg = "Hello!" } };
+}
+
+~greet(name: "Flag")
+| greeting |> _

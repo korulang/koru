@@ -1,0 +1,221 @@
+// Koru Standard Library - HTTP Server
+// Pure events with Zig implementations hidden in procs
+
+const std = @import("std");
+
+// HTTP Request
+~pub event http.parse_request { data: []const u8 }
+| request { method: []const u8, path: []const u8, headers: []const u8, body: []const u8 }
+| invalid { msg: []const u8 }
+
+~proc http.parse_request {
+    const allocator = std.heap.page_allocator;
+    
+    // Find the end of the request line
+    const first_line_end = std.mem.indexOf(u8, data, "\r\n") orelse {
+        return .{ .@"invalid" = .{ .msg = "No request line found" } };
+    };
+    
+    const request_line = data[0..first_line_end];
+    
+    // Parse method and path
+    var parts = std.mem.tokenize(u8, request_line, " ");
+    const method = parts.next() orelse {
+        return .{ .@"invalid" = .{ .msg = "No method found" } };
+    };
+    const path = parts.next() orelse {
+        return .{ .@"invalid" = .{ .msg = "No path found" } };
+    };
+    
+    // Find headers and body
+    const header_start = first_line_end + 2;
+    const header_end = std.mem.indexOf(u8, data[header_start..], "\r\n\r\n") orelse {
+        // No body, just headers
+        return .{ .@"request" = .{
+            .method = method,
+            .path = path,
+            .headers = data[header_start..],
+            .body = "",
+        }};
+    };
+    
+    const headers = data[header_start..header_start + header_end];
+    const body_start = header_start + header_end + 4;
+    const body = if (body_start < data.len) data[body_start..] else "";
+    
+    return .{ .@"request" = .{
+        .method = method,
+        .path = path,
+        .headers = headers,
+        .body = body,
+    }};
+}
+
+// HTTP Response Builder
+~pub event http.response { status: u16, status_text: []const u8, headers: []const u8, body: []const u8 }
+| formatted { data: []const u8 }
+
+~proc http.response {
+    const allocator = std.heap.page_allocator;
+    
+    const response = std.fmt.allocPrint(allocator, 
+        "HTTP/1.1 {} {s}\r\n{s}\r\nContent-Length: {}\r\n\r\n{s}",
+        .{status, status_text, headers, body.len, body}
+    ) catch {
+        // Fallback response
+        const fallback = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\n\r\nError";
+        return .{ .@"formatted" = .{ .data = fallback } };
+    };
+    
+    return .{ .@"formatted" = .{ .data = response } };
+}
+
+// Route matching
+~pub event http.match_route { path: []const u8, pattern: []const u8 }
+| matched { params: []const u8 }  // For simplicity, params as comma-separated string
+| no_match {}
+
+~proc http.match_route {
+    // Simple exact match for now
+    if (std.mem.eql(u8, path, pattern)) {
+        return .{ .@"matched" = .{ .params = "" } };
+    }
+    
+    // Check if pattern ends with /* for prefix match
+    if (std.mem.endsWith(u8, pattern, "/*")) {
+        const prefix = pattern[0..pattern.len - 2];
+        if (std.mem.startsWith(u8, path, prefix)) {
+            return .{ .@"matched" = .{ .params = path[prefix.len..] } };
+        }
+    }
+    
+    return .{ .@"no_match" = .{} };
+}
+
+// Simple JSON response helper
+~pub event http.json_response { status: u16, json: []const u8 }
+| response { data: []const u8 }
+
+~proc http.json_response {
+    const allocator = std.heap.page_allocator;
+    
+    const status_text = switch (status) {
+        200 => "OK",
+        201 => "Created",
+        400 => "Bad Request",
+        404 => "Not Found",
+        500 => "Internal Server Error",
+        else => "Unknown",
+    };
+    
+    const response = std.fmt.allocPrint(allocator,
+        "HTTP/1.1 {} {s}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{s}",
+        .{status, status_text, json.len, json}
+    ) catch {
+        const fallback = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\n\r\nError";
+        return .{ .@"response" = .{ .data = fallback } };
+    };
+    
+    return .{ .@"response" = .{ .data = response } };
+}
+
+// HTML response helper
+~pub event http.html_response { status: u16, html: []const u8 }
+| response { data: []const u8 }
+
+~proc http.html_response {
+    const allocator = std.heap.page_allocator;
+    
+    const status_text = switch (status) {
+        200 => "OK",
+        404 => "Not Found",
+        500 => "Internal Server Error",
+        else => "Unknown",
+    };
+    
+    const response = std.fmt.allocPrint(allocator,
+        "HTTP/1.1 {} {s}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n\r\n{s}",
+        .{status, status_text, html.len, html}
+    ) catch {
+        const fallback = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\n\r\nError";
+        return .{ .@"response" = .{ .data = fallback } };
+    };
+    
+    return .{ .@"response" = .{ .data = response } };
+}
+
+// Static file serving helper
+~pub event http.mime_type { extension: []const u8 }
+| type { mime: []const u8 }
+
+~proc http.mime_type {
+    const mime = if (std.mem.eql(u8, extension, ".html")) "text/html"
+        else if (std.mem.eql(u8, extension, ".css")) "text/css"
+        else if (std.mem.eql(u8, extension, ".js")) "application/javascript"
+        else if (std.mem.eql(u8, extension, ".json")) "application/json"
+        else if (std.mem.eql(u8, extension, ".png")) "image/png"
+        else if (std.mem.eql(u8, extension, ".jpg") or std.mem.eql(u8, extension, ".jpeg")) "image/jpeg"
+        else if (std.mem.eql(u8, extension, ".svg")) "image/svg+xml"
+        else if (std.mem.eql(u8, extension, ".txt")) "text/plain"
+        else "application/octet-stream";
+    
+    return .{ .@"type" = .{ .mime = mime } };
+}
+
+// URL decode helper
+~pub event http.url_decode { encoded: []const u8 }
+| decoded { text: []const u8 }
+| error { msg: []const u8 }
+
+~proc http.url_decode {
+    const allocator = std.heap.page_allocator;
+    var result = std.ArrayList(u8).init(allocator);
+    
+    var i: usize = 0;
+    while (i < encoded.len) {
+        if (encoded[i] == '%' and i + 2 < encoded.len) {
+            const hex = encoded[i+1..i+3];
+            const byte = std.fmt.parseInt(u8, hex, 16) catch {
+                return .{ .@"error" = .{ .msg = "Invalid hex escape" } };
+            };
+            result.append(byte) catch {
+                return .{ .@"error" = .{ .msg = "Out of memory" } };
+            };
+            i += 3;
+        } else if (encoded[i] == '+') {
+            result.append(' ') catch {
+                return .{ .@"error" = .{ .msg = "Out of memory" } };
+            };
+            i += 1;
+        } else {
+            result.append(encoded[i]) catch {
+                return .{ .@"error" = .{ .msg = "Out of memory" } };
+            };
+            i += 1;
+        }
+    }
+    
+    return .{ .@"decoded" = .{ .text = result.toOwnedSlice() catch "" } };
+}
+
+// Parse query string
+~pub event http.parse_query { query: []const u8 }
+| params { data: []const u8 }  // Simplified: key=value,key2=value2 format
+
+~proc http.parse_query {
+    const allocator = std.heap.page_allocator;
+    var result = std.ArrayList(u8).init(allocator);
+    
+    var pairs = std.mem.tokenize(u8, query, "&");
+    var first = true;
+    
+    while (pairs.next()) |pair| {
+        if (!first) {
+            result.append(',') catch break;
+        }
+        result.appendSlice(pair) catch break;
+        first = false;
+    }
+    
+    return .{ .@"params" = .{ .data = result.toOwnedSlice() catch "" } };
+}

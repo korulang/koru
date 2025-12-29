@@ -1,0 +1,5 @@
+count: 42
+size: 1000000
+name: test
+ratio: 3.14159
+flag: true

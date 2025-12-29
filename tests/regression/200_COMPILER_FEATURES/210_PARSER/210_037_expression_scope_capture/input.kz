@@ -1,0 +1,19 @@
+// Test: Expression implicit mapping and auto-comptime
+// 1. Verifies that Expression args with dots (like 'data.value > 10') correctly map to 'expr'
+// 2. Verifies that Expression fields auto-add 'comptime' annotation (no [comptime] needed)
+
+const std = @import("std");
+
+// Event with Expression field - should auto-mark as comptime
+~event check_expr { expr: Expression }
+
+// Proc receives expr as []const u8
+~proc check_expr {
+    std.debug.print("Expression: {s}\n", .{expr});
+}
+
+// Test: Expression with dotted access - should map to 'expr' field
+// Before fix: 'data.value > 10' was parsed as name='value > 10', value='data.value > 10'
+// After fix: name='expr', value='data.value > 10'
+const data = .{ .value = 42 };
+~check_expr(data.value > 10)

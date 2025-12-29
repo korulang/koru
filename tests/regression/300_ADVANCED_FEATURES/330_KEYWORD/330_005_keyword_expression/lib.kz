@@ -1,0 +1,11 @@
+~[comptime]
+
+// Library defining a keyword event with Expression parameter
+// This tests that keywords properly capture expressions
+
+~[keyword|comptime]pub event check { expr: Expression }
+
+~proc check {
+    const std = @import("std");
+    std.debug.print("Expression: {s}\n", .{expr});
+}

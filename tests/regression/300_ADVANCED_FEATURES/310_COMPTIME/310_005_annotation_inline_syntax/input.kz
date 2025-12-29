@@ -1,0 +1,30 @@
+// Test 603: Inline Annotation Syntax
+// Tests that ~[a|b|c] produces annotations: ["a", "b", "c"]
+
+const std = @import("std");
+
+// Single annotation
+~[comptime] event single {}
+| done {}
+
+// Multiple annotations with | delimiter
+~[comptime|runtime] event dual {}
+| done {}
+
+// Many annotations
+~[comptime|runtime|fuseable|inline] event many {}
+| done {}
+
+// Parameterized annotation (opaque string)
+~[optimize(level: 3)] event optimized {}
+| done {}
+
+// Mix of simple and parameterized
+~[comptime|optimize(level: 3)|inline] event mixed {}
+| done {}
+
+~proc single { return .{ .done = .{} }; }
+~proc dual { return .{ .done = .{} }; }
+~proc many { return .{ .done = .{} }; }
+~proc optimized { return .{ .done = .{} }; }
+~proc mixed { return .{ .done = .{} }; }

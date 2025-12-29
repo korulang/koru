@@ -1,0 +1,7 @@
+// Library A defines [keyword] event process
+~[keyword]pub event process {}
+
+~proc process {
+    const std = @import("std");
+    std.debug.print("Process from lib_a\n", .{});
+}

@@ -1,0 +1,12 @@
+// Base module - lowest level in transitive import chain
+// This file should appear in AST even though input.kz doesn't directly import it
+
+const std = @import("std");
+
+~pub event double { x: i32 }
+| doubled { result: i32 }
+
+~proc double {
+    const result = x * 2;
+    return .{ .doubled = .{ .result = result } };
+}

@@ -1,0 +1,1089 @@
+~[comptime]
+
+const std = @import("std");
+const ast = @import("ast");
+const Program = ast.Program;
+const Item = ast.Item;
+const Source = ast.Source;
+
+// Import compiler backend build requirements
+// This declares all the modules needed to compile backend.zig
+~import "$std/compiler_requirements"
+
+// Simplified Koru Compiler Library
+// A working implementation that can actually be injected and used
+
+// ============================================================
+// COMPILER CONTEXT - Threading state for all passes
+// ============================================================
+
+pub const SourceLocation = struct {
+    file: []const u8,
+    line: u32,
+    column: u32,
+};
+
+pub const CompilerError = struct {
+    message: []const u8,
+    location: SourceLocation,
+};
+
+pub const CompilerWarning = struct {
+    message: []const u8,
+    location: SourceLocation,
+};
+
+pub const ErrorPolicy = enum {
+    abort_on_first,
+    collect_all,
+};
+
+pub const CompilerContext = struct {
+    ast: *const Program,
+    original_ast: *const Program,  // Unfiltered AST for metadata queries (TypeRegistry, etc.)
+    allocator: std.mem.Allocator,
+    errors: std.ArrayList(CompilerError),
+    warnings: std.ArrayList(CompilerWarning),
+    error_policy: ErrorPolicy,
+    current_pass: ?[]const u8,
+    passes_completed: u32,
+    tap_registry: ?*@import("tap_registry").TapRegistry,
+};
+
+
+// ============================================================
+// BUILD REQUIREMENTS - Self-documenting build dependencies
+// ============================================================
+// Modules declare their build requirements for backend.zig compilation.
+// The frontend collects these during compilation and generates build.zig.
+//
+// Usage:
+//   ~compiler:requires {
+//     exe.linkSystemLibrary("sqlite3");
+//   }
+//
+// [norun] annotation prevents auto-execution - frontend reads from AST instead.
+// This makes build.zig generation metacircular - discovered by parsing, not hardcoded!
+
+~[comptime|norun]pub event requires { source: Source }
+
+// ============================================================
+// STANDARD COMPILER FLAGS
+// ============================================================
+//
+// ============================================================
+// COMPILER FLAGS - Self-documenting feature flags
+// ============================================================
+// Modules declare their compiler flags with inline documentation.
+// The frontend collects these during --help to build flag documentation.
+//
+// Usage:
+//   ~compiler:flags.declare {
+//     "name": "fusion",
+//     "description": "Enable event fusion optimization",
+//     "type": "boolean"
+//   }
+//
+// [norun] annotation prevents auto-execution - --help reads from AST instead.
+// This makes help metacircular - discovered by parsing, not hardcoded!
+
+
+~[comptime|norun]pub event flags.declare { source: Source }
+
+~flags.declare {
+  "name": "fusion",
+  "description": "Enable event fusion optimization for zero-cost abstractions",
+  "type": "boolean"
+}
+
+~flags.declare {
+  "name": "ccp",
+  "description": "Enable Compiler Communication Protocol for AI observability",
+  "type": "boolean"
+}
+
+~flags.declare {
+  "name": "verbose",
+  "description": "Enable verbose compiler output and debug logging",
+  "type": "boolean"
+}
+
+// ============================================================
+// COMPILER COORDINATION - User-overridable compilation pipeline
+// ============================================================
+
+// The compiler coordinator (user-overridable at 2 segments)
+~pub event compiler.coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
+| coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
+| error { message: []const u8 }
+
+// The default compiler coordinator
+~pub event compiler.coordinate.default { program_ast: *const Program, allocator: std.mem.Allocator }
+| coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
+| error { message: []const u8 }
+
+// Composable pipeline segments - users can mix and match!
+
+// Helper: Create CompilerContext from ast and allocator
+~pub event compiler.context.create { program_ast: *const Program, allocator: std.mem.Allocator }
+| created { ctx: CompilerContext }
+
+~proc compiler.context.create {
+    const ctx = CompilerContext{
+        .ast = program_ast,
+        .original_ast = program_ast,  // Initially same as ast, preserved across filtering
+        .allocator = allocator,
+        .errors = std.ArrayList(CompilerError){},
+        .warnings = std.ArrayList(CompilerWarning){},
+        .error_policy = .collect_all,
+        .current_pass = null,
+        .passes_completed = 0,
+        .tap_registry = null,
+    };
+    return .{ .created = .{ .ctx = ctx } };
+}
+
+// Helper: Format metrics string
+~pub event compiler.metrics.format { passes_completed: u32, allocator: std.mem.Allocator }
+| formatted { metrics: []const u8 }
+
+~proc compiler.metrics.format {
+    const metrics = std.fmt.allocPrint(
+        allocator,
+        "Passes: {d} (flow-based: frontend, analysis, emission)",
+        .{passes_completed}
+    ) catch "Passes: <unknown> (flow-based: frontend, analysis, emission)";
+    return .{ .formatted = .{ .metrics = metrics } };
+}
+
+// Helper: Dump AST as JSON for introspection
+// Usage: Insert at key points in pipeline to inspect AST state
+// Example: ~compiler.ast_dump(ctx: ctx, flag: "frontend") | continued |> ...
+~[comptime]pub event ast_dump {
+    ctx: CompilerContext,
+    flag: []const u8
+}
+| continued { ctx: CompilerContext }
+
+~proc ast_dump {
+    // Serialize AST to JSON
+    const ast_serializer = @import("ast_serializer");
+    var serializer = ast_serializer.AstSerializer.init(ctx.allocator) catch unreachable;
+    defer serializer.deinit();
+
+    const json_output = serializer.serializeToJson(ctx.ast) catch unreachable;
+
+    // Print to stdout with separator showing which dump this is
+    const stdout = std.io.getStdOut().writer();
+    stdout.print("=== AST DUMP: {s} ===\n{s}\n", .{flag, json_output}) catch {};
+
+    // Always continue with same context
+    return .{ .continued = .{ .ctx = ctx } };
+}
+
+// Frontend segment: Early AST processing
+~pub event compiler.coordinate.frontend { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+
+~compiler.coordinate.frontend =
+    compiler.passes.process_ccp_commands(ctx: ctx)
+    | continued c1 |> compiler.passes.evaluate_comptime(ctx: c1.ctx)
+      | continued c2 |> continued { ctx: c2.ctx }
+
+// Analysis segment: Validation passes
+~pub event compiler.coordinate.analysis { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+| failed { ctx: CompilerContext, message: []const u8 }
+
+~compiler.coordinate.analysis =
+    compiler.check.structure(ctx: ctx)
+    | continued c1 |> compiler.check.flow(ctx: c1.ctx)
+      | continued c2 |> compiler.check.phantom.semantic(ctx: c2.ctx)
+        | continued c3 |> compiler.check.purity(ctx: c3.ctx)
+          | continued c4 |> continued { ctx: c4.ctx }
+          | failed f |> failed { ctx: f.ctx, message: f.message }
+        | failed f |> failed { ctx: f.ctx, message: f.message }
+      | failed f |> failed { ctx: f.ctx, message: f.message }
+    | failed f |> failed { ctx: f.ctx, message: f.message }
+
+// Tap transformation segment: Insert tap invocations into AST
+// This converts taps from emission-time code injection to AST nodes,
+// enabling the optimizer to see and optimize them (zero-cost abstraction!)
+~pub event compiler.coordinate.transform_taps { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+
+~proc compiler.coordinate.transform_taps {
+    // Build tap registry from AST (before transformation removes taps)
+    const tap_registry_module = @import("tap_registry");
+    const registry_ptr = ctx.allocator.create(tap_registry_module.TapRegistry) catch unreachable;
+    registry_ptr.* = tap_registry_module.buildTapRegistry(
+        ctx.ast.items,
+        ctx.allocator
+    ) catch unreachable;
+    // Don't defer deinit - we need the registry to persist for emission
+
+    // Transform AST - insert tap invocations as regular flow code
+    const tap_transformer = @import("tap_transformer");
+    const emitter_helpers = @import("emitter_helpers");
+    const transformed_ast = tap_transformer.transformAst(
+        ctx.ast,
+        registry_ptr,
+        emitter_helpers.EmitMode.runtime_only,
+        ctx.allocator
+    ) catch unreachable;
+
+    // Update context with transformed AST and tap registry
+    var updated_ctx = ctx;
+    updated_ctx.ast = transformed_ast;
+    updated_ctx.tap_registry = registry_ptr;
+    updated_ctx.passes_completed += 1;
+
+    return .{ .continued = .{ .ctx = updated_ctx } };
+}
+
+// Optimization segment: AST transformations for performance
+// This is where we create IR nodes (NativeLoop, FusedEvent, etc.)
+~pub event compiler.coordinate.optimize { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+
+// TODO: Loop optimization removed (broken hardcoded implementation)
+// Will be reimplemented properly with actual proc body parsing
+~proc compiler.coordinate.optimize {
+    var updated_ctx = ctx;
+    updated_ctx.passes_completed += 1;
+    return .{ .continued = .{ .ctx = updated_ctx } };
+}
+
+// Emission segment: Final code generation
+~pub event compiler.coordinate.emission { ctx: CompilerContext }
+| continued { ctx: CompilerContext, code: []const u8 }
+
+~compiler.coordinate.emission =
+    compiler.passes.inject_ccp(ctx: ctx)
+    | continued c1 |> compiler.emit.zig(ctx: c1.ctx)
+      | continued c2 |> continued { ctx: c2.ctx, code: c2.code }
+
+// Default coordination pipeline - chains all segments!
+// Users who don't override compiler.coordinate can rely on this standard pipeline.
+// You can also call individual segments or compose your own pipeline by implementing compiler.coordinate!
+~compiler.coordinate.default =
+    compiler.context.create(program_ast: program_ast, allocator: allocator)
+    | created c0 |> compiler.coordinate.frontend(ctx: c0.ctx)
+      | continued c1 |> compiler.coordinate.transform_taps(ctx: c1.ctx)
+        | continued c2 |> compiler.coordinate.analysis(ctx: c2.ctx)
+          | continued c3 |> compiler.coordinate.optimize(ctx: c3.ctx)
+            | continued c4 |> compiler.coordinate.emission(ctx: c4.ctx)
+              | continued c5 |> compiler.metrics.format(passes_completed: c5.ctx.passes_completed, allocator: allocator)
+                | formatted m |> coordinated { ast: c5.ctx.ast, code: c5.code, metrics: m.metrics }
+          | failed f |> error { message: f.message }
+
+// NOTE: compiler.coordinate is intentionally left UNIMPLEMENTED here!
+// This demonstrates Koru's powerful feature: events without implementations.
+// Users can implement compiler.coordinate to customize compilation, or the system
+// will fall back to compiler.coordinate.default (via main.zig bootstrap logic).
+
+// Parser service - makes the Koru parser available at backend comptime
+// This enables dynamic module loading during compilation passes
+~pub event compiler.parse { source: []const u8, module_name: []const u8 }
+| parsed { items: []Item }
+| failed { message: []const u8 }
+
+// Zig code emission event - the final step of compilation!
+~pub event compiler.emit.zig { ctx: CompilerContext }
+| continued { ctx: CompilerContext, code: []const u8 }
+
+// Comptime evaluation pass - executes events with ProgramAST/Source parameters
+~pub event compiler.passes.evaluate_comptime { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+
+// Structural shape checking - validates events/branches exist, base types match
+~pub event compiler.check.structure { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+| failed { ctx: CompilerContext, message: []const u8 }
+
+// Flow checking - validates control flow properties (when-clause exhaustiveness, etc.)
+~pub event compiler.check.flow { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+| failed { ctx: CompilerContext, message: []const u8 }
+
+// Semantic phantom type checking - validates type-state compatibility using
+// the default Koru semantic checker (module-qualified phantom states)
+~pub event compiler.check.phantom.semantic { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+| failed { ctx: CompilerContext, message: []const u8 }
+
+// Purity checking - trusts [pure] annotations as developer assertions
+~pub event compiler.check.purity { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+| failed { ctx: CompilerContext, message: []const u8 }
+
+// CCP observability pass - injects universal observability taps into user AST
+// When enabled, this makes every compiled program self-observing by adding:
+// - emit_json event/proc for JSON output
+// - Universal tap (~* -> *) that emits transition events
+~pub event compiler.passes.inject_ccp { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+
+// Implementation of Zig code emission - this IS ComptimeEmitter as a Koru proc!
+~proc compiler.emit.zig {
+    // NEW VISITOR-BASED IMPLEMENTATION!
+    // Replaces the 2184-line procedural emitter with visitor orchestrator
+
+    // DUMP POINT 5: AST at emission entry (after all passes)
+    const backend_output = @import("backend_output_emitted.zig");
+    backend_output.dumpAST(ctx.ast, "5-emit-zig", ctx.allocator);
+
+    // Import libraries needed for emission
+    const emitter_lib = @import("emitter_helpers");
+    const visitor_emitter_lib = @import("visitor_emitter");
+    const tap_registry_module = @import("tap_registry");
+
+    const MAX_SIZE = 256 * 1024; // 256KB buffer
+    // CRITICAL: Buffer must be heap-allocated because we return a slice to it!
+    // Stack-allocated buffers become invalid when function returns
+    const buffer = ctx.allocator.alloc(u8, MAX_SIZE) catch unreachable;
+    // Note: We don't defer free because the returned slice points to this memory
+
+    // Create CodeEmitter
+    var code_emitter = emitter_lib.CodeEmitter.init(buffer);
+
+    // DEBUG: Check buffer state after init
+    std.debug.print("\n[BUFFER DEBUG] After CodeEmitter.init:\n", .{});
+    std.debug.print("[BUFFER DEBUG]   code_emitter.pos = {d}\n", .{code_emitter.pos});
+    std.debug.print("[BUFFER DEBUG]   First 50 bytes: ", .{});
+    for (buffer[0..@min(50, buffer.len)]) |byte| {
+        if (byte >= 32 and byte < 127) {
+            std.debug.print("{c}", .{byte});
+        } else {
+            std.debug.print("[{d}]", .{byte});
+        }
+    }
+    std.debug.print("\n", .{});
+
+    // Use tap registry from context (built during transform_taps pass)
+    // If no registry exists, build one from current AST (shouldn't happen in normal flow)
+    const tap_registry = if (ctx.tap_registry) |registry|
+        registry
+    else blk: {
+        const registry_ptr = ctx.allocator.create(tap_registry_module.TapRegistry) catch unreachable;
+        registry_ptr.* = tap_registry_module.buildTapRegistry(
+            ctx.ast.items,
+            ctx.allocator
+        ) catch unreachable;
+        break :blk registry_ptr;
+    };
+
+    // Build type registry from ORIGINAL canonicalized AST (before filtering)
+    // The original_ast contains ALL events (including comptime ones) so TypeRegistry has complete metadata
+    const type_registry_module = @import("type_registry");
+    var type_registry = type_registry_module.TypeRegistry.init(ctx.allocator);
+    defer type_registry.deinit();
+    type_registry.populateFromAST(ctx.original_ast.items) catch unreachable;
+
+    // Create visitor orchestrator with tap registry and type registry
+    // Use .runtime_only mode to emit only modules WITHOUT [comptime] annotation
+    var visitor_emitter = visitor_emitter_lib.VisitorEmitter.init(
+        ctx.allocator,
+        &code_emitter,
+        ctx.ast.items,
+        tap_registry,
+        &type_registry,
+        .runtime_only
+    );
+
+    // Emit using visitor pattern!
+    visitor_emitter.emit(ctx.ast) catch unreachable;
+
+    // DEBUG: Check buffer after emission
+    std.debug.print("\n[BUFFER DEBUG] After visitor_emitter.emit:\n", .{});
+    std.debug.print("[BUFFER DEBUG]   code_emitter.pos = {d}\n", .{code_emitter.pos});
+    std.debug.print("[BUFFER DEBUG]   First 50 bytes of buffer: ", .{});
+    for (buffer[0..@min(50, buffer.len)]) |byte| {
+        if (byte >= 32 and byte < 127) {
+            std.debug.print("{c}", .{byte});
+        } else {
+            std.debug.print("[{d}]", .{byte});
+        }
+    }
+    std.debug.print("\n", .{});
+
+    // Get the emitted code
+    const final_code = code_emitter.getOutput();
+
+    std.debug.print("[BUFFER DEBUG] final_code length = {d}\n", .{final_code.len});
+    std.debug.print("[BUFFER DEBUG]   First 50 bytes of final_code: ", .{});
+    for (final_code[0..@min(50, final_code.len)]) |byte| {
+        if (byte >= 32 and byte < 127) {
+            std.debug.print("{c}", .{byte});
+        } else {
+            std.debug.print("[{d}]", .{byte});
+        }
+    }
+    std.debug.print("\n\n", .{});
+
+    var updated_ctx = ctx;
+    updated_ctx.passes_completed += 1;
+    return .{ .continued = .{ .ctx = updated_ctx, .code = final_code } };
+}
+
+// Helper: Join path segments with dots
+const joinPath = struct {
+    fn call(path: []const []const u8) []const u8 {
+        if (path.len == 0) return "";
+        if (path.len == 1) return path[0];
+
+        // Calculate total length needed
+        var total_len: usize = path[0].len;
+        var i: usize = 1;
+        while (i < path.len) : (i += 1) {
+            total_len += 1 + path[i].len; // dot + segment
+        }
+
+        // Build result
+        var result: [256]u8 = undefined;
+        var pos: usize = 0;
+        @memcpy(result[pos..pos + path[0].len], path[0]);
+        pos += path[0].len;
+
+        i = 1;
+        while (i < path.len) : (i += 1) {
+            result[pos] = '.';
+            pos += 1;
+            @memcpy(result[pos..pos + path[i].len], path[i]);
+            pos += path[i].len;
+        }
+
+        return result[0..pos];
+    }
+}.call;
+
+// Parser service implementation - wraps the Koru parser for comptime use
+~proc compiler.parse {
+    const Parser = @import("parser").Parser;
+    // Note: 'std' is already imported at top level by the emitter
+
+    // Use a comptime-friendly allocator
+    // Note: In actual comptime context, we'd use a fixed buffer allocator
+    // For now, we use the standard allocator which works at comptime
+    var buffer: [1024 * 1024]u8 = undefined; // 1MB buffer for parsing
+    var fba = std.heap.FixedBufferAllocator.init(&buffer);
+    const allocator = fba.allocator();
+
+    // Initialize parser (empty compiler flags, no resolver for standalone parsing)
+    var parser = Parser.init(allocator, source, module_name, &[_][]const u8{}, null) catch {
+        return .{ .failed = .{ .message = "Failed to initialize parser" } };
+    };
+    defer parser.deinit();
+
+    // Parse the source
+    const parse_result = parser.parse() catch {
+        // Try to get error details if available
+        if (parser.reporter.hasErrors()) {
+            return .{ .failed = .{ .message = "Parse error - see compiler output" } };
+        }
+        return .{ .failed = .{ .message = "Failed to parse source" } };
+    };
+
+    // Return the parsed items
+    // Note: The items are allocated in our buffer, which is stack-allocated
+    // This is fine for comptime usage where everything gets evaluated away
+    return .{ .parsed = .{ .items = parse_result.source_file.items } };
+}
+
+// Comptime evaluation pass - executes events with ProgramAST/Source parameters
+// This runs BEFORE emission so comptime events can transform the AST
+~proc compiler.passes.evaluate_comptime {
+    // Phase 1: Build map of comptime-only events
+    // (Events that have ProgramAST or Source parameters)
+    var comptime_events: [64][]const u8 = undefined;
+    var comptime_count: usize = 0;
+
+    for (ctx.ast.items) |item| {
+        switch (item) {
+            .event_decl => |event_decl| {
+                // Check if this event has comptime-only parameters
+                var is_comptime = false;
+                for (event_decl.input.fields) |field| {
+                    if (field.is_source) {
+                        is_comptime = true;
+                        break;
+                    }
+                    if (std.mem.eql(u8, field.type, "ProgramAST") or std.mem.eql(u8, field.type, "Program")) {
+                        is_comptime = true;
+                        break;
+                    }
+                }
+
+                if (is_comptime and comptime_count < 64) {
+                    // Build event name from path segments
+                    // MUST allocate event name with allocator, NOT use joinPath stack allocation!
+                    const event_name = std.fmt.allocPrint(ctx.allocator, "{s}", .{joinPath(event_decl.path.segments)}) catch {
+                        std.debug.print("ERROR: Failed to allocate event name\n", .{});
+                        continue; // Skip this event if allocation fails
+                    };
+                    comptime_events[comptime_count] = event_name;
+                    comptime_count += 1;
+                }
+            },
+            .module_decl => |module| {
+                // Also check imported modules
+                for (module.items) |mod_item| {
+                    if (mod_item == .event_decl) {
+                        const event_decl = mod_item.event_decl;
+                        var is_comptime = false;
+                        for (event_decl.input.fields) |field| {
+                            if (field.is_source) {
+                                is_comptime = true;
+                                break;
+                            }
+                            if (std.mem.eql(u8, field.type, "ProgramAST") or std.mem.eql(u8, field.type, "Program")) {
+                                is_comptime = true;
+                                break;
+                            }
+                        }
+
+                        if (is_comptime and comptime_count < 64) {
+                            // For module events, include the module name: "std.build:requires"
+                            const event_name = if (module.logical_name.len > 0) blk: {
+                                // Try to format with module prefix, fall back to plain name if allocation fails
+                                break :blk std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{module.logical_name, joinPath(event_decl.path.segments)}) catch joinPath(event_decl.path.segments);
+                            } else
+                                joinPath(event_decl.path.segments);
+                            comptime_events[comptime_count] = event_name;
+                            comptime_count += 1;
+                        }
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    // Phase 2: Walk flows and find comptime event invocations
+    // std.debug.print("  Phase 2: Scanning flows for comptime invocations...\n", .{});
+    for (ctx.ast.items) |item| {
+        if (item == .flow) {
+            const flow = item.flow;
+            // For module-qualified flows, include the module name: "std.build:requires"
+            const inv_path = if (flow.invocation.path.module_qualifier) |mq| blk: {
+                break :blk std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, joinPath(flow.invocation.path.segments)}) catch joinPath(flow.invocation.path.segments);
+            } else
+                joinPath(flow.invocation.path.segments);
+            defer if (flow.invocation.path.module_qualifier != null) ctx.allocator.free(inv_path);
+            // std.debug.print("    Flow invokes: {s}\n", .{inv_path});
+
+            // Check if this invocation is to a comptime event
+            var i: usize = 0;
+            while (i < comptime_count) : (i += 1) {
+                if (std.mem.eql(u8, inv_path, comptime_events[i])) {
+                    // Found a comptime event invocation!
+                    // std.debug.print("  ✓ Found comptime invocation: {s}\n", .{inv_path});
+
+                    // TODO: Call the comptime handler!
+                    // const handler_result = callComptimeHandler(inv_path, ctx.ast);
+                    // For now, just print that we called it
+                    // TODO: Use result to transform flow/AST
+                    // switch (handler_result) {
+                    //     .none => {
+                    //         // std.debug.print("  WARNING: Handler not found for: {s}\n", .{inv_path});
+                    //     },
+                    // }
+
+                    break;
+                }
+            }
+        }
+    }
+
+    // std.debug.print("  Detected {} comptime events, {} invocations\n", .{comptime_count, invocations_found});
+
+    // Phase 2.4: Execute comptime flows (if they exist)
+    // comptime_main() calls all comptime_flowN() functions at Zig RUNTIME (when ./backend runs)
+    const backend_output = @import("backend_output_emitted.zig");
+    if (@hasDecl(backend_output, "comptime_main")) {
+        std.debug.print("[PHASE 2.4] Executing comptime_main() - running comptime flows\n", .{});
+        backend_output.comptime_main();
+        std.debug.print("[PHASE 2.4] Comptime flows execution complete\n", .{});
+    }
+
+    // Phase 2.5: Execute transform handlers (if they exist)
+    // NOTE: run_pass() is generated into backend_output_emitted.zig by the frontend
+    // It's only present if there are [comptime|transform] events in the source
+    const transform_updated_ctx = if (@hasDecl(backend_output, "run_pass")) blk: {
+        std.debug.print("[PHASE 2.5] Calling run_pass for transforms\\n", .{});
+
+        // DUMP POINT 3: AST before transform handlers
+        backend_output.dumpAST(ctx.ast, "3-pre-transform", ctx.allocator);
+
+        const post_transform_ast = backend_output.run_pass("transform", ctx.ast, ctx.allocator) catch {
+            // Transformation failed - return original AST unchanged
+            std.debug.print("WARNING: Transform execution failed\n", .{});
+            return .{ .continued = .{ .ctx = ctx } };
+        };
+
+        // DUMP POINT 4: AST after transform handlers
+        backend_output.dumpAST(post_transform_ast, "4-post-transform", ctx.allocator);
+
+        var transform_ctx = ctx;
+        transform_ctx.ast = post_transform_ast;
+        break :blk transform_ctx;
+    } else ctx;
+
+    // Phase 2.6: Rebuild comptime_events list from transformed AST
+    // Transforms may have added/removed events, so we need to rescan
+    std.debug.print("[PHASE 2.6] Rescanning transformed AST ({} items)\n", .{transform_updated_ctx.ast.items.len});
+    comptime_count = 0;  // Reset counter
+    for (transform_updated_ctx.ast.items) |item| {
+        switch (item) {
+            .event_decl => |event_decl| {
+                // Check if this event has comptime-only parameters
+                var is_comptime = false;
+                for (event_decl.input.fields) |field| {
+                    if (field.is_source) {
+                        is_comptime = true;
+                        break;
+                    }
+                    if (std.mem.eql(u8, field.type, "ProgramAST") or std.mem.eql(u8, field.type, "Program")) {
+                        is_comptime = true;
+                        break;
+                    }
+                }
+
+                if (is_comptime and comptime_count < 64) {
+                    // MUST allocate event name with allocator, NOT use joinPath stack allocation!
+                    const event_name = std.fmt.allocPrint(ctx.allocator, "{s}", .{joinPath(event_decl.path.segments)}) catch {
+                        std.debug.print("ERROR: Failed to allocate event name during rescan\n", .{});
+                        continue; // Skip this event if allocation fails
+                    };
+                    std.debug.print("  Found comptime event: {s} (fields: {})\n", .{event_name, event_decl.input.fields.len});
+                    comptime_events[comptime_count] = event_name;
+                    comptime_count += 1;
+                }
+            },
+            .module_decl => |module| {
+                for (module.items) |mod_item| {
+                    if (mod_item == .event_decl) {
+                        const event_decl = mod_item.event_decl;
+                        var is_comptime = false;
+                        for (event_decl.input.fields) |field| {
+                            if (field.is_source) {
+                                is_comptime = true;
+                                break;
+                            }
+                            if (std.mem.eql(u8, field.type, "ProgramAST") or std.mem.eql(u8, field.type, "Program")) {
+                                is_comptime = true;
+                                break;
+                            }
+                        }
+
+                        if (is_comptime and comptime_count < 64) {
+                            const event_name = if (module.logical_name.len > 0) blk2: {
+                                break :blk2 std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{module.logical_name, joinPath(event_decl.path.segments)}) catch {
+                                    std.debug.print("ERROR: Failed to allocate module event name during rescan\n", .{});
+                                    continue; // Skip this event if allocation fails
+                                };
+                            } else blk2: {
+                                // MUST allocate! Don't use joinPath directly
+                                break :blk2 std.fmt.allocPrint(ctx.allocator, "{s}", .{joinPath(event_decl.path.segments)}) catch {
+                                    std.debug.print("ERROR: Failed to allocate event name during rescan\n", .{});
+                                    continue; // Skip this event if allocation fails
+                                };
+                            };
+                            comptime_events[comptime_count] = event_name;
+                            comptime_count += 1;
+                        }
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+    std.debug.print("[PHASE 2.6] Rescan complete: {} comptime events found\n", .{comptime_count});
+    for (0..comptime_count) |i| {
+        std.debug.print("  [{}] {s}\n", .{i, comptime_events[i]});
+    }
+
+    // Phase 3: Build new AST without comptime flows, procs, and modules (AST TRANSFORMATION!)
+    // Count non-comptime items first
+    var count_non_comptime: usize = 0;
+    for (transform_updated_ctx.ast.items) |item| {
+        var should_keep = true;
+        if (item == .flow) {
+            const flow = item.flow;
+            // For module-qualified flows, include the module name: "std.build:requires"
+            const inv_path = if (flow.invocation.path.module_qualifier) |mq| blk: {
+                break :blk std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, joinPath(flow.invocation.path.segments)}) catch joinPath(flow.invocation.path.segments);
+            } else
+                joinPath(flow.invocation.path.segments);
+            defer if (flow.invocation.path.module_qualifier != null) ctx.allocator.free(inv_path);
+
+            // Check if comptime flow
+            for (0..comptime_count) |i| {
+                if (std.mem.eql(u8, inv_path, comptime_events[i])) {
+                    should_keep = false;
+                    break;
+                }
+            }
+        }
+
+        // Filter out comptime procs (they were already executed)
+        // Note: [raw] annotation only affects emission style, not filtering
+        if (item == .proc_decl) {
+            const proc = item.proc_decl;
+
+            // Check if this proc is comptime (in comptime_events list)
+            const proc_path = joinPath(proc.path.segments);
+            for (0..comptime_count) |i| {
+                if (std.mem.eql(u8, proc_path, comptime_events[i])) {
+                    // This is a comptime proc - filter it out (already executed)
+                    should_keep = false;
+                    break;
+                }
+            }
+        }
+
+        // NOTE: Don't filter modules based on [comptime] annotation here.
+        // Modules with [comptime] may contain [runtime] events that need to be emitted.
+        // The visitor_emitter handles this correctly by checking if the module contains
+        // any emittable items before filtering the module itself.
+
+        if (should_keep) {
+            count_non_comptime += 1;
+        }
+    }
+
+    // Build new array with exact size (now allocated at runtime)
+    const new_items = ctx.allocator.alloc(Item, count_non_comptime) catch {
+        // Allocation failed - return original AST unchanged
+        return .{ .continued = .{ .ctx = ctx } };
+    };
+    var idx: usize = 0;
+    for (transform_updated_ctx.ast.items) |item| {
+        var should_keep = true;
+        if (item == .flow) {
+            const flow = item.flow;
+            // For module-qualified flows, include the module name: "std.build:requires"
+            const inv_path = if (flow.invocation.path.module_qualifier) |mq| blk: {
+                break :blk std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, joinPath(flow.invocation.path.segments)}) catch joinPath(flow.invocation.path.segments);
+            } else
+                joinPath(flow.invocation.path.segments);
+            defer if (flow.invocation.path.module_qualifier != null) ctx.allocator.free(inv_path);
+
+            // Check if comptime flow
+            for (0..comptime_count) |i| {
+                if (std.mem.eql(u8, inv_path, comptime_events[i])) {
+                    should_keep = false;
+                    break;
+                }
+            }
+        }
+
+        // Filter out comptime procs (they were already executed)
+        // Note: [raw] annotation only affects emission style, not filtering
+        if (item == .proc_decl) {
+            const proc = item.proc_decl;
+
+            // Check if this proc is comptime (in comptime_events list)
+            const proc_path = joinPath(proc.path.segments);
+            for (0..comptime_count) |i| {
+                if (std.mem.eql(u8, proc_path, comptime_events[i])) {
+                    // This is a comptime proc - filter it out (already executed)
+                    should_keep = false;
+                    break;
+                }
+            }
+        }
+
+        // NOTE: Don't filter modules based on [comptime] annotation here.
+        // Modules with [comptime] may contain [runtime] events that need to be emitted.
+        // The visitor_emitter handles this correctly by checking if the module contains
+        // any emittable items before filtering the module itself.
+
+        if (should_keep) {
+            new_items[idx] = item;
+            idx += 1;
+        }
+    }
+
+    const transformed_ast = ctx.allocator.create(Program) catch {
+        // Allocation failed - return original AST unchanged
+        return .{ .continued = .{ .ctx = ctx } };
+    };
+    transformed_ast.* = Program{
+        .items = new_items,
+        .module_annotations = ctx.ast.module_annotations,
+        .main_module_name = ctx.ast.main_module_name,
+        .allocator = ctx.allocator,
+    };
+
+    // Update context with transformed AST
+    // IMPORTANT: Keep original_ast unchanged - it preserves comptime event metadata!
+    var updated_ctx = ctx;
+    updated_ctx.ast = transformed_ast;  // Filtered AST for emission
+    // updated_ctx.original_ast stays the same - unfiltered AST for TypeRegistry
+    updated_ctx.passes_completed += 1;
+
+    return .{ .continued = .{ .ctx = updated_ctx } };
+}
+
+// Structural shape checker implementation
+~proc compiler.check.structure {
+    // Need mutable ctx to append errors
+    var mutable_ctx = ctx;
+
+    // Use the Zig shape_checker library for structural validation
+    const shape_checker = @import("shape_checker");
+    const errors_mod = @import("errors");
+
+    // Create error reporter
+    var reporter = errors_mod.ErrorReporter.init(
+        std.heap.page_allocator,
+        "structural_check",
+        ""
+    ) catch {
+        // Report error to context
+        mutable_ctx.errors.append(mutable_ctx.allocator, .{
+            .message = "Failed to initialize error reporter",
+            .location = .{ .file = "compiler", .line = 0, .column = 0 },
+        }) catch {};
+        return .{ .continued = .{ .ctx = mutable_ctx } };
+    };
+    defer reporter.deinit();
+
+    // Create shape checker
+    var checker = shape_checker.ShapeChecker.init(
+        std.heap.page_allocator,
+        &reporter
+    ) catch {
+        // Report error to context
+        mutable_ctx.errors.append(mutable_ctx.allocator, .{
+            .message = "Failed to initialize shape checker",
+            .location = .{ .file = "compiler", .line = 0, .column = 0 },
+        }) catch {};
+        return .{ .continued = .{ .ctx = mutable_ctx } };
+    };
+    defer checker.deinit();
+
+    // Run structural validation
+    checker.checkSourceFile(mutable_ctx.ast) catch |err| {
+        // Generate error message based on error type
+        const err_msg = switch (err) {
+            error.UnknownEvent => "Unknown event referenced",
+            error.IncompleteBranchCoverage => "Incomplete branch coverage",
+            error.ProcWithoutEvent => "Proc without matching event",
+            error.SubflowWithoutEvent => "Subflow without matching event",
+            error.DuplicateBranchHandler => "Duplicate branch handler at same indentation level",
+            else => "Structural validation failed",
+        };
+
+        // Return failed branch - stops the pipeline!
+        return .{ .failed = .{ .ctx = mutable_ctx, .message = err_msg } };
+    };
+
+    // Validation succeeded
+    mutable_ctx.passes_completed += 1;
+    return .{ .continued = .{ .ctx = mutable_ctx } };
+}
+
+// Flow checker implementation
+// Validates control flow properties like when-clause exhaustiveness
+~proc compiler.check.flow {
+    // Need mutable ctx to append errors
+    var mutable_ctx = ctx;
+
+    // Use the Zig flow_checker library for flow validation
+    const flow_checker = @import("flow_checker");
+    const errors_mod = @import("errors");
+
+    // Create error reporter
+    var reporter = errors_mod.ErrorReporter.init(
+        std.heap.page_allocator,
+        "flow_check",
+        ""
+    ) catch {
+        // Report error to context
+        mutable_ctx.errors.append(mutable_ctx.allocator, .{
+            .message = "Failed to initialize error reporter",
+            .location = .{ .file = "compiler", .line = 0, .column = 0 },
+        }) catch {};
+        return .{ .continued = .{ .ctx = mutable_ctx } };
+    };
+    defer reporter.deinit();
+
+    // Create flow checker
+    var checker = flow_checker.FlowChecker.init(
+        std.heap.page_allocator,
+        &reporter
+    ) catch {
+        // Report error to context
+        mutable_ctx.errors.append(mutable_ctx.allocator, .{
+            .message = "Failed to initialize flow checker",
+            .location = .{ .file = "compiler", .line = 0, .column = 0 },
+        }) catch {};
+        return .{ .continued = .{ .ctx = mutable_ctx } };
+    };
+    defer checker.deinit();
+
+    // Run flow validation
+    checker.checkSourceFile(mutable_ctx.ast) catch |err| {
+        // Generate error message based on error type
+        const err_msg = switch (err) {
+            error.FlowValidationFailed => "Flow validation failed",
+            error.DuplicateBranchHandler => "Duplicate branch handler at same indentation level",
+            else => "Flow validation error",
+        };
+
+        // Return failed branch - stops the pipeline!
+        return .{ .failed = .{ .ctx = mutable_ctx, .message = err_msg } };
+    };
+
+    // Validation succeeded
+    mutable_ctx.passes_completed += 1;
+    return .{ .continued = .{ .ctx = mutable_ctx } };
+}
+
+// Semantic phantom type checker implementation
+// Validates module-qualified phantom states and their compatibility
+~proc compiler.check.phantom.semantic {
+    std.debug.print("\n[PHANTOM-KORU] Starting phantom check proc...\n", .{});
+    // Need mutable ctx to append errors
+    var mutable_ctx = ctx;
+
+    // Use the Zig phantom_semantic_checker library for phantom state validation
+    const phantom_semantic_checker = @import("phantom_semantic_checker");
+    const errors_mod = @import("errors");
+
+    // Create error reporter
+    var reporter = errors_mod.ErrorReporter.init(
+        std.heap.page_allocator,
+        "phantom_semantic_check",
+        ""
+    ) catch {
+        // Report error to context
+        mutable_ctx.errors.append(mutable_ctx.allocator, .{
+            .message = "Failed to initialize error reporter",
+            .location = .{ .file = "compiler", .line = 0, .column = 0 },
+        }) catch {};
+        return .{ .continued = .{ .ctx = mutable_ctx } };
+    };
+    defer reporter.deinit();
+
+    // Create phantom semantic checker
+    var checker = phantom_semantic_checker.PhantomSemanticChecker.init(
+        std.heap.page_allocator,
+        &reporter
+    ) catch {
+        // Report error to context
+        mutable_ctx.errors.append(mutable_ctx.allocator, .{
+            .message = "Failed to initialize phantom semantic checker",
+            .location = .{ .file = "compiler", .line = 0, .column = 0 },
+        }) catch {};
+        return .{ .continued = .{ .ctx = mutable_ctx } };
+    };
+    defer checker.deinit();
+
+    // Run phantom semantic validation
+    checker.check(mutable_ctx.ast) catch |err| {
+        // Collect errors from reporter into context
+        for (reporter.errors.items) |reporter_err| {
+            // Print to stderr immediately for visibility in regression tests
+            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
+                @tagName(reporter_err.code),
+                reporter_err.message,
+                reporter_err.location.file,
+                reporter_err.location.line,
+                reporter_err.location.column,
+            });
+
+            mutable_ctx.errors.append(mutable_ctx.allocator, .{
+                .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
+                .location = .{
+                    .file = mutable_ctx.allocator.dupe(u8, reporter_err.location.file) catch reporter_err.location.file,
+                    .line = @intCast(reporter_err.location.line),
+                    .column = @intCast(reporter_err.location.column),
+                },
+            }) catch {};
+        }
+
+        // Generate error message based on error type
+        const err_msg = switch (err) {
+            error.ValidationFailed => "Phantom semantic validation failed",
+            else => "Phantom semantic validation error",
+        };
+
+        // Return failed branch - stops the pipeline!
+        return .{ .failed = .{ .ctx = mutable_ctx, .message = err_msg } };
+    };
+
+    // Validation succeeded
+    mutable_ctx.passes_completed += 1;
+    return .{ .continued = .{ .ctx = mutable_ctx } };
+}
+
+// Purity checker implementation
+// Tracks [pure] annotations - developer assertion, trusted without verification
+~proc compiler.check.purity {
+    var mutable_ctx = ctx;
+
+    // Purity is determined by [pure] annotation only
+    // We don't analyze host (Zig) code - if you say it's pure, we trust you
+
+    mutable_ctx.passes_completed += 1;
+    return .{ .continued = .{ .ctx = mutable_ctx } };
+}
+
+// CCP Observability Injection Pass
+// Injects universal observability taps into the user's AST
+// This makes every compiled program self-observing by adding emit_json and ~* -> * tap
+~proc compiler.passes.inject_ccp {
+    // Inject CCP observability helpers as self-contained Zig code
+    // Uses __ccp_std local import to avoid namespace pollution
+
+    // CCP is a self-governing feature that requires BOTH:
+    // 1. User imports $std/ccp (declares intent to use CCP)
+    // 2. Compiler flag --ccp is set (enables CCP infrastructure)
+    // This pattern allows features to exist in AST but remain dormant without flags
+
+    // TODO: CCP feature is disabled until CompilerEnv is implemented
+    // This would inject observability helpers when --ccp flag is set
+    var updated_ctx = ctx;
+    updated_ctx.passes_completed += 1;
+    return .{ .continued = .{ .ctx = updated_ctx } };
+}
+
+// CCP Command Processing Pass
+// Reads and processes incoming AI commands from stdin when --ccp is enabled
+~pub event compiler.passes.process_ccp_commands { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+
+~proc compiler.passes.process_ccp_commands {
+    // TODO: Check if --ccp flag is enabled via CompilerEnv
+    // TODO: Attempt non-blocking stdin read for JSONL commands
+    // TODO: Parse and dispatch commands to appropriate handlers
+    // For now, just pass through the context unchanged
+    var updated_ctx = ctx;
+    updated_ctx.passes_completed += 1;
+    return .{ .continued = .{ .ctx = updated_ctx } };
+}
+
+// ============================================================================
+// NOTE: The default compiler coordinator is NOT defined as a Koru flow.
+//       It's hardcoded in src/main.zig as a Zig function.
+//
+// Why: The coordinator runs at Zig compile-time during backend.zig compilation,
+//      before the Koru runtime exists. Flows can't execute at that stage.
+//
+// To modify the compilation pipeline, edit compiler_coordinate_default
+// in src/main.zig directly.
+//
+// The pipeline executes these passes in order:
+//   1. compiler.passes.process_ccp_commands  (reads AI commands from stdin)
+//   2. compiler.passes.evaluate_comptime     (executes comptime events)
+//   3. compiler.check.structure              (validates event/branch shapes)
+//   4. compiler.check.phantom.semantic       (validates phantom types)
+//   5. compiler.passes.inject_ccp            (adds observability taps)
+//   6. compiler.emit.zig                     (generates final Zig code)
+//
+// [expand] events are handled automatically by transform_pass_runner.zig
+// during the transform phase inside evaluate_comptime.
+// ============================================================================

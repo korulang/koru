@@ -1,0 +1,49 @@
+// Tour 08: File Operations Module
+// File handling events for import demonstration
+
+const std = @import("std");
+
+// Public file operation events
+~pub event file.read { path: []const u8 }
+| content { data: []const u8, size: usize }
+| not_found { path: []const u8 }
+| error { message: []const u8 }
+
+~pub event file.write { path: []const u8, data: []const u8 }
+| success { bytes_written: usize }
+| error { message: []const u8 }
+
+~pub event file.exists { path: []const u8 }
+| exists { is_dir: bool }
+| not_exists {}
+
+// Implementations
+~proc file.read {
+    // Simulated implementation
+    if (std.mem.eql(u8, e.path, "/etc/passwd")) {
+        return .{ .error = .{ .message = "Permission denied" } };
+    }
+    if (std.mem.eql(u8, e.path, "test.txt")) {
+        return .{ .content = .{ 
+            .data = "Hello from file!",
+            .size = 16
+        }};
+    }
+    return .{ .not_found = .{ .path = e.path } };
+}
+
+~proc file.write {
+    // Simulated - always succeeds
+    return .{ .success = .{ .bytes_written = e.data.len } };
+}
+
+~proc file.exists {
+    // Simulated
+    if (std.mem.eql(u8, e.path, "/")) {
+        return .{ .exists = .{ .is_dir = true } };
+    }
+    if (std.mem.eql(u8, e.path, "test.txt")) {
+        return .{ .exists = .{ .is_dir = false } };
+    }
+    return .{ .not_exists = .{} };
+}

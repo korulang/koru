@@ -1,0 +1,51 @@
+// Test 170: Module-Level Event Globbing with Taps
+//
+// Tests that taps can use wildcards to match ALL events from a module.
+// Pattern: ~input:* -> * matches ANY event in the main module.
+//
+// This demonstrates powerful observability - a single tap pattern can
+// intercept every event in a module, perfect for profiling or logging.
+//
+// Structure:
+//   test_lib/
+//     logger.kz  → Defines ~input:* -> * to intercept ALL main module events
+//
+// Expected: The logger's tap fires for ALL events (compute, format, display)
+//          even though the pattern only specifies ~input:* once.
+
+const std = @import("std");
+
+// Import the logger module (which defines module-level globbing tap)
+~import "$app/test_lib/logger"
+
+// Define multiple events to test with
+~event compute { x: i32 }
+| result { value: i32 }
+
+~event format { value: i32 }
+| formatted { text: []const u8 }
+
+~event display { text: []const u8 }
+| done {}
+
+~proc compute {
+    std.debug.print("compute({d})\n", .{x});
+    return .{ .result = .{ .value = x * 2 } };
+}
+
+~proc format {
+    std.debug.print("format({d})\n", .{value});
+    const text = "formatted";
+    return .{ .formatted = .{ .text = text } };
+}
+
+~proc display {
+    std.debug.print("Final: {s}\n", .{text});
+    return .{ .done = .{} };
+}
+
+// Call all three events - the logger's ~input:* tap should intercept ALL of them!
+~compute(x: 42)
+| result r |> format(value: r.value)
+    | formatted f |> display(text: f.text)
+        | done |> _

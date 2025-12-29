@@ -1,0 +1,40 @@
+// Test 310_009: Multiple Taps on Same Event (Library Syntax)
+// Validates that multiple ~tap() declarations all fire
+// NOTE: Taps fire in REVERSE declaration order (last declared = first to fire)
+
+const std = @import("std");
+~import "$std/taps"
+
+// Event with a branch to tap
+~event hello {}
+| tap_target {}
+
+// Void observer events
+~event tap1 {}
+
+~event tap2 {}
+
+~proc hello {
+    std.debug.print("Main flow executed\n", .{});
+    return .{ .tap_target = .{} };
+}
+
+~proc tap1 {
+    std.debug.print("First tap observed!\n", .{});
+}
+
+~proc tap2 {
+    std.debug.print("Second tap observed!\n", .{});
+}
+
+// First tap on hello
+~tap(hello -> *)
+| tap_target |> tap1()
+
+// Second tap on hello (should also fire!)
+~tap(hello -> *)
+| tap_target |> tap2()
+
+// Execute hello - should trigger both taps
+~hello()
+| tap_target |> _

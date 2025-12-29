@@ -1,0 +1,56 @@
+// Koru Standard Library - Network Operations (Simplified Demo)
+// Pure events with stub implementations for showcase
+
+const std = @import("std");
+
+// TCP Server (simplified for demo)
+~pub event tcp.listen { port: u16 }
+| listening { port: u16 }
+| error { msg: []const u8 }
+
+~proc tcp.listen {
+    std.debug.print("[NET] Server would listen on port {}\n", .{port});
+    // For demo, just return success
+    return .{ .@"listening" = .{ .port = port } };
+}
+
+// Accept connection (stub)
+~pub event tcp.accept { port: u16 }
+| connection { id: u32 }
+| error { msg: []const u8 }
+
+~proc tcp.accept {
+    std.debug.print("[NET] Would accept connection\n", .{});
+    return .{ .@"connection" = .{ .id = 1 } };
+}
+
+// Read from connection (stub)
+~pub event tcp.read { id: u32, max_bytes: usize }
+| data { bytes: []const u8 }
+| closed {}
+| error { msg: []const u8 }
+
+~proc tcp.read {
+    // Return sample HTTP request
+    const sample = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    return .{ .@"data" = .{ .bytes = sample } };
+}
+
+// Write to connection (stub)
+~pub event tcp.write { id: u32, data: []const u8 }
+| sent { bytes: usize }
+| error { msg: []const u8 }
+
+~proc tcp.write {
+    std.debug.print("[NET] Would write {} bytes\n", .{data.len});
+    return .{ .@"sent" = .{ .bytes = data.len } };
+}
+
+// Close connection (stub)  
+~pub event tcp.close { id: u32 }
+| closed {}
+
+~proc tcp.close {
+    std.debug.print("[NET] Connection {} closed\n", .{id});
+    return .{ .@"closed" = .{} };
+}

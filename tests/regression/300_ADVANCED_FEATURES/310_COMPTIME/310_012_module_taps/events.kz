@@ -1,0 +1,4 @@
+~import "$test/input"
+
+~input:main_event -> *
+| done |> input:observer() |> _

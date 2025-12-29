@@ -1,0 +1,17 @@
+// Test 380_001: Basic Liquid Interpolation
+//
+// Tests that Liquid templates can interpolate event arguments.
+// The template engine resolves {{ variable }} from the event args.
+//
+// Key concepts:
+//   - First argument is the template string
+//   - Named args become template context
+//   - Template is rendered at compile time
+//
+// This is the foundation for powerful code generation.
+
+~import "$std/liquid_template"
+
+// The emit event: first arg is template, named args are context
+// {{ name }} resolves to "Alice", {{ health }} to "100"
+~emit("Player {{ name }} has {{ health }} health.", name: "Alice", health: "100")

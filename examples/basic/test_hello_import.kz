@@ -1,0 +1,6 @@
+// Simple Hello World with import
+~import "koru_std/io"
+
+~io.println(text: "Hello, World!")
+| printed |> _
+| failed |> _

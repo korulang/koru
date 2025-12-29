@@ -1,0 +1,39 @@
+// PERFORMANCE TEST: Koru label loops vs Zig while loops
+// Goal: Prove Koru loops (#/@) compile to same code as Zig while loops
+// Based on working test: 203_labels_and_jumps
+// Loop: Count to 10 million (runs ~10ms for better benchmark accuracy)
+// Baseline: Zig while loop
+// Threshold: 1.05x (5% slower max)
+
+const std = @import("std");
+
+// Event for counting/summing
+~event count { i: u64, sum: u64 }
+| next { i: u64, sum: u64 }
+| done { result: u64 }
+
+~proc count {
+    const new_i = i + 1;
+    const new_sum = sum + i;
+
+    if (new_i < 10_000_000) {
+        return .{ .next = .{ .i = new_i, .sum = new_sum } };
+    } else {
+        return .{ .done = .{ .result = new_sum } };
+    }
+}
+
+// Print result
+~event print { result: u64 }
+| done {}
+
+~proc print {
+    std.debug.print("Sum: {}\n", .{result});
+    return .{ .done = .{} };
+}
+
+// Loop: count to 1 million
+~#loop count(i: 0, sum: 0)
+| next n |> @loop(i: n.i, sum: n.sum)
+| done d |> print(result: d.result)
+    | done |> _

@@ -1,0 +1,148 @@
+// Tour 10: Universal Event Profiler
+// Universal taps with transition metadata enable system-wide monitoring
+// NOTE: Event taps are parsed and type-checked but CODE GENERATION IS NOT YET IMPLEMENTED
+
+const std = @import("std");
+
+// Profiling and monitoring events
+~event profiler.record { 
+    source: []const u8,
+    destination: []const u8, 
+    duration_ns: u64,
+    branch: []const u8
+}
+
+~event latency.track {
+    event: []const u8,
+    latency_ms: f64
+}
+
+~event throughput.measure {
+    event: []const u8,
+    count: u64,
+    window_ms: u64
+}
+
+// System to monitor
+~event api.request { method: []const u8, path: []const u8 }
+| ok { status: u32, body: []const u8 }
+| error { status: u32, message: []const u8 }
+
+~event cache.get { key: []const u8 }
+| hit { value: []const u8 }
+| miss {}
+
+~event database.query { sql: []const u8 }
+| result { rows: usize }
+| error { code: u32 }
+
+// Simple implementations
+~proc profiler.record {
+    std.debug.print("PROFILE: {s} -> {s} [{s}] took {}ns\n", 
+        .{e.source, e.destination, e.branch, e.duration_ns});
+    return .{};
+}
+
+~proc latency.track {
+    std.debug.print("LATENCY: {s} = {d:.2}ms\n", .{e.event, e.latency_ms});
+    return .{};
+}
+
+~proc throughput.measure {
+    const rate = @intToFloat(f64, e.count) / @intToFloat(f64, e.window_ms) * 1000.0;
+    std.debug.print("THROUGHPUT: {s} = {d:.2} ops/sec\n", .{e.event, rate});
+    return .{};
+}
+
+~proc api.request {
+    // Simulate API handling
+    if (std.mem.eql(u8, e.path, "/slow")) {
+        std.time.sleep(100_000_000); // 100ms
+        return .{ .ok = .{ .status = 200, .body = "slow response" } };
+    }
+    return .{ .ok = .{ .status = 200, .body = "fast response" } };
+}
+
+~proc cache.get {
+    // Simulate cache with 80% hit rate
+    const random = std.crypto.random.int(u8) % 10;
+    if (random < 8) {
+        return .{ .hit = .{ .value = "cached value" } };
+    }
+    return .{ .miss = .{} };
+}
+
+~proc database.query {
+    return .{ .result = .{ .rows = 100 } };
+}
+
+// UNIVERSAL PROFILER: Observe ALL transitions with metadata
+// The transition binding 't' would contain source, dest, timing info
+
+~* -> * |> transition t |> profiler.record(
+    source: t.source,
+    destination: t.destination,
+    duration_ns: t.duration_ns,
+    branch: t.branch
+)
+
+// LATENCY MONITORING: Track slow operations
+// Only record events that take longer than a threshold
+
+// ~* -> * |> transition t where t.duration_ns > 10_000_000 |> latency.track(
+//     event: t.destination,
+//     latency_ms: @intToFloat(f64, t.duration_ns) / 1_000_000.0
+// )
+
+// SELECTIVE PROFILING: Only profile specific event categories
+
+// API profiling
+~api.* -> * |> transition t |> latency.track(
+    event: "api",
+    latency_ms: @intToFloat(f64, t.duration_ns) / 1_000_000.0
+)
+
+// Database profiling  
+~database.* -> * |> transition t |> latency.track(
+    event: "database",
+    latency_ms: @intToFloat(f64, t.duration_ns) / 1_000_000.0
+)
+
+// CACHE HIT RATE MONITORING
+~cache.get -> * | hit |> throughput.measure(
+    event: "cache.hits",
+    count: 1,
+    window_ms: 60_000  // 1 minute window
+)
+
+~cache.get -> * | miss |> throughput.measure(
+    event: "cache.misses",
+    count: 1,
+    window_ms: 60_000
+)
+
+// ERROR RATE MONITORING
+~* -> * | error _ |> throughput.measure(
+    event: "global.errors",
+    count: 1,
+    window_ms: 60_000
+)
+
+// SUCCESS CHAIN MONITORING
+// Track successful request -> cache -> database chains
+~api.request -> cache.get | ok _ |> transition t1 |> {
+    ~cache.get -> database.query | hit _ |> transition t2 |> profiler.record(
+        source: "api.request",
+        destination: "database.query",
+        duration_ns: t1.duration_ns + t2.duration_ns,
+        branch: "cached_path"
+    )
+}
+
+// Example flows that would be profiled
+~api.request(method: "GET", path: "/users")
+| ok o |> cache.get(key: o.path)
+| hit h |> _
+| miss |> database.query(sql: "SELECT * FROM users")
+| result r |> _
+| error e |> _

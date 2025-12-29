@@ -1,0 +1,11 @@
+// Test: Parser should reject ~ (tilde) inside a Koru flow
+// The ~ is a LEADER character that switches from host-language to Koru.
+// Inside a continuation pipeline, you're already IN Koru, so ~ is invalid.
+
+~import "$std/io"
+~import "$std/control"
+
+// This is WRONG - ~ should not appear inside flows
+~capture(expr: { total: @as(i32, 0) })
+| as c |> captured { total: 42 }
+| done final |> ~std.io:println("Should reject this!")

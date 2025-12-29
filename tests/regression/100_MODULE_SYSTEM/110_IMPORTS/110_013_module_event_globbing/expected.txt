@@ -1,0 +1,6 @@
+compute(42)
+[TAP] Intercepted: compute
+format(84)
+[TAP] Intercepted: format
+Final: formatted
+[TAP] Intercepted: display

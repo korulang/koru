@@ -1,0 +1,14 @@
+// Test 644: Ambiguous Override Error (MUST_FAIL)
+// Tests that multiple non-default definitions with the same name is an error
+//
+// When multiple user modules define the same step (without [default]),
+// it's ambiguous which one to use.
+// Expected: Compilation error "Ambiguous step definition for 'build'"
+
+~import "$std/build"
+~import "$app/lib/build_config"
+
+// User defines "build" step here
+~std.build:step(name: "build") {
+    echo "Build from main"
+}

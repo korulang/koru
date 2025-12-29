@@ -1,0 +1,21 @@
+// Simplest nested if test - no print.ln, just nested if's
+
+~import "$std/control"
+
+const std = @import("std");
+
+~event start {}
+| done {}
+
+~proc start {
+    return .{ .done = .{} };
+}
+
+// Outer if contains inner if
+// Both should transform to Zig if statements
+~start()
+| done |> if(true)
+    | then |> if(false)
+        | then |> _
+        | else |> _
+    | else |> _

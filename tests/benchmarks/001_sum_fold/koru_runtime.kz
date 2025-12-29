@@ -1,0 +1,26 @@
+// Benchmark: Sum using ~capture + ~for with RUNTIME N
+// This prevents compile-time folding for fair comparison
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+// Get N from command line to prevent compile-time optimization
+fn getN() usize {
+    var args = std.process.args();
+    _ = args.next(); // skip program name
+    const n_str = args.next() orelse "100000000";
+    return std.fmt.parseInt(usize, n_str, 10) catch 100000000;
+}
+
+~event print_result { sum: i64 }
+
+~proc print_result {
+    std.debug.print("Koru runtime sum: {d}\n", .{sum});
+}
+
+~capture(init: { sum: @as(i64, 0) })
+| as acc |> for(0..getN())
+    | each i |> captured { sum: acc.sum + @as(i64, @intCast(i)) + 1 }
+| done result |> print_result(sum: result.sum)

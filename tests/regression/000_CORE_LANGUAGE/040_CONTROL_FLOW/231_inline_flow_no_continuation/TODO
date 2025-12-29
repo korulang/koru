@@ -1,0 +1,20 @@
+COMPILER BUG: Inline flows without continuations should return raw Output union
+
+Currently fails with: IncompleteBranchCoverage
+
+The code in this test is CORRECT and should compile. The inline flow:
+
+    const result = ~multiply(x: x, factor: 2)
+
+Should return the Output union from `multiply` directly, which can then be
+switched on. There's no need for explicit continuations when you just want
+the raw Output union.
+
+This is blocking inline-only proc purity detection because we can't write
+clean inline-only procs without this redundant boilerplate:
+
+    const result = ~multiply(x: x, factor: 2)
+    | done d |> done { result: d.result }  // Unnecessary projection!
+
+Fix: Parser/validator should allow inline flows with zero continuations.
+The inline flow should just return event.Output directly.

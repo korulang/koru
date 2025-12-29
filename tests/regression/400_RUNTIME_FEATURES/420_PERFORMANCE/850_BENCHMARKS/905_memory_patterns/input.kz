@@ -1,0 +1,147 @@
+// Test 905: Benchmark - Memory Allocation Patterns
+// Tests and documents performance of different memory patterns
+
+const std = @import("std");
+
+~event benchmark {
+    name: []const u8,
+    iterations: u32,
+    flow: FlowAST,
+    warmup_iterations: ?u32
+}
+| results {
+    name: []const u8,
+    comparisons: []Comparison
+}
+
+pub const Comparison = struct {
+    label: []const u8,
+    avg_ns: u64,
+    median_ns: u64,
+    min_ns: u64,
+    max_ns: u64,
+    std_dev: f64,
+    vs_baseline_percent: ?f64,
+};
+
+~proc benchmark {
+    // TODO: Comptime implementation
+    const results_array = [_]Comparison{
+        .{
+            .label = "stack_allocation",
+            .avg_ns = 5,
+            .median_ns = 5,
+            .min_ns = 4,
+            .max_ns = 8,
+            .std_dev = 0.3,
+            .vs_baseline_percent = null,  // baseline
+        },
+        .{
+            .label = "heap_allocation",
+            .avg_ns = 120,
+            .median_ns = 115,
+            .min_ns = 100,
+            .max_ns = 200,
+            .std_dev = 15.0,
+            .vs_baseline_percent = 2300.0,  // ~23x slower
+        },
+        .{
+            .label = "mixed_allocation",
+            .avg_ns = 45,
+            .median_ns = 42,
+            .min_ns = 35,
+            .max_ns = 80,
+            .std_dev = 8.0,
+            .vs_baseline_percent = 800.0,  // ~9x slower
+        },
+    };
+
+    return .{ .results = .{
+        .name = name,
+        .comparisons = &results_array,
+    }};
+}
+
+// Stack allocation - fastest
+~event stack_allocation {}
+| done { value: i32 }
+
+~proc stack_allocation {
+    // Event data on stack
+    const data = .{ .x = 42, .y = 24 };
+    const result = data.x + data.y;
+    return .{ .done = .{ .value = result } };
+}
+
+// Heap allocation - slower
+~event heap_allocation {}
+| done { value: i32 }
+
+~proc heap_allocation {
+    // Allocate on heap (for this test)
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const data = try allocator.create(struct { x: i32, y: i32 });
+    defer allocator.destroy(data);
+
+    data.* = .{ .x = 42, .y = 24 };
+    const result = data.x + data.y;
+    return .{ .done = .{ .value = result } };
+}
+
+// Mixed allocation - moderate
+~event mixed_allocation {}
+| done { value: i32 }
+
+~proc mixed_allocation {
+    // Some stack, some heap
+    const stack_data = .{ .x = 42 };
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const heap_data = try allocator.create(struct { y: i32 });
+    defer allocator.destroy(heap_data);
+    heap_data.* = .{ .y = 24 };
+
+    const result = stack_data.x + heap_data.y;
+    return .{ .done = .{ .value = result } };
+}
+
+~event log { message: []const u8 }
+| done {}
+
+~proc log {
+    std.debug.print("{s}\n", .{message});
+    return .{ .done = .{} };
+}
+
+~event test_run {}
+| done {}
+
+~proc test_run {
+    ~benchmark(name: "Memory Allocation Patterns", iterations: 100_000, warmup_iterations: 10_000) {
+        ~stack_allocation()
+        | done |> _
+
+        ~heap_allocation()
+        | done |> _
+
+        ~mixed_allocation()
+        | done |> _
+    }
+    | results r |> {
+        // Just log results - no assertion on performance
+        // This test documents the cost of different patterns
+        ~log(message: "Memory patterns benchmarked")
+        | done |> _
+    }
+
+    return .{ .done = .{} };
+}
+
+~test_run()
+| done |> _

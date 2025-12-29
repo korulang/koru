@@ -1,0 +1,52 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Branch constructors in inline flows
+// Search: parseInlineFlow parseBranchConstructor union_codegen BranchConstructor
+// ============================================================================
+
+const std = @import("std");
+
+~import "$std/io"
+
+~event validate { val: i32 }
+| positive { val: i32 }
+| negative { val: i32 }
+| zero {}
+
+~proc validate {
+    if (val > 0) return .{ .positive = .{ .val = val } };
+    if (val < 0) return .{ .negative = .{ .val = val } };
+    return .{ .zero = .{} };
+}
+
+~event compute { value: i32 }
+| result { doubled: i32 }
+
+~proc compute {
+    // Inline flow with branch constructors
+    // Branch constructors create new branches with computed fields
+    const output = ~validate(val: value)
+    | positive p |> result { doubled: p.val * 2 }  // Branch constructor with expression!
+    | negative n |> result { doubled: 0 }
+    | zero |> result { doubled: 0 }
+
+    return output;
+}
+
+~event verify { expected: i32 }
+| done {}
+
+~proc verify {
+    if (expected == 42) {
+        std.debug.print("Branch constructor works: {}\n", .{expected});
+    } else {
+        std.debug.print("FAILED: Expected 42, got {}\n", .{expected});
+    }
+    return .{ .done = .{} };
+}
+
+// Test it with a top-level flow
+~compute(value: 21)
+| result r |> verify(expected: r.doubled)
+    | done |> _

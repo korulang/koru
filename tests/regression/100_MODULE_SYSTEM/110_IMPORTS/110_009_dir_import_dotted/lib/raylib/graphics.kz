@@ -1,0 +1,32 @@
+// Graphics module with dotted event names
+
+const std = @import("std");
+
+~event z_buffer.render { width: i32, height: i32 }
+| drawn { pixels: i32 }
+
+~event z_buffer.clear {}
+| cleared {}
+
+~event sprite.draw { x: i32, y: i32 }
+| drawn {}
+
+~event texture.load { path: []const u8 }
+| loaded { texture_id: i32 }
+| failed { msg: []const u8 }
+
+~proc z_buffer.render {
+    return .{ .@"drawn" = .{ .pixels = width * height } };
+}
+
+~proc z_buffer.clear {
+    return .{ .@"cleared" = .{} };
+}
+
+~proc sprite.draw {
+    return .{ .@"drawn" = .{} };
+}
+
+~proc texture.load {
+    return .{ .@"loaded" = .{ .texture_id = 42 } };
+}

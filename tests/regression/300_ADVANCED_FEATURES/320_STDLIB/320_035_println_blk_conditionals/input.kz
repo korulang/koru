@@ -1,0 +1,14 @@
+// Test: print.ln.blk with {% if %} conditionals
+
+~import "$std/io"
+
+const debug = true;
+const total: i32 = 100;
+const name: []const u8 = "Report";
+
+~std.io:print.blk {
+    === {{ name:s }} ===
+    {% if debug %}[DEBUG MODE]
+    {% endif %}Total: {{ total:d }}
+    ==============
+}

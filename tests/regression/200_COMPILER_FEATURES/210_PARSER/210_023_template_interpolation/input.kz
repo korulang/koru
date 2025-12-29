@@ -1,0 +1,231 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: Template String Interpolation - THE PILLAR
+// Feature: Source parameters can access their text content
+// Verifies: Basic Source parameter access works
+// ============================================================================
+
+~import "$std/io"
+
+const std = @import("std");
+
+// Event that takes Source[HTML] parameter for template rendering
+// [comptime|transform] annotation marks this as compile-time transformation
+// Transform events receive: source (user args), invocation (for context), program (AST), allocator (memory)
+~[comptime|transform]event renderHTML { source: Source[HTML], invocation: *const Invocation, program: *const Program, allocator: std.mem.Allocator }
+| transformed { program: *const Program }
+| failed { error: []const u8 }
+
+~proc renderHTML {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // Transform is responsible for:
+    // 1. Extracting HTML text from Source parameter
+    // 2. Creating runtime event/proc WITHOUT Source parameter
+    // 3. Transforming flows to remove Source argument
+    // 4. Filtering out comptime event
+    // 5. Returning complete transformed Program
+
+    // Extract HTML text from Source parameter (passed by compiler)
+    const html_text = source.text;
+    const source_location = source.location;
+
+    if (html_text.len == 0) {
+        return .{ .failed = .{ .error = "Source parameter is empty" } };
+    }
+
+    // Generate Zig code that returns | rendered { html: []const u8 }
+    // Build multiline string with \\ prefix for each line
+    var body_parts: [4096]u8 = undefined;
+    var body_len: usize = 0;
+
+    const prefix = "const html =\n";
+    std.mem.copyForwards(u8, body_parts[body_len..], prefix);
+    body_len += prefix.len;
+
+    // Add each line of HTML with \\ prefix
+    var line_num: usize = 0;
+    var i_start: usize = 0;
+    var i_idx: usize = 0;
+    while (i_idx <= html_text.len) : (i_idx += 1) {
+        const is_newline = i_idx < html_text.len and html_text[i_idx] == '\n';
+        const is_end = i_idx == html_text.len;
+
+        if (is_newline or is_end) {
+            const line_prefix = "    \\\\";
+            std.mem.copyForwards(u8, body_parts[body_len..], line_prefix);
+            body_len += line_prefix.len;
+
+            const line_text = html_text[i_start..i_idx];
+            std.mem.copyForwards(u8, body_parts[body_len..], line_text);
+            body_len += line_text.len;
+
+            body_parts[body_len] = '\n';
+            body_len += 1;
+
+            i_start = i_idx + 1;
+            line_num += 1;
+        }
+    }
+
+    const suffix = ";\nreturn .{ .rendered = .{ .html = html } };";
+    std.mem.copyForwards(u8, body_parts[body_len..], suffix);
+    body_len += suffix.len;
+
+    const proc_body = allocator.dupe(u8, body_parts[0..body_len]) catch unreachable;
+
+    // Build DottedPath for renderHTML
+    const path_segments = allocator.alloc([]const u8, 1) catch unreachable;
+    path_segments[0] = allocator.dupe(u8, "renderHTML") catch unreachable;
+
+    const renderHTML_path = ast.DottedPath{
+        .module_qualifier = allocator.dupe(u8, program.main_module_name) catch unreachable,
+        .segments = path_segments,
+    };
+
+    // Create runtime EventDecl (no Source parameter!)
+    const runtime_fields = allocator.alloc(ast.Field, 0) catch unreachable;
+    const runtime_event = ast.EventDecl{
+        .path = renderHTML_path,
+        .input = ast.Shape{ .fields = runtime_fields },  // No input
+        .branches = &[_]ast.Branch{
+            ast.Branch{
+                .name = "rendered",  // String literal - always valid
+                .payload = ast.Shape{ .fields = &[_]ast.Field{
+                    ast.Field{
+                        .name = "html",  // String literal - always valid
+                        .type = "[]const u8",  // String literal - always valid
+                        .module_path = null,
+                        .phantom = null,
+                        .is_source = false,
+                        .is_file = false,
+                    },
+                } },
+                .is_deferred = false,
+                .is_optional = false,
+            },
+        },
+        .is_public = false,
+        .is_implicit_flow = false,
+        .is_abstract = false,
+        .annotations = &[_][]const u8{},
+        .is_pure = false,
+        .is_transitively_pure = false,
+        .location = source_location,
+        .module = allocator.dupe(u8, program.main_module_name) catch unreachable,
+    };
+
+    // Create runtime ProcDecl that implements renderHTML
+    const runtime_proc = ast.ProcDecl{
+        .path = renderHTML_path,
+        .body = proc_body,
+        .inline_flows = &[_]ast.Flow{},
+        .annotations = &[_][]const u8{},
+        .target = null,
+        .is_impl = true,
+        .location = source_location,
+        .module = allocator.dupe(u8, program.main_module_name) catch unreachable,
+    };
+
+    // Build new Program: transform flows, filter out comptime event+proc, add runtime event+proc
+    // Allocate array with same size (removes 2, adds 2 = net 0)
+    const new_items = allocator.alloc(ast.Item, program.items.len) catch unreachable;
+    var idx: usize = 0;
+
+    for (program.items) |prog_item| {
+        // Filter out comptime renderHTML event_decl
+        if (prog_item == .event_decl) {
+            const event = prog_item.event_decl;
+            if (event.path.segments.len == 1 and std.mem.eql(u8, event.path.segments[0], "renderHTML")) {
+                continue; // Skip comptime event
+            }
+        }
+
+        // Filter out comptime renderHTML proc_decl
+        if (prog_item == .proc_decl) {
+            const proc = prog_item.proc_decl;
+            if (proc.path.segments.len == 1 and std.mem.eql(u8, proc.path.segments[0], "renderHTML")) {
+                continue; // Skip comptime proc
+            }
+        }
+
+        // Transform flows that invoke renderHTML (remove Source arg)
+        if (prog_item == .flow) {
+            const flow = prog_item.flow;
+            // Match renderHTML with or without module qualifier
+            const is_renderHTML = flow.invocation.path.segments.len == 1 and
+                std.mem.eql(u8, flow.invocation.path.segments[0], "renderHTML");
+
+            if (is_renderHTML) {
+                // Create new invocation WITHOUT Source argument, preserving module info
+                const transformed_path = ast.DottedPath{
+                    .module_qualifier = flow.invocation.path.module_qualifier,  // Preserve module qualifier
+                    .segments = path_segments,
+                };
+
+                // Mark as already transformed to prevent infinite loops
+                const annotations = allocator.alloc([]const u8, 1) catch unreachable;
+                annotations[0] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+                const new_invocation = ast.Invocation{
+                    .path = transformed_path,
+                    .args = &[_]ast.Arg{},  // No arguments!
+                    .annotations = annotations,
+                    .inserted_by_tap = false,
+                    .from_opaque_tap = false,
+                };
+
+                // Create transformed flow preserving continuations
+                const transformed_flow = ast.Flow{
+                    .invocation = new_invocation,
+                    .continuations = flow.continuations,  // Preserve!
+                    .annotations = flow.annotations,
+                    .pre_label = flow.pre_label,
+                    .post_label = flow.post_label,
+                    .super_shape = flow.super_shape,
+                    .is_pure = flow.is_pure,
+                    .is_transitively_pure = flow.is_transitively_pure,
+                    .location = flow.location,
+                    .module = flow.module,
+                };
+
+                new_items[idx] = ast.Item{ .flow = transformed_flow };
+                idx += 1;
+                continue;
+            }
+        }
+
+        // Modules can be shared (shallow copy), everything else needs deep copy
+        if (prog_item == .module_decl) {
+            new_items[idx] = prog_item;  // Shallow copy OK for modules
+        } else {
+            new_items[idx] = ast_functional.cloneItem(allocator, &prog_item) catch unreachable;
+        }
+        idx += 1;
+    }
+
+    // Add runtime event and proc
+    new_items[idx] = ast.Item{ .event_decl = runtime_event };
+    new_items[idx + 1] = ast.Item{ .proc_decl = runtime_proc };
+
+    const new_program = allocator.create(ast.Program) catch unreachable;
+    new_program.* = ast.Program{
+        .items = new_items,
+        .module_annotations = program.module_annotations,
+        .main_module_name = program.main_module_name,
+        .allocator = allocator,
+    };
+
+    return .{ .transformed = .{ .program = new_program } };
+}
+
+// Module-level test: Source block gets passed to renderHTML
+~renderHTML [HTML]{
+    <div>
+        <h1>Hello, World!</h1>
+        <p>This is a template</p>
+    </div>
+}
+| rendered h |> std.io:println(text: h.html)

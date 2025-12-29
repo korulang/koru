@@ -1,0 +1,23 @@
+// ECOLOGY TEST: Module aliasing should not break special behavior
+//
+// ISSUE: Some modules like "koru", "std.package" have hardcoded paths.
+// If a user aliases these modules, the special behavior might break.
+//
+// This test captures the intention that module aliasing should work
+// transparently - the compiler should track the CANONICAL path, not
+// rely on the user-facing alias.
+
+~import "$std/io"
+
+// Alias the control module
+~import ctrl = "$std/control"
+
+// Use the alias - should still resolve keywords correctly
+~ctrl:for(0..3)
+| each i |> std.io:println(text: "via alias")
+| done |> std.io:println(text: "alias worked")
+
+// Also test that keywords still work (they resolve to std.control internally)
+~for(0..2)
+| each j |> std.io:println(text: "via keyword")
+| done |> std.io:println(text: "keyword worked")

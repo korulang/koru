@@ -1,0 +1,12 @@
+const std = @import("std");
+const Data = struct { value: i32 };
+
+~event gc_alloc {}
+| allocated { data: *Data[gc] }  // GC-managed, NOT owned or borrowed
+
+~proc gc_alloc {
+    const allocator = std.heap.page_allocator;
+    const d = allocator.create(Data) catch unreachable;
+    d.* = Data{ .value = 42 };
+    return .{ .allocated = .{ .data = d } };
+}

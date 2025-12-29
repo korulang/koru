@@ -1,0 +1,1 @@
+error: capture 'r' shadows capture from outer scope

@@ -1,0 +1,36 @@
+// ECOLOGY TEST: Circular import should work without compiler_requirements kludge
+//
+// ISSUE: compiler_requirements module is special-cased in compiler_requires.zig
+// because of circular import issues. This test captures the intention that
+// proper circular imports SHOULD work.
+//
+// When we fix the circular import architecture, this test should pass
+// without the special-casing kludge.
+
+~import "$std/io"
+
+// Module A imports Module B
+~module moduleA {
+    ~import moduleB
+
+    ~event greetA {}
+    | done
+
+    ~greetA = moduleB:greetB()
+    | done |> done {}
+}
+
+// Module B imports Module A (circular!)
+~module moduleB {
+    ~import moduleA
+
+    ~event greetB {}
+    | done
+
+    ~greetB = std.io:println(text: "Hello from B")
+    | done |> done {}
+}
+
+// Main flow uses moduleA
+~moduleA:greetA()
+| done |> std.io:println(text: "Circular import worked!")

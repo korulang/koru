@@ -1,0 +1,14 @@
+// Test 515: Cleanup obligation consumed by disposal
+// Tests that [!state] syntax properly consumes cleanup obligations
+//
+// Key points:
+// - open() returns *File[opened!] (produces obligation)
+// - close() accepts *File[!opened] (consumes obligation)
+// - After disposal, obligation is satisfied
+// - Terminator should not error
+
+~import "$app/fs"
+
+~app.fs:open(path: "test.txt")
+| opened f |> app.fs:close(file: f.file)
+    | closed |> _

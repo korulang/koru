@@ -1,0 +1,4 @@
+Graphics initialized
+Audio initialized
+Rendering frame 42
+Playing sound: explosion.wav

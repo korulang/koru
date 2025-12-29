@@ -1,0 +1,39 @@
+// Default Build Steps - Standard 2-Phase Metaprogramming Compilation
+// This file is NOT marked ~[comptime], so these steps are only collected
+// in the frontend and NOT emitted to backend_output_emitted.zig
+//
+// NOTE: This file is imported BY build.kz, so we don't need to import it back.
+// The std.build:step event is available through transitive imports.
+
+// ============================================================================
+// DEFAULT BUILD STEPS - Standard Compilation Pipeline
+// ============================================================================
+// These steps implement Koru's standard compilation pipeline:
+//   1. Compile backend metaprogram (main.zig → backend executable)
+//   2. Run backend (applies optimizations, generates final code)
+//   3. Run the final program
+//
+// Users can override any step by defining their own with the same name
+// (without the ~[default] annotation). The override resolution in main.zig
+// will automatically use user-defined steps over these defaults.
+//
+// Examples:
+//   - Override "run" to add custom flags
+//   - Override "build" to customize backend execution
+//   - Define new steps with dependencies on these
+
+// Phase 1: Compile backend metaprogram using build_backend.zig
+~[default] std.build:step(name: "compile_backend") {
+    zig build --build-file build_backend.zig
+}
+
+// Phase 2: Run backend to generate & compile final program
+// The backend applies optimizations and generates the runtime code
+~[default, depends_on("compile_backend")] std.build:step(name: "build") {
+    ./zig-out/bin/main backend_tmp
+}
+
+// Phase 3: Run the final program
+~[default, depends_on("build")] std.build:step(name: "run") {
+    ./backend_tmp
+}

@@ -1,0 +1,64 @@
+// Test 823: GPU Shader Execution - End to End!
+//
+// This test proves the ENTIRE GPU pipeline works:
+// 1. Write GLSL shader in |glsl variant
+// 2. Compiler extracts GLSL and compiles to SPIR-V
+// 3. Compiler generates Vulkan bindings matching event interface
+// 4. Shader executes on GPU and modifies data in place
+// 5. Verify results on CPU
+//
+// This is the SIMPLEST possible GPU compute: double all values in an array
+
+const std = @import("std");
+
+// Event interface - pure, platform-agnostic
+~pub event double_values { data: []f32 }
+| done { }
+
+// GPU implementation using GLSL compute shader
+~proc double_values|glsl {
+    #version 450
+    layout(local_size_x = 256) in;
+    layout(binding = 0) buffer Data { float values[]; } data;
+
+    void main() {
+        uint idx = gl_GlobalInvocationID.x;
+        if (idx < data.values.length()) {
+            data.values[idx] *= 2.0;
+        }
+    }
+}
+
+// Custom compiler coordinator that includes GLSL pass
+~compiler.coordinate =
+    compiler.passes.evaluate_comptime(ast: ast)
+    | evaluated ev |> compiler.check.structure(ast: ev.ast)
+    | valid v |> compiler.passes.compile_glsl(ast: v.ast)
+    | transformed t |> compiler.check.phantom.semantic(ast: t.ast)
+    | valid v2 |> compiler.emit.zig(ast: v2.ast)
+    | emitted em |> coordinated {
+        ast: v2.ast,
+        code: em.code,
+        metrics: "GPU test compiled!"
+    }
+
+// Test event - verifies GPU execution
+~pub event test_gpu_execution { }
+
+~proc test_gpu_execution {
+    var values = [_]f32{ 1.0, 2.0, 3.0, 4.0, 5.0 };
+
+    // This should execute on GPU and modify values in place
+    double_values(data: &values);
+
+    // Verify results
+    std.debug.assert(values[0] == 2.0);
+    std.debug.assert(values[1] == 4.0);
+    std.debug.assert(values[2] == 6.0);
+    std.debug.assert(values[3] == 8.0);
+    std.debug.assert(values[4] == 10.0);
+
+    std.debug.print("✅ GPU execution successful! All values doubled.\n", .{});
+
+    return .{ .done = .{ } };
+}

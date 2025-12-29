@@ -1,0 +1,59 @@
+// Emitter Wrapper - Koru Events for Emitter Zig Library
+// ======================================================
+// Makes the Zig emitter available as Koru events at backend runtime.
+//
+// Usage:
+//   ~import "$std/emitter"
+//   ~emit.program(ast: my_ast, allocator: allocator)
+//   | emitted code |> use(code.zig_code)
+//   | failed e |> handle(e.message)
+
+const std = @import("std");
+const emitter_impl = @import("emitter");
+const ast = @import("ast");
+
+// Emit a complete program from AST
+~pub event emit.program {
+    source_ast: *const ast.Program,
+    allocator: std.mem.Allocator
+}
+| emitted { zig_code: []const u8 }
+| failed { message: []const u8 }
+
+~proc emit.program {
+    // Create a large buffer for emission
+    const MAX_SIZE = 512 * 1024; // 512KB
+    const buffer = allocator.alloc(u8, MAX_SIZE) catch |err| {
+        return .{ .failed = .{ .message = @errorName(err) } };
+    };
+    defer allocator.free(buffer);
+
+    // Initialize emitter
+    var code_emitter = emitter_impl.CodeEmitter.init(buffer);
+
+    // Emit program header
+    emitter_impl.emitProgramHeader(&code_emitter) catch |err| {
+        return .{ .failed = .{ .message = @errorName(err) } };
+    };
+
+    // Emit all modules
+    emitter_impl.emitAllModules(&code_emitter, source_ast, allocator) catch |err| {
+        return .{ .failed = .{ .message = @errorName(err) } };
+    };
+
+    // Emit main function
+    emitter_impl.emitMainFunction(&code_emitter, source_ast) catch |err| {
+        return .{ .failed = .{ .message = @errorName(err) } };
+    };
+
+    // Get the generated code
+    const output = code_emitter.getOutput();
+
+    // Allocate and copy to owned slice
+    const owned = allocator.alloc(u8, output.len) catch |err| {
+        return .{ .failed = .{ .message = @errorName(err) } };
+    };
+    @memcpy(owned, output);
+
+    return .{ .emitted = .{ .zig_code = owned } };
+}

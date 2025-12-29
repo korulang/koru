@@ -1,0 +1,1 @@
+AST validation - checks that ImportDecl captures annotations field

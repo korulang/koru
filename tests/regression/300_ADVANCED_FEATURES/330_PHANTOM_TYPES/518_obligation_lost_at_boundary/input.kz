@@ -1,0 +1,13 @@
+// Test 518: Obligation lost at boundary
+// Tests that obligations cannot disappear at flow boundaries
+//
+// Key points:
+// - bad_subflow internally opens a file (*File[opened!])
+// - bad_subflow returns 'done {}' with NO [!] in signature
+// - This loses track of the obligation
+// - ERROR: Obligation must either be cleaned OR returned with [!]
+
+~import "$app/bad_subflow"
+
+~app.bad_subflow:bad_subflow()
+| done |> _

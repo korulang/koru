@@ -1,0 +1,71 @@
+// Test 631: AST Dump with Event Taps
+// ============================================================================
+// Demonstrates observing compiler pipeline stages using the dump_ast event
+//
+// Purpose:
+// - Document how to use event taps to observe compiler internals
+// - Show AST state at different pipeline stages
+// - Debug optimizer transformations (see IR nodes like NativeLoop)
+//
+// Pattern:
+// - Use taps (~* event -> branch) to observe without modifying pipeline
+// - dump_ast is a void event (no branches, just side effects)
+// - Can be called inline: | continued c |> dump_ast(...) |> next_step(...)
+//
+// Pipeline stages where AST changes:
+// 1. post-frontend: After parsing, comptime evaluation
+// 2. post-analysis: After validation passes
+// 3. post-optimization: After IR transformations (NativeLoop, FusedEvent)
+// 4. pre-emission: Final AST before code generation
+// ============================================================================
+
+~import "$std/compiler"
+~import "$std/ast_dump"
+
+const std = @import("std");
+
+// Tap 1: Observe AST after frontend passes (parsing + comptime eval)
+// At this stage: All source-level constructs (EventDecl, ProcDecl, Flow, etc.)
+~std.compiler:compiler.coordinate.frontend -> *
+| continued c |> dump_ast(ctx: c.ctx, stage: "post-frontend")
+    | done |> _
+
+// Tap 2: Observe AST after analysis passes (validation)
+// At this stage: Same as frontend, but validated
+~std.compiler:compiler.coordinate.analysis -> *
+| continued c |> dump_ast(ctx: c.ctx, stage: "post-analysis")
+    | done |> _
+
+// Tap 3: Observe AST after optimization passes
+// At this stage: IR nodes appear! (NativeLoop replaces SubflowImpl, etc.)
+~std.compiler:compiler.coordinate.optimize -> *
+| continued c |> dump_ast(ctx: c.ctx, stage: "post-optimization")
+    | done |> _
+
+// Simple test program with a loop pattern
+// The optimizer should detect this and create NativeLoop IR
+~event loop_step { i: u32, limit: u32, sum: u32 }
+| continue { i: u32, sum: u32 }
+| done { result: u32 }
+
+~proc loop_step {
+    if (i < limit) {
+        return .{ .continue = .{ .i = i, .sum = sum + i } };
+    } else {
+        return .{ .done = .{ .result = sum } };
+    }
+}
+
+~event print { value: u32 }
+| done {}
+
+~proc print {
+    std.debug.print("Sum: {}\n", .{value});
+    return .{ .done = .{} };
+}
+
+// Main flow with label loop (optimizer should transform this!)
+~#main_loop loop_step(i: 0, limit: 100, sum: 0)
+| continue c |> @main_loop(i: c.i + 1, limit: 100, sum: c.sum)
+| done d |> print(value: d.result)
+    | done |> _

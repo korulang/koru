@@ -1,0 +1,8 @@
+// This module ALSO defines a default "test" - this is the error!
+
+~import "$std/build"
+
+~[default]
+std.build:step(name: "test") {
+    echo "Extra test implementation - THIS IS A BUG!"
+}

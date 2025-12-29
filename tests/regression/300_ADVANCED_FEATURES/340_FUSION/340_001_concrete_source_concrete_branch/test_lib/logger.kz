@@ -1,0 +1,17 @@
+// Logger with concrete source + concrete branch tap
+
+const std = @import("std");
+
+~pub event log { event_name: []const u8 }
+| done {}
+
+~proc log {
+    std.debug.print("[TAP] Concrete source + concrete branch: {s}\n", .{event_name});
+    return .{ .done = .{} };
+}
+
+// VALID: Concrete source (input:compute) + concrete branch (result)
+// Type safe - we know input:compute has .result branch
+~input:compute -> *
+| result r |> log(event_name: "compute.result")
+    | done |> _

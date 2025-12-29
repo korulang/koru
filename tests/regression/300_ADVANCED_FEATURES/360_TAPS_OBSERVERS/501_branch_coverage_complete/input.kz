@@ -1,0 +1,30 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 501: Complete branch coverage validation
+// Tests that shape checker validates all branches are handled
+// Demonstrates: Multi-branch event with complete coverage
+
+~import "$std/io"
+
+// Event with two possible outcomes
+~event divide { a: i32, b: i32 }
+| ok { result: i32 }
+| err { msg: []const u8 }
+
+~proc divide {
+    if (b == 0) {
+        return .{ .err = .{ .msg = "Division by zero" } };
+    }
+    return .{ .ok = .{ .result = @divTrunc(a, b) } };
+}
+
+// Test: Valid division - should take ok branch
+~divide(a: 10, b: 2)
+| ok |> std.io:println(text: "Success: divided")
+| err |> std.io:println(text: "Error")
+
+// Test: Division by zero - should take err branch
+~divide(a: 10, b: 0)
+| ok |> std.io:println(text: "Success")
+| err |> std.io:println(text: "Error: division by zero")

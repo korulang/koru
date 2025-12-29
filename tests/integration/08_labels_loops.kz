@@ -1,0 +1,20 @@
+~event counter.tick { value: i32 }
+| continue { value: i32 }
+| done {}
+
+~proc counter.tick {
+    if (e.value >= 10) {
+        return .{ .@"done" = .{} };
+    }
+    // In a real proc, we'd call another event to print
+    // For now, using Zig directly in the proc body is OK
+    const std = @import("std");
+    std.debug.print("Count: {}\n", .{e.value});
+    return .{ .@"continue" = .{ .value = e.value + 1 } };
+}
+
+// Counting loop with post-invocation label
+// The 'done' branch uses _ to explicitly terminate the flow
+~counter.tick (value: 0) #loop
+| done |> _
+| continue c |> counter.tick (value: c.value) @loop

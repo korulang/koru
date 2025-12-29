@@ -1,0 +1,18 @@
+// Test 642: Basic Default Override
+// Tests that user-defined build steps override stdlib defaults
+//
+// The stdlib provides ~[default] build:step definitions
+// User code can override by defining the same name without [default]
+// Expected: User's version wins, diagnostic shows "overridden by main"
+
+~import "$std/build"
+
+// User overrides the default "run" step
+~std.build:step(name: "run") {
+    echo "USER VERSION: Running custom command"
+}
+
+// User defines a new step (no default exists)
+~std.build:step(name: "test") {
+    echo "Running tests"
+}

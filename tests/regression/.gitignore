@@ -1,0 +1,57 @@
+# Generated files from regression tests
+*/backend
+*/backend.zig
+*/backend.err
+*/compile_backend.err
+*/compile_kz.err
+*/compile_intermediate.err
+*/compile_zig.err
+*/intermediate
+*/intermediate.zig
+*/output
+*/output.zig
+*/output_emitted
+*/output_emitted.zig
+*/actual.txt
+*/a.out
+
+# Ignore all files without extensions (likely binaries)
+*
+
+# Keep directories (at any depth)
+!*/
+
+# Keep source and expected files (at any depth)
+!**/*.kz
+!**/expected.txt
+!**/expected_output.txt
+!**/expected_error.txt
+!**/expected.json
+!**/EXPECT
+!**/SKIP
+!**/MUST_*
+!**/SHOULD_*
+!**/PARSER_TEST
+
+# Keep documentation and marker files (at any depth)
+!**/README.md
+!**/*.md
+!**/.MARKER
+!**/TODO
+!**/BROKEN
+!**/BUG_*
+!**/THRESHOLD
+
+# Keep scripts (at any depth)
+!**/post.sh
+!**/*.sh
+
+# Keep baseline files for performance tests (at any depth)
+!**/baseline.zig
+!**/baseline.go
+!**/*.go
+!**/temp_build.zig
+!**/baseline.rs
+!**/COMPILER_FLAGS
+!**/*.c
+!**/koru.json

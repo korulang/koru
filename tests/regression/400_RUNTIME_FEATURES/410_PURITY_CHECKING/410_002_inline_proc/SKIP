@@ -1,0 +1,3 @@
+Inline procs are a feature that we will 97% surely be removing, and/or rethink.
+
+They currently stop optimization runs and create opacity into the call flow.

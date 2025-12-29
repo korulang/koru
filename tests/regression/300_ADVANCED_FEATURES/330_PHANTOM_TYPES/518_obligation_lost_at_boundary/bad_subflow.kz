@@ -1,0 +1,13 @@
+~import "$app/fs"
+
+// BAD: Opens file but doesn't document obligation in signature
+~event bad_subflow {}
+| done {}  // NO [!] in signature - obligation disappears!
+
+~proc bad_subflow {
+    ~app.fs:open(path: "data.txt")
+    | opened f |> done {}
+    // ERROR: f.file has [opened!] obligation
+    // but 'done' branch has no [!] in signature
+    // Obligation is lost!
+}

@@ -1,0 +1,92 @@
+// Koru Standard Library: Filesystem
+// File operations with phantom types for resource safety
+
+~[comptime|runtime]
+
+const std = @import("std");
+
+// ============================================================================
+// HIGH-LEVEL API (convenience, no handle management)
+// ============================================================================
+
+// Read entire file as array of lines
+~pub event read_lines { path: []const u8 }
+| lines [][]const u8
+| failed []const u8
+
+~proc read_lines {
+    // Open the file
+    const file = std.fs.cwd().openFile(path, .{}) catch |err| {
+        const msg = switch (err) {
+            error.FileNotFound => "File not found",
+            error.AccessDenied => "Access denied",
+            error.IsDir => "Path is a directory",
+            else => "Failed to open file",
+        };
+        return .{ .failed = msg };
+    };
+    defer file.close();
+
+    // Read entire file content
+    const content = file.readToEndAlloc(std.heap.page_allocator, 1024 * 1024 * 10) catch |err| {
+        const msg = switch (err) {
+            error.OutOfMemory => "File too large",
+            else => "Failed to read file",
+        };
+        return .{ .failed = msg };
+    };
+
+    // Count lines first
+    var line_count: usize = 0;
+    for (content) |c| {
+        if (c == '\n') line_count += 1;
+    }
+    // Add one for last line if file doesn't end with newline
+    if (content.len > 0 and content[content.len - 1] != '\n') {
+        line_count += 1;
+    }
+    // Handle empty file
+    if (content.len == 0) {
+        line_count = 0;
+    }
+
+    // Allocate lines array
+    const lines = std.heap.page_allocator.alloc([]const u8, line_count) catch {
+        return .{ .failed = "Out of memory allocating lines" };
+    };
+
+    // Split into lines
+    var line_idx: usize = 0;
+    var start: usize = 0;
+    for (content, 0..) |c, i| {
+        if (c == '\n') {
+            // Handle \r\n line endings
+            const end = if (i > 0 and content[i - 1] == '\r') i - 1 else i;
+            lines[line_idx] = content[start..end];
+            line_idx += 1;
+            start = i + 1;
+        }
+    }
+    // Handle last line without newline
+    if (start < content.len) {
+        lines[line_idx] = content[start..];
+    }
+
+    return .{ .lines = lines };
+}
+
+// ============================================================================
+// LOW-LEVEL API (phantom types, full control) - FUTURE
+// ============================================================================
+
+// ~pub event open { path: []const u8 }
+// | opened { handle: FileHandle }
+// | failed { error: []const u8 }
+
+// ~pub event read { handle: FileHandle }
+// | data { content: []const u8 }
+// | failed { error: []const u8 }
+
+// ~pub event close { handle: FileHandle }
+// | closed {}
+// | failed { error: []const u8 }

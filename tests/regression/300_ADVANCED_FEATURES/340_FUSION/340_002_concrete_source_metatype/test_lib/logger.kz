@@ -1,0 +1,21 @@
+// Logger with concrete source + metatype tap
+
+const std = @import("std");
+
+~pub event log { source: []const u8, dest: []const u8, branch: []const u8 }
+| done {}
+
+~proc log {
+    std.debug.print("[TAP] Transition: {s} -> {s} (branch: {s})\n", .{source, dest, branch});
+    return .{ .done = .{} };
+}
+
+// VALID: Concrete source (input:compute) + metatype (Transition)
+// Metatypes work on any branch - they provide metadata about the transition
+~input:compute -> *
+| Transition t |> log(
+    source: "compute",
+    dest: T.destination,
+    branch: @tagName(t.branch)
+)
+| done |> _

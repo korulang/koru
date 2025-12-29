@@ -1,0 +1,64 @@
+// ============================================================================
+// Test 207: Label Scope Isolation
+// ============================================================================
+// Tests that labels with the same name can exist in different flows
+// Each flow has its own label namespace - labels are flow-scoped
+// This is the POSITIVE counterpart to test 206 (which tests cross-flow errors)
+// ============================================================================
+
+const std = @import("std");
+
+// Counter event that can go in both directions
+~event count { n: i32, direction: []const u8 }
+| next { value: i32 }
+| done { final: i32 }
+
+~proc count {
+    std.debug.print("{s}: {}\n", .{direction, n});
+
+    if (std.mem.eql(u8, direction, "up")) {
+        if (n < 3) {
+            return .{ .next = .{ .value = n + 1 } };
+        } else {
+            return .{ .done = .{ .final = n } };
+        }
+    } else {
+        if (n > 2) {
+            return .{ .next = .{ .value = n - 1 } };
+        } else {
+            return .{ .done = .{ .final = n } };
+        }
+    }
+}
+
+// Start events for each flow
+~event start_up {}
+| ready {}
+
+~event start_down {}
+| ready {}
+
+~proc start_up {
+    std.debug.print("Starting count-up flow...\n", .{});
+    return .{ .ready = .{} };
+}
+
+~proc start_down {
+    std.debug.print("Starting count-down flow...\n", .{});
+    return .{ .ready = .{} };
+}
+
+// Flow 1: Count up using label "loop"
+// This label is scoped to this flow only
+~start_up()
+| ready |> #loop count(n: 0, direction: "up")
+    | next c |> @loop(n: c.value, direction: "up")
+    | done d |> _
+
+// Flow 2: Count down using SAME label name "loop"
+// This is a DIFFERENT label, scoped to this flow
+// Both flows can use the name "loop" without conflict!
+~start_down()
+| ready |> #loop count(n: 5, direction: "down")
+    | next c |> @loop(n: c.value, direction: "down")
+    | done d |> _

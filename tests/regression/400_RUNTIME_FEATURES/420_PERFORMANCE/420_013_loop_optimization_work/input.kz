@@ -1,0 +1,84 @@
+// PERFORMANCE TEST: Loop Optimization - Loop With Work Body
+// Goal: Prove compiler inlines work event body into optimized loop
+// Pattern: Checker event + work event called in label jump continuation
+// Baseline: Hand-written Zig for loop with inlined work
+// Threshold: 1.05x (5% overhead max)
+//
+// This tests WORK BODY INLINING:
+// - Checker event controls loop flow
+// - Work event performs computation
+// - Optimizer should inline work event body into loop
+// - Result: Single tight loop with no event dispatch overhead
+
+const std = @import("std");
+
+// Work event: Process array element (this should be INLINED into loop body)
+~event process_element { array: []u64, i: u64, sum: u64 }
+| processed { sum: u64 }
+
+~proc process_element {
+    // Simulate some work: square the element and add to sum
+    const value = array[i];
+    const squared = value * value;
+    const new_sum = sum + squared;
+    return .{ .processed = .{ .sum = new_sum } };
+}
+
+// Checker event: Loop through array indices
+~event loop_step { i: u64, limit: u64, sum: u64 }
+| continue { i: u64, sum: u64 }
+| done { result: u64 }
+
+~proc loop_step {
+    if (i < limit) {
+        return .{ .continue = .{ .i = i, .sum = sum } };
+    } else {
+        return .{ .done = .{ .result = sum } };
+    }
+}
+
+// Print result
+~event print { result: u64 }
+| done {}
+
+~proc print {
+    std.debug.print("Sum: {}\n", .{result});
+    return .{ .done = .{} };
+}
+
+// Initialize array event
+~event init_array {}
+| initialized { array: []u64 }
+
+~proc init_array {
+    // Create array 0..10000
+    const allocator = std.heap.page_allocator;
+    const array = allocator.alloc(u64, 10_000) catch unreachable;
+
+    var i: u64 = 0;
+    while (i < 10_000) : (i += 1) {
+        array[i] = i;
+    }
+
+    return .{ .initialized = .{ .array = array } };
+}
+
+// Main flow: Loop with work body
+// Pattern the optimizer should detect:
+// - Checker event controls loop (i from 0 to limit)
+// - Work event is called in the continue branch
+// - Work result flows to recursive jump
+//
+// Expected transformation:
+// for (0..array.len) |i| {
+//     const value = array[i];
+//     const squared = value * value;
+//     sum += squared;  // Work body INLINED here!
+// }
+
+~init_array()
+| initialized init |> #work_loop loop_step(i: 0, limit: init.array.len, sum: 0)
+    | continue c |> process_element(array: init.array, i: c.i, sum: c.sum)
+        | processed p |> @work_loop(i: c.i + 1, limit: init.array.len, sum: p.sum)
+    | done d |> print(result: d.result)
+        | done |> _

@@ -1,0 +1,71 @@
+// Template Library - Code Pattern Templates for Transforms
+//
+// Allows defining reusable code patterns that transforms can instantiate inline.
+// Templates are stored in the AST and looked up by name at compile time.
+//
+// Usage:
+//   ~std.template:define(name: "if") [template]{
+//       if (${condition}) {
+//           ${| then |}
+//       } else {
+//           ${| else |}
+//       }
+//   }
+//
+// In a transform:
+//   const template = template_utils.lookupTemplate(ast, "if");
+//   const code = template_utils.interpolate(template, bindings);
+//
+// Placeholder syntax (uses ${} to avoid conflicts with Zig braces):
+//   ${name}       - substitute with named binding value
+//   ${| branch |} - inline the continuation code for this branch
+
+~[comptime]
+
+// Define a named template with source code pattern
+// [norun] means it doesn't execute - just stores data in AST for later lookup
+~[comptime|norun]pub event define {
+    name: []const u8,
+    source: Source
+}
+
+// ============================================================================
+// STDLIB TEMPLATES - Used by control flow transforms
+// ============================================================================
+// These templates are defined here so they're available when control.kz
+// looks them up via template_utils.lookupTemplate()
+
+// TODO: These DEFINITIONS should be made in a separate, relevant file.
+// This file should only contain the templating system, not the actual template definitions.
+
+// IF template - conditional branching <-- These should be moved to control.kz
+~define(name: "if") {
+    if (${condition}) { ${| then |} } else { ${| else |} }
+}
+
+// FOR template - iteration with done continuation after loop <-- Move to `control.kz`
+// Note: ${binding_discard} is "_ = &binding; " to suppress unused capture warning
+~define(name: "for") {
+    for (${iterable}) |${binding}| { ${binding_discard}${| each |} }
+    ${| done |}
+}
+
+// CAPTURE template - accumulation with pure semantics
+// The | as | body contains the iteration, with `captured` replaced by assignments
+// After the body, the final value is bound to the done binding
+// NOTE: Uses comptime @Type to convert anonymous comptime struct to runtime struct
+~define(name: "capture") {
+    const __CaptureT = comptime blk: { const info = @typeInfo(@TypeOf(${init})); var fields: [info.@"struct".fields.len]@import("std").builtin.Type.StructField = undefined; for (info.@"struct".fields, 0..) |f, i| { fields[i] = .{ .name = f.name, .type = f.type, .default_value_ptr = null, .is_comptime = false, .alignment = f.alignment, }; } break :blk @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fields, .decls = &.{}, .is_tuple = false, } }); };
+    var ${binding}: __CaptureT = ${init};
+    ${| as |}
+    const ${done_binding} = ${binding};
+    _ = &${done_binding};
+    ${| done |}
+}
+
+// CONST template - immutable bindings that flow through pipelines
+// Much simpler than capture: no mutation, no runtime struct conversion needed
+~define(name: "const") {
+    const ${binding} = ${init};
+    ${| as |}
+}

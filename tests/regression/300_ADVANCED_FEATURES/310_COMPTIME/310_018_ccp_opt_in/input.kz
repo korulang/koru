@@ -1,0 +1,17 @@
+// Test 612: CCP Opt-In via Import
+// Demonstrates that importing $std/ccp_taps enables JSON observability
+
+~import "$std/ccp"
+
+const std = @import("std");
+
+~event greet { name: []const u8 }
+| greeting { msg: []const u8 }
+
+~proc greet {
+    std.debug.print("Hello, {s}!\n", .{name});
+    return .{ .greeting = .{ .msg = "Hello!" } };
+}
+
+~greet(name: "Koru")
+| greeting |> _

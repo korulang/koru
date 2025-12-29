@@ -1,0 +1,29 @@
+// Test 310_006: Event Taps (Library Syntax)
+// Validates that ~tap() observes and reacts to event transitions
+
+const std = @import("std");
+~import "$std/taps"
+
+// Event with a branch to tap (tap_target = test scaffolding name)
+~event hello {}
+| tap_target {}
+
+~proc hello {
+    std.debug.print("Main flow executed\n", .{});
+    return .{ .tap_target = .{} };
+}
+
+// Void observer event
+~event tap_action {}
+
+~proc tap_action {
+    std.debug.print("TAP observed!\n", .{});
+}
+
+// Tap that observes hello and logs via tap_action
+~tap(hello -> *)
+| tap_target |> tap_action()
+
+// Main flow that triggers the tap
+~hello()
+| tap_target |> _

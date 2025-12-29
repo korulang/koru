@@ -1,0 +1,3 @@
+This test is not complete, it doesn't test that this actually works.
+
+The functionality doesn't seem to work unless the whole file is set to being `~[comptime]`.

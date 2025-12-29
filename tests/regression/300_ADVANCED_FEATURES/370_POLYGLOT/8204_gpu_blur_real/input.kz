@@ -1,0 +1,35 @@
+// Test 819: GLSL Code in |gpu Proc Body
+//
+// Tests that the parser can handle ACTUAL GLSL shader code
+// inside a |gpu proc variant. The GLSL is treated as opaque
+// text by the Koru parser (just like any other proc body).
+//
+// What this tests:
+// ✅ Parser accepts GLSL syntax in proc body
+// ✅ GLSL keywords (#version, layout, void, etc.) don't break parser
+// ✅ Proc with |gpu variant emits correctly
+//
+// What this does NOT test:
+// ❌ Compiling GLSL → SPIR-V (that's test 820)
+// ❌ Wrapper generation (that's test 821)
+// ❌ GPU execution (future)
+
+const std = @import("std");
+
+~pub event compute { }
+| done { }
+
+~proc compute|gpu {
+    #version 450
+
+    layout(local_size_x = 16) in;
+
+    layout(binding = 0) buffer Data {
+        float values[];
+    } data;
+
+    void main() {
+        uint idx = gl_GlobalInvocationID.x;
+        data.values[idx] = data.values[idx] * 2.0;
+    }
+}

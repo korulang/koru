@@ -1,0 +1,21 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 004: Multiple flows should all execute in order
+const std = @import("std");
+
+~event first {}
+
+~event second {}
+
+~proc first {
+    std.debug.print("First\n", .{});
+}
+
+~proc second {
+    std.debug.print("Second\n", .{});
+}
+
+// Both flows should execute
+~first()
+~second()

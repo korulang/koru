@@ -1,0 +1,54 @@
+// BUG: print.ln inline code ordering in nested for loop with void events
+//
+// REPRODUCTION: Matches the nbody pattern exactly:
+// - for loop with void events in | each |
+// - branched event in | done |
+// - print.ln using the branch binding
+
+const std = @import("std");
+
+~import "$std/control"
+~import "$std/io"
+
+// Void event (like advance_velocities)
+~event step_one {}
+
+~proc step_one {}
+
+// Another void event (like advance_positions)
+~event step_two {}
+
+~proc step_two {}
+
+// Branched event (like calculate_energy)
+~event get_result {}
+| value i32
+
+~proc get_result {
+    return .{ .value = 42 };
+}
+
+// Print event with a result (like print_energy)
+~event print_value { v: i32 }
+
+~proc print_value {
+    std.debug.print("{d}\n", .{v});
+}
+
+// Initial setup (like initialize_bodies)
+~event setup {}
+| ready i32
+
+~proc setup {
+    return .{ .ready = 1 };
+}
+
+// Main flow - matches nbody structure
+~setup()
+| ready r |> get_result()
+    | value v1 |> print_value(v: v1)
+        |> for(0..3)
+            | each step |> step_one()
+                |> step_two()
+            | done |> get_result()
+                | value v2 |> std.io:print.ln("Result: {{ v2:d }}")

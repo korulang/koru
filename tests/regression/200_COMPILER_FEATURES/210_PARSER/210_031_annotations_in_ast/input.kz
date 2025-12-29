@@ -1,0 +1,29 @@
+// Test: Annotations appear in AST JSON output
+// Verifies that ~[annotation] syntax is parsed and stored in AST
+
+const std = @import("std");
+
+// Single annotation
+~[comptime] event compile_only {}
+| done {}
+
+// Multiple annotations (inline with |)
+~[comptime|runtime] event dual_phase {}
+| done {}
+
+// Multiple annotations (should also work - future vertical syntax)
+~[fuseable] pub event optimizable {}
+| result {}
+
+// Proc with annotations
+~[inline] proc compile_only {
+    return .{ .done = .{} };
+}
+
+~proc dual_phase {
+    return .{ .done = .{} };
+}
+
+~proc optimizable {
+    return .{ .result = .{} };
+}

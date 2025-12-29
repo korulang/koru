@@ -1,0 +1,44 @@
+// Test namespace wildcards - observe all events in a namespace
+const std = @import("std");
+
+~event http.request {}
+| done {}
+
+~event http.response {}
+| done {}
+
+~event db.query {}
+| done {}
+
+~event logger { source: []const u8 }
+| done {}
+
+~proc http.request {
+    std.debug.print("HTTP request\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc http.response {
+    std.debug.print("HTTP response\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc db.query {
+    std.debug.print("DB query\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc logger {
+    std.debug.print("HTTP event: {s}\n", .{source});
+    return .{ .done = .{} };
+}
+
+// Tap only http.* events (not db.query)
+~http.* -> *
+| Profile p |> logger(p.source)
+    | done |> _
+
+~http.request()
+| done |> http.response()
+    | done |> db.query()
+        | done |> _

@@ -1,0 +1,42 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 209: Implicit Return from Terminal Flow
+// Tests that terminal flow expressions (no assignment) implicitly return
+// This should fix test 824 (terminal_inline_flow_bug)
+// ============================================================================
+
+const std = @import("std");
+
+~event helper { input: i32 }
+| ok { value: i32 }
+
+~proc helper {
+    return .{ .ok = .{ .value = input * 2 } };
+}
+
+~event compute { value: i32 }
+| result { value: i32 }
+
+~proc compute {
+    // Terminal flow (no assignment) - should implicitly return!
+    // Note: inline flows can only use proc parameters or literals, not local variables
+    ~helper(input: value * 2)
+    | ok o |> result { value: o.value }
+}
+
+~event run_test { }
+| done { }
+
+~proc run_test {
+    const r = ~compute(value: 5)
+    | result r |> result { value: r.value }
+
+    std.debug.assert(r.result.value == 20);  // 5 * 2 * 2 = 20
+    std.debug.print("✅ Terminal flow implicit return works: 5 → {}\n", .{r.result.value});
+
+    return .{ .done = .{} };
+}
+
+~run_test()
+| done |> _

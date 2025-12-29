@@ -1,0 +1,22 @@
+// Test: Void events (no branches)
+// Features: branch-less events, void output, no switch generation
+
+const std = @import("std");
+
+~event logger.info { msg: []const u8 }
+// No branches - void event
+
+~proc logger.info {
+    std.debug.print("INFO: {s}\n", .{e.msg});
+}
+
+~event app.start { }
+| ready { }
+
+~proc app.start {
+    return .{ .@"ready" = .{} };
+}
+
+// Main flow with void event
+~app.start()
+| ready |> logger.info(msg: "Application started") |> _

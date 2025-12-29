@@ -1,0 +1,30 @@
+// Library module: fileops
+// Defines file operations with phantom type states
+
+const std = @import("std");
+
+// File type with phantom states
+const File = struct {
+    handle: i32,
+};
+
+// Open a file - returns opened state
+~event open { path: []const u8 }
+| opened { file: *File[open] }
+
+~proc open {
+    std.debug.print("Opening file: {s}\n", .{path});
+    const allocator = std.heap.page_allocator;
+    const f = allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+// Close a file - accepts open state, returns closed state
+~event close { file: *File[open] }
+| closed {}
+
+~proc close {
+    std.debug.print("Closing file\n", .{});
+    return .{ .closed = .{} };
+}

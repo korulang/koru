@@ -1,0 +1,33 @@
+// Test: Pure Koru Flow Fusion
+// This test uses pure Koru flows with branch constructors - exactly what fusion is designed for!
+
+const std = @import("std");
+
+// Pure event: add two numbers
+~event add { x: i32, y: i32 }
+| done { result: i32 }
+
+~proc add = done { result: x + y }
+
+// Pure event: multiply by factor
+~event multiply { x: i32, factor: i32 }
+| done { result: i32 }
+
+~proc multiply = done { result: x * factor }
+
+// Event that chains pure events - THIS should be fusible!
+~event calculate { a: i32, b: i32, c: i32 }
+| done { result: i32 }
+
+// Pure Koru flow: add -> multiply
+// Fusion should detect this chain and generate calculate|fused variant
+~calculate = add(x: a, y: b)
+| done sum |> multiply(x: sum.result, factor: c)
+| done product |> done { result: product.result }
+
+// Test: Just invoke calculate to prove it compiles and runs
+// (We'll verify fusion detection in the frontend output)
+pub fn main() void {
+    const result = calculate_event.handler(.{ .a = 10, .b = 20, .c = 3 });
+    std.debug.print("Result: {}\n", .{result.done.result});
+}

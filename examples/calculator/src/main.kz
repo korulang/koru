@@ -1,0 +1,91 @@
+// Koru Calculator
+//
+// Demonstrates: Multiple events, procs with logic, error handling
+
+const std = @import("std");
+~import "$std/io"
+
+// Addition event
+~event add { a: i32, b: i32 }
+| result { value: i32 }
+
+~proc add {
+    return .{ .result = .{ .value = e.a + e.b } };
+}
+
+// Subtraction event
+~event subtract { a: i32, b: i32 }
+| result { value: i32 }
+
+~proc subtract {
+    return .{ .result = .{ .value = e.a - e.b } };
+}
+
+// Multiplication event
+~event multiply { a: i32, b: i32 }
+| result { value: i32 }
+
+~proc multiply {
+    return .{ .result = .{ .value = e.a * e.b } };
+}
+
+// Division event with error handling
+~event divide { a: i32, b: i32 }
+| result { value: i32 }
+| error { message: []const u8 }
+
+~proc divide {
+    if (e.b == 0) {
+        return .{ .error = .{ .message = "Division by zero" } };
+    }
+    return .{ .result = .{ .value = @divTrunc(e.a, e.b) } };
+}
+
+// Helper to format and print results
+~event print_result { operation: []const u8, a: i32, b: i32, result: i32 }
+| done {}
+
+~proc print_result {
+    // Format: "10 + 5 = 15"
+    var buf: [100]u8 = undefined;
+    const formatted = std.fmt.bufPrint(&buf, "{d} {s} {d} = {d}", .{
+        e.a, e.operation, e.b, e.result
+    }) catch "Error formatting";
+
+    // Print directly using Zig
+    std.debug.print("{s}\n", .{formatted});
+
+    return .{ .done = .{} };
+}
+
+// Main calculator flow
+~io:println(text: "Koru Calculator Demo")
+
+// Test addition
+~add(a: 10, b: 5)
+| result r |> print_result(operation: "+", a: 10, b: 5, result: r.value)
+    | done |> _
+
+// Test subtraction
+~subtract(a: 20, b: 8)
+| result r |> print_result(operation: "-", a: 20, b: 8, result: r.value)
+    | done |> _
+
+// Test multiplication
+~multiply(a: 7, b: 6)
+| result r |> print_result(operation: "*", a: 7, b: 6, result: r.value)
+    | done |> _
+
+// Test division
+~divide(a: 42, b: 6)
+| result r |> print_result(operation: "/", a: 42, b: 6, result: r.value)
+    | done |> _
+| error e |> io:println(text: e.message)
+
+// Test division by zero
+~divide(a: 10, b: 0)
+| result r |> print_result(operation: "/", a: 10, b: 0, result: r.value)
+    | done |> _
+| error e |> io:println(text: "Error: " ++ e.message)
+
+~io:println(text: "Done!")

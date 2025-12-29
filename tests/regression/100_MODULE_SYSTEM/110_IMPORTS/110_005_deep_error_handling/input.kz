@@ -1,0 +1,71 @@
+// Test 832: Deep error handling
+//
+// Real apps handle errors at every level.
+// This tests that error branches work correctly when deeply nested.
+
+const std = @import("std");
+
+~event step1 {}
+| ok { value: i32 }
+| failed { reason: []const u8 }
+
+~event step2 { value: i32 }
+| ok { value: i32 }
+| failed { reason: []const u8 }
+
+~event step3 { value: i32 }
+| ok { value: i32 }
+| failed { reason: []const u8 }
+
+~event step4 { value: i32 }
+| ok { value: i32 }
+| failed { reason: []const u8 }
+
+~event log { msg: []const u8 }
+| done {}
+
+~proc step1 {
+    return .{ .@"ok" = .{ .value = 1 } };
+}
+
+~proc step2 {
+    if (value < 0) {
+        return .{ .@"failed" = .{ .reason = "step2 failed" } };
+    }
+    return .{ .@"ok" = .{ .value = value + 1 } };
+}
+
+~proc step3 {
+    if (value < 0) {
+        return .{ .@"failed" = .{ .reason = "step3 failed" } };
+    }
+    return .{ .@"ok" = .{ .value = value + 1 } };
+}
+
+~proc step4 {
+    if (value < 0) {
+        return .{ .@"failed" = .{ .reason = "step4 failed" } };
+    }
+    return .{ .@"ok" = .{ .value = value + 1 } };
+}
+
+~proc log {
+    std.debug.print("{s}\n", .{msg});
+    return .{ .@"done" = .{} };
+}
+
+// 4 levels deep with error handling at each level
+~step1()
+| ok s1 |> step2(value: s1.value)
+    | ok s2 |> step3(value: s2.value)
+        | ok s3 |> step4(value: s3.value)
+            | ok _ |> log(msg: "Success!")
+                | done |> _
+            | failed f |> log(msg: f.reason)
+                | done |> _
+        | failed f |> log(msg: f.reason)
+            | done |> _
+    | failed f |> log(msg: f.reason)
+        | done |> _
+| failed f |> log(msg: f.reason)
+    | done |> _

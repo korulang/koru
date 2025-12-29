@@ -1,0 +1,260 @@
+// Tour 11: Union Types from Inline Flows
+// When inline flows have multiple branch constructors, Koru automatically
+// generates union types that can be used with Zig's switch statements
+
+const std = @import("std");
+
+// HTTP event for fetching data
+~event http.get { url: []const u8 }
+| ok { status: u32, body: []const u8 }
+| timeout { after_ms: u64 }
+| error { code: u32, msg: []const u8 }
+
+~proc http.get {
+    // Simulate different responses based on URL
+    if (std.mem.indexOf(u8, e.url, "timeout") != null) {
+        return .{ .timeout = .{ .after_ms = 5000 } };
+    }
+    if (std.mem.indexOf(u8, e.url, "error") != null) {
+        return .{ .error = .{ .code = 500, .msg = "Server error" } };
+    }
+    return .{ .ok = .{ .status = 200, .body = "Success response" } };
+}
+
+// UNION TYPE GENERATION
+~event fetch_with_retry { endpoint: []const u8, max_retries: u32 }
+| data { content: []const u8 }
+| failed { final_error: []const u8 }
+
+~proc fetch_with_retry {
+    var retries: u32 = 0;
+    
+    while (retries < e.max_retries) : (retries += 1) {
+        // This inline flow returns a union type with three variants:
+        // union(enum) { 
+        //     success: struct { data: []const u8, status: u32 },
+        //     retry: struct { delay: u64 },
+        //     failure: struct { reason: []const u8 }
+        // }
+        const result = ~http.get(url: e.endpoint)
+        | ok o |> success { 
+            data: o.body, 
+            status: o.status 
+        }
+        | timeout t |> retry { 
+            delay: t.after_ms 
+        }
+        | error e |> failure { 
+            reason: e.msg 
+        }
+        
+        // Use Zig's switch to handle the union type
+        switch (result) {
+            .success => |s| {
+                // Success case - return the data
+                std.debug.print("Success with status {}\n", .{s.status});
+                return .{ .data = .{ .content = s.data } };
+            },
+            .retry => |r| {
+                // Retry case - wait and continue loop
+                std.debug.print("Retrying after {} ms\n", .{r.delay});
+                std.time.sleep(r.delay * 1_000_000); // Convert ms to ns
+                continue;
+            },
+            .failure => |f| {
+                // Failure case - log and continue trying
+                std.debug.print("Attempt {} failed: {s}\n", .{retries + 1, f.reason});
+                continue;
+            }
+        }
+    }
+    
+    return .{ .failed = .{ .final_error = "Max retries exceeded" } };
+}
+
+// COMPLEX UNION WITH MULTIPLE FIELDS
+~event parse_config { data: []const u8 }
+| config { 
+    settings: ConfigData,
+    version: u32 
+}
+| error { msg: []const u8 }
+
+const ConfigData = struct {
+    timeout: u32,
+    retries: u32,
+    debug: bool,
+};
+
+~proc parse_config {
+    // Simple mock parser
+    if (e.data.len == 0) {
+        return .{ .error = .{ .msg = "Empty config" } };
+    }
+    
+    return .{ .config = .{
+        .settings = ConfigData{
+            .timeout = 5000,
+            .retries = 3,
+            .debug = true,
+        },
+        .version = 1,
+    }};
+}
+
+~event load_and_validate { config_path: []const u8, schema_version: u32 }
+| ready { config: ConfigData }
+| invalid { errors: []const u8 }
+
+~proc load_and_validate {
+    // Multiple inline flows creating different union types
+    
+    // First union: parse result
+    const parsed = ~parse_config(data: "config_data_here")
+    | config c |> valid_config {
+        data: c.settings,
+        ver: c.version
+    }
+    | error e |> parse_error {
+        msg: e.msg
+    }
+    
+    // Handle first union type
+    const config_data = switch (parsed) {
+        .valid_config => |v| blk: {
+            if (v.ver != e.schema_version) {
+                return .{ .invalid = .{ 
+                    .errors = "Version mismatch" 
+                }};
+            }
+            break :blk v.data;
+        },
+        .parse_error => |p| {
+            return .{ .invalid = .{ .errors = p.msg } };
+        }
+    };
+    
+    // Second inline flow with different union type
+    const validated = ~http.get(url: "/validate")
+    | ok _ |> validation_passed {}
+    | timeout |> validation_timeout {}
+    | error e |> validation_failed { code: e.code }
+    
+    // Handle second union type
+    switch (validated) {
+        .validation_passed => {
+            return .{ .ready = .{ .config = config_data } };
+        },
+        .validation_timeout => {
+            // Could retry or use cached validation
+            return .{ .ready = .{ .config = config_data } };
+        },
+        .validation_failed => |v| {
+            return .{ .invalid = .{ 
+                .errors = std.fmt.allocPrint(
+                    std.heap.page_allocator,
+                    "Validation failed with code {}",
+                    .{v.code}
+                ) catch "Validation error"
+            }};
+        }
+    }
+}
+
+// PATTERN: Result Type
+// Using unions to create Result<T, E> style types
+
+~event divide { numerator: f64, denominator: f64 }
+| result { value: f64 }
+| error { msg: []const u8 }
+
+~proc divide {
+    if (e.denominator == 0) {
+        return .{ .error = .{ .msg = "Division by zero" } };
+    }
+    return .{ .result = .{ .value = e.numerator / e.denominator } };
+}
+
+~event calculate { a: f64, b: f64, c: f64 }
+| answer { value: f64 }
+| computation_error { reason: []const u8 }
+
+~proc calculate {
+    // Chain operations that might fail
+    const div1 = ~divide(numerator: e.a, denominator: e.b)
+    | result r |> ok { val: r.value }
+    | error e |> err { msg: e.msg }
+    
+    const first_result = switch (div1) {
+        .ok => |o| o.val,
+        .err => |e| return .{ 
+            .computation_error = .{ .reason = e.msg } 
+        },
+    };
+    
+    const div2 = ~divide(numerator: first_result, denominator: e.c)
+    | result r |> ok { val: r.value }
+    | error e |> err { msg: e.msg }
+    
+    switch (div2) {
+        .ok => |o| return .{ .answer = .{ .value = o.val } },
+        .err => |e| return .{ .computation_error = .{ .reason = e.msg } },
+    }
+}
+
+// NESTED UNIONS
+// Inline flows can be nested, creating unions within unions
+
+~event process_request { request_data: []const u8 }
+| processed { result: []const u8 }
+| rejected { reason: []const u8 }
+
+~proc process_request {
+    const auth_result = ~http.get(url: "/auth")
+    | ok o |> authorized { token: o.body }
+    | timeout |> auth_timeout {}
+    | error |> unauthorized {}
+    
+    switch (auth_result) {
+        .authorized => |a| {
+            // Nested inline flow
+            const data_result = ~http.get(url: "/data")
+            | ok o |> data_success { content: o.body }
+            | timeout |> data_timeout {}
+            | error e |> data_error { code: e.code }
+            
+            switch (data_result) {
+                .data_success => |d| {
+                    return .{ .processed = .{ .result = d.content } };
+                },
+                .data_timeout => {
+                    return .{ .rejected = .{ .reason = "Data fetch timeout" } };
+                },
+                .data_error => |e| {
+                    return .{ .rejected = .{ 
+                        .reason = std.fmt.allocPrint(
+                            std.heap.page_allocator,
+                            "Data error: {}",
+                            .{e.code}
+                        ) catch "Unknown error"
+                    }};
+                }
+            }
+        },
+        .auth_timeout => {
+            return .{ .rejected = .{ .reason = "Auth timeout" } };
+        },
+        .unauthorized => {
+            return .{ .rejected = .{ .reason = "Unauthorized" } };
+        }
+    }
+}
+
+// Example flows
+~fetch_with_retry(endpoint: "/api/data", max_retries: 3)
+| data d |> _
+| failed f |> _
+
+~calculate(a: 10.0, b: 2.0, c: 5.0)
+| answer a |> _
+| computation_error e |> _

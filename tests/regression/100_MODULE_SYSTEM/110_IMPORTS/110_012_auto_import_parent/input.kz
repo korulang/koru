@@ -1,0 +1,21 @@
+// Test: Auto-import parent module
+//
+// When importing "$testlib/mymod/sub", the parent "mymod.kz" should
+// be automatically imported alongside it.
+//
+// Structure:
+//   testlib/
+//     mymod.kz        → parent_hello event
+//     mymod/
+//       sub.kz        → sub_hello event
+
+~import "$std/compiler"
+
+// Only import the submodule - parent should come automatically
+~import "$testlib/mymod/sub"
+
+// Use event from submodule (explicitly imported)
+~testlib.mymod.sub:sub_hello()
+
+// Use event from parent (auto-imported)
+~testlib.mymod:parent_hello()

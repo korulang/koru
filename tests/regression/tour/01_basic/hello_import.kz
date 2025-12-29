@@ -1,0 +1,11 @@
+// Simple test of import system
+// This should generate proper module structs
+
+~import "../../koru_std/io"
+
+// Simple flow that uses imported io module
+~io.println(text: "Hello from imported module!")
+| printed |> _
+| failed f |> io.println(text: f.message)
+    | printed |> _
+    | failed |> _

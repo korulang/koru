@@ -1,0 +1,17 @@
+// Test 618b: Invalid Module Qualifier (MUST FAIL)
+// Validates that short-form module qualifiers like "io:println" are rejected
+// Koru does NOT support import aliases - must always use full path
+
+~import "$std/io"
+
+~event test {}
+| done {}
+
+~proc test {
+    return .{ .done = .{} };
+}
+
+// This should FAIL - "io" is not a valid module qualifier
+// Correct form is: std.io:println
+~test()
+| done |> io:println(text: "WRONG - should be std.io:println")

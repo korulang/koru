@@ -1,0 +1,13 @@
+// Reproduce Orisha pattern exactly:
+// ~module:event()
+//   | branch |>
+//     module:other_event()
+
+~import "$std/io"
+~import "$std/control"
+
+~std.control:if(cond: true)
+  | then |>
+    std.io:println(text: "then branch")
+  | else |>
+    std.io:println(text: "else branch")

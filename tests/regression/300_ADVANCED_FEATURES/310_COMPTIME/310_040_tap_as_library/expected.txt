@@ -1,0 +1,2 @@
+Hello executed
+Observer fired!

@@ -1,0 +1,62 @@
+// Test 920: Handler Caching and Reuse
+//
+// This test verifies that when multiple flows use the same subset
+// of branches, the compiler generates ONE specialized handler and
+// reuses it, rather than duplicating code.
+
+const std = @import("std");
+
+~event compute { x: u32, y: u32 }
+| sum { result: u32 }              // REQUIRED
+| ?product { result: u32 }         // OPTIONAL
+| ?difference { result: u32 }      // OPTIONAL
+| ?quotient { result: u32 }        // OPTIONAL
+
+~proc compute {
+    const s = x + y;
+    const p = x * y;
+    const d = if (x > y) x - y else y - x;
+    const q = if (y != 0) x / y else 0;
+
+    if (x == y) {
+        return .{ .sum = .{ .result = s } };
+    }
+
+    if (x > 100 and y > 100) {
+        return .{ .product = .{ .result = p } };
+    }
+
+    if (x < 10 and y < 10) {
+        return .{ .difference = .{ .result = d } };
+    }
+
+    if (y > 50) {
+        return .{ .quotient = .{ .result = q } };
+    }
+
+    return .{ .sum = .{ .result = s } };
+}
+
+// Flow A: Handles sum + product
+~compute(x: 10, y: 20)
+| sum |> std.debug.print("Sum A: {}\n", .{result})
+| product |> std.debug.print("Product A: {}\n", .{result})
+
+// Flow B: Handles sum + product (SAME as Flow A)
+// Should reuse the same specialized handler!
+~compute(x: 30, y: 40)
+| sum |> std.debug.print("Sum B: {}\n", .{result})
+| product |> std.debug.print("Product B: {}\n", .{result})
+
+// Flow C: Handles ALL branches (different handler needed)
+~compute(x: 5, y: 5)
+| sum |> std.debug.print("Sum C: {}\n", .{result})
+| product |> std.debug.print("Product C: {}\n", .{result})
+| difference |> std.debug.print("Diff C: {}\n", .{result})
+| quotient |> std.debug.print("Quot C: {}\n", .{result})
+
+// Flow D: Handles sum + product (SAME as A and B)
+// Should reuse the cached handler!
+~compute(x: 50, y: 60)
+| sum |> std.debug.print("Sum D: {}\n", .{result})
+| product |> std.debug.print("Product D: {}\n", .{result})

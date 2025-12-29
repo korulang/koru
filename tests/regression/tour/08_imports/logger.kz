@@ -1,0 +1,49 @@
+// Tour 08: Logger Module
+// A simple logging module for demonstration
+
+const std = @import("std");
+
+// Public logging events
+~pub event log.info { message: []const u8 }
+
+~pub event log.error { message: []const u8, code: u32 }
+
+~pub event log.debug { message: []const u8, data: anytype }
+
+// Public event with configuration
+~pub event log.configure { level: LogLevel }
+| configured { previous_level: LogLevel }
+
+const LogLevel = enum {
+    debug,
+    info,
+    warn,
+    error,
+};
+
+// Private state (not accessible from importers)
+var current_level: LogLevel = .info;
+
+// Implementations
+~proc log.info {
+    std.debug.print("[INFO] {s}\n", .{e.message});
+    return .{};
+}
+
+~proc log.error {
+    std.debug.print("[ERROR] {s} (code: {})\n", .{e.message, e.code});
+    return .{};
+}
+
+~proc log.debug {
+    if (current_level == .debug) {
+        std.debug.print("[DEBUG] {s}\n", .{e.message});
+    }
+    return .{};
+}
+
+~proc log.configure {
+    const prev = current_level;
+    current_level = e.level;
+    return .{ .configured = .{ .previous_level = prev } };
+}

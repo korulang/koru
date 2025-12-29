@@ -1,0 +1,1 @@
+Player Alice has 100 health.

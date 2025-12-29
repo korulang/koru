@@ -1,0 +1,56 @@
+// Test: Fusion Detection Infrastructure
+// This test verifies that the fusion detector is wired into the pipeline
+// and that purity tracking enables fusion analysis
+
+const std = @import("std");
+
+// Pure events - these are fusable candidates
+~event add { x: i32, y: i32 }
+| done { result: i32 }
+
+~[pure]proc add {
+    return .{ .done = .{ .result = x + y } };
+}
+
+~event multiply { x: i32, factor: i32 }
+| done { result: i32 }
+
+~[pure]proc multiply {
+    return .{ .done = .{ .result = x * factor } };
+}
+
+// Impure event - cannot be fused
+~event log { msg: []const u8 }
+| done {}
+
+~proc log {
+    std.debug.print("[LOG] {s}\n", .{msg});
+    return .{ .done = .{} };
+}
+
+// Main test
+~event main {}
+| done {}
+
+~proc main {
+    // Call pure events
+    const sum = add_event.handler(.{ .x = 10, .y = 20 });
+    const product = multiply_event.handler(.{ .x = 30, .factor = 3 });
+
+    switch (sum) {
+        .done => |s| {
+            switch (product) {
+                .done => |p| {
+                    std.debug.print("Sum: {}, Product: {}\n", .{s.result, p.result});
+                },
+            }
+        },
+    }
+
+    _ = log_event.handler(.{ .msg = "Done" });
+
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

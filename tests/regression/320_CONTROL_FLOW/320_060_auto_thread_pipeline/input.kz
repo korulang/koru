@@ -1,0 +1,81 @@
+// Test: Auto-threading for single-branch pipelines
+//
+// FEATURE: When an event has a SINGLE mandatory branch, and the next event
+// has a parameter with the SAME NAME as that branch, auto-thread it.
+//
+// This enables LINQ-style pipelines without explicit plumbing:
+//
+//   ~from(items)
+//   |> where(x > 10)      // seq auto-injected from previous branch
+//   |> select(x.name)     // seq auto-injected
+//   | seq result |> ...   // explicit only at the end
+//
+// Rules:
+// 1. Previous event must have exactly ONE non-optional branch
+// 2. Branch name must match a parameter name in next event
+// 3. Parameter must not already be explicitly provided
+// 4. Multi-branch events ALWAYS require explicit handling
+//
+// This is syntactic sugar - the compiler pass injects:
+//   |> where(x > 10)  →  | seq s |> where(x > 10, seq: s)
+
+const std = @import("std");
+
+// Pipeline events with single "seq" branch
+// The branch name "seq" matches the input parameter name - this enables auto-threading
+
+~pub event from { source: []const i32 }
+| seq []const i32
+
+~proc from {
+    return .{ .seq = source };
+}
+
+~pub event where { pred: bool, seq: []const i32 }
+| seq []const i32
+
+~proc where {
+    // Simplified: just return input (real impl would filter)
+    _ = pred;
+    return .{ .seq = seq };
+}
+
+~pub event select_len { seq: []const i32 }
+| seq []const usize
+
+~proc select_len {
+    // Return length instead of elements (simplified transform)
+    _ = seq;
+    var result: []const usize = &[_]usize{ seq.len };
+    return .{ .seq = result };
+}
+
+// Terminal: different branch name stops the chain
+~pub event count { seq: []const i32 }
+| count usize
+
+~proc count {
+    return .{ .count = seq.len };
+}
+
+// Test data
+const test_data = [_]i32{ 1, 2, 3, 4, 5 };
+
+// THE TEST: Auto-threaded pipeline
+// Without auto-threading, this would need:
+//   ~from(source: test_data[0..])
+//   | seq s1 |> where(pred: true, seq: s1)
+//       | seq s2 |> count(seq: s2)
+//           | count c |> print_result(c)
+//
+// WITH auto-threading:
+~from(source: test_data[0..])
+|> where(pred: true)
+|> count
+| count c |> print_result(c)
+
+~event print_result { value: usize }
+
+~proc print_result {
+    std.debug.print("Count: {d}\n", .{value});
+}

@@ -1,0 +1,35 @@
+// Test void events (events with no branches)
+
+~event log.debug { msg: []const u8 }
+// No branches - this is a void event
+
+~proc log.debug {
+    const std = @import("std");
+    std.debug.print("DEBUG: {s}\n", .{e.msg});
+    // Void events have no return
+}
+
+~event log.info { msg: []const u8 }
+// Another void event
+
+~proc log.info {
+    const std = @import("std");
+    std.debug.print("INFO: {s}\n", .{e.msg});
+    // Void events have no return
+}
+
+~event do.work { input: i32 }
+| success { result: i32 }
+| failure { errmsg: []const u8 }
+
+~proc do.work {
+    if (e.input < 0) {
+        return .{ .@"failure" = .{ .errmsg = "negative input" } };
+    }
+    return .{ .@"success" = .{ .result = e.input * 2 } };
+}
+
+// Test chaining void events in pipelines
+~do.work (input: 42)
+| success s |> log.info (msg: "Work succeeded") |> log.debug (msg: "Result computed") |> _
+| failure f |> log.info (msg: f.errmsg) |> _

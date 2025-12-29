@@ -1,0 +1,27 @@
+// Test pure proc + flow composition pattern
+// Shows how pure procs compose through flows (not inline flows)
+
+const std = @import("std");
+
+// Base pure math event
+~event multiply { x: i32, factor: i32 }
+| done { result: i32 }
+
+~[pure]proc multiply {
+    return .{ .done = .{ .result = x * factor } };
+}
+
+// Pure print event
+~event print_result { n: i32 }
+| done {}
+
+~proc print_result {
+    std.debug.print("Result: {}\n", .{n});
+    return .{ .done = .{} };
+}
+
+// Composition happens through FLOWS (not inline flows in procs)
+// This makes the entire pipeline visible to the optimizer!
+~multiply(x: 21, factor: 2)
+| done d |> print_result(n: d.result)
+    | done |> _

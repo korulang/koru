@@ -1,0 +1,32 @@
+// Test: Taps implemented as a library transform
+// This proves taps don't need special syntax - they're just metaprogramming!
+
+const std = @import("std");
+~import "$std/taps"
+
+// An event with a branch that can be tapped
+// NOTE: Taps work by observing TRANSITIONS (branches), not void events!
+// The branch is named 'tap_target' to make clear this is TEST SCAFFOLDING.
+~event hello {}
+| tap_target {}
+
+~proc hello {
+    std.debug.print("Hello executed\n", .{});
+    return .{ .tap_target = .{} };
+}
+
+// A void observer event - no return needed
+~event observer {}
+
+~proc observer {
+    std.debug.print("Observer fired!\n", .{});
+}
+
+// TAP: Observe hello -> * | tap_target
+// Using the new library syntax instead of special ~hello -> * syntax
+~tap(hello -> *)
+| tap_target |> observer()
+
+// Execute hello - tap should fire on tap_target branch
+~hello()
+| tap_target |> _

@@ -1,0 +1,26 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 507: Module-qualified phantom states
+// Tests that semantic phantom checker resolves module-qualified states
+// Demonstrates: Cross-module phantom type usage with qualification
+
+~import "$std/io"
+~import "$app/fileops"
+
+const std = @import("std");
+
+// Define File type for testing
+const File = struct {
+    handle: i32,
+};
+
+// Use module-qualified phantom states
+// The semantic checker should:
+// 1. Resolve "app.fileops:open" to canonical module path
+// 2. Validate that opened file has correct phantom state
+// 3. Accept the file in close() which expects app.fileops:open
+
+~app.fileops:open(path: "test.txt")
+| opened f |> app.fileops:close(file: f.file)  // f.file: *File[app.fileops:open]
+    | closed |> std.io:println(text: "File closed successfully")

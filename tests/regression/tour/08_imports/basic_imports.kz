@@ -1,0 +1,79 @@
+// Tour 08: Basic Imports
+// Learn how to import and use events from other Koru modules
+
+const std = @import("std");
+
+// BASIC IMPORT: File name becomes the namespace
+// This imports all public events from math_utils.kz
+// They will be available as math_utils.event_name
+~import "math_utils.kz"
+
+// EXPLICIT NAMESPACE: Give the import a custom name
+// This is useful to avoid conflicts or shorten long names
+~import "math_utils.kz" => math  // Same module, different namespace
+~import "logger.kz" => log       // Shorter name for convenience
+
+// DEFAULT NAMESPACE: Another example
+~import "file_ops.kz"           // Will be available as file_ops.*
+
+// Note: These would be errors (if the compiler was complete):
+// ~import "non_existent.kz"     // Error: File not found
+// ~import "math_utils.kz"       // Error: Already imported (even with different name)
+
+// USING IMPORTED EVENTS
+// Events must be called with their namespace prefix
+
+~event demo.basic_usage {}
+| done { message: []const u8 }
+
+~proc demo.basic_usage {
+    // Use math_utils namespace (from default import)
+    ~math_utils:add(a: 10, b: 20)
+    | sum s |> {
+        std.debug.print("10 + 20 = {}\n", .{s.result});
+    }
+
+    // Use math namespace (same module, custom namespace)
+    ~math:multiply(x: 5, y: 6)
+    | product p |> {
+        std.debug.print("5 * 6 = {}\n", .{p.result});
+    }
+
+    // Use log namespace (custom name for logger.kz)
+    ~log:info(message: "Basic import demo running")
+
+    // Use file_ops namespace (default from filename)
+    ~file_ops:read(path: "test.txt")
+    | content c |> log:info(message: c.data)
+    | not_found |> log:error(message: "File not found", code: 404)
+    | error e |> log:error(message: e.message, code: 500)
+
+    return .{ .done = .{ .message = "Basic imports demonstrated" } };
+}
+
+// WHAT YOU CAN'T DO:
+// 1. Import private events (those without 'pub')
+// 2. Import procs (procs are always private)
+// 3. Use events without namespace prefix
+// 4. Import the same file twice (even with different namespaces)
+
+~event demo.error_examples {}
+
+~proc demo.error_examples {
+    // These would be compile errors:
+
+    // ~add(a: 1, b: 2)                    // Error: No event 'add' (needs namespace)
+    // ~math_utils:internal_helper(value: 5) // Error: internal_helper is not public
+    // ~math:add.proc()                     // Error: Can't access procs
+
+    // The only way to use imported events is with their namespace:
+    ~math:divide(numerator: 10.0, denominator: 2.0)
+    | success s |> _
+    | error e |> _
+
+    return .{};
+}
+
+// MAIN FLOW: Demonstrate the imports
+~demo.basic_usage()
+| done d |> _

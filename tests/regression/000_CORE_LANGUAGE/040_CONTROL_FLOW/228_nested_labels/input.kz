@@ -1,0 +1,39 @@
+// Test 828: Nested label loops
+//
+// BUG: When labels are nested (label within a label), the compiler generates
+// tail calls to label functions but doesn't actually generate those functions.
+//
+// This causes "use of undeclared identifier" errors for label functions.
+
+const std = @import("std");
+
+~event outer { count: i32 }
+| continue_outer { next: i32 }
+| done_outer {}
+
+~event inner { count: i32 }
+| continue_inner { next: i32 }
+| done_inner {}
+
+~proc outer {
+    std.debug.print("Outer: {}\n", .{count});
+    if (count < 2) {
+        return .{ .@"continue_outer" = .{ .next = count + 1 } };
+    }
+    return .{ .@"done_outer" = .{} };
+}
+
+~proc inner {
+    std.debug.print("  Inner: {}\n", .{count});
+    if (count < 2) {
+        return .{ .@"continue_inner" = .{ .next = count + 1 } };
+    }
+    return .{ .@"done_inner" = .{} };
+}
+
+// Nested labels: #outer contains #inner
+~#outer outer(count: 0)
+| continue_outer o |> #inner inner(count: 0)
+    | continue_inner i |> @inner(count: i.next)
+    | done_inner |> @outer(count: o.next)
+| done_outer |> _

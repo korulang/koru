@@ -1,0 +1,24 @@
+// Test 620: Multi-line Parameter Lists (NOT YET SUPPORTED)
+// This test captures the current limitation where multi-line parameter
+// lists are split into separate host_line nodes without proper comma handling
+
+const std = @import("std");
+
+~event greet {
+    first: []const u8,
+    last: []const u8,
+    age: u32
+}
+| greeting { msg: []const u8 }
+
+~proc greet {
+    std.debug.print("Hello, {s} {s} ({d})!\n", .{e.first, e.last, e.age});
+    return .{ .greeting = .{ .msg = "Hi!" } };
+}
+
+~greet(
+    first: "John",
+    last: "Doe",
+    age: 42
+)
+| greeting |> _

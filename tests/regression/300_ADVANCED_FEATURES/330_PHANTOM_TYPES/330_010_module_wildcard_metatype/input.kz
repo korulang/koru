@@ -1,0 +1,32 @@
+// Test 183: Module Wildcard + Metatype (VALID)
+//
+// Pattern: ~input:* -> * | Audit a |>
+//
+// This is VALID because:
+// - Source is module wildcard (input:*) - matches all events in main module
+// - Branch is metatype (Audit) - works on any branch
+// - Perfect for module-wide auditing/logging
+
+const std = @import("std");
+
+~import "$app/test_lib/logger"
+
+~event compute { x: i32 }
+| result { value: i32 }
+
+~event format { value: i32 }
+| formatted { text: []const u8 }
+
+~proc compute {
+    std.debug.print("compute({d})\n", .{x});
+    return .{ .result = .{ .value = x * 2 } };
+}
+
+~proc format {
+    std.debug.print("format({d})\n", .{value});
+    return .{ .formatted = .{ .text = "formatted" } };
+}
+
+~compute(x: 42)
+| result r |> format(value: r.value)
+    | formatted f |> _

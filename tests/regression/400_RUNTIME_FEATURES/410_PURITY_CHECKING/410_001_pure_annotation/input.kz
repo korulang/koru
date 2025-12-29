@@ -1,0 +1,27 @@
+// Test basic ~[pure] annotation
+// Verify that parser accepts ~[pure] annotation on proc
+
+const std = @import("std");
+
+// Pure math function - marked with ~[pure]
+~event add { a: i32, b: i32 }
+| done { result: i32 }
+
+~[pure]proc add {
+    return .{ .done = .{ .result = a + b } };
+}
+
+// Impure I/O function (no annotation - defaults to impure)
+~event print_number { n: i32 }
+| done {}
+
+~proc print_number {
+    std.debug.print("Number: {}\n", .{n});
+    return .{ .done = .{} };
+}
+
+// Use flow composition (not handler calls)
+// This tests that pure annotation is parsed correctly
+~add(a: 10, b: 32)
+| done d |> print_number(n: d.result)
+    | done |> _

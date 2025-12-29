@@ -1,0 +1,125 @@
+// Test: Bespoke if-event - conditional flow control
+//
+// Pattern: comptime transform + runtime implementation
+// - my_if: comptime transform captures Expression
+// - my_if_impl: runtime implementation handles branching
+
+~import "$std/io"
+
+const std = @import("std");
+
+// ============================================================================
+// RUNTIME IMPLEMENTATION - handles the actual branching
+// ============================================================================
+
+~event my_if_impl { condition: bool }
+| then {}
+| else {}
+
+~proc my_if_impl {
+    if (condition) {
+        return .{ .then = .{} };
+    } else {
+        return .{ .@"else" = .{} };
+    }
+}
+
+// ============================================================================
+// COMPTIME TRANSFORM - rewrites my_if(expr) to my_if_impl(condition: expr)
+// ============================================================================
+
+~[comptime|transform]event my_if {
+    expr: Expression,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc my_if {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    std.debug.print("my_if transform: expr=\"{s}\"\n", .{expr});
+
+    if (item.* != .flow) {
+        std.debug.print("my_if transform: item is not a flow, returning unchanged\n", .{});
+        return .{ .transformed = .{ .program = program } };
+    }
+
+    const flow = &item.flow;
+
+    // Create new path: my_if -> my_if_impl
+    const new_path = ast.DottedPath{
+        .module_qualifier = flow.invocation.path.module_qualifier,
+        .segments = &[_][]const u8{"my_if_impl"},
+    };
+
+    // Create new args: condition = expr
+    const new_args = allocator.alloc(ast.Arg, 1) catch unreachable;
+    new_args[0] = ast.Arg{
+        .name = allocator.dupe(u8, "condition") catch unreachable,
+        .value = allocator.dupe(u8, expr) catch unreachable,
+        .source_value = null,
+        .expression_value = null,
+    };
+
+    const new_annotations = allocator.alloc([]const u8, 1) catch unreachable;
+    new_annotations[0] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const transformed_flow = ast.Flow{
+        .invocation = ast.Invocation{
+            .path = new_path,
+            .args = new_args,
+            .annotations = new_annotations,
+            .inserted_by_tap = false,
+            .from_opaque_tap = false,
+        },
+        .continuations = flow.continuations,
+        .annotations = flow.annotations,
+        .pre_label = flow.pre_label,
+        .post_label = flow.post_label,
+        .super_shape = flow.super_shape,
+        .is_pure = flow.is_pure,
+        .is_transitively_pure = flow.is_transitively_pure,
+        .location = flow.location,
+        .module = flow.module,
+    };
+
+    const transformed_item = ast.Item{ .flow = transformed_flow };
+
+    // Find the index of the item we're transforming and replace it
+    var item_index: ?usize = null;
+    for (program.items, 0..) |*prog_item, idx| {
+        if (prog_item == item) {
+            item_index = idx;
+            break;
+        }
+    }
+
+    if (item_index) |idx| {
+        const new_program = ast_functional.replaceAt(allocator, program, idx, transformed_item) catch unreachable;
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    } else {
+        std.debug.print("my_if transform: item not found in program.items\n", .{});
+        return .{ .transformed = .{ .program = program } };
+    }
+}
+
+// ============================================================================
+// TEST CASES
+// ============================================================================
+
+const value = 42;
+
+~my_if(value > 10)
+    | then |> std.io:println(text: "Test 1: then branch")
+    | else |> std.io:println(text: "Test 1: else branch")
+
+const small = 5;
+
+~my_if(small > 10)
+    | then |> std.io:println(text: "Test 2: then branch")
+    | else |> std.io:println(text: "Test 2: else branch")

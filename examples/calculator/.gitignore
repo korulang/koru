@@ -1,0 +1,29 @@
+# Koru build artifacts
+*.zig.generated
+backend.zig
+output_emitted.zig
+/zig-cache/
+/zig-out/
+*.o
+*.a
+a.out
+
+# Test artifacts
+/tests/**/*.err
+/tests/**/backend.zig
+/tests/**/output_emitted.zig
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local

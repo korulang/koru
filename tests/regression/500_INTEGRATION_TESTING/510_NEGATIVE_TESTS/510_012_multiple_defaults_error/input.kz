@@ -1,0 +1,14 @@
+// Test 643: Multiple Defaults Error (MUST_FAIL)
+// Tests that having multiple [default] definitions for the same name is an error
+//
+// This is a STDLIB BUG - only one default per name is allowed
+// Expected: Compilation error "Multiple default implementations for 'test'"
+
+~import "$std/build"
+~import "$app/lib/extra_build"
+
+// This file defines ONE default
+~[default]
+std.build:step(name: "test") {
+    echo "Main test implementation"
+}

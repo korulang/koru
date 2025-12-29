@@ -1,0 +1,52 @@
+// Test 210_038: Implicit Expression AND Source Parameters
+// Validates that an event can have BOTH expr: Expression and source: Source
+// and the parser correctly captures both from the syntax:
+//   ~event(expression) [Type]{ source content }
+
+const std = @import("std");
+
+// Event with BOTH Expression and Source parameters
+// The Expression captures a condition, the Source captures template content
+~[comptime|transform]event conditional.render {
+    expr: Expression,
+    source: Source[HTML],
+    invocation: *const Invocation,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc conditional.render {
+    // For this test, just prove we received both parameters
+    // expr should contain the expression text
+    // source should contain the template text
+
+    // Debug: print what we captured
+    std.debug.print("Expression: '{s}'\n", .{expr});
+    std.debug.print("Source: '{s}'\n", .{source.text});
+    std.debug.print("Source bindings: {d}\n", .{source.scope.bindings.len});
+
+    // Return program unchanged for now
+    return .{ .transformed = .{ .program = program } };
+}
+
+// Test: Use both implicit expression AND implicit source block
+// Syntax: ~event(expr) [Type]{ source }
+const show_greeting = true;
+
+~conditional.render(show_greeting) [HTML]{
+    <h1>Hello World</h1>
+    <p>This is conditional content</p>
+}
+| transformed program |> _
+
+// Test 2: Braces inside content should NOT close the block
+// The closing } must be at base_indent or less
+~conditional.render(show_greeting) [HTML]{
+    <style>
+        .header { color: blue; }
+        .content { padding: 10px; }
+    </style>
+    <div class="header">Styled!</div>
+}
+| transformed program |> _

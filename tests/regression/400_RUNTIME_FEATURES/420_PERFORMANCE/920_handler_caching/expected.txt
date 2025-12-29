@@ -1,0 +1,4 @@
+Sum A: 30
+Sum B: 70
+Sum C: 10
+Sum D: 110

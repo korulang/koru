@@ -1,0 +1,499 @@
+// Koru Compiler Visitor Pattern Implementation
+// ===========================================
+// This module provides a clean separation between AST traversal and code emission.
+// The visitor walks the AST, the emitter generates code. Neither knows the other's internals.
+
+// ============================================================
+// CODE EMITTER - Handles generation of Zig code
+// ============================================================
+
+~event compiler.emit.buffer {}
+| allocated { buffer: []u8, size: usize }
+
+~proc compiler.emit.buffer {
+    const size = 64 * 1024; // 64KB buffer
+    var buffer: [size]u8 = undefined;
+    return .{ .allocated = .{ .buffer = &buffer, .size = size } };
+}
+
+// The CodeEmitter manages output buffer and formatting
+const CodeEmitter = struct {
+    buffer: []u8,
+    pos: usize,
+    indent_level: u32,
+    indent_size: u32 = 4, // spaces per indent level
+    
+    pub fn init(buffer: []u8) CodeEmitter {
+        return .{
+            .buffer = buffer,
+            .pos = 0,
+            .indent_level = 0,
+        };
+    }
+    
+    // Low-level write operations
+    pub fn write(self: *CodeEmitter, text: []const u8) !void {
+        if (self.pos + text.len >= self.buffer.len) {
+            return error.BufferOverflow;
+        }
+        @memcpy(self.buffer[self.pos..self.pos + text.len], text);
+        self.pos += text.len;
+    }
+    
+    pub fn writeLine(self: *CodeEmitter, text: []const u8) !void {
+        try self.writeIndent();
+        try self.write(text);
+        try self.write("\n");
+    }
+    
+    pub fn writeIndent(self: *CodeEmitter) !void {
+        const spaces = self.indent_level * self.indent_size;
+        var i: u32 = 0;
+        while (i < spaces) : (i += 1) {
+            try self.write(" ");
+        }
+    }
+    
+    pub fn indent(self: *CodeEmitter) void {
+        self.indent_level += 1;
+    }
+    
+    pub fn dedent(self: *CodeEmitter) void {
+        if (self.indent_level > 0) {
+            self.indent_level -= 1;
+        }
+    }
+    
+    // High-level emission methods
+    pub fn emitStructStart(self: *CodeEmitter, name: []const u8, is_pub: bool) !void {
+        try self.writeIndent();
+        if (is_pub) {
+            try self.write("pub ");
+        }
+        try self.write("const ");
+        try self.write(name);
+        try self.write(" = struct {\n");
+        self.indent();
+    }
+    
+    pub fn emitComment(self: *CodeEmitter, comment: []const u8) !void {
+        try self.writeIndent();
+        try self.write("// ");
+        try self.write(comment);
+        try self.write("\n");
+    }
+    
+    pub fn emitImport(self: *CodeEmitter, name: []const u8, path: []const u8) !void {
+        try self.writeIndent();
+        try self.write("const ");
+        try self.write(name);
+        try self.write(" = @import(\"");
+        try self.write(path);
+        try self.write("\");\n");
+    }
+    
+    pub fn writeEscapedString(self: *CodeEmitter, str: []const u8) !void {
+        for (str) |c| {
+            switch (c) {
+                '\\' => try self.write("\\\\"),
+                '\"' => try self.write("\\\""),
+                '\n' => try self.write("\\n"),
+                '\r' => try self.write("\\r"),
+                '\t' => try self.write("\\t"),
+                else => {
+                    var buf: [1]u8 = .{c};
+                    try self.write(&buf);
+                },
+            }
+        }
+    }
+    
+    pub fn emitStructEnd(self: *CodeEmitter) !void {
+        self.dedent();
+        try self.writeLine("};");
+    }
+    
+    pub fn emitField(self: *CodeEmitter, name: []const u8, typ: []const u8) !void {
+        try self.writeIndent();
+        try self.write(name);
+        try self.write(": ");
+        try self.write(typ);
+        try self.write(",\n");
+    }
+    
+    pub fn emitFunctionStart(self: *CodeEmitter, name: []const u8, params: []const u8, ret: []const u8, is_pub: bool) !void {
+        try self.writeIndent();
+        if (is_pub) {
+            try self.write("pub ");
+        }
+        try self.write("fn ");
+        try self.write(name);
+        try self.write("(");
+        try self.write(params);
+        try self.write(") ");
+        try self.write(ret);
+        try self.writeLine(" {");
+        self.indent();
+    }
+    
+    pub fn emitFunctionEnd(self: *CodeEmitter) !void {
+        self.dedent();
+        try self.writeLine("}");
+    }
+    
+    pub fn emitUnionStart(self: *CodeEmitter, is_tagged: bool) !void {
+        if (is_tagged) {
+            try self.writeLine("union(enum) {");
+        } else {
+            try self.writeLine("union {");
+        }
+        self.indent();
+    }
+    
+    pub fn emitUnionEnd(self: *CodeEmitter) !void {
+        self.dedent();
+        try self.write("}");
+    }
+    
+    pub fn getOutput(self: *CodeEmitter) []const u8 {
+        return self.buffer[0..self.pos];
+    }
+};
+
+// ============================================================
+// AST VISITOR - Handles traversal of the AST
+// ============================================================
+
+const VisitorContext = struct {
+    current_module: ?[]const u8 = null,
+    in_event: bool = false,
+    in_proc: bool = false,
+};
+
+// The visitor pattern implementation
+~proc createASTVisitor {
+    const ASTVisitor = struct {
+        emitter: *CodeEmitter,
+        context: VisitorContext,
+        ast: *const ProgramAST,
+        
+        pub fn init(emitter: *CodeEmitter, ast: *const ProgramAST) ASTVisitor {
+            return .{
+                .emitter = emitter,
+                .context = VisitorContext{},
+                .ast = ast,
+            };
+        }
+        
+        pub fn visit(self: *ASTVisitor) !void {
+            try self.visitSourceFile(self.ast);
+        }
+        
+        fn visitSourceFile(self: *ASTVisitor, ast: *const ProgramAST) !void {
+            // First emit the header
+            try self.emitter.writeLine("// Generated by Koru Visitor Pattern Compiler");
+            try self.emitter.writeLine("");
+            
+            // Check for user main or Koru features
+            const has_user_main = self.hasUserMain(ast);
+            const has_koru_features = self.hasKoruFeatures(ast);
+            
+            if (!has_user_main or has_koru_features) {
+                // Need the main_module wrapper
+                try self.emitter.writeLine("pub const main_module = struct {");
+                self.emitter.indent();
+            }
+            
+            // Visit each top-level item
+            for (ast.items) |item| {
+                try self.visitItem(item);
+            }
+            
+            if (!has_user_main or has_koru_features) {
+                // Close the main_module
+                self.emitter.dedent();
+                try self.emitter.writeLine("};");
+                
+                // Generate main function if needed
+                if (!has_user_main) {
+                    try self.emitDefaultMain();
+                }
+            }
+        }
+        
+        fn visitItem(self: *ASTVisitor, item: anytype) !void {
+            // Dispatch to specific visit methods based on item type
+            switch (item) {
+                .host_line => |line| try self.visitHostLine(line),
+                .event_decl => |event| try self.visitEventDecl(event),
+                .proc_decl => |proc| try self.visitProcDecl(proc),
+                .flow => |flow| try self.visitFlow(flow),
+                .module_decl => |module| try self.visitModuleDecl(module),
+                .subflow_impl => |subflow| try self.visitSubflowImpl(subflow),
+                .import_decl => |import| try self.visitImportDecl(import),
+                .label_decl => |label| try self.visitLabelDecl(label),
+                .event_tap => |tap| try self.visitEventTap(tap),
+            }
+        }
+
+        fn visitHostLine(self: *ASTVisitor, line: anytype) !void {
+            try self.emitter.writeLine(line.content);
+        }
+        
+        fn visitEventDecl(self: *ASTVisitor, event: anytype) !void {
+            // Skip compiler events (internal use only)
+            if (event.path.len > 0 and std.mem.eql(u8, event.path[0], "compiler")) {
+                return;
+            }
+            
+            const name = event.path[event.path.len - 1];
+            try self.emitter.emitStructStart(name, event.is_public);
+            
+            // Emit Input struct
+            try self.emitter.emitStructStart("Input", true);
+            for (event.input.fields) |field| {
+                const field_type = if (field.is_file or field.is_embed_file)
+                    "[]const u8"
+                else
+                    field.type;
+                try self.emitter.emitField(field.name, field_type);
+            }
+            try self.emitter.emitStructEnd();
+            
+            // Emit Output union
+            try self.emitter.writeIndent();
+            try self.emitter.write("pub const Output = ");
+            try self.emitter.emitUnionStart(true);
+            for (event.branches) |branch| {
+                try self.visitBranch(branch);
+            }
+            try self.emitter.emitUnionEnd();
+            try self.emitter.write(";\n");
+            
+            // Emit handler function
+            try self.emitter.emitFunctionStart("handler", "e: Input", "Output", true);
+            
+            // Find proc implementation for this event
+            const impl = self.findProcForEvent(event.path);
+            if (impl) |proc| {
+                try self.emitter.writeLine("_ = &__koru_event_input;");
+                try self.emitProcBody(proc.body);
+            } else {
+                // Default implementation
+                if (event.branches.len > 0) {
+                    try self.emitter.write("return .{ .");
+                    try self.emitter.write(event.branches[0].name);
+                    try self.emitter.writeLine(" = .{} };");
+                } else {
+                    try self.emitter.writeLine("return undefined;");
+                }
+            }
+            
+            try self.emitter.emitFunctionEnd();
+            try self.emitter.emitStructEnd();
+        }
+        
+        fn visitProcDecl(self: *ASTVisitor, proc: anytype) !void {
+            // Procs are typically handled inline with their events
+            // But we might have standalone Zig procs
+            _ = proc;
+            // TODO: Handle standalone procs if needed
+        }
+        
+        fn visitFlow(self: *ASTVisitor, flow: anytype) !void {
+            // Top-level flows become initialization code
+            // These are the actual invocations like ~hello()
+            try self.emitter.emitComment("Flow invocation");
+            
+            // Build the event path
+            try self.emitter.writeIndent();
+            try self.emitter.write("_ = ");
+            for (flow.invocation.path, 0..) |segment, i| {
+                if (i > 0) try self.emitter.write(".");
+                try self.emitter.write(segment);
+            }
+            try self.emitter.write(".handler(.{");
+            
+            // Add arguments
+            for (flow.invocation.args, 0..) |arg, i| {
+                if (i > 0) try self.emitter.write(", ");
+                try self.emitter.write(".");
+                try self.emitter.write(arg.name);
+                try self.emitter.write(" = ");
+                try self.emitter.write(arg.value);
+            }
+            try self.emitter.write("});\n");
+        }
+        
+        fn visitModuleDecl(self: *ASTVisitor, module: anytype) !void {
+            try self.emitter.emitComment(module.canonical_path);
+            try self.emitter.emitStructStart(module.logical_name, true);
+            
+            // Visit all items in the module
+            const old_module = self.context.current_module;
+            self.context.current_module = module.logical_name;
+            
+            for (module.items) |item| {
+                try self.visitItem(item);
+            }
+            
+            self.context.current_module = old_module;
+            try self.emitter.emitStructEnd();
+        }
+        
+        fn visitSubflowImpl(self: *ASTVisitor, subflow: anytype) !void {
+            // Subflow implementations are the ~compiler.coordinate.default = ... constructs
+            // They define how an event responds to being invoked
+            try self.emitter.emitComment("Subflow implementation");
+            
+            // TODO: Full subflow implementation
+            // This needs to generate the actual handler code
+            _ = subflow;
+        }
+        
+        fn visitImportDecl(self: *ASTVisitor, import: anytype) !void {
+            // Handle import statements
+            const name = import.name orelse "imported";
+            try self.emitter.emitImport(name, import.path);
+        }
+        
+        fn visitLabelDecl(self: *ASTVisitor, label: anytype) !void {
+            // Labels for control flow
+            try self.emitter.writeIndent();
+            try self.emitter.write(label.name);
+            try self.emitter.write(": ");
+            _ = label;
+            // TODO: Handle label body
+        }
+        
+        fn visitEventTap(self: *ASTVisitor, tap: anytype) !void {
+            // Event taps for aspect-oriented programming
+            try self.emitter.emitComment("Event tap");
+            _ = tap;
+            // TODO: Implement tap generation
+        }
+        
+        fn visitBranch(self: *ASTVisitor, branch: anytype) !void {
+            try self.emitter.writeIndent();
+            try self.emitter.write(branch.name);
+            try self.emitter.write(": struct {");
+            
+            if (branch.payload.fields.len > 0) {
+                try self.emitter.write("\n");
+                self.emitter.indent();
+                for (branch.payload.fields) |field| {
+                    try self.emitter.emitField(field.name, field.type);
+                }
+                self.emitter.dedent();
+                try self.emitter.writeIndent();
+            }
+            
+            try self.emitter.writeLine("},");
+        }
+        
+        fn hasUserMain(self: *ASTVisitor, ast: *const ProgramAST) bool {
+            _ = self;
+            for (ast.items) |item| {
+                switch (item) {
+                    .host_line => |line| {
+                        if (std.mem.indexOf(u8, line.content, "pub fn main") != null) {
+                            return true;
+                        }
+                    },
+                    else => {},
+                }
+            }
+            return false;
+        }
+        
+        fn hasKoruFeatures(self: *ASTVisitor, ast: *const ProgramAST) bool {
+            _ = self;
+            for (ast.items) |item| {
+                switch (item) {
+                    .event_decl, .flow => return true,
+                    else => {},
+                }
+            }
+            return false;
+        }
+        
+        fn findProcForEvent(self: *ASTVisitor, path: []const []const u8) ?*const ProcDecl {
+            // Search the AST for a proc matching this event's path
+            for (self.ast.items) |item| {
+                switch (item) {
+                    .proc_decl => |proc| {
+                        if (proc.path.len == path.len) {
+                            var matches = true;
+                            for (path, 0..) |segment, i| {
+                                if (!std.mem.eql(u8, segment, proc.path[i])) {
+                                    matches = false;
+                                    break;
+                                }
+                            }
+                            if (matches) {
+                                return &proc;
+                            }
+                        }
+                    },
+                    else => {},
+                }
+            }
+            return null;
+        }
+        
+        fn emitProcBody(self: *ASTVisitor, body: []const u8) !void {
+            // Emit the proc body with proper indentation
+            // Handle both single-line and multi-line bodies
+            if (std.mem.indexOf(u8, body, "\n") == null) {
+                // Single line body
+                try self.emitter.writeLine(body);
+            } else {
+                // Multi-line body - preserve relative indentation
+                var lines = std.mem.split(u8, body, "\n");
+                while (lines.next()) |line| {
+                    if (line.len > 0) {
+                        try self.emitter.writeLine(line);
+                    }
+                }
+            }
+        }
+        
+        fn emitDefaultMain(self: *ASTVisitor) !void {
+            try self.emitter.writeLine("");
+            try self.emitter.writeLine("pub fn main() void {");
+            try self.emitter.writeLine("}");
+        }
+    };
+    
+    return ASTVisitor;
+}
+
+// ============================================================
+// NEW COMPILER.EMIT.ZIG - Simple coordinator
+// ============================================================
+
+~event compiler.emit.zig.visitor {}
+| emitted { code: []const u8 }
+
+~proc compiler.emit.zig.visitor {
+    // Get a buffer
+    var buffer: [64 * 1024]u8 = undefined;
+    
+    // Create emitter
+    var emitter = CodeEmitter.init(&buffer);
+    
+    // Create visitor (would need the AST type)
+    const ASTVisitor = createASTVisitor();
+    var visitor = ASTVisitor.init(&emitter, &ast);
+    
+    // Visit the AST and generate code
+    visitor.visit() catch |err| {
+        // Handle error
+        _ = err;
+        return .{ .emitted = .{ .code = "" } };
+    };
+    
+    // Return generated code
+    const output = emitter.getOutput();
+    return .{ .emitted = .{ .code = output } };
+}

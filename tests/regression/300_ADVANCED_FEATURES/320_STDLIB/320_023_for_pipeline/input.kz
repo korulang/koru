@@ -1,0 +1,25 @@
+// Test: ~for inside a continuation pipeline
+//
+// This tests the pipeline case where ~for is used INSIDE a continuation:
+//   | result |> for(0..3) | each i |> ... | done |> ...
+//
+// This is different from top-level ~for which is the flow's main invocation.
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+// Simple event that returns a count
+~event get_count {}
+| result { n: u32 }
+
+~proc get_count {
+    return .{ .result = .{ .n = 3 } };
+}
+
+// Main flow: pipeline ~for
+~get_count()
+| result r |> for(0..r.n)
+    | each i |> std.io:println(text: "iteration")
+    | done |> std.io:println(text: "done")

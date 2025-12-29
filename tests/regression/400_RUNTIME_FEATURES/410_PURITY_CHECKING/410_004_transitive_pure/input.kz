@@ -1,0 +1,39 @@
+// Test transitive purity through flows
+// Pure procs compose through flows, creating transitively pure pipelines
+// The optimizer can see the ENTIRE call chain!
+
+const std = @import("std");
+
+// Base pure operation
+~event multiply { x: i32, factor: i32 }
+| done { result: i32 }
+
+~[pure]proc multiply {
+    return .{ .done = .{ .result = x * factor } };
+}
+
+// Pure transformation that adds two numbers
+~event add { x: i32, y: i32 }
+| done { result: i32 }
+
+~[pure]proc add {
+    return .{ .done = .{ .result = x + y } };
+}
+
+// Print for verification
+~event print_number { n: i32 }
+| done {}
+
+~proc print_number {
+    std.debug.print("Result: {}\n", .{n});
+    return .{ .done = .{} };
+}
+
+// Transitive purity through FLOWS
+// Flow: add -> multiply -> print
+// Compiler sees: pure -> pure -> impure
+// First two steps can be optimized together!
+~add(x: 10, y: 5)
+| done d1 |> multiply(x: d1.result, factor: 2)
+    | done d2 |> print_number(n: d2.result)
+        | done |> _

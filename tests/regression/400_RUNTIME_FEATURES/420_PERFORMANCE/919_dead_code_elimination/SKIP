@@ -1,0 +1,6 @@
+Phase 4: Dead code elimination not yet implemented
+
+This test requires the compiler to analyze which branches are actually used
+by flows and eliminate code paths that lead only to unused optional branches.
+
+See tests/regression/918_optional_branches/IMPLEMENTATION_ROADMAP.md Phase 4

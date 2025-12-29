@@ -1,0 +1,45 @@
+// Test 320_011: ~for with nested continuations (chained events)
+// Tests that ~for correctly handles | each |> event1() | result |> event2() patterns
+//
+// SEMANTICS:
+// - | each item |> step1() invokes step1 for each element
+// - | result r |> step2() handles step1's result and chains to step2
+// - | done |> runs ONCE after iteration completes
+//
+// This tests the continuation_codegen helper generating proper switch statements.
+
+const std = @import("std");
+
+~import "$std/control"
+
+// Event 1: double a number
+~event double { x: i32 }
+| result { y: i32 }
+
+~proc double {
+    return .{ .result = .{ .y = x * 2 } };
+}
+
+// Event 2: print a number
+~event print_num { y: i32 }
+
+~proc print_num {
+    std.debug.print("{}\n", .{y});
+}
+
+// Event to finalize
+~event finalize {}
+
+~proc finalize {
+    std.debug.print("done\n", .{});
+}
+
+// Test data
+const items = [_]i32{ 1, 2, 3 };
+
+// The for loop with chained events
+// Each item: double it, then print the result
+~for(&items)
+| each item |> double(x: item)
+    | result r |> print_num(y: r.y)
+| done |> finalize()

@@ -1,0 +1,53 @@
+// Test: for loop using continuation binding
+// When we have | result data |> for(data), the binding must be captured
+//
+// BUG: Currently generates:
+//   .result => |_| { for (data) ... }  // data is undefined!
+//
+// EXPECTED:
+//   .result => |data| { for (data) ... }  // data is captured
+
+~import "$std/control"
+
+const std = @import("std");
+
+// Event that returns an array OR fails (multiple branches = switch needed)
+const my_items = [_]i32{ 1, 2, 3 };
+
+~event get_items {}
+| items *const [3]i32
+| failed []const u8
+
+~proc get_items {
+    return .{ .items = &my_items };
+}
+
+// Process each item
+var sum: i32 = 0;
+
+~event add_item { value: i32 }
+| done {}
+
+~proc add_item {
+    sum += value;
+    std.debug.print("Added {}, sum = {}\n", .{value, sum});
+    return .{ .done = .{} };
+}
+
+// Show result
+~event show_sum {}
+| done {}
+
+~proc show_sum {
+    std.debug.print("Final sum: {}\n", .{sum});
+    return .{ .done = .{} };
+}
+
+// Main flow: the binding 'arr' must be captured in the switch arm
+~get_items()
+| items arr |> for(arr)
+    | each x |> add_item(value: x)
+        | done |> _
+    | done |> show_sum()
+        | done |> _
+| failed err |> _

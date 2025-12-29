@@ -1,0 +1,43 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 503: Multiple events with mixed branch patterns
+// Tests shape checker with combination of void and branching events
+// Demonstrates: Complex flows with mixed event types
+
+~import "$std/io"
+
+// Event with single output branch
+~event compute { x: i32 }
+| done { value: i32 }
+
+~proc compute {
+    return .{ .done = .{ .value = x * 2 } };
+}
+
+// Event with two branches
+~event validate { n: i32 }
+| valid { }
+| invalid { }
+
+~proc validate {
+    if (n > 0) {
+        return .{ .valid = .{} };
+    }
+    return .{ .invalid = .{} };
+}
+
+// Mixed flow: void events, single-branch events, and multi-branch events
+~std.io:println(text: "Starting computation")
+
+~compute(x: 5)
+| done d |> validate(n: d.value)
+    | valid |> std.io:println(text: "Valid result")
+    | invalid |> std.io:println(text: "Invalid result")
+
+~compute(x: -3)
+| done d |> validate(n: d.value)
+    | valid |> std.io:println(text: "Valid result")
+    | invalid |> std.io:println(text: "Invalid result")
+
+~std.io:println(text: "Done")

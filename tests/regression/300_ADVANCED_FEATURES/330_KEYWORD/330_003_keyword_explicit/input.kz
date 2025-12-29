@@ -1,0 +1,7 @@
+// Test: Explicit qualification bypasses keyword system
+// Even with keyword collision, explicit ~lib_a:process works
+~import "$lib_a"
+~import "$lib_b"
+
+// Using explicit qualification - no ambiguity!
+~lib_a:process()

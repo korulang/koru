@@ -1,0 +1,34 @@
+// Test 827: Namespace handling in nested flows
+//
+// BUG: When events have namespaces (foo.bar), nested flow invocations
+// generate inconsistent code - sometimes with namespace prefix, sometimes without.
+//
+// This causes "use of undeclared identifier" errors in generated code.
+
+const std = @import("std");
+
+// Events with namespace
+~event net.connect { host: []const u8 }
+| connected { id: u32 }
+| failed { msg: []const u8 }
+
+~event net.send { id: u32, data: []const u8 }
+| sent { bytes: usize }
+| failed { msg: []const u8 }
+
+~proc net.connect {
+    std.debug.print("Connecting to {s}\n", .{e.host});
+    return .{ .@"connected" = .{ .id = 42 } };
+}
+
+~proc net.send {
+    std.debug.print("Sending {} bytes on connection {}\n", .{data.len, id});
+    return .{ .@"sent" = .{ .bytes = e.data.len } };
+}
+
+// Nested flow with namespaced events - this should trigger the bug
+~net.connect(host: "localhost")
+| connected c |> net.send(id: c.id, data: "hello")
+    | sent s |> _
+    | failed f |> _
+| failed f |> _

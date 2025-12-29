@@ -1,0 +1,5 @@
+// Test: Using [keyword] event without module qualification
+~import "$lib"
+
+// Using ~greet instead of ~lib:greet because lib defines [keyword]pub event greet
+~greet(name: "World")

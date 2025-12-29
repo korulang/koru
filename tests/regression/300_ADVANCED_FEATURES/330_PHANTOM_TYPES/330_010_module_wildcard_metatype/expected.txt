@@ -1,0 +1,4 @@
+compute(42)
+[TAP] Audit: input:compute.result
+format(84)
+[TAP] Audit: input:format.formatted

@@ -1,0 +1,3 @@
+Template-based optimized code generation not yet implemented.
+Requires: std.math:matrix event, Liquid templates for type generation.
+This is the "insane generics" vision - templates emit optimized Zig source.

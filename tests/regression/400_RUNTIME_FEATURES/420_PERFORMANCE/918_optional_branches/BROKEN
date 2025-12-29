@@ -1,0 +1,5 @@
+This test is broken with invalid Koru.
+
+It uses inline Zig in flows, which is not allowed.
+
+It also uses bad binding syntax in the continuation branches.

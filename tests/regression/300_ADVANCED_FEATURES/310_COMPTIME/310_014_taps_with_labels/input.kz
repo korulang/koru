@@ -1,0 +1,41 @@
+// Test 608: Event Taps with Label Jumps
+// Validates that taps fire when continuations use label jumps (@label)
+//
+// BUG: Tap function __tap0 is generated but never called in label loops
+// Expected: __tap0(v) should be invoked after .next branch binding
+// Actual: Tap invocation is missing, so no output is produced
+
+const std = @import("std");
+
+~event counter { n: i32 }
+| next { value: i32 }
+| done { final: i32 }
+
+~proc counter {
+    if (n < 3) {
+        return .{ .next = .{ .value = n + 1 } };
+    }
+    return .{ .done = .{ .final = n } };
+}
+
+~event log_iteration { value: i32 }
+
+~proc log_iteration {
+    std.debug.print("Iteration: {}\n", .{value});
+}
+
+// Tap that should fire on every counter -> * transition with 'next' branch
+~counter -> * | next v |> log_iteration(value: v.value)
+
+// Recursive label using counter - tap should fire on each loop iteration
+~event start {}
+| ready {}
+
+~proc start {
+    return .{ .ready = .{} };
+}
+
+~start()
+| ready |> #loop counter(n: 1)
+    | next v |> @loop(n: v.value)
+    | done |> _

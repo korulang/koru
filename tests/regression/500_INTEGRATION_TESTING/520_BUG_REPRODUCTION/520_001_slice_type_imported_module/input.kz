@@ -1,0 +1,31 @@
+// ============================================================================
+// BUG 990: Slice Types from Imported Modules Generate Invalid Zig
+// ============================================================================
+//
+// Issue: When a Koru event returns a slice of a type from an imported module,
+// the generated Zig code has incorrect syntax.
+//
+// Expected Zig:  handles: []const koru_mylib.Handle
+// Actual Zig:    handles: koru_[]const mylib.Handle    ❌ INVALID!
+//
+// This affects any event that returns/accepts slices of imported types.
+//
+// Discovered while building $std/threading library (test 2006)
+// ============================================================================
+
+const std = @import("std");
+~import $std/threading
+
+// Minimal reproduction: Event that returns slice of imported type
+~event getHandles {}
+| got { handles: []const threading:WorkerHandle }
+
+~proc getHandles {
+    // Create empty slice just to test codegen
+    const handles = std.heap.page_allocator.alloc(threading:WorkerHandle, 0) catch unreachable;
+    return .{ .got = .{ .handles = handles } };
+}
+
+// Try to use it
+~getHandles()
+| got h |> _

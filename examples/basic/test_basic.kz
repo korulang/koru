@@ -1,0 +1,9 @@
+~event hello { name: []const u8 }
+| greeting { message: []const u8 }
+
+~proc hello {
+    const std = @import("std");
+    var buf: [256]u8 = undefined;
+    const msg = try std.fmt.bufPrint(&buf, "Hello, {s}!", .{name});
+    return .{ .greeting = .{ .message = msg } };
+}

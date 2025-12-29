@@ -1,0 +1,103 @@
+// Koru Conditional Taps
+// Tests: when clauses compile to direct conditionals, no dispatch overhead
+//
+// Scenario: 10M events with values 0-99
+// 10 taps, each with a `when` clause for its range (0-9, 10-19, etc.)
+// Average: only 1 tap's when clause matches per event
+//
+// Key difference from callbacks:
+// - Callbacks: Dispatch ALL handlers, each checks condition internally
+// - Taps: Conditions fused at compile time, just 10 branch checks
+
+const std = @import("std");
+
+const MESSAGES: u64 = 10_000_000;
+
+// Accumulators for each range
+var sum0: u64 = 0;
+var sum1: u64 = 0;
+var sum2: u64 = 0;
+var sum3: u64 = 0;
+var sum4: u64 = 0;
+var sum5: u64 = 0;
+var sum6: u64 = 0;
+var sum7: u64 = 0;
+var sum8: u64 = 0;
+var sum9: u64 = 0;
+
+// Producer event
+~event count { i: u64 }
+| next { value: u64 }
+| done {}
+
+~proc count {
+    if (i >= MESSAGES) {
+        return .{ .done = .{} };
+    }
+    return .{ .next = .{ .value = i } };
+}
+
+// Accumulator events for each range
+~event accumulate0 { value: u64 }
+~proc accumulate0 { sum0 += value; }
+
+~event accumulate1 { value: u64 }
+~proc accumulate1 { sum1 += value; }
+
+~event accumulate2 { value: u64 }
+~proc accumulate2 { sum2 += value; }
+
+~event accumulate3 { value: u64 }
+~proc accumulate3 { sum3 += value; }
+
+~event accumulate4 { value: u64 }
+~proc accumulate4 { sum4 += value; }
+
+~event accumulate5 { value: u64 }
+~proc accumulate5 { sum5 += value; }
+
+~event accumulate6 { value: u64 }
+~proc accumulate6 { sum6 += value; }
+
+~event accumulate7 { value: u64 }
+~proc accumulate7 { sum7 += value; }
+
+~event accumulate8 { value: u64 }
+~proc accumulate8 { sum8 += value; }
+
+~event accumulate9 { value: u64 }
+~proc accumulate9 { sum9 += value; }
+
+~event validate {}
+~proc validate {
+    const total = sum0 + sum1 + sum2 + sum3 + sum4 + sum5 + sum6 + sum7 + sum8 + sum9;
+    const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
+    if (total == expected) {
+        std.debug.print("Koru (10 conditional taps): Validated {} messages (checksum: {})\n", .{ MESSAGES, total });
+    } else {
+        std.debug.print("Koru (10 conditional taps): CHECKSUM MISMATCH! got {}, expected {}\n", .{ total, expected });
+    }
+}
+
+~event start {} | ready {}
+~proc start { return .{ .ready = .{} }; }
+
+// 10 CONDITIONAL TAPS with `when` clauses
+// These compile to direct branch checks, not callback dispatch!
+~count -> * | next v when (v.value % 100 < 10) |> accumulate0(value: v.value)
+~count -> * | next v when (v.value % 100 >= 10 and v.value % 100 < 20) |> accumulate1(value: v.value)
+~count -> * | next v when (v.value % 100 >= 20 and v.value % 100 < 30) |> accumulate2(value: v.value)
+~count -> * | next v when (v.value % 100 >= 30 and v.value % 100 < 40) |> accumulate3(value: v.value)
+~count -> * | next v when (v.value % 100 >= 40 and v.value % 100 < 50) |> accumulate4(value: v.value)
+~count -> * | next v when (v.value % 100 >= 50 and v.value % 100 < 60) |> accumulate5(value: v.value)
+~count -> * | next v when (v.value % 100 >= 60 and v.value % 100 < 70) |> accumulate6(value: v.value)
+~count -> * | next v when (v.value % 100 >= 70 and v.value % 100 < 80) |> accumulate7(value: v.value)
+~count -> * | next v when (v.value % 100 >= 80 and v.value % 100 < 90) |> accumulate8(value: v.value)
+~count -> * | next v when (v.value % 100 >= 90) |> accumulate9(value: v.value)
+
+~count -> * | done |> validate()
+
+~start()
+| ready |> #loop count(i: 0)
+    | next n |> @loop(i: n.value + 1)
+    | done |> _

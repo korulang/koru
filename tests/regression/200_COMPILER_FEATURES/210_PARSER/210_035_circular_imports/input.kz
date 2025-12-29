@@ -1,0 +1,20 @@
+// Test: Circular Imports
+//
+// Tests that circular/mutual imports don't crash the compiler.
+// A imports B, B imports A - this should work without infinite loop.
+
+const std = @import("std");
+~import "$std/io"
+
+~import "$app/module_b"
+
+~pub event from_a {}
+| done { msg: []const u8 }
+
+~proc from_a {
+    std.debug.print("Event from module A\n", .{});
+    return .{ .done = .{ .msg = "hello from A" } };
+}
+
+~from_a()
+| done d |> std.io:println(text: d.msg)

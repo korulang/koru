@@ -1,0 +1,17 @@
+// Logger with universal wildcard + metatype tap
+
+const std = @import("std");
+
+~pub event log { source: []const u8, branch: []const u8 }
+| done {}
+
+~proc log {
+    std.debug.print("[TAP] Profile: {s}.{s}\n", .{source, branch});
+    return .{ .done = .{} };
+}
+
+// VALID: Universal wildcard (*:*) + metatype (Profile)
+// Profile metatype works on ANY event and ANY branch
+~*:* -> *
+| Profile p |> log(source: p.source, branch: p.branch)
+    | done |> _

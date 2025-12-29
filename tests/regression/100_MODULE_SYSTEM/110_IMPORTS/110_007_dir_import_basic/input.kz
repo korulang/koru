@@ -1,0 +1,21 @@
+// Test 833: Basic directory import
+//
+// Tests importing a directory containing multiple .kz files
+// Directory import creates two-level namespace: package.module:event()
+
+const std = @import("std");
+
+// Import directory 'lib/raylib' containing graphics.kz and audio.kz
+// With canonical naming, events are fully qualified:
+// - app.lib.raylib.graphics:render()
+// - app.lib.raylib.graphics:clear()
+// - app.lib.raylib.audio:play()
+// - app.lib.raylib.audio:stop()
+~import "$app/lib/raylib"
+
+// Test using directory imports with full canonical paths
+~app.lib.raylib.graphics:render(width: 1920, height: 1080)
+| drawn d |> app.lib.raylib.graphics:clear(color: 0xFF0000)
+    | cleared |> app.lib.raylib.audio:play(sound_id: 42)
+        | playing |> app.lib.raylib.audio:stop()
+            | stopped |> _

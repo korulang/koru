@@ -1,0 +1,12 @@
+// Parse module
+
+const std = @import("std");
+
+~event lines { text: []const u8 }
+| parsed { lines: [][]const u8 }
+
+~proc lines {
+    // Stub implementation for test
+    const empty: [][]const u8 = &.{};
+    return .{ .@"parsed" = .{ .lines = empty } };
+}

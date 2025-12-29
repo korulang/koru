@@ -1,0 +1,61 @@
+// Test immediate return syntax for subflows
+// Immediate returns are useful for constants, stubs, mocks, and prototyping
+const std = @import("std");
+
+// Define an event that we want to mock
+~event user.fetch { id: i32 }
+| found { name: []const u8, email: []const u8 }
+| not_found {}
+
+// Traditional implementation with a flow
+~event user.fetchComplex { id: i32 }
+| found { name: []const u8, email: []const u8 }
+| not_found {}
+
+// Declare the db.lookup event
+~event db.lookup { id: i32 }
+| success { name: []const u8, email: []const u8 }
+| failure {}
+
+~user.fetchComplex = db.lookup(id: id)
+| success s |> found { name: s.name, email: s.email }
+| failure |> not_found {}
+
+// IMMEDIATE RETURN SYNTAX - Just return a branch directly!
+// Perfect for constants, stubs, testing, or any fixed response
+~user.fetch = found { name: "Test User", email: "test@example.com" }
+
+// Test an event with parameters that returns fixed values
+~event calc.add { a: i32, b: i32 }
+| result { sum: i32 }
+
+// Constant implementation that always returns 42
+~calc.add = result { sum: 42 }
+
+// Test empty branch
+~event status.check {}
+| ok {}
+| error { code: i32 }
+
+// Simple stub that always returns ok
+~status.check = ok {}
+
+// Declare print events for output
+~event io.print { msg: []const u8 }
+
+~proc io.print {
+    std.debug.print("{s}\n", .{e.msg});
+}
+
+// Use the events with immediate returns - only one main flow allowed
+~user.fetch(id: 123)
+| found u |> io.print(msg: "Found user") |> _
+| not_found |> io.print(msg: "User not found") |> _
+
+// Proc for db.lookup (for the complex version)
+~proc db.lookup {
+    if (e.id == 1) {
+        return .{ .success = .{ .name = "Real User", .email = "real@example.com" } };
+    }
+    return .{ .failure = .{} };
+}

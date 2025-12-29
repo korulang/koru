@@ -1,0 +1,383 @@
+// Koru Standard Library: Event Taps
+// ==================================
+//
+// LESSON IN METAPROGRAMMING: This file implements event observation as a
+// compile-time AST transformation. Taps are not a language primitive - they're
+// built using the same transform system available to any Koru library.
+//
+// THE TRANSFORMATION:
+//   Before: event() | branch b |> next_step(b.data)
+//   After:  event() | branch b |> tap_call(b) |> next_step(b.data)
+//
+// That's it. A void call is inserted at the front of the continuation chain.
+// The binding `b` remains in scope. The optimizer sees no difference between
+// tap calls and regular calls - they're just steps in the flow.
+//
+// USAGE:
+//   ~import "$std/taps"
+//
+//   // Concrete source + branch (has payload access)
+//   ~tap(source: myEvent, destination: *)
+//   | result r |> log(data: r.value)
+//
+//   // Metatype branch (required for wildcard sources)
+//   ~tap(source: *, destination: *)
+//   | Profile p |> profiler(p)
+
+~[comptime]
+
+const std = @import("std");
+
+// ============================================================================
+// TAP TRANSFORM
+// ============================================================================
+// When the compiler encounters ~tap(...), this transform:
+// 1. Parses the source/destination patterns
+// 2. Walks the program AST finding matching transitions
+// 3. Wraps matching continuations with the tap's void call
+// 4. Removes the tap declaration (it compiled away)
+
+~[keyword|comptime|transform]pub event tap {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc tap {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // ========================================================================
+    // STEP 1: Extract tap configuration from the declaration
+    // ========================================================================
+
+    // Parse expr to extract source and destination
+    // Format: "source -> destination" (e.g., "hello -> *", "* -> *")
+    var source: []const u8 = "*";
+    var destination: []const u8 = "*";
+
+    if (std.mem.indexOf(u8, expr, "->")) |arrow_pos| {
+        source = std.mem.trim(u8, expr[0..arrow_pos], " \t");
+        destination = std.mem.trim(u8, expr[arrow_pos + 2..], " \t");
+    } else {
+        // No arrow, treat entire expr as source, destination = *
+        source = std.mem.trim(u8, expr, " \t");
+    }
+
+    const tap_flow = if (item.* == .flow) &item.flow
+        else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
+            &item.subflow_impl.body.flow
+        else return .{ .transformed = .{ .program = program } };
+
+    if (tap_flow.continuations.len == 0) {
+        std.debug.print("[tap] ERROR: No continuation branch in tap declaration\n", .{});
+        return .{ .transformed = .{ .program = program } };
+    }
+
+    // The tap's continuation defines: which branch to match, what call to insert
+    const tap_cont = &tap_flow.continuations[0];
+    const match_branch = tap_cont.branch;
+    const tap_step = tap_cont.node orelse {
+        std.debug.print("[tap] ERROR: No node in tap continuation\n", .{});
+        return .{ .transformed = .{ .program = program } };
+    };
+
+    // Pattern matching config
+    const source_is_wildcard = std.mem.eql(u8, source, "*");
+    const dest_is_wildcard = std.mem.eql(u8, destination, "*");
+    _ = dest_is_wildcard; // TODO: use for destination matching
+    const is_metatype = std.mem.eql(u8, match_branch, "Transition") or
+                        std.mem.eql(u8, match_branch, "Profile") or
+                        std.mem.eql(u8, match_branch, "Audit");
+
+    std.debug.print("[tap] source='{s}' dest='{s}' branch='{s}' metatype={}\n",
+        .{ source, destination, match_branch, is_metatype });
+
+    // ========================================================================
+    // STEP 2: Walk program, transform matching flows
+    // ========================================================================
+
+    const Helper = struct {
+        // Check if an event path matches a pattern
+        fn pathMatches(pattern: []const u8, is_wildcard: bool, path: *const ast.DottedPath, alloc: std.mem.Allocator) bool {
+            if (is_wildcard) return true;
+
+            // Build path string for comparison
+            var len: usize = 0;
+            for (path.segments) |seg| len += seg.len + 1;
+            if (len > 0) len -= 1;
+
+            const path_str = alloc.alloc(u8, len) catch return false;
+            defer alloc.free(path_str);
+
+            var pos: usize = 0;
+            for (path.segments, 0..) |seg, i| {
+                if (i > 0) { path_str[pos] = '.'; pos += 1; }
+                @memcpy(path_str[pos..pos+seg.len], seg);
+                pos += seg.len;
+            }
+
+            return std.mem.eql(u8, pattern, path_str);
+        }
+
+        // Splice original flow into tap terminal points
+        fn spliceContinuations(
+            alloc: std.mem.Allocator,
+            tap_conts: []const ast.Continuation,
+            original_step: ?ast.Step,
+            original_conts: []const ast.Continuation,
+        ) ![]ast.Continuation {
+            var result = try alloc.alloc(ast.Continuation, tap_conts.len);
+            for (tap_conts, 0..) |*tc, i| {
+                var new_tc = tc.*;
+                // Terminal point if node is terminal (|> _) or null
+                const is_pass_through = if (tc.node) |s| s == .terminal else true;
+
+                if (is_pass_through) {
+                    new_tc.node = original_step;
+                    new_tc.continuations = original_conts;
+                } else if (tc.continuations.len > 0) {
+                    new_tc.continuations = try spliceContinuations(alloc, tc.continuations, original_step, original_conts);
+                }
+                result[i] = new_tc;
+            }
+            return result;
+        }
+
+        // Wrap a continuation with a tap call
+        // Original: { branch, binding, step: X, continuations: [...] }
+        // Case A (Void Tap): | branch b |> TAP | "" |> X | [...]
+        // Case B (Spliced):  | branch b |> TAP | tap_br |> X | [...]
+        fn wrapContinuation(
+            alloc: std.mem.Allocator,
+            original: *const ast.Continuation,
+            tap_stp: ast.Step,
+            tap_conts: []const ast.Continuation,
+        ) !ast.Continuation {
+            var final_conts: []ast.Continuation = undefined;
+
+            if (tap_conts.len > 0) {
+                // Case B: Splice original flow into tap's terminal points
+                final_conts = try spliceContinuations(alloc, tap_conts, original.node, original.continuations);
+            } else {
+                // Case A: Simple void tap, resume original flow on void branch ""
+                const inner_cont = try alloc.create(ast.Continuation);
+                inner_cont.* = ast.Continuation{
+                    .branch = "",           // Resume on void branch for void taps
+                    .binding = null,
+                    .binding_type = .branch_payload,
+                    .node = original.node,
+                    .continuations = original.continuations,
+                    .indent = original.indent,
+                    .condition = null,
+                    .condition_expr = null,
+                };
+                final_conts = try alloc.alloc(ast.Continuation, 1);
+                final_conts[0] = inner_cont.*;
+            }
+
+            // Return wrapped continuation
+            return ast.Continuation{
+                .branch = original.branch,
+                .binding = original.binding,
+                .binding_type = original.binding_type,
+                .node = tap_stp,
+                .continuations = final_conts,
+                .indent = original.indent,
+                .condition = original.condition,
+                .condition_expr = original.condition_expr,
+            };
+        }
+
+        fn transformContinuations(
+            alloc: std.mem.Allocator,
+            continuations: []const ast.Continuation,
+            match_br: []const u8,
+            is_meta: bool,
+            tap_stp: ast.Step,
+            tap_nested_conts: []const ast.Continuation,
+        ) !struct { conts: []ast.Continuation, modified: bool } {
+            var new_conts = try alloc.alloc(ast.Continuation, continuations.len);
+            var any_modified = false;
+
+            for (continuations, 0..) |*cont, i| {
+                const branch_matches = is_meta or std.mem.eql(u8, cont.branch, match_br);
+
+                if (branch_matches and cont.node != null) {
+                    // Match! Wrap this continuation
+                    new_conts[i] = try wrapContinuation(alloc, cont, tap_stp, tap_nested_conts);
+                    any_modified = true;
+                    std.debug.print("[tap] Wrapped continuation at branch '{s}'\n", .{cont.branch});
+                } else {
+                    // No match, but recurse into nested continuations
+                    const nested = try transformContinuations(alloc, cont.continuations, match_br, is_meta, tap_stp, tap_nested_conts);
+                    new_conts[i] = cont.*;
+                    new_conts[i].continuations = nested.conts;
+                    if (nested.modified) any_modified = true;
+                }
+            }
+
+            return .{ .conts = new_conts, .modified = any_modified };
+        }
+
+        fn transformNestedInvocations(
+            alloc: std.mem.Allocator,
+            continuations: []const ast.Continuation,
+            source_pattern: []const u8,
+            source_wildcard: bool,
+            match_br: []const u8,
+            is_meta: bool,
+            tap_stp: ast.Step,
+            tap_nested_conts: []const ast.Continuation,
+        ) !struct { conts: []ast.Continuation, modified: bool } {
+            var new_conts = try alloc.alloc(ast.Continuation, continuations.len);
+            var any_modified = false;
+
+            for (continuations, 0..) |*cont, i| {
+                var this_cont = cont.*;
+                var matched_here = false;
+
+                // Check if this continuation's node is an invocation matching source
+                if (cont.node) |step| {
+                    if (step == .invocation) {
+                        // Skip invocations inserted by a tap (avoid infinite recursion)
+                        if (!step.invocation.inserted_by_tap) {
+                            if (pathMatches(source_pattern, source_wildcard, &step.invocation.path, alloc)) {
+                                // Found a nested invocation matching source!
+                                // Transform its continuations (what happens after it returns)
+                                const nested_result = try transformContinuations(
+                                    alloc, cont.continuations, match_br, is_meta, tap_stp, tap_nested_conts
+                                );
+                                this_cont.continuations = nested_result.conts;
+                                if (nested_result.modified) {
+                                    any_modified = true;
+                                    matched_here = true;
+                                    std.debug.print("[tap] Wrapped NESTED invocation '{s}'\n", .{source_pattern});
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Recurse into nested continuations to find deeper invocations
+                // But use ORIGINAL continuations if we matched here (don't recurse into our own modifications)
+                const conts_to_recurse = if (matched_here) cont.continuations else this_cont.continuations;
+                const deeper = try transformNestedInvocations(
+                    alloc, conts_to_recurse, source_pattern, source_wildcard,
+                    match_br, is_meta, tap_stp, tap_nested_conts
+                );
+
+                // If we matched here, we need to splice deeper results into the wrapped structure
+                if (matched_here) {
+                    // The wrapped structure is: this_cont.continuations = [{ .branch="", .step=ORIGINAL, .continuations=NESTED }]
+                    // We need to update NESTED with deeper results
+                    if (this_cont.continuations.len > 0 and deeper.modified) {
+                        var new_inner = try alloc.alloc(ast.Continuation, 1);
+                        new_inner[0] = this_cont.continuations[0];
+                        new_inner[0].continuations = deeper.conts;
+                        this_cont.continuations = new_inner;
+                    }
+                } else {
+                    this_cont.continuations = deeper.conts;
+                }
+
+                if (deeper.modified) any_modified = true;
+
+                new_conts[i] = this_cont;
+            }
+
+            return .{ .conts = new_conts, .modified = any_modified };
+        }
+    };
+
+    // Build new program with transformed flows
+    var new_items = std.ArrayList(ast.Item).initCapacity(allocator, program.items.len) catch unreachable;
+    var any_tap_inserted = false;
+
+    const tap_nested_conts = tap_flow.continuations[0].continuations;
+
+    for (program.items) |*prog_item| {
+        // Skip the tap declaration itself (it compiles away)
+        if (prog_item == item) continue;
+
+        if (prog_item.* == .flow) {
+            const flow = &prog_item.flow;
+            var flow_modified = false;
+            var new_continuations = flow.continuations;
+
+            // CASE 1: Top-level flow matches source - transform its continuations
+            if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, allocator)) {
+                const result = Helper.transformContinuations(
+                    allocator, flow.continuations, match_branch, is_metatype, tap_step, tap_nested_conts
+                ) catch unreachable;
+
+                if (result.modified) {
+                    new_continuations = result.conts;
+                    flow_modified = true;
+                }
+            }
+
+            // CASE 2: Check for NESTED invocations matching source
+            const nested_result = Helper.transformNestedInvocations(
+                allocator, new_continuations, source, source_is_wildcard,
+                match_branch, is_metatype, tap_step, tap_nested_conts
+            ) catch unreachable;
+
+            if (nested_result.modified) {
+                new_continuations = nested_result.conts;
+                flow_modified = true;
+            }
+
+            if (flow_modified) {
+                // Create modified flow
+                const new_flow = ast.Flow{
+                    .invocation = flow.invocation,
+                    .continuations = new_continuations,
+                    .annotations = flow.annotations,
+                    .pre_label = flow.pre_label,
+                    .post_label = flow.post_label,
+                    .super_shape = flow.super_shape,
+                    .inline_body = flow.inline_body,
+                    .is_pure = flow.is_pure,
+                    .is_transitively_pure = flow.is_transitively_pure,
+                    .location = flow.location,
+                    .module = flow.module,
+                };
+                new_items.append(allocator, ast.Item{ .flow = new_flow }) catch unreachable;
+                any_tap_inserted = true;
+            } else {
+                new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
+            }
+        } else {
+            new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
+        }
+    }
+
+    // ========================================================================
+    // STEP 3: Return transformed program (tap declaration removed)
+    // ========================================================================
+
+    var new_annotations = allocator.alloc([]const u8, program.module_annotations.len) catch unreachable;
+    for (program.module_annotations, 0..) |ann, i| {
+        new_annotations[i] = allocator.dupe(u8, ann) catch unreachable;
+    }
+
+    const new_program = allocator.create(ast.Program) catch unreachable;
+    new_program.* = ast.Program{
+        .items = new_items.toOwnedSlice(allocator) catch unreachable,
+        .module_annotations = new_annotations,
+        .main_module_name = allocator.dupe(u8, program.main_module_name) catch unreachable,
+        .allocator = allocator,
+    };
+
+    if (any_tap_inserted) {
+        std.debug.print("[tap] Transform complete - tap calls inserted\n", .{});
+    } else {
+        std.debug.print("[tap] No matching transitions found\n", .{});
+    }
+
+    return .{ .transformed = .{ .program = new_program } };
+}

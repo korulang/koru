@@ -1,0 +1,15 @@
+// Graphics module for test_lib
+
+const std = @import("std");
+
+~pub event init {}
+
+~pub event render { frame: i32 }
+
+~proc init {
+    std.debug.print("Graphics initialized\n", .{});
+}
+
+~proc render {
+    std.debug.print("Rendering frame {d}\n", .{frame});
+}

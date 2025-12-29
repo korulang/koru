@@ -1,0 +1,19 @@
+const std = @import("std");
+const Data = struct { value: i32 };
+
+~event alloc {}
+| allocated { data: *Data[owned] }
+
+~proc alloc {
+    const allocator = std.heap.page_allocator;
+    const d = allocator.create(Data) catch unreachable;
+    d.* = Data{ .value = 42 };
+    return .{ .allocated = .{ .data = d } };
+}
+
+~event borrow { other: *Data[owned] }
+| borrowed { data: *Data[borrowed] }
+
+~proc borrow {
+    return .{ .borrowed = .{ .data = other } };
+}

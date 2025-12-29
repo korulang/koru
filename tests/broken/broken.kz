@@ -1,0 +1,21 @@
+// This file tests error detection - it intentionally has issues
+// Uncomment sections to see different error types
+
+~event test.foo { x: i32 }
+| ok { y: i32 }
+
+// TEST 1: Missing branch coverage (commented out to allow compilation)
+// ~test.foo (x: 42)
+// This would error - missing the "ok" branch
+
+// TEST 2: Unknown branch (commented out to allow compilation)  
+// ~test.foo (x: 42)
+// | missing |> log.error (msg: "branch doesn't exist")
+
+// TEST 3: Correct usage - this should compile
+~proc test.foo {
+    return .@"ok"(.{ .y = e.x * 2 });
+}
+
+~test.foo (x: 42)
+| ok result |> _  // Terminal marker to complete the flow

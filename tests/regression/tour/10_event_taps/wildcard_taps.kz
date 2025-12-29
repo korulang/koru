@@ -1,0 +1,125 @@
+// Tour 10: Wildcard Event Taps
+// Wildcards (*) allow observing multiple events with a single tap
+// NOTE: Event taps are parsed and type-checked but CODE GENERATION IS NOT YET IMPLEMENTED
+
+const std = @import("std");
+
+// Define a family of file events
+~event file.read { path: []const u8 }
+| ok { data: []const u8 }
+| error { reason: []const u8 }
+
+~event file.write { path: []const u8, data: []const u8 }  
+| ok { bytes_written: usize }
+| error { reason: []const u8 }
+
+~event file.delete { path: []const u8 }
+| ok {}
+| error { reason: []const u8 }
+
+// Database events
+~event database.query { sql: []const u8 }
+| rows { count: usize }
+| error { code: u32 }
+
+~event database.connect { host: []const u8 }
+| connected { session_id: u32 }
+| error { reason: []const u8 }
+
+// Monitoring events
+~event metrics.increment { metric: []const u8, tags: anytype }
+
+~event audit.log { operation: []const u8, details: anytype }
+
+// Simple implementations
+~proc file.read {
+    return .{ .ok = .{ .data = "content" } };
+}
+
+~proc file.write {
+    return .{ .ok = .{ .bytes_written = e.data.len } };
+}
+
+~proc file.delete {
+    return .{ .ok = .{} };
+}
+
+~proc database.query {
+    return .{ .rows = .{ .count = 42 } };
+}
+
+~proc database.connect {
+    return .{ .connected = .{ .session_id = 12345 } };
+}
+
+~proc metrics.increment {
+    std.debug.print("METRIC: {s} incremented\n", .{e.metric});
+    return .{};
+}
+
+~proc audit.log {
+    std.debug.print("AUDIT: {s}\n", .{e.operation});
+    return .{};
+}
+
+// WILDCARD SOURCE: Observe all events going to a specific destination
+// Any event that flows to metrics.increment will trigger this tap
+
+~* -> metrics.increment | error _ |> audit.log(
+    operation: "error_metric_recorded",
+    details: .{ .timestamp = std.time.milliTimestamp() }
+)
+
+// WILDCARD DESTINATION: Observe specific event going anywhere
+// All outputs from file events are observed
+
+~file.read -> * | error e |> metrics.increment(
+    metric: "file.read.errors",
+    tags: .{ .reason = e.reason }
+)
+
+~file.write -> * | error e |> metrics.increment(
+    metric: "file.write.errors", 
+    tags: .{ .reason = e.reason }
+)
+
+~file.delete -> * | error e |> metrics.increment(
+    metric: "file.delete.errors",
+    tags: .{ .reason = e.reason }
+)
+
+// PATTERN WILDCARDS: Observe all events matching a pattern
+// This would observe all file.* events if pattern matching was supported
+
+// ~file.* -> * | ok |> audit.log(
+//     operation: "file_operation_success",
+//     details: .{}
+// )
+
+// ~file.* -> * | error e |> audit.log(
+//     operation: "file_operation_error",
+//     details: .{ .reason = e.reason }
+// )
+
+// DOUBLE WILDCARD: Universal observer
+// Observe ALL event transitions in the system
+
+~* -> * | error _ |> metrics.increment(
+    metric: "global.errors",
+    tags: .{ .source = "unknown" }  // Would need transition metadata
+)
+
+// DATABASE WILDCARD: Observe all database operations
+~database.* -> * | _ |> audit.log(
+    operation: "database_access",
+    details: .{ .timestamp = std.time.milliTimestamp() }
+)
+
+// Example flows that would trigger various taps
+~file.read(path: "/data.txt")
+| ok o |> _
+| error e |> _  // Would trigger error tap
+
+~database.connect(host: "localhost")
+| connected c |> database.query(sql: "SELECT * FROM users")
+| error e |> _  // Would trigger database and global error taps

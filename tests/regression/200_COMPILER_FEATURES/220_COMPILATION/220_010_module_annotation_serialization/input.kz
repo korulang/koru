@@ -1,0 +1,20 @@
+// Test: Module annotations are correctly serialized to backend.zig
+//
+// Verifies that when modules are imported, their annotations
+// (like [comptime], [runtime], [comptime|runtime]) are preserved
+// in the serialized AST in backend.zig
+//
+// std.io has [comptime|runtime] → should have both in backend.zig
+// std.compiler has [comptime] → should have only "comptime" in backend.zig
+
+~import "$std/io"
+
+~event hello {}
+| done {}
+
+~proc hello {
+    return .{ .done = .{} };
+}
+
+~hello()
+| done |> _

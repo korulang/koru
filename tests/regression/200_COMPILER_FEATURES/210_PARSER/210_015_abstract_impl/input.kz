@@ -1,0 +1,67 @@
+// ============================================================================
+// Test 064: Abstract Events and Implementation
+// ============================================================================
+// Abstract events allow declaring event signatures that can be implemented
+// elsewhere in the program. This enables:
+// - Library interfaces with user-provided implementations
+// - Customizable coordination (e.g., compiler.coordinate)
+// - Dependency inversion without runtime overhead
+//
+// Key properties:
+// - ~abstract event declares the signature
+// - ~proc in same file provides optional default implementation
+// - ~impl elsewhere provides THE implementation (exactly one)
+// - Within ~impl, event name delegates to default
+// - Compile-time resolution, no runtime dispatch
+//
+// Design rationale:
+// - Removes special-case hack for compiler.coordinate
+// - Explicit and searchable (~impl is greppable)
+// - No inheritance hierarchies or virtual dispatch
+// - Single implementation enforced at compile time
+// - Delegation is explicit (not hidden like OOP super())
+// ============================================================================
+
+const std = @import("std");
+
+// Example 1: Abstract event WITH default implementation
+// The default can be called from within ~impl via delegation
+~abstract event coordinate { ctx: i32 }
+| finished { result: i32 }
+
+~proc coordinate {
+    std.debug.print("Default coordination: {}\n", .{ctx});
+    return .{ .finished = .{ .result = ctx } };
+}
+
+// Example 2: Abstract event WITHOUT default implementation
+// User MUST provide ~impl or compile error
+~abstract event process { data: i32 }
+| done { output: i32 }
+
+// Helper proc for Example 4
+~event double { value: i32 }
+| result { doubled: i32 }
+
+~proc double {
+    return .{ .result = .{ .doubled = value * 2 } };
+}
+
+// Example 3: Implementation that delegates to default and extends
+// The event name within ~impl refers to the default implementation
+~impl coordinate =
+    coordinate(ctx: 42)  // Delegates to default
+    | finished f |> .{ .finished = .{ .result = f.result + 1 } }
+
+// Example 4: Implementation that provides complete logic
+// No delegation to default (there isn't one for 'process')
+~impl process =
+    double(value: data)
+    | result r |> .{ .done = .{ .output = r.doubled } }
+
+// Use the implemented events
+~coordinate(ctx: 10)
+| finished |> _
+
+~process(data: 5)
+| done |> _

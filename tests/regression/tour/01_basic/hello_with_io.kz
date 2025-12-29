@@ -1,0 +1,10 @@
+// Tour 01: Hello World with I/O Import
+// This demonstrates the import system with the standard I/O library
+
+// Import the Koru standard I/O library
+~import "../../koru_std/io"
+
+// A simple flow that prints hello world
+~io.println(text: "Hello from the Koru Tour!")
+| printed |> _
+| failed |> _

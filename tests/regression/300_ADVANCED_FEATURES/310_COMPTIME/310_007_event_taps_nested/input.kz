@@ -1,0 +1,40 @@
+// Test 603b: Event Taps - Nested Flow Support
+//
+// Validates that event taps work even when events are called
+// from within nested continuations (not just top-level flows).
+//
+// This test proves taps work in ALL contexts:
+// - Top-level flows ✅ (test 603)
+// - Nested continuations ✅ (this test)
+
+const std = @import("std");
+
+~event helper {}
+| done {}
+
+~proc helper {
+    std.debug.print("Helper executed\n", .{});
+    return .{ .done = .{} };
+}
+
+~event log_tap {}
+
+~proc log_tap {
+    std.debug.print("TAP executed from nested context!\n", .{});
+}
+
+// Tap that observes helper
+~helper -> *
+| done |> log_tap()
+
+// Call helper from a NESTED context (inside a continuation)
+~event outer {}
+| done {}
+
+~proc outer {
+    return .{ .done = .{} };
+}
+
+~outer()
+| done |> helper()
+    | done |> _

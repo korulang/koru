@@ -1,0 +1,10 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 402: Import paths with ../ must be forbidden
+// Security: Prevent directory traversal attacks
+// Simplicity: Use explicit path aliases in koru.json instead
+
+~import "../koru_std/io"
+
+~io:println(text: "This should never compile!")

@@ -1,0 +1,10 @@
+DESIGN EXPLORATION - STATUS: UGLY / UNCERTAIN
+
+Auto-threading looked elegant but has problems:
+1. Parser needs to handle event-name without () - violates "dumb parser"
+2. Complex branch destructuring - which fields thread? All? Matching names?
+3. Optional params get auto-filled when you wanted to omit them
+4. Implicit magic vs "explicit for AI" principle
+
+Keeping as design artifact. May revisit, may abandon.
+Explicit threading is verbose but honest.

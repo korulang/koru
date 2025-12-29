@@ -1,0 +1,31 @@
+// TEST: kernel.init with array of bodies
+//
+// When source contains nested {} blocks, init creates an array.
+// Count is implied from the number of blocks.
+
+const std = @import("std");
+
+~import "$std/kernel"
+
+// Declare the shape
+~std.kernel:shape(Body) {
+    x: f64,
+    y: f64,
+    mass: f64,
+}
+
+// Initialize multiple bodies - array mode!
+~std.kernel:init(Body) {
+    { x: 0.0, y: 0.0, mass: 1.0 },
+    { x: 1.0, y: 0.0, mass: 0.5 },
+    { x: 2.0, y: 0.0, mass: 0.25 },
+}
+
+// Access the generated array
+pub fn main() void {
+    std.debug.print("bodies[0].x={d}, bodies[2].mass={d}, len={d}\n", .{
+        kernel_data[0].x,
+        kernel_data[2].mass,
+        kernel_data.len,
+    });
+}

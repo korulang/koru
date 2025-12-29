@@ -1,0 +1,33 @@
+// Test: ~if deeply nested in continuation hierarchy
+//
+// This tests the case where ~if is several levels deep in nested continuations.
+// Same structural challenge as 320_024_for_deeply_nested.
+//
+// The transform must search RECURSIVELY through nested continuations.
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+// Event chain to create deep nesting
+~event step1 {}
+| done {}
+
+~proc step1 {
+    return .{ .done = .{} };
+}
+
+~event step2 {}
+| result { value: i32 }
+
+~proc step2 {
+    return .{ .result = .{ .value = 42 } };
+}
+
+// Main flow: if is nested 2 levels deep
+~step1()
+| done |> step2()
+    | result r |> if(r.value > 10)
+        | then |> std.io:println(text: "greater")
+        | else |> std.io:println(text: "less")

@@ -1,0 +1,30 @@
+// Test 407: Imported module proc input unwrapping
+//
+// BUG: The compiler generates input field unwrapping for main module procs,
+// but NOT for imported module procs. This causes "undeclared identifier" errors.
+//
+// Main module proc body can use 'value' directly (unwrapping works)
+// Imported module proc body should also be able to use 'value' directly (currently broken)
+
+const std = @import("std");
+
+~import "$test/mylib"
+
+~event print_result { value: i32 }
+
+~proc print_result {
+    std.debug.print("Result: {d}\n", .{value});
+}
+
+~event print_sum { value: i32 }
+
+~proc print_sum {
+    std.debug.print("Sum: {d}\n", .{value});
+}
+
+// Call the imported library's event
+~mylib:double(value: 21)
+| result r |> print_result(value: r.doubled)
+
+~mylib:add(a: 10, b: 32)
+| sum s |> print_sum(value: s.total)

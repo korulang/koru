@@ -1,0 +1,16 @@
+// Test 614: CCP Flag Without Import
+// Verifies that --ccp flag alone doesn't inject CCP (need import too)
+// Demonstrates self-governing features: flag without declared intent = no action
+
+const std = @import("std");
+
+~event greet { name: []const u8 }
+| greeting { msg: []const u8 }
+
+~proc greet {
+    std.debug.print("Hello, {s}!\n", .{name});
+    return .{ .greeting = .{ .msg = "Hello!" } };
+}
+
+~greet(name: "NoImport")
+| greeting |> _

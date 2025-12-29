@@ -1,0 +1,31 @@
+// Test 310_025: Fully Qualified Pattern Matching
+// Validates that qualified patterns match specific modules
+// Tests: bare suffix wildcard (print* matches println)
+
+const std = @import("std");
+
+~import "$std/io"
+
+// Local event to transition to (so tap can fire)
+~event finish {}
+| done {}
+
+~proc finish {
+    std.debug.print("Local print\n", .{});
+    return .{ .done = .{} };
+}
+
+~event logger { source: []const u8 }
+
+~proc logger {
+    std.debug.print("Observed: {s}\n", .{source});
+}
+
+// Fully qualified - matches std.io:println via print* wildcard
+// Using Profile metatype for string-based source field
+~std.io:print* -> *
+| Profile p |> logger(source: p.source)
+
+// Flow: println (void) transitions to finish
+// Tap fires because println matches print* and transitions to finish
+~std.io:println(text: "From std.io") |> finish() | done |> _

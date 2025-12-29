@@ -1,0 +1,39 @@
+// Test shorthand parameter syntax with struct fields
+// When passing t.field, should expand to field: t.field (not t.field: t.field)
+
+const std = @import("std");
+
+~event process {
+    source: []const u8,
+    branch: []const u8,
+    destination: ?[]const u8,
+}
+| done {}
+
+~proc process {
+    std.debug.print("source={s} branch={s}\n", .{source, branch});
+    return .{ .done = .{} };
+}
+
+pub const Data = struct {
+    source: []const u8,
+    branch: []const u8,
+    destination: ?[]const u8,
+};
+
+// Main flow: Use shorthand syntax (r.data.source) which should expand to (source: r.data.source)
+~start()
+| result r |> process(r.data.source, r.data.branch, r.data.destination)
+    | done |> _
+
+~event start {}
+| result { data: Data }
+
+~proc start {
+    const data = Data{
+        .source = "test_event",
+        .branch = "success",
+        .destination = null,
+    };
+    return .{ .result = .{ .data = data } };
+}

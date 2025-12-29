@@ -1,0 +1,38 @@
+// Tour 02: Shape Checking
+// Koru validates that data shapes match at each flow step
+
+~event fetch_user { id: u32 }
+| found { user: User }
+| not_found { }
+
+~event process_user { user: User }
+| processed { name: []const u8, score: i32 }
+
+// User type (would be defined in Zig or through Koru types)
+const User = struct {
+    id: u32,
+    name: []const u8,
+    score: i32,
+};
+
+~proc fetch_user {
+    if (e.id == 123) {
+        return .{ .found = .{ 
+            .user = User{ .id = 123, .name = "Alice", .score = 100 } 
+        }};
+    }
+    return .{ .not_found = .{} };
+}
+
+~proc process_user {
+    return .{ .processed = .{ 
+        .name = e.user.name,
+        .score = e.user.score * 2
+    }};
+}
+
+// Shape checking ensures 'found' output matches 'process_user' input
+~fetch_user(id: 123)
+| found f |> process_user(user: f.user)
+    | processed p |> _
+| not_found |> _

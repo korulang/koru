@@ -1,0 +1,13 @@
+VALIDATION TEST: Invalid Module Qualifier
+
+This test MUST FAIL to verify that Koru correctly rejects invalid module qualifiers.
+
+Expected error:
+  error[PARSE001]: Event 'io:println' not found in registry
+
+Koru does NOT support import aliases. You must ALWAYS use the full module path:
+- ✅ Correct: ~import "$std/io" then use std.io:println
+- ❌ Wrong:   ~import "$std/io" then use io:println
+
+This test uses the incorrect short form "io:println" and should fail during parsing.
+If this test PASSES, our module qualifier validation is BROKEN.

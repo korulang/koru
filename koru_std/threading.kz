@@ -1,0 +1,147 @@
+// ============================================================================
+// $std/threading - Generic Threading Primitives
+// ============================================================================
+// Progressive Disclosure Pattern for Concurrency:
+//
+// Level 1 - Simple:   worker.spawn (fire-and-forget, detached)
+// Level 2 - Async:    worker.spawn.async (returns handle)
+// Level 3 - Await:    worker.spawn.await (wait for single)
+// Level 4 - Join:     worker.spawn.join (wait for multiple)
+//
+// Design Philosophy:
+// - Threading is an IMPLEMENTATION DETAIL, not part of the contract
+// - Events are the interface (SEMANTIC level)
+// - Zig threading is hidden in procs (TECHNICAL level)
+// - Progressive disclosure allows simple AND powerful usage
+//
+// Inspired by test 2005_multi_consumer_async
+// ============================================================================
+
+const std = @import("std");
+
+// ============================================================================
+// Generic Worker Types
+// ============================================================================
+
+// Generic work function signature
+// Takes opaque context pointer, returns opaque result pointer
+pub const WorkFn = *const fn (context: *anyopaque) *anyopaque;
+
+// Worker handle for async operations
+pub const WorkerHandle = struct {
+    thread: std.Thread,
+    result_ptr: *anyopaque,
+};
+
+// ============================================================================
+// Level 1: Fire-and-Forget Worker (Detached)
+// ============================================================================
+// Simple interface - spawn and forget
+// Use when you don't need to wait for result
+
+~event worker.spawn { work_fn: WorkFn, context: *anyopaque }
+| spawned {}
+
+~proc worker.spawn {
+    // Spawn thread with work function
+    const thread = std.Thread.spawn(.{}, struct {
+        fn run(fn_ptr: WorkFn, ctx: *anyopaque) void {
+            _ = fn_ptr(ctx);
+        }
+    }.run, .{ work_fn, context }) catch unreachable;
+
+    // Detach - caller doesn't wait for completion
+    thread.detach();
+
+    return .{ .spawned = .{} };
+}
+
+// ============================================================================
+// Level 2: Async Worker (Returns Handle)
+// ============================================================================
+// Advanced interface - spawn and return handle for later joining
+// Threading happens INSIDE the proc, but event signature is clean
+
+~event worker.spawn.async { work_fn: WorkFn, context: *anyopaque }
+| awaitable { handle: WorkerHandle }
+
+~proc worker.spawn.async {
+    // Spawn thread with work function
+    // Work function is responsible for writing result to context
+    const thread = std.Thread.spawn(.{}, struct {
+        fn run(fn_ptr: WorkFn, ctx: *anyopaque) void {
+            _ = fn_ptr(ctx);
+        }
+    }.run, .{ work_fn, context }) catch unreachable;
+
+    // Return handle (thread + context pointer for result retrieval)
+    return .{ .awaitable = .{ .handle = .{
+        .thread = thread,
+        .result_ptr = context,
+    } } };
+}
+
+// ============================================================================
+// Level 3: Await Single Worker
+// ============================================================================
+// Explicitly wait for one worker to complete
+
+~event worker.spawn.await { handle: WorkerHandle }
+| completed { result: *anyopaque }
+
+~proc worker.spawn.await {
+    // Block until thread completes
+    handle.thread.join();
+
+    // Return result pointer (caller must cast to expected type)
+    return .{ .completed = .{ .result = handle.result_ptr } };
+}
+
+// ============================================================================
+// Level 4: Join Multiple Workers
+// ============================================================================
+// Wait for multiple workers to complete
+// This is where progressive disclosure really shines!
+
+~event worker.spawn.join { handles: []const WorkerHandle }
+| all_completed { results: []*anyopaque }
+
+~proc worker.spawn.join {
+    // Allocate results array
+    const results = std.heap.page_allocator.alloc(*anyopaque, handles.len) catch unreachable;
+
+    // Join all threads and collect result pointers
+    for (handles, 0..) |h, i| {
+        h.thread.join();
+        results[i] = h.result_ptr;
+    }
+
+    return .{ .all_completed = .{ .results = results } };
+}
+
+// ============================================================================
+// Usage Example (commented out, for documentation)
+// ============================================================================
+//
+// Define your work function:
+//
+// fn myWork(ctx: *anyopaque) *anyopaque {
+//     const my_ctx = @ptrCast(*MyContext, @alignCast(@alignOf(MyContext), ctx));
+//     // Do work...
+//     my_ctx.result = calculate_something();
+//     return ctx;
+// }
+//
+// Use it:
+//
+// // Simple (fire-and-forget)
+// ~worker.spawn(work_fn: myWork, context: &my_context)
+// | spawned |> continueWithoutWaiting()
+//
+// // Async (with handle)
+// ~worker.spawn.async(work_fn: myWork, context: &my_context1)
+// | awaitable h1 |> worker.spawn.async(work_fn: myWork, context: &my_context2)
+//     | awaitable h2 |> worker.spawn.join(handles: &[_]WorkerHandle{ h1.handle, h2.handle })
+//         | all_completed results |> processResults(results: results.results)
+//
+// ============================================================================

@@ -1,0 +1,16 @@
+// Test that expressions are not allowed in branch constructors
+
+~event compute.value { x: u32 }
+| result { value: u32 }
+
+// This should fail - arithmetic expression
+~compute.value (x: 10)
+| result r |> result { value: r.value * 2 }
+
+// This should fail - function call
+~compute.value (x: 20)  
+| result r |> result { value: hash(r.value) }
+
+// This should fail - ternary expression
+~compute.value (x: 30)
+| result r |> result { value: r.value > 10 ? 100 : 0 }

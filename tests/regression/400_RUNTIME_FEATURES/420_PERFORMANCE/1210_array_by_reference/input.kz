@@ -1,0 +1,51 @@
+// ============================================================================
+// OPTIMIZATION: Large arrays should pass by reference, not by value
+// ============================================================================
+//
+// Issue discovered in benchmark 2101_nbody:
+// - Events that take/return arrays copy the entire array by value
+// - [5]Body (280 bytes) copied through every event = 4% slowdown
+// - Baseline Zig uses slices/pointers (16 bytes) = no copying
+//
+// Current behavior (BAD):
+//   pub const Input = struct { bodies: [5]Body };  // 280 byte copy
+//   pub const Output = union(enum) { result: struct { bodies: [5]Body } };
+//
+// Desired behavior (GOOD):
+//   pub const Input = struct { bodies: []const Body };  // 16 bytes (slice)
+//   pub const Output = union(enum) { result: struct { bodies: []Body } };
+//
+// OR even better - use pointers for fixed-size arrays:
+//   pub const Input = struct { bodies: *const [5]Body };  // 8 bytes (pointer)
+//   pub const Output = union(enum) { result: struct { bodies: *[5]Body } };
+//
+// ============================================================================
+
+const std = @import("std");
+
+const LargeStruct = struct {
+    data: [100]f64,  // 800 bytes - expensive to copy!
+};
+
+~event process_data { input: [100]f64 }
+| result { output: [100]f64 }
+
+~proc process_data {
+    var output_data = input;
+    for (&output_data) |*val| {
+        val.* *= 2.0;
+    }
+    return .{ .result = .{ .output = output_data } };
+}
+
+~event chain { values: [100]f64 }
+| done { values: [100]f64 }
+
+~proc chain {
+    return .{ .done = .{ .values = values } };
+}
+
+// Test flow - currently copies 800 bytes twice!
+~process_data(input: [_]f64{1.0} ** 100)
+| result r |> chain(values: r.output)
+    | done |> _

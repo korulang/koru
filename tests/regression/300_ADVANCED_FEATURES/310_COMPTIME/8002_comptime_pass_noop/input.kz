@@ -1,0 +1,18 @@
+// Test 802: Comptime Pass No-op
+// Verifies that the evaluate_comptime pass runs without breaking anything
+// This test has NO comptime events - just verifies infrastructure works
+
+const std = @import("std");
+
+// Simple event with no comptime parameters
+~event greet { name: []const u8 }
+| greeting { message: []const u8 }
+
+~proc greet {
+    const msg = "Hello, World!";
+    return .{ .greeting = .{ .message = msg } };
+}
+
+// Simple flow to trigger compilation
+~greet(name: "Koru")
+| greeting g |> _

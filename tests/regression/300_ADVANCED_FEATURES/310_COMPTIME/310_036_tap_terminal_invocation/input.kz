@@ -1,0 +1,26 @@
+// Test 310_036: Tap on Terminal Invocation
+// BUG: Taps don't fire for terminal invocations (event at end of pipeline)
+//
+// When an event is called at the END of a pipeline (terminal position),
+// tap lookups don't happen because there's no "destination" to transition to.
+//
+// Expected: Tap should fire when println completes, even as terminal
+// Actual: Tap doesn't fire
+
+const std = @import("std");
+
+~import "$std/io"
+
+// Logger to observe taps
+~event log { msg: []const u8 }
+
+~proc log {
+    std.debug.print("TAP: {s}\n", .{msg});
+}
+
+// Tap: observe std.io:println completions
+~std.io:println -> *
+| Profile p |> log(msg: p.source)
+
+// Simple flow: just println (terminal - no destination)
+~std.io:println(text: "Hello")

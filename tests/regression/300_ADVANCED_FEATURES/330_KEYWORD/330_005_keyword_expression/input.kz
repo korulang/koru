@@ -1,0 +1,11 @@
+// Test: Keyword event with Expression parameter
+// Verifies that [keyword] events properly capture Expression parameters
+
+~import "$lib"
+
+// Using ~check without module qualification
+// The expression "2 + 2" should be captured as expr
+~check(2 + 2)
+
+// Test with a more complex expression
+~check(value > 10)

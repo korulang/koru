@@ -1,0 +1,36 @@
+// Test 825: Reserved Zig Keyword as Branch Name
+//
+// BUG: When a branch uses a Zig reserved keyword (like "error"),
+// the emitter generates invalid Zig code.
+//
+// Expected: Emitter escapes reserved keyword as .@"error" - compiles fine
+// Actual: Emitter generates .error which is invalid Zig syntax
+//
+// This test demonstrates that the parser correctly accepts "error" as
+// a branch name, but the emitter needs to escape it for Zig.
+
+const std = @import("std");
+
+~import "$std/io"
+
+~pub event process_file { path: []const u8 }
+| success { data: []const u8 }
+| error { msg: []const u8 }  // "error" is a Zig reserved keyword!
+
+~proc process_file {
+    const file = std.fs.cwd().openFile(path, .{}) catch |err| {
+        return .{ .@"error" = .{ .msg = @errorName(err) } };
+    };
+    defer file.close();
+
+    const data = file.readToEndAlloc(std.heap.page_allocator, 1024) catch |err| {
+        return .{ .@"error" = .{ .msg = @errorName(err) } };
+    };
+
+    return .{ .success = .{ .data = data } };
+}
+
+// Test without inline flows - just test keyword escaping
+~process_file(path: "/nonexistent/file.txt")
+| success |> std.io:println(text: "Unexpected file found")
+| error |> std.io:println(text: "✅ Reserved Zig keyword branch works!")

@@ -1,0 +1,33 @@
+// Test 310_035: Tap on Void Event Transition
+// Validates that void events CAN be tapped when they transition to another event
+//
+// This tests the fix for bare suffix wildcards (print* matching println)
+// and void event handling (__void branch in BranchEnum)
+
+const std = @import("std");
+
+~import "$std/io"
+
+// Logger to observe taps
+~event log { msg: []const u8 }
+
+~proc log {
+    std.debug.print("TAP: {s}\n", .{msg});
+}
+
+// Tap: observe std.io:println when it transitions to another event
+// Using Profile for string source field
+~std.io:print* -> *
+| Profile p |> log(msg: p.source)
+
+// Flow: println transitions to a local event
+~event finish {}
+| done {}
+
+~proc finish {
+    std.debug.print("Done\n", .{});
+    return .{ .done = .{} };
+}
+
+// Main flow: println (void) transitions to finish (has branch)
+~std.io:println(text: "Hello") |> finish() | done |> _

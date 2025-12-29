@@ -1,0 +1,36 @@
+// TCP networking module
+
+const std = @import("std");
+
+~event server.listen { port: i32 }
+| listening { server_id: i32 }
+| failed { msg: []const u8 }
+
+~event server.accept { server_id: i32 }
+| connection { conn_id: i32 }
+| failed { msg: []const u8 }
+
+~event connection.read { conn_id: i32 }
+| data { bytes: []const u8 }
+| closed {}
+| failed { msg: []const u8 }
+
+~event connection.write { conn_id: i32, data: []const u8 }
+| sent { bytes_written: i32 }
+| failed { msg: []const u8 }
+
+~proc server.listen {
+    return .{ .@"listening" = .{ .server_id = 1 } };
+}
+
+~proc server.accept {
+    return .{ .@"connection" = .{ .conn_id = 100 } };
+}
+
+~proc connection.read {
+    return .{ .@"data" = .{ .bytes = "GET / HTTP/1.1" } };
+}
+
+~proc connection.write {
+    return .{ .@"sent" = .{ .bytes_written = 100 } };
+}

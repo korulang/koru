@@ -1,0 +1,38 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 204: Continuation labels (label on continuation, not flow)
+// Tests SPEC.md label scoping - labels can be on continuation steps
+// ============================================================================
+
+const std = @import("std");
+
+// Simple counter event
+~event counter { n: i32 }
+| next { value: i32 }
+| done { final: i32 }
+
+~proc counter {
+    std.debug.print("Count: {}\n", .{n});
+
+    if (n < 5) {
+        return .{ .next = .{ .value = n + 1 } };
+    } else {
+        return .{ .done = .{ .final = n } };
+    }
+}
+
+// Start event to kick things off
+~event start {}
+| ready {}
+
+~proc start {
+    std.debug.print("Starting counter...\n", .{});
+    return .{ .ready = .{} };
+}
+
+// Flow with label on continuation (not on flow itself!)
+~start()
+| ready |> #loop counter(n: 1)
+    | next c |> @loop(n: c.value)
+    | done d |> _

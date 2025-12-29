@@ -1,0 +1,59 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test 209: Flow with multiple continuation branches
+// A synthetic example for visualizing flows where multiple branches continue
+// ============================================================================
+
+const std = @import("std");
+
+// Validation events
+~event validate { value: i32 }
+| valid { result: i32 }
+| invalid { msg: []const u8 }
+
+~proc validate {
+    if (value > 0) {
+        return .{ .valid = .{ .result = value } };
+    }
+    return .{ .invalid = .{ .msg = "Value must be positive" } };
+}
+
+~event double { value: i32 }
+| ok { result: i32 }
+
+~proc double {
+    return .{ .ok = .{ .result = value * 2 } };
+}
+
+~event triple { value: i32 }
+| ok { result: i32 }
+
+~proc triple {
+    return .{ .ok = .{ .result = value * 3 } };
+}
+
+~event success { result: i32 }
+| done {}
+
+~proc success {
+    std.debug.print("Success: {}\n", .{result});
+    return .{ .done = .{} };
+}
+
+~event failure { msg: []const u8 }
+| done {}
+
+~proc failure {
+    std.debug.print("Failure: {s}\n", .{msg});
+    return .{ .done = .{} };
+}
+
+// Flow with multiple branching paths
+~validate(value: 42)
+| valid v |> double(value: v.result)
+    | ok doubled |> success(result: doubled.result)
+        | done |> _
+| invalid e |> triple(value: -1)
+    | ok _ |> failure(msg: e.msg)
+        | done |> _

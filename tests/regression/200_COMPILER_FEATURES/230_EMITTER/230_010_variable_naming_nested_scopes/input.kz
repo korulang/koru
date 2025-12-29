@@ -1,0 +1,57 @@
+// BUG: Emitter generates duplicate variable names in nested scopes
+//
+// ISSUE: When multiple events are called at different nesting levels,
+// the emitter reuses names like `result_2`, causing Zig compilation errors:
+//   "error: redeclaration of local constant 'result_2'"
+//
+// EXPECTED: Each event call should get a unique variable name,
+// even across different scopes (loops, branches, etc.)
+//
+// MINIMAL REPRODUCTION: Two void events followed by a branched event,
+// called at different nesting levels.
+
+const std = @import("std");
+
+~import "$std/control"
+
+// Void event (no branches)
+~event step_one {}
+
+~proc step_one {
+    // Does nothing, just tests void event handling
+}
+
+// Another void event
+~event step_two {}
+
+~proc step_two {
+    // Does nothing
+}
+
+// Event with a result branch
+~event get_value {}
+| value i32
+
+~proc get_value {
+    return .{ .value = 42 };
+}
+
+// Event to print
+~event print_value { v: i32 }
+
+~proc print_value {
+    std.debug.print("{d}\n", .{v});
+}
+
+// Main flow - triggers the naming collision
+// The structure: void event -> branched event -> loop -> void event -> branched event
+// Both branched events generate `result_N` with same N
+
+~step_one()
+|> get_value()
+    | value v1 |> print_value(v: v1)
+        |> for(0..2)
+            | each i |> step_two()
+                |> get_value()
+                    | value v2 |> print_value(v: v2)
+            | done |> _

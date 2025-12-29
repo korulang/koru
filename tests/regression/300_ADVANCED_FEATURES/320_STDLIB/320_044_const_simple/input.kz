@@ -1,0 +1,7 @@
+// Test: Simple ~const without ~if (to isolate shape checker issue)
+
+~import "$std/io"
+~import "$std/control"
+
+~const({ x: @as(i32, 10), y: @as(i32, 20) })
+| as cfg |> std.io:print.ln("${cfg.x + cfg.y:d}")

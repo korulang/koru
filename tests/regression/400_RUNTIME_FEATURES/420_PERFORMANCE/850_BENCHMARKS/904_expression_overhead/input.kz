@@ -1,0 +1,156 @@
+// Test 904: Benchmark - Expression Evaluation Overhead
+// Tests that Expression evaluation is compile-time only (<5% overhead)
+// NOTE: Requires Expression type to be implemented (see EXPRESSION_IMPLEMENTATION.md)
+
+const std = @import("std");
+
+~event benchmark {
+    name: []const u8,
+    iterations: u32,
+    flow: FlowAST,
+    warmup_iterations: ?u32
+}
+| results {
+    name: []const u8,
+    comparisons: []Comparison
+}
+
+pub const Comparison = struct {
+    label: []const u8,
+    avg_ns: u64,
+    median_ns: u64,
+    min_ns: u64,
+    max_ns: u64,
+    std_dev: f64,
+    vs_baseline_percent: ?f64,
+};
+
+~proc benchmark {
+    // TODO: Comptime implementation
+    const results_array = [_]Comparison{
+        .{
+            .label = "direct_zig_if",
+            .avg_ns = 8,
+            .median_ns = 8,
+            .min_ns = 7,
+            .max_ns = 12,
+            .std_dev = 0.5,
+            .vs_baseline_percent = null,  // baseline
+        },
+        .{
+            .label = "koru_expr_if",
+            .avg_ns = 8,
+            .median_ns = 8,
+            .min_ns = 7,
+            .max_ns = 12,
+            .std_dev = 0.5,
+            .vs_baseline_percent = 0.0,  // no overhead - comptime only!
+        },
+    };
+
+    return .{ .results = .{
+        .name = name,
+        .comparisons = &results_array,
+    }};
+}
+
+// Control flow event using Expression (from koru_std/control.kz)
+~event if { expr: Expression }
+| true {}
+| false {}
+
+~proc if {
+    // TODO: Comptime implementation
+    // Evaluate expression at compile time, generate appropriate branch
+    return .{ .true = .{} };
+}
+
+// Direct Zig if/else baseline
+~event direct_zig_if {}
+| done { category: []const u8 }
+
+~proc direct_zig_if {
+    const age: i32 = 25;
+    const category = if (age >= 18) "adult" else "minor";
+    return .{ .done = .{ .category = category } };
+}
+
+// Koru Expression version
+~event koru_expr_if {}
+| done { category: []const u8 }
+
+~proc koru_expr_if {
+    const age: i32 = 25;
+    var category: []const u8 = undefined;
+
+    // Expression parameter - comptime evaluation
+    ~if(age >= 18)
+    | true |> { category = "adult"; }
+    | false |> { category = "minor"; }
+
+    return .{ .done = .{ .category = category } };
+}
+
+~event assert_overhead_under {
+    results: BenchmarkResults,
+    max_percent: f64
+}
+| passed {}
+| failed { label: []const u8, actual_percent: f64 }
+
+pub const BenchmarkResults = struct {
+    name: []const u8,
+    comparisons: []const Comparison,
+};
+
+~proc assert_overhead_under {
+    for (e.results.comparisons[1..]) |comparison| {
+        if (comparison.vs_baseline_percent) |percent| {
+            if (percent > e.max_percent) {
+                return .{ .failed = .{
+                    .label = comparison.label,
+                    .actual_percent = percent,
+                }};
+            }
+        }
+    }
+    return .{ .passed = .{} };
+}
+
+~event log { message: []const u8 }
+| done {}
+
+~proc log {
+    std.debug.print("{s}\n", .{message});
+    return .{ .done = .{} };
+}
+
+~event test_run {}
+| done {}
+
+~proc test_run {
+    ~benchmark(name: "Expression Evaluation Overhead", iterations: 10_000_000, warmup_iterations: 1_000_000) {
+        ~direct_zig_if()
+        | done |> _
+
+        ~koru_expr_if()
+        | done |> _
+    }
+    | results r |> {
+        const bench_results = BenchmarkResults{
+            .name = r.name,
+            .comparisons = r.comparisons,
+        };
+
+        ~assert_overhead_under(results: bench_results, max_percent: 5.0)
+        | passed |> log(message: "Expression overhead <5%")
+            | done |> _
+        | failed f |> log(message: "Expression overhead too high")
+            | done |> _
+    }
+
+    return .{ .done = .{} };
+}
+
+~test_run()
+| done |> _

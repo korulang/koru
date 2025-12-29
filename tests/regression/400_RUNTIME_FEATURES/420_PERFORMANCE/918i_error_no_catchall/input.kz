@@ -1,0 +1,40 @@
+// Test 918i: Optional Branches - Runtime Error Without |?
+//
+// This test demonstrates:
+// 1. Handler has NO |? catch-all
+// 2. Optional branch fires at runtime
+// 3. No explicit handler for that optional branch
+// 4. Expected: Runtime error (branch interface cannot be satisfied)
+
+const std = @import("std");
+
+// Event with required + optional branches
+~event process { value: u32 }
+| success { result: u32 }        // REQUIRED
+| ?warning { msg: []const u8 }   // OPTIONAL
+
+~proc process {
+    if (value > 100) {
+        // Return optional warning branch
+        return .{ .warning = .{ .msg = "Value too large" } };
+    }
+
+    // Return required success branch
+    const doubled = value * 2;
+    std.debug.print("Success: {}\n", .{doubled});
+    return .{ .success = .{ .result = doubled } };
+}
+
+// First call: returns success → handler has continuation → works fine
+~process(value: 10)
+| success { result } |> std.debug.print("Handler success: {}\n", .{result})
+// No |? but that's OK because this call returns success
+
+// Second call: returns warning → handler has NO continuation → RUNTIME ERROR
+~process(value: 150)
+| success { result } |> std.debug.print("Handler success: {}\n", .{result})
+// No warning handler
+// No |? catch-all
+// This call WILL return warning branch
+// Branch interface cannot be satisfied
+// Expected: Runtime panic/error

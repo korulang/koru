@@ -1,0 +1,10 @@
+Starting count-up flow...
+up: 0
+up: 1
+up: 2
+up: 3
+Starting count-down flow...
+down: 5
+down: 4
+down: 3
+down: 2

@@ -1,0 +1,28 @@
+// Test 210_039: File Source Syntax
+// Validates the [type]"path" syntax for reading files as Source at compile time
+//
+// Syntax: ~event [type]"path"
+// vs:     ~event [type]{ inline content }
+
+const std = @import("std");
+
+// Event that takes Source parameter
+~[comptime|transform]event render.file {
+    source: Source[text],
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc render.file {
+    // Just print what we received to prove file was read
+    std.debug.print("File content: '{s}'\n", .{source.text});
+    std.debug.print("Phantom type: '{s}'\n", .{source.phantom_type orelse "none"});
+
+    // Return program unchanged
+    return .{ .transformed = .{ .program = program } };
+}
+
+// Test: Read file content using [type]"path" syntax
+~render.file [text]"hello.txt"
+| transformed program |> _

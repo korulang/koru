@@ -1,0 +1,47 @@
+// Test 310_011: Wildcard Patterns in Taps (Library Syntax)
+// Tests universal wildcards with Transition metatype
+//
+// With nested invocation support, `* -> *` matches ALL invocations including:
+// - hello (top-level)
+// - goodbye (nested inside hello's continuation)
+// - observer (the tap action, also gets matched!)
+// Result: observer fires 3 times (once after each matched transition)
+
+const std = @import("std");
+~import "$std/taps"
+
+~event hello {}
+| tap_target {}
+
+~event goodbye {}
+| tap_target {}
+
+// Observer returns a branch because it's called from tap continuation
+~event observer {}
+| tap_target {}
+
+~proc hello {
+    std.debug.print("Hello executed\n", .{});
+    return .{ .tap_target = .{} };
+}
+
+~proc goodbye {
+    std.debug.print("Goodbye executed\n", .{});
+    return .{ .tap_target = .{} };
+}
+
+~proc observer {
+    std.debug.print("Universal observer fired!\n", .{});
+    return .{ .tap_target = .{} };
+}
+
+// Universal tap - observes ALL events with wildcard source
+// Must use metatype (Transition) because wildcard matches different event shapes
+~tap(* -> *)
+| Transition |> observer()
+    | tap_target |> _
+
+// Execute both hello and goodbye - tap should fire for both
+~hello()
+| tap_target |> goodbye()
+    | tap_target |> _

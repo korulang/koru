@@ -1,0 +1,32 @@
+// MINIMAL TEST: Does label loop work at all?
+// Just count to 10 and print each iteration
+
+const std = @import("std");
+
+// Count event - loop controller
+~event count { i: u64 }
+| next { i: u64 }
+| done {}
+
+~proc count {
+    if (i < 10) {
+        return .{ .next = .{ .i = i + 1 } };
+    } else {
+        return .{ .done = .{} };
+    }
+}
+
+// Print event
+~event print { i: u64 }
+| done {}
+
+~proc print {
+    std.debug.print("i = {}\n", .{i});
+    return .{ .done = .{} };
+}
+
+// Loop: count and print each iteration
+~#loop count(i: 0)
+| next n |> print(i: n.i)
+    | done |> @loop(i: n.i)
+| done |> _

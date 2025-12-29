@@ -1,0 +1,108 @@
+// CCP - Compiler Control Protocol (User Program Observability)
+// ==============================================================
+// This module provides basic event observability for Koru programs.
+//
+// Usage:
+//   ~import "$std/ccp"
+//   koruc my_app.kz --ccp
+//
+// Result: Program emits JSONL transition events to stdout at runtime
+//
+// Architecture:
+// - Uses Koru's universal tap system (~* -> *)
+// - Zero-cost when disabled (dead-strips at compile time)
+// - Self-governing: requires both import AND --ccp flag
+//
+// Related: docs/CCP.md
+
+const std = @import("std");
+
+// Note: Transition type is a magical ambient type emitted by the compiler
+// when any tap uses it. No need to define it here.
+
+// Event: Emit a transition event as JSONL to stdout
+~event emit_transition {
+    source: []const u8,
+    branch: []const u8,
+    destination: ?[]const u8,
+    timestamp_ns: i128,
+}
+
+~proc emit_transition {
+    var buffer: [8192]u8 = undefined;
+    var pos: usize = 0;
+
+    // Build JSON manually (fast, no allocations)
+    const prefix = "{\"type\":\"transition\",\"timestamp\":";
+    @memcpy(buffer[pos..][0..prefix.len], prefix);
+    pos += prefix.len;
+
+    const timestamp = std.time.milliTimestamp();
+    var timestamp_buf: [32]u8 = undefined;
+    const timestamp_str = std.fmt.bufPrint(&timestamp_buf, "{d}", .{timestamp}) catch
+        return .{ .emitted = .{} };
+    @memcpy(buffer[pos..][0..timestamp_str.len], timestamp_str);
+    pos += timestamp_str.len;
+
+    const src_prefix = ",\"source\":\"";
+    @memcpy(buffer[pos..][0..src_prefix.len], src_prefix);
+    pos += src_prefix.len;
+    @memcpy(buffer[pos..][0..source.len], source);
+    pos += source.len;
+
+    const branch_prefix = "\",\"branch\":\"";
+    @memcpy(buffer[pos..][0..branch_prefix.len], branch_prefix);
+    pos += branch_prefix.len;
+    @memcpy(buffer[pos..][0..branch.len], branch);
+    pos += branch.len;
+
+    buffer[pos] = '"';
+    pos += 1;
+
+    if (destination) |dest| {
+        const dest_prefix = ",\"destination\":\"";
+        @memcpy(buffer[pos..][0..dest_prefix.len], dest_prefix);
+        pos += dest_prefix.len;
+        @memcpy(buffer[pos..][0..dest.len], dest);
+        pos += dest.len;
+        buffer[pos] = '"';
+        pos += 1;
+    } else {
+        const dest_null = ",\"destination\":null";
+        @memcpy(buffer[pos..][0..dest_null.len], dest_null);
+        pos += dest_null.len;
+    }
+
+
+    const dur_prefix = ",\"timestamp_ns\":";
+    @memcpy(buffer[pos..][0..dur_prefix.len], dur_prefix);
+    pos += dur_prefix.len;
+    var dur_buf: [32]u8 = undefined;
+    const dur_str = std.fmt.bufPrint(&dur_buf, "{d}", .{timestamp_ns}) catch
+        return .{ .emitted = .{} };
+    @memcpy(buffer[pos..][0..dur_str.len], dur_str);
+    pos += dur_str.len;
+
+    const suffix = "}\n";
+    @memcpy(buffer[pos..][0..suffix.len], suffix);
+    pos += suffix.len;
+
+    // Write to stdout (compiler diagnostics go to stderr)
+    std.debug.print("{s}", .{buffer[0..pos]});
+}
+
+// UNIVERSAL TAP: Observe ALL event transitions in the program
+//
+// This tap fires for every event transition:
+// - User code events (any ~event in your program)
+// - Standard library events (when used)
+//
+// The Transition metatype provides:
+// - source: Source event name (e.g., "fetch", "process")
+// - branch: Branch name taken (e.g., "success", "error")
+// - destination: Next event in flow (null for terminal transitions)
+// - timestamp_ns: Execution time (null unless profiling enabled)
+//
+// Self-governing: Only fires when --ccp flag is set AND this module is imported
+~[ccp]* -> *
+| Profile t |> emit_transition(t.source, t.branch, t.destination, t.timestamp_ns)

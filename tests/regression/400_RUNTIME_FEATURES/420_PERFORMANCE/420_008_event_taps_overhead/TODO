@@ -1,0 +1,23 @@
+Event tap code injection not yet implemented
+
+This test currently "passes" with Koru being 3x faster than baseline,
+but that's because the taps aren't actually running!
+
+Expected output:
+  Baseline: Taps called: 25
+  Koru:     Taps called: 25  (should match!)
+
+Actual output:
+  Baseline: Taps called: 25
+  Koru:     Taps called: 0   (taps not firing!)
+
+From EVENT_TAPS.md Phase 4:
+  "Code Generation: Identify event invocation sites and inject tap code"
+  Status: NOT IMPLEMENTED YET
+
+Once tap injection is implemented, this test will:
+- Start showing ~3.5ms for both (same work)
+- Prove taps have same overhead as manual function calls
+- Validate the "zero-cost" claim (no dispatch overhead)
+
+Until then, this test documents that taps need implementation!

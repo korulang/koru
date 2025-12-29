@@ -1,0 +1,12 @@
+// Test: Parser should handle void event chaining
+// Void events (no output branches) should support continuation syntax
+// ~void_event() |> next_event() should create a continuation
+
+~event void_event {}
+
+~event another_void {}
+
+// This should parse as a flow with ONE continuation
+// Initial invocation: void_event()
+// Continuation: |> another_void() (no branch specifier needed)
+~void_event() |> another_void()

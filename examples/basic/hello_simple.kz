@@ -1,0 +1,44 @@
+// Simple Koru Web Server Demo
+// Shows the power of declarative flows with Zig hidden in std lib
+
+~import "koru_std/io.kz" => io
+~import "koru_std/net.kz" => net
+~import "koru_std/http.kz" => http
+
+// Request handler as a pure subflow
+~event handle.request { path: []const u8 }
+| response { html: []const u8 }
+
+~handle.request = http.match_route(path: path, pattern: "/")
+| matched |> response { html: "<h1>Hello from Pure Koru!</h1><p>100% declarative web server</p>" }
+| no_match |> response { html: "<h1>404 Not Found</h1>" }
+
+// Connection handler
+~event handle.conn { id: u32 }
+| done {}
+
+~handle.conn = net.tcp.read(id: id, max_bytes: 4096)
+| data d |> http.parse_request(data: d.bytes)
+  | request r |> handle.request(path: r.path)
+    | response resp |> http.html_response(status: 200, html: resp.html)
+      | response html |> net.tcp.write(id: id, data: html.data)
+        | sent |> net.tcp.close(id: id)
+          | closed |> done {}
+        | error |> done {}
+  | invalid |> done {}
+| closed |> done {}
+| error |> done {}
+
+// Main flow 
+~io.print(msg: "Pure Koru Web Server Demo")
+| printed |> io.print(msg: "Starting server on port 8080...")
+  | printed |> net.tcp.listen(port: 8080)
+    | listening l |> io.print(msg: "Server ready! (This is a demo)")
+      | printed |> net.tcp.accept(port: l.port)
+        | connection c |> handle.conn(id: c.id)
+          | done |> io.print(msg: "Request handled!")
+            | printed |> _
+        | error e |> io.print(msg: "Accept error")
+          | printed |> _
+    | error e |> io.print(msg: e.msg)
+      | printed |> _

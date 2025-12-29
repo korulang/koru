@@ -1,0 +1,756 @@
+// Koru Standard Library: I/O
+// Basic input/output operations for Koru programs
+//
+// Finally! After achieving consciousness (metacircular compilation),
+// we can now print "Hello, World!"
+
+~[comptime|runtime]
+
+const std = @import("std");
+
+// Print text without newline
+~pub event print { text: []const u8 }
+
+~proc print {
+    std.debug.print("{s}", .{text});
+}
+
+// Print text with newline
+~pub event println { text: []const u8 }
+
+~proc println {
+    std.debug.print("{s}\n", .{text});
+}
+
+// Print formatted text
+// NOTE: printf with varargs would require runtime support - skipping for now
+// ~pub event io.printf { format: []const u8, args: anytype }
+// | printed {}
+//
+// ~proc io.printf {
+//     std.debug.print(format, args);
+//     return .{ .printed = .{} };
+// }
+
+// Read line from stdin (for future interactive programs)
+~pub event readln {}
+| line { text: []const u8 }
+| eof {}
+| failed { message: []const u8 }
+
+~proc readln {
+    // TODO: Implement actual stdin reading
+    // For now, return a placeholder
+    return .{ .failed = .{ .message = "readln not yet implemented" } };
+}
+
+// Debug print for development
+// NOTE: debug with anytype would require runtime support - skipping for now
+// ~pub event io.debug { label: []const u8, value: anytype }
+// | printed {}
+//
+// ~proc io.debug {
+//     std.debug.print("[DEBUG {s}]: ", .{label});
+//     std.debug.print("{any}\n", .{value});
+//     return .{ .printed = .{} };
+// }
+
+// Print error to stderr
+~pub event eprintln { message: []const u8 }
+| printed {}
+
+~proc eprintln {
+    const stderr = std.io.getStdErr().writer();
+    stderr.print("ERROR: {s}\n", .{message}) catch {
+        // Fall back to debug print if stderr fails
+        std.debug.print("ERROR: {s}\n", .{message});
+    };
+    return .{ .printed = .{} };
+}
+
+// Success message with green color (if terminal supports it)
+~pub event success { message: []const u8 }
+| printed {}
+
+~proc success {
+    std.debug.print("✅ {s}\n", .{message});
+    return .{ .printed = .{} };
+}
+
+// Warning message
+~pub event warn { message: []const u8 }
+| printed {}
+
+~proc warn {
+    std.debug.print("⚠️  {s}\n", .{message});
+    return .{ .printed = .{} };
+}
+
+// ============================================================================
+// PRINT.LN - Interpolated printing with Expression (ZERO OVERHEAD)
+// ============================================================================
+//
+// Syntax: std.io:print.ln("Hello {{ name }}! Count: {{ count }}")
+//
+// ARCHITECTURE:
+// - ~print.ln is a comptime transform that generates inline Zig code
+// - Parses {{ ... }} placeholders from the Expression string
+// - Optional format specifier: {{ name:s }} or {{ count:d }}
+// - Generates: std.debug.print("Hello {}! Count: {}\n", .{name, count});
+//
+// This is NOT a regular event - it's a pure compile-time transformation.
+
+~[keyword|comptime|transform]pub event print.ln {
+    expr: Expression,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~[norun]pub event print.impl {
+    expr: []const u8,
+}
+
+~proc print.ln {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // Helper: Check if identifier is a Zig keyword
+    const isZigKeyword = struct {
+        fn check(word: []const u8) bool {
+            const keywords = [_][]const u8{
+                "error", "type", "async", "await", "suspend", "resume",
+                "try", "catch", "if", "else", "switch", "while",
+                "for", "break", "continue", "return", "defer", "errdefer",
+                "test", "pub", "export", "extern", "packed", "inline",
+                "noinline", "comptime", "nosuspend", "volatile", "allowzero",
+                "align", "linksection", "callconv", "noalias",
+                "struct", "enum", "union", "opaque", "fn", "const",
+                "var", "anyframe", "anytype", "anyerror", "unreachable",
+                "undef", "null", "true", "false", "and", "or",
+                "orelse", "threadlocal",
+            };
+            for (keywords) |kw| {
+                if (std.mem.eql(u8, word, kw)) return true;
+            }
+            return false;
+        }
+    }.check;
+
+    // Helper: Append path with escaped keywords (e.g., err.error -> err.@"error")
+    const appendEscapedPath = struct {
+        fn append(buf: *std.ArrayList(u8), alloc: std.mem.Allocator, path: []const u8) void {
+            var start: usize = 0;
+            var pos: usize = 0;
+            var is_first = true;
+
+            while (pos <= path.len) {
+                if (pos == path.len or path[pos] == '.') {
+                    const segment = path[start..pos];
+                    if (!is_first) {
+                        buf.append(alloc, '.') catch unreachable;
+                        // Check if this segment is a keyword
+                        if (isZigKeyword(segment)) {
+                            buf.appendSlice(alloc, "@\"") catch unreachable;
+                            buf.appendSlice(alloc, segment) catch unreachable;
+                            buf.append(alloc, '"') catch unreachable;
+                        } else {
+                            buf.appendSlice(alloc, segment) catch unreachable;
+                        }
+                    } else {
+                        buf.appendSlice(alloc, segment) catch unreachable;
+                    }
+                    is_first = false;
+                    start = pos + 1;
+                }
+                pos += 1;
+            }
+        }
+    }.append;
+
+    // Handle both flow items and subflow_impl items
+    const flow = if (item.* == .flow)
+        &item.flow
+    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
+        &item.subflow_impl.body.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    // Parse the Expression string for ${...} placeholders
+    var format_buf = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+    var args_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+    var i: usize = 0;
+    var first_arg = true;
+
+    // Skip leading quote if present
+    const start: usize = if (expr.len > 0 and expr[0] == '"') 1 else 0;
+    // Skip trailing quote if present
+    const end: usize = if (expr.len > 0 and expr[expr.len - 1] == '"') expr.len - 1 else expr.len;
+    const content = expr[start..end];
+
+    while (i < content.len) {
+        // Look for {% if var %}...{% endif %} control blocks
+        if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '%') {
+            const tag_start = i + 2;
+            // Skip whitespace after {%
+            var ws_start = tag_start;
+            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+
+            // Check for "if " keyword
+            if (ws_start + 3 <= content.len and std.mem.eql(u8, content[ws_start..ws_start + 3], "if ")) {
+                const var_start = ws_start + 3;
+                // Skip whitespace after "if"
+                var var_pos = var_start;
+                while (var_pos < content.len and (content[var_pos] == ' ' or content[var_pos] == '\t')) : (var_pos += 1) {}
+
+                // Find end of variable name (until whitespace or %)
+                var var_end = var_pos;
+                while (var_end < content.len and content[var_end] != ' ' and content[var_end] != '\t' and content[var_end] != '%') : (var_end += 1) {}
+                const cond_var = content[var_pos..var_end];
+
+                // Find closing %}
+                var tag_end = var_end;
+                while (tag_end + 1 < content.len and !(content[tag_end] == '%' and content[tag_end + 1] == '}')) : (tag_end += 1) {}
+
+                if (tag_end + 1 < content.len) {
+                    const body_start = tag_end + 2;
+
+                    // Find matching {% endif %}
+                    const endif_marker = "{% endif %}";
+                    if (std.mem.indexOf(u8, content[body_start..], endif_marker)) |endif_offset| {
+                        const body_end = body_start + endif_offset;
+                        const body_content = content[body_start..body_end];
+
+                        // Generate: {s} with arg: if (var) "content" else ""
+                        format_buf.appendSlice(allocator, "{s}") catch unreachable;
+
+                        if (!first_arg) {
+                            args_buf.appendSlice(allocator, ", ") catch unreachable;
+                        }
+                        args_buf.appendSlice(allocator, "if (") catch unreachable;
+                        appendEscapedPath(&args_buf, allocator, cond_var);
+                        args_buf.appendSlice(allocator, ") \"") catch unreachable;
+                        // Escape body content for Zig string
+                        for (body_content) |c| {
+                            switch (c) {
+                                '"' => args_buf.appendSlice(allocator, "\\\"") catch unreachable,
+                                '\\' => args_buf.appendSlice(allocator, "\\\\") catch unreachable,
+                                '\n' => args_buf.appendSlice(allocator, "\\n") catch unreachable,
+                                '\r' => args_buf.appendSlice(allocator, "\\r") catch unreachable,
+                                '\t' => args_buf.appendSlice(allocator, "\\t") catch unreachable,
+                                else => args_buf.append(allocator, c) catch unreachable,
+                            }
+                        }
+                        args_buf.appendSlice(allocator, "\" else \"\"") catch unreachable;
+                        first_arg = false;
+
+                        i = body_end + endif_marker.len;
+                        continue;
+                    }
+                }
+            }
+            // Not a recognized tag, treat as literal
+            format_buf.append(allocator, content[i]) catch unreachable;
+            i += 1;
+        }
+        // Look for {{ ... }} placeholders (Liquid-style syntax)
+        else if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '{') {
+            const placeholder_start = i + 2;
+            // Skip leading whitespace inside {{ }}
+            var ws_start = placeholder_start;
+            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+
+            // Find closing }}
+            var j = ws_start;
+            while (j + 1 < content.len and !(content[j] == '}' and content[j + 1] == '}')) : (j += 1) {}
+
+            if (j + 1 < content.len) {
+                // Trim trailing whitespace
+                var ws_end = j;
+                while (ws_end > ws_start and (content[ws_end - 1] == ' ' or content[ws_end - 1] == '\t')) : (ws_end -= 1) {}
+
+                const placeholder = content[ws_start..ws_end];
+                var var_name: []const u8 = placeholder;
+                var format_spec: []const u8 = "any";
+
+                // Check for format specifier: {{ name:s }}
+                if (std.mem.indexOf(u8, placeholder, ":")) |colon_pos| {
+                    var_name = placeholder[0..colon_pos];
+                    format_spec = placeholder[colon_pos + 1..];
+                }
+
+                format_buf.append(allocator, '{') catch unreachable;
+                format_buf.appendSlice(allocator, format_spec) catch unreachable;
+                format_buf.append(allocator, '}') catch unreachable;
+
+                if (!first_arg) {
+                    args_buf.appendSlice(allocator, ", ") catch unreachable;
+                }
+                // Escape Zig keywords in dotted paths (e.g., err.error -> err.@"error")
+                appendEscapedPath(&args_buf, allocator, var_name);
+                first_arg = false;
+                i = j + 2; // Skip past }}
+            } else {
+                format_buf.append(allocator, content[i]) catch unreachable;
+                i += 1;
+            }
+        } else {
+            format_buf.append(allocator, content[i]) catch unreachable;
+            i += 1;
+        }
+    }
+
+    format_buf.appendSlice(allocator, "\\n") catch unreachable;
+
+    const inline_code = std.fmt.allocPrint(
+        allocator,
+        "@import(\"std\").debug.print(\"{s}\", .{{{s}}});",
+        .{ format_buf.items, args_buf.items }
+    ) catch unreachable;
+
+    // Check if this is a top-level print.ln (flow.invocation IS print.ln)
+    const is_top_level = blk: {
+        const segments = flow.invocation.path.segments;
+        break :blk segments.len == 2 and
+            std.mem.eql(u8, segments[0], "print") and
+            std.mem.eql(u8, segments[1], "ln");
+    };
+
+    // Re-route path to void print.impl event for shape checking
+    const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
+    impl_segments[0] = allocator.dupe(u8, "print") catch unreachable;
+    impl_segments[1] = allocator.dupe(u8, "impl") catch unreachable;
+    const impl_path = ast.DottedPath{
+        .module_qualifier = flow.invocation.path.module_qualifier,
+        .segments = impl_segments,
+    };
+
+    if (is_top_level) {
+        // TOP-LEVEL CASE: Set flow.inline_body
+        if (flow.inline_body != null) {
+            return .{ .transformed = .{ .program = program } };
+        }
+
+        const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+        for (flow.invocation.annotations, 0..) |ann, idx| {
+            new_inv_annotations[idx] = ann;
+        }
+        new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+        const new_invocation = ast.Invocation{
+            .path = impl_path,
+            .args = flow.invocation.args,
+            .annotations = new_inv_annotations,
+            .inserted_by_tap = flow.invocation.inserted_by_tap,
+            .from_opaque_tap = flow.invocation.from_opaque_tap,
+        };
+
+        const transformed_flow = ast.Flow{
+            .invocation = new_invocation,
+            .continuations = flow.continuations,
+            .annotations = flow.annotations,
+            .pre_label = flow.pre_label,
+            .post_label = flow.post_label,
+            .super_shape = flow.super_shape,
+            .inline_body = inline_code,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
+            .location = flow.location,
+            .module = flow.module,
+        };
+
+        const new_item = if (item.* == .subflow_impl) blk2: {
+            var new_subflow = item.subflow_impl;
+            new_subflow.body = .{ .flow = transformed_flow };
+            break :blk2 ast.Item{ .subflow_impl = new_subflow };
+        } else ast.Item{ .flow = transformed_flow };
+
+        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = .{ .program = result } };
+        }
+        return .{ .transformed = .{ .program = program } };
+    } else {
+        // PIPELINE CASE: Find print.ln in continuations and replace with inline_code step
+        const SearchResult = struct {
+            path: []const usize,
+            step_idx: usize,
+        };
+
+        const findPrintLnRecursive = struct {
+            fn search(
+                alloc: std.mem.Allocator,
+                continuations: []const ast.Continuation,
+                current_path: []const usize,
+            ) ?SearchResult {
+                for (continuations, 0..) |*cont, cont_idx| {
+                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
+                    @memcpy(path[0..current_path.len], current_path);
+                    path[current_path.len] = cont_idx;
+
+                    if (cont.node) |step| {
+                        if (step == .invocation) {
+                            const segments = step.invocation.path.segments;
+                            if (segments.len == 2 and
+                                std.mem.eql(u8, segments[0], "print") and
+                                std.mem.eql(u8, segments[1], "ln"))
+                            {
+                                return SearchResult{ .path = path, .step_idx = 0 };
+                            }
+                        }
+                    }
+
+                    if (search(alloc, cont.continuations, path)) |result| {
+                        return result;
+                    }
+                    alloc.free(path);
+                }
+                return null;
+            }
+        }.search;
+
+        const empty_path = &[_]usize{};
+        const search_result = findPrintLnRecursive(allocator, flow.continuations, empty_path) orelse {
+            return .{ .transformed = .{ .program = program } };
+        };
+
+        const new_invocation = ast.Invocation{
+            .path = impl_path,
+            .args = flow.invocation.args,
+            .annotations = flow.invocation.annotations, // Existing annotations (pipeline print.ln doesn't set @pass_ran yet)
+            .inserted_by_tap = flow.invocation.inserted_by_tap,
+            .from_opaque_tap = flow.invocation.from_opaque_tap,
+        };
+
+        const new_step = ast.Step{
+            .invocation = new_invocation,
+            // We'll also set inline_code here for the pipeline step
+        };
+        _ = new_step; // TODO: PIPELINE CASE NEEDS MORE WORK TO SUPPORT BOTH PATH RE-ROUTE AND INLINE CODE
+                      // For now, let's fix top-level first as it's the most common for println
+
+        const final_step = ast.Step{ .inline_code = inline_code };
+        const modified_flow = ast_functional.replacePipelineStepAtPath(
+            allocator,
+            flow,
+            search_result.path,
+            search_result.step_idx,
+            final_step,
+        ) catch unreachable;
+
+        const new_item = if (item.* == .subflow_impl) blk2: {
+            var new_subflow = item.subflow_impl;
+            new_subflow.body = .{ .flow = modified_flow };
+            break :blk2 ast.Item{ .subflow_impl = new_subflow };
+        } else ast.Item{ .flow = modified_flow };
+
+        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = .{ .program = result } };
+        }
+        return .{ .transformed = .{ .program = program } };
+    }
+}
+
+// ============================================================================
+// PRINT.BLK - Multi-line block printing with Source block (ZERO OVERHEAD)
+// ============================================================================
+//
+// Syntax: std.io:print.blk {
+//     Header: {{ title }}
+//     Value:  {{ count }}
+// }
+//
+// ARCHITECTURE:
+// - Takes a Source block (multi-line text)
+// - Parses {{ ... }} and {% if %} placeholders
+// - Generates inline Zig print statement
+//
+// This is NOT a regular event - it's a pure compile-time transformation.
+
+~[comptime|transform]pub event print.blk {
+    source: Source,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~[norun]pub event print.blk.impl {
+    text: []const u8,
+}
+
+~proc print.blk {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // Helper: Check if identifier is a Zig keyword
+    const isZigKeyword = struct {
+        fn check(word: []const u8) bool {
+            const keywords = [_][]const u8{
+                "error", "type", "async", "await", "suspend", "resume",
+                "try", "catch", "if", "else", "switch", "while",
+                "for", "break", "continue", "return", "defer", "errdefer",
+                "test", "pub", "export", "extern", "packed", "inline",
+                "noinline", "comptime", "nosuspend", "volatile", "allowzero",
+                "align", "linksection", "callconv", "noalias",
+                "struct", "enum", "union", "opaque", "fn", "const",
+                "var", "anyframe", "anytype", "anyerror", "unreachable",
+                "undef", "null", "true", "false", "and", "or",
+                "orelse", "threadlocal",
+            };
+            for (keywords) |kw| {
+                if (std.mem.eql(u8, word, kw)) return true;
+            }
+            return false;
+        }
+    }.check;
+
+    // Helper: Append path with escaped keywords
+    const appendEscapedPath = struct {
+        fn append(buf: *std.ArrayList(u8), alloc: std.mem.Allocator, path: []const u8) void {
+            var start: usize = 0;
+            var pos: usize = 0;
+            var is_first = true;
+
+            while (pos <= path.len) {
+                if (pos == path.len or path[pos] == '.') {
+                    const segment = path[start..pos];
+                    if (!is_first) {
+                        buf.append(alloc, '.') catch unreachable;
+                        if (isZigKeyword(segment)) {
+                            buf.appendSlice(alloc, "@\"") catch unreachable;
+                            buf.appendSlice(alloc, segment) catch unreachable;
+                            buf.append(alloc, '"') catch unreachable;
+                        } else {
+                            buf.appendSlice(alloc, segment) catch unreachable;
+                        }
+                    } else {
+                        buf.appendSlice(alloc, segment) catch unreachable;
+                    }
+                    is_first = false;
+                    start = pos + 1;
+                }
+                pos += 1;
+            }
+        }
+    }.append;
+
+    // Get the flow from the item
+    const flow = if (item.* == .flow)
+        &item.flow
+    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
+        &item.subflow_impl.body.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    // Parse the Source content for {{ ... }} placeholders
+    var format_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+    var args_buf = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+    var i: usize = 0;
+    var first_arg = true;
+
+    const content = source.text;
+
+    while (i < content.len) {
+        // Look for {% if var %}...{% endif %} control blocks
+        if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '%') {
+            const tag_start = i + 2;
+            // Skip whitespace after {%
+            var ws_start = tag_start;
+            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+
+            // Check for "if " keyword
+            if (ws_start + 3 <= content.len and std.mem.eql(u8, content[ws_start..ws_start + 3], "if ")) {
+                const var_start = ws_start + 3;
+                // Skip whitespace after "if"
+                var var_pos = var_start;
+                while (var_pos < content.len and (content[var_pos] == ' ' or content[var_pos] == '\t')) : (var_pos += 1) {}
+
+                // Find end of variable name
+                var var_end = var_pos;
+                while (var_end < content.len and content[var_end] != ' ' and content[var_end] != '\t' and content[var_end] != '%') : (var_end += 1) {}
+                const cond_var = content[var_pos..var_end];
+
+                // Find closing %}
+                var tag_end = var_end;
+                while (tag_end + 1 < content.len and !(content[tag_end] == '%' and content[tag_end + 1] == '}')) : (tag_end += 1) {}
+
+                if (tag_end + 1 < content.len) {
+                    const body_start = tag_end + 2;
+
+                    // Find matching {% endif %}
+                    const endif_marker = "{% endif %}";
+                    if (std.mem.indexOf(u8, content[body_start..], endif_marker)) |endif_offset| {
+                        const body_end = body_start + endif_offset;
+                        const body_content = content[body_start..body_end];
+
+                        format_buf.appendSlice(allocator, "{s}") catch unreachable;
+
+                        if (!first_arg) {
+                            args_buf.appendSlice(allocator, ", ") catch unreachable;
+                        }
+                        args_buf.appendSlice(allocator, "if (") catch unreachable;
+                        appendEscapedPath(&args_buf, allocator, cond_var);
+                        args_buf.appendSlice(allocator, ") \"") catch unreachable;
+                        for (body_content) |c| {
+                            switch (c) {
+                                '"' => args_buf.appendSlice(allocator, "\\\"") catch unreachable,
+                                '\\' => args_buf.appendSlice(allocator, "\\\\") catch unreachable,
+                                '\n' => args_buf.appendSlice(allocator, "\\n") catch unreachable,
+                                '\r' => args_buf.appendSlice(allocator, "\\r") catch unreachable,
+                                '\t' => args_buf.appendSlice(allocator, "\\t") catch unreachable,
+                                else => args_buf.append(allocator, c) catch unreachable,
+                            }
+                        }
+                        args_buf.appendSlice(allocator, "\" else \"\"") catch unreachable;
+                        first_arg = false;
+
+                        i = body_end + endif_marker.len;
+                        continue;
+                    }
+                }
+            }
+            // Not a recognized tag, treat as literal
+            switch (content[i]) {
+                '"' => format_buf.appendSlice(allocator, "\\\"") catch unreachable,
+                '\\' => format_buf.appendSlice(allocator, "\\\\") catch unreachable,
+                '\n' => format_buf.appendSlice(allocator, "\\n") catch unreachable,
+                '\r' => format_buf.appendSlice(allocator, "\\r") catch unreachable,
+                '\t' => format_buf.appendSlice(allocator, "\\t") catch unreachable,
+                else => format_buf.append(allocator, content[i]) catch unreachable,
+            }
+            i += 1;
+        }
+        // Look for {{ ... }} placeholders
+        else if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '{') {
+            const placeholder_start = i + 2;
+            // Skip leading whitespace
+            var ws_start = placeholder_start;
+            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+
+            // Find closing }}
+            var j = ws_start;
+            while (j + 1 < content.len and !(content[j] == '}' and content[j + 1] == '}')) : (j += 1) {}
+
+            if (j + 1 < content.len) {
+                // Trim trailing whitespace
+                var ws_end = j;
+                while (ws_end > ws_start and (content[ws_end - 1] == ' ' or content[ws_end - 1] == '\t')) : (ws_end -= 1) {}
+
+                const placeholder = content[ws_start..ws_end];
+                var var_name: []const u8 = placeholder;
+                var format_spec: []const u8 = "any";
+
+                // Check for format specifier
+                if (std.mem.indexOf(u8, placeholder, ":")) |colon_pos| {
+                    var_name = placeholder[0..colon_pos];
+                    format_spec = placeholder[colon_pos + 1..];
+                }
+
+                format_buf.append(allocator, '{') catch unreachable;
+                format_buf.appendSlice(allocator, format_spec) catch unreachable;
+                format_buf.append(allocator, '}') catch unreachable;
+
+                if (!first_arg) {
+                    args_buf.appendSlice(allocator, ", ") catch unreachable;
+                }
+                appendEscapedPath(&args_buf, allocator, var_name);
+                first_arg = false;
+                i = j + 2;
+            } else {
+                switch (content[i]) {
+                    '"' => format_buf.appendSlice(allocator, "\\\"") catch unreachable,
+                    '\\' => format_buf.appendSlice(allocator, "\\\\") catch unreachable,
+                    '\n' => format_buf.appendSlice(allocator, "\\n") catch unreachable,
+                    '\r' => format_buf.appendSlice(allocator, "\\r") catch unreachable,
+                    '\t' => format_buf.appendSlice(allocator, "\\t") catch unreachable,
+                    else => format_buf.append(allocator, content[i]) catch unreachable,
+                }
+                i += 1;
+            }
+        } else {
+            // Escape special characters for Zig string literal
+            switch (content[i]) {
+                '"' => format_buf.appendSlice(allocator, "\\\"") catch unreachable,
+                '\\' => format_buf.appendSlice(allocator, "\\\\") catch unreachable,
+                '\n' => format_buf.appendSlice(allocator, "\\n") catch unreachable,
+                '\r' => format_buf.appendSlice(allocator, "\\r") catch unreachable,
+                '\t' => format_buf.appendSlice(allocator, "\\t") catch unreachable,
+                else => format_buf.append(allocator, content[i]) catch unreachable,
+            }
+            i += 1;
+        }
+    }
+
+    // Add final newline if not present
+    if (format_buf.items.len < 2 or
+        format_buf.items[format_buf.items.len - 2] != '\\' or
+        format_buf.items[format_buf.items.len - 1] != 'n')
+    {
+        format_buf.appendSlice(allocator, "\\n") catch unreachable;
+    }
+
+    const inline_code = std.fmt.allocPrint(
+        allocator,
+        "@import(\"std\").debug.print(\"{s}\", .{{{s}}});",
+        .{ format_buf.items, args_buf.items }
+    ) catch unreachable;
+
+    // Create impl path for shape checking
+    const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
+    impl_segments[0] = allocator.dupe(u8, "print") catch unreachable;
+    impl_segments[1] = allocator.dupe(u8, "blk.impl") catch unreachable;
+    const impl_path = ast.DottedPath{
+        .module_qualifier = flow.invocation.path.module_qualifier,
+        .segments = impl_segments,
+    };
+
+    // Build new invocation with @pass_ran annotation
+    const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+    for (flow.invocation.annotations, 0..) |ann, idx| {
+        new_inv_annotations[idx] = ann;
+    }
+    new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const new_invocation = ast.Invocation{
+        .path = impl_path,
+        .args = flow.invocation.args,
+        .annotations = new_inv_annotations,
+        .inserted_by_tap = flow.invocation.inserted_by_tap,
+        .from_opaque_tap = flow.invocation.from_opaque_tap,
+    };
+
+    const transformed_flow = ast.Flow{
+        .invocation = new_invocation,
+        .continuations = flow.continuations,
+        .annotations = flow.annotations,
+        .pre_label = flow.pre_label,
+        .post_label = flow.post_label,
+        .super_shape = flow.super_shape,
+        .inline_body = inline_code,
+        .is_pure = flow.is_pure,
+        .is_transitively_pure = flow.is_transitively_pure,
+        .location = flow.location,
+        .module = flow.module,
+    };
+
+    const new_item = if (item.* == .subflow_impl) blk: {
+        var new_subflow = item.subflow_impl;
+        new_subflow.body = .{ .flow = transformed_flow };
+        break :blk ast.Item{ .subflow_impl = new_subflow };
+    } else ast.Item{ .flow = transformed_flow };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    return .{ .transformed = .{ .program = program } };
+}
