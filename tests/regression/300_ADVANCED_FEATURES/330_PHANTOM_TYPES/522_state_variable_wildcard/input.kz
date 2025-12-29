@@ -13,4 +13,4 @@
 // Test 1: Wildcard accepts [owned]
 ~app.data:alloc()
 | allocated a |> app.processor:process(data: a.data)  // M'_ accepts [owned], M = owned
-    | done d1 |> _  // d1.data: *Data[owned] - preserved!
+    | done |> _  // d1.data: *Data[owned] - preserved!

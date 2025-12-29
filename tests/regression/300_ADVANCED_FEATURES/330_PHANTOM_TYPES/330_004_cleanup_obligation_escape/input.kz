@@ -13,7 +13,7 @@
 // The ! marker means this state requires cleanup (calling app.fs:close)
 // before the flow terminates
 ~app.fs:open(path: "test.txt")
-| opened f |> _  // ERROR: Flow ends with *File[opened!] not cleaned up!
+| opened |> _  // ERROR: Flow ends with *File[opened!] not cleaned up!
 
 // This SHOULD fail because:
 // 1. app.fs:open returns *File[opened!]

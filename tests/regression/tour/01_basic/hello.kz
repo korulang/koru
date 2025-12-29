@@ -22,4 +22,4 @@ const std = @import("std");
 
 // Top-level flow that executes
 ~greet(name: "Koru Tour")
-| welcomed w |> _  // Terminal marker ends the flow
+| welcomed |> _  // Terminal marker ends the flow

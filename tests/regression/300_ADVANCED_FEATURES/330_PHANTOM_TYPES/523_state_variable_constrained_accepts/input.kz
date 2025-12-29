@@ -14,4 +14,4 @@
 // Test 1: Constraint accepts [owned]
 ~app.data:alloc()
 | allocated a |> app.processor:process(data: a.data)  // M'owned|borrowed accepts [owned], M = owned
-    | done d1 |> _  // d1.data: *Data[owned] - preserved!
+    | done |> _  // d1.data: *Data[owned] - preserved!

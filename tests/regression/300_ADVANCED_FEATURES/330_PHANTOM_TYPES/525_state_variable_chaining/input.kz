@@ -15,4 +15,4 @@
 | allocated a |> app.processor:validate(data: a.data)  // M'_ accepts [owned], M = owned
     | validated v |> app.processor:process(data: v.data)  // M'_ accepts [owned], M = owned
         | processed p |> app.processor:finalize(data: p.data)  // M'_ accepts [owned], M = owned
-            | done d |> _  // d.data: *Data[owned] - M preserved through entire chain!
+            | done |> _  // d.data: *Data[owned] - M preserved through entire chain!
