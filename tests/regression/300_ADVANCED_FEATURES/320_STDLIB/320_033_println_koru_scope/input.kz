@@ -6,4 +6,4 @@
 // Use ~capture to create a Koru binding, then print it
 ~capture(expr: { total: @as(i32, 0) })
 | as |> captured { total: 42 }
-| done final |> std.io:print.ln("Captured total: {{ final.total:d }}")
+| captured final |> std.io:print.ln("Captured total: {{ final.total:d }}")

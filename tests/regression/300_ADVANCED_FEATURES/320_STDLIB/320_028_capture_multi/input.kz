@@ -28,7 +28,7 @@ const std = @import("std");
       sum: c.sum + val,
       max: if (val > c.max) val else c.max
     }
-| done final |> result { sum: final.sum, max: final.max }
+| captured final |> result { sum: final.sum, max: final.max }
 
 ~compute_stats()
 | result |> std.io:println(text: "done")

@@ -82,6 +82,7 @@ pub const EmissionContext = struct {
     module_annotations: ?[]const []const u8 = null, // Module-level annotations for tap filtering
     skip_tap_inserted_steps: bool = false, // Skip steps inserted by tap transformation (for opaque modules)
     capture_counter: usize = 0, // Counter for unique capture type names (nested captures)
+    for_counter: usize = 0, // Counter for unique for loop binding names (nested loops)
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -3936,9 +3937,17 @@ fn emitStep(
         },
         .foreach => |fe| {
             // Emit for loop with proper AST body
-            const each_binding = ast.NamedBranch.getBinding(fe.branches, "each") orelse "_";
+            const raw_binding = ast.NamedBranch.getBinding(fe.branches, "each") orelse "_";
             const each_body = ast.NamedBranch.getBody(fe.branches, "each");
             const done_body = ast.NamedBranch.getBody(fe.branches, "done");
+
+            // Generate unique binding for default names to avoid shadowing in nested loops
+            var binding_buf: [64]u8 = undefined;
+            const each_binding = if (std.mem.eql(u8, raw_binding, "item") or std.mem.eql(u8, raw_binding, "_")) blk: {
+                const for_id = ctx.for_counter;
+                ctx.for_counter += 1;
+                break :blk std.fmt.bufPrint(&binding_buf, "__for_item_{d}", .{for_id}) catch raw_binding;
+            } else raw_binding;
 
             try emitter.writeIndent();
             try emitter.write("for (");
@@ -4074,11 +4083,11 @@ fn emitStep(
             // Emit capture with comptime type transformation
             const as_binding = ast.NamedBranch.getBinding(cap.branches, "as") orelse "__capture";
             const as_body = ast.NamedBranch.getBody(cap.branches, "as");
-            const done_binding = ast.NamedBranch.getBinding(cap.branches, "done");
-            const done_body = ast.NamedBranch.getBody(cap.branches, "done");
+            const captured_binding = ast.NamedBranch.getBinding(cap.branches, "captured");
+            const captured_body = ast.NamedBranch.getBody(cap.branches, "captured");
 
             // Use counter to create unique TYPE name (avoids type collision in nested captures)
-            // Variable names stay as-is (user must use unique bindings for nested captures)
+            // Variable bindings must be unique - user must provide explicit names for nested captures
             const capture_id = ctx.capture_counter;
             ctx.capture_counter += 1;
             const type_name_buf = std.fmt.allocPrint(ctx.allocator, "__CaptureT_{s}_{d}", .{ as_binding, capture_id }) catch "__CaptureT";
@@ -4173,11 +4182,11 @@ fn emitStep(
                 }
             }
 
-            // Bind final value and emit done_body
-            if (done_binding) |done_bind| {
+            // Bind final value and emit captured_body
+            if (captured_binding) |captured_bind| {
                 try emitter.writeIndent();
                 try emitter.write("const ");
-                try emitter.write(done_bind);
+                try emitter.write(captured_bind);
                 try emitter.write(" = ");
                 try emitter.write(as_binding);
                 try emitter.write(";\n");
@@ -4185,12 +4194,12 @@ fn emitStep(
                 // Suppress unused warning
                 try emitter.writeIndent();
                 try emitter.write("_ = &");
-                try emitter.write(done_bind);
+                try emitter.write(captured_bind);
                 try emitter.write(";\n");
             }
 
-            // Emit done_body continuations
-            for (done_body) |*cont| {
+            // Emit captured_body continuations
+            for (captured_body) |*cont| {
                 if (cont.node) |node| {
                     var result_buf: [64]u8 = undefined;
                     const inner_result = std.fmt.bufPrint(&result_buf, "done_result_{d}", .{step_idx}) catch "_";
@@ -4439,9 +4448,17 @@ fn emitStepWithBindingSubstitution(
         },
         .foreach => |fe| {
             // Emit for loop - binding substitution not applied inside loop body for now
-            const each_binding = ast.NamedBranch.getBinding(fe.branches, "each") orelse "_";
+            const raw_binding = ast.NamedBranch.getBinding(fe.branches, "each") orelse "_";
             const each_body = ast.NamedBranch.getBody(fe.branches, "each");
             const done_body = ast.NamedBranch.getBody(fe.branches, "done");
+
+            // Generate unique binding for default names to avoid shadowing in nested loops
+            var binding_buf: [64]u8 = undefined;
+            const each_binding = if (std.mem.eql(u8, raw_binding, "item") or std.mem.eql(u8, raw_binding, "_")) blk: {
+                const for_id = ctx.for_counter;
+                ctx.for_counter += 1;
+                break :blk std.fmt.bufPrint(&binding_buf, "__for_item_{d}", .{for_id}) catch raw_binding;
+            } else raw_binding;
 
             try emitter.writeIndent();
             try emitter.write("for (");

@@ -8,4 +8,4 @@
 // This is WRONG - ~ should not appear inside flows
 ~capture(expr: { total: @as(i32, 0) })
 | as |> captured { total: 42 }
-| done |> ~std.io:println("Should reject this!")
+| captured |> ~std.io:println("Should reject this!")

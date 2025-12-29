@@ -655,7 +655,7 @@ const std = @import("std");
 //         | as c |>
 //           for(items)
 //           | each i |> captured { total: c.total + i.item }
-//         | done final |> result { sum: final.total }
+//         | captured final |> result { sum: final.total }
 //
 // ARCHITECTURE:
 // - ~capture is a comptime transform that rewrites to ~capture.impl
@@ -951,14 +951,14 @@ const std = @import("std");
         // 1. Find path to the capture invocation
         // 2. Build CaptureNode from parent continuation's nested continuations
         // 3. Replace invocation with CaptureNode
-        // 4. Filter out consumed | as |> and | done |> branches
+        // 4. Filter out consumed | as |> and | captured |> branches
 
         // Helper to find path to invocation
         const findCaptureWithPath = struct {
             const SearchResult = struct {
                 path: []const usize,
                 as_cont: ?*const ast.Continuation,
-                done_cont: ?*const ast.Continuation,
+                captured_cont: ?*const ast.Continuation,
             };
 
             fn search(alloc: std.mem.Allocator, continuations: []const ast.Continuation, current_path: []const usize, target_inv: *const ast.Invocation) ?SearchResult {
@@ -972,22 +972,22 @@ const std = @import("std");
                     if (cont.node) |*node| {
                         if (node.* == .invocation) {
                             if (&node.invocation == target_inv) {
-                                // Found it! Extract | as |> and | done |> from this continuation's nested continuations
+                                // Found it! Extract | as |> and | captured |> from this continuation's nested continuations
                                 var found_as: ?*const ast.Continuation = null;
-                                var found_done: ?*const ast.Continuation = null;
+                                var found_captured: ?*const ast.Continuation = null;
 
                                 for (cont.continuations) |*nested| {
                                     if (std.mem.eql(u8, nested.branch, "as")) {
                                         found_as = nested;
-                                    } else if (std.mem.eql(u8, nested.branch, "done")) {
-                                        found_done = nested;
+                                    } else if (std.mem.eql(u8, nested.branch, "captured")) {
+                                        found_captured = nested;
                                     }
                                 }
 
                                 return SearchResult{
                                     .path = path,
                                     .as_cont = found_as,
-                                    .done_cont = found_done,
+                                    .captured_cont = found_captured,
                                 };
                             }
                         }
@@ -1013,25 +1013,25 @@ const std = @import("std");
 
         // Get bindings
         const nested_as_binding = if (search_result.as_cont) |ac| (ac.binding orelse "c") else "c";
-        const nested_done_binding = if (search_result.done_cont) |dc| dc.binding else null;
+        const nested_captured_binding = if (search_result.captured_cont) |cc| cc.binding else null;
 
         // Parse field names to know which fields THIS nested capture owns
         const nested_my_fields = TransformHelper.parseFieldNames(allocator, expr);
 
-        // Transform captured { } blocks in the as_cont and done_cont
+        // Transform captured { } blocks in the as_cont and captured_cont
         const transformed_as_cont = if (search_result.as_cont) |ac|
             TransformHelper.transformCaptured(allocator, ac, nested_as_binding, nested_my_fields)
         else
             null;
 
-        const transformed_done_cont = if (search_result.done_cont) |dc|
-            TransformHelper.transformCaptured(allocator, dc, nested_as_binding, nested_my_fields)
+        const transformed_captured_cont = if (search_result.captured_cont) |cc|
+            TransformHelper.transformCaptured(allocator, cc, nested_as_binding, nested_my_fields)
         else
             null;
 
         // Build branches for CaptureNode using uniform NamedBranch structure
-        // Count branches (as + optional done)
-        const branch_count: usize = if (transformed_done_cont != null) 2 else if (transformed_as_cont != null) 1 else 0;
+        // Count branches (as + optional captured)
+        const branch_count: usize = if (transformed_captured_cont != null) 2 else if (transformed_as_cont != null) 1 else 0;
         const branches = allocator.alloc(ast.NamedBranch, branch_count) catch unreachable;
 
         var branch_idx: usize = 0;
@@ -1046,13 +1046,13 @@ const std = @import("std");
             branch_idx += 1;
         }
 
-        if (transformed_done_cont) |tc| {
-            const done_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
-            done_body[0] = tc.*;
+        if (transformed_captured_cont) |tc| {
+            const captured_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
+            captured_body[0] = tc.*;
             branches[branch_idx] = .{
-                .name = "done",
-                .body = done_body,
-                .binding = nested_done_binding,
+                .name = "captured",
+                .body = captured_body,
+                .binding = nested_captured_binding,
             };
         }
 
@@ -1077,10 +1077,10 @@ const std = @import("std");
             capture_node,
         ) catch unreachable;
 
-        // Filter out | as |> and | done |> from the nested continuations (they're now inside the CaptureNode)
+        // Filter out | as |> and | captured |> from the nested continuations (they're now inside the CaptureNode)
         const keepNotCaptureBranch = struct {
             fn check(branch: []const u8) bool {
-                return !std.mem.eql(u8, branch, "as") and !std.mem.eql(u8, branch, "done");
+                return !std.mem.eql(u8, branch, "as") and !std.mem.eql(u8, branch, "captured");
             }
         }.check;
 
@@ -1117,11 +1117,11 @@ const std = @import("std");
     // This keeps AST analyzable for shape checking, tap injection, etc.
     // =====================================================================
 
-    // Find | as binding |> and | done final |> continuations
+    // Find | as binding |> and | captured final |> continuations
     var as_cont: ?*const ast.Continuation = null;
-    var done_cont: ?*const ast.Continuation = null;
+    var captured_cont: ?*const ast.Continuation = null;
     var as_binding: []const u8 = "c"; // default
-    var done_binding: []const u8 = "result"; // default
+    var captured_binding: []const u8 = "result"; // default
 
     for (capture_continuations) |*cont| {
         if (std.mem.eql(u8, cont.branch, "as")) {
@@ -1129,10 +1129,10 @@ const std = @import("std");
             if (cont.binding) |b| {
                 as_binding = b;
             }
-        } else if (std.mem.eql(u8, cont.branch, "done")) {
-            done_cont = cont;
+        } else if (std.mem.eql(u8, cont.branch, "captured")) {
+            captured_cont = cont;
             if (cont.binding) |b| {
-                done_binding = b;
+                captured_binding = b;
             }
         }
     }
@@ -1156,7 +1156,7 @@ const std = @import("std");
 
     // Step 4: Build CaptureNode with NamedBranch array
     // The emitter's .capture => handler will emit var decl, bodies, and aliases
-    const branch_count: usize = if (done_cont != null) 2 else 1;
+    const branch_count: usize = if (captured_cont != null) 2 else 1;
     const branches = allocator.alloc(ast.NamedBranch, branch_count) catch unreachable;
 
     // As branch - wrap transformed continuation in array for NamedBranch.body
@@ -1168,14 +1168,14 @@ const std = @import("std");
         .binding = as_binding,
     };
 
-    // Done branch if present - wrap entire continuation in array
-    if (done_cont) |dc| {
-        const done_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
-        done_body[0] = dc.*;
+    // Captured branch if present - wrap entire continuation in array
+    if (captured_cont) |cc| {
+        const captured_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
+        captured_body[0] = cc.*;
         branches[1] = .{
-            .name = "done",
-            .body = done_body,
-            .binding = done_binding,
+            .name = "captured",
+            .body = captured_body,
+            .binding = captured_binding,
         };
     }
 

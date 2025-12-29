@@ -19,5 +19,5 @@ const std = @import("std");
 ~capture(expr: { outer: @as(i32, 0) })
 | as o |> capture(expr: { inner: @as(i32, 0) })
     | as |> captured { inner: 42, outer: 99 }
-    | done result |> print_results(outer_val: o.outer, inner_val: result.inner)
-| done |> _
+    | captured result |> print_results(outer_val: o.outer, inner_val: result.inner)
+| captured |> _

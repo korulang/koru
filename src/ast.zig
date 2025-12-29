@@ -684,7 +684,7 @@ pub const Branch = struct {
 /// Examples:
 ///   - Conditional: branches = [{ name: "then", body: [...] }, { name: "else", body: [...] }]
 ///   - Foreach: branches = [{ name: "each", body: [...] }, { name: "done", body: [...] }]
-///   - Capture: branches = [{ name: "as", body: [...] }, { name: "done", body: [...] }]
+///   - Capture: branches = [{ name: "as", body: [...] }, { name: "captured", body: [...] }]
 pub const NamedBranch = struct {
     name: []const u8,              // Branch name: "then", "else", "each", "done", "as", etc.
     body: []const Continuation,    // The continuations in this branch

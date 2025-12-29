@@ -1,8 +1,4 @@
 // Test: Nested ~capture - outer capture's `captured` inside inner capture's continuation
-//
-// FIXME: The `captured` syntax is BROKEN/badly designed.
-// The bindings `o` and `i` below appear unused but are implicitly used by `captured`.
-// This is confusing and needs a syntax redesign. See KORU100 false positive issue.
 
 ~import "$std/io"
 ~import "$std/control"
@@ -16,9 +12,11 @@ const std = @import("std");
 }
 
 // Outer capture wraps inner capture
-// The outer's `captured { outer: ... }` is inside the inner's `| done |>` continuation
+// The outer's `captured { outer: ... }` is inside the inner's `| captured |>` continuation
+// Note: nested captures require explicit unique bindings (outer/inner)
+// The bindings must actually be used in captured { } blocks
 ~capture(expr: { outer: @as(i32, 0) })
-| as o |> capture(expr: { inner: @as(i32, 0) })
-    | as i |> captured { inner: 42 }
-    | done result |> captured { outer: result.inner }
-| done final |> print_int(value: final.outer)
+| as outer |> capture(expr: { inner: @as(i32, 0) })
+    | as inner |> captured { inner: inner.inner + 42 }
+    | captured result |> captured { outer: outer.outer + result.inner }
+| captured final |> print_int(value: final.outer)

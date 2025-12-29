@@ -24,5 +24,5 @@ const std = @import("std");
 ~capture(init: { count: @as(i32, 0) })
 | as outer |> capture(init: { count: @as(i32, 0) })
     | as inner |> captured { inner.count: inner.count + 10 }
-    | done inner_result |> captured { outer.count: outer.count + inner_result.count }
-| done final |> print_results(outer_count: final.count, inner_count: 10)
+    | captured inner_result |> captured { outer.count: outer.count + inner_result.count }
+| captured final |> print_results(outer_count: final.count, inner_count: 10)

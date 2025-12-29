@@ -16,4 +16,4 @@
     | each item |> if(item > 5)
         | then |> captured { sum: acc.sum + @as(i64, item), count: acc.count + 1 }
         | else |> captured { sum: acc.sum, count: acc.count }
-| done result |> std.io:print.ln("${@divTrunc(result.sum, @as(i64, result.count)):d}")
+| captured result |> std.io:print.ln("${@divTrunc(result.sum, @as(i64, result.count)):d}")
