@@ -124,7 +124,7 @@ const BODIES = [_]Body{
         |> energy(bodies: b[0..])
             | e e1 |> print_e(e: e1)
                 |> for(0..iters)
-                    | each step |> capture({ dv0x: @as(f64,0), dv0y: @as(f64,0), dv0z: @as(f64,0), dv1x: @as(f64,0), dv1y: @as(f64,0), dv1z: @as(f64,0), dv2x: @as(f64,0), dv2y: @as(f64,0), dv2z: @as(f64,0), dv3x: @as(f64,0), dv3y: @as(f64,0), dv3z: @as(f64,0), dv4x: @as(f64,0), dv4y: @as(f64,0), dv4z: @as(f64,0) })
+                    | each |> capture({ dv0x: @as(f64,0), dv0y: @as(f64,0), dv0z: @as(f64,0), dv1x: @as(f64,0), dv1y: @as(f64,0), dv1z: @as(f64,0), dv2x: @as(f64,0), dv2y: @as(f64,0), dv2z: @as(f64,0), dv3x: @as(f64,0), dv3y: @as(f64,0), dv3z: @as(f64,0), dv4x: @as(f64,0), dv4y: @as(f64,0), dv4z: @as(f64,0) })
                         | as dv |> for(0..5)
                             | each i |> for(i+1..5)
                                 | each j |> pair_force(bi: b[i], bj: b[j], dt: DT)

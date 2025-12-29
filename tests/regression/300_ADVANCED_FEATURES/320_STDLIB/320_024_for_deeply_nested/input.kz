@@ -30,5 +30,5 @@ const std = @import("std");
 ~step1()
 | done |> step2()
     | done |> for(0..3)
-        | each i |> std.io:println(text: "iteration")
+        | each |> std.io:println(text: "iteration")
         | done |> std.io:println(text: "done")

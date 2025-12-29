@@ -50,5 +50,5 @@ const Item = ast.Item;
 }
 
 ~metamorphic_transform()
-| left v {}
-| right v {}
+| left {}
+| right {}

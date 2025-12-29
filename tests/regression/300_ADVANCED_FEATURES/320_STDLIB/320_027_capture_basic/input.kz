@@ -14,5 +14,5 @@ const std = @import("std");
 
 // Struct capture with typed init
 ~capture(expr: { total: @as(i32, 0) })
-| as c |> captured { total: 42 }
+| as |> captured { total: 42 }
 | done final |> print_int(value: final.total)

@@ -31,4 +31,4 @@ const std = @import("std");
 | done final |> result { sum: final.sum, max: final.max }
 
 ~compute_stats()
-| result r |> std.io:println(text: "done")
+| result |> std.io:println(text: "done")

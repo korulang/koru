@@ -32,8 +32,8 @@ const std = @import("std");
 
 // Use file submodule
 ~std.io.file:open(path: "test.txt")
-| opened f |> std.io:println(text: "File opened!")
-| error e |> std.io:println(text: "No file")
+| opened |> std.io:println(text: "File opened!")
+| error |> std.io:println(text: "No file")
 
 // Use console submodule
 ~std.io.console:write(text: "Console output")

@@ -212,7 +212,7 @@ const Body = struct {
         | adjusted |> calculate_energy(bodies: init.bodies[0..])
             | result r1 |> print_energy(energy: r1.energy)
                 | done |> for(0..p.n)
-                    | each sim |> process_all_pairs(bodies: init.bodies[0..], dt: 0.01)
+                    | each |> process_all_pairs(bodies: init.bodies[0..], dt: 0.01)
                         | done |> update_all_positions(bodies: init.bodies[0..], dt: 0.01)
                     | done |> calculate_energy(bodies: init.bodies[0..])
                         | result r2 |> print_energy(energy: r2.energy)

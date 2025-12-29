@@ -51,7 +51,7 @@ const std = @import("std");
 |> get_value()
     | value v1 |> print_value(v: v1)
         |> for(0..2)
-            | each i |> step_two()
+            | each |> step_two()
                 |> get_value()
                     | value v2 |> print_value(v: v2)
             | done |> _

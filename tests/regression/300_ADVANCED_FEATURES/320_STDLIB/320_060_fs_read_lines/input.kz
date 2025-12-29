@@ -3,7 +3,7 @@
 ~import "$std/io"
 
 ~std.fs:read_lines(path: "data.txt")
-| lines data |>
+| lines |>
     std.io:print.ln("Read file successfully")
 | failed err |>
     std.io:print.ln("Error: ${err}")

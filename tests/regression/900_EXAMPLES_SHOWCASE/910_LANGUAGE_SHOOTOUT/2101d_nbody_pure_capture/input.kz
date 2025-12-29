@@ -191,7 +191,7 @@ const Body = struct {
         |> calculate_energy(bodies: b[0..])
             | energy e1 |> print_energy(e: e1)
                 |> for(0..iterations)
-                    | each step |> advance_velocities(bodies: b[0..], dt: DT)
+                    | each |> advance_velocities(bodies: b[0..], dt: DT)
                         |> advance_positions(bodies: b[0..], dt: DT)
                     | done |> calculate_energy(bodies: b[0..])
                         | energy e2 |> print_energy(e: e2)

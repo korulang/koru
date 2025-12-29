@@ -18,6 +18,6 @@ const std = @import("std");
 // A single `captured` block updates BOTH captures at once
 ~capture(expr: { outer: @as(i32, 0) })
 | as o |> capture(expr: { inner: @as(i32, 0) })
-    | as i |> captured { inner: 42, outer: 99 }
+    | as |> captured { inner: 42, outer: 99 }
     | done result |> print_results(outer_val: o.outer, inner_val: result.inner)
 | done |> _

@@ -18,4 +18,4 @@ const std = @import("std");
 
 // Tap with comptime annotation - should work but currently fails
 ~[comptime]start -> end
-| Profile t |> end()
+| Profile |> end()

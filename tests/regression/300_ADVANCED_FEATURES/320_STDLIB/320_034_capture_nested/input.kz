@@ -14,7 +14,7 @@ const std = @import("std");
 // Outer capture wraps inner capture
 // The outer's `captured { outer: ... }` is inside the inner's `| done |>` continuation
 ~capture(expr: { outer: @as(i32, 0) })
-| as o |> capture(expr: { inner: @as(i32, 0) })
-    | as i |> captured { inner: 42 }
+| as |> capture(expr: { inner: @as(i32, 0) })
+    | as |> captured { inner: 42 }
     | done result |> captured { outer: result.inner }
 | done final |> print_int(value: final.outer)

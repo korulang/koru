@@ -13,5 +13,5 @@ const std = @import("std");
 // VALID: Concrete source (input:compute) + concrete branch (result)
 // Type safe - we know input:compute has .result branch
 ~input:compute -> *
-| result r |> log(event_name: "compute.result")
+| result |> log(event_name: "compute.result")
     | done |> _

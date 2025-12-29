@@ -56,7 +56,7 @@ const std = @import("std");
 
 // Comptime flow - validates AST structure
 ~validate_imports
-| validated v |> test_import | tested |> _
+| validated |> test_import | tested |> _
 | validation_failed |> _
 
 // Runtime flow - uses the imported io module

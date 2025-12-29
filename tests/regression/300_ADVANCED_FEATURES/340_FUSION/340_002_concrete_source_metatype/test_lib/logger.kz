@@ -13,9 +13,5 @@ const std = @import("std");
 // VALID: Concrete source (input:compute) + metatype (Transition)
 // Metatypes work on any branch - they provide metadata about the transition
 ~input:compute -> *
-| Transition t |> log(
-    source: "compute",
-    dest: T.destination,
-    branch: @tagName(t.branch)
-)
+| Transition t |> log(source: "compute", dest: T.destination, branch: @tagName(t.branch))
 | done |> _
