@@ -32,8 +32,8 @@ const std = @import("std");
 
 // Use submodule event (from io/file.kz)
 ~std.io.file:open(path: "test.txt")
-| opened f |> std.io:println(text: "File opened!")
-| error e |> std.io:println(text: "Error opening file")
+| opened |> std.io:println(text: "File opened!")
+| error |> std.io:println(text: "Error opening file")
 
 // Run test
 ~test()

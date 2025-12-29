@@ -38,7 +38,7 @@ const show_greeting = true;
     <h1>Hello World</h1>
     <p>This is conditional content</p>
 }
-| transformed program |> _
+| transformed |> _
 
 // Test 2: Braces inside content should NOT close the block
 // The closing } must be at base_indent or less
@@ -49,4 +49,4 @@ const show_greeting = true;
     </style>
     <div class="header">Styled!</div>
 }
-| transformed program |> _
+| transformed |> _

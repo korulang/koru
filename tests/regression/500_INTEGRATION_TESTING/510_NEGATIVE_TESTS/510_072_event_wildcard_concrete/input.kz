@@ -22,4 +22,4 @@ const std = @import("std");
 }
 
 ~compute(x: 42)
-| result r |> _
+| result |> _

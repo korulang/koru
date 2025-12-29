@@ -23,4 +23,4 @@
     const x = 42;
     const y = x + 1;
 }
-| transformed item |> _
+| transformed |> _

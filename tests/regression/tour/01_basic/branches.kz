@@ -22,6 +22,6 @@
 
 // Handle all branches
 ~divide(numerator: 10, denominator: 3)
-| success s |> _
+| success |> _
 | div_by_zero |> _
 | overflow |> _

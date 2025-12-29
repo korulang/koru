@@ -68,12 +68,12 @@ const std = @import("std");
 
     // The only way to use imported events is with their namespace:
     ~math:divide(numerator: 10.0, denominator: 2.0)
-    | success s |> _
-    | error e |> _
+    | success |> _
+    | error |> _
 
     return .{};
 }
 
 // MAIN FLOW: Demonstrate the imports
 ~demo.basic_usage()
-| done d |> _
+| done |> _

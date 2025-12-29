@@ -35,4 +35,4 @@ const std = @import("std");
 // Create a domain user and grant access
 ~app.test_lib.domain.user:create(email: "admin@example.com", role: "administrator", permissions: 999)
 | created c |> grant_access(user_data: c.user)
-    | granted g |> _
+    | granted |> _

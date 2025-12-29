@@ -14,4 +14,4 @@
 
 // This will be compiled with YOUR compiler strategy
 ~hello(name: "Metacircular")
-| greeted g |> _
+| greeted |> _

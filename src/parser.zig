@@ -89,6 +89,11 @@ pub const Parser = struct {
 
     /// Get current source location for error reporting and AST metadata
     fn getCurrentLocation(self: *Parser) errors.SourceLocation {
+        return self.getLineLocation(self.current, 0);
+    }
+
+    /// Get source location for a specific line and indent (column)
+    fn getLineLocation(self: *Parser, line_idx: usize, indent: usize) errors.SourceLocation {
         // CRITICAL: Duplicate file string into parse_arena so it survives import_parser.deinit()
         // The reporter.file_name might be a temporary stack string or might get freed when
         // the parser is deinit'd, but AST nodes need the file string to stay alive.
@@ -96,14 +101,14 @@ pub const Parser = struct {
             // If allocation fails, return a static error string rather than crashing
             return .{
                 .file = "<allocation_failed>",
-                .line = if (self.current < self.lines.len) self.current + 1 else self.lines.len,
-                .column = 0,
+                .line = if (line_idx < self.lines.len) line_idx + 1 else self.lines.len,
+                .column = indent,
             };
         };
         return .{
             .file = file_copy,
-            .line = if (self.current < self.lines.len) self.current + 1 else self.lines.len,
-            .column = 0,  // TODO: Track column position for precise error locations
+            .line = if (line_idx < self.lines.len) line_idx + 1 else self.lines.len,
+            .column = indent,
         };
     }
 
@@ -2509,6 +2514,7 @@ pub const Parser = struct {
             return error.UnexpectedEOF;
         }
 
+        const location = self.getLineLocation(self.current, lexer.getIndent(self.lines[self.current]));
         const line = self.lines[self.current];
         self.current += 1;
 
@@ -2791,7 +2797,7 @@ pub const Parser = struct {
             .pre_label = null, // Pre-label is handled in parseLabelAnchor
             .post_label = post_label,
             .super_shape = null, // Will be set later for inline flows
-            .location = self.getCurrentLocation(),
+            .location = location,
             .module = try self.allocator.dupe(u8, self.module_name),
         };
     }
@@ -3600,6 +3606,7 @@ pub const Parser = struct {
                 .node = .{ .invocation = flow_invocation },
                 .indent = indent,
                 .continuations = flow_continuations,
+                .location = self.getCurrentLocation(),
             };
 
             try flow_ast_continuations.append(self.allocator, flow_cont);
@@ -3760,6 +3767,7 @@ pub const Parser = struct {
             .node = step,
             .indent = indent,
             .continuations = &[_]ast.Continuation{},  // Temporary - will be replaced
+            .location = self.getCurrentLocation(),
         };
 
         // Parse nested continuations (multi-line continuations that follow the inline |>)
@@ -3803,15 +3811,16 @@ pub const Parser = struct {
             if (indent != expected_indent.?) break;
             
             // Parse the continuation (which will also parse its nested continuations)
+            const location = self.getLineLocation(self.current, indent);
             self.current += 1; // Move past current line before parsing
-            const cont = try self.parseContinuationWithNested(indent);
+            const cont = try self.parseContinuationWithNested(indent, location);
             try continuations.append(self.allocator, cont);
         }
         
         return continuations.toOwnedSlice(self.allocator);
     }
     
-    fn parseContinuationInternal(self: *Parser, indent: usize, parent_indent: usize) !ast.Continuation {
+    fn parseContinuationInternal(self: *Parser, indent: usize, parent_indent: usize, location: errors.SourceLocation) !ast.Continuation {
         _ = parent_indent;
         const line = self.lines[self.current - 1]; // We already incremented
         const trimmed = lexer.trim(line);
@@ -3823,13 +3832,13 @@ pub const Parser = struct {
         
         if (lexer.startsWith(after_bar, ">")) {
             // Pipeline continuation |>
-            cont = try self.parsePipelineContinuationBase(after_bar[1..], indent);
+            cont = try self.parsePipelineContinuationBase(after_bar[1..], indent, location);
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation
-            cont = try self.parseDerefContinuationBase(after_bar[1..], indent);
+            cont = try self.parseDerefContinuationBase(after_bar[1..], indent, location);
         } else {
             // Branch continuation
-            cont = try self.parseBranchContinuationBase(after_bar, indent);
+            cont = try self.parseBranchContinuationBase(after_bar, indent, location);
         }
         
         // Initialize continuations as empty, will be filled by caller if needed
@@ -3838,7 +3847,7 @@ pub const Parser = struct {
         return cont;
     }
     
-    fn parseContinuationWithNested(self: *Parser, indent: usize) !ast.Continuation {
+    fn parseContinuationWithNested(self: *Parser, indent: usize, location: errors.SourceLocation) anyerror!ast.Continuation {
         const line = self.lines[self.current - 1]; // We already incremented in parseContinuations
         const trimmed = lexer.trim(line);
 
@@ -3849,13 +3858,13 @@ pub const Parser = struct {
 
         if (lexer.startsWith(after_bar, ">")) {
             // Pipeline continuation |>
-            cont = try self.parsePipelineContinuationBase(after_bar[1..], indent);
+            cont = try self.parsePipelineContinuationBase(after_bar[1..], indent, location);
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation
-            cont = try self.parseDerefContinuationBase(after_bar[1..], indent);
+            cont = try self.parseDerefContinuationBase(after_bar[1..], indent, location);
         } else {
             // Branch continuation
-            cont = try self.parseBranchContinuationBase(after_bar, indent);
+            cont = try self.parseBranchContinuationBase(after_bar, indent, location);
         }
 
         // Parse nested continuations - ONLY greater indentation means nesting
@@ -3865,7 +3874,7 @@ pub const Parser = struct {
         return cont;
     }
     
-    fn parseNestedContinuationsForLevel(self: *Parser, parent_indent: usize) ![]ast.Continuation {
+    fn parseNestedContinuationsForLevel(self: *Parser, parent_indent: usize) anyerror![]ast.Continuation {
         var continuations = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 8);
         errdefer {
             for (continuations.items) |*cont| {
@@ -3884,11 +3893,11 @@ pub const Parser = struct {
             if (indent <= parent_indent) break;
             
             // Found a nested continuation - parse it and its nested ones recursively
+            const location = self.getLineLocation(self.current, indent);
             self.current += 1;
-            var cont = try self.parseContinuationInternal(indent, parent_indent);
+            const cont = try self.parseContinuationWithNested(indent, location);
             
             // After parsing this continuation, check for its nested ones
-            cont.continuations = try self.parseNestedContinuationsForLevel(indent);
             
             try continuations.append(self.allocator, cont);
         }
@@ -3896,7 +3905,7 @@ pub const Parser = struct {
         return continuations.toOwnedSlice(self.allocator);
     }
     
-    fn parseContinuation(self: *Parser, indent: usize) !ast.Continuation {
+    fn parseContinuation(self: *Parser, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         const line = self.lines[self.current];
         const trimmed = lexer.trim(line);
         
@@ -3905,20 +3914,20 @@ pub const Parser = struct {
         
         if (lexer.startsWith(after_bar, ">")) {
             // Pipeline continuation |>
-            return self.parsePipelineContinuation(after_bar[1..], indent);
+            return self.parsePipelineContinuation(after_bar[1..], indent, location);
         } else {
             // Branch continuation
-            return self.parseBranchContinuation(after_bar, indent);
+            return self.parseBranchContinuation(after_bar, indent, location);
         }
     }
     
-    fn parsePipelineContinuation(self: *Parser, content: []const u8, indent: usize) !ast.Continuation {
-        var cont = try self.parsePipelineContinuationBase(content, indent);
+    fn parsePipelineContinuation(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
+        var cont = try self.parsePipelineContinuationBase(content, indent, location);
         cont.continuations = try self.parseNestedContinuationsForLevel(indent);
         return cont;
     }
     
-    fn parseDerefContinuationBase(self: *Parser, content: []const u8, indent: usize) !ast.Continuation {
+    fn parseDerefContinuationBase(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
 
         // Parse: *target [(args)]
         // Note: Additional pipeline steps after deref (|> ...) are not supported in new AST model
@@ -3972,10 +3981,11 @@ pub const Parser = struct {
             .node = deref_step,
             .indent = indent,
             .continuations = &[_]ast.Continuation{}, // Will be filled by caller
+            .location = location,
         };
     }
     
-    fn parseBranchContinuationBase(self: *Parser, content: []const u8, indent: usize) !ast.Continuation {
+    fn parseBranchContinuationBase(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         // Note: *deref syntax is handled at a higher level, not here
         
         // Parse: branch [binding] [|> pipeline...]
@@ -4029,23 +4039,23 @@ pub const Parser = struct {
                 }
             }
 
+
+            const catch_all_branch = try self.allocator.dupe(u8, "?");
+            try self.context_stack.append(self.allocator, .{
+                .in_continuation = .{
+                    .branch = catch_all_branch,
+                    .binding = binding,
+                },
+            });
+            defer {
+                _ = self.context_stack.pop();
+                self.allocator.free(catch_all_branch);
+            }
+
             // Parse step if present
             var step: ?ast.Step = null;
 
             if (std.mem.indexOf(u8, rest, "|>")) |_| {
-                // Push continuation context so Source blocks can capture the binding
-                const catch_all_branch = try self.allocator.dupe(u8, "?");
-                try self.context_stack.append(self.allocator, .{
-                    .in_continuation = .{
-                        .branch = catch_all_branch,
-                        .binding = binding,
-                    },
-                });
-                defer {
-                    _ = self.context_stack.pop();
-                    self.allocator.free(catch_all_branch);
-                }
-
                 const steps = try self.parsePipelineSteps(rest);
                 defer self.allocator.free(steps);
                 if (steps.len > 0) {
@@ -4064,6 +4074,7 @@ pub const Parser = struct {
                 .node = step,
                 .indent = indent,
                 .continuations = &[_]ast.Continuation{},
+                .location = location,
             };
         }
 
@@ -4343,6 +4354,7 @@ pub const Parser = struct {
             .node = step,
             .indent = indent,
             .continuations = &[_]ast.Continuation{}, // Will be filled by caller
+            .location = location,
         };
     }
     
@@ -4384,21 +4396,21 @@ pub const Parser = struct {
             if (indent <= parent_indent) break;
             
             self.current += 1;
-            const cont = try self.parseContinuationInternal(indent, parent_indent);
+            const cont = try self.parseContinuationInternal(indent, parent_indent, self.getLineLocation(self.current - 1, indent));
             try continuations.append(self.allocator, cont);
         }
         
         return continuations.toOwnedSlice(self.allocator);
     }
     
-    fn parseDerefContinuation(self: *Parser, content: []const u8, indent: usize) !ast.Continuation {
-        var cont = try self.parseDerefContinuationBase(content, indent);
+    fn parseDerefContinuation(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
+        var cont = try self.parseDerefContinuationBase(content, indent, location);
         cont.continuations = try self.parseNestedContinuationsForLevel(indent);
         return cont;
     }
 
-    fn parseBranchContinuation(self: *Parser, content: []const u8, indent: usize) !ast.Continuation {
-        var cont = try self.parseBranchContinuationBase(content, indent);
+    fn parseBranchContinuation(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
+        var cont = try self.parseBranchContinuationBase(content, indent, location);
 
         // Advance cursor to look for nested continuations on following lines
         // (parseNestedContinuationsForLevel expects self.current to point at potential nested lines)
@@ -4408,7 +4420,7 @@ pub const Parser = struct {
         return cont;
     }
     
-    fn parsePipelineContinuationBase(self: *Parser, content: []const u8, indent: usize) !ast.Continuation {
+    fn parsePipelineContinuationBase(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         // This is a |> continuation (pipeline step on new line)
         // Check if we have a multi-line branch constructor
         var full_content = content;
@@ -4475,6 +4487,7 @@ pub const Parser = struct {
             .node = step,
             .indent = indent,
             .continuations = &[_]ast.Continuation{}, // Will be filled by caller
+            .location = location,
         };
     }
     

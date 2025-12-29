@@ -36,7 +36,7 @@ const std = @import("std");
 ~start()
 | ready |> #loop counter(n: 1)
     | next c |> @loop(n: c.value)
-    | done d |> _
+    | done |> _
 
 // Flow 2 trying to jump to Flow 1's label (should error!)
 ~start()

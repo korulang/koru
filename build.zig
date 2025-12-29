@@ -122,6 +122,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     
+    // Branch checker module
+    const branch_checker_module = b.createModule(.{
+        .root_source_file = b.path("src/branch_checker.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Shape checker module with dependencies
     const shape_checker_module = b.createModule(.{
         .root_source_file = b.path("src/shape_checker.zig"),
@@ -131,6 +138,17 @@ pub fn build(b: *std.Build) void {
     shape_checker_module.addImport("ast", ast_module);
     shape_checker_module.addImport("errors", errors_module);
     shape_checker_module.addImport("phantom_parser", phantom_parser_module);
+    shape_checker_module.addImport("branch_checker", branch_checker_module);
+
+    // Flow checker module
+    const flow_checker_module = b.createModule(.{
+        .root_source_file = b.path("src/flow_checker.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    flow_checker_module.addImport("ast", ast_module);
+    flow_checker_module.addImport("errors", errors_module);
+    flow_checker_module.addImport("branch_checker", branch_checker_module);
 
     // Phantom semantic checker module
     const phantom_semantic_checker_module = b.createModule(.{
@@ -396,6 +414,8 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("canonicalize_names", canonicalize_names_module);
     exe.root_module.addImport("meta_events", meta_events_module);
     exe.root_module.addImport("validate_abstract_impl", validate_abstract_impl_module);
+    exe.root_module.addImport("flow_checker", flow_checker_module);
+    exe.root_module.addImport("branch_checker", branch_checker_module);
 
     // Functional AST modules
     const ast_functional_module = b.createModule(.{

@@ -35,4 +35,4 @@ const std = @import("std");
 ~start()
 | ready |> #loop counter(n: 1)
     | next c |> @loop(n: c.value)
-    | done d |> _
+    | done |> _

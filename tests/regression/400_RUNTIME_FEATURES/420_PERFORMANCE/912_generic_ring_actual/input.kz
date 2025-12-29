@@ -75,6 +75,6 @@ var my_ring = MyRing.init();
 
 ~ring.enqueue(ring: &my_ring, value: 42)
 | enqueued |> ring.dequeue(ring: &my_ring)
-    | value v |> _
+    | value |> _
     | empty |> _
 | full |> _

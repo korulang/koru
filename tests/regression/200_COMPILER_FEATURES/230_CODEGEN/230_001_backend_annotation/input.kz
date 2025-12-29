@@ -31,4 +31,4 @@ const std = @import("std");
 
 // Test the runtime event
 ~runtime_event(x: 5)
-| done d |> _
+| done |> _

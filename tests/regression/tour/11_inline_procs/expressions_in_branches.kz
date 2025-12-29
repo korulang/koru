@@ -218,10 +218,10 @@ const std = @import("std");
 // Example flows
 const test_data = [_]f64{1.0, 2.0, 3.0, 4.0, 5.0};
 ~compute_metrics(data: &test_data)
-| metrics m |> _
+| metrics |> _
 | empty |> _
-| error e |> _
+| error |> _
 
 ~process_response(url: "/api/data")
-| success s |> _
-| failure f |> _
+| success |> _
+| failure |> _

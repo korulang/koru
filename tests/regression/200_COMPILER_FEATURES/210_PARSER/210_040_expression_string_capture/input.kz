@@ -13,12 +13,12 @@ const std = @import("std");
 
 // Test 1: Simple string with comma inside
 ~test.expr("Hello, world")
-| transformed program |> _
+| transformed |> _
 
 // Test 2: String with multiple commas
 ~test.expr("one, two, three")
-| transformed program |> _
+| transformed |> _
 
 // Test 3: Escaped quotes - works!
 ~test.expr("Hello \"world\"")
-| transformed program |> _
+| transformed |> _

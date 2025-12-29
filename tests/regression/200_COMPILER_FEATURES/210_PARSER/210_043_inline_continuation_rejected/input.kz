@@ -12,4 +12,4 @@
 }
 
 // INVALID: continuation on same line as invocation
-~greet(name: "World") | done d |> _
+~greet(name: "World") | done |> _

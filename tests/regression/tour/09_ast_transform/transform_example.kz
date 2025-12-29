@@ -47,4 +47,4 @@ const std = @import("std");
 
 // Test it - should compute 2 * (3 + 4) = 14 instead of 7!
 ~compute(x: 3, y: 4)
-| result r |> _
+| result |> _

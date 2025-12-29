@@ -29,4 +29,4 @@ const std = @import("std");
 
 ~compute(x: 42)
 | result r |> format(value: r.value)
-    | formatted f |> _
+    | formatted |> _

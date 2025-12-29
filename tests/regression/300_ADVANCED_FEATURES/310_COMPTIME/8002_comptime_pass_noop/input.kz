@@ -15,4 +15,4 @@ const std = @import("std");
 
 // Simple flow to trigger compilation
 ~greet(name: "Koru")
-| greeting g |> _
+| greeting |> _

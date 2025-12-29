@@ -117,7 +117,7 @@ const std = @import("std");
 
 // Example flows that would trigger various taps
 ~file.read(path: "/data.txt")
-| ok o |> _
+| ok |> _
 | error e |> _  // Would trigger error tap
 
 ~database.connect(host: "localhost")

@@ -897,6 +897,7 @@ fn cloneContinuation(allocator: std.mem.Allocator, cont: *const ast.Continuation
         .node = cloned_step,
         .indent = cont.indent,
         .continuations = continuations,
+        .location = cont.location,
     };
 }
 

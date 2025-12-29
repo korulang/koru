@@ -31,8 +31,8 @@ const std = @import("std");
 // THIS FLOW INVOKES A COMPTIME EVENT - IT SHOULD BE REMOVED!
 // The handler executes at compile-time, but the flow itself disappears
 ~analyze_ast
-| analyzed a |> greet(name: "World") | greeting g |> _
+| analyzed a |> greet(name: "World") | greeting |> _
 
 // THIS FLOW IS REGULAR - IT SHOULD REMAIN!
 ~greet(name: "Koru")
-| greeting g |> _
+| greeting |> _

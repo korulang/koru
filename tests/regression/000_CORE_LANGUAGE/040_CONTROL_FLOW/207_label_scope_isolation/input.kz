@@ -53,7 +53,7 @@ const std = @import("std");
 ~start_up()
 | ready |> #loop count(n: 0, direction: "up")
     | next c |> @loop(n: c.value, direction: "up")
-    | done d |> _
+    | done |> _
 
 // Flow 2: Count down using SAME label name "loop"
 // This is a DIFFERENT label, scoped to this flow
@@ -61,4 +61,4 @@ const std = @import("std");
 ~start_down()
 | ready |> #loop count(n: 5, direction: "down")
     | next c |> @loop(n: c.value, direction: "down")
-    | done d |> _
+    | done |> _

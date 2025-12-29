@@ -142,7 +142,7 @@ const std = @import("std");
 // Example flows that would be profiled
 ~api.request(method: "GET", path: "/users")
 | ok o |> cache.get(key: o.path)
-| hit h |> _
+| hit |> _
 | miss |> database.query(sql: "SELECT * FROM users")
-| result r |> _
-| error e |> _
+| result |> _
+| error |> _

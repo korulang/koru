@@ -12,15 +12,15 @@ const std = @import("std");
 | listening l |> app.lib.net.tcp:server.accept(server_id: l.server_id)
     | connection c |> app.lib.net.tcp:connection.read(conn_id: c.conn_id)
         | data d |> app.lib.net.http:request.parse(bytes: d.bytes)
-            | request r |> app.lib.net.http:response.build(status: 200, body: "OK")
+            | request |> app.lib.net.http:response.build(status: 200, body: "OK")
                 | response resp |> app.lib.net.tcp:connection.write(conn_id: c.conn_id, data: resp.bytes)
-                    | sent s |> _
-                    | failed f |> _
-            | invalid i |> app.lib.net.http:response.build(status: 400, body: "Bad Request")
+                    | sent |> _
+                    | failed |> _
+            | invalid |> app.lib.net.http:response.build(status: 400, body: "Bad Request")
                 | response resp |> app.lib.net.tcp:connection.write(conn_id: c.conn_id, data: resp.bytes)
-                    | sent s |> _
-                    | failed f |> _
+                    | sent |> _
+                    | failed |> _
         | closed |> _
         | failed |> _
-    | failed f |> _
-| failed f |> _
+    | failed |> _
+| failed |> _

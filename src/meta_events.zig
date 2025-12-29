@@ -115,10 +115,20 @@ pub fn injectMetaEvents(allocator: std.mem.Allocator, program: *ast.Program) !vo
     start_flow_continuations[0] = ast.Continuation{
         .branch = try allocator.dupe(u8, "done"),
         .binding = null,  // Discard pattern (no binding)
+        .binding_type = .branch_payload,
+        .binding_annotations = &[_][]const u8{},
+        .is_catchall = false,
+        .catchall_metatype = null,
         .condition = null,
+        .condition_expr = null,
         .node = null,  // Empty (no node)
         .indent = 0,
         .continuations = &.{},
+        .location = errors.SourceLocation{
+            .file = "koru_meta_events",
+            .line = 0,
+            .column = 0,
+        },
     };
 
     var start_flow_segments = try allocator.alloc([]const u8, 1);
@@ -148,10 +158,20 @@ pub fn injectMetaEvents(allocator: std.mem.Allocator, program: *ast.Program) !vo
     end_flow_continuations[0] = ast.Continuation{
         .branch = try allocator.dupe(u8, "done"),
         .binding = null,  // Discard pattern (no binding)
+        .binding_type = .branch_payload,
+        .binding_annotations = &[_][]const u8{},
+        .is_catchall = false,
+        .catchall_metatype = null,
         .condition = null,
+        .condition_expr = null,
         .node = null,  // Empty (no node)
         .indent = 0,
         .continuations = &.{},
+        .location = errors.SourceLocation{
+            .file = "koru_meta_events",
+            .line = 0,
+            .column = 0,
+        },
     };
 
     var end_flow_segments = try allocator.alloc([]const u8, 1);

@@ -1384,7 +1384,15 @@ test "branch coverage - missing branch" {
     };
     
     const continuations = [_]ast.Continuation{
-        .{ .branch = "success", .binding = null, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
+        .{
+            .branch = "success",
+            .binding = null,
+            .condition = null,
+            .node = null,
+            .indent = 0,
+            .continuations = &[_]ast.Continuation{},
+            .location = errors.SourceLocation{ .file = "internal", .line = 0, .column = 0 },
+        },
     };
     
     try std.testing.expect(!try checker.checkBranchCoverage(&branches, &continuations));
@@ -1403,8 +1411,24 @@ test "branch coverage - unknown branch" {
     };
     
     const continuations = [_]ast.Continuation{
-        .{ .branch = "success", .binding = null, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
-        .{ .branch = "unknown", .binding = null, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{} },
+        .{
+            .branch = "success",
+            .binding = null,
+            .condition = null,
+            .node = null,
+            .indent = 0,
+            .continuations = &[_]ast.Continuation{},
+            .location = errors.SourceLocation{ .file = "internal", .line = 0, .column = 0 },
+        },
+        .{
+            .branch = "unknown",
+            .binding = null,
+            .condition = null,
+            .node = null,
+            .indent = 0,
+            .continuations = &[_]ast.Continuation{},
+            .location = errors.SourceLocation{ .file = "internal", .line = 0, .column = 0 },
+        },
     };
     
     try std.testing.expect(!try checker.checkBranchCoverage(&branches, &continuations));

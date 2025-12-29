@@ -25,6 +25,8 @@ const project_template = @import("project_template.zig");
 const Config = @import("config").Config;
 const annotation_parser = @import("annotation_parser");
 const keyword_registry = @import("keyword_registry");
+const flow_checker = @import("flow_checker");
+const FlowChecker = flow_checker.FlowChecker;
 
 const version = "0.1.0";
 
@@ -4622,6 +4624,18 @@ pub fn main() !void {
     var purity_check = PurityChecker.init(compile_allocator);
     defer purity_check.deinit();
     try purity_check.check(&source_file);
+
+    // Flow checking pass (validates branch coverage and unused bindings)
+    var flow_check = try FlowChecker.init(compile_allocator, &parser.reporter);
+    defer flow_check.deinit();
+    flow_check.checkSourceFile(&source_file) catch |err| {
+        if (err == error.FlowValidationFailed) {
+            const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+            try parser.reporter.printErrors(stderr_writer);
+            std.process.exit(1);
+        }
+        return err;
+    };
 
     // Fusion detection pass (experimental!)
     var fusion_detect = FusionDetector.init(compile_allocator);

@@ -1052,6 +1052,12 @@ pub const AstSerializer = struct {
         self.dedent();
         try self.writeIndent();
         try self.write("},\n");
+
+        // Location
+        try self.writeIndent();
+        try self.write(".location = ");
+        try self.serializeSourceLocation(&cont.location);
+        try self.write(",\n");
         
         self.dedent();
         try self.writeIndent();

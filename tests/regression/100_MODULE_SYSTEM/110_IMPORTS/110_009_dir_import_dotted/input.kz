@@ -11,8 +11,8 @@ const std = @import("std");
 
 // Full hierarchy: package.module:category.event()
 ~app.lib.raylib.graphics:z_buffer.render(width: 1024, height: 768)
-| drawn d |> app.lib.raylib.graphics:z_buffer.clear()
+| drawn |> app.lib.raylib.graphics:z_buffer.clear()
     | cleared |> app.lib.raylib.graphics:sprite.draw(x: 100, y: 200)
         | drawn |> app.lib.raylib.graphics:texture.load(path: "sprite.png")
-            | loaded l |> _
-            | failed f |> _
+            | loaded |> _
+            | failed |> _

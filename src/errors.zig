@@ -55,6 +55,9 @@ pub const ErrorCode = enum(u16) {
     TYPE003, // Field type mismatch
     TYPE004, // Missing required field
     TYPE005, // Unexpected field in branch constructor
+
+    // Binding errors
+    KORU100, // Unused binding
 };
 
 pub const SourceLocation = struct {

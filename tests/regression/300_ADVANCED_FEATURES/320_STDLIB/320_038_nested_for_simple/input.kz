@@ -17,6 +17,6 @@ const std = @import("std");
 ~start()
 | done |> for(&[_]i32{1, 2})
     | each outer |> for(&[_]i32{10, 20})
-        | each inner |> _
+        | each |> _
         | done |> _
     | done |> _

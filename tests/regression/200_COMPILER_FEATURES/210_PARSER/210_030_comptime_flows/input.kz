@@ -52,4 +52,4 @@ const std = @import("std");
 
 ~[comptime] preprocessMipmaps(inputDir: "assets/images")
 | ok |> _
-| err e |> _
+| err |> _

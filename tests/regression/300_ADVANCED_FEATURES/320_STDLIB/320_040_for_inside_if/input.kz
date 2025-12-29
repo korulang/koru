@@ -17,6 +17,6 @@ const std = @import("std");
 ~start()
 | done |> if(true)
     | then |> for(&[_]i32{1, 2, 3})
-        | each item |> _
+        | each |> _
         | done |> _
     | else |> _

@@ -18,4 +18,4 @@ const std = @import("std");
 
 // Use it with any file - the file gets embedded at compile-time
 ~analyze_binary(data: "file_example.kz")
-| analyzed a |> _
+| analyzed |> _

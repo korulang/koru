@@ -25,4 +25,4 @@ const std = @import("std");
 
 // Test: Read file content using [type]"path" syntax
 ~render.file [text]"hello.txt"
-| transformed program |> _
+| transformed |> _

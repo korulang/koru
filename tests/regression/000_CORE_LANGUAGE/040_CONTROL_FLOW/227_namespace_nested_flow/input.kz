@@ -29,6 +29,6 @@ const std = @import("std");
 // Nested flow with namespaced events - this should trigger the bug
 ~net.connect(host: "localhost")
 | connected c |> net.send(id: c.id, data: "hello")
-    | sent s |> _
-    | failed f |> _
-| failed f |> _
+    | sent |> _
+    | failed |> _
+| failed |> _

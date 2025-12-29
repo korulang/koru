@@ -150,7 +150,7 @@ pub const HostLine = struct {
     content: []const u8,
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
     pub fn deinit(self: *HostLine, allocator: std.mem.Allocator) void {
@@ -167,7 +167,7 @@ pub const ModuleDecl = struct {
     annotations: []const []const u8 = &[_][]const u8{},  // Module annotations (e.g., [comptime|runtime])
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     // Note: ModuleDecl uses canonical_path as its "module" identifier
 
     pub fn deinit(self: *ModuleDecl, allocator: std.mem.Allocator) void {
@@ -192,7 +192,7 @@ pub const ModuleDecl = struct {
 pub const ParseErrorNode = struct {
     error_code: errors.ErrorCode,
     message: []const u8,
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     raw_text: []const u8,  // The source text that failed to parse
     hint: ?[]const u8,
 
@@ -260,7 +260,7 @@ pub const EventDecl = struct {
     is_transitively_pure: bool = false,  // True if ALL proc implementations are transitively pure
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,  // Canonical module path (e.g., "input", "lib/fs")
 
     /// Returns true if this event is comptime-only (should not be emitted to backend)
@@ -334,7 +334,7 @@ pub const ProcDecl = struct {
     optimization_applied: ?[]const u8 = null,  // "fusion", "inline", etc.
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
     pub fn deinit(self: *ProcDecl, allocator: std.mem.Allocator) void {
@@ -360,7 +360,7 @@ pub const ProcDecl = struct {
 /// Used for tests, macros, templates, embedded DSLs, etc.
 pub const Source = struct {
     text: []const u8,                // Raw source text
-    location: errors.SourceLocation,  // Where this Source started in original file
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },  // Where this Source started in original file
     scope: CapturedScope,             // Available bindings at invocation site
     phantom_type: ?[]const u8 = null, // Phantom type annotation from call site (e.g., "HTML", "SQL")
 
@@ -377,7 +377,7 @@ pub const Source = struct {
 /// Used for Expression parameters that need access to bindings at the call site
 pub const CapturedExpression = struct {
     text: []const u8,                 // The expression text (e.g., "data.value > 10")
-    location: errors.SourceLocation,  // Where this expression appeared in source
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },  // Where this expression appeared in source
     scope: CapturedScope,             // Available bindings at invocation site
 
     pub fn deinit(self: *CapturedExpression, allocator: std.mem.Allocator) void {
@@ -455,7 +455,7 @@ pub const Flow = struct {
     is_transitively_pure: bool = false,  // Default false until purity checker walks and verifies
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
     pub fn deinit(self: *Flow, allocator: std.mem.Allocator) void {
@@ -497,7 +497,7 @@ pub const EventTap = struct {
     annotations: []const []const u8 = &.{},  // Annotations like [debug], [trace], etc.
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
     pub fn deinit(self: *EventTap, allocator: std.mem.Allocator) void {
@@ -542,7 +542,7 @@ pub const SubflowImpl = struct {
     is_impl: bool = false,   // True if this implements an abstract event (~impl)
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
     pub fn deinit(self: *SubflowImpl, allocator: std.mem.Allocator) void {
@@ -569,7 +569,7 @@ pub const ImportDecl = struct {
     local_name: ?[]const u8,  // Optional local name/alias (e.g., "calc" in ~import calc = "math")
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
     pub fn deinit(self: *ImportDecl, allocator: std.mem.Allocator) void {
@@ -766,6 +766,9 @@ pub const Continuation = struct {
     node: ?Node,  // The single node in this continuation (null for empty branches like | done |> _)
     indent: usize, // Track indentation level
     continuations: []const Continuation, // This node's branch continuations (e.g., | then |>, | else |>)
+
+    // FOUNDATIONAL: Every item knows where it came from
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
 
     pub fn deinit(self: *Continuation, allocator: std.mem.Allocator) void {
         allocator.free(self.branch);
@@ -1050,7 +1053,7 @@ pub const NativeLoop = struct {
     optimized_from_flow: ?*Flow = null,  // THE ACTUAL FLOW that was optimized (full context!)
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
     pub const FieldValue = struct {
@@ -1121,7 +1124,7 @@ pub const FusedEvent = struct {
     provenance: []const u8,         // Human-readable: "fused from foo → bar → baz"
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
     pub fn deinit(self: *FusedEvent, allocator: std.mem.Allocator) void {
@@ -1157,7 +1160,7 @@ pub const InlinedEvent = struct {
     inlined_from: DottedPath,       // Original event that was inlined
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
     pub fn deinit(self: *InlinedEvent, allocator: std.mem.Allocator) void {
@@ -1176,7 +1179,7 @@ pub const InlineCode = struct {
     code: []const u8,               // The generated code to emit verbatim
 
     // FOUNDATIONAL: Every item knows where it came from
-    location: errors.SourceLocation,
+    location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
     pub fn deinit(self: *InlineCode, allocator: std.mem.Allocator) void {

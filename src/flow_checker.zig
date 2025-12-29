@@ -83,10 +83,145 @@ pub const FlowChecker = struct {
         // Validate branch coverage (all required branches must be handled)
         try self.validateBranchCoverage(flow, location);
 
-        // Recursively validate nested continuations
+        // Recursively validate nested continuations and bindings
         for (flow.continuations) |*cont| {
             try self.validateContinuationWhenClauses(cont, location);
+            try self.validateBindingUsage(cont);
         }
+    }
+
+    fn validateBindingUsage(self: *FlowChecker, cont: *const ast.Continuation) !void {
+        // If this continuation has a binding (other than _), check if it's used
+        if (cont.binding) |binding| {
+            if (!std.mem.eql(u8, binding, "_")) {
+                if (!self.isBindingUsed(cont, binding)) {
+                    // ERROR: Unused binding
+                    // We need a source location for the binding specifically, but using the continuation's location is a good start
+                    try self.reporter.addErrorWithHint(
+                        .KORU100,
+                        cont.location.line,
+                        cont.location.column,
+                        "unused binding '{s}'",
+                        .{binding},
+                        "remove the binding if not needed",
+                        .{},
+                    );
+                }
+            }
+        }
+
+        // Recursively check nested continuations
+        for (cont.continuations) |*nested| {
+            try self.validateBindingUsage(nested);
+        }
+    }
+
+    fn isBindingUsed(self: *FlowChecker, cont: *const ast.Continuation, binding: []const u8) bool {
+        // Check if the binding is used in the continuation's condition (when-clause)
+        if (cont.condition) |cond| {
+            if (containsIdentifier(cond, binding)) return true;
+        }
+
+        // Check if the binding is used in the continuation's node
+        if (cont.node) |node| {
+            if (self.nodeUsesBinding(node, binding)) return true;
+        }
+
+        // Recursively check nested continuations
+        for (cont.continuations) |*nested| {
+            if (self.continuationUsesBindingRecursive(nested, binding)) return true;
+        }
+
+        return false;
+    }
+
+    fn continuationUsesBindingRecursive(self: *FlowChecker, cont: *const ast.Continuation, binding: []const u8) bool {
+        // Check condition
+        if (cont.condition) |cond| {
+            if (containsIdentifier(cond, binding)) return true;
+        }
+
+        // Check node
+        if (cont.node) |node| {
+            if (self.nodeUsesBinding(node, binding)) return true;
+        }
+
+        // Check nested continuations
+        for (cont.continuations) |*nested| {
+            if (self.continuationUsesBindingRecursive(nested, binding)) return true;
+        }
+
+        return false;
+    }
+
+    fn nodeUsesBinding(self: *FlowChecker, node: ast.Node, binding: []const u8) bool {
+        switch (node) {
+            .invocation => |inv| {
+                for (inv.args) |arg| {
+                    if (containsIdentifier(arg.value, binding)) return true;
+                }
+            },
+            .branch_constructor => |bc| {
+                for (bc.fields) |field| {
+                    const value = if (field.expression_str) |expr| expr else field.type;
+                    if (containsIdentifier(value, binding)) return true;
+                }
+            },
+            .deref => |deref| {
+                if (containsIdentifier(deref.target, binding)) return true;
+                if (deref.args) |args| {
+                    for (args) |arg| {
+                        if (containsIdentifier(arg.value, binding)) return true;
+                    }
+                }
+            },
+            .label_with_invocation => |lwi| {
+                for (lwi.invocation.args) |arg| {
+                    if (containsIdentifier(arg.value, binding)) return true;
+                }
+            },
+            .label_jump => |lj| {
+                for (lj.args) |arg| {
+                    if (containsIdentifier(arg.value, binding)) return true;
+                }
+            },
+            .inline_code => |ic| {
+                if (containsIdentifier(ic, binding)) return true;
+            },
+            .foreach => |fe| {
+                if (containsIdentifier(fe.iterable, binding)) return true;
+                for (fe.branches) |*branch| {
+                    for (branch.body) |*body_cont| {
+                        if (self.continuationUsesBindingRecursive(body_cont, binding)) return true;
+                    }
+                }
+            },
+            .conditional => |cond| {
+                if (containsIdentifier(cond.condition, binding)) return true;
+                for (cond.branches) |*branch| {
+                    for (branch.body) |*body_cont| {
+                        if (self.continuationUsesBindingRecursive(body_cont, binding)) return true;
+                    }
+                }
+            },
+            .capture => |cap| {
+                if (containsIdentifier(cap.init_expr, binding)) return true;
+                for (cap.branches) |*branch| {
+                    for (branch.body) |*body_cont| {
+                        if (self.continuationUsesBindingRecursive(body_cont, binding)) return true;
+                    }
+                }
+            },
+            .assignment => |asgn| {
+                if (std.mem.eql(u8, asgn.target, binding)) return true;
+                for (asgn.fields) |field| {
+                    const value = if (field.expression_str) |expr| expr else field.type;
+                    if (containsIdentifier(value, binding)) return true;
+                }
+            },
+            else => {},
+        }
+        return false;
     }
 
     fn validateContinuationWhenClauses(self: *FlowChecker, cont: *const ast.Continuation, location: errors.SourceLocation) !void {
@@ -417,4 +552,28 @@ test "when-clause exhaustiveness - ambiguous else" {
     try checker.validateWhenClauseExhaustiveness(&continuations, location);
 
     try std.testing.expect(reporter.hasErrors());
+}
+
+fn isIdentifierChar(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or
+           (c >= 'A' and c <= 'Z') or
+           (c >= '0' and c <= '9') or
+           c == '_';
+}
+
+fn containsIdentifier(text: []const u8, ident: []const u8) bool {
+    var idx: usize = 0;
+    while (idx < text.len) {
+        const remaining = text[idx..];
+        const pos_opt = std.mem.indexOf(u8, remaining, ident) orelse return false;
+        const start = idx + pos_opt;
+        const end = start + ident.len;
+
+        const valid_start = start == 0 or !isIdentifierChar(text[start - 1]);
+        const valid_end = end >= text.len or !isIdentifierChar(text[end]);
+
+        if (valid_start and valid_end) return true;
+        idx = end;
+    }
+    return false;
 }

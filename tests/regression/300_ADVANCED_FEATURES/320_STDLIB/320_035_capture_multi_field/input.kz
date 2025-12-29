@@ -20,4 +20,4 @@ const std = @import("std");
 | as o |> capture(expr: { inner: @as(i32, 0) })
     | as i |> captured { inner: 42, outer: 99 }
     | done result |> print_results(outer_val: o.outer, inner_val: result.inner)
-| done final |> _
+| done |> _

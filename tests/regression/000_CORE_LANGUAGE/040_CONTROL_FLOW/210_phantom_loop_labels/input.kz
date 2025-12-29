@@ -32,4 +32,4 @@ const std = @import("std");
 ~start()
 | ready r |> #loop step(n: r.n)
     | next c |> @loop(n: c.value) // ERROR: passing [File[closed]] where [File[open]] expected
-    | done d |> _
+    | done |> _

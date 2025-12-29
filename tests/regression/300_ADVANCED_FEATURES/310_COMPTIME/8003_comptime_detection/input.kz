@@ -40,4 +40,4 @@ const std = @import("std");
 
 // Simple flow - just needs to compile
 ~greet(name: "Koru")
-| greeting g |> _
+| greeting |> _

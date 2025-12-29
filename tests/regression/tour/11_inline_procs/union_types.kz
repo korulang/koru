@@ -252,9 +252,9 @@ const ConfigData = struct {
 
 // Example flows
 ~fetch_with_retry(endpoint: "/api/data", max_retries: 3)
-| data d |> _
-| failed f |> _
+| data |> _
+| failed |> _
 
 ~calculate(a: 10.0, b: 2.0, c: 5.0)
-| answer a |> _
-| computation_error e |> _
+| answer |> _
+| computation_error |> _

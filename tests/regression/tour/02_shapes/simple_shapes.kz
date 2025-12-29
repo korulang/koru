@@ -34,5 +34,5 @@ const User = struct {
 // Shape checking ensures 'found' output matches 'process_user' input
 ~fetch_user(id: 123)
 | found f |> process_user(user: f.user)
-    | processed p |> _
+    | processed |> _
 | not_found |> _

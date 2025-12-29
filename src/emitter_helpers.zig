@@ -1022,11 +1022,36 @@ fn bindingIsUsedInContinuations(binding_name: []const u8, continuations: []const
     return false;
 }
 
+/// Check if a string contains a specific identifier (whole-word match)
+fn containsIdentifier(text: []const u8, ident: []const u8) bool {
+    var idx: usize = 0;
+    while (idx < text.len) {
+        const remaining = text[idx..];
+        const pos_opt = std.mem.indexOf(u8, remaining, ident) orelse return false;
+        const start = idx + pos_opt;
+        const end = start + ident.len;
+
+        // Check if this is a whole identifier (not part of another identifier)
+        const valid_start = start == 0 or !isIdentifierChar(text[start - 1]);
+        const valid_end = end >= text.len or !isIdentifierChar(text[end]);
+
+        if (valid_start and valid_end) {
+            return true;
+        }
+
+        idx = end;
+    }
+    return false;
+}
+
 /// Check if a value expression references a specific binding variable
 /// Examples: "s.sun" references "s", "outer.i + 1" references "outer"
 fn valueReferencesBinding(value: []const u8, binding_name: []const u8) bool {
-    // Look for the binding name followed by a dot (field access)
-    // We need to match whole identifiers, not substrings
+    // Look for the binding name as a whole identifier
+    if (!containsIdentifier(value, binding_name)) return false;
+
+    // Special case: if it's found, check if it's used as a base for field access or directly
+    // This is a bit more specific than containsIdentifier but often used for bindings
     var idx: usize = 0;
     while (idx < value.len) {
         const remaining = value[idx..];
@@ -1034,28 +1059,24 @@ fn valueReferencesBinding(value: []const u8, binding_name: []const u8) bool {
         const start = idx + pos_opt;
         const end = start + binding_name.len;
 
-        // Check if this is a whole identifier (not part of another identifier)
         const valid_start = start == 0 or !isIdentifierChar(value[start - 1]);
         const valid_end = end >= value.len or !isIdentifierChar(value[end]);
 
         if (valid_start and valid_end) {
-            // Found the binding name as a whole identifier
-            // Check if it's followed by a dot (field access) or used directly
+            // Check if it's followed by a dot (field access) or used in an expression
             if (end < value.len and value[end] == '.') {
-                return true;  // Field access like "s.sun"
+                return true; // Field access
             }
-            // Also match if it's used in an expression like "outer.i + 1"
             if (end < value.len) {
                 const next_char = value[end];
-                if (next_char == '.' or next_char == ' ' or next_char == '+' or next_char == '-' or next_char == ')' or next_char == ',') {
+                if (next_char == ' ' or next_char == '+' or next_char == '-' or next_char == ')' or next_char == ',' or next_char == '*' or next_char == '/' or next_char == '%') {
                     return true;
                 }
             }
             if (end == value.len) {
-                return true;  // Used at end of expression
+                return true;
             }
         }
-
         idx = end;
     }
     return false;
@@ -3036,7 +3057,7 @@ fn emitContinuationCase(
                         switch (step) {
                             .invocation => |inv| {
                                 for (inv.args) |arg| {
-                                    if (std.mem.indexOf(u8, arg.value, tap_bind) != null) {
+                                    if (containsIdentifier(arg.value, tap_bind)) {
                                         taps_use_binding = true;
                                         break;
                                     }
@@ -4515,7 +4536,7 @@ fn emitBranchConstructor(
 fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) bool {
     // Check condition
     if (cont.condition) |cond| {
-        if (std.mem.indexOf(u8, cond, binding) != null) {
+        if (containsIdentifier(cond, binding)) {
             return true;
         }
     }
@@ -4525,7 +4546,7 @@ fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) b
         switch (step) {
             .invocation => |inv| {
                 for (inv.args) |arg| {
-                    if (std.mem.indexOf(u8, arg.value, binding) != null) {
+                    if (containsIdentifier(arg.value, binding)) {
                         return true;
                     }
                 }
@@ -4533,18 +4554,18 @@ fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) b
             .branch_constructor => |bc| {
                 for (bc.fields) |field| {
                     const value = if (field.expression_str) |expr| expr else field.type;
-                    if (std.mem.indexOf(u8, value, binding) != null) {
+                    if (containsIdentifier(value, binding)) {
                         return true;
                     }
                 }
             },
             .deref => |deref| {
-                if (std.mem.indexOf(u8, deref.target, binding) != null) {
+                if (containsIdentifier(deref.target, binding)) {
                     return true;
                 }
                 if (deref.args) |args| {
                     for (args) |arg| {
-                        if (std.mem.indexOf(u8, arg.value, binding) != null) {
+                        if (containsIdentifier(arg.value, binding)) {
                             return true;
                         }
                     }
@@ -4552,27 +4573,27 @@ fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) b
             },
             .label_with_invocation => |lwi| {
                 for (lwi.invocation.args) |arg| {
-                    if (std.mem.indexOf(u8, arg.value, binding) != null) {
+                    if (containsIdentifier(arg.value, binding)) {
                         return true;
                     }
                 }
             },
             .label_jump => |lj| {
                 for (lj.args) |arg| {
-                    if (std.mem.indexOf(u8, arg.value, binding) != null) {
+                    if (containsIdentifier(arg.value, binding)) {
                         return true;
                     }
                 }
             },
             .inline_code => |ic| {
                 // Check if inline code references the binding (e.g., print.ln transform generating "err.@\"error\"")
-                if (std.mem.indexOf(u8, ic, binding) != null) {
+                if (containsIdentifier(ic, binding)) {
                     return true;
                 }
             },
             .foreach => |fe| {
                 // Check if foreach uses the binding in its iterable expression
-                if (std.mem.indexOf(u8, fe.iterable, binding) != null) {
+                if (containsIdentifier(fe.iterable, binding)) {
                     return true;
                 }
                 // Check all branches recursively
@@ -4586,7 +4607,7 @@ fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) b
             },
             .conditional => |cond| {
                 // Check if conditional uses the binding in its condition expression
-                if (std.mem.indexOf(u8, cond.condition, binding) != null) {
+                if (containsIdentifier(cond.condition, binding)) {
                     return true;
                 }
                 // Check all branches recursively

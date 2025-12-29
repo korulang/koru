@@ -138,13 +138,13 @@ const std = @import("std");
 
 // Example flows
 ~handle_request(payload: "Hello, Koru!")
-| ok o |> _
-| error e |> _
+| ok |> _
+| error |> _
 
 ~quick_validate(text: "")
 | accepted |> _
-| rejected r |> _
+| rejected |> _
 
 ~multi_step(input: "Process this")
-| done d |> _
-| failed f |> _
+| done |> _
+| failed |> _
