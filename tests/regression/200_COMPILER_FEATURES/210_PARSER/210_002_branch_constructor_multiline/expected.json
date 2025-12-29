@@ -235,7 +235,7 @@
                     "post_label": null,
                     "location": {
                         "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_002_branch_constructor_multiline/input.kz",
-                        "line": 6,
+                        "line": 1,
                         "col": 0
                     }
                 }

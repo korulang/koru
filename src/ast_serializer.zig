@@ -2692,7 +2692,7 @@ test "serialize simple Koru program" {
     ;
     
     // Parse the source
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -2729,7 +2729,7 @@ test "serialize Zig lines are preserved" {
         \\const data = [_]u8{1, 2, 3};
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -2761,7 +2761,7 @@ test "serialize proc body preserves Zig code" {
         \\}
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -2812,7 +2812,7 @@ test "serialize complete mixed program" {
         \\| failure f |> _
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();

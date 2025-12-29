@@ -62,8 +62,11 @@ pub const FlowChecker = struct {
                 },
                 .proc_decl => |*proc| {
                     // Check inline flows in proc declarations for duplicate branch handlers
-                    for (proc.inline_flows) |*inline_flow| {
-                        try self.checkDuplicateBranchHandlers(inline_flow.continuations, inline_flow.location);
+                    // Only in backend mode (semantic check that may need transforms applied)
+                    if (self.mode == .all) {
+                        for (proc.inline_flows) |*inline_flow| {
+                            try self.checkDuplicateBranchHandlers(inline_flow.continuations, inline_flow.location);
+                        }
                     }
                 },
                 .module_decl => |*module| {
@@ -74,8 +77,11 @@ pub const FlowChecker = struct {
                                 try self.validateFlow(flow, flow.location);
                             },
                             .proc_decl => |*proc| {
-                                for (proc.inline_flows) |*inline_flow| {
-                                    try self.checkDuplicateBranchHandlers(inline_flow.continuations, inline_flow.location);
+                                // Only in backend mode
+                                if (self.mode == .all) {
+                                    for (proc.inline_flows) |*inline_flow| {
+                                        try self.checkDuplicateBranchHandlers(inline_flow.continuations, inline_flow.location);
+                                    }
                                 }
                             },
                             else => {},

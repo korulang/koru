@@ -81,6 +81,7 @@ pub const EmissionContext = struct {
     emit_mode: ?EmitMode = null, // Emission mode for filtering taps by phase annotations
     module_annotations: ?[]const []const u8 = null, // Module-level annotations for tap filtering
     skip_tap_inserted_steps: bool = false, // Skip steps inserted by tap transformation (for opaque modules)
+    capture_counter: usize = 0, // Counter for unique capture type names (nested captures)
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -4076,8 +4077,11 @@ fn emitStep(
             const done_binding = ast.NamedBranch.getBinding(cap.branches, "done");
             const done_body = ast.NamedBranch.getBody(cap.branches, "done");
 
-            // Use as_binding to create unique type name (avoids collision in nested captures)
-            const type_name_buf = std.fmt.allocPrint(ctx.allocator, "__CaptureT_{s}", .{as_binding}) catch "__CaptureT";
+            // Use counter to create unique TYPE name (avoids type collision in nested captures)
+            // Variable names stay as-is (user must use unique bindings for nested captures)
+            const capture_id = ctx.capture_counter;
+            ctx.capture_counter += 1;
+            const type_name_buf = std.fmt.allocPrint(ctx.allocator, "__CaptureT_{s}_{d}", .{ as_binding, capture_id }) catch "__CaptureT";
             defer ctx.allocator.free(type_name_buf);
 
             // First, generate the runtime struct type using comptime metaprogramming
