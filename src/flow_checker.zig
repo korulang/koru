@@ -8,17 +8,39 @@ const branch_checker = @import("branch_checker");
 /// 2. When-clause determinism (no ambiguous else cases)
 /// 3. Branch coverage (all required branches must be handled)
 /// 4. Optional branches (can be skipped, |? catch-all is optional)
+///
+/// Check modes:
+/// - frontend: Syntactic checks only (KORU100, KORU050, KORU051) - runs before transforms
+/// - all: Full validation including branch coverage (adds KORU021, KORU022) - runs after transforms
+
+pub const CheckMode = enum {
+    /// Frontend mode: Only syntactic checks that don't require event lookups
+    /// Safe to run before transforms are applied
+    /// Checks: KORU100 (unused binding), KORU050/051 (when-clause exhaustiveness)
+    frontend,
+
+    /// Full mode: All checks including branch coverage validation
+    /// Must run after transforms are applied (backend)
+    /// Checks: All frontend checks + KORU021 (unknown branch), KORU022 (missing branch)
+    all,
+};
 
 pub const FlowChecker = struct {
     allocator: std.mem.Allocator,
     reporter: *errors.ErrorReporter,
     ast_items: ?[]const ast.Item,  // Full AST for event lookups
+    mode: CheckMode,
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) !FlowChecker {
+        return initWithMode(allocator, reporter, .all);
+    }
+
+    pub fn initWithMode(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter, mode: CheckMode) !FlowChecker {
         return FlowChecker{
             .allocator = allocator,
             .reporter = reporter,
             .ast_items = null,
+            .mode = mode,
         };
     }
 
@@ -77,16 +99,24 @@ pub const FlowChecker = struct {
             return;
         }
 
-        // Validate when-clause exhaustiveness for all continuations
-        try self.validateWhenClauseExhaustiveness(flow.continuations, location);
+        // === FRONTEND CHECKS (syntactic, always run) ===
 
-        // Validate branch coverage (all required branches must be handled)
-        try self.validateBranchCoverage(flow, location);
+        // Validate when-clause exhaustiveness for all continuations (KORU050, KORU051)
+        try self.validateWhenClauseExhaustiveness(flow.continuations, location);
 
         // Recursively validate nested continuations and bindings
         for (flow.continuations) |*cont| {
             try self.validateContinuationWhenClauses(cont, location);
+            // KORU100: Unused binding check
             try self.validateBindingUsage(cont);
+        }
+
+        // === BACKEND CHECKS (semantic, require event lookups) ===
+
+        if (self.mode == .all) {
+            // Validate branch coverage (KORU021, KORU022)
+            // Only run in 'all' mode - requires transforms to be applied first
+            try self.validateBranchCoverage(flow, location);
         }
     }
 
@@ -302,6 +332,8 @@ pub const FlowChecker = struct {
     }
 
     /// Validate branch coverage: all required branches must be handled
+    /// NOTE: This check should only run AFTER transforms are applied (mode == .all)
+    /// because transform events replace flows entirely.
     fn validateBranchCoverage(self: *FlowChecker, flow: *const ast.Flow, location: errors.SourceLocation) !void {
         // Find the event definition for this flow
         const event_decl = self.findEventDecl(&flow.invocation.path) orelse {

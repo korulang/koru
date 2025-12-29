@@ -4625,8 +4625,9 @@ pub fn main() !void {
     defer purity_check.deinit();
     try purity_check.check(&source_file);
 
-    // Flow checking pass (validates branch coverage and unused bindings)
-    var flow_check = try FlowChecker.init(compile_allocator, &parser.reporter);
+    // Flow checking pass - FRONTEND ONLY (syntactic checks: KORU100, KORU050, KORU051)
+    // Branch coverage checks (KORU021, KORU022) run in backend after transforms are applied
+    var flow_check = try FlowChecker.initWithMode(compile_allocator, &parser.reporter, .frontend);
     defer flow_check.deinit();
     flow_check.checkSourceFile(&source_file) catch |err| {
         if (err == error.FlowValidationFailed) {
