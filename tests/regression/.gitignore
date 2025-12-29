@@ -50,7 +50,6 @@
 !**/baseline.zig
 !**/baseline.go
 !**/*.go
-!**/temp_build.zig
 !**/baseline.rs
 !**/COMPILER_FLAGS
 !**/*.c
