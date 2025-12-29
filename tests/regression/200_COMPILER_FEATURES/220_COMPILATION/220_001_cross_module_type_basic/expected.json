@@ -1,13 +1,11 @@
 {
-    "module_annotations": [
-
-    ],
+    "module_annotations": [],
     "items": [
         {
             "type": "import_decl",
             "path": "$std/compiler",
             "location": {
-                "file": "tests/regression/050_PARSER/053_cross_module_type_basic/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/220_COMPILATION/220_001_cross_module_type_basic/input.kz",
                 "line": 2,
                 "col": 0
             }
@@ -16,7 +14,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/050_PARSER/053_cross_module_type_basic/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/220_COMPILATION/220_001_cross_module_type_basic/input.kz",
                 "line": 2,
                 "col": 0
             }
@@ -25,7 +23,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/050_PARSER/053_cross_module_type_basic/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/220_COMPILATION/220_001_cross_module_type_basic/input.kz",
                 "line": 3,
                 "col": 0
             }
@@ -34,7 +32,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/050_PARSER/053_cross_module_type_basic/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/220_COMPILATION/220_001_cross_module_type_basic/input.kz",
                 "line": 4,
                 "col": 0
             }
@@ -43,7 +41,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/050_PARSER/053_cross_module_type_basic/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/220_COMPILATION/220_001_cross_module_type_basic/input.kz",
                 "line": 5,
                 "col": 0
             }
@@ -51,7 +49,9 @@
         {
             "type": "event_decl",
             "name": "process_user",
-            "path": ["process_user"],
+            "path": [
+                "process_user"
+            ],
             "module": "input",
             "input": {
                 "fields": [
@@ -88,7 +88,7 @@
                 }
             ],
             "location": {
-                "file": "tests/regression/050_PARSER/053_cross_module_type_basic/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/220_COMPILATION/220_001_cross_module_type_basic/input.kz",
                 "line": 12,
                 "col": 0
             }
