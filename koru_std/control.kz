@@ -384,7 +384,7 @@ const std = @import("std");
         // Find | each |> and | done |> continuations
         var each_cont: ?*const ast.Continuation = null;
         var done_cont: ?*const ast.Continuation = null;
-        var each_binding: []const u8 = "item";
+        var each_binding: []const u8 = "_"; // Default to discard; emitter generates unique names
 
         for (flow.continuations) |*cont| {
             if (std.mem.eql(u8, cont.branch, "each")) {
@@ -528,7 +528,7 @@ const std = @import("std");
                                 // Found it! Now get | each |> and | done |> from continuations
                                 var found_each: ?*const ast.Continuation = null;
                                 var found_done: ?*const ast.Continuation = null;
-                                var binding: []const u8 = "item";
+                                var binding: []const u8 = "_"; // Default to discard; emitter generates unique names
 
                                 for (cont.continuations) |*nested| {
                                     if (std.mem.eql(u8, nested.branch, "each")) {

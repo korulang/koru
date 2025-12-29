@@ -3943,7 +3943,7 @@ fn emitStep(
 
             // Generate unique binding for default names to avoid shadowing in nested loops
             var binding_buf: [64]u8 = undefined;
-            const each_binding = if (std.mem.eql(u8, raw_binding, "item") or std.mem.eql(u8, raw_binding, "_")) blk: {
+            const each_binding = if (std.mem.eql(u8, raw_binding, "_")) blk: {
                 const for_id = ctx.for_counter;
                 ctx.for_counter += 1;
                 break :blk std.fmt.bufPrint(&binding_buf, "__for_item_{d}", .{for_id}) catch raw_binding;
@@ -4454,7 +4454,7 @@ fn emitStepWithBindingSubstitution(
 
             // Generate unique binding for default names to avoid shadowing in nested loops
             var binding_buf: [64]u8 = undefined;
-            const each_binding = if (std.mem.eql(u8, raw_binding, "item") or std.mem.eql(u8, raw_binding, "_")) blk: {
+            const each_binding = if (std.mem.eql(u8, raw_binding, "_")) blk: {
                 const for_id = ctx.for_counter;
                 ctx.for_counter += 1;
                 break :blk std.fmt.bufPrint(&binding_buf, "__for_item_{d}", .{for_id}) catch raw_binding;
