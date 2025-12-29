@@ -422,6 +422,7 @@ const std = @import("std");
                 .name = "done",
                 .body = done_body,
                 .binding = dc.binding,
+                .is_optional = true,  // done branch is optional - often discarded
             };
         }
 

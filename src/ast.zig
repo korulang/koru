@@ -689,6 +689,7 @@ pub const NamedBranch = struct {
     name: []const u8,              // Branch name: "then", "else", "each", "done", "as", etc.
     body: []const Continuation,    // The continuations in this branch
     binding: ?[]const u8 = null,   // Optional binding for the branch (e.g., "item" in | each item |>)
+    is_optional: bool = false,     // Marks branches that don't need to be handled (like `for`'s `done`)
 
     pub fn deinit(self: *NamedBranch, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
