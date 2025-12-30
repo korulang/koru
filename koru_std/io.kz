@@ -102,6 +102,7 @@ const std = @import("std");
 
 ~[keyword|comptime|transform]pub event print.ln {
     expr: Expression,
+    invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
@@ -374,36 +375,37 @@ const std = @import("std");
         }
         return .{ .transformed = .{ .program = program } };
     } else {
-        // PIPELINE CASE: Find print.ln in continuations and replace with inline_code step
+        // PIPELINE CASE: Find the SPECIFIC invocation that triggered this transform
+        // We compare pointers to ensure we replace the exact invocation, not just any print.ln
         const SearchResult = struct {
             path: []const usize,
             step_idx: usize,
         };
 
-        const findPrintLnRecursive = struct {
+        const findInvocationByPointer = struct {
             fn search(
                 alloc: std.mem.Allocator,
                 continuations: []const ast.Continuation,
                 current_path: []const usize,
+                target_inv: *const ast.Invocation,
             ) ?SearchResult {
                 for (continuations, 0..) |*cont, cont_idx| {
                     var path = alloc.alloc(usize, current_path.len + 1) catch return null;
                     @memcpy(path[0..current_path.len], current_path);
                     path[current_path.len] = cont_idx;
 
-                    if (cont.node) |step| {
-                        if (step == .invocation) {
-                            const segments = step.invocation.path.segments;
-                            if (segments.len == 2 and
-                                std.mem.eql(u8, segments[0], "print") and
-                                std.mem.eql(u8, segments[1], "ln"))
-                            {
+                    // Get pointer to the node, not a copy
+                    if (cont.node != null) {
+                        const node_ptr: *const ast.Node = @ptrCast(&cont.node);
+                        if (node_ptr.* == .invocation) {
+                            // Compare pointers to find the exact invocation
+                            if (&node_ptr.invocation == target_inv) {
                                 return SearchResult{ .path = path, .step_idx = 0 };
                             }
                         }
                     }
 
-                    if (search(alloc, cont.continuations, path)) |result| {
+                    if (search(alloc, cont.continuations, path, target_inv)) |result| {
                         return result;
                     }
                     alloc.free(path);
@@ -413,7 +415,7 @@ const std = @import("std");
         }.search;
 
         const empty_path = &[_]usize{};
-        const search_result = findPrintLnRecursive(allocator, flow.continuations, empty_path) orelse {
+        const search_result = findInvocationByPointer(allocator, flow.continuations, empty_path, invocation) orelse {
             return .{ .transformed = .{ .program = program } };
         };
 

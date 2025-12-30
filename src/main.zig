@@ -5025,10 +5025,12 @@ pub fn main() !void {
         defer if (backend_run_args[0].ptr != backend_exe.ptr) allocator.free(backend_run_args[0]);
 
         // Run backend in the output directory
+        // Note: default max_output_bytes is only 50KB, way too small for large compilations
         const backend_result = try std.process.Child.run(.{
             .allocator = allocator,
             .argv = &backend_run_args,
             .cwd = output_dir_for_build,
+            .max_output_bytes = 10 * 1024 * 1024, // 10MB should be plenty
         });
         defer allocator.free(backend_result.stdout);
         defer allocator.free(backend_result.stderr);

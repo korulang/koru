@@ -7,6 +7,7 @@
 
 const std = @import("std");
 ~import "$std/control"
+~import "$std/io"
 
 const PI: f64 = 3.141592653589793;
 const SOLAR_MASS: f64 = 4.0 * PI * PI;
@@ -65,10 +66,6 @@ const ZERO_DV = [5][3]f64{
     }
     return .{ .e = e };
 }
-
-~event print_e { e: f64 }
-
-~proc print_e { std.debug.print("{d:.9}\n", .{e}); }
 
 ~event parse {}
 | n u32
@@ -131,7 +128,7 @@ const ZERO_DV = [5][3]f64{
 | n iters |> init()
     | bodies b[mutable] |> offset(bodies: b[0..])
         |> energy(bodies: b[0..])
-            | e e1 |> print_e(e: e1)
+            | e e1 |> std.io:print.ln("{{ e1:d:.9 }}")
                 |> for(0..iters)
                     | each |> capture({ dv: ZERO_DV })
                         | as acc |> for(0..5)
@@ -142,4 +139,4 @@ const ZERO_DV = [5][3]f64{
                             | done |> _
                         | captured deltas |> apply(bodies: b[0..], dt: DT, dv: deltas.dv)
                     | done |> energy(bodies: b[0..])
-                        | e e2 |> print_e(e: e2)
+                        | e e2 |> std.io:print.ln("{{ e2:d:.9 }}")

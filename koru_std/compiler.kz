@@ -866,6 +866,26 @@ const joinPath = struct {
 
     // Run structural validation
     checker.checkSourceFile(mutable_ctx.ast) catch |err| {
+        // Print all errors from the reporter for visibility
+        for (reporter.errors.items) |reporter_err| {
+            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
+                @tagName(reporter_err.code),
+                reporter_err.message,
+                reporter_err.location.file,
+                reporter_err.location.line,
+                reporter_err.location.column,
+            });
+
+            mutable_ctx.errors.append(mutable_ctx.allocator, .{
+                .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
+                .location = .{
+                    .file = mutable_ctx.allocator.dupe(u8, reporter_err.location.file) catch reporter_err.location.file,
+                    .line = @intCast(reporter_err.location.line),
+                    .column = @intCast(reporter_err.location.column),
+                },
+            }) catch {};
+        }
+
         // Generate error message based on error type
         const err_msg = switch (err) {
             error.UnknownEvent => "Unknown event referenced",
@@ -926,6 +946,26 @@ const joinPath = struct {
 
     // Run flow validation
     checker.checkSourceFile(mutable_ctx.ast) catch |err| {
+        // Print all errors from the reporter for visibility
+        for (reporter.errors.items) |reporter_err| {
+            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
+                @tagName(reporter_err.code),
+                reporter_err.message,
+                reporter_err.location.file,
+                reporter_err.location.line,
+                reporter_err.location.column,
+            });
+
+            mutable_ctx.errors.append(mutable_ctx.allocator, .{
+                .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
+                .location = .{
+                    .file = mutable_ctx.allocator.dupe(u8, reporter_err.location.file) catch reporter_err.location.file,
+                    .line = @intCast(reporter_err.location.line),
+                    .column = @intCast(reporter_err.location.column),
+                },
+            }) catch {};
+        }
+
         // Generate error message based on error type
         const err_msg = switch (err) {
             error.FlowValidationFailed => "Flow validation failed",

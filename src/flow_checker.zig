@@ -10,18 +10,18 @@ const branch_checker = @import("branch_checker");
 /// 4. Optional branches (can be skipped, |? catch-all is optional)
 ///
 /// Check modes:
-/// - frontend: Syntactic checks only (KORU100, KORU050, KORU051) - runs before transforms
-/// - all: Full validation including branch coverage (adds KORU021, KORU022) - runs after transforms
+/// - frontend: Syntactic checks only (KORU050, KORU051 when-clause) - runs before transforms
+/// - all: Full validation (adds KORU100 unused binding, KORU021/022 branch coverage) - runs after transforms
 
 pub const CheckMode = enum {
     /// Frontend mode: Only syntactic checks that don't require event lookups
     /// Safe to run before transforms are applied
-    /// Checks: KORU100 (unused binding), KORU050/051 (when-clause exhaustiveness)
+    /// Checks: KORU050/051 (when-clause exhaustiveness)
     frontend,
 
-    /// Full mode: All checks including branch coverage validation
+    /// Full mode: All checks including branch coverage and binding usage
     /// Must run after transforms are applied (backend)
-    /// Checks: All frontend checks + KORU021 (unknown branch), KORU022 (missing branch)
+    /// Checks: KORU100 (unused binding), KORU021 (unknown branch), KORU022 (missing branch)
     all,
 };
 
@@ -110,16 +110,20 @@ pub const FlowChecker = struct {
         // Validate when-clause exhaustiveness for all continuations (KORU050, KORU051)
         try self.validateWhenClauseExhaustiveness(flow.continuations, location);
 
-        // Recursively validate nested continuations and bindings
+        // Recursively validate nested continuations (when-clause checks only in frontend)
         for (flow.continuations) |*cont| {
             try self.validateContinuationWhenClauses(cont, location);
-            // KORU100: Unused binding check
-            try self.validateBindingUsage(cont);
         }
 
-        // === BACKEND CHECKS (semantic, require event lookups) ===
+        // === BACKEND CHECKS (semantic, require event lookups and transforms) ===
 
         if (self.mode == .all) {
+            // KORU100: Unused binding check - must run after transforms
+            // (transforms like print.ln use bindings in template strings)
+            for (flow.continuations) |*cont| {
+                try self.validateBindingUsage(cont);
+            }
+
             // Validate branch coverage (KORU021, KORU022)
             // Only run in 'all' mode - requires transforms to be applied first
             try self.validateBranchCoverage(flow, location);
