@@ -51,12 +51,13 @@ const ZERO_DV = [5][3]f64{
 ~event energy { bodies: []const Body }
 | e f64
 
+// NOTE: Energy calculation has asymmetric loops (once per body + once per pair)
+// that don't map cleanly to pure Koru capture patterns. Using ~proc for now.
 ~proc energy {
     var e: f64 = 0;
     for (bodies, 0..) |b, i| {
         e += 0.5 * b.mass * (b.vx*b.vx + b.vy*b.vy + b.vz*b.vz);
-        var j = i + 1;
-        while (j < 5) : (j += 1) {
+        for (i+1..5) |j| {
             const dx = b.x - bodies[j].x; const dy = b.y - bodies[j].y; const dz = b.z - bodies[j].z;
             e -= (b.mass * bodies[j].mass) / @sqrt(dx*dx + dy*dy + dz*dz);
         }
