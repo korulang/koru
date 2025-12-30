@@ -3308,8 +3308,11 @@ fn emitPipelineStep(
 
     try emitStep(emitter, ctx, step, current_result);
 
+    // Assignment is a void step - it doesn't produce a result variable
+    const is_void_step = step.* == .assignment;
+
     if (needs_result and !std.mem.eql(u8, current_result, "_") and
-        step.* != .conditional_block and step.* != .metatype_binding)
+        step.* != .conditional_block and step.* != .metatype_binding and !is_void_step)
     {
         try emitter.writeIndent();
         try emitter.write("_ = &");
@@ -3317,7 +3320,7 @@ fn emitPipelineStep(
         try emitter.write(";\n");
     }
 
-    if (needs_result and step.* != .conditional_block and step.* != .metatype_binding) {
+    if (needs_result and step.* != .conditional_block and step.* != .metatype_binding and !is_void_step) {
         result_counter.* += 1;
     }
 }
@@ -3568,48 +3571,60 @@ pub fn emitContinuationBody(
         // Label case is done - no remaining steps to process
     } else {
         // Normal case - no label_with_invocation
+        // Check if this is a void step (like assignment) that doesn't produce a result
+        const is_void_step = if (cont.node) |step| step == .assignment else false;
+
         if (cont.node) |*step| {
             try emitPipelineStep(emitter, ctx, cont, step, 0, result_counter);
         }
 
-        // Emit nested continuations using the last result
+        // Emit nested continuations
         if (cont.continuations.len > 0) {
-            if (result_counter.* == 0) {
-                return;
-            }
-
-            const last_result = try std.fmt.allocPrint(
-                ctx.allocator,
-                "{s}{}",
-                .{ ctx.result_prefix, result_counter.* - 1 },
-            );
-            defer ctx.allocator.free(last_result);
-
-            // Find the invocation in the step to update current_source_event
-            // This ensures taps on nested invocations match correctly
-            var last_invocation: ?*const ast.Invocation = null;
-            if (cont.node) |step| {
-                if (step == .invocation) {
-                    last_invocation = &step.invocation;
+            if (is_void_step) {
+                // Void step (like assignment) - emit continuations directly as void chain
+                // Each continuation should be emitted without needing a result to switch on
+                for (cont.continuations) |*nested_cont| {
+                    try emitContinuationBody(emitter, ctx, nested_cont, result_counter);
                 }
-            }
-
-            // If we found an invocation, temporarily update current_source_event
-            const saved_source = ctx.current_source_event;
-            if (last_invocation) |inv| {
-                const new_source = try buildCanonicalEventName(&inv.path, ctx.allocator, ctx.main_module_name);
-                ctx.current_source_event = new_source;
-                defer {
-                    if (ctx.current_source_event) |src| {
-                        ctx.allocator.free(src);
-                    }
-                    ctx.current_source_event = saved_source;
-                }
-
-                try emitContinuationList(emitter, ctx, cont.continuations, last_result, result_counter, false);
             } else {
-                // No invocation in step, keep current source
-                try emitContinuationList(emitter, ctx, cont.continuations, last_result, result_counter, false);
+                // Normal case - use the last result for continuation switching
+                if (result_counter.* == 0) {
+                    return;
+                }
+
+                const last_result = try std.fmt.allocPrint(
+                    ctx.allocator,
+                    "{s}{}",
+                    .{ ctx.result_prefix, result_counter.* - 1 },
+                );
+                defer ctx.allocator.free(last_result);
+
+                // Find the invocation in the step to update current_source_event
+                // This ensures taps on nested invocations match correctly
+                var last_invocation: ?*const ast.Invocation = null;
+                if (cont.node) |step| {
+                    if (step == .invocation) {
+                        last_invocation = &step.invocation;
+                    }
+                }
+
+                // If we found an invocation, temporarily update current_source_event
+                const saved_source = ctx.current_source_event;
+                if (last_invocation) |inv| {
+                    const new_source = try buildCanonicalEventName(&inv.path, ctx.allocator, ctx.main_module_name);
+                    ctx.current_source_event = new_source;
+                    defer {
+                        if (ctx.current_source_event) |src| {
+                            ctx.allocator.free(src);
+                        }
+                        ctx.current_source_event = saved_source;
+                    }
+
+                    try emitContinuationList(emitter, ctx, cont.continuations, last_result, result_counter, false);
+                } else {
+                    // No invocation in step, keep current source
+                    try emitContinuationList(emitter, ctx, cont.continuations, last_result, result_counter, false);
+                }
             }
         }
     }

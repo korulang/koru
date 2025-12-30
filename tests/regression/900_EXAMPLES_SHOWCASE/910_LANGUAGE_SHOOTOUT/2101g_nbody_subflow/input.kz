@@ -51,8 +51,9 @@ const ZERO_DV = [5][3]f64{
 ~event energy { bodies: []const Body }
 | e f64
 
-// NOTE: Energy calculation has asymmetric loops (once per body + once per pair)
-// that don't map cleanly to pure Koru capture patterns. Using ~proc for now.
+// NOTE: Chainable captured works! But subflows don't yet support plain-value returns.
+// The `| e f64` branch needs struct syntax which doesn't match the scalar type.
+// TODO: Add `e(result.e)` syntax for plain-value branch constructors in subflows.
 ~proc energy {
     var e: f64 = 0;
     for (bodies, 0..) |b, i| {
