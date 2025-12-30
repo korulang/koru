@@ -303,6 +303,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Add annotation_parser to flow_checker (defined earlier, but needs this dep)
+    flow_checker_module.addImport("annotation_parser", annotation_parser_module);
+
     // Visitor Emitter module - visitor-based orchestration
     const visitor_emitter_module = b.createModule(.{
         .root_source_file = b.path("src/visitor_emitter.zig"),

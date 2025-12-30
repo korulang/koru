@@ -2173,6 +2173,8 @@ pub const PROGRAM_AST = Program{
                                 \\    });
                                 \\    flow_checker_module.addImport("ast", ast_module);
                                 \\    flow_checker_module.addImport("errors", errors_module);
+                                \\    flow_checker_module.addImport("branch_checker", branch_checker_module);
+                                \\    flow_checker_module.addImport("annotation_parser", annotation_parser_module);
                                 \\
                                 \\    // AST functional utilities
                                 \\    const ast_functional_module = b.createModule(.{

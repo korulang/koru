@@ -2,6 +2,7 @@ const std = @import("std");
 const ast = @import("ast");
 const errors = @import("errors");
 const branch_checker = @import("branch_checker");
+const annotation_parser = @import("annotation_parser");
 
 /// The flow checker validates control flow properties:
 /// 1. When-clause exhaustiveness (exactly one continuation without `when` per branch)
@@ -10,18 +11,18 @@ const branch_checker = @import("branch_checker");
 /// 4. Optional branches (can be skipped, |? catch-all is optional)
 ///
 /// Check modes:
-/// - frontend: Syntactic checks only (KORU050, KORU051 when-clause) - runs before transforms
-/// - all: Full validation (adds KORU100 unused binding, KORU021/022 branch coverage) - runs after transforms
+/// - frontend: Syntactic checks (KORU050/051 when-clause, KORU100 unused binding) - runs before transforms
+///             Note: KORU100 skips [transform] invocations since binding usage isn't visible until after transform
+/// - all: Full validation (KORU100 for transforms, KORU021/022 branch coverage) - runs after transforms
 
 pub const CheckMode = enum {
-    /// Frontend mode: Only syntactic checks that don't require event lookups
-    /// Safe to run before transforms are applied
-    /// Checks: KORU050/051 (when-clause exhaustiveness)
+    /// Frontend mode: Syntactic checks that can run before transforms
+    /// Checks: KORU050/051 (when-clause exhaustiveness), KORU100 (unused binding, skips [transform] invocations)
     frontend,
 
-    /// Full mode: All checks including branch coverage and binding usage
+    /// Full mode: All checks including branch coverage
     /// Must run after transforms are applied (backend)
-    /// Checks: KORU100 (unused binding), KORU021 (unknown branch), KORU022 (missing branch)
+    /// Checks: KORU100 (for transform invocations), KORU021 (unknown branch), KORU022 (missing branch)
     all,
 };
 
@@ -110,20 +111,18 @@ pub const FlowChecker = struct {
         // Validate when-clause exhaustiveness for all continuations (KORU050, KORU051)
         try self.validateWhenClauseExhaustiveness(flow.continuations, location);
 
-        // Recursively validate nested continuations (when-clause checks only in frontend)
+        // Recursively validate nested continuations and bindings
         for (flow.continuations) |*cont| {
             try self.validateContinuationWhenClauses(cont, location);
+            // KORU100: Unused binding check
+            // In frontend mode, skip for [transform] invocations (binding usage not visible until after transform)
+            // In backend mode (all), check everything (transforms have run)
+            try self.validateBindingUsage(cont);
         }
 
         // === BACKEND CHECKS (semantic, require event lookups and transforms) ===
 
         if (self.mode == .all) {
-            // KORU100: Unused binding check - must run after transforms
-            // (transforms like print.ln use bindings in template strings)
-            for (flow.continuations) |*cont| {
-                try self.validateBindingUsage(cont);
-            }
-
             // Validate branch coverage (KORU021, KORU022)
             // Only run in 'all' mode - requires transforms to be applied first
             try self.validateBranchCoverage(flow, location);
@@ -134,9 +133,12 @@ pub const FlowChecker = struct {
         // If this continuation has a binding (other than _), check if it's used
         if (cont.binding) |binding| {
             if (!std.mem.eql(u8, binding, "_")) {
-                if (!self.isBindingUsed(cont, binding)) {
+                // In frontend mode, skip check if node is a [transform] invocation
+                // (transforms consume bindings in ways not visible until after transform runs)
+                const skip_check = self.mode == .frontend and self.isTransformInvocation(cont);
+
+                if (!skip_check and !self.isBindingUsed(cont, binding)) {
                     // ERROR: Unused binding
-                    // We need a source location for the binding specifically, but using the continuation's location is a good start
                     try self.reporter.addErrorWithHint(
                         .KORU100,
                         cont.location.line,
@@ -154,6 +156,21 @@ pub const FlowChecker = struct {
         for (cont.continuations) |*nested| {
             try self.validateBindingUsage(nested);
         }
+    }
+
+    /// Check if a continuation's node is an invocation of a [transform] event
+    fn isTransformInvocation(self: *FlowChecker, cont: *const ast.Continuation) bool {
+        const node = cont.node orelse return false;
+        if (node != .invocation) return false;
+
+        const inv = node.invocation;
+
+        // Look up the event declaration to check for [transform] annotation
+        if (self.findEventDecl(&inv.path)) |event_decl| {
+            return annotation_parser.hasPart(event_decl.annotations, "transform");
+        }
+
+        return false;
     }
 
     fn isBindingUsed(self: *FlowChecker, cont: *const ast.Continuation, binding: []const u8) bool {
