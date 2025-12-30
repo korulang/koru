@@ -3324,8 +3324,9 @@ pub const Parser = struct {
                         
                         // Track brace depth (already have one open brace)
                         var brace_depth: i32 = 1;
-                        self.current += 1; // Move to next line
-                        
+                        // NOTE: Don't increment self.current here - line 3277 already advanced past
+                        // the opening line, so we're already at the first field line
+
                         while (self.current < self.lines.len and brace_depth > 0) {
                             const curr_line = self.lines[self.current];
                             self.current += 1;

@@ -83,6 +83,7 @@ pub const EmissionContext = struct {
     skip_tap_inserted_steps: bool = false, // Skip steps inserted by tap transformation (for opaque modules)
     capture_counter: usize = 0, // Counter for unique capture type names (nested captures)
     for_counter: usize = 0, // Counter for unique for loop binding names (nested loops)
+    result_prefix: []const u8 = "result_", // Prefix for result variable names (changes to "loop_result_" inside loops)
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -3300,7 +3301,7 @@ fn emitPipelineStep(
     const needs_result = cont.continuations.len > 0;
 
     const current_result = if (needs_result)
-        try std.fmt.allocPrint(ctx.allocator, "result_{}", .{result_counter.*})
+        try std.fmt.allocPrint(ctx.allocator, "{s}{}", .{ ctx.result_prefix, result_counter.* })
     else
         "_";
     defer if (needs_result) ctx.allocator.free(current_result);
@@ -3579,8 +3580,8 @@ pub fn emitContinuationBody(
 
             const last_result = try std.fmt.allocPrint(
                 ctx.allocator,
-                "result_{}",
-                .{result_counter.* - 1},
+                "{s}{}",
+                .{ ctx.result_prefix, result_counter.* - 1 },
             );
             defer ctx.allocator.free(last_result);
 
@@ -3966,6 +3967,12 @@ fn emitStep(
             // Emit body continuations
             // Process each continuation: emit its node, then handle nested continuations
             var step_idx: usize = 0;
+
+            // Set result prefix to "loop_result_" for nested continuations inside the loop
+            const saved_prefix = ctx.result_prefix;
+            ctx.result_prefix = "loop_result_";
+            defer ctx.result_prefix = saved_prefix;
+
             for (each_body) |*cont| {
                 if (cont.node) |node| {
                     var result_buf: [64]u8 = undefined;
