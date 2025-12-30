@@ -4795,18 +4795,45 @@ pub const Parser = struct {
         }
 
         const fields_str = lexer.trim(fields_content);
+
+        // Check if this is a plain value (no field separators at the top level)
+        // A plain value has no ':' or '=' outside of nested braces/parens/brackets
+        const is_plain_value = blk: {
+            if (fields_str.len == 0) break :blk false;
+            var depth: i32 = 0;
+            for (fields_str) |c| {
+                switch (c) {
+                    '{', '(', '[' => depth += 1,
+                    '}', ')', ']' => depth -= 1,
+                    ':', '=' => if (depth == 0) break :blk false,
+                    else => {},
+                }
+            }
+            break :blk true;
+        };
+
+        if (is_plain_value) {
+            // Plain value syntax: branch { expr } → return .{ .branch = expr }
+            return ast.BranchConstructor{
+                .branch_name = try self.allocator.dupe(u8, branch_name),
+                .fields = &.{},
+                .plain_value = try self.allocator.dupe(u8, fields_str),
+                .has_expressions = true,
+            };
+        }
+
         var fields = try std.ArrayList(ast.Field).initCapacity(self.allocator, 4);
         errdefer {
             for (fields.items) |*field| field.deinit(self.allocator);
             fields.deinit(self.allocator);
         }
-        
+
         if (fields_str.len > 0) {
             // Parse fields: field: value, field: value
             // But be careful with nested objects that contain commas
             const fields_list = try self.splitFieldsRespectingBraces(fields_str);
             defer self.allocator.free(fields_list);
-            
+
             for (fields_list) |field_str| {
                 const trimmed = lexer.trim(field_str);
                 // Support both : and = as field separators

@@ -1209,12 +1209,12 @@ pub const AstSerializer = struct {
     fn serializeBranchConstructor(self: *AstSerializer, bc: *const ast.BranchConstructor) SerializeError!void {
         try self.write("BranchConstructor{\n");
         self.indent();
-        
+
         try self.writeIndent();
         try self.write(".branch_name = ");
         try self.writeString(bc.branch_name);
         try self.write(",\n");
-        
+
         try self.writeIndent();
         try self.write(".fields = &[_]Field{\n");
         self.indent();
@@ -1225,12 +1225,21 @@ pub const AstSerializer = struct {
         self.dedent();
         try self.writeIndent();
         try self.write("},\n");
-        
+
+        try self.writeIndent();
+        try self.write(".plain_value = ");
+        if (bc.plain_value) |pv| {
+            try self.writeString(pv);
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+
         try self.writeIndent();
         try self.write(".has_expressions = ");
         try self.write(if (bc.has_expressions) "true" else "false");
         try self.write(",\n");
-        
+
         self.dedent();
         try self.writeIndent();
         try self.write("}");
@@ -2522,6 +2531,15 @@ pub const AstSerializer = struct {
         self.dedent();
         try self.writeIndent();
         try self.write("],\n");
+
+        try self.writeIndent();
+        try self.write("\"plain_value\": ");
+        if (bc.plain_value) |pv| {
+            try self.writeString(pv);
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
 
         try self.writeIndent();
         try self.write("\"has_expressions\": ");

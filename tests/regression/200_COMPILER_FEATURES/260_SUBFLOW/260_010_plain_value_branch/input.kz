@@ -1,0 +1,29 @@
+// Test plain value branch return in subflows
+// Syntax: ~event = branch { expr } instead of branch { field: expr }
+
+const std = @import("std");
+
+// Event with plain value branch (not a struct)
+~event double { n: i32 }
+| result i32
+
+// Subflow with plain value return - no field name needed!
+~double = result { n * 2 }
+
+// Another example with expressions
+~event square { n: i32 }
+| result i32
+
+~square = result { n * n }
+
+// Printer event
+~event print_results { a: i32, b: i32 }
+
+~proc print_results {
+    std.debug.print("{} {}\n", .{ a, b });
+}
+
+// Main flow - chain subflows
+~double(n: 5)
+| result a |> square(n: 4)
+    | result b |> print_results(a, b)

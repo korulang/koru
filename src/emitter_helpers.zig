@@ -4558,18 +4558,27 @@ fn emitBranchConstructor(
     _ = is_terminal; // Terminal status doesn't affect branch constructor syntax
     try emitter.write(".{ .");
     try writeBranchName(emitter, bc.branch_name);
-    try emitter.write(" = .{");
-    for (bc.fields, 0..) |field, idx| {
-        if (idx > 0) {
-            try emitter.write(", ");
+    try emitter.write(" = ");
+
+    // Check for plain value (non-struct branch)
+    if (bc.plain_value) |pv| {
+        try emitValue(emitter, ctx, pv);
+    } else {
+        // Struct value
+        try emitter.write(".{");
+        for (bc.fields, 0..) |field, idx| {
+            if (idx > 0) {
+                try emitter.write(", ");
+            }
+            try emitter.write(" .");
+            try emitter.write(field.name);
+            try emitter.write(" = ");
+            const value = if (field.expression_str) |expr| expr else field.type;
+            try emitValue(emitter, ctx, value);
         }
-        try emitter.write(" .");
-        try emitter.write(field.name);
-        try emitter.write(" = ");
-        const value = if (field.expression_str) |expr| expr else field.type;
-        try emitValue(emitter, ctx, value);
+        try emitter.write(" }");
     }
-    try emitter.write(" } }");
+    try emitter.write(" }");
 }
 
 /// Check if a continuation uses a binding variable in its body
@@ -4592,6 +4601,12 @@ fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) b
                 }
             },
             .branch_constructor => |bc| {
+                // Check plain value first
+                if (bc.plain_value) |pv| {
+                    if (containsIdentifier(pv, binding)) {
+                        return true;
+                    }
+                }
                 for (bc.fields) |field| {
                     const value = if (field.expression_str) |expr| expr else field.type;
                     if (containsIdentifier(value, binding)) {

@@ -996,10 +996,14 @@ pub const Arg = struct {
 pub const BranchConstructor = struct {
     branch_name: []const u8,
     fields: []const Field,  // Reuse Field type from Shape
+    plain_value: ?[]const u8 = null, // For branches with a single plain value (not a struct)
     has_expressions: bool = false, // True if any field contains an expression (for procs)
 
     pub fn deinit(self: *BranchConstructor, allocator: std.mem.Allocator) void {
         allocator.free(self.branch_name);
+        if (self.plain_value) |pv| {
+            allocator.free(pv);
+        }
         for (self.fields) |*field| {
             var mutable_field = field.*;
             mutable_field.deinit(allocator);

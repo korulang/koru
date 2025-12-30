@@ -1022,6 +1022,8 @@ fn cloneBranchConstructor(allocator: std.mem.Allocator, bc: *const ast.BranchCon
     return .{
         .branch_name = try allocator.dupe(u8, bc.branch_name),
         .fields = fields,
+        .plain_value = if (bc.plain_value) |pv| try allocator.dupe(u8, pv) else null,
+        .has_expressions = bc.has_expressions,
     };
 }
 

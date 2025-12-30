@@ -1063,17 +1063,24 @@ pub const VisitorEmitter = struct {
                                     try self.code_emitter.writeIndent();
                                     try self.code_emitter.write("return .{ .");
                                     try emitter.writeBranchName(self.code_emitter, bc.branch_name);
-                                    try self.code_emitter.write(" = .{");
-                                    for (bc.fields, 0..) |field, k| {
-                                        if (k > 0) try self.code_emitter.write(", ");
-                                        try self.code_emitter.write(" .");
-                                        try self.code_emitter.write(field.name);
-                                        try self.code_emitter.write(" = ");
-                                        // Use expression_str if present (for expressions), otherwise use type
-                                        const value = if (field.expression_str) |expr| expr else field.type;
-                                        try self.code_emitter.write(value);
+                                    try self.code_emitter.write(" = ");
+                                    // Check for plain value (non-struct branch)
+                                    if (bc.plain_value) |pv| {
+                                        try self.code_emitter.write(pv);
+                                    } else {
+                                        try self.code_emitter.write(".{");
+                                        for (bc.fields, 0..) |field, k| {
+                                            if (k > 0) try self.code_emitter.write(", ");
+                                            try self.code_emitter.write(" .");
+                                            try self.code_emitter.write(field.name);
+                                            try self.code_emitter.write(" = ");
+                                            // Use expression_str if present (for expressions), otherwise use type
+                                            const value = if (field.expression_str) |expr| expr else field.type;
+                                            try self.code_emitter.write(value);
+                                        }
+                                        try self.code_emitter.write(" }");
                                     }
-                                    try self.code_emitter.write(" } };\n");
+                                    try self.code_emitter.write(" };\n");
                                 },
                                 .flow => |flow| {
                                     // Generate implicit input bindings for consistency with procs
@@ -1250,17 +1257,24 @@ pub const VisitorEmitter = struct {
                                 try self.code_emitter.writeIndent();
                                 try self.code_emitter.write("return .{ .");
                                 try emitter.writeBranchName(self.code_emitter, bc.branch_name);
-                                try self.code_emitter.write(" = .{");
-                                for (bc.fields, 0..) |field, k| {
-                                    if (k > 0) try self.code_emitter.write(", ");
-                                    try self.code_emitter.write(" .");
-                                    try self.code_emitter.write(field.name);
-                                    try self.code_emitter.write(" = ");
-                                    // Use expression_str if present (for expressions), otherwise use type
-                                    const value = if (field.expression_str) |expr| expr else field.type;
-                                    try self.code_emitter.write(value);
+                                try self.code_emitter.write(" = ");
+                                // Check for plain value (non-struct branch)
+                                if (bc.plain_value) |pv| {
+                                    try self.code_emitter.write(pv);
+                                } else {
+                                    try self.code_emitter.write(".{");
+                                    for (bc.fields, 0..) |field, k| {
+                                        if (k > 0) try self.code_emitter.write(", ");
+                                        try self.code_emitter.write(" .");
+                                        try self.code_emitter.write(field.name);
+                                        try self.code_emitter.write(" = ");
+                                        // Use expression_str if present (for expressions), otherwise use type
+                                        const value = if (field.expression_str) |expr| expr else field.type;
+                                        try self.code_emitter.write(value);
+                                    }
+                                    try self.code_emitter.write(" }");
                                 }
-                                try self.code_emitter.write(" } };\n");
+                                try self.code_emitter.write(" };\n");
                             },
                             .flow => {
                                 // Flow-based user coordinators not supported yet
