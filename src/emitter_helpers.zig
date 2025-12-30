@@ -4219,25 +4219,22 @@ fn emitStep(
             }
         },
         .assignment => |asgn| {
-            // Emit assignment: target = .{ .field1 = expr1, .field2 = expr2 };
-            try emitter.writeIndent();
-            try emitter.write(asgn.target);
-            try emitter.write(" = .{");
-            for (asgn.fields, 0..) |field, idx| {
-                if (idx > 0) {
-                    try emitter.write(",");
-                }
-                try emitter.write(" .");
-                try emitter.write(field.name);
+            // Emit direct field assignments: target.field = expr;
+            // This handles both scalar fields (target.sum = expr) and
+            // indexed fields (target.arr[i] = expr) - Zig parses arr[i] correctly
+            for (asgn.fields) |field| {
+                try emitter.writeIndent();
+                try emitter.write(asgn.target);
+                try emitter.write(".");
+                try emitter.write(field.name); // Can be "sum" or "arr[i]"
                 try emitter.write(" = ");
-                // Use expression_str if available, otherwise use type (for literal values)
                 if (field.expression_str) |expr| {
                     try emitter.write(expr);
                 } else {
                     try emitter.write(field.type);
                 }
+                try emitter.write(";\n");
             }
-            try emitter.write(" };\n");
         },
     }
 }

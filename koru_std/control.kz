@@ -769,8 +769,15 @@ const std = @import("std");
         }
 
         fn fieldBelongsToCapture(field_name: []const u8, my_fields: []const []const u8) bool {
+            // Extract base name (before '[' if present) for indexed field matching
+            // e.g., "arr[i]" -> "arr" to match capture field "arr"
+            const base_name = if (std.mem.indexOf(u8, field_name, "[")) |bracket_idx|
+                field_name[0..bracket_idx]
+            else
+                field_name;
+
             for (my_fields) |mf| {
-                if (std.mem.eql(u8, field_name, mf)) return true;
+                if (std.mem.eql(u8, base_name, mf)) return true;
             }
             return false;
         }

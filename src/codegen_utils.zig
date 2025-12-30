@@ -236,9 +236,22 @@ fn parseValue(
         }
 
         if (c == '{') {
-            // Nested struct - recursively convert
+            // Check if this is an array initializer (preceded by type like [3]i32)
+            // Array literals: [3]i32{ 0, 0, 0 } - don't add '.'
+            // Struct literals: { field: value } - add '.'
+            const is_array_init = blk: {
+                if (i == 0) break :blk false;
+                var j = i - 1;
+                // Skip backwards over type name (identifier chars)
+                while (j > 0 and (std.ascii.isAlphanumeric(input[j]) or input[j] == '_')) {
+                    j -= 1;
+                }
+                break :blk input[j] == ']';
+            };
             brace_depth += 1;
-            try result.append(allocator, '.');
+            if (!is_array_init) {
+                try result.append(allocator, '.');
+            }
             try result.append(allocator, '{');
             i += 1;
             // Skip whitespace
@@ -246,8 +259,8 @@ fn parseValue(
                 try result.append(allocator, input[i]);
                 i += 1;
             }
-            // Parse nested fields
-            if (i < input.len and input[i] != '}') {
+            // Parse nested fields ONLY for struct literals, not array initializers
+            if (!is_array_init and i < input.len and input[i] != '}') {
                 i = try parseFieldAndValue(allocator, input, i, result);
             }
         } else if (c == '}') {

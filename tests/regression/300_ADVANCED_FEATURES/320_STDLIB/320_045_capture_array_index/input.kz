@@ -1,0 +1,22 @@
+// Test: Array indexing in captured { } blocks
+// Demonstrates the "pure mutation" pattern with array elements
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+// Simple helper to print result
+~event print_sum { arr: [3]i32 }
+
+~proc print_sum {
+    const sum = arr[0] + arr[1] + arr[2];
+    std.debug.print("{d}\n", .{sum});
+}
+
+// Initialize array, update each element via captured { arr[i]: value }
+// Expression references acc.arr[i] to satisfy KORU100 (binding must be used)
+~capture(expr: { arr: [3]i32{ 0, 0, 0 } })
+| as acc |> for(0..3)
+    | each i |> captured { arr[i]: acc.arr[i] + @as(i32, @intCast(i)) * 10 }
+| captured result |> print_sum(arr: result.arr)
