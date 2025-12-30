@@ -1,7 +1,5 @@
 {
-    "module_annotations": [
-
-    ],
+    "module_annotations": [],
     "items": [
         {
             "type": "import_decl",
@@ -69,7 +67,9 @@
         {
             "type": "flow",
             "invocation": {
-                "event": ["step"],
+                "event": [
+                    "step"
+                ],
                 "args": [
                     {
                         "name": "name",
@@ -77,32 +77,28 @@
                     },
                     {
                         "name": "source",
-                        "value": "    zig build\n",
+                        "value": "zig build\n",
                         "source_value": {
-                            "text": "    zig build\n",
+                            "text": "zig build\n",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
                                 "line": 14,
                                 "col": 0
                             },
                             "scope": {
-                                "bindings": [
-
-                                ]
+                                "bindings": []
                             },
                             "phantom_type": "sh"
                         }
                     }
                 ]
             },
-            "continuations": [
-
-            ],
+            "continuations": [],
             "pre_label": null,
             "post_label": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
-                "line": 14,
+                "line": 11,
                 "col": 0
             }
         },
@@ -118,7 +114,9 @@
         {
             "type": "flow",
             "invocation": {
-                "event": ["step"],
+                "event": [
+                    "step"
+                ],
                 "args": [
                     {
                         "name": "name",
@@ -126,32 +124,28 @@
                     },
                     {
                         "name": "source",
-                        "value": "    ./zig-out/bin/main\n",
+                        "value": "./zig-out/bin/main\n",
                         "source_value": {
-                            "text": "    ./zig-out/bin/main\n",
+                            "text": "./zig-out/bin/main\n",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
                                 "line": 20,
                                 "col": 0
                             },
                             "scope": {
-                                "bindings": [
-
-                                ]
+                                "bindings": []
                             },
                             "phantom_type": "sh"
                         }
                     }
                 ]
             },
-            "continuations": [
-
-            ],
+            "continuations": [],
             "pre_label": null,
             "post_label": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
-                "line": 20,
+                "line": 17,
                 "col": 0
             }
         },
@@ -167,7 +161,10 @@
         {
             "type": "event_decl",
             "name": "signal",
-            "path": ["test", "signal"],
+            "path": [
+                "test",
+                "signal"
+            ],
             "module": "input",
             "input": {
                 "fields": [
@@ -180,9 +177,7 @@
                     }
                 ]
             },
-            "branches": [
-
-            ],
+            "branches": [],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
                 "line": 26,
@@ -201,12 +196,13 @@
         {
             "type": "proc_decl",
             "event_name": "handler",
-            "path": ["test", "handler"],
+            "path": [
+                "test",
+                "handler"
+            ],
             "module": "input",
             "target": "zig",
-            "inline_flows": [
-
-            ],
+            "inline_flows": [],
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
