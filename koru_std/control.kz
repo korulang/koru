@@ -1060,6 +1060,7 @@ const std = @import("std");
                 .name = "captured",
                 .body = captured_body,
                 .binding = nested_captured_binding,
+                .is_optional = true,  // captured branch is optional - often discarded in nested captures
             };
         }
 
@@ -1183,6 +1184,7 @@ const std = @import("std");
             .name = "captured",
             .body = captured_body,
             .binding = captured_binding,
+            .is_optional = true,  // captured branch is optional - often discarded in nested captures
         };
     }
 
