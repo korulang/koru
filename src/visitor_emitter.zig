@@ -1,5 +1,5 @@
 const std = @import("std");
-const DEBUG = false;  // Set to true for verbose logging
+const DEBUG = true;  // Set to true for verbose logging
 const ast = @import("ast");
 const emitter = @import("emitter_helpers");
 const visitor_mod = @import("ast_visitor");

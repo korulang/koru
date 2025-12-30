@@ -56,7 +56,10 @@ const std = @import("std");
 }
 
 // ============================================================================
-// KERNEL.INIT - Initialize kernel data (TRANSFORM)
+// Internal no-op event for refactored flows
+// (This is here for reference; the transform injects a local one into the user program)
+~[norun]pub event nop {}
+
 // ============================================================================
 //
 // Creates kernel data from a shape. Looks up the shape by name, emits
@@ -88,6 +91,54 @@ const std = @import("std");
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
+    // Helper to find the source text for a ~std.kernel:shape(name) declaration
+    const findShapeSource = struct {
+        fn call(prog_internal: *const ast.Program, target_type: []const u8) ?[]const u8 {
+            for (prog_internal.items) |item_internal| {
+                if (item_internal == .flow) {
+                    const f = item_internal.flow;
+                    if (f.invocation.path.segments.len == 1 and 
+                        std.mem.eql(u8, f.invocation.path.segments[0], "shape") and
+                        f.invocation.path.module_qualifier != null and
+                        std.mem.eql(u8, f.invocation.path.module_qualifier.?, "std.kernel")) 
+                    {
+                        // Check if first arg matches target_type
+                        for (f.invocation.args) |arg| {
+                            if (std.mem.eql(u8, arg.name, "expr")) {
+                                 var name = arg.value;
+                                 if (name.len >= 2 and name[0] == '"') name = name[1..name.len-1];
+                                 if (std.mem.eql(u8, name, target_type)) {
+                                     // Found it! Get source arg
+                                     for (f.invocation.args) |s_arg| {
+                                         if (std.mem.eql(u8, s_arg.name, "source")) {
+                                             return s_arg.source_value.?.text;
+                                         }
+                                     }
+                                 }
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+    }.call;
+
+    // Helper to transform Koru shape source "x: f64, y: f64" to Zig struct fields "x: f64, y: f64,"
+    const parseShapeFields = struct {
+        fn call(alloc: std.mem.Allocator, shape_source: []const u8) []const u8 {
+            var res = std.ArrayList(u8).initCapacity(alloc, shape_source.len) catch unreachable;
+            var iter_f = std.mem.splitSequence(u8, shape_source, ",");
+            while (iter_f.next()) |field_raw| {
+                const field = std.mem.trim(u8, field_raw, " \t\n\r{}");
+                if (field.len == 0) continue;
+                res.appendSlice(alloc, field) catch unreachable;
+                res.appendSlice(alloc, ", ") catch unreachable;
+            }
+            return res.items;
+        }
+    }.call;
+
     // Get the flow from the item
     const flow = if (item.* == .flow)
         &item.flow
@@ -107,10 +158,10 @@ const std = @import("std");
     // ========================================================================
     // STEP 2: Get binding name from | kernel k |> continuation
     // ========================================================================
-    var binding_name: []const u8 = "data"; // default fallback
-    for (flow.continuations) |*cont| {
-        if (std.mem.eql(u8, cont.branch, "kernel")) {
-            binding_name = cont.binding orelse "k";
+    var binding_name: []const u8 = "k"; // default fallback
+    for (flow.continuations) |cont| {
+        if (std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) {
+            if (cont.binding) |b| binding_name = b;
             break;
         }
     }
@@ -127,15 +178,21 @@ const std = @import("std");
     }
 
     // ========================================================================
-    // STEP 4: Transform source to Zig struct initialization
+    // STEP 4: Get struct fields (dynamic lookup or fallback)
+    // ========================================================================
+    const shape_src = findShapeSource(program, type_name);
+    const struct_fields = if (shape_src) |s| parseShapeFields(allocator, s) else "x: f64, y: f64, mass: f64";
+
+    // ========================================================================
+    // STEP 5: Transform source to Zig struct initialization
     // ========================================================================
     // Helper: transform "x: 42, y: 0" -> ".x = 42, .y = 0"
     const transformFields = struct {
         fn call(alloc: std.mem.Allocator, block_text: []const u8) []const u8 {
-            var result = std.ArrayList(u8).initCapacity(alloc, block_text.len * 2) catch unreachable;
-            var iter = std.mem.splitSequence(u8, block_text, ",");
+            var resArr = std.ArrayList(u8).initCapacity(alloc, block_text.len * 2) catch unreachable;
+            var iter_fields = std.mem.splitSequence(u8, block_text, ",");
             var first = true;
-            while (iter.next()) |field_raw| {
+            while (iter_fields.next()) |field_raw| {
                 const field = std.mem.trim(u8, field_raw, " \t\n\r{}");
                 if (field.len == 0) continue;
 
@@ -143,16 +200,16 @@ const std = @import("std");
                     const name = std.mem.trim(u8, field[0..colon_idx], " \t\n\r");
                     const value = std.mem.trim(u8, field[colon_idx + 1 ..], " \t\n\r");
 
-                    if (!first) result.appendSlice(alloc, ", ") catch unreachable;
+                    if (!first) resArr.appendSlice(alloc, ", ") catch unreachable;
                     first = false;
 
-                    result.append(alloc, '.') catch unreachable;
-                    result.appendSlice(alloc, name) catch unreachable;
-                    result.appendSlice(alloc, " = ") catch unreachable;
-                    result.appendSlice(alloc, value) catch unreachable;
+                    resArr.append(alloc, '.') catch unreachable;
+                    resArr.appendSlice(alloc, name) catch unreachable;
+                    resArr.appendSlice(alloc, " = ") catch unreachable;
+                    resArr.appendSlice(alloc, value) catch unreachable;
                 }
             }
-            return result.items;
+            return resArr.items;
         }
     }.call;
 
@@ -164,77 +221,113 @@ const std = @import("std");
 
     if (is_array_mode) {
         // Array mode: parse multiple { ... } blocks
-        var elements = std.ArrayList(u8).initCapacity(allocator, source.text.len * 2) catch unreachable;
+        var elements = __koru_std.ArrayList(u8).initCapacity(allocator, source.text.len * 2) catch unreachable;
         var count: usize = 0;
 
-        var block_iter = std.mem.splitSequence(u8, source.text, "}");
+        var block_iter = __koru_std.mem.splitSequence(u8, source.text, "}");
         while (block_iter.next()) |block_raw| {
-            if (std.mem.indexOf(u8, block_raw, "{")) |brace_idx| {
+            if (__koru_std.mem.indexOf(u8, block_raw, "{")) |brace_idx| {
                 const block_content = block_raw[brace_idx + 1 ..];
                 const fields = transformFields(allocator, block_content);
 
-                if (count > 0) elements.appendSlice(allocator, ", ") catch unreachable;
-                elements.appendSlice(allocator, type_name) catch unreachable;
-                elements.appendSlice(allocator, "{ ") catch unreachable;
-                elements.appendSlice(allocator, fields) catch unreachable;
-                elements.appendSlice(allocator, " }") catch unreachable;
-                count += 1;
+                if (fields.len > 0) {
+                    if (count > 0) elements.appendSlice(allocator, ", ") catch unreachable;
+                    elements.appendSlice(allocator, type_name) catch unreachable;
+                    elements.appendSlice(allocator, "{ ") catch unreachable;
+                    elements.appendSlice(allocator, fields) catch unreachable;
+                    elements.appendSlice(allocator, " }") catch unreachable;
+                    count += 1;
+                }
             }
         }
 
         // Generate array initialization
         code = std.fmt.allocPrint(
             allocator,
-            "const {s} = struct {{ x: f64, y: f64, mass: f64 }};\nvar {s} = [_]{s}{{ {s} }};",
-            .{ type_name, var_name, type_name, elements.items }
+            "const {s} = struct {{ {s} }};\nvar {s} = [_]{s}{{ {s} }};\n_ = &{s};",
+            .{ type_name, struct_fields, var_name, type_name, elements.items, var_name }
         ) catch unreachable;
     } else {
         // Single mode: just one struct instance
-        const fields = transformFields(allocator, source.text);
-        code = std.fmt.allocPrint(
-            allocator,
-            "const {s} = struct {{ x: f64, y: f64, mass: f64 }};\nvar {s} = {s}{{ {s} }};",
-            .{ type_name, var_name, type_name, fields }
-        ) catch unreachable;
-    }
+    const fields = transformFields(allocator, source.text);
+    code = std.fmt.allocPrint(
+        allocator,
+        "const {s} = struct {{ {s} }};\nvar {s} = {s}{{ {s} }};\n_ = &{s};",
+        .{ type_name, struct_fields, var_name, type_name, fields, var_name }
+    ) catch unreachable;
+}
 
-    // ========================================================================
-    // STEP 5: Collect inline_code from continuations and combine
-    // ========================================================================
-    // Kernel code needs to be at module scope, not wrapped in a function.
-    // So we combine our code with any inline_code in continuations and
-    // replace the entire flow with an Item.inline_code.
+// ========================================================================
+// STEP 5: Re-emit flow with preamble instead of replacing everything
+// ========================================================================
 
-    var final_code = std.ArrayList(u8).initCapacity(allocator, code.len + 1024) catch unreachable;
-    final_code.appendSlice(allocator, code) catch unreachable;
+// Create no-op invocation for the head of the flow (LOCAL nop)
+const segments = allocator.alloc([]const u8, 1) catch unreachable;
+segments[0] = allocator.dupe(u8, "nop") catch unreachable;
 
-    // Collect inline_code from each continuation (e.g., pairwise function)
-    for (flow.continuations) |*cont| {
-        if (cont.node) |node| {
-            if (node == .inline_code) {
-                final_code.appendSlice(allocator, "\n") catch unreachable;
-                final_code.appendSlice(allocator, node.inline_code) catch unreachable;
-            }
-        }
-    }
+const nop_inv = ast.Invocation{
+    .path = ast.DottedPath{
+        .module_qualifier = null,
+        .segments = segments,
+    },
+    .args = &[_]ast.Arg{},
+};
 
-    // Replace the entire flow with inline_code
-    const inline_code_item = ast.Item{
-        .inline_code = ast.InlineCode{
-            .code = final_code.items,
+// Build new preamble (combine our code with existing one)
+const full_preamble = if (flow.preamble_code) |p|
+    std.fmt.allocPrint(allocator, "{s}\n{s}", .{ p, code }) catch unreachable
+else
+    code;
+
+// Clone continuations (shallow clone of the array is fine if we don't mutate elements)
+var new_continuations = allocator.alloc(ast.Continuation, flow.continuations.len) catch unreachable;
+for (flow.continuations, 0..) |cont, i| {
+    new_continuations[i] = cont;
+}
+
+// Create new flow
+const new_flow_item = ast.Item{
+    .flow = ast.Flow{
+        .invocation = nop_inv,
+        .continuations = new_continuations,
+        .preamble_code = full_preamble,
+        .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
+        .post_label = if (flow.post_label) |l| allocator.dupe(u8, l) catch unreachable else null,
+        .super_shape = null,
+        .inline_body = if (flow.inline_body) |b| allocator.dupe(u8, b) catch unreachable else null,
+        .is_pure = flow.is_pure,
+        .is_transitively_pure = flow.is_transitively_pure,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    },
+};
+
+// Replace flow in program
+const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_flow_item) catch unreachable;
+if (maybe_new_program) |new_program| {
+    // Inject local nop event declaration at the top of the program
+    const local_nop_item = ast.Item{
+        .event_decl = ast.EventDecl{
+            .path = ast.DottedPath{ .module_qualifier = null, .segments = segments },
+            .input = ast.Shape{ .fields = &[_]ast.Field{} },
+            .branches = &[_]ast.Branch{},
+            .is_public = false,
+            .is_implicit_flow = false,
+            .is_abstract = false,
+            .annotations = &[_][]const u8{ "norun" },
             .location = flow.location,
             .module = allocator.dupe(u8, flow.module) catch unreachable,
-        },
+        }
     };
+    
+    // Create final program
+    const res_prog_raw = ast_functional.insertAt(allocator, &new_program, 0, local_nop_item) catch unreachable;
+    const res_prog = allocator.create(ast.Program) catch unreachable;
+    res_prog.* = res_prog_raw;
+    return .{ .transformed = .{ .program = res_prog } };
+}
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
-    }
-
-    @panic("kernel.init: replaceFlowRecursive returned null - flow not found in AST");
+@panic("kernel.init: replaceFlowRecursive failed");
 }
 
 // ============================================================================
@@ -278,13 +371,6 @@ const std = @import("std");
         &item.subflow_impl.body.flow
     else
         @panic("kernel.pairwise: expected flow item");
-
-    // ========================================================================
-    // STEP 1: Find ourselves in the AST using the invocation pointer
-    // ========================================================================
-    // The structure is: ~init(...) | kernel k |> pairwise { ... }
-    // We're the pairwise invocation in a nested continuation.
-    // We need to find: (1) which step we are, (2) the binding name from "kernel"
 
     const SearchResult = struct {
         path: []const usize,
@@ -385,20 +471,15 @@ const std = @import("std");
         }
     }
 
-    // ========================================================================
-    // STEP 4: Generate the pairwise function
-    // ========================================================================
     const code = std.fmt.allocPrint(
         allocator,
-        \\pub fn kernel_pairwise() void {{
-        \\    for (0..{s}.len) |i| {{
-        \\        for (i+1..{s}.len) |j| {{
-        \\            {s}
-        \\        }}
+        \\for (0..{0s}.len) |i| {{
+        \\    for (i + 1..{0s}.len) |j| {{
+        \\        {1s}
         \\    }}
         \\}}
         ,
-        .{ var_name, var_name, body_code.items }
+        .{ var_name, body_code.items }
     ) catch unreachable;
 
     // ========================================================================

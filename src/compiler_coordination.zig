@@ -158,11 +158,16 @@ const PassResult = struct {
 /// Check if an event is comptime-only (has ProgramAST or Source parameters)
 fn isComptimeOnlyEvent(event_decl: *const ast.EventDecl) bool {
     for (event_decl.input.fields) |field| {
-        if (field.is_source) {
+        if (field.is_source or field.is_expression) {
             return true;
         }
-        // Check for ProgramAST type (which is an alias for Program)
-        if (std.mem.eql(u8, field.type, "ProgramAST") or std.mem.eql(u8, field.type, "Program")) {
+        // Check for ProgramAST type (which is an alias for Program), or Item
+        if (std.mem.eql(u8, field.type, "ProgramAST") or 
+            std.mem.eql(u8, field.type, "Program") or
+            std.mem.eql(u8, field.type, "Item") or
+            std.mem.eql(u8, field.type, "*const Item") or
+            std.mem.eql(u8, field.type, "*const Program")) 
+        {
             return true;
         }
     }
@@ -186,39 +191,61 @@ fn executePass(
             for (source_ast.items) |item| {
                 switch (item) {
                     .event_decl => |event_decl| {
+                        const event_name = try std.mem.join(allocator, ".", event_decl.path.segments);
+                        defer allocator.free(event_name);
+                        std.debug.print("  [DEBUG] Checking top-level event: {s}\n", .{event_name});
+                        
                         // Check if this event has comptime-only parameters
                         if (isComptimeOnlyEvent(&event_decl)) {
-                            const event_name = try std.mem.join(allocator, ".", event_decl.path.segments);
                             const gop = try comptime_events.getOrPut(event_name);
                             if (!gop.found_existing) {
                                 std.debug.print("  Found comptime-only event: {s}\n", .{event_name});
                                 gop.value_ptr.* = true;
-                            } else {
-                                // Already exists, free the duplicate string
-                                allocator.free(event_name);
                             }
                         }
                     },
                     .module_decl => |module| {
+                        std.debug.print("  [DEBUG] Scanning module: {s} ({s}) items: {}\n", .{module.logical_name, module.canonical_path, module.items.len});
                         // Check events in imported modules too
                         for (module.items) |mod_item| {
-                            if (mod_item == .event_decl) {
-                                const event_decl = mod_item.event_decl;
-                                if (isComptimeOnlyEvent(&event_decl)) {
+                            std.debug.print("    [DEBUG] Item type: {s}\n", .{@tagName(mod_item)});
+                            switch (mod_item) {
+                                .event_decl => |event_decl| {
                                     const event_name = try std.mem.join(allocator, ".", event_decl.path.segments);
-                                    const gop = try comptime_events.getOrPut(event_name);
-                                    if (!gop.found_existing) {
-                                        std.debug.print("  Found comptime-only event: {s}\n", .{event_name});
-                                        gop.value_ptr.* = true;
-                                    } else {
-                                        // Already exists, free the duplicate string
-                                        allocator.free(event_name);
+                                    defer allocator.free(event_name);
+                                    std.debug.print("      [DEBUG] Event: {s}\n", .{event_name});
+                                    if (isComptimeOnlyEvent(&event_decl)) {
+                                        const full_name = if (module.logical_name.len > 0)
+                                            try std.fmt.allocPrint(allocator, "{s}:{s}", .{module.logical_name, event_name})
+                                        else
+                                            try allocator.dupe(u8, event_name);
+                                            
+                                        const gop = try comptime_events.getOrPut(full_name);
+                                        if (!gop.found_existing) {
+                                            std.debug.print("      Found comptime-only event: {s}\n", .{full_name});
+                                            gop.value_ptr.* = true;
+                                        } else {
+                                            allocator.free(full_name);
+                                        }
                                     }
-                                }
+                                },
+                                .proc_decl => |proc| {
+                                    const proc_name = try std.mem.join(allocator, ".", proc.path.segments);
+                                    defer allocator.free(proc_name);
+                                    std.debug.print("      [DEBUG] Proc: {s}\n", .{proc_name});
+                                },
+                                .subflow_impl => |subflow| {
+                                    const flow_name = try std.mem.join(allocator, ".", subflow.event_path.segments);
+                                    defer allocator.free(flow_name);
+                                    std.debug.print("      [DEBUG] Subflow: {s}\n", .{flow_name});
+                                },
+                                else => {},
                             }
                         }
                     },
-                    else => {},
+                    else => {
+                        // std.debug.print("  [DEBUG] Ignoring top-level item type: {}\n", .{@as(ast.Item, item)});
+                    },
                 }
             }
 
