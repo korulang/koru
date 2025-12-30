@@ -52,20 +52,21 @@ const ZERO_DV = [5][3]f64{
 ~event energy { bodies: []const Body }
 | e f64
 
-// NOTE: Chainable captured works! But subflows don't yet support plain-value returns.
-// The `| e f64` branch needs struct syntax which doesn't match the scalar type.
-// TODO: Add `e(result.e)` syntax for plain-value branch constructors in subflows.
-~proc energy {
-    var e: f64 = 0;
-    for (bodies, 0..) |b, i| {
-        e += 0.5 * b.mass * (b.vx*b.vx + b.vy*b.vy + b.vz*b.vz);
-        for (i+1..5) |j| {
-            const dx = b.x - bodies[j].x; const dy = b.y - bodies[j].y; const dz = b.z - bodies[j].z;
-            e -= (b.mass * bodies[j].mass) / @sqrt(dx*dx + dy*dy + dz*dz);
-        }
-    }
-    return .{ .e = e };
-}
+// Subflow with chained captures: kinetic first, then potential
+~energy = capture({ e: @as(f64, 0) })
+| as ke |> for(bodies)
+    | each b |> captured { e: ke.e + 0.5 * b.mass * (b.vx*b.vx + b.vy*b.vy + b.vz*b.vz) }
+| captured kinetic |> capture({ e: kinetic.e })
+    | as pe |> for(0..5)
+        | each i |> for(i+1..5)
+            | each j |> captured {
+                e: pe.e - (bodies[i].mass * bodies[j].mass) / @sqrt(
+                    (bodies[i].x - bodies[j].x)*(bodies[i].x - bodies[j].x) +
+                    (bodies[i].y - bodies[j].y)*(bodies[i].y - bodies[j].y) +
+                    (bodies[i].z - bodies[j].z)*(bodies[i].z - bodies[j].z)
+                )
+            }
+    | captured result |> e { result.e }
 
 ~event parse {}
 | n u32
@@ -94,30 +95,32 @@ const ZERO_DV = [5][3]f64{
 // THE MAGIC: Terse subflow chain for force calculation!
 // ============================================================================
 
-// Step 1: Compute deltas and pass through everything needed
+// Step 1: Compute deltas - use const to compute dx/dy/dz once, then dsq from them
 ~event pair_delta { bi: Body, bj: Body, dt: f64 }
 | delta { dx: f64, dy: f64, dz: f64, dsq: f64, dt: f64, mi: f64, mj: f64 }
 
-~pair_delta = delta {
-    dx: bi.x - bj.x,
-    dy: bi.y - bj.y,
-    dz: bi.z - bj.z,
-    dsq: (bi.x - bj.x)*(bi.x - bj.x) + (bi.y - bj.y)*(bi.y - bj.y) + (bi.z - bj.z)*(bi.z - bj.z),
-    dt: dt,
+~pair_delta = const({ dx: bi.x - bj.x, dy: bi.y - bj.y, dz: bi.z - bj.z })
+| as d |> delta {
+    d.dx,
+    d.dy,
+    d.dz,
+    dsq: d.dx*d.dx + d.dy*d.dy + d.dz*d.dz,
+    dt,
     mi: bi.mass,
     mj: bj.mass
 }
 
-// Step 2: Compute force from deltas
+// Step 2: Compute force - use const to compute mag once (inv_d^3 pattern)
 ~event pair_force { dx: f64, dy: f64, dz: f64, dsq: f64, dt: f64, mi: f64, mj: f64 }
 | result { fx: f64, fy: f64, fz: f64, mi: f64, mj: f64 }
 
-~pair_force = result {
-    fx: dx * dt / (dsq * @sqrt(dsq)),
-    fy: dy * dt / (dsq * @sqrt(dsq)),
-    fz: dz * dt / (dsq * @sqrt(dsq)),
-    mi: mi,
-    mj: mj
+~pair_force = const({ mag: dt / (dsq * @sqrt(dsq)) })
+| as c |> result {
+    fx: dx * c.mag,
+    fy: dy * c.mag,
+    fz: dz * c.mag,
+    mi,
+    mj
 }
 
 // ============================================================================
@@ -135,8 +138,14 @@ const ZERO_DV = [5][3]f64{
                             | each i |> for(i+1..5)
                                 | each j |> pair_delta(bi: b[i], bj: b[j], dt: DT)
                                     | delta d |> pair_force(d.dx, d.dy, d.dz, d.dsq, d.dt, d.mi, d.mj)
-                                        | result f |> captured { dv[i][0]: acc.dv[i][0] - f.fx*f.mj, dv[i][1]: acc.dv[i][1] - f.fy*f.mj, dv[i][2]: acc.dv[i][2] - f.fz*f.mj, dv[j][0]: acc.dv[j][0] + f.fx*f.mi, dv[j][1]: acc.dv[j][1] + f.fy*f.mi, dv[j][2]: acc.dv[j][2] + f.fz*f.mi }
-                            | done |> _
-                        | captured deltas |> apply(bodies: b[0..], dt: DT, dv: deltas.dv)
+                                        | result f |> captured {
+                                            dv[i][0]: acc.dv[i][0] - f.fx*f.mj,
+                                            dv[i][1]: acc.dv[i][1] - f.fy*f.mj,
+                                            dv[i][2]: acc.dv[i][2] - f.fz*f.mj,
+                                            dv[j][0]: acc.dv[j][0] + f.fx*f.mi,
+                                            dv[j][1]: acc.dv[j][1] + f.fy*f.mi,
+                                            dv[j][2]: acc.dv[j][2] + f.fz*f.mi
+                                        }
+                        | captured deltas |> apply(bodies: b[0..], dt: DT, deltas.dv)
                     | done |> energy(bodies: b[0..])
                         | e e2 |> std.io:print.ln("{{ e2:d:.9 }}")

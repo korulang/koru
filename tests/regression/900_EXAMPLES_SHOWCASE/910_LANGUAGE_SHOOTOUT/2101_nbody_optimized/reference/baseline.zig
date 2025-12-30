@@ -34,12 +34,10 @@ const Body = struct {
     mass: f64,
 };
 
-fn advance(bodies: []Body, dt: f64) void {
+fn advance(bodies: *[5]Body, dt: f64) void {
     // Update velocities based on gravitational interactions
-    var i: usize = 0;
-    while (i < bodies.len) : (i += 1) {
-        var j: usize = i + 1;
-        while (j < bodies.len) : (j += 1) {
+    for (0..5) |i| {
+        for (i + 1..5) |j| {
             const dx = bodies[i].x - bodies[j].x;
             const dy = bodies[i].y - bodies[j].y;
             const dz = bodies[i].z - bodies[j].z;
@@ -64,7 +62,7 @@ fn advance(bodies: []Body, dt: f64) void {
     }
 }
 
-fn energy(bodies: []const Body) f64 {
+fn energy(bodies: *const [5]Body) f64 {
     var e: f64 = 0.0;
 
     for (bodies, 0..) |body, i| {
@@ -72,8 +70,7 @@ fn energy(bodies: []const Body) f64 {
         e += 0.5 * body.mass * (body.vx * body.vx + body.vy * body.vy + body.vz * body.vz);
 
         // Potential energy (pairwise)
-        var j = i + 1;
-        while (j < bodies.len) : (j += 1) {
+        for (i + 1..5) |j| {
             const dx = body.x - bodies[j].x;
             const dy = body.y - bodies[j].y;
             const dz = body.z - bodies[j].z;
@@ -85,7 +82,7 @@ fn energy(bodies: []const Body) f64 {
     return e;
 }
 
-fn offsetMomentum(bodies: []Body) void {
+fn offsetMomentum(bodies: *[5]Body) void {
     var px: f64 = 0.0;
     var py: f64 = 0.0;
     var pz: f64 = 0.0;
@@ -165,8 +162,7 @@ pub fn main() !void {
     std.debug.print("{d:.9}\n", .{energy(&bodies)});
 
     // Run simulation
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |_| {
         advance(&bodies, 0.01);
     }
 

@@ -4225,8 +4225,11 @@ fn emitStep(
             // Emit captured_body continuations
             for (captured_body) |*cont| {
                 if (cont.node) |node| {
+                    // If in_handler and the node is a branch_constructor, use "_" to trigger return
+                    // This handles subflow handlers like: ~my_event = capture(...) | captured |> result { ... }
+                    const is_return_node = ctx.in_handler and node == .branch_constructor;
                     var result_buf: [64]u8 = undefined;
-                    const inner_result = std.fmt.bufPrint(&result_buf, "done_result_{d}", .{step_idx}) catch "_";
+                    const inner_result = if (is_return_node) "_" else std.fmt.bufPrint(&result_buf, "done_result_{d}", .{step_idx}) catch "_";
                     try emitStep(emitter, ctx, &node, inner_result);
                     if (node == .invocation) {
                         try emitter.writeIndent();
