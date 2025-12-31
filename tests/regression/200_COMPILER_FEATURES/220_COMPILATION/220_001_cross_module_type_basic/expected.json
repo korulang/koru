@@ -1,5 +1,7 @@
 {
-    "module_annotations": [],
+    "module_annotations": [
+
+    ],
     "items": [
         {
             "type": "import_decl",
@@ -49,9 +51,7 @@
         {
             "type": "event_decl",
             "name": "process_user",
-            "path": [
-                "process_user"
-            ],
+            "path": ["process_user"],
             "module": "input",
             "input": {
                 "fields": [

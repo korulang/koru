@@ -1,5 +1,7 @@
 {
-    "module_annotations": [],
+    "module_annotations": [
+
+    ],
     "items": [
         {
             "type": "import_decl",
@@ -67,9 +69,7 @@
         {
             "type": "flow",
             "invocation": {
-                "event": [
-                    "step"
-                ],
+                "event": ["step"],
                 "args": [
                     {
                         "name": "name",
@@ -86,14 +86,18 @@
                                 "col": 0
                             },
                             "scope": {
-                                "bindings": []
+                                "bindings": [
+
+                                ]
                             },
                             "phantom_type": "sh"
                         }
                     }
                 ]
             },
-            "continuations": [],
+            "continuations": [
+
+            ],
             "pre_label": null,
             "post_label": null,
             "location": {
@@ -114,9 +118,7 @@
         {
             "type": "flow",
             "invocation": {
-                "event": [
-                    "step"
-                ],
+                "event": ["step"],
                 "args": [
                     {
                         "name": "name",
@@ -133,14 +135,18 @@
                                 "col": 0
                             },
                             "scope": {
-                                "bindings": []
+                                "bindings": [
+
+                                ]
                             },
                             "phantom_type": "sh"
                         }
                     }
                 ]
             },
-            "continuations": [],
+            "continuations": [
+
+            ],
             "pre_label": null,
             "post_label": null,
             "location": {
@@ -161,10 +167,7 @@
         {
             "type": "event_decl",
             "name": "signal",
-            "path": [
-                "test",
-                "signal"
-            ],
+            "path": ["test", "signal"],
             "module": "input",
             "input": {
                 "fields": [
@@ -177,7 +180,9 @@
                     }
                 ]
             },
-            "branches": [],
+            "branches": [
+
+            ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
                 "line": 26,
@@ -196,13 +201,12 @@
         {
             "type": "proc_decl",
             "event_name": "handler",
-            "path": [
-                "test",
-                "handler"
-            ],
+            "path": ["test", "handler"],
             "module": "input",
             "target": "zig",
-            "inline_flows": [],
+            "inline_flows": [
+
+            ],
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_018_multiline_annotations/input.kz",
