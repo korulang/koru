@@ -1,0 +1,49 @@
+// Hello Vaxis - Simple TUI example
+// =================================
+//
+// Demonstrates the reactive tap pattern:
+// - poll() runs in a loop
+// - Taps intercept events reactively
+// - 'q' quits the application
+
+~import "$app/vaxis"
+~import "$std/taps"
+
+// ============================================================================
+// EVENT HANDLERS VIA TAPS
+// ============================================================================
+
+// Quit on 'q'
+~tap(vaxis:poll -> *)
+| key k when(k.data.char == 'q') |> vaxis:quit()
+    | done |> _
+
+// Quit on Ctrl+C
+~tap(vaxis:poll -> *)
+| key k when(k.data.mods.ctrl and k.data.char == 'c') |> vaxis:quit()
+    | done |> _
+
+// ============================================================================
+// MAIN LOOP
+// ============================================================================
+
+// The main pump - runs poll() in a loop with null transitions
+// Taps intercept events before they hit the null transition
+~#loop vaxis:poll()
+| key k |> vaxis:render()
+    | done |> @loop()
+| resize r |> vaxis:clear()
+    | done |> vaxis:render()
+        | done |> @loop()
+| focus_in |> @loop()
+| focus_out |> @loop()
+| quit |> vaxis:cleanup()
+    | done |> _
+
+// Entry point
+~vaxis:run(title: "Hello Vaxis")
+| ready |> vaxis:clear()
+    | done |> vaxis:write_at(x: 10, y: 5, text: "Hello, Vaxis! Press 'q' to quit.")
+        | done |> vaxis:render()
+            | done |> @loop()
+| err e |> _

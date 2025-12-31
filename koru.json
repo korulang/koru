@@ -4,6 +4,7 @@
   "paths": {
     "std": "./koru_std",
     "lib": "./lib",
+    "app": "./examples",
     "test": "{ENTRY}"
   }
 }

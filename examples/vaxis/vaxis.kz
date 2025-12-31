@@ -1,0 +1,202 @@
+// Koru Vaxis Library - Reactive TUI wrapper
+// ==========================================
+//
+// Wraps libvaxis for Koru, exposing terminal events
+// as a reactive event stream that can be tapped.
+//
+// PATTERN: Dumb pump loop + smart taps
+//   - poll() runs in a loop with null transitions
+//   - User code taps poll to react to events
+//   - Multicast for free - multiple taps can observe
+//
+// USAGE:
+//   ~import "$app/vaxis"
+//   ~import "$std/taps"
+//
+//   ~tap(vaxis:poll -> *)
+//   | key k when(k.char == 'q') |> vaxis:quit()
+//       | done |> _
+//
+//   ~vaxis:run(title: "My App")
+//   | ready |> @loop()
+
+const std = @import("std");
+const vaxis = @import("vaxis");
+
+// Zig types for event payloads
+const KeyMods = struct {
+    ctrl: bool = false,
+    alt: bool = false,
+    shift: bool = false,
+    super_key: bool = false,
+};
+
+const KeyData = struct {
+    codepoint: u21,
+    char: ?u8,
+    mods: KeyMods,
+};
+
+const SizeData = struct {
+    width: u16,
+    height: u16,
+};
+
+// Runtime state
+var vx: ?vaxis.Vaxis = null;
+var tty: ?vaxis.Tty = null;
+var should_quit: bool = false;
+var alloc: std.mem.Allocator = undefined;
+
+// Internal event type for vaxis loop
+const VaxisEvent = union(enum) {
+    key_press: vaxis.Key,
+    key_release: vaxis.Key,
+    winsize: vaxis.Winsize,
+    focus_in,
+    focus_out,
+};
+
+// ============================================================================
+// EVENT DEFINITIONS
+// ============================================================================
+
+// The poll event - returns terminal events
+~pub event poll {}
+| key { data: KeyData }
+| resize { size: SizeData }
+| focus_in {}
+| focus_out {}
+| quit {}
+
+~proc poll {
+    if (should_quit) {
+        return .{ .quit = .{} };
+    }
+
+    // Get next event from vaxis
+    if (vx) |*v| {
+        var loop: vaxis.Loop(VaxisEvent) = .{ .tty = &tty.?, .vaxis = v };
+        const event = loop.nextEvent();
+
+        switch (event) {
+            .key_press => |k| {
+                return .{ .key = .{
+                    .data = .{
+                        .codepoint = k.codepoint,
+                        .char = if (k.codepoint < 128) @intCast(k.codepoint) else null,
+                        .mods = .{
+                            .ctrl = k.mods.ctrl,
+                            .alt = k.mods.alt,
+                            .shift = k.mods.shift,
+                            .super_key = k.mods.super,
+                        },
+                    },
+                }};
+            },
+            .winsize => |ws| {
+                v.resize(alloc, tty.?.writer(), ws) catch {};
+                return .{ .resize = .{
+                    .size = .{
+                        .width = ws.cols,
+                        .height = ws.rows,
+                    },
+                }};
+            },
+            .focus_in => return .{ .focus_in = .{} },
+            .focus_out => return .{ .focus_out = .{} },
+            else => return .{ .focus_in = .{} },
+        }
+    }
+    return .{ .quit = .{} };
+}
+
+// Initialize vaxis
+~pub event run { title: []const u8 }
+| ready {}
+| err { message: []const u8 }
+
+~proc run {
+    _ = title; // TODO: set window title
+
+    alloc = std.heap.page_allocator;
+
+    // Initialize TTY
+    tty = vaxis.Tty.init() catch |e| {
+        return .{ .err = .{ .message = @errorName(e) } };
+    };
+
+    // Initialize Vaxis
+    vx = vaxis.Vaxis.init(alloc, .{}) catch |e| {
+        return .{ .err = .{ .message = @errorName(e) } };
+    };
+
+    // Enter alt screen
+    if (vx) |*v| {
+        v.enterAltScreen(tty.?.writer()) catch {};
+    }
+
+    return .{ .ready = .{} };
+}
+
+// Request quit
+~pub event quit {}
+| done {}
+
+~proc quit {
+    should_quit = true;
+    return .{ .done = .{} };
+}
+
+// Clean up
+~pub event cleanup {}
+| done {}
+
+~proc cleanup {
+    if (vx) |*v| {
+        v.deinit(alloc, tty.?.writer());
+    }
+    if (tty) |*t| {
+        t.deinit();
+    }
+    return .{ .done = .{} };
+}
+
+// Render to screen
+~pub event render {}
+| done {}
+
+~proc render {
+    if (vx) |*v| {
+        v.render(tty.?.writer()) catch {};
+    }
+    return .{ .done = .{} };
+}
+
+// Clear screen
+~pub event clear {}
+| done {}
+
+~proc clear {
+    if (vx) |*v| {
+        const win = v.window();
+        win.clear();
+    }
+    return .{ .done = .{} };
+}
+
+// Write text at position
+~pub event write_at { x: u16, y: u16, text: []const u8 }
+| done {}
+
+~proc write_at {
+    if (vx) |*v| {
+        const win = v.window();
+        for (text, 0..) |char, i| {
+            win.writeCell(x + @as(u16, @intCast(i)), y, .{
+                .char = .{ .grapheme = text[i..i+1] },
+            });
+        }
+    }
+    return .{ .done = .{} };
+}
