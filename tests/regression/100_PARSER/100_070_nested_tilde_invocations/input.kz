@@ -1,0 +1,22 @@
+// TEST: Nested tilde invocations should fail
+// MUST_FAIL: Nested flows (~) are not allowed inside continuations
+//
+// The ~ prefix starts a flow at the top level. Inside a continuation,
+// you should use a bare event call instead.
+//
+// WRONG:  | done d |> ~inner()
+// RIGHT:  | done d |> inner()
+
+const std = @import("std");
+
+~pub event outer {}
+| done { value: i32 }
+
+~pub event inner { x: i32 }
+| done {}
+
+~outer()
+| done d |> ~inner(x: d.value)
+            | done _ |> nop()
+
+~pub event nop {}

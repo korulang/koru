@@ -4718,7 +4718,20 @@ pub const Parser = struct {
             // Simple label apply without args (for compatibility)
             return ast.Step{ .label_apply = try self.allocator.dupe(u8, after_at) };
         }
-        
+
+        // Check for nested flow invocation (~event) - NOT ALLOWED in pipeline steps
+        // Flows (~) can only appear at the top level, not nested inside continuations
+        if (lexer.startsWith(clean_content, "~")) {
+            try self.reporter.addError(
+                .PARSE001,
+                self.current,
+                0,
+                "Nested flows (~) are not allowed inside continuations. Use a bare event call instead: remove the ~ prefix.",
+                .{},
+            );
+            return error.ParseError;
+        }
+
         // Check for branch constructor: identifier { field: value, ... }
         // Also recognize .{ as shorthand branch constructor (immediate return)
         const brace_idx = std.mem.indexOf(u8, clean_content, "{");
