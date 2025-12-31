@@ -1,0 +1,35 @@
+// TEST: Single-line source block edge cases
+// Verifies that special characters inside { } are preserved correctly
+//
+// Edge cases tested:
+// 1. Semicolons (statement separators)
+// 2. Nested braces (control flow)
+// 3. Strings containing braces
+// 4. Pipe characters (bitwise OR, should NOT be treated as Koru branches)
+// 5. Multiple pipes (chained OR)
+
+const std = @import("std");
+
+~import "$std/template"
+
+// Case 1: Semicolons
+~std.template:define(with_semicolons) { const x = 42; return x; }
+
+// Case 2: Nested braces
+~std.template:define(with_nested_braces) { if (x) { return 1; } else { return 2; } }
+
+// Case 3: Strings containing braces
+~std.template:define(with_string_braces) { print("Hello {world}"); }
+
+// Case 4: Bitwise OR (pipe character)
+~std.template:define(with_bitwise_or) { FLAG_A | FLAG_B }
+
+// Case 5: Multiple pipes
+~std.template:define(with_chained_or) { a | b | c | d }
+
+// Case 6: Mixed - pipes inside nested braces
+~std.template:define(complex) { if (flags & (A | B)) { return x | y; } }
+
+pub fn main() void {
+    std.debug.print("All source blocks parsed correctly\n", .{});
+}

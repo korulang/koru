@@ -8,6 +8,75 @@ const ModuleResolver = @import("module_resolver").ModuleResolver;
 
 const DEBUG = false;  // Set to true for verbose parser logging
 
+/// Check if line has a source block pattern: `eventName { ... }` or `eventName(args) { ... }`
+/// Source blocks are opaque - their content should not affect parsing decisions.
+/// Returns true if there's a `{` that's NOT inside parentheses AND no `=` before it.
+/// The `=` check distinguishes source blocks from subflow impls with branch constructors:
+///   - Source block:   `~event { content }`      - no = before {
+///   - Subflow impl:   `~event = branch { ... }` - has = before {
+fn hasSourceBlock(s: []const u8) bool {
+    var paren_depth: i32 = 0;
+    var in_string = false;
+    var seen_equals = false;
+
+    for (s, 0..) |c, i| {
+        // Track string state (skip escaped quotes)
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+
+        if (in_string) continue;
+
+        // Track paren depth
+        if (c == '(') paren_depth += 1;
+        if (c == ')') paren_depth -= 1;
+
+        // Track if we've seen = at top level (indicates subflow impl)
+        if (c == '=' and paren_depth == 0) {
+            seen_equals = true;
+        }
+
+        // A `{` at paren_depth 0, with no prior `=`, means source block
+        if (c == '{' and paren_depth == 0) {
+            return !seen_equals;
+        }
+    }
+
+    return false;
+}
+
+/// Find '=' at the top level (not inside (), {}, or strings)
+/// Used inside parseSubflowImpl to find the split point
+fn findTopLevelEquals(s: []const u8) ?usize {
+    var paren_depth: i32 = 0;
+    var brace_depth: i32 = 0;
+    var in_string = false;
+
+    for (s, 0..) |c, i| {
+        // Track string state (skip escaped quotes)
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+
+        if (in_string) continue;
+
+        // Track nesting depth
+        if (c == '(') paren_depth += 1;
+        if (c == ')') paren_depth -= 1;
+        if (c == '{') brace_depth += 1;
+        if (c == '}') brace_depth -= 1;
+
+        // Only match = at top level
+        if (c == '=' and paren_depth == 0 and brace_depth == 0) {
+            return i;
+        }
+    }
+
+    return null;
+}
+
 /// Parser error set - explicit to avoid circular dependency issues
 pub const ParseError = error{
     OutOfMemory,
@@ -730,8 +799,14 @@ pub const Parser = struct {
         } else if (lexer.startsWith(after_tilde, "@")) {
             // Old syntax - we'll deprecate this for standalone labels
             return .{ .label_decl = try self.parseLabelDecl() };
-        } else if (std.mem.indexOf(u8, remaining, "=") != null) {
+        } else if (hasSourceBlock(remaining)) {
+            // Source block detected: ~event { ... } or ~event(args) { ... }
+            // Source blocks are opaque - route to flow parsing BEFORE checking for =
+            // This prevents `{ a = b }` from being misinterpreted as subflow impl
+            return .{ .flow = try self.parseFlow(annotations.items) };
+        } else if (findTopLevelEquals(remaining) != null) {
             // Event implementation via subflow: ~event.name = ...
+            // NOTE: This only matches = outside of source blocks (checked above)
             var subflow = try self.parseSubflowImpl();
             subflow.is_impl = is_impl;
             return .{ .subflow_impl = subflow };
@@ -2683,10 +2758,35 @@ pub const Parser = struct {
             // Check for invalid inline branch continuations: ~event() | branch |> _
             // Branch continuations must be on a new line - only void chaining (|>) is allowed inline
             // Look for `| ` followed by a word (not > or ?)
+            // NOTE: Skip pipes inside { } braces (source blocks) and strings
             {
                 var i: usize = 0;
+                var brace_depth: i32 = 0;
+                var in_string = false;
                 while (i < invocation_str.len) : (i += 1) {
-                    if (invocation_str[i] == '|' and i + 1 < invocation_str.len) {
+                    const c = invocation_str[i];
+
+                    // Track string state (skip escaped quotes)
+                    if (c == '"' and (i == 0 or invocation_str[i - 1] != '\\')) {
+                        in_string = !in_string;
+                        continue;
+                    }
+
+                    // Skip everything inside strings
+                    if (in_string) continue;
+
+                    // Track brace depth
+                    if (c == '{') {
+                        brace_depth += 1;
+                        continue;
+                    }
+                    if (c == '}') {
+                        brace_depth -= 1;
+                        continue;
+                    }
+
+                    // Only check pipes at brace_depth 0 (outside source blocks)
+                    if (brace_depth == 0 and c == '|' and i + 1 < invocation_str.len) {
                         const next_char = invocation_str[i + 1];
                         // |> is valid (void chaining), |? is valid (catch-all)
                         // | followed by space then word is invalid (branch must be on new line)
@@ -3279,7 +3379,7 @@ pub const Parser = struct {
         // Parse: ~event.name = ...
         // OR: ~impl event.name = ... (impl keyword will be handled by caller via is_impl flag)
         const after_tilde = lexer.trim(line[1..]);
-        const eq_idx = std.mem.indexOf(u8, after_tilde, "=") orelse return error.InvalidSyntax;
+        const eq_idx = findTopLevelEquals(after_tilde) orelse return error.InvalidSyntax;
 
         var event_path_str = lexer.trim(after_tilde[0..eq_idx]);
         // Strip "impl " prefix if present (caller will set is_impl flag on returned struct)
