@@ -1,2 +1,12 @@
-Cross-module tap matching NOW WORKS (parser + pathMatches fixed)
-Segfault occurs after tap insertion - AST emission issue with cross-module flows
+Cross-module tap transform causes infinite loop
+
+Root cause: When tap is in imported module (events.kz) and target flow is in main module (input.kz):
+1. Parser fix works: "input:main_event" correctly passed as single expression ✅
+2. Path matching works: module_qualifier comparison works ✅
+3. Tap wrapping works: continuation correctly wrapped ✅
+4. BUT: Transform walker doesn't see tap removal across module boundary
+   - Tap declaration keeps getting re-matched each pass
+   - Causes infinite loop
+
+Fix needed in transform_pass_runner.zig or how cross-module items are updated.
+Same-module taps work fine (310_006, 310_009, 310_013, 310_014, etc.)
