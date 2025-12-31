@@ -33,7 +33,8 @@ const std = @import("std");
     | done |> _
 
 // Question: Should this tap on logger fire when logger is invoked from a tap?
-// Current design: NO - taps don't fire inside tap functions (TAP_FUNCTION_CONTEXT guard)
+// Answer: YES - chained taps fire by default (full observability)
+// Use [opaque] annotation if you need to hide internal implementation from tap matching
 ~tap(logger -> *)
 | done |> metrics()
     | done |> _

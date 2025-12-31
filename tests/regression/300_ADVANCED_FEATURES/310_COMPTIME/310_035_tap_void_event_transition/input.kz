@@ -7,6 +7,7 @@
 const std = @import("std");
 
 ~import "$std/io"
+~import "$std/taps"
 
 // Logger to observe taps
 ~event log { msg: []const u8 }
@@ -17,7 +18,7 @@ const std = @import("std");
 
 // Tap: observe std.io:println when it transitions to another event
 // Using Profile for string source field
-~std.io:print* -> *
+~tap(std.io:print* -> *)
 | Profile p |> log(msg: p.source)
 
 // Flow: println transitions to a local event
@@ -30,4 +31,5 @@ const std = @import("std");
 }
 
 // Main flow: println (void) transitions to finish (has branch)
-~std.io:println(text: "Hello") |> finish() | done |> _
+~std.io:println(text: "Hello") |> finish()
+    | done |> _
