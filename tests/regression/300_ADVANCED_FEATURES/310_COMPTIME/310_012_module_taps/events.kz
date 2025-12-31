@@ -2,4 +2,5 @@
 ~import "$std/taps"
 
 ~tap(input:main_event -> *)
-| done |> input:observer() |> _
+| done |> input:observer()
+    | done |> _

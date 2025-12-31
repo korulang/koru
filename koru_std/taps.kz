@@ -103,7 +103,8 @@ const std = @import("std");
     const Helper = struct {
         // Check if an event path matches a pattern
         // Pattern can be: "event", "module:event", or "module:path.to.event"
-        fn pathMatches(pattern: []const u8, is_wildcard: bool, path: *const ast.DottedPath, alloc: std.mem.Allocator) bool {
+        // fallback_module: Used when path.module_qualifier is null (e.g., for flows declared in a module)
+        fn pathMatches(pattern: []const u8, is_wildcard: bool, path: *const ast.DottedPath, fallback_module: ?[]const u8, alloc: std.mem.Allocator) bool {
             if (is_wildcard) return true;
 
             // Check if pattern has module qualifier (contains :)
@@ -113,10 +114,12 @@ const std = @import("std");
 
             // Check module qualifier match
             if (pattern_module) |pm| {
-                if (path.module_qualifier) |mq| {
+                // Use explicit module_qualifier if present, otherwise fall back to containing module
+                const path_module = path.module_qualifier orelse fallback_module;
+                if (path_module) |mq| {
                     if (!std.mem.eql(u8, pm, mq)) return false;
                 } else {
-                    return false; // Pattern has module but path doesn't
+                    return false; // Pattern has module but path doesn't (and no fallback)
                 }
             }
 
@@ -243,6 +246,7 @@ const std = @import("std");
             continuations: []const ast.Continuation,
             source_pattern: []const u8,
             source_wildcard: bool,
+            containing_module: ?[]const u8,
             match_br: []const u8,
             is_meta: bool,
             tap_stp: ast.Step,
@@ -268,7 +272,7 @@ const std = @import("std");
                     if (maybe_inv) |inv| {
                         // Skip invocations inserted by a tap (avoid infinite recursion)
                         if (!inv.inserted_by_tap) {
-                            if (pathMatches(source_pattern, source_wildcard, &inv.path, alloc)) {
+                            if (pathMatches(source_pattern, source_wildcard, &inv.path, containing_module, alloc)) {
                                 // Found a nested invocation matching source!
                                 // Transform its continuations (what happens after it returns)
                                 const nested_result = try transformContinuations(
@@ -290,7 +294,7 @@ const std = @import("std");
                 const conts_to_recurse = if (matched_here) cont.continuations else this_cont.continuations;
                 const deeper = try transformNestedInvocations(
                     alloc, conts_to_recurse, source_pattern, source_wildcard,
-                    match_br, is_meta, tap_stp, tap_nested_conts
+                    containing_module, match_br, is_meta, tap_stp, tap_nested_conts
                 );
 
                 // If we matched here, we need to splice deeper results into the wrapped structure
@@ -332,7 +336,7 @@ const std = @import("std");
             var new_continuations = flow.continuations;
 
             // CASE 1: Top-level flow matches source - transform its continuations
-            if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, allocator)) {
+            if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
                 const result = Helper.transformContinuations(
                     allocator, flow.continuations, match_branch, is_metatype, tap_step, tap_nested_conts
                 ) catch unreachable;
@@ -346,7 +350,7 @@ const std = @import("std");
             // CASE 2: Check for NESTED invocations matching source
             const nested_result = Helper.transformNestedInvocations(
                 allocator, new_continuations, source, source_is_wildcard,
-                match_branch, is_metatype, tap_step, tap_nested_conts
+                flow.module, match_branch, is_metatype, tap_step, tap_nested_conts
             ) catch unreachable;
 
             if (nested_result.modified) {
@@ -374,6 +378,80 @@ const std = @import("std");
             } else {
                 new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
             }
+        } else if (prog_item.* == .module_decl) {
+            // Handle imported modules - must descend to remove tap and transform flows
+            const module = &prog_item.module_decl;
+            var new_mod_items = std.ArrayList(ast.Item).initCapacity(allocator, module.items.len) catch unreachable;
+
+            for (module.items) |*mod_item| {
+                // Skip the tap if it's in this module
+                if (mod_item == item) {
+                    std.debug.print("[tap] Removing tap from module '{s}'\n", .{module.logical_name});
+                    continue;
+                }
+
+                if (mod_item.* == .flow) {
+                    const flow = &mod_item.flow;
+                    var flow_modified = false;
+                    var new_continuations = flow.continuations;
+
+                    // Check if flow matches source pattern
+                    if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
+                        const result = Helper.transformContinuations(
+                            allocator, flow.continuations, match_branch, is_metatype, tap_step, tap_nested_conts
+                        ) catch unreachable;
+
+                        if (result.modified) {
+                            new_continuations = result.conts;
+                            flow_modified = true;
+                        }
+                    }
+
+                    // Check nested invocations
+                    const nested_result = Helper.transformNestedInvocations(
+                        allocator, new_continuations, source, source_is_wildcard,
+                        flow.module, match_branch, is_metatype, tap_step, tap_nested_conts
+                    ) catch unreachable;
+
+                    if (nested_result.modified) {
+                        new_continuations = nested_result.conts;
+                        flow_modified = true;
+                    }
+
+                    if (flow_modified) {
+                        const new_flow = ast.Flow{
+                            .invocation = flow.invocation,
+                            .continuations = new_continuations,
+                            .annotations = flow.annotations,
+                            .pre_label = flow.pre_label,
+                            .post_label = flow.post_label,
+                            .super_shape = flow.super_shape,
+                            .inline_body = flow.inline_body,
+                            .is_pure = flow.is_pure,
+                            .is_transitively_pure = flow.is_transitively_pure,
+                            .location = flow.location,
+                            .module = flow.module,
+                        };
+                        new_mod_items.append(allocator, ast.Item{ .flow = new_flow }) catch unreachable;
+                        any_tap_inserted = true;
+                    } else {
+                        new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
+                    }
+                } else {
+                    new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
+                }
+            }
+
+            // Create new module_decl with updated items
+            const new_module = ast.ModuleDecl{
+                .logical_name = allocator.dupe(u8, module.logical_name) catch unreachable,
+                .canonical_path = allocator.dupe(u8, module.canonical_path) catch unreachable,
+                .items = new_mod_items.toOwnedSlice(allocator) catch unreachable,
+                .is_system = module.is_system,
+                .annotations = module.annotations,
+                .location = module.location,
+            };
+            new_items.append(allocator, ast.Item{ .module_decl = new_module }) catch unreachable;
         } else {
             new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
         }

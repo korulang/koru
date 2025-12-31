@@ -1,0 +1,2 @@
+Main event executed
+Observer fired!
