@@ -30,7 +30,9 @@ TODO_TESTS=0
 BROKEN_TESTS=0
 BENCHMARK_TESTS=0
 LEAKED_TESTS=0
+PRIORITY_TESTS=0
 FAILED_TESTS=""
+PRIORITY_LIST=""
 
 # Memory leak detection flag (default: ON)
 # Use --ignore-leaks to disable strict leak checking
@@ -47,6 +49,10 @@ REBUILD_COMPILER=true
 # Verbose error output flag (default: OFF)
 # Use --verbose to show full stderr output on failures (not truncated)
 VERBOSE=false
+
+# Priority list flag (default: OFF)
+# Use --priority to list all priority items
+SHOW_PRIORITY=false
 
 echo "════════════════════════════════════════"
 echo "    KORU REGRESSION TEST SUITE"
@@ -82,6 +88,7 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  --no-rebuild                           Skip compiler rebuild (for rapid iteration)"
     echo "  --run-units                            Run unit tests before regression tests"
     echo "  --verbose                              Show full stderr output on failures (not truncated)"
+    echo "  --priority                             List all tests marked as PRIORITY"
     echo ""
     echo -e "${CYAN}SNAPSHOT SYSTEM:${NC}"
     echo "  After each full run, a snapshot is saved to test-results/ with:"
@@ -111,7 +118,7 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     exit 0
 fi
 
-# Check for special commands first (--status, --list)
+# Check for special commands first (--status, --list, --priority)
 if [ "$1" = "--status" ]; then
     # Generate and display status using Node script
     # This reads actual test markers (SUCCESS/FAILURE/TODO/SKIP/BROKEN) from test dirs
@@ -123,6 +130,33 @@ if [ "$1" = "--status" ]; then
         echo "Alternative: Run tests to see current state:"
         echo "  ./run_regression.sh"
         exit 1
+    fi
+    exit 0
+fi
+
+if [ "$1" = "--priority" ]; then
+    # List all tests marked with PRIORITY
+    echo -e "${RED}🔥 PRIORITY ITEMS${NC}"
+    echo "════════════════════════════════════════"
+    echo ""
+    FOUND_ANY=false
+    while IFS= read -r -d '' priority_file; do
+        FOUND_ANY=true
+        test_dir=$(dirname "$priority_file")
+        test_name=$(basename "$test_dir")
+        priority_content=$(cat "$priority_file" 2>/dev/null)
+        echo -e "${YELLOW}$test_name${NC}"
+        if [ -n "$priority_content" ]; then
+            echo "$priority_content" | sed 's/^/  /'
+        fi
+        echo ""
+    done < <(find tests/regression -name "PRIORITY" -type f -print0 | sort -z)
+
+    if [ "$FOUND_ANY" = false ]; then
+        echo "No priority items found."
+        echo ""
+        echo "To mark a test as priority:"
+        echo "  echo 'Description of issue' > tests/regression/.../PRIORITY"
     fi
     exit 0
 fi
@@ -307,6 +341,9 @@ while [[ $# -gt 0 ]]; do
         --verbose|-v)
             VERBOSE=true
             echo "📢 Verbose mode ENABLED - full stderr output on failures"
+            ;;
+        --priority)
+            SHOW_PRIORITY=true
             echo ""
             shift
             ;;
@@ -521,6 +558,14 @@ while IFS= read -r -d '' test_dir; do
         echo "  Reason: $SKIP_REASON"
         SKIPPED_TESTS=$((SKIPPED_TESTS + 1))  # Count separately, not as pass or fail
         continue
+    fi
+
+    # Check for PRIORITY file - track tests that need attention
+    if [ -f "$test_dir/PRIORITY" ]; then
+        PRIORITY_TESTS=$((PRIORITY_TESTS + 1))
+        PRIORITY_REASON=$(head -1 "$test_dir/PRIORITY" 2>/dev/null || echo "")
+        PRIORITY_LIST="$PRIORITY_LIST $TEST_NAME"
+        echo -e "${RED}🔥 PRIORITY${NC}: $PRIORITY_REASON"
     fi
 
     # Check for BROKEN file - test itself is broken/incorrect
@@ -1349,6 +1394,12 @@ fi
 # Report failed tests
 if [ -n "$FAILED_TESTS" ]; then
     echo -e "${RED}❌ FAILED TESTS:$FAILED_TESTS${NC}"
+fi
+
+# Report priority tests
+if [ "$PRIORITY_TESTS" -gt 0 ]; then
+    echo -e "${RED}🔥 PRIORITY ($PRIORITY_TESTS):$PRIORITY_LIST${NC}"
+    echo "   Run './run_regression.sh --priority' for details"
 fi
 
 # Save snapshot after full run (not for filtered runs)
