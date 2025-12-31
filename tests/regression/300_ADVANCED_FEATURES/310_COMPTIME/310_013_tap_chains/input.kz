@@ -1,6 +1,7 @@
 // Test tap chains - tap invokes event that also has taps
 // This verifies TAP_FUNCTION_CONTEXT prevents infinite recursion
 const std = @import("std");
+~import "$std/taps"
 
 ~event main_flow {}
 | done {}
@@ -27,13 +28,13 @@ const std = @import("std");
 }
 
 // Tap on main_flow that invokes logger
-~main_flow -> *
+~tap(main_flow -> *)
 | done |> logger()
     | done |> _
 
 // Question: Should this tap on logger fire when logger is invoked from a tap?
 // Current design: NO - taps don't fire inside tap functions (TAP_FUNCTION_CONTEXT guard)
-~logger -> *
+~tap(logger -> *)
 | done |> metrics()
     | done |> _
 

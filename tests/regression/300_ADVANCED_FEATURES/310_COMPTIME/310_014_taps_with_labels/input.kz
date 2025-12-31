@@ -6,6 +6,7 @@
 // Actual: Tap invocation is missing, so no output is produced
 
 const std = @import("std");
+~import "$std/taps"
 
 ~event counter { n: i32 }
 | next { value: i32 }
@@ -25,7 +26,8 @@ const std = @import("std");
 }
 
 // Tap that should fire on every counter -> * transition with 'next' branch
-~counter -> * | next v |> log_iteration(value: v.value)
+~tap(counter -> *)
+| next v |> log_iteration(value: v.value)
 
 // Recursive label using counter - tap should fire on each loop iteration
 ~event start {}

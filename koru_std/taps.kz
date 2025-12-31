@@ -241,11 +241,19 @@ const std = @import("std");
                 var matched_here = false;
 
                 // Check if this continuation's node is an invocation matching source
+                // Also check label_with_invocation which wraps invocations with #label prefix
                 if (cont.node) |step| {
-                    if (step == .invocation) {
+                    const maybe_inv: ?*const ast.Invocation = if (step == .invocation)
+                        &step.invocation
+                    else if (step == .label_with_invocation)
+                        &step.label_with_invocation.invocation
+                    else
+                        null;
+
+                    if (maybe_inv) |inv| {
                         // Skip invocations inserted by a tap (avoid infinite recursion)
-                        if (!step.invocation.inserted_by_tap) {
-                            if (pathMatches(source_pattern, source_wildcard, &step.invocation.path, alloc)) {
+                        if (!inv.inserted_by_tap) {
+                            if (pathMatches(source_pattern, source_wildcard, &inv.path, alloc)) {
                                 // Found a nested invocation matching source!
                                 // Transform its continuations (what happens after it returns)
                                 const nested_result = try transformContinuations(

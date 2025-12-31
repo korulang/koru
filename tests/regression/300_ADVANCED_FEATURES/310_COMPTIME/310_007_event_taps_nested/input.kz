@@ -8,6 +8,7 @@
 // - Nested continuations ✅ (this test)
 
 const std = @import("std");
+~import "$std/taps"
 
 ~event helper {}
 | done {}
@@ -24,7 +25,7 @@ const std = @import("std");
 }
 
 // Tap that observes helper
-~helper -> *
+~tap(helper -> *)
 | done |> log_tap()
 
 // Call helper from a NESTED context (inside a continuation)
