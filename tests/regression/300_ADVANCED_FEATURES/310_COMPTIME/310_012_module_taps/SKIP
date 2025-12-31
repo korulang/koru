@@ -1,1 +1,2 @@
-Migrate to ~tap() library syntax
+Cross-module tap matching NOW WORKS (parser + pathMatches fixed)
+Segfault occurs after tap insertion - AST emission issue with cross-module flows

@@ -102,10 +102,25 @@ const std = @import("std");
 
     const Helper = struct {
         // Check if an event path matches a pattern
+        // Pattern can be: "event", "module:event", or "module:path.to.event"
         fn pathMatches(pattern: []const u8, is_wildcard: bool, path: *const ast.DottedPath, alloc: std.mem.Allocator) bool {
             if (is_wildcard) return true;
 
-            // Build path string for comparison
+            // Check if pattern has module qualifier (contains :)
+            const pattern_colon = std.mem.indexOfScalar(u8, pattern, ':');
+            const pattern_module = if (pattern_colon) |idx| pattern[0..idx] else null;
+            const pattern_path = if (pattern_colon) |idx| pattern[idx + 1..] else pattern;
+
+            // Check module qualifier match
+            if (pattern_module) |pm| {
+                if (path.module_qualifier) |mq| {
+                    if (!std.mem.eql(u8, pm, mq)) return false;
+                } else {
+                    return false; // Pattern has module but path doesn't
+                }
+            }
+
+            // Build path string for comparison (segments joined by .)
             var len: usize = 0;
             for (path.segments) |seg| len += seg.len + 1;
             if (len > 0) len -= 1;
@@ -120,7 +135,7 @@ const std = @import("std");
                 pos += seg.len;
             }
 
-            return std.mem.eql(u8, pattern, path_str);
+            return std.mem.eql(u8, pattern_path, path_str);
         }
 
         // Splice original flow into tap terminal points
