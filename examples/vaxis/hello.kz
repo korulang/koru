@@ -30,9 +30,9 @@
 // The main pump - runs poll() in a loop with null transitions
 // Taps intercept events before they hit the null transition
 ~#loop vaxis:poll()
-| key k |> vaxis:render()
+| key _ |> vaxis:render()
     | done |> @loop()
-| resize r |> vaxis:clear()
+| resize _ |> vaxis:clear()
     | done |> vaxis:render()
         | done |> @loop()
 | focus_in |> @loop()
@@ -46,4 +46,4 @@
     | done |> vaxis:write_at(x: 10, y: 5, text: "Hello, Vaxis! Press 'q' to quit.")
         | done |> vaxis:render()
             | done |> @loop()
-| err e |> _
+| err _ |> _
