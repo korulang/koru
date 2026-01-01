@@ -4454,6 +4454,21 @@ pub fn main() !void {
             }
         }
 
+        // Also scan submodules for transitive imports (for directory imports)
+        // This ensures imports in index.kz (or other submodule files) are resolved
+        for (module.submodules) |*submod| {
+            for (submod.source_file.items) |item| {
+                if (item == .import_decl) {
+                    std.debug.print("TRANSITIVE: Found import in submodule '{s}.{s}' -> '{s}'\n", .{ module.logical_name, submod.logical_name, item.import_decl.path });
+                    try work_queue.append(allocator, .{
+                        .import_decl = item.import_decl,
+                        .base_file = submod.canonical_path,
+                        .is_synthetic = false,
+                    });
+                }
+            }
+        }
+
         try imported_modules.append(allocator, module);
     }
 

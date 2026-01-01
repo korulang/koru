@@ -1,0 +1,15 @@
+.{
+    .name = .vaxis_hello,
+    .version = "0.0.1",
+    .fingerprint = 0x1780bd4064869cf9,
+    .paths = .{
+        "build_output.zig",
+        "output_emitted.zig",
+    },
+    .dependencies = .{
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis.git#75035b169e91a51c233f3742161f8eb8eafca659",
+            .hash = "vaxis-0.5.1-BWNV_IE-CQBYmSf_boEKUyv6den0Gmj5LksxvdCx2pBL",
+        },
+    },
+}

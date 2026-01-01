@@ -58,6 +58,7 @@ var vx: ?vaxis.Vaxis = null;
 var tty: ?vaxis.Tty = null;
 var should_quit: bool = false;
 var alloc: std.mem.Allocator = undefined;
+var tty_buffer: [4096]u8 = undefined; // Buffer for TTY init
 
 // Internal event type for vaxis loop
 const VaxisEvent = union(enum) {
@@ -128,12 +129,12 @@ const VaxisEvent = union(enum) {
 | err { message: []const u8 }
 
 ~proc run {
-    _ = title; // TODO: set window title
+    // TODO: set window title using 'title' parameter
 
     alloc = std.heap.page_allocator;
 
     // Initialize TTY
-    tty = vaxis.Tty.init() catch |e| {
+    tty = vaxis.Tty.init(&tty_buffer) catch |e| {
         return .{ .err = .{ .message = @errorName(e) } };
     };
 
@@ -203,7 +204,7 @@ const VaxisEvent = union(enum) {
 ~proc write_at {
     if (vx) |*v| {
         const win = v.window();
-        for (text, 0..) |char, i| {
+        for (text, 0..) |_, i| {
             win.writeCell(x + @as(u16, @intCast(i)), y, .{
                 .char = .{ .grapheme = text[i..i+1] },
             });

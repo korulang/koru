@@ -200,3 +200,16 @@ temp_build.zig
 
 .DS_Store
 Thumbs.db
+
+# Prose local data
+.claude/prose/
+# Prose skill (auto-generated)
+.claude/skills/flash/
+
+# Koru generated files in examples
+examples/**/backend.zig
+examples/**/backend_output_emitted.zig
+examples/**/build.zig
+examples/**/build_backend.zig
+examples/**/build_output.zig
+examples/**/output_emitted.zig
