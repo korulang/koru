@@ -1,0 +1,12 @@
+Opening: outer.txt
+Opening: inner.txt
+Closing
+Opening: inner.txt
+Closing
+Closing
+Opening: outer.txt
+Opening: inner.txt
+Closing
+Opening: inner.txt
+Closing
+Closing

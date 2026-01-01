@@ -1,0 +1,6 @@
+Opening file: test.txt
+Closing file
+Opening file: test.txt
+Closing file
+Opening file: test.txt
+Closing file
