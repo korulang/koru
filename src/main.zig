@@ -2582,20 +2582,20 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
     errdefer allocator.free(module_name); // Clean up if we error before consuming module_name
 
     if (has_file and has_dir) {
-        // BOTH file and directory - import BOTH!
-        std.debug.print("  Importing BOTH file and directory for: {s}\n", .{import_decl.path});
-
-        const file_data = try loadFile(allocator, parse_allocator, resolved.file_path.?);
-        const submodules = try loadSubmodules(allocator, parse_allocator, resolver, resolved.dir_path.?);
-
-        return ImportedModule{
-            .logical_name = module_name,
-            .canonical_path = try allocator.dupe(u8, resolved.file_path.?),
-            .public_events = file_data.public_events,
-            .source_file = file_data.source_file,
-            .is_directory = true, // Has directory with submodules
-            .submodules = submodules,
-        };
+        // ERROR: Both foo.kz and foo/ exist - this is ambiguous
+        // Modules must be self-contained: use EITHER foo.kz OR foo/index.kz
+        std.debug.print("\n", .{});
+        std.debug.print("error[KORU200]: Ambiguous module structure\n", .{});
+        std.debug.print("  --> {s}\n", .{import_decl.path});
+        std.debug.print("  |\n", .{});
+        std.debug.print("  | Found both '{s}.kz' and '{s}/' directory\n", .{ module_name, module_name });
+        std.debug.print("  | \n", .{});
+        std.debug.print("  | Modules must be self-contained. Choose one:\n", .{});
+        std.debug.print("  |   - Single file: {s}.kz\n", .{module_name});
+        std.debug.print("  |   - Directory:   {s}/index.kz (with submodules)\n", .{module_name});
+        std.debug.print("  |\n", .{});
+        std.debug.print("  = help: Delete or rename one of them\n\n", .{});
+        return error.ModuleNotFound; // TODO: Add proper AmbiguousModule error
     } else if (has_dir) {
         // ONLY directory
         std.debug.print("  Importing directory only: {s}\n", .{import_decl.path});
