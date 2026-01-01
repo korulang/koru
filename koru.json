@@ -5,6 +5,7 @@
     "std": "./koru_std",
     "lib": "./lib",
     "app": "./examples",
+    "vaxis": "./examples/vaxis",
     "test": "{ENTRY}"
   }
 }

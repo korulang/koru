@@ -4500,7 +4500,12 @@ pub fn main() !void {
                     const is_system = res.isSystemModule(submod.canonical_path);
 
                     // Create ModuleDecl with dotted name: dir.file
-                    const dotted_name = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ module.logical_name, submod.logical_name });
+                    // SPECIAL CASE: index.kz gets the parent namespace (no .index suffix)
+                    // This makes modules self-contained: vaxis/index.kz -> namespace "vaxis"
+                    const dotted_name = if (std.mem.eql(u8, submod.logical_name, "index"))
+                        try alloc.dupe(u8, module.logical_name)
+                    else
+                        try std.fmt.allocPrint(alloc, "{s}.{s}", .{ module.logical_name, submod.logical_name });
 
                     // Copy module annotations from source file
                     const annotations = try alloc.alloc([]const u8, submod.source_file.module_annotations.len);
