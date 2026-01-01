@@ -1,0 +1,14 @@
+// TEST: Explicit dispose - no auto-insert needed
+// STATUS: Should already work (existing behavior)
+//
+// When user explicitly calls the disposal event, no auto-insert
+// is needed. This is the current behavior and should continue to work.
+
+~import "$app/fs"
+
+// Explicit close - no auto-insert needed
+~app.fs:open(path: "test.txt")
+| opened f |> app.fs:close(file: f.file)
+    | closed |> _
+
+pub fn main() void {}

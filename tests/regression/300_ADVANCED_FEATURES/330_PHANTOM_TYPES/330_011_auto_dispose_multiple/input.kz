@@ -1,0 +1,24 @@
+// TEST: Auto-dispose with multiple consumers - MUST FAIL
+// STATUS: PENDING IMPLEMENTATION
+// MUST_FAIL: Multiple disposal options
+//
+// When multiple events consume the same obligation [!state],
+// the compiler cannot auto-choose - user must be explicit.
+//
+// Here: Both close() and abandon() consume *File[!opened]
+// Compiler should error: "Multiple disposal options for [opened!]: close, abandon"
+//
+// To fix, user would write:
+//   | opened f |> app.fs:close(file: f.file)
+//       | closed |> _
+// OR:
+//   | opened f |> app.fs:abandon(file: f.file)
+//       | abandoned |> _
+
+~import "$app/fs"
+
+// This should FAIL - two disposal options, be explicit!
+~app.fs:open(path: "test.txt")
+| opened f |> _
+
+pub fn main() void {}

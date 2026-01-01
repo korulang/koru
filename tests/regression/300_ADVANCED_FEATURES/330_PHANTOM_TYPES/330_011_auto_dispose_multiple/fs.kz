@@ -1,0 +1,34 @@
+// Library module: fs
+// Multiple disposal events - requires explicit choice
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+// Open a file - returns opened! state (requires cleanup)
+~pub event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+// Close - saves any changes before closing
+~pub event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.debug.print("Closing file (saving changes)\n", .{});
+    return .{ .closed = .{} };
+}
+
+// Abandon - discards any changes
+~pub event abandon { file: *File[!opened] }
+| abandoned {}
+
+~proc abandon {
+    std.debug.print("Abandoning file (discarding changes)\n", .{});
+    return .{ .abandoned = .{} };
+}

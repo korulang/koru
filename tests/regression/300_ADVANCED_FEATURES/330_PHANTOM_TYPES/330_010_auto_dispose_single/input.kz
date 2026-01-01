@@ -1,0 +1,18 @@
+// TEST: Auto-dispose with single consumer
+// STATUS: PENDING IMPLEMENTATION
+//
+// When a flow terminates with an unsatisfied cleanup obligation [state!],
+// and there's exactly ONE event that consumes it [!state], auto-insert it.
+//
+// Here: open() returns *File[opened!], close() consumes *File[!opened]
+// Since close() is the ONLY consumer, it should be auto-inserted.
+//
+// Expected: Compiles and prints "Closing file (auto-disposed)"
+
+~import "$app/fs"
+
+// Flow terminates without explicit close - should auto-insert close()
+~app.fs:open(path: "test.txt")
+| opened f |> _
+
+pub fn main() void {}

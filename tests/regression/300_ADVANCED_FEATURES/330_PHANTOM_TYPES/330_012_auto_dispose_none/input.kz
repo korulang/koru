@@ -1,0 +1,20 @@
+// TEST: Auto-dispose with no consumer - MUST FAIL
+// STATUS: PENDING IMPLEMENTATION
+// MUST_FAIL: No disposal event found
+//
+// When no event consumes the obligation [!state], the compiler
+// cannot auto-dispose and should error clearly.
+//
+// Here: open() returns *File[opened!] but NO event has [!opened]
+// Compiler should error: "No disposal event found for [opened!]"
+//
+// This indicates a library bug - the library author forgot to
+// provide a disposal event for the resource.
+
+~import "$app/fs"
+
+// This should FAIL - no way to dispose!
+~app.fs:open(path: "test.txt")
+| opened f |> _
+
+pub fn main() void {}
