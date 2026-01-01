@@ -2430,6 +2430,74 @@ pub const Parser = struct {
         };
     }
 
+    /// Create implicit source invocation when event is not in registry
+    /// (happens during module imports when fail_fast=false)
+    /// Uses default field name "source"
+    fn createImplicitSourceInvocationDefault(
+        self: *Parser,
+        original: ast.Invocation,
+        source_text: []const u8,
+        phantom_type: ?[]const u8,
+    ) !ast.Invocation {
+        // Create new args array with the source argument
+        var new_args = try std.ArrayList(ast.Arg).initCapacity(
+            self.allocator,
+            original.args.len + 1
+        );
+        defer new_args.deinit(self.allocator);
+
+        // Copy existing args
+        for (original.args) |arg| {
+            try new_args.append(self.allocator, arg);
+        }
+
+        // Capture continuation bindings from context stack
+        var bindings = try std.ArrayList(ast.ScopeBinding).initCapacity(self.allocator, 4);
+        defer bindings.deinit(self.allocator);
+
+        for (self.context_stack.items) |ctx| {
+            switch (ctx) {
+                .in_continuation => |cont| {
+                    if (cont.binding) |binding_name| {
+                        const scope_binding = ast.ScopeBinding{
+                            .name = try self.allocator.dupe(u8, binding_name),
+                            .type = try self.allocator.dupe(u8, "unknown"),
+                            .value_ref = try self.allocator.dupe(u8, binding_name),
+                        };
+                        try bindings.append(self.allocator, scope_binding);
+                    }
+                },
+                else => {},
+            }
+        }
+
+        const captured_scope = ast.CapturedScope{
+            .bindings = try bindings.toOwnedSlice(self.allocator),
+        };
+
+        const source_value = try self.allocator.create(ast.Source);
+        source_value.* = ast.Source{
+            .text = try self.allocator.dupe(u8, source_text),
+            .location = self.getCurrentLocation(),
+            .scope = captured_scope,
+            .phantom_type = if (phantom_type) |pt| try self.allocator.dupe(u8, pt) else null,
+        };
+
+        // Add the source argument with default name "source"
+        const source_arg = ast.Arg{
+            .name = try self.allocator.dupe(u8, "source"),
+            .value = try self.allocator.dupe(u8, source_text),
+            .source_value = source_value,
+        };
+
+        try new_args.append(self.allocator, source_arg);
+
+        return ast.Invocation{
+            .path = original.path,
+            .args = try new_args.toOwnedSlice(self.allocator),
+        };
+    }
+
     fn extractProcBody(self: *Parser, start: []const u8) ![]const u8 {
         var depth: i32 = 0;
         var body_lines = try std.ArrayList([]const u8).initCapacity(self.allocator, 8);
@@ -2872,6 +2940,14 @@ pub const Parser = struct {
                     event_type
                 );
                 // continuations are already the output continuations from parseImplicitSourceBlock
+            } else {
+                // Event not in registry (happens during module imports when fail_fast=false)
+                // Add source parameter with default name "source"
+                final_invocation = try self.createImplicitSourceInvocationDefault(
+                    invocation,
+                    implicit_source_text.?,
+                    implicit_source_phantom_type
+                );
             }
         } else if (self.registry.getEventType(path_str)) |event_type| {
             if (event_type.is_implicit_flow) {
