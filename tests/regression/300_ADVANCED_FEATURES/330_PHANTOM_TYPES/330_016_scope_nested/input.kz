@@ -18,11 +18,11 @@
 ~std.control:for(0..2)
 | each _ |>
     app.fs:open(path: "outer.txt")
-    | opened outer_f |>
+    | opened _ |>
         std.control:for(0..2)
         | each _ |>
             app.fs:open(path: "inner.txt")
-            | opened inner_f |> _  // Auto-close inner_f here
+            | opened _ |> _  // Auto-close inner here
         | done |> _  // Auto-close outer_f here
 | done |> _
 

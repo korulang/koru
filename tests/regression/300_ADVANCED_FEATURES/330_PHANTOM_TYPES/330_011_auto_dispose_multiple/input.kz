@@ -19,6 +19,6 @@
 
 // This should FAIL - two disposal options, be explicit!
 ~app.fs:open(path: "test.txt")
-| opened f |> _
+| opened _ |> _
 
 pub fn main() void {}

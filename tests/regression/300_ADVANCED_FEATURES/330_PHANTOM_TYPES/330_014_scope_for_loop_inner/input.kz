@@ -15,7 +15,7 @@
 ~std.control:for(0..3)
 | each _ |>
     app.fs:open(path: "test.txt")
-    | opened f |> _  // Should auto-insert close() here, per iteration
+    | opened _ |> _  // Should auto-insert close() here, per iteration
 | done |> _
 
 pub fn main() void {}

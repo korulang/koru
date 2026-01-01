@@ -353,6 +353,37 @@ pub const AutoDisposeInserter = struct {
         var context = try parent_context.clone(self.allocator);
         defer context.deinit();
 
+        // Handle discard binding (_) - synthesize a real binding name
+        // This must happen BEFORE we process the continuation so the binding can be used
+        if (cont.binding) |binding_name| {
+            if (std.mem.eql(u8, binding_name, "_")) {
+                // Generate synthetic binding to replace _
+                const synthetic_name = try self.generateSyntheticBinding();
+
+                // Clone the continuation with the new binding (preserves all metadata)
+                const new_cont = try self.cloneContinuationWithBinding(cont, synthetic_name);
+
+                // Replace this continuation in the flow
+                const new_flow = try self.replaceContinuationAnywhere(flow, cont, new_cont.*);
+
+                // Replace the flow in the program
+                const new_program = try ast_functional.replaceFlowRecursive(
+                    self.allocator,
+                    program,
+                    flow,
+                    .{ .flow = new_flow },
+                ) orelse {
+                    return .{ .transformed = false, .program = program };
+                };
+
+                const result_ptr = try self.allocator.create(ast.Program);
+                result_ptr.* = new_program;
+
+                // Return transformed - the next iteration will process with the real binding
+                return .{ .transformed = true, .program = result_ptr };
+            }
+        }
+
         // Add bindings from this branch
         if (cont.binding) |binding_name| {
             // Find the branch in the event declaration
@@ -538,6 +569,37 @@ pub const AutoDisposeInserter = struct {
         // Clone context for this continuation
         var context = try parent_context.clone(self.allocator);
         defer context.deinit();
+
+        // Handle discard binding (_) - synthesize a real binding name
+        // This must happen BEFORE we process the continuation so the binding can be used
+        if (cont.binding) |binding_name| {
+            if (std.mem.eql(u8, binding_name, "_")) {
+                // Generate synthetic binding to replace _
+                const synthetic_name = try self.generateSyntheticBinding();
+
+                // Clone the continuation with the new binding (preserves all metadata)
+                const new_cont = try self.cloneContinuationWithBinding(cont, synthetic_name);
+
+                // Replace this continuation in the flow
+                const new_flow = try self.replaceContinuationAnywhere(flow, cont, new_cont.*);
+
+                // Replace the flow in the program
+                const new_program = try ast_functional.replaceFlowRecursive(
+                    self.allocator,
+                    program,
+                    flow,
+                    .{ .flow = new_flow },
+                ) orelse {
+                    return .{ .transformed = false, .program = program };
+                };
+
+                const result_ptr = try self.allocator.create(ast.Program);
+                result_ptr.* = new_program;
+
+                // Return transformed - the next iteration will process with the real binding
+                return .{ .transformed = true, .program = result_ptr };
+            }
+        }
 
         // Check if this continuation has a node
         if (cont.node) |node| {
@@ -1001,12 +1063,25 @@ pub const AutoDisposeInserter = struct {
             }
         }
 
+        // Clone annotations
+        var new_annotations = try self.allocator.alloc([]const u8, flow.annotations.len);
+        for (flow.annotations, 0..) |ann, i| {
+            new_annotations[i] = try self.allocator.dupe(u8, ann);
+        }
+
         return .{
             .invocation = try ast_functional.cloneInvocation(self.allocator, &flow.invocation),
             .continuations = new_continuations,
+            .annotations = new_annotations,
+            .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
+            .post_label = if (flow.post_label) |l| try self.allocator.dupe(u8, l) else null,
+            .super_shape = flow.super_shape,
+            .inline_body = if (flow.inline_body) |b| try self.allocator.dupe(u8, b) else null,
+            .preamble_code = if (flow.preamble_code) |p| try self.allocator.dupe(u8, p) else null,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
             .location = flow.location,
             .module = try self.allocator.dupe(u8, flow.module),
-            .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
         };
     }
 
@@ -1023,12 +1098,25 @@ pub const AutoDisposeInserter = struct {
             new_continuations[i] = try self.replaceContinuationInTree(cont, old_cont, new_cont);
         }
 
+        // Clone annotations
+        var new_annotations = try self.allocator.alloc([]const u8, flow.annotations.len);
+        for (flow.annotations, 0..) |ann, i| {
+            new_annotations[i] = try self.allocator.dupe(u8, ann);
+        }
+
         return .{
             .invocation = try ast_functional.cloneInvocation(self.allocator, &flow.invocation),
             .continuations = new_continuations,
+            .annotations = new_annotations,
+            .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
+            .post_label = if (flow.post_label) |l| try self.allocator.dupe(u8, l) else null,
+            .super_shape = flow.super_shape,
+            .inline_body = if (flow.inline_body) |b| try self.allocator.dupe(u8, b) else null,
+            .preamble_code = if (flow.preamble_code) |p| try self.allocator.dupe(u8, p) else null,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
             .location = flow.location,
             .module = try self.allocator.dupe(u8, flow.module),
-            .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
         };
     }
 
@@ -1116,12 +1204,25 @@ pub const AutoDisposeInserter = struct {
         var new_invocation = try ast_functional.cloneInvocation(self.allocator, &flow.invocation);
         new_invocation.annotations = new_annotations;
 
+        // Clone flow annotations
+        var new_flow_annotations = try self.allocator.alloc([]const u8, flow.annotations.len);
+        for (flow.annotations, 0..) |ann, i| {
+            new_flow_annotations[i] = try self.allocator.dupe(u8, ann);
+        }
+
         return .{
             .invocation = new_invocation,
             .continuations = flow.continuations,
+            .annotations = new_flow_annotations,
+            .pre_label = if (flow.pre_label) |l| try self.allocator.dupe(u8, l) else null,
+            .post_label = if (flow.post_label) |l| try self.allocator.dupe(u8, l) else null,
+            .super_shape = flow.super_shape,
+            .inline_body = if (flow.inline_body) |b| try self.allocator.dupe(u8, b) else null,
+            .preamble_code = if (flow.preamble_code) |p| try self.allocator.dupe(u8, p) else null,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
             .location = flow.location,
-            .module = flow.module,
-            .pre_label = flow.pre_label,
+            .module = try self.allocator.dupe(u8, flow.module),
         };
     }
 
@@ -1173,5 +1274,20 @@ pub const AutoDisposeInserter = struct {
         const name = try std.fmt.allocPrint(self.allocator, "_auto_{d}", .{self.synthetic_binding_counter});
         self.synthetic_binding_counter += 1;
         return name;
+    }
+
+    /// Clone a continuation with a new binding name
+    /// This preserves ALL metadata by copying fields, only changing the binding
+    fn cloneContinuationWithBinding(
+        self: *AutoDisposeInserter,
+        cont: *const ast.Continuation,
+        new_binding: []const u8,
+    ) !*const ast.Continuation {
+        const new_cont = try self.allocator.create(ast.Continuation);
+        // Copy all fields from original (preserves all pointers/metadata)
+        new_cont.* = cont.*;
+        // Override just the binding
+        new_cont.binding = try self.allocator.dupe(u8, new_binding);
+        return new_cont;
     }
 };
