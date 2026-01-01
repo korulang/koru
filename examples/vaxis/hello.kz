@@ -1,12 +1,34 @@
-// Hello Vaxis - Minimal test
-// ===========================
+// Hello Vaxis - Minimal TUI demo
+// ==============================
 //
-// Just test module import works
+// Pattern: Dumb pump loop + smart taps
 
 ~import "$vaxis"
 
-// Simple flow - no loops
+// Local wrapper for poll (workaround: #loop doesn't support module:event syntax)
+~event poll {}
+| key { data: vaxis:KeyData }
+| resize { size: vaxis:SizeData }
+| focus_in {}
+| focus_out {}
+| quit {}
+
+~proc poll {
+    const result = vaxis:poll();
+    return result;
+}
+
+// Main flow: Setup -> Draw -> Event loop
 ~vaxis:run(title: "Hello Vaxis")
-| ready |> vaxis:render()
-    | done |> _
+| ready |> vaxis:clear()
+    | done |> vaxis:write_at(x: 10, y: 5, text: "Hello from Koru + Vaxis!")
+        | done |> vaxis:write_at(x: 10, y: 7, text: "Press any key to exit...")
+            | done |> vaxis:render()
+                | done |> #loop poll()
+                    | key _ |> vaxis:cleanup()
+                        | done |> _
+                    | resize _ |> @loop()
+                    | focus_in |> @loop()
+                    | focus_out |> @loop()
+                    | quit |> _
 | err _ |> _

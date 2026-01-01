@@ -1,0 +1,49 @@
+// TEST: Auto-dispose with escaped obligation via subflow
+//
+// This tests the full obligation lifecycle:
+// 1. get_file subflow internally calls open()
+// 2. get_file returns via branch constructor - obligation ESCAPES
+// 3. Main flow receives the obligation via binding 'f'
+// 4. Main flow terminates with '_' - obligation unsatisfied
+// 5. Auto-dispose should insert close(file: f.file) in MAIN flow
+//
+// Expected: Compiles successfully with auto-inserted disposal in main flow
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+// Open a file - returns opened! state (requires cleanup)
+~event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    std.debug.print("Opening file\n", .{});
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+// Close - the ONLY consumer of [!opened]
+~event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.debug.print("Closing file (auto-disposed)\n", .{});
+    return .{ .closed = .{} };
+}
+
+// Wrapper event that opens and returns file (obligation escapes)
+~event get_file { path: []const u8 }
+| got_file { file: *File[opened!] }
+
+// Subflow: opens file, returns via branch constructor (obligation escapes!)
+~get_file = open(path: path)
+| opened f |> got_file { file: f.file }
+
+// Main flow: calls get_file, receives escaped obligation, terminates
+// Auto-dispose should insert close() HERE
+~get_file(path: "test.txt")
+| got_file f |> _
+
+pub fn main() void {}

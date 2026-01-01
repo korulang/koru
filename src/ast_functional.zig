@@ -834,7 +834,7 @@ fn cloneBranch(allocator: std.mem.Allocator, branch: *const ast.Branch) !ast.Bra
     };
 }
 
-fn cloneInvocation(allocator: std.mem.Allocator, invocation: *const ast.Invocation) CloneError!ast.Invocation {
+pub fn cloneInvocation(allocator: std.mem.Allocator, invocation: *const ast.Invocation) CloneError!ast.Invocation {
     var args = try allocator.alloc(ast.Arg, invocation.args.len);
     errdefer allocator.free(args);
 
@@ -868,7 +868,7 @@ fn cloneArg(allocator: std.mem.Allocator, arg: *const ast.Arg) CloneError!ast.Ar
     };
 }
 
-fn cloneContinuation(allocator: std.mem.Allocator, cont: *const ast.Continuation) CloneError!ast.Continuation {
+pub fn cloneContinuation(allocator: std.mem.Allocator, cont: *const ast.Continuation) CloneError!ast.Continuation {
     const cloned_step = if (cont.node) |*step| try cloneStep(allocator, step) else null;
 
     var continuations = try allocator.alloc(ast.Continuation, cont.continuations.len);

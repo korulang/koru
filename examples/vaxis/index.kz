@@ -54,8 +54,10 @@ const SizeData = struct {
 };
 
 // Runtime state
-var vx: ?vaxis.Vaxis = null;
-var tty: ?vaxis.Tty = null;
+var vx: vaxis.Vaxis = undefined;
+var tty: vaxis.Tty = undefined;
+var event_loop: vaxis.Loop(VaxisEvent) = undefined;
+var is_initialized: bool = false;
 var should_quit: bool = false;
 var alloc: std.mem.Allocator = undefined;
 var tty_buffer: [4096]u8 = undefined; // Buffer for TTY init
@@ -82,45 +84,41 @@ const VaxisEvent = union(enum) {
 | quit {}
 
 ~proc poll {
-    if (should_quit) {
+    if (should_quit or !is_initialized) {
         return .{ .quit = .{} };
     }
 
-    // Get next event from vaxis
-    if (vx) |*v| {
-        var loop: vaxis.Loop(VaxisEvent) = .{ .tty = &tty.?, .vaxis = v };
-        const event = loop.nextEvent();
+    // Get next event from the global event loop
+    const event = event_loop.nextEvent();
 
-        switch (event) {
-            .key_press => |k| {
-                return .{ .key = .{
-                    .data = .{
-                        .codepoint = k.codepoint,
-                        .char = if (k.codepoint < 128) @intCast(k.codepoint) else null,
-                        .mods = .{
-                            .ctrl = k.mods.ctrl,
-                            .alt = k.mods.alt,
-                            .shift = k.mods.shift,
-                            .super_key = k.mods.super,
-                        },
+    switch (event) {
+        .key_press => |k| {
+            return .{ .key = .{
+                .data = .{
+                    .codepoint = k.codepoint,
+                    .char = if (k.codepoint < 128) @intCast(k.codepoint) else null,
+                    .mods = .{
+                        .ctrl = k.mods.ctrl,
+                        .alt = k.mods.alt,
+                        .shift = k.mods.shift,
+                        .super_key = k.mods.super,
                     },
-                }};
-            },
-            .winsize => |ws| {
-                v.resize(alloc, tty.?.writer(), ws) catch {};
-                return .{ .resize = .{
-                    .size = .{
-                        .width = ws.cols,
-                        .height = ws.rows,
-                    },
-                }};
-            },
-            .focus_in => return .{ .focus_in = .{} },
-            .focus_out => return .{ .focus_out = .{} },
-            else => return .{ .focus_in = .{} },
-        }
+                },
+            }};
+        },
+        .winsize => |ws| {
+            vx.resize(alloc, tty.writer(), ws) catch {};
+            return .{ .resize = .{
+                .size = .{
+                    .width = ws.cols,
+                    .height = ws.rows,
+                },
+            }};
+        },
+        .focus_in => return .{ .focus_in = .{} },
+        .focus_out => return .{ .focus_out = .{} },
+        else => return .{ .focus_in = .{} },
     }
-    return .{ .quit = .{} };
 }
 
 // Initialize vaxis
@@ -143,11 +141,19 @@ const VaxisEvent = union(enum) {
         return .{ .err = .{ .message = @errorName(e) } };
     };
 
-    // Enter alt screen
-    if (vx) |*v| {
-        v.enterAltScreen(tty.?.writer()) catch {};
-    }
+    // Initialize event loop
+    event_loop = .{ .vaxis = &vx, .tty = &tty };
+    event_loop.init() catch |e| {
+        return .{ .err = .{ .message = @errorName(e) } };
+    };
+    event_loop.start() catch |e| {
+        return .{ .err = .{ .message = @errorName(e) } };
+    };
 
+    // Enter alt screen
+    vx.enterAltScreen(tty.writer()) catch {};
+
+    is_initialized = true;
     return .{ .ready = .{} };
 }
 
@@ -165,11 +171,10 @@ const VaxisEvent = union(enum) {
 | done {}
 
 ~proc cleanup {
-    if (vx) |*v| {
-        v.deinit(alloc, tty.?.writer());
-    }
-    if (tty) |*t| {
-        t.deinit();
+    if (is_initialized) {
+        vx.deinit(alloc, tty.writer());
+        tty.deinit();
+        is_initialized = false;
     }
     return .{ .done = .{} };
 }
@@ -179,8 +184,8 @@ const VaxisEvent = union(enum) {
 | done {}
 
 ~proc render {
-    if (vx) |*v| {
-        v.render(tty.?.writer()) catch {};
+    if (is_initialized) {
+        vx.render(tty.writer()) catch {};
     }
     return .{ .done = .{} };
 }
@@ -190,8 +195,8 @@ const VaxisEvent = union(enum) {
 | done {}
 
 ~proc clear {
-    if (vx) |*v| {
-        const win = v.window();
+    if (is_initialized) {
+        const win = vx.window();
         win.clear();
     }
     return .{ .done = .{} };
@@ -202,8 +207,8 @@ const VaxisEvent = union(enum) {
 | done {}
 
 ~proc write_at {
-    if (vx) |*v| {
-        const win = v.window();
+    if (is_initialized) {
+        const win = vx.window();
         for (text, 0..) |_, i| {
             win.writeCell(x + @as(u16, @intCast(i)), y, .{
                 .char = .{ .grapheme = text[i..i+1] },

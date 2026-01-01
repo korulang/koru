@@ -211,6 +211,17 @@ pub const CompilerContext = struct {
     });
     ast_functional_module.addImport("ast", ast_module);
 
+    // Auto-dispose inserter - inserts disposal calls before terminators
+    const auto_dispose_inserter_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/auto_dispose_inserter.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    auto_dispose_inserter_module.addImport("ast", ast_module);
+    auto_dispose_inserter_module.addImport("ast_functional", ast_functional_module);
+    auto_dispose_inserter_module.addImport("errors", errors_module);
+    auto_dispose_inserter_module.addImport("phantom_parser", phantom_parser_module);
+
     // Codegen utilities - keyword escaping, identifier helpers
     const codegen_utils_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/codegen_utils.zig" },
@@ -368,6 +379,7 @@ pub const CompilerContext = struct {
     exe.root_module.addImport("shape_checker", shape_checker_module);
     exe.root_module.addImport("flow_checker", flow_checker_module);
     exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
+    exe.root_module.addImport("auto_dispose_inserter", auto_dispose_inserter_module);
     exe.root_module.addImport("purity_analyzer", purity_analyzer_module);
     exe.root_module.addImport("errors", errors_module);
     exe.root_module.addImport("type_registry", type_registry_module);
@@ -509,10 +521,12 @@ pub const CompilerContext = struct {
 
 ~compiler.coordinate.analysis =
     compiler.check.structure(ctx: ctx)
-    | continued c1 |> compiler.check.flow(ctx: c1.ctx)
-      | continued c2 |> compiler.check.phantom.semantic(ctx: c2.ctx)
-        | continued c3 |> compiler.check.purity(ctx: c3.ctx)
-          | continued c4 |> continued { ctx: c4.ctx }
+    | continued c1 |> compiler.pass.auto_dispose(ctx: c1.ctx)
+      | continued c2 |> compiler.check.flow(ctx: c2.ctx)
+        | continued c3 |> compiler.check.phantom.semantic(ctx: c3.ctx)
+          | continued c4 |> compiler.check.purity(ctx: c4.ctx)
+            | continued c5 |> continued { ctx: c5.ctx }
+            | failed f |> failed { ctx: f.ctx, message: f.message }
           | failed f |> failed { ctx: f.ctx, message: f.message }
         | failed f |> failed { ctx: f.ctx, message: f.message }
       | failed f |> failed { ctx: f.ctx, message: f.message }
@@ -615,6 +629,12 @@ pub const CompilerContext = struct {
 
 // Flow checking - validates control flow properties (when-clause exhaustiveness, etc.)
 ~pub event compiler.check.flow { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+| failed { ctx: CompilerContext, message: []const u8 }
+
+// Auto-dispose insertion - inserts disposal calls before terminators
+// Runs BEFORE phantom.semantic so checker validates the inserted calls
+~pub event compiler.pass.auto_dispose { ctx: CompilerContext }
 | continued { ctx: CompilerContext }
 | failed { ctx: CompilerContext, message: []const u8 }
 
@@ -1290,6 +1310,77 @@ const joinPath = struct {
     };
 
     // Validation succeeded
+    mutable_ctx.passes_completed += 1;
+    return .{ .continued = .{ .ctx = mutable_ctx } };
+}
+
+// Auto-dispose inserter implementation
+// Inserts disposal calls before terminators when exactly one disposal option exists
+~proc compiler.pass.auto_dispose {
+    var mutable_ctx = ctx;
+
+    const auto_dispose_inserter = @import("auto_dispose_inserter");
+    const errors_mod = @import("errors");
+
+    // Create error reporter
+    var reporter = errors_mod.ErrorReporter.init(
+        std.heap.page_allocator,
+        "auto_dispose",
+        ""
+    ) catch {
+        mutable_ctx.errors.append(mutable_ctx.allocator, .{
+            .message = "Failed to initialize error reporter",
+            .location = .{ .file = "compiler", .line = 0, .column = 0 },
+        }) catch {};
+        return .{ .continued = .{ .ctx = mutable_ctx } };
+    };
+    defer reporter.deinit();
+
+    // Create inserter
+    var inserter = auto_dispose_inserter.AutoDisposeInserter.init(
+        std.heap.page_allocator,
+        &reporter
+    ) catch {
+        mutable_ctx.errors.append(mutable_ctx.allocator, .{
+            .message = "Failed to initialize auto-dispose inserter",
+            .location = .{ .file = "compiler", .line = 0, .column = 0 },
+        }) catch {};
+        return .{ .continued = .{ .ctx = mutable_ctx } };
+    };
+    defer inserter.deinit();
+
+    // Run the pass - may modify AST
+    const new_ast = inserter.run(mutable_ctx.ast) catch |err| {
+        // Collect errors from reporter into context
+        for (reporter.errors.items) |reporter_err| {
+            std.debug.print("error[{s}]: {s}\n  --> {s}:{}:{}\n\n", .{
+                @tagName(reporter_err.code),
+                reporter_err.message,
+                reporter_err.location.file,
+                reporter_err.location.line,
+                reporter_err.location.column,
+            });
+
+            mutable_ctx.errors.append(mutable_ctx.allocator, .{
+                .message = mutable_ctx.allocator.dupe(u8, reporter_err.message) catch reporter_err.message,
+                .location = .{
+                    .file = mutable_ctx.allocator.dupe(u8, reporter_err.location.file) catch reporter_err.location.file,
+                    .line = @intCast(reporter_err.location.line),
+                    .column = @intCast(reporter_err.location.column),
+                },
+            }) catch {};
+        }
+
+        const err_msg = switch (err) {
+            error.ValidationFailed => "Auto-dispose failed (multiple disposal options or no disposal event)",
+            else => "Auto-dispose pass error",
+        };
+
+        return .{ .failed = .{ .ctx = mutable_ctx, .message = err_msg } };
+    };
+
+    // Update AST with potentially modified version
+    mutable_ctx.ast = new_ast;
     mutable_ctx.passes_completed += 1;
     return .{ .continued = .{ .ctx = mutable_ctx } };
 }

@@ -1,5 +1,4 @@
-// TEST: Auto-dispose with single consumer
-// STATUS: PENDING IMPLEMENTATION - PHASE 2 required for full AST insertion
+// TEST: Auto-dispose with single consumer (WITH BINDING)
 //
 // When a flow terminates with an unsatisfied cleanup obligation [state!],
 // and there's exactly ONE event that consumes it [!state], auto-insert it.
@@ -7,16 +6,16 @@
 // Here: open() returns *File[opened!], close() consumes *File[!opened]
 // Since close() is the ONLY consumer, it should be auto-inserted.
 //
-// PHASE 1: Just validates that auto-dispose WOULD work (no binding = no KORU100)
-// PHASE 2: Actually inserts the disposal call with synthesized binding
+// The binding 'f' creates an obligation that must be satisfied.
+// Auto-dispose should insert: app.fs:close(file: f.file)
 //
-// Expected: Compiles (checker passes), but no actual output until PHASE 2
+// Expected: Compiles successfully with auto-inserted disposal
 
 ~import "$app/fs"
 
 // Flow terminates without explicit close - should auto-insert close()
-// Note: No binding since we're not using the file for anything else
+// HAS BINDING: This creates an obligation that must be satisfied
 ~app.fs:open(path: "test.txt")
-| opened |> _
+| opened f |> _
 
 pub fn main() void {}

@@ -27,6 +27,8 @@ const annotation_parser = @import("annotation_parser");
 const keyword_registry = @import("keyword_registry");
 const flow_checker = @import("flow_checker");
 const FlowChecker = flow_checker.FlowChecker;
+const auto_dispose_inserter = @import("auto_dispose_inserter");
+const AutoDisposeInserter = auto_dispose_inserter.AutoDisposeInserter;
 
 const version = "0.1.0";
 
@@ -4644,6 +4646,23 @@ pub fn main() !void {
     var purity_check = PurityChecker.init(compile_allocator);
     defer purity_check.deinit();
     try purity_check.check(&source_file);
+
+    // Auto-dispose pass - inserts disposal calls for phantom obligations
+    // Must run BEFORE flow_checker so bindings are "used" by the inserted calls
+    var auto_dispose = try AutoDisposeInserter.init(compile_allocator, &parser.reporter);
+    defer auto_dispose.deinit();
+    const auto_dispose_result = auto_dispose.run(&source_file) catch |err| {
+        if (err == error.ValidationFailed) {
+            const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+            try parser.reporter.printErrors(stderr_writer);
+            std.process.exit(1);
+        }
+        return err;
+    };
+    // Update source_file if AST was modified
+    if (auto_dispose_result != &source_file) {
+        source_file = auto_dispose_result.*;
+    }
 
     // Flow checking pass - FRONTEND ONLY (syntactic checks: KORU100, KORU050, KORU051)
     // Branch coverage checks (KORU021, KORU022) run in backend after transforms are applied
