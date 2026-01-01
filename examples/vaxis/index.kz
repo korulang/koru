@@ -21,9 +21,9 @@
 //   | ready |> @loop()
 
 // Build system dependency - libvaxis from Zig package manager
-~import "$std/compiler"
+~import "$std/build"
 
-~std.compiler:requires {
+~std.build:requires {
     const vaxis_dep = b.dependency("vaxis", .{
         .target = target,
         .optimize = optimize,

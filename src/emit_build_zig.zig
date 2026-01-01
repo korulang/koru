@@ -167,6 +167,118 @@ pub fn emitBuildZig(
     std.debug.print("✅ Successfully wrote build.zig\n", .{});
 }
 
+/// Generate a build.zig file for the OUTPUT binary (compiled from output_emitted.zig)
+/// This is separate from the backend build.zig as it uses user dependencies (build:requires)
+pub fn emitOutputBuildZig(
+    _: std.mem.Allocator, // Reserved for future use
+    requires: []const BuildRequirement,
+    output_path: []const u8,
+) !void {
+    std.debug.print("📦 Generating output build.zig with {d} requirements\n", .{requires.len});
+
+    var buffer: [64 * 1024]u8 = undefined;
+    var pos: usize = 0;
+
+    const append = struct {
+        fn call(buf: []u8, p: *usize, str: []const u8) void {
+            @memcpy(buf[p.*..p.* + str.len], str);
+            p.* += str.len;
+        }
+    }.call;
+
+    const sanitizeModuleName = struct {
+        fn call(module_name: []const u8) [256]u8 {
+            var result: [256]u8 = undefined;
+            var i: usize = 0;
+            for (module_name) |c| {
+                if (c == '/' or c == '.' or c == '-') {
+                    result[i] = '_';
+                } else {
+                    result[i] = c;
+                }
+                i += 1;
+            }
+            return result;
+        }
+    }.call;
+
+    // Header - note we target output_emitted.zig, not backend.zig
+    append(&buffer, &pos,
+        \\const std = @import("std");
+        \\
+        \\pub fn build(__koru_b: *std.Build) void {
+        \\    const __koru_target = __koru_b.standardTargetOptions(.{});
+        \\    const __koru_optimize = __koru_b.standardOptimizeOption(.{});
+        \\
+        \\    const __koru_exe = __koru_b.addExecutable(.{
+        \\        .name = "output",
+        \\        .root_module = __koru_b.createModule(.{
+        \\            .root_source_file = __koru_b.path("output_emitted.zig"),
+        \\            .target = __koru_target,
+        \\            .optimize = __koru_optimize,
+        \\        }),
+        \\    });
+        \\
+        \\
+    );
+
+    // Add each build requirement
+    for (requires, 0..) |req, i| {
+        const sanitized = sanitizeModuleName(req.module_name);
+        const sanitized_len = req.module_name.len;
+
+        var index_buf: [32]u8 = undefined;
+        const index_str = std.fmt.bufPrint(&index_buf, "{d}", .{i}) catch unreachable;
+
+        append(&buffer, &pos, "    // User module: ");
+        append(&buffer, &pos, req.module_name);
+        append(&buffer, &pos, "\n");
+
+        append(&buffer, &pos, "    const ");
+        append(&buffer, &pos, sanitized[0..sanitized_len]);
+        append(&buffer, &pos, "_build_");
+        append(&buffer, &pos, index_str);
+        append(&buffer, &pos,
+            \\ = struct {
+            \\        fn call(b: *std.Build, exe: *std.Build.Step.Compile, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+            \\            _ = &b; _ = &exe; _ = &target; _ = &optimize; // Suppress unused warnings
+            \\
+        );
+
+        // Add the user's build code directly (no REL_TO_ROOT substitution needed)
+        append(&buffer, &pos, req.source_code);
+
+        append(&buffer, &pos,
+            \\
+            \\        }
+            \\    }.call;
+            \\
+        );
+
+        append(&buffer, &pos, sanitized[0..sanitized_len]);
+        append(&buffer, &pos, "_build_");
+        append(&buffer, &pos, index_str);
+        append(&buffer, &pos, "(__koru_b, __koru_exe, __koru_target, __koru_optimize);\n\n");
+    }
+
+    append(&buffer, &pos,
+        \\    __koru_b.installArtifact(__koru_exe);
+        \\}
+        \\
+    );
+
+    const final_content = buffer[0..pos];
+
+    std.debug.print("📦 Generated {d} bytes of output build.zig\n", .{final_content.len});
+    std.debug.print("📦 Writing to: {s}\n", .{output_path});
+
+    const file = try std.fs.cwd().createFile(output_path, .{});
+    defer file.close();
+    try file.writeAll(final_content);
+
+    std.debug.print("✅ Successfully wrote output build.zig\n", .{});
+}
+
 test "sanitizeModuleName basic" {
     const sanitize = struct {
         fn call(module_name: []const u8) [256]u8 {

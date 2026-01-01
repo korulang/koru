@@ -1,26 +1,38 @@
 const std = @import("std");
 const ast = @import("ast");
 
-/// CompilerRequiresCollector gathers all ~compiler:requires invocations
-/// from the AST to generate build.zig files for backend compilation.
-/// This is a compiler pass that walks the AST looking for the specific
-/// ~compiler:requires event invocations.
+/// CompilerRequiresCollector gathers build requirements from the AST.
+/// It distinguishes between:
+/// - std.compiler:requires → for BACKEND compilation (backend.zig)
+/// - std.build:requires → for OUTPUT binary (output_emitted.zig)
 pub const CompilerRequiresCollector = struct {
     allocator: std.mem.Allocator,
-    requirements: std.ArrayList([]const u8),
+    compiler_requirements: std.ArrayList([]const u8), // For backend.zig
+    build_requirements: std.ArrayList([]const u8), // For output binary
 
     pub fn init(allocator: std.mem.Allocator) !CompilerRequiresCollector {
         return CompilerRequiresCollector{
             .allocator = allocator,
-            .requirements = try std.ArrayList([]const u8).initCapacity(allocator, 0),
+            .compiler_requirements = try std.ArrayList([]const u8).initCapacity(allocator, 0),
+            .build_requirements = try std.ArrayList([]const u8).initCapacity(allocator, 0),
         };
     }
 
     pub fn deinit(self: *CompilerRequiresCollector) void {
-        for (self.requirements.items) |req| {
+        for (self.compiler_requirements.items) |req| {
             self.allocator.free(req);
         }
-        self.requirements.deinit(self.allocator);
+        self.compiler_requirements.deinit(self.allocator);
+
+        for (self.build_requirements.items) |req| {
+            self.allocator.free(req);
+        }
+        self.build_requirements.deinit(self.allocator);
+    }
+
+    // Legacy alias for backwards compatibility
+    pub fn getRequirements(self: *CompilerRequiresCollector) []const []const u8 {
+        return self.compiler_requirements.items;
     }
 
     /// Collect all ~compiler:requires invocations from the source file
@@ -56,40 +68,55 @@ pub const CompilerRequiresCollector = struct {
     }
 
     fn checkFlowForRequires(self: *CompilerRequiresCollector, flow: *const ast.Flow) !void {
-        // Check if this is a compiler:requires invocation (for BACKEND compilation)
-        // Note: std.build:requires (for USER PROGRAM compilation) is handled by backend pass
         if (flow.invocation.path.module_qualifier) |mq| {
+            if (flow.invocation.path.segments.len < 1) return;
+
             // DEBUG: Print what we're checking
             std.debug.print("[CompilerRequiresCollector] Checking flow: {s}:{s}\n", .{ mq, flow.invocation.path.segments[0] });
 
-            // Check for compiler:requires or compiler_requirements:requires
-            // User code uses: ~std.compiler:requires { ... }
-            // Internal code uses: ~std.compiler_requirements:requires { ... }
+            // Check for std.build:requires (for OUTPUT binary)
+            const is_build_module = std.mem.endsWith(u8, mq, ".build") or std.mem.eql(u8, mq, "build");
+            const is_build_requires = is_build_module and
+                flow.invocation.path.segments.len == 1 and
+                std.mem.eql(u8, flow.invocation.path.segments[0], "requires");
+
+            // Check for std.compiler:requires or std.compiler_requirements:requires (for BACKEND)
             const is_compiler_module = std.mem.endsWith(u8, mq, ".compiler") or std.mem.eql(u8, mq, "compiler");
             const is_compiler_requirements_module = std.mem.endsWith(u8, mq, ".compiler_requirements") or std.mem.eql(u8, mq, "compiler_requirements");
-            const is_compiler_requires = ((is_compiler_module or is_compiler_requirements_module) and
+            const is_compiler_requires = (is_compiler_module or is_compiler_requirements_module) and
                 flow.invocation.path.segments.len == 1 and
-                std.mem.eql(u8, flow.invocation.path.segments[0], "requires"));
+                std.mem.eql(u8, flow.invocation.path.segments[0], "requires");
 
-            if (is_compiler_requires) {
-                std.debug.print("[CompilerRequiresCollector] ✓ FOUND compiler:requires!\n", .{});
-                // Extract source parameter
-                for (flow.invocation.args) |arg| {
-                    // Accept both "source" (named) and "" (anonymous block with source_value)
-                    if (std.mem.eql(u8, arg.name, "source") or (std.mem.eql(u8, arg.name, "") and arg.source_value != null)) {
-                        const source_code = if (arg.source_value) |sv| sv.text else arg.value;
-                        const source_copy = try self.allocator.dupe(u8, source_code);
-                        try self.requirements.append(self.allocator, source_copy);
-                        std.debug.print("[CompilerRequiresCollector]   Added requirement ({d} bytes)\n", .{source_code.len});
-                    }
-                }
+            if (is_build_requires) {
+                std.debug.print("[CompilerRequiresCollector] ✓ FOUND build:requires (for output binary)!\n", .{});
+                try self.extractAndAddSource(flow, &self.build_requirements);
+            } else if (is_compiler_requires) {
+                std.debug.print("[CompilerRequiresCollector] ✓ FOUND compiler:requires (for backend)!\n", .{});
+                try self.extractAndAddSource(flow, &self.compiler_requirements);
             }
         }
     }
 
-    /// Get the collected requirements
-    pub fn getRequirements(self: *CompilerRequiresCollector) []const []const u8 {
-        return self.requirements.items;
+    fn extractAndAddSource(self: *CompilerRequiresCollector, flow: *const ast.Flow, target_list: *std.ArrayList([]const u8)) !void {
+        for (flow.invocation.args) |arg| {
+            // Accept both "source" (named) and "" (anonymous block with source_value)
+            if (std.mem.eql(u8, arg.name, "source") or (std.mem.eql(u8, arg.name, "") and arg.source_value != null)) {
+                const source_code = if (arg.source_value) |sv| sv.text else arg.value;
+                const source_copy = try self.allocator.dupe(u8, source_code);
+                try target_list.append(self.allocator, source_copy);
+                std.debug.print("[CompilerRequiresCollector]   Added requirement ({d} bytes)\n", .{source_code.len});
+            }
+        }
+    }
+
+    /// Get compiler requirements (for backend.zig)
+    pub fn getCompilerRequirements(self: *CompilerRequiresCollector) []const []const u8 {
+        return self.compiler_requirements.items;
+    }
+
+    /// Get build requirements (for output binary)
+    pub fn getBuildRequirements(self: *CompilerRequiresCollector) []const []const u8 {
+        return self.build_requirements.items;
     }
 };
 
@@ -123,7 +150,7 @@ test "collects single compiler:requires" {
 
     try collector.checkFlowForRequires(&flow);
 
-    const reqs = collector.getRequirements();
+    const reqs = collector.getCompilerRequirements();
     try std.testing.expectEqual(@as(usize, 1), reqs.len);
     try std.testing.expectEqualStrings("exe.linkSystemLibrary(\"sqlite3\");", reqs[0]);
 }
@@ -178,7 +205,7 @@ test "collects multiple compiler:requires" {
     try collector.checkFlowForRequires(&flow1);
     try collector.checkFlowForRequires(&flow2);
 
-    const reqs = collector.getRequirements();
+    const reqs = collector.getCompilerRequirements();
     try std.testing.expectEqual(@as(usize, 2), reqs.len);
     try std.testing.expectEqualStrings("exe.linkSystemLibrary(\"sqlite3\");", reqs[0]);
     try std.testing.expectEqualStrings("exe.linkSystemLibrary(\"c\");", reqs[1]);
@@ -213,6 +240,8 @@ test "ignores non-compiler:requires flows" {
 
     try collector.checkFlowForRequires(&flow);
 
-    const reqs = collector.getRequirements();
+    const reqs = collector.getCompilerRequirements();
     try std.testing.expectEqual(@as(usize, 0), reqs.len);
+    // Also check build requirements are empty
+    try std.testing.expectEqual(@as(usize, 0), collector.getBuildRequirements().len);
 }

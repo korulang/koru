@@ -4796,45 +4796,64 @@ pub fn main() !void {
     try printStdout(allocator, "✓ Compiled {s} → {s}\n", .{ input, output });
     try printStdout(allocator, "✓ Generated {s} ({d} bytes)\n", .{ backend_output_path, comptime_backend_code.len });
 
-    // Collect compiler:requires from AST (for BACKEND compilation)
-    // Note: build:requires (for USER PROGRAM compilation) is handled by backend pass
+    // Collect requirements from AST
+    // - compiler:requires → for BACKEND compilation (backend.zig)
+    // - build:requires → for OUTPUT binary (output_emitted.zig)
     var requires_collector = try CompilerRequiresCollector.init(allocator);
     defer requires_collector.deinit();
     try requires_collector.collectFromSourceFile(&source_file);
-    const requirements_raw = requires_collector.getRequirements();
 
-    if (requirements_raw.len > 0) {
-        try printStdout(allocator, "✓ Found {d} compiler requirement(s) for backend\n", .{requirements_raw.len});
+    const compiler_requirements_raw = requires_collector.getCompilerRequirements();
+    const build_requirements_raw = requires_collector.getBuildRequirements();
 
-        // Convert to BuildRequirement format for emit_build_zig
-        var build_requirements = try std.ArrayList(emit_build_zig.BuildRequirement).initCapacity(allocator, requirements_raw.len);
-        defer build_requirements.deinit(allocator);
+    // Use absolute path to koru library (symlinked at /usr/local/lib/koru)
+    const koru_lib_path = "/usr/local/lib/koru";
 
-        for (requirements_raw) |req| {
-            try build_requirements.append(allocator, .{
+    // Generate build.zig for BACKEND (compiler:requires)
+    if (compiler_requirements_raw.len > 0) {
+        try printStdout(allocator, "✓ Found {d} compiler requirement(s) for backend\n", .{compiler_requirements_raw.len});
+
+        var backend_build_reqs = try std.ArrayList(emit_build_zig.BuildRequirement).initCapacity(allocator, compiler_requirements_raw.len);
+        defer backend_build_reqs.deinit(allocator);
+
+        for (compiler_requirements_raw) |req| {
+            try backend_build_reqs.append(allocator, .{
                 .module_name = "compiler",
                 .source_code = req,
             });
         }
 
-        // Use absolute path to koru library (symlinked at /usr/local/lib/koru)
-        // This makes koruc work from any directory, not just the repo root
-        const koru_lib_path = "/usr/local/lib/koru";
-
-        // Generate build_backend.zig in the same directory as backend.zig
         const build_backend_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "build_backend.zig" });
         defer allocator.free(build_backend_path);
-
-        try emit_build_zig.emitBuildZig(allocator, build_requirements.items, build_backend_path, koru_lib_path);
+        try emit_build_zig.emitBuildZig(allocator, backend_build_reqs.items, build_backend_path, koru_lib_path);
         try printStdout(allocator, "✓ Generated {s}\n", .{build_backend_path});
 
-        // Also generate build.zig in the SAME output directory (not cwd!)
-        // This allows users to run `zig build` in the output directory
+        // Also as build.zig for zig build convenience
         const build_user_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "build.zig" });
         defer allocator.free(build_user_path);
-
-        try emit_build_zig.emitBuildZig(allocator, build_requirements.items, build_user_path, koru_lib_path);
+        try emit_build_zig.emitBuildZig(allocator, backend_build_reqs.items, build_user_path, koru_lib_path);
         try printStdout(allocator, "✓ Generated {s} (for backend compilation)\n", .{build_user_path});
+    }
+
+    // Generate build_output.zig for OUTPUT binary (build:requires)
+    if (build_requirements_raw.len > 0) {
+        try printStdout(allocator, "✓ Found {d} build requirement(s) for output binary\n", .{build_requirements_raw.len});
+
+        var output_build_reqs = try std.ArrayList(emit_build_zig.BuildRequirement).initCapacity(allocator, build_requirements_raw.len);
+        defer output_build_reqs.deinit(allocator);
+
+        for (build_requirements_raw) |req| {
+            try output_build_reqs.append(allocator, .{
+                .module_name = "user",
+                .source_code = req,
+            });
+        }
+
+        // Generate build_output.zig - this will be used to compile output_emitted.zig
+        const build_output_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "build_output.zig" });
+        defer allocator.free(build_output_path);
+        try emit_build_zig.emitOutputBuildZig(allocator, output_build_reqs.items, build_output_path);
+        try printStdout(allocator, "✓ Generated {s} (for output binary)\n", .{build_output_path});
     }
 
     // Collect package requirements from AST
