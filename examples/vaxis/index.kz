@@ -20,6 +20,17 @@
 //   ~vaxis:run(title: "My App")
 //   | ready |> @loop()
 
+// Build system dependency - libvaxis from Zig package manager
+~import "$std/compiler"
+
+~std.compiler:requires {
+    const vaxis_dep = b.dependency("vaxis", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
+}
+
 const std = @import("std");
 const vaxis = @import("vaxis");
 

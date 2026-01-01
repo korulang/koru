@@ -62,21 +62,25 @@ pub const CompilerRequiresCollector = struct {
             // DEBUG: Print what we're checking
             std.debug.print("[CompilerRequiresCollector] Checking flow: {s}:{s}\n", .{ mq, flow.invocation.path.segments[0] });
 
-            // Check for compiler_requirements:requires
-            // After moving to compiler_requirements.kz, it's now std.compiler_requirements:requires
+            // Check for compiler:requires or compiler_requirements:requires
+            // User code uses: ~std.compiler:requires { ... }
+            // Internal code uses: ~std.compiler_requirements:requires { ... }
+            const is_compiler_module = std.mem.endsWith(u8, mq, ".compiler") or std.mem.eql(u8, mq, "compiler");
             const is_compiler_requirements_module = std.mem.endsWith(u8, mq, ".compiler_requirements") or std.mem.eql(u8, mq, "compiler_requirements");
-            const is_compiler_requires = (is_compiler_requirements_module and
+            const is_compiler_requires = ((is_compiler_module or is_compiler_requirements_module) and
                 flow.invocation.path.segments.len == 1 and
                 std.mem.eql(u8, flow.invocation.path.segments[0], "requires"));
 
             if (is_compiler_requires) {
                 std.debug.print("[CompilerRequiresCollector] ✓ FOUND compiler:requires!\n", .{});
-                // Extract source parameter (stored in .value for anonymous blocks)
+                // Extract source parameter
                 for (flow.invocation.args) |arg| {
-                    if (std.mem.eql(u8, arg.name, "source")) {
-                        const source_copy = try self.allocator.dupe(u8, arg.value);
+                    // Accept both "source" (named) and "" (anonymous block with source_value)
+                    if (std.mem.eql(u8, arg.name, "source") or (std.mem.eql(u8, arg.name, "") and arg.source_value != null)) {
+                        const source_code = if (arg.source_value) |sv| sv.text else arg.value;
+                        const source_copy = try self.allocator.dupe(u8, source_code);
                         try self.requirements.append(self.allocator, source_copy);
-                        std.debug.print("[CompilerRequiresCollector]   Added requirement\n", .{});
+                        std.debug.print("[CompilerRequiresCollector]   Added requirement ({d} bytes)\n", .{source_code.len});
                     }
                 }
             }
