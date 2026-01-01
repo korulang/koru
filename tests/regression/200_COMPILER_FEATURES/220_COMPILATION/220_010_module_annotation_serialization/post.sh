@@ -11,19 +11,14 @@ if ! grep -q 'annotations = &\.{"comptime", "runtime"}.*io\.kz' backend.zig; the
 fi
 
 # Check std.compiler has [comptime] annotation only
-# Pattern: .annotations = &.{"comptime"}...compiler.kz (but not compiler_requirements)
-if ! grep 'annotations = &\.{"comptime"}.*file.*compiler\.kz' backend.zig | grep -qv compiler_requirements; then
+# Pattern: .annotations = &.{"comptime"}...compiler.kz
+if ! grep -q 'annotations = &\.{"comptime"}.*compiler\.kz' backend.zig; then
     echo "FAIL: std.compiler should have annotations = &.{\"comptime\"}"
-    grep "compiler\.kz" backend.zig | grep -v compiler_requirements | head -1 || echo "(not found)"
+    grep "compiler\.kz" backend.zig | head -1 || echo "(not found)"
     exit 1
 fi
 
-# Check std.compiler_requirements has [comptime] annotation only
-if ! grep -q 'annotations = &\.{"comptime"}.*compiler_requirements\.kz' backend.zig; then
-    echo "FAIL: std.compiler_requirements should have annotations = &.{\"comptime\"}"
-    grep "compiler_requirements\.kz" backend.zig | head -1 || echo "(not found)"
-    exit 1
-fi
+# NOTE: compiler_requirements.kz was removed - its functionality merged into compiler.kz
 
 echo "PASS: All module annotations correctly serialized"
 exit 0

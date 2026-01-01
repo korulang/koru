@@ -339,8 +339,11 @@ pub const AutoDisposeInserter = struct {
                 }
             }
 
-            // TODO: Check invocations for obligation satisfaction
+            // Check invocations for obligation satisfaction
             // (when binding is passed to [!state] parameter)
+            if (node == .invocation) {
+                try self.checkInvocationSatisfiesObligations(&context, &node.invocation, module_name);
+            }
         }
 
         // Check nested continuations
@@ -370,6 +373,46 @@ pub const AutoDisposeInserter = struct {
         }
 
         return .{ .transformed = false, .program = program };
+    }
+
+    /// Check if an invocation satisfies any obligations (explicit cleanup)
+    fn checkInvocationSatisfiesObligations(
+        self: *AutoDisposeInserter,
+        context: *BindingContext,
+        invocation: *const ast.Invocation,
+        module_name: []const u8,
+    ) !void {
+        // Look up the event being invoked
+        const event_name = try self.pathToString(invocation.path);
+        defer self.allocator.free(event_name);
+
+        const inv_module = invocation.path.module_qualifier orelse module_name;
+        const qualified_name = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ inv_module, event_name });
+        defer self.allocator.free(qualified_name);
+
+        const event_info = self.event_map.get(qualified_name) orelse return;
+        const event_decl = event_info.decl;
+
+        // Check each argument to see if it satisfies an obligation
+        for (invocation.args) |arg| {
+            // Find the corresponding parameter in the event declaration
+            for (event_decl.input.fields) |field| {
+                if (std.mem.eql(u8, field.name, arg.name)) {
+                    // Check if this parameter consumes an obligation
+                    if (field.phantom) |phantom_str| {
+                        var parsed = phantom_parser.PhantomState.parse(self.allocator, phantom_str) catch continue;
+                        defer parsed.deinit(self.allocator);
+
+                        if (parsed == .concrete and parsed.concrete.consumes_obligation) {
+                            // This parameter consumes an obligation - check if arg satisfies one
+                            // The arg.value should be something like "f.file"
+                            context.clearObligation(arg.value);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     /// Insert disposal calls for unsatisfied obligations
