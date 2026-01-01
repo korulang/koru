@@ -1,0 +1,35 @@
+// TEST: #loop/@loop scope behavior
+// STATUS: PENDING IMPLEMENTATION
+//
+// When using #loop/@loop (label-based loops), the branch that leads to
+// @loop creates a scope. Obligations created in that branch should be
+// auto-disposed before the jump back.
+//
+// Here: The | next |> branch opens a file and jumps back.
+// Each iteration should close the file before @loop.
+//
+// Expected: Compiles with open/close per iteration
+
+~import "$app/fs"
+
+const std = @import("std");
+
+~event iterate { count: i32 }
+| next { count: i32 }
+| done {}
+
+~proc iterate {
+    if (count < 3) {
+        return .{ .next = .{ .count = count + 1 } };
+    } else {
+        return .{ .done = .{} };
+    }
+}
+
+~#loop iterate(count: 0)
+| next n |>
+    app.fs:open(path: "test.txt")
+    | opened f |> @loop(count: n.count)  // Auto-close f before @loop
+| done |> _
+
+pub fn main() void {}
