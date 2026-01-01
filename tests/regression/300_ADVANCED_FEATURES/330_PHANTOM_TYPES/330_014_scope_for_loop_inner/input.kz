@@ -13,7 +13,7 @@
 ~import "$app/fs"
 
 ~std.control:for(0..3)
-| each i |>
+| each _ |>
     app.fs:open(path: "test.txt")
     | opened f |> _  // Should auto-insert close() here, per iteration
 | done |> _
