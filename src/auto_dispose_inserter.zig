@@ -43,6 +43,7 @@ pub const AutoDisposeInserter = struct {
         allocator: std.mem.Allocator,
         scope_depth: u32, // Current scope depth (increments when entering loop body)
         is_repeating: bool, // True if we're inside a loop's `each` branch
+        loop_entry_scope: ?u32, // Scope depth when we entered the current loop (null if not in loop)
 
         const BindingInfo = struct {
             phantom_state: []const u8,
@@ -57,6 +58,7 @@ pub const AutoDisposeInserter = struct {
                 .allocator = allocator,
                 .scope_depth = 0,
                 .is_repeating = false,
+                .loop_entry_scope = null,
             };
         }
 
@@ -120,6 +122,7 @@ pub const AutoDisposeInserter = struct {
             var new_ctx = BindingContext.init(allocator);
             new_ctx.scope_depth = self.scope_depth;
             new_ctx.is_repeating = self.is_repeating;
+            new_ctx.loop_entry_scope = self.loop_entry_scope;
 
             var bind_iter = self.bindings.iterator();
             while (bind_iter.next()) |entry| {
@@ -141,10 +144,39 @@ pub const AutoDisposeInserter = struct {
             return new_ctx;
         }
 
+        /// Enter a loop construct (records scope at loop entry)
+        fn enterLoop(self: *BindingContext) void {
+            if (self.loop_entry_scope == null) {
+                self.loop_entry_scope = self.scope_depth;
+            }
+        }
+
         /// Enter a new scope (for loop bodies)
         fn enterScope(self: *BindingContext, is_repeating: bool) void {
             self.scope_depth += 1;
             self.is_repeating = is_repeating;
+        }
+
+        /// Check if there are obligations from before we entered the current loop
+        fn hasPreLoopObligations(self: *BindingContext) bool {
+            const entry_scope = self.loop_entry_scope orelse return false;
+            var iter = self.cleanup_obligations.iterator();
+            while (iter.next()) |entry| {
+                if (entry.value_ptr.scope_depth < entry_scope) return true;
+            }
+            return false;
+        }
+
+        /// Get first pre-loop obligation for error message
+        fn getFirstPreLoopObligation(self: *BindingContext) ?struct { name: []const u8, state: []const u8 } {
+            const entry_scope = self.loop_entry_scope orelse return null;
+            var iter = self.cleanup_obligations.iterator();
+            while (iter.next()) |entry| {
+                if (entry.value_ptr.scope_depth < entry_scope) {
+                    return .{ .name = entry.key_ptr.*, .state = entry.value_ptr.phantom_state };
+                }
+            }
+            return null;
         }
 
         /// Check if there are obligations from outer scopes that would need disposal
@@ -523,19 +555,28 @@ pub const AutoDisposeInserter = struct {
         flow: *const ast.Flow,
         module_name: []const u8,
     ) RecursiveError!TransformResult {
+        // Increment scope BEFORE recording loop entry
+        // This ensures obligations created before the loop are at a lower scope
+        parent_context.scope_depth += 1;
+
+        // Mark that we're inside a loop - obligations from before this point
+        // cannot be auto-disposed inside any branch of this loop
+        parent_context.enterLoop();
+
         // Process each branch of the foreach
         for (branches) |*branch| {
-            const is_each_branch = std.mem.eql(u8, branch.name, "each");
+            // Check for [@scope] annotation which marks repeating scope boundaries
+            const has_scope_annotation = branch.hasAnnotation("[@scope]");
 
             // Clone context and set up scope for this branch
             var branch_context = try parent_context.clone(self.allocator);
             defer branch_context.deinit();
 
-            if (is_each_branch) {
-                // Enter a new repeating scope for `each` branch
+            if (has_scope_annotation) {
+                // Enter a new repeating scope for branches with [@scope] annotation
                 branch_context.enterScope(true);
             }
-            // Note: `done` branch stays at parent scope and is_repeating = false
+            // Note: branches without [@scope] stay at parent scope and is_repeating = false
             // (unless parent was already repeating, which is inherited via clone)
 
             // Process continuations in this branch
@@ -604,9 +645,24 @@ pub const AutoDisposeInserter = struct {
         // Check if this continuation has a node
         if (cont.node) |node| {
             if (node == .terminal) {
-                // Found a terminator - check for current-scope obligations to dispose
-                // Only dispose obligations from CURRENT scope
-                // Outer-scope obligations will be handled at a non-repeating terminal (like `done`)
+                // Found a terminator - check for obligations to dispose
+
+                // ERROR: Cannot auto-dispose obligations from BEFORE the loop
+                // These must be handled explicitly outside the loop structure
+                if (context.hasPreLoopObligations()) {
+                    if (context.getFirstPreLoopObligation()) |obl| {
+                        try self.reporter.addError(
+                            .KORU032,
+                            flow.location.line,
+                            flow.location.column,
+                            "Cannot auto-dispose outer-scope resource '{s}' with state '{s}' inside loop. Handle the resource explicitly outside the loop.",
+                            .{ obl.name, obl.state },
+                        );
+                        return error.ValidationFailed;
+                    }
+                }
+
+                // Check for current-scope obligations to dispose
                 if (context.hasObligations()) {
                     // Count how many obligations are from current scope
                     var current_scope_count: u32 = 0;

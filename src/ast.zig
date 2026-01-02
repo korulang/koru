@@ -690,6 +690,7 @@ pub const NamedBranch = struct {
     body: []const Continuation,    // The continuations in this branch
     binding: ?[]const u8 = null,   // Optional binding for the branch (e.g., "item" in | each item |>)
     is_optional: bool = false,     // Marks branches that don't need to be handled (like `for`'s `done`)
+    annotations: []const []const u8 = &.{}, // Branch annotations (e.g., [@scope] for loop bodies)
 
     pub fn deinit(self: *NamedBranch, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -699,6 +700,16 @@ pub const NamedBranch = struct {
         }
         allocator.free(@constCast(self.body));
         if (self.binding) |b| allocator.free(b);
+        for (self.annotations) |ann| allocator.free(ann);
+        if (self.annotations.len > 0) allocator.free(@constCast(self.annotations));
+    }
+
+    /// Check if this branch has a specific annotation
+    pub fn hasAnnotation(self: *const NamedBranch, annotation: []const u8) bool {
+        for (self.annotations) |ann| {
+            if (std.mem.eql(u8, ann, annotation)) return true;
+        }
+        return false;
     }
 
     /// Find a branch by name in a slice of NamedBranch

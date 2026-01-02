@@ -1,14 +1,15 @@
 // TEST: Scope - obligation OUTSIDE for-loop should NOT auto-dispose inside
-// STATUS: PENDING IMPLEMENTATION
-// MUST_FAIL: Cannot auto-dispose outer-scope resource inside loop
+// STATUS: IMPLEMENTED
+// MUST_FAIL: KORU032 - Cannot auto-dispose outer-scope resource inside loop
 //
 // When an obligation is created OUTSIDE a for-loop, the checker must NOT
-// auto-dispose it inside the loop (that would run multiple times!).
+// auto-dispose it inside the loop. The user must explicitly handle the
+// resource outside the loop structure.
 //
 // Here: We open a file BEFORE the loop, then terminate inside the loop.
-// This is an error - the outer resource would be disposed N times.
+// This is an error - auto-dispose cannot handle outer-scope obligations.
 //
-// Expected: Compile error about outer-scope resource
+// Expected: KORU032 error about outer-scope resource
 
 ~import "$std/control"
 ~import "$app/fs"

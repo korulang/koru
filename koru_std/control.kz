@@ -408,10 +408,16 @@ const std = @import("std");
         // Each branch - wrap full continuation in array
         const each_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
         each_body[0] = each_cont.?.*;
+
+        // Add [@scope] annotation - marks this as a scope boundary for obligation tracking
+        const scope_annotations = allocator.alloc([]const u8, 1) catch unreachable;
+        scope_annotations[0] = allocator.dupe(u8, "[@scope]") catch unreachable;
+
         branches[0] = .{
             .name = "each",
             .body = each_body,
             .binding = each_binding,
+            .annotations = scope_annotations,
         };
 
         // Done branch if present - wrap full continuation
@@ -579,6 +585,10 @@ const std = @import("std");
         const each_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
         each_body[0] = search_result.each_cont.*;
 
+        // Add [@scope] annotation - marks this as a scope boundary for obligation tracking
+        const scope_annotations = allocator.alloc([]const u8, 1) catch unreachable;
+        scope_annotations[0] = allocator.dupe(u8, "[@scope]") catch unreachable;
+
         // Count branches needed (each + optional done)
         const branch_count: usize = if (search_result.done_cont != null) 2 else 1;
         const branches = allocator.alloc(ast.NamedBranch, branch_count) catch unreachable;
@@ -587,6 +597,7 @@ const std = @import("std");
             .name = "each",
             .body = each_body,
             .binding = search_result.each_binding,  // The loop variable binding
+            .annotations = scope_annotations,
         };
 
         if (search_result.done_cont) |dc| {
