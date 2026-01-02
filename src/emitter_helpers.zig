@@ -510,6 +510,9 @@ pub fn emitHostLine(emitter: *CodeEmitter, content: []const u8) !void {
 
 /// Emit main_module struct start
 pub fn emitMainModuleStart(emitter: *CodeEmitter) !void {
+    // Import CompilerEnv from root (backend.zig) so procs can check compiler flags
+    try emitter.write("// Access compiler flags from backend.zig via root import\n");
+    try emitter.write("const CompilerEnv = @import(\"root\").CompilerEnv;\n\n");
     try emitter.write("pub const main_module = struct {\n");
 }
 

@@ -101,8 +101,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
     try writer.writeAll("\n\n");
 
     // Generate CompilerEnv - makes compilation context available at backend comptime
+    // Made pub so backend_output_emitted.zig can access it via @import("root")
     try writer.writeAll("/// Compiler Environment - Query compilation context at backend comptime\n");
-    try writer.writeAll("const CompilerEnv = struct {\n");
+    try writer.writeAll("pub const CompilerEnv = struct {\n");
     try writer.writeAll("    /// Check if a compiler flag is set\n");
     try writer.writeAll("    pub fn hasFlag(comptime name: []const u8) bool {\n");
 
