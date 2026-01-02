@@ -252,6 +252,10 @@ pub const FlowChecker = struct {
                 }
             },
             .branch_constructor => |bc| {
+                // Check plain_value for shorthand syntax like `e { result.e }`
+                if (bc.plain_value) |pv| {
+                    if (containsIdentifier(pv, binding)) return true;
+                }
                 for (bc.fields) |field| {
                     const value = if (field.expression_str) |expr| expr else field.type;
                     if (containsIdentifier(value, binding)) return true;
