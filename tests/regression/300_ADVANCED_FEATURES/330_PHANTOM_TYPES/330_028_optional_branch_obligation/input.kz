@@ -1,0 +1,20 @@
+// TEST: Optional branch with obligation - auto-dispose handles it!
+// STATUS: IMPLEMENTED
+//
+// This test verifies that:
+// 1. Unhandled optional branches get synthesized continuations
+// 2. Auto-dispose inserts disposal calls for obligations in optional branches
+// 3. The emitter generates proper switch cases (not direct field access)
+//
+// If user only handles | success |>, but event returns | ?leaked |>,
+// the compiler automatically inserts close() call to dispose the handle!
+
+~import "$app/resource"
+
+// User only handles required branch - auto-dispose handles ?leaked
+~app.resource:risky()
+| success _ |>
+    _
+// | ?leaked |> AUTO-SYNTHESIZED with disposal of handle!
+
+pub fn main() void {}

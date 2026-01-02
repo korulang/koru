@@ -827,10 +827,19 @@ fn cloneField(allocator: std.mem.Allocator, field: *const ast.Field) !ast.Field 
 }
 
 fn cloneBranch(allocator: std.mem.Allocator, branch: *const ast.Branch) !ast.Branch {
+    // Clone annotations array
+    var cloned_annotations = try allocator.alloc([]const u8, branch.annotations.len);
+    errdefer allocator.free(cloned_annotations);
+    for (branch.annotations, 0..) |annotation, i| {
+        cloned_annotations[i] = try allocator.dupe(u8, annotation);
+    }
+
     return .{
         .name = try allocator.dupe(u8, branch.name),
         .payload = try cloneShape(allocator, &branch.payload),
         .is_deferred = branch.is_deferred,
+        .is_optional = branch.is_optional,
+        .annotations = cloned_annotations,
     };
 }
 

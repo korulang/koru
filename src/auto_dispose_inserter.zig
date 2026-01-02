@@ -344,6 +344,24 @@ pub const AutoDisposeInserter = struct {
             return .{ .transformed = false, .program = program };
         };
 
+        // Synthesize continuations for unhandled optional branches
+        // This ensures all optional branches get switch cases and auto-dispose can handle them
+        if (try self.synthesizeOptionalBranches(flow, event_info.decl)) |new_flow| {
+            // Replace the flow in the program with the synthesized version
+            const new_program = try ast_functional.replaceFlowRecursive(
+                self.allocator,
+                program,
+                flow,
+                .{ .flow = new_flow.* },
+            ) orelse {
+                return .{ .transformed = false, .program = program };
+            };
+
+            const result_ptr = try self.allocator.create(ast.Program);
+            result_ptr.* = new_program;
+            return .{ .transformed = true, .program = result_ptr };
+        }
+
         // Check if this is a loop-like flow (for, while, loop)
         const is_loop_flow = std.mem.eql(u8, event_name, "for") or
             std.mem.eql(u8, event_name, "while") or
@@ -1355,5 +1373,77 @@ pub const AutoDisposeInserter = struct {
         // Override just the binding
         new_cont.binding = try self.allocator.dupe(u8, new_binding);
         return new_cont;
+    }
+
+    /// Synthesize continuations for unhandled optional branches
+    /// This ensures:
+    /// 1. All optional branches get proper switch cases (runtime safety)
+    /// 2. Auto-dispose can insert disposals for obligations in optional branches
+    fn synthesizeOptionalBranches(
+        self: *AutoDisposeInserter,
+        flow: *const ast.Flow,
+        event_decl: *const ast.EventDecl,
+    ) !?*const ast.Flow {
+        // Find which branches are already handled
+        var handled = std.StringHashMap(void).init(self.allocator);
+        defer handled.deinit();
+
+        for (flow.continuations) |*cont| {
+            if (cont.is_catchall) {
+                // Catch-all handles all optional branches - no synthesis needed
+                return null;
+            }
+            try handled.put(cont.branch, {});
+        }
+
+        // Find optional branches that need synthesis
+        var missing_optional = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
+        defer missing_optional.deinit(self.allocator);
+
+        for (event_decl.branches) |branch| {
+            if (branch.is_optional and !handled.contains(branch.name)) {
+                try missing_optional.append(self.allocator, branch.name);
+            }
+        }
+
+        if (missing_optional.items.len == 0) {
+            return null; // Nothing to synthesize
+        }
+
+        // Create new continuations array with synthesized branches
+        const new_len = flow.continuations.len + missing_optional.items.len;
+        var new_continuations = try self.allocator.alloc(ast.Continuation, new_len);
+        errdefer self.allocator.free(new_continuations);
+
+        // Copy existing continuations
+        for (flow.continuations, 0..) |*cont, i| {
+            new_continuations[i] = try ast_functional.cloneContinuation(self.allocator, cont);
+        }
+
+        // Add synthesized continuations for missing optional branches
+        for (missing_optional.items, 0..) |branch_name, i| {
+            const idx = flow.continuations.len + i;
+            new_continuations[idx] = ast.Continuation{
+                .branch = try self.allocator.dupe(u8, branch_name),
+                .binding = try self.allocator.dupe(u8, "_"), // Discard binding - auto-dispose will synthesize _auto_N
+                .binding_annotations = &[_][]const u8{},
+                .binding_type = .branch_payload,
+                .is_catchall = false,
+                .catchall_metatype = null,
+                .condition = null,
+                .condition_expr = null,
+                .node = .{ .terminal = {} }, // Terminal - triggers auto-dispose check
+                .indent = 0,
+                .continuations = &[_]ast.Continuation{},
+                .location = flow.location,
+            };
+        }
+
+        // Create new flow with synthesized continuations
+        const new_flow = try self.allocator.create(ast.Flow);
+        new_flow.* = flow.*;
+        new_flow.continuations = new_continuations;
+
+        return new_flow;
     }
 };

@@ -1,0 +1,29 @@
+// Library module: resource
+// Demonstrates optional branch with obligation
+
+const std = @import("std");
+
+const Handle = struct {
+    id: i32,
+};
+
+// Risky operation - might succeed OR might leak a handle
+~event risky {}
+| success { result: u32 }
+| ?leaked { handle: *Handle[owned!] }  // Optional with obligation!
+
+~proc risky {
+    // Always succeeds in this test, but the event DECLARES
+    // that it COULD return ?leaked with an obligation
+    std.debug.print("Operation succeeded\n", .{});
+    return .{ .success = .{ .result = 42 } };
+}
+
+// Disposer for the obligation (would need to be called for ?leaked)
+~event close { handle: *Handle[!owned] }
+| closed {}
+
+~proc close {
+    std.debug.print("Closing handle\n", .{});
+    return .{ .closed = .{} };
+}
