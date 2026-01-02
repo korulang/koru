@@ -1,0 +1,1 @@
+Test expects KORU032 error when trying to dispose outer-scope resource inside loop body

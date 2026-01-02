@@ -1,7 +1,7 @@
 // TEST: Manual disposal at | done |> is allowed
-// STATUS: INVESTIGATING
+// STATUS: IMPLEMENTED
 //
-// Test manual close in done branch
+// Test manual close in done branch - runs once after loop completes
 
 ~import "$std/control"
 ~import "$app/fs"

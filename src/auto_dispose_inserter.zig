@@ -646,22 +646,12 @@ pub const AutoDisposeInserter = struct {
         if (cont.node) |node| {
             if (node == .terminal) {
                 // Found a terminator - check for obligations to dispose
-
-                // ERROR: Cannot auto-dispose obligations from BEFORE the loop in REPEATING context
-                // In repeating scopes (like | each |>), disposing would run N times
-                // Non-repeating scopes (like | done |>) can safely auto-dispose
-                if (context.is_repeating and context.hasPreLoopObligations()) {
-                    if (context.getFirstPreLoopObligation()) |obl| {
-                        try self.reporter.addError(
-                            .KORU032,
-                            flow.location.line,
-                            flow.location.column,
-                            "Cannot dispose outer-scope resource '{s}' with state '{s}' inside repeating loop body. Handle at '| done |>' or escape via branch constructor.",
-                            .{ obl.name, obl.state },
-                        );
-                        return error.ValidationFailed;
-                    }
-                }
+                //
+                // NOTE: Pre-loop obligations in repeating context are OK here!
+                // They "flow through" the loop and will be handled at the `done` branch.
+                // We only error for pre-loop obligations when:
+                // 1. Trying to INSERT auto-disposal (checked in insertDisposalsInForeach)
+                // 2. Manually disposing via invocation (checked in checkInvocationSatisfiesObligations)
 
                 // Check for current-scope obligations to dispose
                 if (context.hasObligations()) {
