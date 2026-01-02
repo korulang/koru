@@ -1,0 +1,23 @@
+// TEST: Manual disposal at | each |> is NOT allowed
+// STATUS: IMPLEMENTED
+// MUST_FAIL: KORU032 - Cannot dispose outer-scope resource inside repeating loop body
+//
+// When an obligation is created OUTSIDE a for-loop, it CANNOT be
+// disposed inside | each |> (would run N times).
+//
+// Here: Open file before loop, try to close inside each - ERROR!
+//
+// Expected: KORU032 error about disposing in repeating context
+
+~import "$std/control"
+~import "$app/fs"
+
+~app.fs:open(path: "outer.txt")
+| opened f |>
+    std.control:for(0..3)
+    | each _ |>
+        app.fs:close(file: f.file)  // ERROR! Would run 3 times
+        | closed _ |> _
+    | done |> _
+
+pub fn main() void {}

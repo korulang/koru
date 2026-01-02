@@ -477,7 +477,7 @@ pub const AutoDisposeInserter = struct {
             // Check invocations for obligation satisfaction
             // (when binding is passed to [!state] parameter)
             if (node == .invocation) {
-                try self.checkInvocationSatisfiesObligations(&context, &node.invocation, module_name);
+                try self.checkInvocationSatisfiesObligations(&context, &node.invocation, module_name, flow);
             }
 
             // Handle foreach nodes - recurse into branches with scope tracking
@@ -565,15 +565,15 @@ pub const AutoDisposeInserter = struct {
 
         // Process each branch of the foreach
         for (branches) |*branch| {
-            // Check for [@scope] annotation which marks repeating scope boundaries
-            const has_scope_annotation = branch.hasAnnotation("[@scope]");
+            // The "each" branch is the repeating scope boundary
+            const is_each_branch = std.mem.eql(u8, branch.name, "each");
 
             // Clone context and set up scope for this branch
             var branch_context = try parent_context.clone(self.allocator);
             defer branch_context.deinit();
 
-            if (has_scope_annotation) {
-                // Enter a new repeating scope for branches with [@scope] annotation
+            if (is_each_branch) {
+                // Enter a new repeating scope for the "each" branch (runs N times)
                 branch_context.enterScope(true);
             }
             // Note: branches without [@scope] stay at parent scope and is_repeating = false
@@ -647,15 +647,16 @@ pub const AutoDisposeInserter = struct {
             if (node == .terminal) {
                 // Found a terminator - check for obligations to dispose
 
-                // ERROR: Cannot auto-dispose obligations from BEFORE the loop
-                // These must be handled explicitly outside the loop structure
-                if (context.hasPreLoopObligations()) {
+                // ERROR: Cannot auto-dispose obligations from BEFORE the loop in REPEATING context
+                // In repeating scopes (like | each |>), disposing would run N times
+                // Non-repeating scopes (like | done |>) can safely auto-dispose
+                if (context.is_repeating and context.hasPreLoopObligations()) {
                     if (context.getFirstPreLoopObligation()) |obl| {
                         try self.reporter.addError(
                             .KORU032,
                             flow.location.line,
                             flow.location.column,
-                            "Cannot auto-dispose outer-scope resource '{s}' with state '{s}' inside loop. Handle the resource explicitly outside the loop.",
+                            "Cannot dispose outer-scope resource '{s}' with state '{s}' inside repeating loop body. Handle at '| done |>' or escape via branch constructor.",
                             .{ obl.name, obl.state },
                         );
                         return error.ValidationFailed;
@@ -691,7 +692,7 @@ pub const AutoDisposeInserter = struct {
             // Handle invocations - look up event and check for obligation satisfaction + binding creation
             if (node == .invocation) {
                 const invocation = &node.invocation;
-                try self.checkInvocationSatisfiesObligations(&context, invocation, module_name);
+                try self.checkInvocationSatisfiesObligations(&context, invocation, module_name, flow);
 
                 // Also add any bindings from this invocation's continuations
                 const inv_event_name = try self.pathToString(invocation.path);
@@ -854,11 +855,13 @@ pub const AutoDisposeInserter = struct {
     }
 
     /// Check if an invocation satisfies any obligations (explicit cleanup)
+    /// Also validates that manual disposal doesn't happen in repeating context for pre-loop obligations
     fn checkInvocationSatisfiesObligations(
         self: *AutoDisposeInserter,
         context: *BindingContext,
         invocation: *const ast.Invocation,
         module_name: []const u8,
+        flow: *const ast.Flow,
     ) !void {
         // Look up the event being invoked
         const event_name = try self.pathToString(invocation.path);
@@ -882,8 +885,25 @@ pub const AutoDisposeInserter = struct {
                         defer parsed.deinit(self.allocator);
 
                         if (parsed == .concrete and parsed.concrete.consumes_obligation) {
-                            // This parameter consumes an obligation - check if arg satisfies one
-                            // The arg.value should be something like "f.file"
+                            // ERROR: Cannot manually dispose pre-loop obligation in repeating context
+                            if (context.is_repeating) {
+                                // Check if this is a pre-loop obligation
+                                const loop_entry = context.loop_entry_scope orelse 0;
+                                if (context.cleanup_obligations.get(arg.value)) |obl_info| {
+                                    if (obl_info.scope_depth < loop_entry) {
+                                        try self.reporter.addError(
+                                            .KORU032,
+                                            flow.location.line,
+                                            flow.location.column,
+                                            "Cannot dispose outer-scope resource '{s}' inside repeating loop body. Handle at '| done |>' or escape via branch constructor.",
+                                            .{arg.value},
+                                        );
+                                        return error.ValidationFailed;
+                                    }
+                                }
+                            }
+
+                            // This parameter consumes an obligation - clear it
                             context.clearObligation(arg.value);
                         }
                     }
