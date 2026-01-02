@@ -1,0 +1,26 @@
+// Library module: fs
+// Single disposal event - auto-dispose should work
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+// Open a file - returns opened! state (requires cleanup)
+~pub event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    std.debug.print("Opening file\n", .{});
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+// Close - the ONLY consumer of [!opened]
+~pub event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.debug.print("Closing file (auto-disposed)\n", .{});
+    return .{ .closed = .{} };
+}

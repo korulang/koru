@@ -61,6 +61,12 @@ pub const FlowChecker = struct {
                 .flow => |*flow| {
                     try self.validateFlow(flow, flow.location);
                 },
+                .subflow_impl => |*subflow| {
+                    // Validate subflow implementations (e.g., ~event_name = for(...))
+                    if (subflow.body == .flow) {
+                        try self.validateFlow(&subflow.body.flow, subflow.body.flow.location);
+                    }
+                },
                 .proc_decl => |*proc| {
                     // Check inline flows in proc declarations for duplicate branch handlers
                     // Only in backend mode (semantic check that may need transforms applied)
@@ -76,6 +82,11 @@ pub const FlowChecker = struct {
                         switch (module_item.*) {
                             .flow => |*flow| {
                                 try self.validateFlow(flow, flow.location);
+                            },
+                            .subflow_impl => |*subflow| {
+                                if (subflow.body == .flow) {
+                                    try self.validateFlow(&subflow.body.flow, subflow.body.flow.location);
+                                }
                             },
                             .proc_decl => |*proc| {
                                 // Only in backend mode
@@ -100,20 +111,23 @@ pub const FlowChecker = struct {
     }
 
     fn validateFlow(self: *FlowChecker, flow: *const ast.Flow, location: errors.SourceLocation) !void {
-        // Skip validation for flows with inline_body or preamble_code (transformed flows)
-        // These don't need traditional branch coverage since their code is handled specially
-        if (flow.inline_body != null or flow.preamble_code != null) {
-            return;
-        }
+        const is_transformed = flow.inline_body != null or flow.preamble_code != null;
 
         // === FRONTEND CHECKS (syntactic, always run) ===
+        // These run even for transformed flows
 
-        // Validate when-clause exhaustiveness for all continuations (KORU050, KORU051)
-        try self.validateWhenClauseExhaustiveness(flow.continuations, location);
+        // Skip when-clause checks for transformed flows (structure has changed)
+        if (!is_transformed) {
+            // Validate when-clause exhaustiveness for all continuations (KORU050, KORU051)
+            try self.validateWhenClauseExhaustiveness(flow.continuations, location);
+        }
 
         // Recursively validate nested continuations and bindings
+        // KORU100 runs even for transformed flows - checks inside ForeachNode etc.
         for (flow.continuations) |*cont| {
-            try self.validateContinuationWhenClauses(cont, location);
+            if (!is_transformed) {
+                try self.validateContinuationWhenClauses(cont, location);
+            }
             // KORU100: Unused binding check
             // In frontend mode, skip for [transform] invocations (binding usage not visible until after transform)
             // In backend mode (all), check everything (transforms have run)
@@ -122,17 +136,19 @@ pub const FlowChecker = struct {
 
         // === BACKEND CHECKS (semantic, require event lookups and transforms) ===
 
-        if (self.mode == .all) {
+        if (self.mode == .all and !is_transformed) {
             // Validate branch coverage (KORU021, KORU022)
             // Only run in 'all' mode - requires transforms to be applied first
+            // Skip for transformed flows - their branch structure has changed
             try self.validateBranchCoverage(flow, location);
         }
     }
 
     fn validateBindingUsage(self: *FlowChecker, cont: *const ast.Continuation) !void {
-        // If this continuation has a binding (other than _), check if it's used
+        // If this continuation has a binding (other than _ or _auto_*), check if it's used
+        // Bindings starting with _ are explicit discards or synthetic bindings from auto-dispose
         if (cont.binding) |binding| {
-            if (!std.mem.eql(u8, binding, "_")) {
+            if (!std.mem.startsWith(u8, binding, "_")) {
                 // In frontend mode, skip check if node is a [transform] invocation
                 // (transforms consume bindings in ways not visible until after transform runs)
                 const skip_check = self.mode == .frontend and self.isTransformInvocation(cont);
@@ -155,6 +171,23 @@ pub const FlowChecker = struct {
         // Recursively check nested continuations
         for (cont.continuations) |*nested| {
             try self.validateBindingUsage(nested);
+        }
+
+        // Also check inside ForeachNode and ConditionalNode branches
+        if (cont.node) |node| {
+            if (node == .foreach) {
+                for (node.foreach.branches) |*branch| {
+                    for (branch.body) |*body_cont| {
+                        try self.validateBindingUsage(body_cont);
+                    }
+                }
+            } else if (node == .conditional) {
+                for (node.conditional.branches) |*branch| {
+                    for (branch.body) |*body_cont| {
+                        try self.validateBindingUsage(body_cont);
+                    }
+                }
+            }
         }
     }
 

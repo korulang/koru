@@ -1,0 +1,17 @@
+// TEST: Discard binding with _ is valid
+//
+// When a user writes `| opened _ |>`, this is an explicit discard.
+// Unlike named bindings, _ is NOT checked for usage (KORU100 exempt).
+//
+// The auto-dispose system will synthesize a binding (_auto_0) internally
+// so disposal calls can still reference the value.
+//
+// Expected: Compiles successfully
+
+~import "$app/fs"
+
+// OK: _ is explicit discard - no KORU100 error
+~app.fs:open(path: "test.txt")
+| opened _ |> _
+
+pub fn main() void {}

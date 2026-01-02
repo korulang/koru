@@ -16,7 +16,7 @@
 ~app.fs:open(path: "outer.txt")
 | opened outer_f |>
     std.control:for(0..3)
-    | each i |> _  // ERROR: outer_f has [opened!] but we can't dispose here
+    | each _ |> _  // ERROR: outer_f has [opened!] but we can't dispose here
     | done |> _
 
 pub fn main() void {}

@@ -1,0 +1,16 @@
+// TEST: KORU100 - Unused binding must be an error
+// MUST_FAIL: unused binding 'f'
+//
+// When a user writes `| opened f |>` but never uses `f`, this is an error.
+// The correct syntax for discarding is `| opened _ |>`.
+//
+// This test ensures the flow checker catches unused named bindings.
+// The _ syntax is exempted from this check (explicit discard).
+
+~import "$app/fs"
+
+// ERROR: f is bound but never used - should trigger KORU100
+~app.fs:open(path: "test.txt")
+| opened f |> _
+
+pub fn main() void {}
