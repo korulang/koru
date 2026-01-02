@@ -1,0 +1,23 @@
+// TEST: Auto-dispose in both branches of ~if
+// STATUS: IMPLEMENTED
+//
+// When an obligation is created BEFORE an ~if with discard binding,
+// auto-dispose should insert cleanup in BOTH branches.
+//
+// This demonstrates that the compiler correctly handles obligations
+// that need cleanup in all code paths through a conditional.
+//
+// Expected: Compiles successfully, auto-inserts close in both branches
+
+~import "$std/control"
+~import "$app/fs"
+
+const condition = true;
+
+~app.fs:open(path: "test.txt")
+| opened _ |>
+    std.control:if(condition)
+    | then |> _  // Auto-dispose inserts close here
+    | else |> _  // Auto-dispose inserts close here too
+
+pub fn main() void {}

@@ -1,0 +1,26 @@
+// TEST: Nested ~for inside ~if with outer obligation
+// STATUS: IMPLEMENTED
+//
+// Open file, then conditionally run a loop, close after.
+// The obligation created before the if can be disposed in
+// either branch (both run at most once).
+
+~import "$std/control"
+~import "$app/fs"
+
+const should_loop = true;
+
+~app.fs:open(path: "test.txt")
+| opened f |>
+    std.control:if(should_loop)
+    | then |>
+        std.control:for(0..3)
+        | each _ |> _
+        | done |>
+            app.fs:close(file: f.file)
+            | closed |> _
+    | else |>
+        app.fs:close(file: f.file)  // Still need to close if no loop
+        | closed |> _
+
+pub fn main() void {}

@@ -1,0 +1,68 @@
+// Library module: db
+// Database operations with layered cleanup obligations
+//
+// Pattern: connect → query → (commit OR rollback) → disconnect
+// Two obligations:
+//   1. connected! on Connection - must call disconnect
+//   2. transaction! on Transaction - must call commit or rollback
+
+const std = @import("std");
+
+const Connection = struct {
+    id: i32,
+};
+
+const Transaction = struct {
+    conn: *Connection,
+};
+
+// Connect to database - creates connected! obligation
+~event connect { url: []const u8 }
+| connected { conn: *Connection[connected!] }
+
+~proc connect {
+    std.debug.print("Connecting to: {s}\n", .{url});
+    const allocator = std.heap.page_allocator;
+    const c = allocator.create(Connection) catch unreachable;
+    c.* = Connection{ .id = 1 };
+    return .{ .connected = .{ .conn = c } };
+}
+
+// Start a query/transaction - creates transaction! obligation
+~event query { conn: *Connection[connected!], sql: []const u8 }
+| started { tx: *Transaction[transaction!] }
+
+~proc query {
+    std.debug.print("Query: {s}\n", .{sql});
+    const allocator = std.heap.page_allocator;
+    const t = allocator.create(Transaction) catch unreachable;
+    t.* = Transaction{ .conn = conn };
+    return .{ .started = .{ .tx = t } };
+}
+
+// Commit - CONSUMES transaction! obligation
+~event commit { tx: *Transaction[!transaction] }
+| committed {}
+
+~proc commit {
+    std.debug.print("Committing transaction\n", .{});
+    return .{ .committed = .{} };
+}
+
+// Rollback - CONSUMES transaction! obligation (alternative to commit)
+~event rollback { tx: *Transaction[!transaction] }
+| rolledback {}
+
+~proc rollback {
+    std.debug.print("Rolling back transaction\n", .{});
+    return .{ .rolledback = .{} };
+}
+
+// Disconnect - CONSUMES connected! obligation
+~event disconnect { conn: *Connection[!connected] }
+| disconnected {}
+
+~proc disconnect {
+    std.debug.print("Disconnecting\n", .{});
+    return .{ .disconnected = .{} };
+}

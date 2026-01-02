@@ -1,0 +1,24 @@
+// TEST: Auto-dispose fills in missing disposal in else branch
+// STATUS: IMPLEMENTED
+//
+// When an obligation is created BEFORE an ~if, and only the then
+// branch manually disposes, auto-dispose inserts cleanup at the
+// else branch's terminal.
+//
+// Even though we use explicit binding (f), the terminal _ in else
+// triggers auto-dispose which sees the unsatisfied obligation.
+
+~import "$std/control"
+~import "$app/fs"
+
+const condition = true;
+
+~app.fs:open(path: "test.txt")
+| opened f |>
+    std.control:if(condition)
+    | then |>
+        app.fs:close(file: f.file)
+        | closed |> _
+    | else |> _  // ERROR? Obligation not satisfied here!
+
+pub fn main() void {}

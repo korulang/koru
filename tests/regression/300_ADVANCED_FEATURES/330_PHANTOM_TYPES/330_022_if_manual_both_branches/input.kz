@@ -1,0 +1,28 @@
+// TEST: Manual disposal in both branches of ~if is allowed
+// STATUS: IMPLEMENTED
+//
+// When an obligation is created BEFORE an ~if, it can be
+// manually disposed in BOTH branches (each runs at most once).
+//
+// This demonstrates that metaprogramming (~if transform) composes
+// correctly with phantom type obligations - no scope boundary
+// violation because neither branch is repeating.
+//
+// Expected: Compiles successfully
+
+~import "$std/control"
+~import "$app/fs"
+
+const condition = true;
+
+~app.fs:open(path: "test.txt")
+| opened f |>
+    std.control:if(condition)
+    | then |>
+        app.fs:close(file: f.file)
+        | closed |> _
+    | else |>
+        app.fs:close(file: f.file)
+        | closed |> _
+
+pub fn main() void {}
