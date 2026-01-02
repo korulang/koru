@@ -1,3 +1,0 @@
-Codegen variable shadowing bug: result_1 used for both query and disconnect.
-The scope boundary and obligation logic is CORRECT - this is purely a naming issue in the emitter.
-Frontend compilation succeeds, backend Zig compilation fails.

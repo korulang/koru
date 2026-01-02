@@ -4050,6 +4050,11 @@ fn emitStep(
             emitter.indent();
 
             // Emit then_body continuations
+            // Save and update result_prefix to avoid shadowing outer scope variables
+            const saved_prefix = ctx.result_prefix;
+            ctx.result_prefix = "then_result_";
+            defer ctx.result_prefix = saved_prefix;
+
             var step_idx: usize = 0;
             for (then_body) |*cont| {
                 if (cont.node) |node| {
@@ -4076,6 +4081,9 @@ fn emitStep(
             if (else_body.len > 0) {
                 try emitter.write("} else {\n");
                 emitter.indent();
+
+                // Update prefix for else branch
+                ctx.result_prefix = "else_result_";
 
                 step_idx = 0;
                 for (else_body) |*cont| {
