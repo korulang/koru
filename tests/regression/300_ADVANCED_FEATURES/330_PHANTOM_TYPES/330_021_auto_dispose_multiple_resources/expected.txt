@@ -1,0 +1,4 @@
+Opening: first.txt
+Opening: second.txt
+Closing file
+Closing file

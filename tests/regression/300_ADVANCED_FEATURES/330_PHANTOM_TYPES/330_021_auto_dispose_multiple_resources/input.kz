@@ -1,0 +1,22 @@
+// TEST: Auto-dispose with MULTIPLE nested resources
+//
+// Open TWO files in nested continuations.
+// User closes SECOND file explicitly, but leaves FIRST for auto-dispose.
+//
+// Expected: Second is closed explicitly, first is auto-closed
+
+~import "$app/fs"
+
+const std = @import("std");
+
+// Open first file (use _ for auto-dispose)
+// Then open second, close it explicitly
+// The outer file should be auto-closed at the terminal
+~app.fs:open(path: "first.txt")
+| opened _ |>
+    app.fs:open(path: "second.txt")
+    | opened f2 |>
+        app.fs:close(file: f2.file)
+        | closed |> _
+
+pub fn main() void {}

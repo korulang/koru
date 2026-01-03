@@ -397,7 +397,7 @@ pub const PhantomSemanticChecker = struct {
                 .flow => |*flow| {
                     const module = flow.module; // Already qualified for top-level or from module_decl.items walk
                     std.debug.print("[PHANTOM-FLOW] Validating flow in module '{s}'\n", .{module});
-                    if (!try self.validateFlow(flow, event_map, module)) {
+                    if (!try self.validateFlow(flow, event_map, module, null)) {
                         has_errors = true;
                     }
                 },
@@ -405,7 +405,7 @@ pub const PhantomSemanticChecker = struct {
                     const module = proc.module;
                     std.debug.print("[PHANTOM-FLOW] Validating proc '{s}' in module '{s}'\n", .{try self.pathToString(proc.path), module});
                     for (proc.inline_flows) |*flow| {
-                        if (!try self.validateFlow(flow, event_map, module)) {
+                        if (!try self.validateFlow(flow, event_map, module, null)) {
                             has_errors = true;
                         }
                     }
@@ -414,7 +414,28 @@ pub const PhantomSemanticChecker = struct {
                     if (sub.body == .flow) {
                         const module = current_module orelse "input"; // Need to pass module context down
                         std.debug.print("[PHANTOM-FLOW] Validating subflow in module '{s}'\n", .{module});
-                        if (!try self.validateFlow(&sub.body.flow, event_map, module)) {
+
+                        // Look up the event this subflow implements
+                        const impl_event_name = try self.pathToString(sub.event_path);
+                        defer self.allocator.free(impl_event_name);
+
+                        const impl_qualified = try std.fmt.allocPrint(
+                            self.allocator,
+                            "{s}:{s}",
+                            .{module, impl_event_name}
+                        );
+                        defer self.allocator.free(impl_qualified);
+
+                        const impl_event: ?*const ast.EventDecl = if (event_map.get(impl_qualified)) |info| info.decl else null;
+
+                        if (impl_event) |ev| {
+                            std.debug.print("[PHANTOM-FLOW]   Subflow implements event: '{s}'\n", .{impl_qualified});
+                            _ = ev;
+                        } else {
+                            std.debug.print("[PHANTOM-FLOW]   Subflow event '{s}' not found in event map\n", .{impl_qualified});
+                        }
+
+                        if (!try self.validateFlow(&sub.body.flow, event_map, module, impl_event)) {
                             has_errors = true;
                         }
                     }
@@ -472,7 +493,13 @@ pub const PhantomSemanticChecker = struct {
         }
     }
 
-    fn validateFlow(self: *PhantomSemanticChecker, flow: *const ast.Flow, event_map: *std.StringHashMap(EventInfo), current_module: []const u8) !bool {
+    fn validateFlow(
+        self: *PhantomSemanticChecker,
+        flow: *const ast.Flow,
+        event_map: *std.StringHashMap(EventInfo),
+        current_module: []const u8,
+        implementing_event: ?*const ast.EventDecl,  // Event this flow implements (for branch_constructor escape checking)
+    ) !bool {
         // Skip flows that have been transformed by [transform] events.
         // Transformed flows have valid structure by construction - the transform
         // replaced the comptime event structure with a runtime node structure.
@@ -514,7 +541,7 @@ pub const PhantomSemanticChecker = struct {
         // Pass both: current_module (where flow is defined, for name resolution)
         // and module_name (where event is defined, for phantom qualification)
         for (flow.continuations) |cont_item| {
-            const cont_valid = try self.validateContinuation(&cont_item, event_info.decl, module_name, current_module, event_map, flow.location, null);
+            const cont_valid = try self.validateContinuation(&cont_item, event_info.decl, module_name, current_module, event_map, flow.location, null, implementing_event);
             if (!cont_valid) {
                 has_errors = true;
                 // Continue checking for more errors
@@ -532,7 +559,8 @@ pub const PhantomSemanticChecker = struct {
         flow_module: []const u8,    // Module where the flow is defined (for name resolution)
         event_map: *std.StringHashMap(EventInfo),
         location: errors.SourceLocation,
-        parent_context: ?*const BindingContext  // Optional parent context to inherit from
+        parent_context: ?*const BindingContext,  // Optional parent context to inherit from
+        implementing_event: ?*const ast.EventDecl,  // Event this flow implements (for branch_constructor escape)
     ) !bool {
         var has_errors = false;
 
@@ -566,7 +594,7 @@ pub const PhantomSemanticChecker = struct {
             }
             // Validate nested continuations recursively
             for (cont.continuations) |*nested| {
-                const nested_valid = try self.validateContinuation(nested, event_decl, event_module, flow_module, event_map, location, &void_context);
+                const nested_valid = try self.validateContinuation(nested, event_decl, event_module, flow_module, event_map, location, &void_context, implementing_event);
                 if (!nested_valid) {
                     return false;
                 }
@@ -580,7 +608,7 @@ pub const PhantomSemanticChecker = struct {
             std.debug.print("[PHANTOM-FLOW]   (catch-all continuation - skipping branch validation)\n", .{});
             // Still validate nested continuations if present
             for (cont.continuations) |*nested| {
-                const nested_valid = try self.validateContinuation(nested, event_decl, event_module, flow_module, event_map, location, null);
+                const nested_valid = try self.validateContinuation(nested, event_decl, event_module, flow_module, event_map, location, null, implementing_event);
                 if (!nested_valid) {
                     return false;
                 }
@@ -629,8 +657,10 @@ pub const PhantomSemanticChecker = struct {
             BindingContext.init(self.allocator);
         defer context.deinit();
 
-        if (cont.binding) |binding_name| {
-            // Add binding with phantom states from branch payload
+        // Add binding with phantom states from branch payload
+        // If there's no explicit binding, synthesize "_" to track the obligation
+        const binding_name = cont.binding orelse "_";
+        {
             for (branch_payload.?.fields) |field| {
                 if (field.phantom) |phantom_str| {
                     // Construct field access: binding.field_name
@@ -708,15 +738,18 @@ pub const PhantomSemanticChecker = struct {
             }
         }
 
-        // Check for terminator: pipeline contains a 'terminal' step OR (empty pipeline AND no nested continuations)
+        // Check for terminator: pipeline contains a 'terminal' step, 'branch_constructor' step,
+        // OR (empty pipeline AND no nested continuations)
+        // Branch constructors are ALSO flow terminators - they end the flow and return a value.
         var is_terminator = cont.node == null and cont.continuations.len == 0;
         if (cont.node) |step| {
-            if (step == .terminal) {
+            if (step == .terminal or step == .branch_constructor) {
                 is_terminator = true;
             }
         }
         if (is_terminator) {
-            std.debug.print("[CLEANUP] Terminator detected (_), checking for uncleaned resources\n", .{});
+            const terminator_type = if (cont.node) |n| @tagName(n) else "empty";
+            std.debug.print("[CLEANUP] Terminator detected ({s}), checking for uncleaned resources\n", .{terminator_type});
             if (context.hasUncleanedResources()) {
                 const uncleaned = try context.getUncleanedResources(self.allocator);
                 defer self.allocator.free(uncleaned);
@@ -726,38 +759,77 @@ pub const PhantomSemanticChecker = struct {
                     std.debug.print("[CLEANUP]   - '{s}'\n", .{resource});
                 }
 
-                // Check if these obligations are documented in the branch signature
-                // If the branch returns fields with ! states, those obligations escape by design
+                // Determine what fields to check for documented escape.
+                // - For terminal (_): NO escape allowed
+                // - For branch_constructor: Check the IMPLEMENTING event's branch signature
+                // - For other terminators: Fall back to incoming branch_payload
+                const is_hard_terminal = if (cont.node) |node| node == .terminal else false;
+                const is_branch_constructor = if (cont.node) |node| node == .branch_constructor else false;
+
+                // For branch_constructor, find the return branch's fields from the implementing event
+                var return_branch_fields: ?[]const ast.Field = null;
+                if (is_branch_constructor) {
+                    if (cont.node) |node| {
+                        const bc = &node.branch_constructor;
+                        std.debug.print("[CLEANUP] Branch constructor returns '{s}'\n", .{bc.branch_name});
+
+                        if (implementing_event) |impl_ev| {
+                            // Find the branch in the implementing event's declaration
+                            for (impl_ev.branches) |branch| {
+                                if (std.mem.eql(u8, branch.name, bc.branch_name)) {
+                                    return_branch_fields = branch.payload.fields;
+                                    std.debug.print("[CLEANUP]   Found return branch '{s}' with {} fields\n", .{bc.branch_name, branch.payload.fields.len});
+                                    break;
+                                }
+                            }
+                            if (return_branch_fields == null) {
+                                std.debug.print("[CLEANUP]   WARNING: Branch '{s}' not found in implementing event\n", .{bc.branch_name});
+                            }
+                        } else {
+                            std.debug.print("[CLEANUP]   No implementing_event - cannot check return signature\n", .{});
+                        }
+                    }
+                }
+
                 var lost_count: usize = 0;
                 var first_lost: ?[]const u8 = null;
 
                 for (uncleaned) |resource| {
-                    // Check if this resource is in the branch payload with a ! state
+                    // For hard terminals (_), all uncleaned resources are errors
                     var documented_escape = false;
 
-                    for (branch_payload.?.fields) |field| {
-                        if (field.phantom) |phantom_str| {
-                            // Parse to check for ! suffix
-                            var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
-                            defer phantom.deinit(self.allocator);
+                    // Only check for escape through signature if NOT a hard terminal
+                    if (!is_hard_terminal) {
+                        // Use return_branch_fields if available (branch_constructor case),
+                        // otherwise fall back to incoming branch_payload
+                        const fields_to_check = return_branch_fields orelse (if (branch_payload) |bp| bp.fields else null);
 
-                            switch (phantom) {
-                                .concrete => |concrete| {
-                                    if (concrete.requires_cleanup) {
-                                        // This field has ! in the signature
-                                        // Check if it matches our uncleaned resource
-                                        // Resource is "binding.field", so extract the field name
-                                        if (std.mem.lastIndexOf(u8, resource, ".")) |dot_idx| {
-                                            const resource_field = resource[dot_idx + 1..];
-                                            if (std.mem.eql(u8, resource_field, field.name)) {
-                                                documented_escape = true;
-                                                std.debug.print("[CLEANUP]   '{s}' escapes through signature field '{s}' with [!]\n", .{resource, field.name});
-                                                break;
+                        if (fields_to_check) |fields| {
+                            for (fields) |field| {
+                                if (field.phantom) |phantom_str| {
+                                    // Parse to check for ! suffix
+                                    var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
+                                    defer phantom.deinit(self.allocator);
+
+                                    switch (phantom) {
+                                        .concrete => |concrete| {
+                                            if (concrete.requires_cleanup) {
+                                                // This field has ! in the signature
+                                                // Check if it matches our uncleaned resource
+                                                // Resource is "binding.field", so extract the field name
+                                                if (std.mem.lastIndexOf(u8, resource, ".")) |dot_idx| {
+                                                    const resource_field = resource[dot_idx + 1..];
+                                                    if (std.mem.eql(u8, resource_field, field.name)) {
+                                                        documented_escape = true;
+                                                        std.debug.print("[CLEANUP]   '{s}' escapes through signature field '{s}' with [!]\n", .{resource, field.name});
+                                                        break;
+                                                    }
+                                                }
                                             }
-                                        }
+                                        },
+                                        .variable => {},
                                     }
-                                },
-                                .variable => {},
+                                }
                             }
                         }
                     }
@@ -777,25 +849,35 @@ pub const PhantomSemanticChecker = struct {
 
                     // Report error for each lost obligation
                     // (This is a safety net - inserter should have handled or errored)
+
+                    // Use the same fields we used for detection
+                    const fields_for_error = return_branch_fields orelse (if (branch_payload) |bp| bp.fields else null);
+
                     for (uncleaned) |resource| {
                         // Skip if it escapes through signature
                         var escapes = false;
-                        for (branch_payload.?.fields) |field| {
-                            if (field.phantom) |phantom_str| {
-                                var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
-                                defer phantom.deinit(self.allocator);
-                                switch (phantom) {
-                                    .concrete => |concrete| {
-                                        if (concrete.requires_cleanup) {
-                                            if (std.mem.lastIndexOf(u8, resource, ".")) |dot_idx| {
-                                                if (std.mem.eql(u8, resource[dot_idx + 1..], field.name)) {
-                                                    escapes = true;
-                                                    break;
+
+                        // For hard terminals, nothing escapes
+                        if (!is_hard_terminal) {
+                            if (fields_for_error) |fields| {
+                                for (fields) |field| {
+                                    if (field.phantom) |phantom_str| {
+                                        var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
+                                        defer phantom.deinit(self.allocator);
+                                        switch (phantom) {
+                                            .concrete => |concrete| {
+                                                if (concrete.requires_cleanup) {
+                                                    if (std.mem.lastIndexOf(u8, resource, ".")) |dot_idx| {
+                                                        if (std.mem.eql(u8, resource[dot_idx + 1..], field.name)) {
+                                                            escapes = true;
+                                                            break;
+                                                        }
+                                                    }
                                                 }
-                                            }
+                                            },
+                                            .variable => {},
                                         }
-                                    },
-                                    .variable => {},
+                                    }
                                 }
                             }
                         }
@@ -866,7 +948,7 @@ pub const PhantomSemanticChecker = struct {
                 // Validate nested continuations against the invoked event (not parent event)
                 // Pass the current context down so disposed bindings propagate
                 for (cont.continuations) |nested| {
-                    const nested_valid = try self.validateContinuation(&nested, nested_event_info.decl, module_name, flow_module, event_map, location, &context);
+                    const nested_valid = try self.validateContinuation(&nested, nested_event_info.decl, module_name, flow_module, event_map, location, &context, implementing_event);
                     if (!nested_valid) {
                         has_errors = true;
                         // Continue checking for more errors
@@ -876,7 +958,7 @@ pub const PhantomSemanticChecker = struct {
                 // No invocations in pipeline - nested continuations still belong to parent event
                 std.debug.print("[PHANTOM-FLOW]   No invocations in pipeline, nested continuations belong to parent event\n", .{});
                 for (cont.continuations) |nested| {
-                    const nested_valid = try self.validateContinuation(&nested, event_decl, event_module, flow_module, event_map, location, &context);
+                    const nested_valid = try self.validateContinuation(&nested, event_decl, event_module, flow_module, event_map, location, &context, implementing_event);
                     if (!nested_valid) {
                         has_errors = true;
                         // Continue checking for more errors
