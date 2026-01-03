@@ -179,6 +179,44 @@ fn walkNode(
         std.debug.print("[WALK] -> No transform/expand match\n", .{});
     }
 
+    // Check for declaration-level transforms on event declarations
+    // This enables [transform(EBNF)] on ~event declarations to generate code from the declaration
+    if (node == .item) {
+        if (node.item.* == .event_decl) {
+            const event_decl = &node.item.event_decl;
+
+            // Check for [transform(X)] annotation
+            if (annotation_parser.getCall(allocator, event_decl.annotations, "transform") catch null) |call| {
+                defer {
+                    var mutable_call = call;
+                    mutable_call.deinit(allocator);
+                }
+
+                // Get the transform handler name from first arg
+                if (call.args.len > 0) {
+                    const handler_name = call.args[0];
+                    std.debug.print("[WALK] Declaration transform: {s} on event\n", .{handler_name});
+
+                    // Find matching transform handler
+                    for (transforms) |transform| {
+                        if (std.mem.eql(u8, transform.name, handler_name)) {
+                            std.debug.print("[WALK] -> Matched declaration transform: {s}\n", .{handler_name});
+                            const transformed = try transform.handler_fn(node, program, allocator);
+
+                            if (transformed == program) {
+                                std.debug.print("ERROR: Declaration transform '{s}' returned same program pointer!\n", .{handler_name});
+                                return error.TransformReturnedSamePointer;
+                            }
+
+                            return WalkResult{ .found = true, .program = transformed };
+                        }
+                    }
+                    std.debug.print("[WALK] -> No handler found for declaration transform: {s}\n", .{handler_name});
+                }
+            }
+        }
+    }
+
     // No transform found at this node
     return WalkResult{ .found = false, .program = program };
 }

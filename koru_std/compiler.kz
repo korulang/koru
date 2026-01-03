@@ -1339,7 +1339,6 @@ const joinPath = struct {
 
     // Check if warnings are enabled for auto-dispose
     const warn_mode = CompilerEnv.hasFlag("auto-dispose=warn");
-    _ = warn_mode; // Passed to inserter via reporter context (see auto_dispose_inserter.zig)
 
     var mutable_ctx = ctx;
 
@@ -1360,10 +1359,11 @@ const joinPath = struct {
     };
     defer reporter.deinit();
 
-    // Create inserter
+    // Create inserter with warn_mode flag
     var inserter = auto_dispose_inserter.AutoDisposeInserter.init(
         std.heap.page_allocator,
-        &reporter
+        &reporter,
+        warn_mode,
     ) catch {
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
             .message = "Failed to initialize auto-dispose inserter",

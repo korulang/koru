@@ -7,6 +7,34 @@
 
 # Koru Language Reference (Zig Superset)
 
+## THE MOST IMPORTANT RULE
+
+**`~` is ONLY for top-level declarations and flow starts. NEVER use `~` inside a flow.**
+
+```koru
+// CORRECT:
+~proc main {}
+| done |>
+    some_event(x: 1)        // No ~ inside flow!
+    | ok r |>
+        another(y: r.val)   // No ~ here either!
+
+// WRONG:
+~proc main {}
+| done |>
+    ~some_event(x: 1)       // WRONG! No ~ inside flows!
+    | ok r |>
+        ~another(y: r.val)  // WRONG!
+```
+
+The `~` prefix is used for:
+- `~event` - declare an event
+- `~proc` - declare a proc
+- `~import` - import a module
+- `~some_event()` - START a top-level flow
+
+Inside continuations (`|>`), just use the bare event name.
+
 ## Event Declarations
 Events define the "shape" of transitions. They can have input parameters and multiple output branches.
 

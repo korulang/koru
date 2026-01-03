@@ -19,6 +19,7 @@ pub const AutoDisposeInserter = struct {
     reporter: *errors.ErrorReporter,
     event_map: std.StringHashMap(EventInfo),
     synthetic_binding_counter: u32,
+    warn_mode: bool, // When true, emit warnings about auto-inserted disposals
 
     /// Error set for recursive functions that need explicit error types
     pub const RecursiveError = std.mem.Allocator.Error || error{ ValidationFailed, NoSpaceLeft };
@@ -197,12 +198,13 @@ pub const AutoDisposeInserter = struct {
         }
     };
 
-    pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) !AutoDisposeInserter {
+    pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter, warn_mode: bool) !AutoDisposeInserter {
         return .{
             .allocator = allocator,
             .reporter = reporter,
             .event_map = std.StringHashMap(EventInfo).init(allocator),
             .synthetic_binding_counter = 0,
+            .warn_mode = warn_mode,
         };
     }
 
@@ -300,14 +302,29 @@ pub const AutoDisposeInserter = struct {
                     const result = try self.checkAndTransformFlow(flow, program, item_idx);
                     if (result.transformed) return result;
                 },
+                .subflow_impl => {
+                    const subflow = &item.subflow_impl;
+                    if (subflow.body == .flow) {
+                        const flow = &subflow.body.flow;
+                        const result = try self.checkAndTransformFlow(flow, program, item_idx);
+                        if (result.transformed) return result;
+                    }
+                },
                 .module_decl => {
                     const module = &item.module_decl;
                     for (module.items, 0..) |*mod_item, mod_item_idx| {
+                        _ = mod_item_idx;
                         if (mod_item.* == .flow) {
                             const flow = &mod_item.flow;
-                            _ = mod_item_idx;
                             const result = try self.checkAndTransformFlow(flow, program, item_idx);
                             if (result.transformed) return result;
+                        } else if (mod_item.* == .subflow_impl) {
+                            const subflow = &mod_item.subflow_impl;
+                            if (subflow.body == .flow) {
+                                const flow = &subflow.body.flow;
+                                const result = try self.checkAndTransformFlow(flow, program, item_idx);
+                                if (result.transformed) return result;
+                            }
                         }
                     }
                 },
@@ -838,12 +855,14 @@ pub const AutoDisposeInserter = struct {
                 // Insert the disposal - this requires finding and replacing the continuation in the AST
                 const disposal = disposals[0];
 
-                // Emit warning about auto-dispose insertion
-                std.debug.print("warning[AUTO-DISPOSE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
-                    disposal.qualified_name,
-                    binding_path,
-                    info.phantom_state,
-                });
+                // Emit warning about auto-dispose insertion (only in warn mode)
+                if (self.warn_mode) {
+                    std.debug.print("warning[AUTO-DISPOSE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
+                        disposal.qualified_name,
+                        binding_path,
+                        info.phantom_state,
+                    });
+                }
 
                 // Create new continuation with disposal
                 const new_cont = try self.createDisposalContinuation(cont, binding_path, disposal);
@@ -991,12 +1010,14 @@ pub const AutoDisposeInserter = struct {
             // Exactly one disposal - insert it!
             const disposal = disposals[0];
 
-            // Emit warning about auto-dispose insertion
-            std.debug.print("warning[AUTO-DISPOSE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
-                disposal.qualified_name,
-                binding_path,
-                info.phantom_state,
-            });
+            // Emit warning about auto-dispose insertion (only in warn mode)
+            if (self.warn_mode) {
+                std.debug.print("warning[AUTO-DISPOSE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
+                    disposal.qualified_name,
+                    binding_path,
+                    info.phantom_state,
+                });
+            }
 
             // Create the transformed continuation
             const new_cont = try self.createDisposalContinuation(

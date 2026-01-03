@@ -1,0 +1,17 @@
+// TEST: Auto-dispose disabled via --auto-dispose=disable flag
+//
+// When auto-dispose is disabled, the phantom semantic checker should
+// report KORU030 for unsatisfied cleanup obligations.
+//
+// This test verifies that:
+// 1. The --auto-dispose=disable flag works
+// 2. The phantom checker correctly catches obligations when not auto-disposed
+//
+// Expected: KORU030 error for unsatisfied obligation
+
+~import "$app/fs"
+
+// Open a file but don't close it
+// Without auto-dispose, this should error
+~app.fs:open(path: "test.txt")
+| opened _ |> _

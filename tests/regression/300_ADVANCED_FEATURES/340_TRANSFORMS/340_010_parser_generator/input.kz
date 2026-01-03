@@ -1,0 +1,64 @@
+// TEST: Parser Generator from Event Schema
+//
+// ASPIRATIONAL - This is the dream syntax for generating parsers from type declarations.
+// The event declaration IS the grammar. Transforms generate the implementation.
+//
+// ~event token - pure schema, never invoked directly
+// ~event token.parse - generated parser (stream -> token branch)
+// ~event token.serialize - generated serializer (token -> bytes)
+
+~import "$koru/std"
+
+// Schema declaration - this event is NEVER invoked directly.
+// It exists purely as a type definition that transforms consume.
+// The phantom annotations carry regex patterns for the parser generator.
+//
+// Syntax: field: Type[regex|semantic_state]
+//   - regex: pattern to match (no quotes needed, bracket-counted)
+//   - semantic_state: optional obligation tracking (after |)
+
+~[transform(parser)]event token {}
+| number { value: u64[\d+] }
+| string { content: []const u8["[^"]*"] }
+| identifier { name: []const u8[[a-zA-Z_][a-zA-Z0-9_]*] }
+| lparen { _: void[(] }
+| rparen { _: void[)] }
+| plus { _: void[+] }
+| star { _: void[*] }
+| whitespace { _: void[\s+|skip] }  // 'skip' tells parser to consume but not emit
+
+// The [transform(parser)] annotation causes generation of:
+//
+// ~event token.parse { stream: []const u8 }
+// | number { value: u64, remaining: []const u8 }
+// | string { content: []const u8, remaining: []const u8 }
+// | identifier { name: []const u8, remaining: []const u8 }
+// | lparen { remaining: []const u8 }
+// | rparen { remaining: []const u8 }
+// | plus { remaining: []const u8 }
+// | star { remaining: []const u8 }
+// | whitespace { remaining: []const u8 }  // or skipped entirely?
+// | error { message: []const u8, position: usize }
+//
+// ~proc token.parse { stream }
+// | number |> ... regex match \d+, parse to u64 ...
+// | string |> ... regex match "[^"]*" ...
+// | error |> ... no pattern matched ...
+
+// Usage example - parsing a simple expression
+~proc main {}
+| done |>
+    token.parse(stream: "123 + foo")
+    | number n |>
+        std.io:print(message: "Got number: {n.value}")
+        token.parse(stream: n.remaining)
+        | plus _ |>
+            token.parse(stream: _.remaining)
+            | identifier id |>
+                std.io:print(message: "Got identifier: {id.name}")
+            | error e |>
+                std.io:print(message: "Parse error: {e.message}")
+        | error e |>
+            std.io:print(message: "Expected +, got error: {e.message}")
+    | error e |>
+        std.io:print(message: "Parse error at start: {e.message}")

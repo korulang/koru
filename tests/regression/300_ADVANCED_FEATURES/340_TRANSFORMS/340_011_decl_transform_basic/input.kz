@@ -1,0 +1,27 @@
+// TEST: Basic declaration-level transform
+//
+// Tests that [transform(X)] on an event declaration triggers the transform handler.
+// The transform handler receives the event_decl node and can generate new items.
+//
+// For this test, we use a hypothetical 'echo' transform that:
+// 1. Reads the event declaration
+// 2. Generates a simple proc that prints the event name
+//
+// This validates the declaration-level transform infrastructure without
+// needing a complex parser generator.
+
+~import "$koru/std"
+
+// Event with declaration-level transform
+// The 'echo' transform should generate: ~proc greet.info that prints "greet"
+~[transform(echo)]event greet {}
+| hello { name: []const u8 }
+| goodbye { name: []const u8 }
+
+// Use the generated proc
+~proc main {}
+| done |>
+    // This should print "Event: greet" if the transform worked
+    greet.info()
+    | done |>
+        std.io:print(message: "Transform worked!")

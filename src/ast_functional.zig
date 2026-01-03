@@ -225,8 +225,28 @@ fn replaceFlowInItems(
         } else if (item.* == .subflow_impl and item.subflow_impl.body == .flow and
             @intFromPtr(&item.subflow_impl.body.flow) == @intFromPtr(target_flow))
         {
-            // Found target flow inside subflow_impl - replace entire item
-            new_items[i] = new_item;
+            // Found target flow inside subflow_impl
+            // Check if caller already wrapped in subflow_impl (transforms do this)
+            if (new_item == .subflow_impl) {
+                // Caller already created proper subflow_impl wrapper - use it directly
+                new_items[i] = new_item;
+            } else if (new_item == .flow) {
+                // Caller passed bare flow - wrap it preserving original metadata
+                const orig = &item.subflow_impl;
+                new_items[i] = ast.Item{
+                    .subflow_impl = ast.SubflowImpl{
+                        .event_path = try cloneDottedPath(allocator, &orig.event_path),
+                        .body = .{ .flow = new_item.flow },
+                        .is_impl = orig.is_impl,
+                        .location = orig.location,
+                        .module = try allocator.dupe(u8, orig.module),
+                    },
+                };
+            } else {
+                // Unexpected item type - clone original
+                new_items[i] = try cloneItem(allocator, item);
+                continue;
+            }
             found = true;
         } else if (item.* == .module_decl) {
             // Recursively search inside module_decl
