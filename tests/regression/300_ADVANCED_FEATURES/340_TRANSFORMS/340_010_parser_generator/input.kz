@@ -50,15 +50,15 @@
 | done |>
     token.parse(stream: "123 + foo")
     | number n |>
-        std.io:print(message: "Got number: {n.value}")
+        std.io:print.ln("Got number: {{ n.value:d }}")
         token.parse(stream: n.remaining)
         | plus _ |>
             token.parse(stream: _.remaining)
             | identifier id |>
-                std.io:print(message: "Got identifier: {id.name}")
+                std.io:print.ln("Got identifier: {{ id.name:s }}")
             | error e |>
-                std.io:print(message: "Parse error: {e.message}")
+                std.io:print.ln("Parse error: {{ e.message:s }}")
         | error e |>
-            std.io:print(message: "Expected +, got error: {e.message}")
+            std.io:print.ln("Expected +, got error: {{ e.message:s }}")
     | error e |>
-        std.io:print(message: "Parse error at start: {e.message}")
+        std.io:print.ln("Parse error at start: {{ e.message:s }}")

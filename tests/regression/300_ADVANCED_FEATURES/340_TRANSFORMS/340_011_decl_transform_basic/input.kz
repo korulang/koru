@@ -24,4 +24,4 @@
     // This should print "Event: greet" if the transform worked
     greet.info()
     | done |>
-        std.io:print(message: "Transform worked!")
+        std.io:println(text: "Transform worked!")
