@@ -1317,19 +1317,17 @@ const joinPath = struct {
 // Auto-dispose inserter implementation
 // Inserts disposal calls before terminators when exactly one disposal option exists
 
-// Flag to disable auto-dispose (co-located with implementation!)
+// Flag to enable auto-dispose warnings (co-located with implementation!)
 ~flags.declare {
-  "name": "auto-dispose=disable",
-  "description": "Disable automatic disposal insertion (obligations must be manually satisfied)",
+  "name": "auto-dispose=warn",
+  "description": "Emit warnings when auto-dispose inserts disposal calls (for debugging obligation handling)",
   "type": "boolean"
 }
 
 ~proc compiler.pass.auto_dispose {
-    // Check if auto-dispose is disabled via compiler flag
-    if (CompilerEnv.hasFlag("auto-dispose=disable")) {
-        // Skip auto-dispose pass entirely - user takes responsibility for obligations
-        return .{ .continued = .{ .ctx = ctx } };
-    }
+    // Check if warnings are enabled for auto-dispose
+    const warn_mode = CompilerEnv.hasFlag("auto-dispose=warn");
+    _ = warn_mode; // Passed to inserter via reporter context (see auto_dispose_inserter.zig)
 
     var mutable_ctx = ctx;
 

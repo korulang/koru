@@ -835,6 +835,13 @@ pub const AutoDisposeInserter = struct {
                 // Insert the disposal - this requires finding and replacing the continuation in the AST
                 const disposal = disposals[0];
 
+                // Emit warning about auto-dispose insertion
+                std.debug.print("warning[AUTO-DISPOSE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
+                    disposal.qualified_name,
+                    binding_path,
+                    info.phantom_state,
+                });
+
                 // Create new continuation with disposal
                 const new_cont = try self.createDisposalContinuation(cont, binding_path, disposal);
 
@@ -981,6 +988,12 @@ pub const AutoDisposeInserter = struct {
             // Exactly one disposal - insert it!
             const disposal = disposals[0];
 
+            // Emit warning about auto-dispose insertion
+            std.debug.print("warning[AUTO-DISPOSE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
+                disposal.qualified_name,
+                binding_path,
+                info.phantom_state,
+            });
 
             // Create the transformed continuation
             const new_cont = try self.createDisposalContinuation(
