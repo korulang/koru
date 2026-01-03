@@ -19,3 +19,13 @@ const File = struct { handle: i32 };
     std.debug.print("Closing file\n", .{});
     return .{ .closed = .{} };
 }
+
+// Subflow that opens a file and returns it with obligation
+// The obligation escapes via the return signature - caller must handle it
+~pub event my_subflow {}
+| file_opened { file: *File[opened!] }
+
+// SUBFLOW: Delegates to open, maps opened → file_opened
+// The [opened!] obligation passes through to the caller
+~my_subflow = open(path: "data.txt")
+| opened f |> file_opened { file: f.file }
