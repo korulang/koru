@@ -1,0 +1,20 @@
+const std = @import("std");
+const File = struct { handle: i32 };
+
+~pub event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    std.debug.print("Opening file: {s}\n", .{path});
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+~pub event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.debug.print("Closing file (auto-disposed)\n", .{});
+    return .{ .closed = .{} };
+}

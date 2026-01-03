@@ -300,6 +300,15 @@ pub const AutoDisposeInserter = struct {
                     const result = try self.checkAndTransformFlow(flow, program, item_idx);
                     if (result.transformed) return result;
                 },
+                .subflow_impl => {
+                    // Subflows with flow bodies also need auto-dispose processing
+                    const subflow = &item.subflow_impl;
+                    if (subflow.body == .flow) {
+                        const flow = &subflow.body.flow;
+                        const result = try self.checkAndTransformFlow(flow, program, item_idx);
+                        if (result.transformed) return result;
+                    }
+                },
                 .module_decl => {
                     const module = &item.module_decl;
                     for (module.items, 0..) |*mod_item, mod_item_idx| {
@@ -308,6 +317,15 @@ pub const AutoDisposeInserter = struct {
                             _ = mod_item_idx;
                             const result = try self.checkAndTransformFlow(flow, program, item_idx);
                             if (result.transformed) return result;
+                        }
+                        // Also check subflows in modules
+                        if (mod_item.* == .subflow_impl) {
+                            const subflow = &mod_item.subflow_impl;
+                            if (subflow.body == .flow) {
+                                const flow = &subflow.body.flow;
+                                const result = try self.checkAndTransformFlow(flow, program, item_idx);
+                                if (result.transformed) return result;
+                            }
                         }
                     }
                 },
@@ -461,9 +479,11 @@ pub const AutoDisposeInserter = struct {
             }
         }
 
-        // Check if this continuation has a terminal node
+        // Check if this continuation has a terminal node or branch constructor
+        // Both are flow terminators that should trigger auto-dispose
         if (cont.node) |node| {
-            if (node == .terminal) {
+            const is_terminator = (node == .terminal or node == .branch_constructor);
+            if (is_terminator) {
                 // Found a terminator - check for unsatisfied obligations
                 // Only dispose obligations from CURRENT scope
                 // Outer-scope obligations will be handled at a non-repeating terminal (like `done`)
@@ -662,7 +682,8 @@ pub const AutoDisposeInserter = struct {
 
         // Check if this continuation has a node
         if (cont.node) |node| {
-            if (node == .terminal) {
+            const is_terminator = (node == .terminal or node == .branch_constructor);
+            if (is_terminator) {
                 // Found a terminator - check for obligations to dispose
                 //
                 // NOTE: Pre-loop obligations in repeating context are OK here!
@@ -1117,20 +1138,21 @@ pub const AutoDisposeInserter = struct {
             break;
         }
 
-        // Create terminal continuation
-        var terminal_cont = try self.allocator.alloc(ast.Continuation, 1);
-        terminal_cont[0] = .{
+        // Create continuation after disposal - preserve original node (terminal OR branch_constructor)
+        // Use "_" as binding to suppress unused capture warnings
+        var after_disposal_cont = try self.allocator.alloc(ast.Continuation, 1);
+        after_disposal_cont[0] = .{
             .branch = try self.allocator.dupe(u8, disposal_branch),
-            .binding = null,
+            .binding = try self.allocator.dupe(u8, "_"),
             .binding_annotations = &[_][]const u8{},
             .condition = null,
-            .node = .terminal,
+            .node = original.node,  // Preserve original: .terminal OR .branch_constructor
             .indent = original.indent + 1,
             .continuations = &[_]ast.Continuation{},
             .location = original.location,
         };
 
-        // Return modified continuation with invocation instead of terminal
+        // Return modified continuation with invocation instead of original node
         return .{
             .branch = try self.allocator.dupe(u8, original.branch),
             .binding = if (original.binding) |b| try self.allocator.dupe(u8, b) else null,
@@ -1138,7 +1160,7 @@ pub const AutoDisposeInserter = struct {
             .condition = if (original.condition) |c| try self.allocator.dupe(u8, c) else null,
             .node = .{ .invocation = disposal_invocation },
             .indent = original.indent,
-            .continuations = terminal_cont,
+            .continuations = after_disposal_cont,
             .location = original.location,
         };
     }

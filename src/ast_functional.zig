@@ -225,8 +225,18 @@ fn replaceFlowInItems(
         } else if (item.* == .subflow_impl and item.subflow_impl.body == .flow and
             @intFromPtr(&item.subflow_impl.body.flow) == @intFromPtr(target_flow))
         {
-            // Found target flow inside subflow_impl - replace entire item
-            new_items[i] = new_item;
+            // Found target flow inside subflow_impl - create new subflow_impl with modified flow body
+            const orig_subflow = &item.subflow_impl;
+            const new_flow = if (new_item == .flow) &new_item.flow else unreachable;
+            new_items[i] = ast.Item{
+                .subflow_impl = ast.SubflowImpl{
+                    .event_path = try cloneDottedPath(allocator, &orig_subflow.event_path),
+                    .body = .{ .flow = new_flow.* },
+                    .is_impl = orig_subflow.is_impl,
+                    .location = orig_subflow.location,
+                    .module = try allocator.dupe(u8, orig_subflow.module),
+                },
+            };
             found = true;
         } else if (item.* == .module_decl) {
             // Recursively search inside module_decl
