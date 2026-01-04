@@ -288,11 +288,17 @@ const std = @import("std");
                 }
             }
 
+            // Add @scope annotation to mark this as a scope boundary for obligation tracking.
+            // Tap code runs in its own scope - it can observe but cannot satisfy outer obligations.
+            const scope_annotations = alloc.alloc([]const u8, 1) catch unreachable;
+            scope_annotations[0] = alloc.dupe(u8, "@scope") catch unreachable;
+
             // Return wrapped continuation
             return ast.Continuation{
                 .branch = original.branch,
                 .binding = effective_binding,
                 .binding_type = original.binding_type,
+                .binding_annotations = scope_annotations,
                 .node = rewritten_step,
                 .continuations = final_conts,
                 .indent = original.indent,

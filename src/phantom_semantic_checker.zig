@@ -227,6 +227,7 @@ pub const PhantomSemanticChecker = struct {
         bindings: std.StringHashMap([]const u8), // variable name → phantom state string
         cleanup_obligations: std.StringHashMap(void), // track bindings with ! states that need cleanup
         disposed_bindings: std.StringHashMap(void), // track bindings that have been disposed (poisoned)
+        outer_scope_obligations: std.StringHashMap(void), // track obligations from outside @scope boundary
         allocator: std.mem.Allocator,
 
         fn init(allocator: std.mem.Allocator) BindingContext {
@@ -234,6 +235,7 @@ pub const PhantomSemanticChecker = struct {
                 .bindings = std.StringHashMap([]const u8).init(allocator),
                 .cleanup_obligations = std.StringHashMap(void).init(allocator),
                 .disposed_bindings = std.StringHashMap(void).init(allocator),
+                .outer_scope_obligations = std.StringHashMap(void).init(allocator),
                 .allocator = allocator,
             };
         }
@@ -259,6 +261,13 @@ pub const PhantomSemanticChecker = struct {
                 self.allocator.free(key.*);
             }
             self.disposed_bindings.deinit();
+
+            // Free outer scope obligation keys
+            var outer_iter = self.outer_scope_obligations.keyIterator();
+            while (outer_iter.next()) |key| {
+                self.allocator.free(key.*);
+            }
+            self.outer_scope_obligations.deinit();
         }
 
         fn set(self: *BindingContext, name: []const u8, phantom_state: []const u8) !void {
@@ -320,6 +329,56 @@ pub const PhantomSemanticChecker = struct {
                 try child.disposed_bindings.put(key_copy, {});
             }
 
+            // Inherit outer scope obligations (already marked as outer)
+            var outer_iter = parent.outer_scope_obligations.keyIterator();
+            while (outer_iter.next()) |key| {
+                const key_copy = try allocator.dupe(u8, key.*);
+                try child.outer_scope_obligations.put(key_copy, {});
+            }
+
+            return child;
+        }
+
+        /// Create a child context that marks all inherited cleanup obligations as "outer scope"
+        /// Used when entering a @scope boundary - these obligations cannot be satisfied inside the scope
+        fn inheritWithScope(parent: *const BindingContext, allocator: std.mem.Allocator) !BindingContext {
+            var child = BindingContext.init(allocator);
+
+            // Inherit all bindings
+            var bind_iter = parent.bindings.iterator();
+            while (bind_iter.next()) |entry| {
+                const key = try allocator.dupe(u8, entry.key_ptr.*);
+                const value = try allocator.dupe(u8, entry.value_ptr.*);
+                try child.bindings.put(key, value);
+            }
+
+            // Inherit cleanup obligations AND mark them as outer scope
+            var clean_iter = parent.cleanup_obligations.keyIterator();
+            while (clean_iter.next()) |key| {
+                const key_copy = try allocator.dupe(u8, key.*);
+                try child.cleanup_obligations.put(key_copy, {});
+                // Mark as outer scope - these cannot be satisfied inside @scope
+                const outer_key = try allocator.dupe(u8, key.*);
+                try child.outer_scope_obligations.put(outer_key, {});
+                std.debug.print("[SCOPE] Marking '{s}' as outer-scope obligation\n", .{key.*});
+            }
+
+            // Inherit disposed bindings
+            var disposed_iter = parent.disposed_bindings.keyIterator();
+            while (disposed_iter.next()) |key| {
+                const key_copy = try allocator.dupe(u8, key.*);
+                try child.disposed_bindings.put(key_copy, {});
+            }
+
+            // Also inherit any already-marked outer scope obligations from parent
+            var outer_iter = parent.outer_scope_obligations.keyIterator();
+            while (outer_iter.next()) |key| {
+                if (!child.outer_scope_obligations.contains(key.*)) {
+                    const key_copy = try allocator.dupe(u8, key.*);
+                    try child.outer_scope_obligations.put(key_copy, {});
+                }
+            }
+
             return child;
         }
 
@@ -360,6 +419,47 @@ pub const PhantomSemanticChecker = struct {
                 list[i] = key.*;
             }
             return list;
+        }
+
+        /// Check if there are any outer-scope uncleaned resources
+        /// These are obligations from outside a @scope boundary that cannot be satisfied inside
+        fn hasOuterScopeObligations(self: *BindingContext) bool {
+            // Check if any uncleaned resource is also marked as outer scope
+            var iter = self.cleanup_obligations.keyIterator();
+            while (iter.next()) |key| {
+                if (self.outer_scope_obligations.contains(key.*)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// Get list of outer-scope uncleaned resources (for error reporting)
+        fn getOuterScopeObligations(self: *BindingContext, allocator: std.mem.Allocator) ![][]const u8 {
+            var count: usize = 0;
+            var iter = self.cleanup_obligations.keyIterator();
+            while (iter.next()) |key| {
+                if (self.outer_scope_obligations.contains(key.*)) {
+                    count += 1;
+                }
+            }
+            if (count == 0) return &[_][]const u8{};
+
+            var list = try allocator.alloc([]const u8, count);
+            iter = self.cleanup_obligations.keyIterator();
+            var i: usize = 0;
+            while (iter.next()) |key| {
+                if (self.outer_scope_obligations.contains(key.*)) {
+                    list[i] = key.*;
+                    i += 1;
+                }
+            }
+            return list;
+        }
+
+        /// Check if a specific obligation is from outer scope
+        fn isOuterScope(self: *BindingContext, name: []const u8) bool {
+            return self.outer_scope_obligations.contains(name);
         }
     };
 
@@ -1022,6 +1122,22 @@ pub const PhantomSemanticChecker = struct {
                 }
                 return !has_errors;
             },
+            .foreach => |fe| {
+                std.debug.print("[PHANTOM-FLOW] Validating foreach with {} branches\n", .{fe.branches.len});
+                for (fe.branches) |*branch| {
+                    const branch_valid = try self.validateNamedBranchRecursive(branch, context, event_map, current_module, location);
+                    if (!branch_valid) has_errors = true;
+                }
+                return !has_errors;
+            },
+            .conditional => |cond| {
+                std.debug.print("[PHANTOM-FLOW] Validating conditional with {} branches\n", .{cond.branches.len});
+                for (cond.branches) |*branch| {
+                    const branch_valid = try self.validateNamedBranchRecursive(branch, context, event_map, current_module, location);
+                    if (!branch_valid) has_errors = true;
+                }
+                return !has_errors;
+            },
             .branch_constructor => |bc| {
                 // Validate phantom states in inline branch construction
                 for (bc.fields) |field| {
@@ -1036,6 +1152,145 @@ pub const PhantomSemanticChecker = struct {
                 return true;
             },
         }
+    }
+
+    /// Validate a NamedBranch (from foreach or conditional)
+    /// Handles @scope annotations to track outer-scope obligations
+    /// This function does NOT call validateStep to avoid mutual recursion
+    fn validateNamedBranchRecursive(
+        self: *PhantomSemanticChecker,
+        branch: *const ast.NamedBranch,
+        parent_context: *BindingContext,
+        event_map: *std.StringHashMap(EventInfo),
+        current_module: ?[]const u8,
+        location: errors.SourceLocation
+    ) !bool {
+        var has_errors = false;
+
+        // Check if this branch has @scope annotation
+        const has_scope = blk: {
+            for (branch.annotations) |ann| {
+                if (std.mem.eql(u8, ann, "@scope")) {
+                    break :blk true;
+                }
+            }
+            break :blk false;
+        };
+
+        std.debug.print("[PHANTOM-FLOW] Validating branch '{s}' (has_scope={}, {} continuations)\n", .{branch.name, has_scope, branch.body.len});
+
+        // Create context for this branch
+        // If @scope, use inheritWithScope to mark existing obligations as outer-scope
+        var branch_context = if (has_scope)
+            try BindingContext.inheritWithScope(parent_context, self.allocator)
+        else
+            try BindingContext.inherit(parent_context, self.allocator);
+        defer branch_context.deinit();
+
+        // Validate each continuation in the branch body
+        for (branch.body) |*cont| {
+            // Check for terminator with outer-scope obligations
+            const is_terminator = cont.node == null and cont.continuations.len == 0 or
+                (if (cont.node) |step| step == .terminal else false);
+
+            if (is_terminator and has_scope) {
+                // Inside @scope at terminator - check for outer-scope obligations
+                if (branch_context.hasOuterScopeObligations()) {
+                    const outer_obligations = try branch_context.getOuterScopeObligations(self.allocator);
+                    defer self.allocator.free(outer_obligations);
+
+                    for (outer_obligations) |resource| {
+                        const phantom_state = branch_context.get(resource) orelse "unknown";
+                        std.debug.print("[SCOPE] ❌ ERROR: Outer-scope obligation '{s}' [{s}] cannot be satisfied inside @scope\n", .{resource, phantom_state});
+                        try self.reporter.addError(
+                            .KORU032, // Scope error
+                            location.line,
+                            location.column,
+                            "Cannot satisfy outer-scope obligation '{s}' [{s}] inside @scope boundary (loop/tap body). Move the resource creation inside the scope or handle it after the scope.",
+                            .{resource, phantom_state}
+                        );
+                        has_errors = true;
+                    }
+                }
+            }
+
+            // Validate the step if present - handle recursively for nested structures
+            if (cont.node) |step| {
+                switch (step) {
+                    .foreach => |fe| {
+                        for (fe.branches) |*inner_branch| {
+                            const valid = try self.validateNamedBranchRecursive(inner_branch, &branch_context, event_map, current_module, location);
+                            if (!valid) has_errors = true;
+                        }
+                    },
+                    .conditional => |cond| {
+                        for (cond.branches) |*inner_branch| {
+                            const valid = try self.validateNamedBranchRecursive(inner_branch, &branch_context, event_map, current_module, location);
+                            if (!valid) has_errors = true;
+                        }
+                    },
+                    .invocation => |inv| {
+                        const valid = try self.validateSingleInvocation(&inv, &branch_context, event_map, current_module, location);
+                        if (!valid) has_errors = true;
+                    },
+                    else => {
+                        // Other step types (terminal, inline_code, etc.) don't need recursive validation
+                    },
+                }
+            }
+
+            // Recursively validate nested continuations
+            for (cont.continuations) |*nested| {
+                // For nested continuations, check for terminator with outer-scope obligations
+                const nested_is_terminator = nested.node == null and nested.continuations.len == 0 or
+                    (if (nested.node) |step| step == .terminal else false);
+
+                if (nested_is_terminator and has_scope) {
+                    if (branch_context.hasOuterScopeObligations()) {
+                        const outer_obligations = try branch_context.getOuterScopeObligations(self.allocator);
+                        defer self.allocator.free(outer_obligations);
+
+                        for (outer_obligations) |resource| {
+                            const phantom_state = branch_context.get(resource) orelse "unknown";
+                            std.debug.print("[SCOPE] ❌ ERROR: Outer-scope obligation '{s}' [{s}] cannot be satisfied inside @scope\n", .{resource, phantom_state});
+                            try self.reporter.addError(
+                                .KORU032,
+                                location.line,
+                                location.column,
+                                "Cannot satisfy outer-scope obligation '{s}' [{s}] inside @scope boundary. Move the resource creation inside the scope or handle it after the scope.",
+                                .{resource, phantom_state}
+                            );
+                            has_errors = true;
+                        }
+                    }
+                }
+
+                // Validate nested step - handle recursively for nested structures
+                if (nested.node) |step| {
+                    switch (step) {
+                        .foreach => |fe| {
+                            for (fe.branches) |*inner_branch| {
+                                const valid = try self.validateNamedBranchRecursive(inner_branch, &branch_context, event_map, current_module, location);
+                                if (!valid) has_errors = true;
+                            }
+                        },
+                        .conditional => |cond| {
+                            for (cond.branches) |*inner_branch| {
+                                const valid = try self.validateNamedBranchRecursive(inner_branch, &branch_context, event_map, current_module, location);
+                                if (!valid) has_errors = true;
+                            }
+                        },
+                        .invocation => |inv| {
+                            const valid = try self.validateSingleInvocation(&inv, &branch_context, event_map, current_module, location);
+                            if (!valid) has_errors = true;
+                        },
+                        else => {},
+                    }
+                }
+            }
+        }
+
+        return !has_errors;
     }
 
     fn validateSingleInvocation(

@@ -37,6 +37,24 @@ pub const AutoDisposeInserter = struct {
         field_name: []const u8,
     };
 
+    /// Check if a continuation has @scope annotation (marks scope boundary)
+    fn hasScope(cont: *const ast.Continuation) bool {
+        for (cont.binding_annotations) |ann| {
+            if (std.mem.eql(u8, ann, "@scope")) return true;
+        }
+        return false;
+    }
+
+    /// Check if a NamedBranch has @scope annotation (marks scope boundary)
+    fn branchHasScope(branch: *const ast.NamedBranch) bool {
+        std.debug.print("[SCOPE] Checking NamedBranch '{s}' for @scope, has {d} annotations\n", .{branch.name, branch.annotations.len});
+        for (branch.annotations) |ann| {
+            std.debug.print("[SCOPE]   annotation: '{s}'\n", .{ann});
+            if (std.mem.eql(u8, ann, "@scope")) return true;
+        }
+        return false;
+    }
+
     /// Binding context tracks phantom states of variables in scope
     const BindingContext = struct {
         bindings: std.StringHashMap([]const u8), // variable name → phantom state
@@ -389,13 +407,14 @@ pub const AutoDisposeInserter = struct {
         defer context.deinit();
 
         for (flow.continuations) |*cont| {
-            // If this is a loop flow and we're in the "each" branch, enter a new scope
-            if (is_loop_flow and std.mem.eql(u8, cont.branch, "each")) {
-                var loop_context = try context.clone(self.allocator);
-                defer loop_context.deinit();
-                loop_context.enterScope(true); // Repeating scope
+            // If this continuation has @scope annotation, enter a new scope
+            // (replaces old "each" branch name check - now uses annotation)
+            if (hasScope(cont)) {
+                var scoped_context = try context.clone(self.allocator);
+                defer scoped_context.deinit();
+                scoped_context.enterScope(is_loop_flow); // Repeating if it's a loop
 
-                const result = try self.checkContinuation(cont, event_info.decl, module_name, &loop_context, program, flow);
+                const result = try self.checkContinuation(cont, event_info.decl, module_name, &scoped_context, program, flow);
                 if (result.transformed) return result;
             } else {
                 const result = try self.checkContinuation(cont, event_info.decl, module_name, &context, program, flow);
@@ -564,14 +583,14 @@ pub const AutoDisposeInserter = struct {
                 }
             }
 
-            // If this is a loop invocation and we're entering the "each" branch,
-            // treat it as a scope boundary (before the transform creates ForeachNode)
-            if (is_loop_invocation and std.mem.eql(u8, nested.branch, "each")) {
-                var loop_context = try context.clone(self.allocator);
-                defer loop_context.deinit();
-                loop_context.enterScope(true); // Repeating scope
+            // If this continuation has @scope annotation, treat it as a scope boundary
+            // (replaces old "each" branch name check - now uses annotation)
+            if (hasScope(nested)) {
+                var scoped_context = try context.clone(self.allocator);
+                defer scoped_context.deinit();
+                scoped_context.enterScope(is_loop_invocation); // Repeating if it's a loop
 
-                const result = try self.checkContinuation(nested, nested_event, nested_module, &loop_context, program, flow);
+                const result = try self.checkContinuation(nested, nested_event, nested_module, &scoped_context, program, flow);
                 if (result.transformed) return result;
             } else {
                 const result = try self.checkContinuation(nested, nested_event, nested_module, &context, program, flow);
@@ -602,18 +621,18 @@ pub const AutoDisposeInserter = struct {
 
         // Process each branch of the foreach
         for (branches) |*branch| {
-            // The "each" branch is the repeating scope boundary
-            const is_each_branch = std.mem.eql(u8, branch.name, "each");
+            // Check for @scope annotation (replaces old "each" branch name check)
+            const is_scope_boundary = branchHasScope(branch);
 
             // Clone context and set up scope for this branch
             var branch_context = try parent_context.clone(self.allocator);
             defer branch_context.deinit();
 
-            if (is_each_branch) {
-                // Enter a new repeating scope for the "each" branch (runs N times)
+            if (is_scope_boundary) {
+                // Enter a new repeating scope for branches with @scope (runs N times for loops)
                 branch_context.enterScope(true);
             }
-            // Note: branches without [@scope] stay at parent scope and is_repeating = false
+            // Note: branches without @scope stay at parent scope and is_repeating = false
             // (unless parent was already repeating, which is inherited via clone)
 
             // Process continuations in this branch
@@ -1267,11 +1286,17 @@ pub const AutoDisposeInserter = struct {
                     for (branch.body, 0..) |*body_cont, bci| {
                         new_body[bci] = try self.replaceContinuationInTree(body_cont, old_cont, new_cont);
                     }
+                    // Clone annotations (critical for @scope)
+                    var cloned_anns = try self.allocator.alloc([]const u8, branch.annotations.len);
+                    for (branch.annotations, 0..) |ann, ai| {
+                        cloned_anns[ai] = try self.allocator.dupe(u8, ann);
+                    }
                     new_branches[bi] = .{
                         .name = try self.allocator.dupe(u8, branch.name),
                         .body = new_body,
                         .binding = if (branch.binding) |b| try self.allocator.dupe(u8, b) else null,
                         .is_optional = branch.is_optional,
+                        .annotations = cloned_anns,
                     };
                 }
                 cloned.node = .{ .foreach = .{
@@ -1287,11 +1312,17 @@ pub const AutoDisposeInserter = struct {
                     for (branch.body, 0..) |*body_cont, bci| {
                         new_body[bci] = try self.replaceContinuationInTree(body_cont, old_cont, new_cont);
                     }
+                    // Clone annotations (critical for @scope)
+                    var cloned_anns = try self.allocator.alloc([]const u8, branch.annotations.len);
+                    for (branch.annotations, 0..) |ann, ai| {
+                        cloned_anns[ai] = try self.allocator.dupe(u8, ann);
+                    }
                     new_branches[bi] = .{
                         .name = try self.allocator.dupe(u8, branch.name),
                         .body = new_body,
                         .binding = if (branch.binding) |b| try self.allocator.dupe(u8, b) else null,
                         .is_optional = branch.is_optional,
+                        .annotations = cloned_anns,
                     };
                 }
                 cloned.node = .{ .conditional = .{

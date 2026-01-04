@@ -1064,10 +1064,18 @@ fn cloneNamedBranch(allocator: std.mem.Allocator, branch: *const ast.NamedBranch
         cloned_body[i] = try cloneContinuation(allocator, cont);
     }
 
+    // Clone annotations (critical for @scope and other branch-level annotations)
+    var cloned_annotations = try allocator.alloc([]const u8, branch.annotations.len);
+    for (branch.annotations, 0..) |ann, i| {
+        cloned_annotations[i] = try allocator.dupe(u8, ann);
+    }
+
     return .{
         .name = try allocator.dupe(u8, branch.name),
         .body = cloned_body,
         .binding = if (branch.binding) |b| try allocator.dupe(u8, b) else null,
+        .is_optional = branch.is_optional,
+        .annotations = cloned_annotations,
     };
 }
 

@@ -409,15 +409,20 @@ const std = @import("std");
         const each_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
         each_body[0] = each_cont.?.*;
 
-        // Note: We used to add [@scope] annotation here, but annotations don't serialize
-        // correctly between frontend/backend. Instead, auto_dispose_inserter detects
-        // the "each" branch by name for scope boundary tracking.
+        // Add @scope annotation to mark this as a scope boundary for obligation tracking.
+        // Obligations created inside this scope must be satisfied here, and obligations
+        // from outer scopes cannot be satisfied inside this scope.
+        const scope_annotations = allocator.alloc([]const u8, 1) catch unreachable;
+        scope_annotations[0] = allocator.dupe(u8, "@scope") catch unreachable;
+        std.debug.print("[FOR-TRANSFORM] Setting @scope annotation on 'each' branch\n", .{});
 
         branches[0] = .{
             .name = "each",
             .body = each_body,
             .binding = each_binding,
+            .annotations = scope_annotations,
         };
+        std.debug.print("[FOR-TRANSFORM] Branch annotations len: {d}\n", .{branches[0].annotations.len});
 
         // Done branch if present - wrap full continuation
         if (done_cont) |dc| {
@@ -588,12 +593,18 @@ const std = @import("std");
         const branch_count: usize = if (search_result.done_cont != null) 2 else 1;
         const branches = allocator.alloc(ast.NamedBranch, branch_count) catch unreachable;
 
-        // Note: auto_dispose_inserter detects "each" branch by name for scope tracking
+        // Add @scope annotation to mark this as a scope boundary for obligation tracking
+        const scope_annotations = allocator.alloc([]const u8, 1) catch unreachable;
+        scope_annotations[0] = allocator.dupe(u8, "@scope") catch unreachable;
+        std.debug.print("[FOR-TRANSFORM-NESTED] Setting @scope annotation on 'each' branch\n", .{});
+
         branches[0] = .{
             .name = "each",
             .body = each_body,
             .binding = search_result.each_binding,  // The loop variable binding
+            .annotations = scope_annotations,
         };
+        std.debug.print("[FOR-TRANSFORM-NESTED] Branch annotations len: {d}\n", .{branches[0].annotations.len});
 
         if (search_result.done_cont) |dc| {
             const done_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
