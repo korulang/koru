@@ -143,7 +143,6 @@ const std = @import("std");
     var proc_body = std.ArrayList(u8).initCapacity(allocator, 4096) catch unreachable;
     const writer = proc_body.writer(allocator);
 
-    writer.writeAll("    const std = @import(\"std\");\n") catch unreachable;
     writer.writeAll("    // Generated parser for ") catch unreachable;
     writer.writeAll(event_name) catch unreachable;
     writer.writeAll("\n") catch unreachable;
@@ -273,7 +272,7 @@ fn generateMatchCode(writer: anytype, branch_name: []const u8, field: __koru_ast
         try writer.writeAll("        var i: usize = 0;\n");
         try writer.writeAll("        while (i < input.len and input[i] >= '0' and input[i] <= '9') : (i += 1) {}\n");
         try writer.writeAll("        if (i > 0) {\n");
-        try writer.writeAll("            const parsed_value = std.fmt.parseInt(u64, input[0..i], 10) catch 0;\n");
+        try writer.writeAll("            const parsed_value = @import(\"std\").fmt.parseInt(u64, input[0..i], 10) catch 0;\n");
         try writer.writeAll("            return .{ .");
         try writer.writeAll(branch_name);
         try writer.writeAll(" = .{ .");
