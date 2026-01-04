@@ -1,0 +1,119 @@
+// Mock Vaxis Library
+// ===================
+// Simulates the vaxis TUI pattern with deterministic events from an array.
+// Used to validate the tap-based reactive pattern before real vaxis integration.
+
+const std = @import("std");
+
+// Mock event type
+const MockEvent = enum {
+    key_press,
+    resize,
+    quit,
+};
+
+// Mock data types
+const KeyData = struct {
+    char: u8,
+};
+
+const SizeData = struct {
+    w: u16,
+    h: u16,
+};
+
+// Global state
+var should_quit: bool = false;
+var event_index: usize = 0;
+const mock_events = [_]MockEvent{ .key_press, .key_press, .resize, .key_press };
+
+// ============================================================================
+// Layer 1: Raw Event Capture
+// ============================================================================
+
+~pub event next_event {}
+| raw MockEvent
+
+~proc next_event {
+    if (should_quit or event_index >= mock_events.len) {
+        return .{ .raw = .quit };
+    }
+    const e = mock_events[event_index];
+    event_index += 1;
+    return .{ .raw = e };
+}
+
+// ============================================================================
+// Layer 2: Event Branching (what taps observe)
+// ============================================================================
+
+~pub event event { e: MockEvent }
+| key_press KeyData
+| resize SizeData
+| quit
+
+~proc event {
+    switch (e) {
+        .key_press => return .{ .key_press = .{ .char = 'x' } },
+        .resize => return .{ .resize = .{ .w = 80, .h = 24 } },
+        .quit => return .{ .quit = .{} },
+    }
+}
+
+// ============================================================================
+// Quit Signal
+// ============================================================================
+
+~pub event quit {}
+
+~proc quit {
+    should_quit = true;
+}
+
+// ============================================================================
+// Run Loop (subflow)
+// ============================================================================
+
+~pub event run { title: []const u8 }
+
+~run =
+    init(title: title)
+    | ready |> #loop next_event()
+        | raw e |> event(e: e)
+            | key_press _ |> @loop()
+            | resize _ |> @loop()
+            | quit |> _
+
+// ============================================================================
+// Singleton Operations (mock - just print)
+// ============================================================================
+
+~pub event clear {}
+
+~proc clear {
+    std.debug.print("CLEAR\n", .{});
+}
+
+~pub event render {}
+
+~proc render {
+    std.debug.print("RENDER\n", .{});
+}
+
+~pub event write_at { x: u16, y: u16, text: []const u8 }
+
+~proc write_at {
+    std.debug.print("WRITE({},{}):{s}\n", .{ x, y, text });
+}
+
+// ============================================================================
+// Init (mock)
+// ============================================================================
+
+~event init { title: []const u8 }
+| ready
+
+~proc init {
+    std.debug.print("INIT: {s}\n", .{title});
+    return .{ .ready = .{} };
+}

@@ -798,11 +798,13 @@ const std = @import("std");
         // Walk continuations recursively, transforming `captured { ... }` blocks
         // Only processes fields belonging to THIS capture, leaves others for other captures
         // Supports binding-qualified syntax: captured { outer.count: value } explicitly targets 'outer' capture
+        // When is_existing_struct is true, ALL unqualified fields belong to this capture
         fn transformCaptured(
             alloc: std.mem.Allocator,
             cont: *const ast.Continuation,
             binding_name: []const u8,
             my_fields: []const []const u8,
+            is_existing_struct: bool,
         ) *const ast.Continuation {
             // Transform the single node if present
             var new_node: ?ast.Node = null;
@@ -832,7 +834,8 @@ const std = @import("std");
                                     }
                                 } else {
                                     // Unqualified: use implicit field name matching (original behavior)
-                                    if (fieldBelongsToCapture(field.name, my_fields)) {
+                                    // In existing struct mode, ALL unqualified fields belong to this capture
+                                    if (is_existing_struct or fieldBelongsToCapture(field.name, my_fields)) {
                                         my_field_list.append(alloc, field) catch unreachable;
                                     } else {
                                         other_field_list.append(alloc, field) catch unreachable;
@@ -870,7 +873,7 @@ const std = @import("std");
                         for (fe.branches, 0..) |*branch, bi| {
                             var new_body = alloc.alloc(ast.Continuation, branch.body.len) catch unreachable;
                             for (branch.body, 0..) |*body_cont, ci| {
-                                const transformed = transformCaptured(alloc, body_cont, binding_name, my_fields);
+                                const transformed = transformCaptured(alloc, body_cont, binding_name, my_fields, is_existing_struct);
                                 new_body[ci] = transformed.*;
                             }
                             new_branches[bi] = .{
@@ -892,7 +895,7 @@ const std = @import("std");
                         for (cond_node.branches, 0..) |*branch, bi| {
                             var new_body = alloc.alloc(ast.Continuation, branch.body.len) catch unreachable;
                             for (branch.body, 0..) |*body_cont, ci| {
-                                const transformed = transformCaptured(alloc, body_cont, binding_name, my_fields);
+                                const transformed = transformCaptured(alloc, body_cont, binding_name, my_fields, is_existing_struct);
                                 new_body[ci] = transformed.*;
                             }
                             new_branches[bi] = .{
@@ -914,7 +917,7 @@ const std = @import("std");
                         for (cap.branches, 0..) |*branch, bi| {
                             var new_body = alloc.alloc(ast.Continuation, branch.body.len) catch unreachable;
                             for (branch.body, 0..) |*body_cont, ci| {
-                                const transformed = transformCaptured(alloc, body_cont, binding_name, my_fields);
+                                const transformed = transformCaptured(alloc, body_cont, binding_name, my_fields, is_existing_struct);
                                 new_body[ci] = transformed.*;
                             }
                             new_branches[bi] = .{
@@ -938,7 +941,7 @@ const std = @import("std");
             // CRITICAL: Recurse into continuations!
             var new_continuations = alloc.alloc(ast.Continuation, cont.continuations.len) catch unreachable;
             for (cont.continuations, 0..) |*nested_cont, ni| {
-                const transformed_nested = transformCaptured(alloc, nested_cont, binding_name, my_fields);
+                const transformed_nested = transformCaptured(alloc, nested_cont, binding_name, my_fields, is_existing_struct);
                 new_continuations[ni] = transformed_nested.*;
             }
 
@@ -1035,17 +1038,21 @@ const std = @import("std");
         const nested_as_binding = if (search_result.as_cont) |ac| (ac.binding orelse "c") else "c";
         const nested_captured_binding = if (search_result.captured_cont) |cc| cc.binding else null;
 
+        // Detect existing struct mode: no '{' means binding to existing variable
+        const trimmed_expr = std.mem.trim(u8, expr, " \t\n\r");
+        const nested_is_existing_struct = !std.mem.startsWith(u8, trimmed_expr, "{");
+
         // Parse field names to know which fields THIS nested capture owns
         const nested_my_fields = TransformHelper.parseFieldNames(allocator, expr);
 
         // Transform captured { } blocks in the as_cont and captured_cont
         const transformed_as_cont = if (search_result.as_cont) |ac|
-            TransformHelper.transformCaptured(allocator, ac, nested_as_binding, nested_my_fields)
+            TransformHelper.transformCaptured(allocator, ac, nested_as_binding, nested_my_fields, nested_is_existing_struct)
         else
             null;
 
         const transformed_captured_cont = if (search_result.captured_cont) |cc|
-            TransformHelper.transformCaptured(allocator, cc, nested_as_binding, nested_my_fields)
+            TransformHelper.transformCaptured(allocator, cc, nested_as_binding, nested_my_fields, nested_is_existing_struct)
         else
             null;
 
@@ -1163,14 +1170,18 @@ const std = @import("std");
         return .{ .transformed = .{ .program = program } };
     }
 
+    // Detect existing struct mode: no '{' means binding to existing variable
+    const trimmed_expr = std.mem.trim(u8, expr, " \t\n\r");
+    const is_existing_struct = !std.mem.startsWith(u8, trimmed_expr, "{");
+
     // Step 1: Parse field names from expr to know what THIS capture owns
     const my_fields = TransformHelper.parseFieldNames(allocator, expr);
 
     // Step 2: Transform `captured { }` blocks into assignment nodes
-    const transformed_as_cont = TransformHelper.transformCaptured(allocator, as_cont.?, as_binding, my_fields);
+    const transformed_as_cont = TransformHelper.transformCaptured(allocator, as_cont.?, as_binding, my_fields, is_existing_struct);
 
     // Step 3: Convert init expression from Koru struct syntax to Zig
-    const init_value = if (std.mem.startsWith(u8, std.mem.trim(u8, expr, " \t\n\r"), "{"))
+    const init_value = if (!is_existing_struct)
         codegen_utils.koruStructToZig(allocator, expr) catch expr
     else
         expr;

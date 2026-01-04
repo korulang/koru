@@ -1,0 +1,12 @@
+// Library module (index.kz)
+// Should be a SIBLING to input.kz in output, NOT its parent
+
+const std = @import("std");
+
+~pub event greet { name: []const u8 }
+| done
+
+~proc greet {
+    std.debug.print("Hello, {s}!\n", .{name});
+    return .{ .done = .{} };
+}

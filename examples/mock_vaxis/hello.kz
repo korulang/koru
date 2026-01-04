@@ -1,0 +1,33 @@
+// Mock Vaxis Hello World
+// =======================
+// Tests the tap-based reactive pattern.
+
+const std = @import("std");
+
+~import "$std/taps"
+~import "$mock_vaxis"
+
+~mock_vaxis:run(title: "Test App")
+
+~tap(mock_vaxis:event -> *)
+| key_press _ |> on_key()
+| resize _ |> on_resize()
+| quit |> on_quit()
+
+~event on_key {}
+
+~proc on_key {
+    std.debug.print("TAP: key_press\n", .{});
+}
+
+~event on_resize {}
+
+~proc on_resize {
+    std.debug.print("TAP: resize\n", .{});
+}
+
+~event on_quit {}
+
+~proc on_quit {
+    std.debug.print("TAP: quit\n", .{});
+}

@@ -2531,7 +2531,7 @@ fn queueIndexImport(
     });
 }
 
-fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocator, resolver: *ModuleResolver, import_decl: ast.ImportDecl, base_file: []const u8) !ImportedModule {
+fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocator, resolver: *ModuleResolver, import_decl: ast.ImportDecl, base_file: []const u8, entry_file: []const u8) !ImportedModule {
     // Use ModuleResolver to find BOTH file and directory (if they exist)
     var resolved = try resolver.resolveBoth(import_decl.path, base_file);
     defer resolved.deinit(allocator);
@@ -2544,7 +2544,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
 
     // Helper to load submodules from directory
     const loadSubmodules = struct {
-        fn load(alloc: std.mem.Allocator, parse_alloc: std.mem.Allocator, res: *ModuleResolver, dir_path: []const u8) ![]ImportedModule {
+        fn load(alloc: std.mem.Allocator, parse_alloc: std.mem.Allocator, res: *ModuleResolver, dir_path: []const u8, entry_file_to_exclude: []const u8) ![]ImportedModule {
             const files = try res.enumerateDirectory(dir_path);
             defer {
                 for (files) |file| alloc.free(file);
@@ -2558,6 +2558,13 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
             }
 
             for (files) |file_path| {
+                // Skip the entry file - it's already compiled as main_module
+                // This prevents duplication when a file imports its own directory
+                if (std.mem.eql(u8, file_path, entry_file_to_exclude)) {
+                    std.debug.print("SUBMODULE: Skipping entry file '{s}' (already main_module)\n", .{file_path});
+                    continue;
+                }
+
                 const file = try std.fs.cwd().openFile(file_path, .{});
                 defer file.close();
 
@@ -2652,7 +2659,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
         // ONLY directory
         std.debug.print("  Importing directory only: {s}\n", .{import_decl.path});
 
-        const submodules = try loadSubmodules(allocator, parse_allocator, resolver, resolved.dir_path.?);
+        const submodules = try loadSubmodules(allocator, parse_allocator, resolver, resolved.dir_path.?, entry_file);
 
         return ImportedModule{
             .logical_name = module_name,
@@ -4166,6 +4173,14 @@ pub fn main() !void {
     const input_dir_absolute = try std.fs.cwd().realpathAlloc(allocator, input_dir);
     defer allocator.free(input_dir_absolute);
 
+    // Create canonical entry file path for filtering in directory imports
+    // When a file imports its own directory, we must exclude itself from submodules
+    const entry_file_absolute = try std.fs.path.join(allocator, &[_][]const u8{
+        input_dir_absolute,
+        std.fs.path.basename(input),
+    });
+    defer allocator.free(entry_file_absolute);
+
     const project_root = blk: {
         var search_dir: []const u8 = input_dir_absolute;
         while (true) {
@@ -4470,7 +4485,7 @@ pub fn main() !void {
             }
         }
 
-        const module = try processImport(allocator, parse_allocator, &resolver, work_item.import_decl, work_item.base_file);
+        const module = try processImport(allocator, parse_allocator, &resolver, work_item.import_decl, work_item.base_file, entry_file_absolute);
 
         // Check if we've already imported this canonical path
         if (imported_paths.contains(module.canonical_path)) {

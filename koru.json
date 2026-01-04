@@ -6,6 +6,7 @@
     "lib": "./lib",
     "app": "./examples",
     "vaxis": "./examples/vaxis",
+    "mock_vaxis": "./examples/mock_vaxis",
     "test": "{ENTRY}"
   }
 }

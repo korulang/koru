@@ -1,0 +1,34 @@
+// Test: Capture from existing struct (no { } literal)
+//
+// ~capture(existing_var) binds to existing struct instead of creating new one
+// captured { field: expr } updates just that field, preserves others
+//
+// Key: No { } in capture() → bind to existing variable
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+const Entity = struct {
+    id: u32,
+    health: i32,
+    pos_x: i32,
+};
+
+~event print_health { value: i32 }
+
+~proc print_health {
+    std.debug.print("{d}\n", .{value});
+}
+
+const entity = Entity{
+    .id = 42,
+    .health = 100,
+    .pos_x = 10,
+};
+
+~capture(entity)
+| as acc |> for(&[_]i32{10, 20, 30})
+    | each damage |> captured { health: acc.health - damage }
+| captured final |> print_health(value: final.health)

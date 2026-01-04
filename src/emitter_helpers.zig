@@ -4170,74 +4170,89 @@ fn emitStep(
             const captured_binding = ast.NamedBranch.getBinding(cap.branches, "captured");
             const captured_body = ast.NamedBranch.getBody(cap.branches, "captured");
 
-            // Use counter to create unique TYPE name (avoids type collision in nested captures)
-            // Variable bindings must be unique - user must provide explicit names for nested captures
-            const capture_id = ctx.capture_counter;
-            ctx.capture_counter += 1;
-            const type_name_buf = std.fmt.allocPrint(ctx.allocator, "__CaptureT_{s}_{d}", .{ as_binding, capture_id }) catch "__CaptureT";
-            defer ctx.allocator.free(type_name_buf);
+            // Detect existing struct mode: init_expr doesn't start with ".{"
+            const trimmed_init = std.mem.trim(u8, cap.init_expr, " \t\n\r");
+            const is_existing_struct = !std.mem.startsWith(u8, trimmed_init, ".{");
 
-            // First, generate the runtime struct type using comptime metaprogramming
-            try emitter.writeIndent();
-            try emitter.write("const ");
-            try emitter.write(type_name_buf);
-            try emitter.write(" = comptime blk: {\n");
-            emitter.indent();
-            try emitter.writeIndent();
-            try emitter.write("const info = @typeInfo(@TypeOf(");
-            try emitter.write(cap.init_expr);  // Already in Zig syntax: .{ .field = value }
-            try emitter.write("));\n");
-            try emitter.writeIndent();
-            try emitter.write("var fields: [info.@\"struct\".fields.len]@import(\"std\").builtin.Type.StructField = undefined;\n");
-            try emitter.writeIndent();
-            try emitter.write("for (info.@\"struct\".fields, 0..) |f, i| {\n");
-            emitter.indent();
-            try emitter.writeIndent();
-            try emitter.write("fields[i] = .{\n");
-            emitter.indent();
-            try emitter.writeIndent();
-            try emitter.write(".name = f.name,\n");
-            try emitter.writeIndent();
-            try emitter.write(".type = f.type,\n");
-            try emitter.writeIndent();
-            try emitter.write(".default_value_ptr = null,\n");
-            try emitter.writeIndent();
-            try emitter.write(".is_comptime = false,\n");
-            try emitter.writeIndent();
-            try emitter.write(".alignment = f.alignment,\n");
-            emitter.dedent();
-            try emitter.writeIndent();
-            try emitter.write("};\n");
-            emitter.dedent();
-            try emitter.writeIndent();
-            try emitter.write("}\n");
-            try emitter.writeIndent();
-            try emitter.write("break :blk @Type(.{ .@\"struct\" = .{\n");
-            emitter.indent();
-            try emitter.writeIndent();
-            try emitter.write(".layout = .auto,\n");
-            try emitter.writeIndent();
-            try emitter.write(".fields = &fields,\n");
-            try emitter.writeIndent();
-            try emitter.write(".decls = &.{},\n");
-            try emitter.writeIndent();
-            try emitter.write(".is_tuple = false,\n");
-            emitter.dedent();
-            try emitter.writeIndent();
-            try emitter.write("}});\n");
-            emitter.dedent();
-            try emitter.writeIndent();
-            try emitter.write("};\n");
+            if (is_existing_struct) {
+                // Existing struct mode: just bind to the variable, let Zig infer type
+                try emitter.writeIndent();
+                try emitter.write("var ");
+                try emitter.write(as_binding);
+                try emitter.write(" = ");
+                try emitter.write(cap.init_expr);
+                try emitter.write(";\n");
+            } else {
+                // Struct literal mode: generate comptime type transformation
+                // Use counter to create unique TYPE name (avoids type collision in nested captures)
+                // Variable bindings must be unique - user must provide explicit names for nested captures
+                const capture_id = ctx.capture_counter;
+                ctx.capture_counter += 1;
+                const type_name_buf = std.fmt.allocPrint(ctx.allocator, "__CaptureT_{s}_{d}", .{ as_binding, capture_id }) catch "__CaptureT";
+                defer ctx.allocator.free(type_name_buf);
 
-            // Initialize the capture variable
-            try emitter.writeIndent();
-            try emitter.write("var ");
-            try emitter.write(as_binding);
-            try emitter.write(": ");
-            try emitter.write(type_name_buf);
-            try emitter.write(" = ");
-            try emitter.write(cap.init_expr);  // Already in Zig syntax: .{ .field = value }
-            try emitter.write(";\n");
+                // First, generate the runtime struct type using comptime metaprogramming
+                try emitter.writeIndent();
+                try emitter.write("const ");
+                try emitter.write(type_name_buf);
+                try emitter.write(" = comptime blk: {\n");
+                emitter.indent();
+                try emitter.writeIndent();
+                try emitter.write("const info = @typeInfo(@TypeOf(");
+                try emitter.write(cap.init_expr);  // Already in Zig syntax: .{ .field = value }
+                try emitter.write("));\n");
+                try emitter.writeIndent();
+                try emitter.write("var fields: [info.@\"struct\".fields.len]@import(\"std\").builtin.Type.StructField = undefined;\n");
+                try emitter.writeIndent();
+                try emitter.write("for (info.@\"struct\".fields, 0..) |f, i| {\n");
+                emitter.indent();
+                try emitter.writeIndent();
+                try emitter.write("fields[i] = .{\n");
+                emitter.indent();
+                try emitter.writeIndent();
+                try emitter.write(".name = f.name,\n");
+                try emitter.writeIndent();
+                try emitter.write(".type = f.type,\n");
+                try emitter.writeIndent();
+                try emitter.write(".default_value_ptr = null,\n");
+                try emitter.writeIndent();
+                try emitter.write(".is_comptime = false,\n");
+                try emitter.writeIndent();
+                try emitter.write(".alignment = f.alignment,\n");
+                emitter.dedent();
+                try emitter.writeIndent();
+                try emitter.write("};\n");
+                emitter.dedent();
+                try emitter.writeIndent();
+                try emitter.write("}\n");
+                try emitter.writeIndent();
+                try emitter.write("break :blk @Type(.{ .@\"struct\" = .{\n");
+                emitter.indent();
+                try emitter.writeIndent();
+                try emitter.write(".layout = .auto,\n");
+                try emitter.writeIndent();
+                try emitter.write(".fields = &fields,\n");
+                try emitter.writeIndent();
+                try emitter.write(".decls = &.{},\n");
+                try emitter.writeIndent();
+                try emitter.write(".is_tuple = false,\n");
+                emitter.dedent();
+                try emitter.writeIndent();
+                try emitter.write("}});\n");
+                emitter.dedent();
+                try emitter.writeIndent();
+                try emitter.write("};\n");
+
+                // Initialize the capture variable with explicit type
+                try emitter.writeIndent();
+                try emitter.write("var ");
+                try emitter.write(as_binding);
+                try emitter.write(": ");
+                try emitter.write(type_name_buf);
+                try emitter.write(" = ");
+                try emitter.write(cap.init_expr);  // Already in Zig syntax: .{ .field = value }
+                try emitter.write(";\n");
+            }
 
             // Suppress unused warning
             try emitter.writeIndent();

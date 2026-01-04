@@ -1,0 +1,25 @@
+// Test 110_015: Entry file not nested when importing own directory
+//
+// When a file imports a directory it resides in, the entry file should NOT
+// be included as a submodule. The entry file is already compiled as main_module.
+//
+// This test verifies:
+//   - main_module contains the entry file content (this file)
+//   - koru_mylib contains index.kz content
+//   - input.kz is NOT duplicated inside koru_mylib
+
+const std = @import("std");
+
+// Import the library (index.kz in the same directory as THIS FILE)
+~import "$mylib"
+
+// Call an event from the library
+~mylib:greet(name: "World")
+| done |> on_done()
+
+// Handler that uses std - this will trigger ambiguity if nested
+~event on_done {}
+
+~proc on_done {
+    std.debug.print("Done!\n", .{});
+}
