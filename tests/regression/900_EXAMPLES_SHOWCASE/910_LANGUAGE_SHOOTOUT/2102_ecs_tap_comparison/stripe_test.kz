@@ -1,0 +1,55 @@
+// Exploration: Striping pattern with TAP
+// The tap should be fused into process_entity at compile time
+
+~import "$std/io"
+~import "$std/control"
+~import "$std/taps"
+
+const std = @import("std");
+
+// Simple entity with damage flag
+const Entity = struct {
+    id: u32,
+    health: i32,
+    has_damage: bool,
+};
+
+// The broadcast point
+~pub event process_entity { e: Entity }
+| entity { e: Entity }
+
+~proc process_entity {
+    return .{ .entity = .{ .e = e } };
+}
+
+// TAP: Only fires when entity has damage
+~tap(process_entity -> *)
+| entity ent when ent.e.has_damage |> handle_damage(e: ent.e)
+
+~event handle_damage { e: Entity }
+~proc handle_damage {
+    std.debug.print("DAMAGE on Entity {d}!\n", .{ e.id });
+}
+
+// Test entities - some with damage, some without
+const entities = [_]Entity{
+    .{ .id = 1, .health = 100, .has_damage = false },
+    .{ .id = 2, .health = 80, .has_damage = true },
+    .{ .id = 3, .health = 50, .has_damage = false },
+    .{ .id = 4, .health = 30, .has_damage = true },
+};
+
+// Iterate and broadcast each entity
+// Note: | entity _ |> noop() to consume the branch without doing anything
+~for(&entities)
+| each e |> process_entity(e: e)
+    | entity _ |> noop()
+| done |> print_done()
+
+~event noop {}
+~proc noop {}
+
+~event print_done {}
+~proc print_done {
+    std.debug.print("Done!\n", .{});
+}

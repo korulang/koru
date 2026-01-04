@@ -1,0 +1,44 @@
+// BUG: Subflow field shorthand { e } incorrectly emits `.{ .branch = e }` instead of `.{ .branch = .{ .e = e } }`
+//
+// SYNTAX DESIGN ISSUE:
+// - Original: `{ e }` is shorthand for `{ e: e }` (field shorthand)
+// - Later added: `branch { value }` to mean "branch with simple value"
+// - These clash!
+//
+// PROPOSED FIX:
+// - No braces = simple value:  |> result 10
+// - Braces = struct:           |> entity { e }  means { e: e }
+//
+// CURRENT BEHAVIOR:
+// - `~foo = bar { e }` emits: return .{ .bar = e };
+// - SHOULD emit:              return .{ .bar = .{ .e = e } };
+//
+// WORKAROUND: Use explicit `{ e: e }` syntax
+
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+const Entity = struct {
+    id: u32,
+};
+
+~pub event test_event { e: Entity }
+| result { e: Entity }
+
+// BUG: This emits wrong code
+// ~test_event = result { e }
+
+// WORKAROUND: Explicit syntax works
+~test_event = result { e: e }
+
+~event print_result { e: Entity }
+~proc print_result {
+    std.debug.print("Got entity {d}\n", .{ e.id });
+}
+
+const entity = Entity{ .id = 42 };
+
+~test_event(e: entity)
+| result r |> print_result(e: r.e)

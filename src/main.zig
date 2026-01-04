@@ -1055,7 +1055,7 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
     const tap_registry_module = @import("tap_registry");
 
     // Create a large buffer for the generated code
-    const MAX_SIZE = 256 * 1024; // 256KB
+    const MAX_SIZE = 1024 * 1024; // 1MB (increased for complex tap imports)
     const buffer = try allocator.alloc(u8, MAX_SIZE);
     // Note: We'll trim it down before returning
 
@@ -2148,7 +2148,7 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
             \\        const allocator = __koru_event_input.allocator;
             \\
             \\        // Create buffer for generated code
-            \\        const MAX_SIZE = 256 * 1024;  // 256KB
+            \\        const MAX_SIZE = 1024 * 1024;  // 1MB
             \\        const buffer = allocator.alloc(u8, MAX_SIZE) catch {
             \\            return .{ .emitted = .{ .code = "" } };
             \\        };
