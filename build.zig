@@ -486,6 +486,27 @@ pub fn build(b: *std.Build) void {
     transform_collector_module.addImport("ast_functional", ast_functional_module);
     exe.root_module.addImport("transform_collector", transform_collector_module);
 
+    // Template utils module for template expansion
+    const template_utils_module = b.createModule(.{
+        .root_source_file = b.path("src/template_utils.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    template_utils_module.addImport("ast", ast_module);
+    exe.root_module.addImport("template_utils", template_utils_module);
+
+    // Transform Pass Runner module - generic AST walker for transforms
+    const transform_pass_runner_module = b.createModule(.{
+        .root_source_file = b.path("src/transform_pass_runner.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    transform_pass_runner_module.addImport("ast", ast_module);
+    transform_pass_runner_module.addImport("ast_functional", ast_functional_module);
+    transform_pass_runner_module.addImport("annotation_parser", annotation_parser_module);
+    transform_pass_runner_module.addImport("template_utils", template_utils_module);
+    exe.root_module.addImport("transform_pass_runner", transform_pass_runner_module);
+
     // Compiler module for metacircular compilation
     const compiler_module = b.createModule(.{
         .root_source_file = b.path("src/compiler.zig"),

@@ -1,0 +1,157 @@
+~[comptime]
+
+// Koru Standard Library: Derive Handlers
+// Provides derive handlers that generate new declarations from event declarations
+//
+// ARCHITECTURE: Derive handlers operate on event declarations (not invocations).
+// They receive the declaration AST and return a modified program with generated items.
+//
+// Usage:
+//   ~[derive(echo)]event greet {}
+//   | hello { name: []const u8 }
+//
+// The 'echo' derive generates:
+//   ~event greet.info {} | done {}
+//   ~proc greet.info { return .{ .done = .{} }; }
+
+const std = @import("std");
+
+// Derive handler: generates a simple .info event from an event declaration
+//
+// Input: ~[derive(echo)]event foo {} | branch1 | branch2
+// Output: Adds ~event foo.info {} | done {} and ~proc foo.info that returns done
+~[comptime]pub event echo {
+    event_decl: *const EventDecl,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc echo {
+    const ast = @import("ast");
+
+    // Build the event name from path segments
+    var name_buf: [256]u8 = undefined;
+    var name_len: usize = 0;
+    for (event_decl.path.segments, 0..) |seg, i| {
+        if (i > 0) {
+            name_buf[name_len] = '.';
+            name_len += 1;
+        }
+        @memcpy(name_buf[name_len..][0..seg.len], seg);
+        name_len += seg.len;
+    }
+    const event_name = name_buf[0..name_len];
+
+    std.debug.print("[ECHO DERIVE] Processing event declaration: {s}\n", .{event_name});
+
+    // Create new path for {name}.info
+    const info_segments = allocator.alloc([]const u8, event_decl.path.segments.len + 1) catch unreachable;
+    for (event_decl.path.segments, 0..) |seg, i| {
+        info_segments[i] = allocator.dupe(u8, seg) catch unreachable;
+    }
+    info_segments[event_decl.path.segments.len] = allocator.dupe(u8, "info") catch unreachable;
+
+    const info_path = ast.DottedPath{
+        .segments = info_segments,
+        .module_qualifier = event_decl.path.module_qualifier,
+    };
+
+    // Create the .info event: ~event {name}.info {} | done {}
+    const done_branch = allocator.create(ast.Branch) catch unreachable;
+    done_branch.* = ast.Branch{
+        .name = allocator.dupe(u8, "done") catch unreachable,
+        .payload = ast.Shape{ .fields = &[_]ast.Field{} },
+        .is_optional = false,
+    };
+
+    const branches = allocator.alloc(ast.Branch, 1) catch unreachable;
+    branches[0] = done_branch.*;
+
+    const info_event = ast.EventDecl{
+        .path = info_path,
+        .input = ast.Shape{ .fields = &[_]ast.Field{} },
+        .branches = branches,
+        .annotations = &[_][]const u8{},
+        .is_public = event_decl.is_public,
+        .module = event_decl.module,
+    };
+
+    // Create the .info proc: ~proc {name}.info { return .{ .done = .{} }; }
+    const proc_body = allocator.dupe(u8, "return .{ .done = .{} };") catch unreachable;
+
+    const info_proc = ast.ProcDecl{
+        .path = info_path,
+        .body = proc_body,
+        .annotations = &[_][]const u8{},
+        .module = event_decl.module,
+    };
+
+    // Mark the original event as processed (add @pass_ran annotation)
+    var new_annotations = std.ArrayList([]const u8).initCapacity(allocator, event_decl.annotations.len + 1) catch unreachable;
+    for (event_decl.annotations) |ann| {
+        // Skip the derive(echo) annotation to prevent re-processing
+        if (std.mem.indexOf(u8, ann, "derive(echo)") == null) {
+            new_annotations.append(allocator, allocator.dupe(u8, ann) catch unreachable) catch unreachable;
+        }
+    }
+    new_annotations.append(allocator, allocator.dupe(u8, "@pass_ran(\"derive\")") catch unreachable) catch unreachable;
+
+    const modified_event_decl = ast.EventDecl{
+        .path = event_decl.path,
+        .input = event_decl.input,
+        .branches = event_decl.branches,
+        .annotations = new_annotations.toOwnedSlice(allocator) catch unreachable,
+        .is_public = event_decl.is_public,
+        .module = event_decl.module,
+    };
+
+    // Build new program with:
+    // 1. Original event (with derive annotation removed)
+    // 2. New .info event
+    // 3. New .info proc
+    const new_items = allocator.alloc(ast.Item, program.items.len + 2) catch unreachable;
+
+    var write_idx: usize = 0;
+    for (program.items) |prog_item| {
+        // Replace the original event_decl with modified version
+        if (prog_item == .event_decl) {
+            const prog_event = &prog_item.event_decl;
+            if (prog_event.path.segments.len == event_decl.path.segments.len) {
+                var matches = true;
+                for (prog_event.path.segments, event_decl.path.segments) |a, b| {
+                    if (!std.mem.eql(u8, a, b)) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) {
+                    new_items[write_idx] = ast.Item{ .event_decl = modified_event_decl };
+                    write_idx += 1;
+                    continue;
+                }
+            }
+        }
+        new_items[write_idx] = prog_item;
+        write_idx += 1;
+    }
+
+    // Add the new .info event and proc
+    new_items[write_idx] = ast.Item{ .event_decl = info_event };
+    write_idx += 1;
+    new_items[write_idx] = ast.Item{ .proc_decl = info_proc };
+    write_idx += 1;
+
+    std.debug.print("[ECHO DERIVE] Generated {s}.info event and proc\n", .{event_name});
+
+    // Create and return new program
+    const new_program = allocator.create(ast.Program) catch unreachable;
+    new_program.* = ast.Program{
+        .items = new_items[0..write_idx],
+        .module_annotations = program.module_annotations,
+        .main_module_name = program.main_module_name,
+        .allocator = allocator,
+    };
+
+    return .{ .transformed = .{ .program = new_program } };
+}

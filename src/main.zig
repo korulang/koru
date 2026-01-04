@@ -1129,14 +1129,17 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
 
 /// TransformEvent stores both the underscore name (for stubs) and dotted name (for matching)
 /// Transforms are compiler passes: Program -> transformed{Program} | failed{error}
+/// Also used for derive handlers which generate new declarations from event declarations
+/// Detection is TYPE-DRIVEN: *const Invocation = transform, *const EventDecl = derive
 const TransformEvent = struct {
-    stub_name: []const u8,    // e.g., "control_if" - unique name for call_transform_X function
-    match_name: []const u8,   // e.g., "if" - event name with dots for matching invocations
+    stub_name: []const u8,    // e.g., "control_if" - unique name for call_handler_X function
+    match_name: []const u8,   // e.g., "if" - event name with dots for matching
     event_name: []const u8,   // e.g., "if" - original event name for handler struct lookup
     module_path: ?[]const u8, // e.g., "koru_std.control" for stdlib, null for main_module
     has_source: bool,         // Event accepts source: Source[T] parameter
     has_expression: bool,     // Event accepts expr: Expression parameter
     has_invocation: bool,     // Event accepts invocation: *const Invocation parameter
+    has_event_decl: bool,     // Event accepts event_decl: *const EventDecl parameter
     has_item: bool,           // Event accepts item: *const Item parameter
     has_program_ast: bool,    // Event accepts program: *const Program parameter
     has_allocator: bool,      // Event accepts allocator: std.mem.Allocator parameter
@@ -1495,67 +1498,66 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
         if (item == .event_decl) {
             const event_decl = item.event_decl;
 
-            // Check if this event has [transform] annotation OR has Source parameter
-            const has_transform_annotation = annotation_parser.hasPart(event_decl.annotations, "transform");
-
-            // Check if event has Source or Expression parameter (any field with is_source/is_expression flag)
+            // TYPE-DRIVEN DETECTION: Check if this event consumes AST types
+            // Events with *const Invocation or *const Item are transform handlers
+            // Events with *const EventDecl are derive handlers (operate on declarations)
+            // The frontend is agnostic to [transform]/[derive] annotations - that's backend dispatch
             var has_source_param = false;
             var has_expression_param = false;
+            var has_invocation_param = false;
+            var has_item_param = false;
+            var has_event_decl_param = false;
+
             for (event_decl.input.fields) |field| {
                 if (field.is_source) {
                     has_source_param = true;
                 } else if (field.is_expression) {
                     has_expression_param = true;
+                } else if (std.mem.eql(u8, field.type, "*const Invocation")) {
+                    has_invocation_param = true;
+                } else if (std.mem.eql(u8, field.type, "*const Item")) {
+                    has_item_param = true;
+                } else if (std.mem.eql(u8, field.type, "*const EventDecl")) {
+                    has_event_decl_param = true;
                 }
             }
 
-            // VALIDATION: Transform handlers must be emitted to backend_output_emitted.zig
-            // This happens either:
-            // 1. Implicitly via Source/Expression parameters (visitor_emitter treats them as comptime)
-            // 2. Explicitly via [comptime] annotation
-            // Without either, the transform handler won't be available at Pass 2
-            if (has_transform_annotation and !has_source_param and !has_expression_param) {
+            // Events consuming AST types must be emitted to backend
+            // *const Item also indicates a transform handler (needs to access flow from item)
+            const consumes_ast_types = has_invocation_param or has_item_param or has_event_decl_param;
+
+            // VALIDATION: AST-consuming handlers must be available at compile-time
+            if (consumes_ast_types and !has_source_param and !has_expression_param) {
                 const has_comptime = annotation_parser.hasPart(event_decl.annotations, "comptime");
                 if (!has_comptime) {
-                    // Build event name for error message
                     const event_name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
                     defer allocator.free(event_name);
 
-                    std.debug.print("\nERROR: Event '{s}' has [transform] annotation but won't be emitted to backend_output_emitted.zig\n", .{event_name});
+                    const handler_type = if (has_event_decl_param) "derive" else "transform";
+                    std.debug.print("\nERROR: Event '{s}' consumes *const {s} but won't be emitted to backend\n", .{ event_name, if (has_event_decl_param) "EventDecl" else "Invocation" });
                     std.debug.print("\n", .{});
-                    std.debug.print("Transform handlers must be available at compile-time. This requires either:\n", .{});
-                    std.debug.print("  1. Source parameters (implicitly comptime): source: Source[...]\n", .{});
-                    std.debug.print("  2. Expression parameters (implicitly comptime): expr: Expression\n", .{});
-                    std.debug.print("  3. [comptime] annotation (explicitly comptime)\n", .{});
+                    std.debug.print("AST-consuming handlers must be available at compile-time. Add [comptime]:\n", .{});
+                    std.debug.print("  ~[comptime] event {s} {{ ... }}\n", .{event_name});
                     std.debug.print("\n", .{});
-                    std.debug.print("Change to: ~[comptime|transform] event {s} {{ ... }}\n", .{event_name});
-                    std.debug.print("Or add a Source/Expression parameter to make it implicitly comptime.\n", .{});
-                    std.debug.print("\n", .{});
+                    _ = handler_type;
                     return error.TransformMissingComptimeAnnotation;
                 }
             }
 
-            // Only generate transform handlers for events with [transform] annotation.
-            // Events with just Source/Expression params are comptime events that run during
-            // comptime_main(), not transforms that modify the AST during the transform pass.
-            const should_generate_transform = has_transform_annotation;
+            // Emit handlers for events that consume AST types
+            const should_generate_handler = consumes_ast_types;
 
-            if (should_generate_transform and transform_count < 16) {
+            if (should_generate_handler and transform_count < 16) {
                 const stub_name = try joinPathSegments(allocator, event_decl.path.segments);
                 const match_name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
 
-                // Detect what parameters this event accepts (besides source, which we already detected)
-                var has_invocation = false;
-                var has_item = false;
+                // Detect additional parameters by NAME (program, allocator)
+                // Note: invocation/event_decl/item already detected by TYPE above
                 var has_program_ast = false;
                 var has_allocator = false;
 
                 for (event_decl.input.fields) |field| {
-                    if (std.mem.eql(u8, field.name, "invocation")) {
-                        has_invocation = true;
-                    } else if (std.mem.eql(u8, field.name, "item")) {
-                        has_item = true;
-                    } else if (std.mem.eql(u8, field.name, "program_ast") or std.mem.eql(u8, field.name, "program")) {
+                    if (std.mem.eql(u8, field.name, "program_ast") or std.mem.eql(u8, field.name, "program")) {
                         has_program_ast = true;
                     } else if (std.mem.eql(u8, field.name, "allocator")) {
                         has_allocator = true;
@@ -1585,8 +1587,9 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     .module_path = null,  // Top-level events are in main_module
                     .has_source = has_source_param,
                     .has_expression = has_expression_param,
-                    .has_invocation = has_invocation,
-                    .has_item = has_item,
+                    .has_invocation = has_invocation_param,
+                    .has_event_decl = has_event_decl_param,
+                    .has_item = has_item_param,
                     .has_program_ast = has_program_ast,
                     .has_allocator = has_allocator,
                     .returns_program = returns_program,
@@ -1596,32 +1599,38 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             }
         }
 
-        // Also check for transforms in imported modules
+        // Also check for handlers in imported modules (same type-driven detection)
         if (item == .module_decl) {
             const module = item.module_decl;
             for (module.items) |mod_item| {
                 if (mod_item == .event_decl) {
                     const event_decl = mod_item.event_decl;
 
-                    // Check if this event has [transform] annotation OR has Source parameter
-                    const has_transform_annotation = annotation_parser.hasPart(event_decl.annotations, "transform");
-
-                    // Check if event has Source or Expression parameter
+                    // TYPE-DRIVEN DETECTION: Check if this event consumes AST types
                     var has_source_param = false;
                     var has_expression_param = false;
+                    var has_invocation_param = false;
+                    var has_item_param = false;
+                    var has_event_decl_param = false;
+
                     for (event_decl.input.fields) |field| {
                         if (field.is_source) {
                             has_source_param = true;
                         } else if (field.is_expression) {
                             has_expression_param = true;
+                        } else if (std.mem.eql(u8, field.type, "*const Invocation")) {
+                            has_invocation_param = true;
+                        } else if (std.mem.eql(u8, field.type, "*const Item")) {
+                            has_item_param = true;
+                        } else if (std.mem.eql(u8, field.type, "*const EventDecl")) {
+                            has_event_decl_param = true;
                         }
                     }
 
-                    // Only generate transform handlers for events with [transform] annotation.
-                    // See comment above for rationale.
-                    const should_generate_transform = has_transform_annotation;
+                    // Emit handlers for events that consume AST types
+                    const should_generate_handler = has_invocation_param or has_item_param or has_event_decl_param;
 
-                    if (should_generate_transform and transform_count < 16) {
+                    if (should_generate_handler and transform_count < 16) {
                         const event_name = try joinPathSegments(allocator, event_decl.path.segments);
                         // Note: don't free event_name - it's stored in transform_events
                         const match_name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
@@ -1672,18 +1681,13 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
                         const stub_name = try allocator.dupe(u8, stub_name_buf[0..stub_name_len]);
 
-                        // Detect parameters
-                        var has_invocation = false;
-                        var has_item = false;
+                        // Detect additional parameters by NAME (program, allocator)
+                        // Note: invocation/event_decl/item already detected by TYPE above
                         var has_program_ast = false;
                         var has_allocator = false;
 
                         for (event_decl.input.fields) |field| {
-                            if (std.mem.eql(u8, field.name, "invocation")) {
-                                has_invocation = true;
-                            } else if (std.mem.eql(u8, field.name, "item")) {
-                                has_item = true;
-                            } else if (std.mem.eql(u8, field.name, "program_ast") or std.mem.eql(u8, field.name, "program")) {
+                            if (std.mem.eql(u8, field.name, "program_ast") or std.mem.eql(u8, field.name, "program")) {
                                 has_program_ast = true;
                             } else if (std.mem.eql(u8, field.name, "allocator")) {
                                 has_allocator = true;
@@ -1713,8 +1717,9 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .module_path = module_path,
                             .has_source = has_source_param,
                             .has_expression = has_expression_param,
-                            .has_invocation = has_invocation,
-                            .has_item = has_item,
+                            .has_invocation = has_invocation_param,
+                            .has_event_decl = has_event_decl_param,
+                            .has_item = has_item_param,
                             .has_program_ast = has_program_ast,
                             .has_allocator = has_allocator,
                             .returns_program = returns_program,
@@ -1783,41 +1788,60 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     for (transform_events[0..transform_count]) |event| {
         const stub = try std.fmt.bufPrint(&buf, "// Transform handler for: {s}\n", .{event.stub_name});
         try code_emitter.write(stub);
-        try code_emitter.write("// Called when a flow invokes this transform event\n");
+        // Handler type determined by parameter: *const Invocation = transform, *const EventDecl = derive
+        if (event.has_event_decl) {
+            try code_emitter.write("// Derive handler: called when [derive(X)] is found on an event declaration\n");
+        } else {
+            try code_emitter.write("// Transform handler: called when a flow invokes this transform event\n");
+        }
         try code_emitter.write("// Uses unified ASTNode interface for generic AST traversal\n");
 
-        // NEW SIGNATURE: (node: __koru_ast.ASTNode, program, allocator) instead of (item, invocation, program, allocator)
-        const fn_sig = try std.fmt.bufPrint(&buf, "fn call_transform_{s}(node: __koru_ast.ASTNode, program: *const __koru_ast.Program, allocator: transform_std.mem.Allocator) !*const __koru_ast.Program {{\n", .{event.stub_name});
+        // Function signature
+        const fn_sig = try std.fmt.bufPrint(&buf, "fn call_handler_{s}(node: __koru_ast.ASTNode, program: *const __koru_ast.Program, allocator: transform_std.mem.Allocator) !*const __koru_ast.Program {{\n", .{event.stub_name});
         try code_emitter.write(fn_sig);
 
-        // Extract invocation from node
-        try code_emitter.write("    const invocation = node.invocation;\n");
-
-        // If handler needs item, find it using ASTNode helper
-        if (event.has_item) {
-            try code_emitter.write("    const item = __koru_ast.ASTNode.findContainingItem(program, invocation) orelse {\n");
-            try code_emitter.write("        transform_std.debug.print(\"ERROR: Could not find containing item for invocation\\n\", .{});\n");
-            try code_emitter.write("        @panic(\"transform: invocation not found in program\");\n");
+        // Extract the appropriate data from the node based on handler type
+        if (event.has_event_decl) {
+            // Derive handler: extract event_decl from the item
+            try code_emitter.write("    // Extract event declaration from node\n");
+            try code_emitter.write("    const event_decl = if (node == .item and node.item.* == .event_decl) &node.item.event_decl else {\n");
+            try code_emitter.write("        transform_std.debug.print(\"ERROR: Derive handler called with non-event_decl node\\n\", .{});\n");
+            try code_emitter.write("        @panic(\"derive: expected event_decl node\");\n");
             try code_emitter.write("    };\n");
+        } else if (event.has_invocation or event.has_item) {
+            // Transform handler: node is always an invocation for invocation-based transforms
+            try code_emitter.write("    const invocation = node.invocation;\n");
+
+            // If handler needs item, find it using ASTNode helper
+            if (event.has_item) {
+                try code_emitter.write("    const item = __koru_ast.ASTNode.findContainingItem(program, invocation) orelse {\n");
+                try code_emitter.write("        transform_std.debug.print(\"ERROR: Could not find containing item for invocation\\n\", .{});\n");
+                try code_emitter.write("        @panic(\"transform: invocation not found in program\");\n");
+                try code_emitter.write("    };\n");
+            }
         }
 
         if (!event.has_allocator) {
             try code_emitter.write("    _ = allocator;\n");
         }
         // Only discard program if we don't use it anywhere
-        // (we use it in fallback path if has_source or has_expression)
-        if (!event.has_program_ast and !event.has_source and !event.has_expression and !event.has_item) {
+        if (!event.has_program_ast and !event.has_source and !event.has_expression and !event.has_item and !event.has_event_decl) {
             try code_emitter.write("    _ = program;\n");
         }
 
-        // DEBUG: Show what's in the invocation args
-        const debug_count = try std.fmt.bufPrint(&buf, "    transform_std.debug.print(\"[TRANSFORM] {s}: {{d}} args\\n\", .{{invocation.args.len}});\n", .{event.stub_name});
-        try code_emitter.write(debug_count);
-        try code_emitter.write("    for (invocation.args, 0..) |arg, i| {\n");
-        try code_emitter.write("        transform_std.debug.print(\"  Arg[{d}]: name='{s}' has_source={} has_expr={}\\n\", .{i, arg.name, arg.source_value != null, arg.expression_value != null});\n");
-        try code_emitter.write("    }\n");
+        // DEBUG: Show what we're processing
+        if (event.has_event_decl) {
+            const debug_derive = try std.fmt.bufPrint(&buf, "    transform_std.debug.print(\"[DERIVE] {s}: processing event declaration\\n\", .{{}});\n", .{event.stub_name});
+            try code_emitter.write(debug_derive);
+        } else if (event.has_invocation or event.has_item) {
+            const debug_count = try std.fmt.bufPrint(&buf, "    transform_std.debug.print(\"[TRANSFORM] {s}: {{d}} args\\n\", .{{invocation.args.len}});\n", .{event.stub_name});
+            try code_emitter.write(debug_count);
+            try code_emitter.write("    for (invocation.args, 0..) |arg, i| {\n");
+            try code_emitter.write("        transform_std.debug.print(\"  Arg[{d}]: name='{s}' has_source={} has_expr={}\\n\", .{i, arg.name, arg.source_value != null, arg.expression_value != null});\n");
+            try code_emitter.write("    }\n");
+        }
 
-        // Generate handler call - extract Source and/or Expression as needed
+        // Generate handler call
         // Use event_name (original name) for handler struct lookup, not stub_name (prefixed for uniqueness)
         if (event.module_path) |mp| {
             const handler_line = try std.fmt.bufPrint(&buf, "    const handler = {s}.{s}_event;\n", .{ mp, event.event_name });
@@ -1827,82 +1851,108 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             try code_emitter.write(handler_line);
         }
 
-        // Extract Source if needed
-        if (event.has_source) {
-            try code_emitter.write("    const source_opt = extractSourceFromArgs(invocation.args);\n");
-        }
-
-        // Extract Expression if needed
-        if (event.has_expression) {
-            try code_emitter.write("    const expr_opt = extractExprFromArgs(invocation.args);\n");
-        }
-
-        // Build guard condition and input based on what's required
-        if (event.has_source and event.has_expression) {
-            // Both Source AND Expression - require both to be present
-            try code_emitter.write("    if (source_opt != null and expr_opt != null) {\n");
-            try code_emitter.write("        const source = source_opt.?;\n");
-            try code_emitter.write("        const expr_text = expr_opt.?;\n");
-            try code_emitter.write("        const input = handler.Input{\n");
-            try code_emitter.write("            .source = source,\n");
-            try code_emitter.write("            .expr = expr_text,\n");
-        } else if (event.has_source) {
-            // Source only
-            try code_emitter.write("    if (source_opt) |source| {\n");
-            try code_emitter.write("        const input = handler.Input{\n");
-            try code_emitter.write("            .source = source,\n");
-        } else if (event.has_expression) {
-            // Expression only
-            try code_emitter.write("    if (expr_opt) |expr_text| {\n");
-            try code_emitter.write("        const input = handler.Input{\n");
-            try code_emitter.write("            .expr = expr_text,\n");
-        } else {
-            // Neither - no guard needed, call handler directly
-            try code_emitter.write("    {\n");
-            try code_emitter.write("        const input = handler.Input{\n");
-        }
-
-        // Add remaining Input fields
-        if (event.has_item) {
-            try code_emitter.write("            .item = item,\n");
-        }
-        if (event.has_invocation) {
-            try code_emitter.write("            .invocation = invocation,\n");
-        }
-        if (event.has_program_ast) {
-            try code_emitter.write("            .program = program,\n");
-        }
-        if (event.has_allocator) {
-            try code_emitter.write("            .allocator = allocator,\n");
-        }
-
-        // Call handler and handle result
-        try code_emitter.write("        };\n");
-        if (event.returns_program) {
-            // Transform returns a union with .transformed branch containing program
-            try code_emitter.write("        const result = handler.handler(input);\n");
-            try code_emitter.write("        return switch (result) {\n");
-            try code_emitter.write("            .transformed => |t| t.program,\n");
-            if (event.has_failed) {
-                try code_emitter.write("            .failed => |f| {\n");
-                try code_emitter.write("                transform_std.debug.print(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");
-                try code_emitter.write("                return error.TransformFailed;\n");
-                try code_emitter.write("            },\n");
+        // Derive handlers have simpler input (no Source/Expression extraction)
+        if (event.has_event_decl) {
+            // Derive handler: build Input with event_decl
+            try code_emitter.write("    const input = handler.Input{\n");
+            try code_emitter.write("        .event_decl = event_decl,\n");
+            if (event.has_program_ast) {
+                try code_emitter.write("        .program = program,\n");
             }
-            try code_emitter.write("        };\n");
+            if (event.has_allocator) {
+                try code_emitter.write("        .allocator = allocator,\n");
+            }
+            try code_emitter.write("    };\n");
+
+            // Call handler and return result
+            if (event.returns_program) {
+                try code_emitter.write("    const result = handler.handler(input);\n");
+                try code_emitter.write("    return switch (result) {\n");
+                try code_emitter.write("        .transformed => |t| t.program,\n");
+                if (event.has_failed) {
+                    try code_emitter.write("        .failed => |f| {\n");
+                    try code_emitter.write("            transform_std.debug.print(\"Derive failed: {s}\\n\", .{f.@\"error\"});\n");
+                    try code_emitter.write("            return error.DeriveFailed;\n");
+                    try code_emitter.write("        },\n");
+                }
+                try code_emitter.write("    };\n");
+            } else {
+                try code_emitter.write("    _ = handler.handler(input);\n");
+                try code_emitter.write("    return program;\n");
+            }
         } else {
-            // Transform is a Source-capture event or doesn't return program - just call handler
-            try code_emitter.write("        _ = handler.handler(input);\n");
-            try code_emitter.write("        return program;  // Source-capture events don't modify program\n");
+            // Transform handler: extract Source and/or Expression as needed
+            if (event.has_source) {
+                try code_emitter.write("    const source_opt = extractSourceFromArgs(invocation.args);\n");
+            }
+
+            if (event.has_expression) {
+                try code_emitter.write("    const expr_opt = extractExprFromArgs(invocation.args);\n");
+            }
+
+            // Build guard condition and input based on what's required
+            if (event.has_source and event.has_expression) {
+                try code_emitter.write("    if (source_opt != null and expr_opt != null) {\n");
+                try code_emitter.write("        const source = source_opt.?;\n");
+                try code_emitter.write("        const expr_text = expr_opt.?;\n");
+                try code_emitter.write("        const input = handler.Input{\n");
+                try code_emitter.write("            .source = source,\n");
+                try code_emitter.write("            .expr = expr_text,\n");
+            } else if (event.has_source) {
+                try code_emitter.write("    if (source_opt) |source| {\n");
+                try code_emitter.write("        const input = handler.Input{\n");
+                try code_emitter.write("            .source = source,\n");
+            } else if (event.has_expression) {
+                try code_emitter.write("    if (expr_opt) |expr_text| {\n");
+                try code_emitter.write("        const input = handler.Input{\n");
+                try code_emitter.write("            .expr = expr_text,\n");
+            } else {
+                try code_emitter.write("    {\n");
+                try code_emitter.write("        const input = handler.Input{\n");
+            }
+
+            // Add remaining Input fields
+            if (event.has_item) {
+                try code_emitter.write("            .item = item,\n");
+            }
+            if (event.has_invocation) {
+                try code_emitter.write("            .invocation = invocation,\n");
+            }
+            if (event.has_program_ast) {
+                try code_emitter.write("            .program = program,\n");
+            }
+            if (event.has_allocator) {
+                try code_emitter.write("            .allocator = allocator,\n");
+            }
+
+            // Call handler and handle result
+            try code_emitter.write("        };\n");
+            if (event.returns_program) {
+                try code_emitter.write("        const result = handler.handler(input);\n");
+                try code_emitter.write("        return switch (result) {\n");
+                try code_emitter.write("            .transformed => |t| t.program,\n");
+                if (event.has_failed) {
+                    try code_emitter.write("            .failed => |f| {\n");
+                    try code_emitter.write("                transform_std.debug.print(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");
+                    try code_emitter.write("                return error.TransformFailed;\n");
+                    try code_emitter.write("            },\n");
+                }
+                try code_emitter.write("        };\n");
+            } else {
+                try code_emitter.write("        _ = handler.handler(input);\n");
+                try code_emitter.write("        return program;  // Source-capture events don't modify program\n");
+            }
         }
 
-        // Close guard and add else case if needed
-        if (event.has_source or event.has_expression) {
-            try code_emitter.write("    } else {\n");
-            try code_emitter.write("        return program;  // Required args not present, return unchanged\n");
-            try code_emitter.write("    }\n");
-        } else {
-            try code_emitter.write("    }\n");
+        // Close guard and add else case if needed (only for transform handlers, not derive)
+        if (!event.has_event_decl) {
+            if (event.has_source or event.has_expression) {
+                try code_emitter.write("    } else {\n");
+                try code_emitter.write("        return program;  // Required args not present, return unchanged\n");
+                try code_emitter.write("    }\n");
+            } else {
+                try code_emitter.write("    }\n");
+            }
         }
         try code_emitter.write("}\n\n");
     }
@@ -1933,13 +1983,14 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     try code_emitter.write("    // DUMP POINT 6: AST at run_pass() entry\n");
     try code_emitter.write("    dumpAST(program, \"6-run-pass-start\", allocator);\n");
     try code_emitter.write("    \n");
-    try code_emitter.write("    // Build dispatch table for transform handlers\n");
+    try code_emitter.write("    // Build dispatch table for transform/derive handlers\n");
+    try code_emitter.write("    // Handlers are Koru-defined events with *const Invocation or *const EventDecl params\n");
     try code_emitter.write("    const transform_pass_runner = @import(\"transform_pass_runner\");\n");
     try code_emitter.write("    const transforms = &[_]transform_pass_runner.TransformEntry{\n");
 
-    // Generate dispatch table entries
+    // Generate dispatch table entries for Koru-defined handlers (both transform and derive)
     for (transform_events[0..transform_count]) |event| {
-        const entry_line = try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .handler_fn = call_transform_{s} }},\n", .{ event.match_name, event.stub_name });
+        const entry_line = try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .handler_fn = call_handler_{s} }},\n", .{ event.match_name, event.stub_name });
         try code_emitter.write(entry_line);
     }
 
@@ -4597,6 +4648,9 @@ pub fn main() !void {
     const meta_events = @import("meta_events");
     try meta_events.injectMetaEvents(parse_allocator, &source_file);
     std.debug.print("Injected meta-events: koru:start, koru:end\n", .{});
+
+    // NOTE: Declaration-level transforms run in the BACKEND alongside invocation transforms.
+    // They update the type registry when they run, not here in the frontend.
 
     // Build TypeRegistry from canonicalized AST
     // This must happen AFTER canonicalization so event names include module qualifiers

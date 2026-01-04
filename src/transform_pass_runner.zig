@@ -179,39 +179,41 @@ fn walkNode(
         std.debug.print("[WALK] -> No transform/expand match\n", .{});
     }
 
-    // Check for declaration-level transforms on event declarations
-    // This enables [transform(EBNF)] on ~event declarations to generate code from the declaration
+    // Check for [derive(X)] annotations on event declarations
+    // This enables ~[derive(parser)]event token {} to generate new events/procs from the declaration
+    // Unlike [transform] which mutates invocations, [derive] generates NEW declarations
     if (node == .item) {
         if (node.item.* == .event_decl) {
             const event_decl = &node.item.event_decl;
 
-            // Check for [transform(X)] annotation
-            if (annotation_parser.getCall(allocator, event_decl.annotations, "transform") catch null) |call| {
+            // Check for [derive(X)] annotation
+            if (annotation_parser.getCall(allocator, event_decl.annotations, "derive") catch null) |call| {
                 defer {
                     var mutable_call = call;
                     mutable_call.deinit(allocator);
                 }
 
-                // Get the transform handler name from first arg
+                // Get the derive handler name from first arg
                 if (call.args.len > 0) {
                     const handler_name = call.args[0];
-                    std.debug.print("[WALK] Declaration transform: {s} on event\n", .{handler_name});
+                    std.debug.print("[WALK] Derive: {s} on event declaration\n", .{handler_name});
 
-                    // Find matching transform handler
+                    // Find matching derive handler in transforms array
+                    // Derive handlers are registered alongside transform handlers
                     for (transforms) |transform| {
                         if (std.mem.eql(u8, transform.name, handler_name)) {
-                            std.debug.print("[WALK] -> Matched declaration transform: {s}\n", .{handler_name});
-                            const transformed = try transform.handler_fn(node, program, allocator);
+                            std.debug.print("[WALK] -> Matched derive handler: {s}\n", .{handler_name});
+                            const derived = try transform.handler_fn(node, program, allocator);
 
-                            if (transformed == program) {
-                                std.debug.print("ERROR: Declaration transform '{s}' returned same program pointer!\n", .{handler_name});
+                            if (derived == program) {
+                                std.debug.print("ERROR: Derive handler '{s}' returned same program pointer!\n", .{handler_name});
                                 return error.TransformReturnedSamePointer;
                             }
 
-                            return WalkResult{ .found = true, .program = transformed };
+                            return WalkResult{ .found = true, .program = derived };
                         }
                     }
-                    std.debug.print("[WALK] -> No handler found for declaration transform: {s}\n", .{handler_name});
+                    std.debug.print("[WALK] -> No handler found for derive: {s}\n", .{handler_name});
                 }
             }
         }
