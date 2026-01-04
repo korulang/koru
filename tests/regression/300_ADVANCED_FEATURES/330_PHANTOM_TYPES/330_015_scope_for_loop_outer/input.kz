@@ -1,15 +1,14 @@
-// TEST: Scope - obligation OUTSIDE for-loop should NOT auto-dispose inside
+// TEST: Scope - obligation OUTSIDE for-loop is auto-disposed in done branch
 // STATUS: IMPLEMENTED
-// MUST_FAIL: KORU032 - Cannot auto-dispose outer-scope resource inside loop
 //
-// When an obligation is created OUTSIDE a for-loop, the checker must NOT
-// auto-dispose it inside the loop. The user must explicitly handle the
-// resource outside the loop structure.
+// When an obligation is created OUTSIDE a for-loop:
+// - It CANNOT be auto-disposed inside the `each` branch (@scope)
+// - It CAN be auto-disposed in the `done` branch (no @scope)
 //
-// Here: We open a file BEFORE the loop, then terminate inside the loop.
-// This is an error - auto-dispose cannot handle outer-scope obligations.
+// Here: We open a file BEFORE the loop, loop runs, then auto_dispose
+// inserts close in the `done` branch. This is valid code.
 //
-// Expected: KORU032 error about outer-scope resource
+// Expected: Compiles successfully - file is auto-closed after loop
 
 ~import "$std/control"
 ~import "$app/fs"
@@ -17,7 +16,7 @@
 ~app.fs:open(path: "outer.txt")
 | opened outer_f |>
     std.control:for(0..3)
-    | each _ |> _  // ERROR: outer_f has [opened!] but we can't dispose here
+    | each _ |> _  // outer_f is suspended here (@scope), disposed in done
     | done |> _
 
 pub fn main() void {}

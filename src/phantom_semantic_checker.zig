@@ -1189,30 +1189,10 @@ pub const PhantomSemanticChecker = struct {
 
         // Validate each continuation in the branch body
         for (branch.body) |*cont| {
-            // Check for terminator with outer-scope obligations
-            const is_terminator = cont.node == null and cont.continuations.len == 0 or
-                (if (cont.node) |step| step == .terminal else false);
-
-            if (is_terminator and has_scope) {
-                // Inside @scope at terminator - check for outer-scope obligations
-                if (branch_context.hasOuterScopeObligations()) {
-                    const outer_obligations = try branch_context.getOuterScopeObligations(self.allocator);
-                    defer self.allocator.free(outer_obligations);
-
-                    for (outer_obligations) |resource| {
-                        const phantom_state = branch_context.get(resource) orelse "unknown";
-                        std.debug.print("[SCOPE] ❌ ERROR: Outer-scope obligation '{s}' [{s}] cannot be satisfied inside @scope\n", .{resource, phantom_state});
-                        try self.reporter.addError(
-                            .KORU032, // Scope error
-                            location.line,
-                            location.column,
-                            "Cannot satisfy outer-scope obligation '{s}' [{s}] inside @scope boundary (loop/tap body). Move the resource creation inside the scope or handle it after the scope.",
-                            .{resource, phantom_state}
-                        );
-                        has_errors = true;
-                    }
-                }
-            }
+            // NOTE: We do NOT check outer-scope obligations at terminators inside @scope.
+            // Outer obligations are "suspended" - they'll be checked when the OUTER scope
+            // terminates (e.g., in the `done` branch after a for-loop).
+            // The auto_dispose_inserter handles the actual disposal logic, respecting @scope.
 
             // Validate the step if present - handle recursively for nested structures
             if (cont.node) |step| {
@@ -1241,29 +1221,8 @@ pub const PhantomSemanticChecker = struct {
 
             // Recursively validate nested continuations
             for (cont.continuations) |*nested| {
-                // For nested continuations, check for terminator with outer-scope obligations
-                const nested_is_terminator = nested.node == null and nested.continuations.len == 0 or
-                    (if (nested.node) |step| step == .terminal else false);
-
-                if (nested_is_terminator and has_scope) {
-                    if (branch_context.hasOuterScopeObligations()) {
-                        const outer_obligations = try branch_context.getOuterScopeObligations(self.allocator);
-                        defer self.allocator.free(outer_obligations);
-
-                        for (outer_obligations) |resource| {
-                            const phantom_state = branch_context.get(resource) orelse "unknown";
-                            std.debug.print("[SCOPE] ❌ ERROR: Outer-scope obligation '{s}' [{s}] cannot be satisfied inside @scope\n", .{resource, phantom_state});
-                            try self.reporter.addError(
-                                .KORU032,
-                                location.line,
-                                location.column,
-                                "Cannot satisfy outer-scope obligation '{s}' [{s}] inside @scope boundary. Move the resource creation inside the scope or handle it after the scope.",
-                                .{resource, phantom_state}
-                            );
-                            has_errors = true;
-                        }
-                    }
-                }
+                // NOTE: Same as above - we don't check outer-scope obligations at terminators.
+                // They're suspended inside @scope and will be checked by the outer scope.
 
                 // Validate nested step - handle recursively for nested structures
                 if (nested.node) |step| {
