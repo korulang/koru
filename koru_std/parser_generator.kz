@@ -143,6 +143,7 @@ const std = @import("std");
     var proc_body = std.ArrayList(u8).initCapacity(allocator, 4096) catch unreachable;
     const writer = proc_body.writer(allocator);
 
+    writer.writeAll("    const std = @import(\"std\");\n") catch unreachable;
     writer.writeAll("    // Generated parser for ") catch unreachable;
     writer.writeAll(event_name) catch unreachable;
     writer.writeAll("\n") catch unreachable;

@@ -1,26 +1,20 @@
 // TEST: Parser Generator - Basic
 //
-// Tests that [transform(parser)] generates a working lexer from event schema.
-// Start simple: just digits and single-char operators.
+// Tests that [derive(parser)] generates a working lexer from event schema.
+// Phantom annotations carry regex patterns that the derive handler interprets.
 
 ~import "$std/parser_generator"
+~import "$std/io"
 
-const std = @import("std");
-
-// Token schema - the phantom annotations carry regex patterns
+// Token schema - phantom annotations carry regex patterns
 ~[derive(parser)]event token {}
 | number u64[\d+]
 | plus void[\+]
 | eof
 
-// Main: test the generated parser
-pub fn main() void {
-    // Parse "123+456"
-    const result1 = main_module.token_parse_event.handler(.{ .stream = "123+456" });
-    switch (result1) {
-        .number => |n| std.debug.print("number: {}\n", .{n.value}),
-        .plus => std.debug.print("plus\n", .{}),
-        .eof => std.debug.print("eof\n", .{}),
-        .@"error" => |e| std.debug.print("error: {s}\n", .{e.message}),
-    }
-}
+// Test the generated parser using Koru flows!
+~token.parse(stream: "123+456")
+| number n |> std.io:print.ln("number: {{ n.value }}")
+| plus _ |> std.io:print.ln("plus")
+| eof _ |> std.io:print.ln("eof")
+| error e |> std.io:print.ln("error: {{ e.message }}")
