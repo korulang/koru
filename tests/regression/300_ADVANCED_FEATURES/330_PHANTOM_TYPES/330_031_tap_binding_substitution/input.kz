@@ -1,20 +1,17 @@
-// TEST: Tap binding substitution (MUST_FAIL - documents current limitation)
+// TEST: Tap binding substitution
 //
-// ISSUE: When a tap uses a binding to access payload data, the tap transform
-// does not substitute the binding name when splicing into the target flow.
+// Verifies that taps can use bindings to access payload data.
+// The tap transform correctly rewrites binding references when splicing.
 //
-// The tap declares: | opened f |> log_open(handle: f.file.handle)
-// The main flow has: | opened _ |> (which becomes _auto_0 via auto-dispose)
+// Example: The tap declares `| opened f |> log_open(handle: f.file.handle)`
+//          The main flow has `| opened _ |>` (auto-dispose synthesizes binding)
 //
-// When spliced, the tap's code still references 'f', but the actual binding
-// is '_auto_0'. This causes "use of undeclared identifier 'f'" in codegen.
+// The tap transform:
+// 1. Synthesizes a unique binding (_tap_N) when original binding is "_"
+// 2. Rewrites tap's binding references: f.file.handle → _tap_N.file.handle
+// 3. Sets the synthesized binding on the continuation
 //
-// FIX NEEDED: The tap transform should rewrite binding references when
-// splicing the tap's continuation into the target flow. The tap's binding
-// name should be substituted with the actual binding from the matched
-// continuation.
-//
-// When this test PASSES, the limitation has been fixed!
+// Result: Tap can observe and access payload data without breaking codegen!
 
 ~import "$std/taps"
 ~import "$app/fs"
