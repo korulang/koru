@@ -2280,10 +2280,11 @@ pub fn emitFlow(
                 }
 
                 // Emit switch with only non-looping branches
-                // Non-looping switches need else => unreachable (looping branches not handled here)
-                const has_looping_branches = looping_branches.len > 0;
+                // NOTE: After the while loop guard, looping branches are IMPOSSIBLE.
+                // Zig 0.15+ knows this and considers the switch exhaustive, so we must NOT
+                // emit else => unreachable (it would be "unreachable else prong; all cases handled")
                 if (non_looping_conts.items.len > 0) {
-                    try emitContinuationList(emitter, ctx, non_looping_conts.items, first_result, &result_counter, has_looping_branches);
+                    try emitContinuationList(emitter, ctx, non_looping_conts.items, first_result, &result_counter, false);
                 }
             }
             }
@@ -2969,8 +2970,27 @@ fn emitContinuationList(
             try emitter.write(";\n");
         }
 
-        // Taps are now in the AST via tap_transformer - execute continuation body directly
-        try emitContinuationBody(emitter, ctx, cont, result_counter);
+        // Check if continuation has a when-clause condition
+        // (e.g., from tap: ~tap(foo -> *) | branch b when b.flag |> handler())
+        if (cont.condition) |condition| {
+            // Wrap in if statement
+            try emitter.writeIndent();
+            try emitter.write("if (");
+            if (cont.condition_expr) |expr| {
+                try emitExpression(emitter, ctx, expr, null);
+            } else {
+                try emitter.write(condition);
+            }
+            try emitter.write(") {\n");
+            emitter.indent();
+            try emitContinuationBody(emitter, ctx, cont, result_counter);
+            emitter.dedent();
+            try emitter.writeIndent();
+            try emitter.write("}\n");
+        } else {
+            // No when-clause - execute continuation body directly
+            try emitContinuationBody(emitter, ctx, cont, result_counter);
+        }
         return;
     }
 
@@ -3060,6 +3080,54 @@ fn emitContinuationList(
     if (is_partial_switch) {
         try emitter.writeIndent();
         try emitter.write("else => unreachable,\n");
+    }
+
+    emitter.dedent();
+    try emitter.writeIndent();
+    try emitter.write("}\n");
+}
+
+/// Emit continuations with explicit unreachable cases for specific branches
+/// Used when a while loop guards certain branches - we can't use `else => unreachable`
+/// because Zig might determine all cases are handled via control flow analysis,
+/// but we also can't omit the guarded branches because Zig's exhaustiveness check
+/// doesn't always track the while condition.
+fn emitContinuationListWithUnreachableBranches(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    continuations: []const ast.Continuation,
+    prev_result: []const u8,
+    result_counter: *usize,
+    unreachable_branches: []const []const u8,
+) anyerror!void {
+    if (continuations.len == 0 and unreachable_branches.len == 0) {
+        return;
+    }
+
+    try emitter.writeIndent();
+    try emitter.write("switch (");
+    try emitter.write(prev_result);
+    try emitter.write(") {\n");
+    emitter.indent();
+
+    // Emit actual continuation cases
+    for (continuations) |*cont| {
+        try emitContinuationCase(emitter, ctx, cont, result_counter);
+    }
+
+    // Emit explicit unreachable cases for guarded branches
+    for (unreachable_branches) |branch| {
+        try emitter.writeIndent();
+        try emitter.write(".");
+        // Handle reserved Zig keywords
+        if (CodeEmitter.isZigKeyword(branch)) {
+            try emitter.write("@\"");
+            try emitter.write(branch);
+            try emitter.write("\"");
+        } else {
+            try emitter.write(branch);
+        }
+        try emitter.write(" => unreachable,\n");
     }
 
     emitter.dedent();
@@ -3559,10 +3627,11 @@ pub fn emitContinuationBody(
                 }
 
                 // Emit switch with only looping branches
-                // NOTE: Must pass true for is_partial_switch since we only emit looping branches,
-                // but the event output type has all branches - Zig requires else => unreachable
+                // NOTE: The while loop condition already guarantees only looping branch values are possible.
+                // Zig 0.15+ considers the switch exhaustive for those values, so we must NOT emit
+                // else => unreachable (it would be "unreachable else prong; all cases handled")
                 if (looping_conts.items.len > 0) {
-                    try emitContinuationList(emitter, ctx, looping_conts.items, result_var, result_counter, true);
+                    try emitContinuationList(emitter, ctx, looping_conts.items, result_var, result_counter, false);
                 }
             }
         }
@@ -3599,8 +3668,10 @@ pub fn emitContinuationBody(
             }
 
             // Emit switch with only non-looping branches
-            // Non-looping switches need else => unreachable (looping branches not handled here)
-            const has_looping_branches_lwi = looping_branches.len > 0;
+            // NOTE: After the while loop guard, looping branches are IMPOSSIBLE at runtime.
+            // However, Zig's exhaustiveness checker doesn't track this via control flow.
+            // We must emit explicit `.branch => unreachable` for each looping branch
+            // instead of `else => unreachable` (which Zig 0.15 rejects when it CAN track exhaustiveness).
             if (non_looping_conts.items.len > 0) {
                 // Need to restore source event context for the non-looping switch
                 const saved_source_2 = ctx.current_source_event;
@@ -3613,7 +3684,8 @@ pub fn emitContinuationBody(
                     ctx.current_source_event = saved_source_2;
                 }
 
-                try emitContinuationList(emitter, ctx, non_looping_conts.items, result_var, result_counter, has_looping_branches_lwi);
+                // Pass the looping branches so we can emit explicit unreachable cases for them
+                try emitContinuationListWithUnreachableBranches(emitter, ctx, non_looping_conts.items, result_var, result_counter, looping_branches);
             }
         } else if (cont.continuations.len > 0 and looping_branches.len == cont.continuations.len) {
             // ALL branches are looping - the while loop only exits via return statements
