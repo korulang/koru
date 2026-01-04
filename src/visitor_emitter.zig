@@ -1215,6 +1215,266 @@ pub const VisitorEmitter = struct {
                         }
                     }
                 },
+                .module_decl => |module| {
+                    // Recursively search inside modules for implementations
+                    // This is needed when all_items contains module_decl items
+                    // and we need to find subflow_impl/proc_decl inside them
+                    for (module.items) |module_item| {
+                        switch (module_item) {
+                            .proc_decl => |proc| {
+                                if (proc.path.segments.len == event.path.segments.len) {
+                                    var matches = true;
+                                    for (proc.path.segments, 0..) |seg, j| {
+                                        if (!eql(u8, seg, event.path.segments[j])) {
+                                            matches = false;
+                                            break;
+                                        }
+                                    }
+                                    if (matches) {
+                                        // Skip non-Zig variants
+                                        if (proc.target) |target| {
+                                            if (!eql(u8, target, "zig")) {
+                                                continue;
+                                            }
+                                        }
+
+                                        // Generate source marker for proc
+                                        try self.code_emitter.writeIndent();
+                                        try self.code_emitter.write("// >>> PROC: ");
+                                        for (proc.path.segments, 0..) |seg, idx| {
+                                            if (idx > 0) try self.code_emitter.write(".");
+                                            try self.code_emitter.write(seg);
+                                        }
+                                        try self.code_emitter.write("\n");
+
+                                        // Generate implicit input bindings
+                                        for (event.input.fields) |field| {
+                                            try self.code_emitter.writeIndent();
+                                            try self.code_emitter.write("const ");
+                                            try self.code_emitter.write(field.name);
+                                            try self.code_emitter.write(" = __koru_event_input.");
+                                            try self.code_emitter.write(field.name);
+                                            try self.code_emitter.write(";\n");
+                                        }
+                                        // Suppress unused variable warnings
+                                        for (event.input.fields) |field| {
+                                            try self.code_emitter.writeIndent();
+                                            try self.code_emitter.write("_ = &");
+                                            try self.code_emitter.write(field.name);
+                                            try self.code_emitter.write(";\n");
+                                        }
+
+                                        try self.code_emitter.writeIndent();
+                                        try self.code_emitter.write("_ = &__koru_event_input;\n");
+
+                                        // Emit proc body with proper indentation
+                                        var indent_buf: [64]u8 = undefined;
+                                        var indent_pos: usize = 0;
+                                        var i: usize = 0;
+                                        while (i < self.code_emitter.indent_level) : (i += 1) {
+                                            @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
+                                            indent_pos += 4;
+                                        }
+                                        const indent_str = indent_buf[0..indent_pos];
+
+                                        // Emit each line of the proc body
+                                        var lines = std.mem.splitSequence(u8, proc.body, "\n");
+                                        while (lines.next()) |line| {
+                                            // Trim leading whitespace and re-indent
+                                            const trimmed = std.mem.trimLeft(u8, line, " \t");
+                                            if (trimmed.len > 0) {
+                                                try self.code_emitter.write(indent_str);
+                                                try self.code_emitter.write(trimmed);
+                                                try self.code_emitter.write("\n");
+                                            } else if (line.len > 0) {
+                                                try self.code_emitter.write("\n");
+                                            }
+                                        }
+                                        found_impl = true;
+                                        break;
+                                    }
+                                }
+                            },
+                            .subflow_impl => |subflow| {
+                                if (DEBUG) std.debug.print("    [module] Checking subflow: ", .{});
+                                for (subflow.event_path.segments) |seg| {
+                                    if (DEBUG) std.debug.print("{s}.", .{seg});
+                                }
+                                if (DEBUG) std.debug.print("\n", .{});
+
+                                if (subflow.event_path.segments.len == event.path.segments.len) {
+                                    var matches = true;
+                                    for (subflow.event_path.segments, 0..) |seg, j| {
+                                        if (!eql(u8, seg, event.path.segments[j])) {
+                                            matches = false;
+                                            break;
+                                        }
+                                    }
+                                    if (matches) {
+                                        if (DEBUG) std.debug.print("    [module] ✓ FOUND MATCHING SUBFLOW!\n", .{});
+                                        switch (subflow.body) {
+                                            .immediate => |bc| {
+                                                // Generate implicit input bindings for immediate subflows
+                                                for (event.input.fields) |field| {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("const ");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(" = __koru_event_input.");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(";\n");
+                                                }
+                                                // Suppress unused variable warnings
+                                                for (event.input.fields) |field| {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("_ = &");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(";\n");
+                                                }
+                                                if (event.input.fields.len == 0) {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("_ = &__koru_event_input;\n");
+                                                }
+                                                try self.code_emitter.writeIndent();
+                                                try self.code_emitter.write("return .{ .");
+                                                try emitter.writeBranchName(self.code_emitter, bc.branch_name);
+                                                try self.code_emitter.write(" = ");
+                                                if (bc.plain_value) |pv| {
+                                                    try self.code_emitter.write(pv);
+                                                } else {
+                                                    try self.code_emitter.write(".{");
+                                                    for (bc.fields, 0..) |field, k| {
+                                                        if (k > 0) try self.code_emitter.write(", ");
+                                                        try self.code_emitter.write(" .");
+                                                        try self.code_emitter.write(field.name);
+                                                        try self.code_emitter.write(" = ");
+                                                        const value = if (field.expression_str) |expr| expr else field.type;
+                                                        try self.code_emitter.write(value);
+                                                    }
+                                                    try self.code_emitter.write(" }");
+                                                }
+                                                try self.code_emitter.write(" };\n");
+                                            },
+                                            .flow => |flow| {
+                                                // Generate implicit input bindings
+                                                for (event.input.fields) |field| {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("const ");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(" = __koru_event_input.");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(";\n");
+                                                }
+                                                for (event.input.fields) |field| {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("_ = &");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(";\n");
+                                                }
+                                                try self.code_emitter.writeIndent();
+                                                try self.code_emitter.write("_ = &__koru_event_input;\n");
+
+                                                // Check for preamble_code (from transforms)
+                                                if (flow.preamble_code) |preamble| {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write(preamble);
+                                                    try self.code_emitter.write("\n");
+
+                                                    var emitter_ctx = emitter.EmissionContext{
+                                                        .allocator = self.allocator,
+                                                        .ast_items = self.all_items,
+                                                        .tap_registry = self.tap_registry,
+                                                        .main_module_name = self.main_module_name,
+                                                        .current_source_event = null,
+                                                        .label_contexts = null,
+                                                        .is_sync = true,
+                                                        .in_handler = true,
+                                                    };
+
+                                                    var result_counter: usize = 0;
+                                                    for (flow.continuations) |*cont| {
+                                                        try emitter.emitContinuationBody(self.code_emitter, &emitter_ctx, cont, &result_counter);
+                                                    }
+                                                } else if (flow.inline_body) |inline_code| {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("// >>> INLINE: transformed subflow\n");
+
+                                                    var indent_buf: [64]u8 = undefined;
+                                                    var indent_pos: usize = 0;
+                                                    var idx: usize = 0;
+                                                    while (idx < self.code_emitter.indent_level) : (idx += 1) {
+                                                        @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
+                                                        indent_pos += 4;
+                                                    }
+                                                    const indent_str = indent_buf[0..indent_pos];
+
+                                                    try self.code_emitter.emitReindentedText(inline_code, indent_str);
+                                                    try self.code_emitter.write("\n");
+                                                } else {
+                                                    // Generate the invocation of the inner event
+                                                    try self.code_emitter.writeIndent();
+
+                                                    const invoked_event = self.findEventDeclInItems(items_to_search, &flow.invocation.path);
+                                                    const needs_mutable = if (invoked_event) |invoked| blk: {
+                                                        for (invoked.branches) |branch| {
+                                                            for (branch.annotations) |ann| {
+                                                                if (std.mem.eql(u8, ann, "mutable")) {
+                                                                    break :blk true;
+                                                                }
+                                                            }
+                                                        }
+                                                        break :blk false;
+                                                    } else false;
+
+                                                    if (needs_mutable) {
+                                                        try self.code_emitter.write("var result = ");
+                                                    } else {
+                                                        try self.code_emitter.write("const result = ");
+                                                    }
+
+                                                    if (flow.invocation.path.module_qualifier) |mq| {
+                                                        try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
+                                                        try self.code_emitter.write(".");
+                                                    }
+                                                    for (flow.invocation.path.segments, 0..) |seg, idx| {
+                                                        if (idx > 0) try self.code_emitter.write("_");
+                                                        try self.code_emitter.write(seg);
+                                                    }
+                                                    try self.code_emitter.write("_event.handler(.{");
+
+                                                    for (flow.invocation.args, 0..) |arg, k| {
+                                                        if (k > 0) try self.code_emitter.write(", ");
+                                                        try self.code_emitter.write(" .");
+                                                        try self.code_emitter.write(arg.name);
+                                                        try self.code_emitter.write(" = ");
+                                                        try self.code_emitter.write(arg.value);
+                                                    }
+                                                    try self.code_emitter.write(" });\n");
+
+                                                    var indent_buf: [64]u8 = undefined;
+                                                    var indent_pos: usize = 0;
+                                                    var idx: usize = 0;
+                                                    while (idx < self.code_emitter.indent_level) : (idx += 1) {
+                                                        @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
+                                                        indent_pos += 4;
+                                                    }
+                                                    const indent_str = indent_buf[0..indent_pos];
+
+                                                    const source_event_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
+
+                                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name);
+                                                }
+                                            },
+                                        }
+                                        found_impl = true;
+                                        break;
+                                    }
+                                }
+                            },
+                            else => {},
+                        }
+                    }
+                    if (found_impl) break;
+                },
                 else => {},
             }
         }
@@ -1439,7 +1699,9 @@ pub const VisitorEmitter = struct {
                 if (module_item.* != .host_line) {
                     // Use the module's OWN annotations, not the top-level file's annotations
                     // This is critical for [comptime|runtime] modules like std.io
-                    try self.visitItem(module_item, module.annotations, module.items);
+                    // CRITICAL: Pass all_items (full AST) for module-qualified event resolution (e.g., vaxis:poll)
+                    // Module.items only contains the module's local items, not imported modules
+                    try self.visitItem(module_item, module.annotations, self.all_items);
                 }
             }
         }

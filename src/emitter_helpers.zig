@@ -1826,7 +1826,30 @@ pub fn findEventModule(event_path: []const []const u8, items: []const ast.Item) 
 }
 
 /// Find an event declaration by its path
+/// Handles both local events (no module_qualifier) and imported module events (with module_qualifier)
 fn findEventDeclByPath(items: []const ast.Item, path: *const ast.DottedPath) ?*const ast.EventDecl {
+    // If path has a module_qualifier (e.g., "vaxis" in "vaxis:poll"),
+    // we need to find the matching module first
+    if (path.module_qualifier) |module_qual| {
+        for (items) |*item| {
+            switch (item.*) {
+                .module_decl => |*module| {
+                    // Check if this module matches the qualifier
+                    if (std.mem.eql(u8, module.logical_name, module_qual)) {
+                        // Found the module - now search for the event inside it
+                        return findEventDeclByPathInModule(module.items, path.segments);
+                    }
+                },
+                else => {},
+            }
+        }
+        // If no module_decl matches, the module_qualifier might refer to the main module
+        // which is the source_file itself (not a module_decl). Fall back to searching
+        // top-level items for the event.
+        return findEventDeclByPathInModule(items, path.segments);
+    }
+
+    // No module qualifier - search for local events
     for (items) |*item| {
         switch (item.*) {
             .event_decl => |*event| {
@@ -1847,6 +1870,30 @@ fn findEventDeclByPath(items: []const ast.Item, path: *const ast.DottedPath) ?*c
             .module_decl => |*module| {
                 if (findEventDeclByPath(module.items, path)) |found| {
                     return found;
+                }
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// Helper: Find event by segments within a specific module's items
+fn findEventDeclByPathInModule(items: []const ast.Item, segments: []const []const u8) ?*const ast.EventDecl {
+    for (items) |*item| {
+        switch (item.*) {
+            .event_decl => |*event| {
+                if (event.path.segments.len == segments.len) {
+                    var matches = true;
+                    for (event.path.segments, 0..) |segment, i| {
+                        if (!std.mem.eql(u8, segment, segments[i])) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if (matches) {
+                        return event;
+                    }
                 }
             },
             else => {},

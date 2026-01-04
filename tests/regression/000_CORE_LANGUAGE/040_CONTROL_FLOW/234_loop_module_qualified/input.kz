@@ -1,0 +1,28 @@
+// Test 234: Loop with module-qualified event as loop target
+//
+// BUG: #loop module:event() fails with "Event not found"
+// WORKS: #loop local.event() (dotted path without module qualifier)
+//
+// The emitter can't find event declarations for module:event syntax in loop context.
+// See test 230 for working example with dotted paths.
+
+const std = @import("std");
+
+// Simulate an imported module with an event
+~event mymodule.tick {}
+| next { n: u32 }
+| done {}
+
+~proc mymodule.tick {
+    const static = struct { var count: u32 = 0; };
+    static.count += 1;
+    if (static.count < 3) {
+        return .{ .next = .{ .n = static.count } };
+    }
+    return .{ .done = .{} };
+}
+
+// WORKS: dotted path (local namespace)
+~#loop mymodule.tick()
+| next _ |> @loop()
+| done |> _

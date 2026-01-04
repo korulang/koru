@@ -1,0 +1,15 @@
+// Test 235: Loop with imported module event (MUST_FAIL - documents known bug)
+//
+// BUG: #loop module:event() fails with "Event not found"
+// when the event comes from an imported module.
+//
+// Error: "COMPILER BUG: Cannot find event declaration for loop variable"
+//
+// This is a regression test to track when the bug is fixed.
+
+~import "$app/mylib"
+
+// The loop uses an event from the imported module
+~#loop app.mylib:tick()
+| next _ |> @loop()
+| done |> _
