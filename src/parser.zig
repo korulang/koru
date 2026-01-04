@@ -5297,11 +5297,55 @@ pub const Parser = struct {
                 type_str = type_and_annotation;
             }
 
+            // Handle phantom types like u64[\d+] - extract and strip from type_str
+            // Use same logic as parseFields for consistency
+            var phantom: ?[]const u8 = null;
+            if (type_str.len > 0 and type_str[type_str.len - 1] == ']') {
+                // Type ends with ], might have a phantom tag
+                var bracket_depth: i32 = 0;
+                var j: usize = type_str.len - 1;
+                const end_pos = j;
+                var start_pos: ?usize = null;
+                while (j > 0) : (j -= 1) {
+                    if (type_str[j] == ']') {
+                        bracket_depth += 1;
+                    } else if (type_str[j] == '[') {
+                        bracket_depth -= 1;
+                        if (bracket_depth == 0) {
+                            start_pos = j;
+                            break;
+                        }
+                    }
+                }
+
+                if (start_pos) |start| {
+                    if (start > 0) {
+                        const bracket_content = type_str[start + 1..end_pos];
+                        // Check if it's a number (array dimension) vs phantom tag
+                        const is_number = blk: {
+                            if (bracket_content.len == 0) break :blk true; // empty []
+                            for (bracket_content) |c| {
+                                if (!std.ascii.isDigit(c) and c != '_') break :blk false;
+                            }
+                            break :blk true;
+                        };
+
+                        if (!is_number and bracket_content.len > 0) {
+                            // This is a phantom tag/state!
+                            phantom = try self.allocator.dupe(u8, bracket_content);
+                            // Remove phantom from type for Zig emission
+                            type_str = type_str[0..start];
+                        }
+                    }
+                }
+            }
+
             // Create identity field with __type_ref convention
             var fields = try self.allocator.alloc(ast.Field, 1);
             fields[0] = ast.Field{
                 .name = try self.allocator.dupe(u8, "__type_ref"),
                 .type = try self.allocator.dupe(u8, type_str),
+                .phantom = phantom,
             };
 
             return ast.Branch{

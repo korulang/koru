@@ -142,18 +142,18 @@ fn walkNode(
             @memcpy(debug_path[debug_len..][0..seg.len], seg);
             debug_len += seg.len;
         }
-        std.debug.print("[WALK] Checking invocation: {s} (module: {s})\n", .{ debug_path[0..debug_len], inv.path.module_qualifier orelse "<none>" });
+        // std.debug.print("[WALK] Checking invocation: {s} (module: {s})\n", .{ debug_path[0..debug_len], inv.path.module_qualifier orelse "<none>" });
 
         // Skip if already transformed
         if (node.isAlreadyTransformed()) {
-            std.debug.print("[WALK] -> Skipping (already transformed)\n", .{});
+            // std.debug.print("[WALK] -> Skipping (already transformed)\n", .{});
             return WalkResult{ .found = false, .program = program };
         }
 
         // Check if this invocation matches any transform
         for (transforms) |transform| {
             if (node.matchesTransform(transform.name)) {
-                std.debug.print("[WALK] -> Matched transform: {s}\n", .{transform.name});
+                // std.debug.print("[WALK] -> Matched transform: {s}\n", .{transform.name});
                 const transformed = try transform.handler_fn(node, program, allocator);
 
                 // CRITICAL: A transform MUST change the AST. If it returns the same pointer,
@@ -170,13 +170,13 @@ fn walkNode(
         }
 
         // Check if this invocation matches an [expand] event
-        std.debug.print("[WALK] -> Checking for [expand] match\n", .{});
+        // std.debug.print("[WALK] -> Checking for [expand] match\n", .{});
         const expand_result = try handleExpandIfMatches(node, program, allocator);
         if (expand_result.found) {
-            std.debug.print("[WALK] -> Found [expand] match!\n", .{});
+            // std.debug.print("[WALK] -> Found [expand] match!\n", .{});
             return expand_result;
         }
-        std.debug.print("[WALK] -> No transform/expand match\n", .{});
+        // std.debug.print("[WALK] -> No transform/expand match\n", .{});
     }
 
     // Check for [derive(X)] annotations on event declarations
@@ -196,13 +196,13 @@ fn walkNode(
                 // Get the derive handler name from first arg
                 if (call.args.len > 0) {
                     const handler_name = call.args[0];
-                    std.debug.print("[WALK] Derive: {s} on event declaration\n", .{handler_name});
+                    // std.debug.print("[WALK] Derive: {s} on event declaration\n", .{handler_name});
 
                     // Find matching derive handler in transforms array
                     // Derive handlers are registered alongside transform handlers
                     for (transforms) |transform| {
                         if (std.mem.eql(u8, transform.name, handler_name)) {
-                            std.debug.print("[WALK] -> Matched derive handler: {s}\n", .{handler_name});
+                            // std.debug.print("[WALK] -> Matched derive handler: {s}\n", .{handler_name});
                             const derived = try transform.handler_fn(node, program, allocator);
 
                             if (derived == program) {
@@ -213,7 +213,7 @@ fn walkNode(
                             return WalkResult{ .found = true, .program = derived };
                         }
                     }
-                    std.debug.print("[WALK] -> No handler found for derive: {s}\n", .{handler_name});
+                    // std.debug.print("[WALK] -> No handler found for derive: {s}\n", .{handler_name});
                 }
             }
         }
@@ -309,7 +309,7 @@ fn applyExpandTemplate(
 ) !WalkResult {
     const invocation = node.invocation;
 
-    std.debug.print("[EXPAND] Processing: {s}\n", .{event_name});
+    // std.debug.print("[EXPAND] Processing: {s}\n", .{event_name});
 
     // Look up template by event name
     const template_source = template_utils.lookupTemplate(program, event_name) orelse {
@@ -343,7 +343,7 @@ fn applyExpandTemplate(
         return WalkResult{ .found = false, .program = program };
     };
 
-    std.debug.print("[EXPAND] Generated: {s}\n", .{inline_body});
+    // std.debug.print("[EXPAND] Generated: {s}\n", .{inline_body});
 
     // Find the containing flow and update it with inline_body
     const containing_item = ASTNode.findContainingItem(program, invocation) orelse {

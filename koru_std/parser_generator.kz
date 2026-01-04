@@ -1,0 +1,348 @@
+~[comptime]
+
+// Koru Standard Library: Parser Generator Transform
+// Generates lexer/parser from event schema with regex patterns in phantom annotations
+//
+// ARCHITECTURE: Transform operates on event declarations with [transform(parser)].
+// It reads regex patterns from phantom annotations and generates matching code.
+//
+// Usage:
+//   ~[transform(parser)]event token {}
+//   | number { value: u64[\d+] }
+//   | identifier { name: []const u8[[a-zA-Z_][a-zA-Z0-9_]*] }
+//
+// Generates:
+//   ~event token.parse { stream: []const u8 }
+//   | number { value: u64, remaining: []const u8 }
+//   | identifier { name: []const u8, remaining: []const u8 }
+//   | error { message: []const u8, position: usize }
+//
+//   ~proc token.parse { ... matching code ... }
+
+const std = @import("std");
+
+// Parser transform: generates .parse event and proc from token schema
+//
+// Input: ~[transform(parser)]event token {} | branch1 { field: Type[regex] } | ...
+// Output: Adds token.parse event + proc with regex matching
+~[comptime]pub event parser {
+    event_decl: *const EventDecl,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc parser {
+    const ast = @import("ast");
+
+    // Build the event name from path segments
+    var name_buf: [256]u8 = undefined;
+    var name_len: usize = 0;
+    for (event_decl.path.segments, 0..) |seg, i| {
+        if (i > 0) {
+            name_buf[name_len] = '.';
+            name_len += 1;
+        }
+        @memcpy(name_buf[name_len..][0..seg.len], seg);
+        name_len += seg.len;
+    }
+    const event_name = name_buf[0..name_len];
+
+    // std.debug.print("[PARSER TRANSFORM] Processing event declaration: {s}\n", .{event_name});
+    // std.debug.print("[PARSER TRANSFORM] Branches: {}\n", .{event_decl.branches.len});
+
+    // Create new path for {name}.parse
+    const parse_segments = allocator.alloc([]const u8, event_decl.path.segments.len + 1) catch unreachable;
+    for (event_decl.path.segments, 0..) |seg, i| {
+        parse_segments[i] = allocator.dupe(u8, seg) catch unreachable;
+    }
+    parse_segments[event_decl.path.segments.len] = allocator.dupe(u8, "parse") catch unreachable;
+
+    const parse_path = ast.DottedPath{
+        .segments = parse_segments,
+        .module_qualifier = event_decl.path.module_qualifier,
+    };
+
+    // Build branches for the .parse event
+    // Each original branch becomes a branch with 'remaining: []const u8' added
+    // Plus we add an 'error' branch
+    const parse_branches = allocator.alloc(ast.Branch, event_decl.branches.len + 1) catch unreachable;
+
+    for (event_decl.branches, 0..) |branch, i| {
+        // std.debug.print("[PARSER TRANSFORM]   Branch: {s}\n", .{branch.name});
+
+        // Copy original fields + add 'remaining'
+        const new_fields = allocator.alloc(ast.Field, branch.payload.fields.len + 1) catch unreachable;
+        for (branch.payload.fields, 0..) |field, j| {
+            // std.debug.print("[PARSER TRANSFORM]     Field: {s}: {s}", .{field.name, field.type});
+            // if (field.phantom) |p| {
+            //     std.debug.print(" [{s}]", .{p});
+            // }
+            // std.debug.print("\n", .{});
+
+            // Rename __type_ref to 'value' for better semantics
+            const output_field_name = if (std.mem.eql(u8, field.name, "__type_ref")) "value" else field.name;
+            new_fields[j] = ast.Field{
+                .name = allocator.dupe(u8, output_field_name) catch unreachable,
+                .type = allocator.dupe(u8, field.type) catch unreachable,
+                .phantom = null, // Don't carry regex pattern to output
+            };
+        }
+        // Add 'remaining' field
+        new_fields[branch.payload.fields.len] = ast.Field{
+            .name = allocator.dupe(u8, "remaining") catch unreachable,
+            .type = allocator.dupe(u8, "[]const u8") catch unreachable,
+        };
+
+        parse_branches[i] = ast.Branch{
+            .name = allocator.dupe(u8, branch.name) catch unreachable,
+            .payload = ast.Shape{ .fields = new_fields },
+            .annotations = &[_][]const u8{},
+        };
+    }
+
+    // Add error branch
+    const error_fields = allocator.alloc(ast.Field, 2) catch unreachable;
+    error_fields[0] = ast.Field{
+        .name = allocator.dupe(u8, "message") catch unreachable,
+        .type = allocator.dupe(u8, "[]const u8") catch unreachable,
+    };
+    error_fields[1] = ast.Field{
+        .name = allocator.dupe(u8, "position") catch unreachable,
+        .type = allocator.dupe(u8, "usize") catch unreachable,
+    };
+    parse_branches[event_decl.branches.len] = ast.Branch{
+        .name = allocator.dupe(u8, "error") catch unreachable,
+        .payload = ast.Shape{ .fields = error_fields },
+        .annotations = &[_][]const u8{},
+    };
+
+    // Create input shape: { stream: []const u8 }
+    const input_fields = allocator.alloc(ast.Field, 1) catch unreachable;
+    input_fields[0] = ast.Field{
+        .name = allocator.dupe(u8, "stream") catch unreachable,
+        .type = allocator.dupe(u8, "[]const u8") catch unreachable,
+    };
+    const input_shape = ast.Shape{ .fields = input_fields };
+
+    // Create the .parse event declaration
+    const parse_event = allocator.create(ast.EventDecl) catch unreachable;
+    parse_event.* = ast.EventDecl{
+        .path = parse_path,
+        .input = input_shape,
+        .branches = parse_branches,
+        .annotations = &[_][]const u8{},
+        .module = event_decl.module,
+        .location = event_decl.location,
+    };
+
+    // std.debug.print("[PARSER TRANSFORM] Created {s}.parse event with {} branches\n", .{event_name, parse_branches.len});
+
+    // Generate the proc body - this is where the magic happens!
+    // We generate Zig code that matches each pattern
+    var proc_body = std.ArrayList(u8).initCapacity(allocator, 4096) catch unreachable;
+    const writer = proc_body.writer(allocator);
+
+    writer.writeAll("    // Generated parser for ") catch unreachable;
+    writer.writeAll(event_name) catch unreachable;
+    writer.writeAll("\n") catch unreachable;
+    writer.writeAll("    const input = stream;\n") catch unreachable;
+    writer.writeAll("    if (input.len == 0) return .{ .@\"error\" = .{ .message = \"unexpected end of input\", .position = 0 } };\n\n") catch unreachable;
+
+    // Generate matching code for each branch
+    for (event_decl.branches) |branch| {
+        // Get the first field's phantom annotation (regex pattern)
+        if (branch.payload.fields.len > 0) {
+            const field = branch.payload.fields[0];
+            if (field.phantom) |pattern| {
+                writer.writeAll("    // Try matching: ") catch unreachable;
+                writer.writeAll(branch.name) catch unreachable;
+                writer.writeAll(" with pattern: ") catch unreachable;
+                writer.writeAll(pattern) catch unreachable;
+                writer.writeAll("\n") catch unreachable;
+
+                // Generate pattern-specific matching code
+                generateMatchCode(writer, branch.name, field, pattern, allocator) catch unreachable;
+                writer.writeAll("\n") catch unreachable;
+            }
+        }
+    }
+
+    // Default: no pattern matched
+    writer.writeAll("    // No pattern matched\n") catch unreachable;
+    writer.writeAll("    return .{ .@\"error\" = .{ .message = \"no token matched\", .position = 0 } };\n") catch unreachable;
+
+    // Create the .parse proc declaration
+    const proc_body_str = proc_body.toOwnedSlice(allocator) catch unreachable;
+
+    const parse_proc = allocator.create(ast.ProcDecl) catch unreachable;
+    parse_proc.* = ast.ProcDecl{
+        .path = ast.DottedPath{
+            .segments = parse_segments, // Reuse same segments
+            .module_qualifier = event_decl.path.module_qualifier,
+        },
+        .body = proc_body_str,
+        .target = null, // null = Zig
+        .module = event_decl.module,
+        .location = event_decl.location,
+        .inline_flows = &[_]ast.Flow{},
+    };
+
+    // std.debug.print("[PARSER TRANSFORM] Created {s}.parse proc\n", .{event_name});
+
+    // Mark the original event as processed (add @pass_ran annotation)
+    var new_annotations = std.ArrayList([]const u8).initCapacity(allocator, event_decl.annotations.len + 1) catch unreachable;
+    for (event_decl.annotations) |ann| {
+        // Skip the derive(parser) annotation to prevent re-processing
+        if (std.mem.indexOf(u8, ann, "derive(parser)") == null) {
+            new_annotations.append(allocator, allocator.dupe(u8, ann) catch unreachable) catch unreachable;
+        }
+    }
+    new_annotations.append(allocator, allocator.dupe(u8, "@pass_ran(\"derive\")") catch unreachable) catch unreachable;
+
+    const modified_event_decl = ast.EventDecl{
+        .path = event_decl.path,
+        .input = event_decl.input,
+        .branches = event_decl.branches,
+        .annotations = new_annotations.toOwnedSlice(allocator) catch unreachable,
+        .is_public = event_decl.is_public,
+        .module = event_decl.module,
+        .location = event_decl.location,
+    };
+
+    // Build new program with:
+    // 1. Original event (with derive annotation removed, pass_ran added)
+    // 2. New .parse event
+    // 3. New .parse proc
+    const new_items = allocator.alloc(ast.Item, program.items.len + 2) catch unreachable;
+
+    var write_idx: usize = 0;
+    for (program.items) |prog_item| {
+        // Replace the original event_decl with modified version
+        if (prog_item == .event_decl) {
+            const prog_event = &prog_item.event_decl;
+            if (prog_event.path.segments.len == event_decl.path.segments.len) {
+                var matches = true;
+                for (prog_event.path.segments, event_decl.path.segments) |a, b| {
+                    if (!std.mem.eql(u8, a, b)) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) {
+                    new_items[write_idx] = ast.Item{ .event_decl = modified_event_decl };
+                    write_idx += 1;
+                    continue;
+                }
+            }
+        }
+        new_items[write_idx] = prog_item;
+        write_idx += 1;
+    }
+
+    // Add the new .parse event and proc
+    new_items[write_idx] = ast.Item{ .event_decl = parse_event.* };
+    write_idx += 1;
+    new_items[write_idx] = ast.Item{ .proc_decl = parse_proc.* };
+    write_idx += 1;
+
+    const new_program = allocator.create(ast.Program) catch unreachable;
+    new_program.* = ast.Program{
+        .items = new_items[0..write_idx],
+        .module_annotations = program.module_annotations,
+        .main_module_name = program.main_module_name,
+        .allocator = allocator,
+    };
+
+    return .{ .transformed = .{ .program = new_program } };
+}
+
+// Helper: Generate Zig matching code for a pattern
+fn generateMatchCode(writer: anytype, branch_name: []const u8, field: __koru_ast.Field, pattern: []const u8, allocator: std.mem.Allocator) !void {
+    _ = allocator;
+
+    // Get the output field name (rename __type_ref to value)
+    const field_name = if (std.mem.eql(u8, field.name, "__type_ref")) "value" else field.name;
+    const is_void_type = std.mem.eql(u8, field.type, "void");
+
+    // Simple pattern recognition - we'll expand this
+    if (std.mem.eql(u8, pattern, "\\d+")) {
+        // Digit sequence
+        try writer.writeAll("    {\n");
+        try writer.writeAll("        var i: usize = 0;\n");
+        try writer.writeAll("        while (i < input.len and input[i] >= '0' and input[i] <= '9') : (i += 1) {}\n");
+        try writer.writeAll("        if (i > 0) {\n");
+        try writer.writeAll("            const parsed_value = std.fmt.parseInt(u64, input[0..i], 10) catch 0;\n");
+        try writer.writeAll("            return .{ .");
+        try writer.writeAll(branch_name);
+        try writer.writeAll(" = .{ .");
+        try writer.writeAll(field_name);
+        try writer.writeAll(" = parsed_value, .remaining = input[i..] } };\n");
+        try writer.writeAll("        }\n");
+        try writer.writeAll("    }\n");
+    } else if (pattern.len == 1) {
+        // Single character literal
+        try writer.writeAll("    if (input[0] == '");
+        try writer.writeByte(pattern[0]);
+        try writer.writeAll("') return .{ .");
+        try writer.writeAll(branch_name);
+        if (is_void_type) {
+            try writer.writeAll(" = .{ .value = {}, .remaining = input[1..] } };\n");
+        } else {
+            try writer.writeAll(" = .{ .remaining = input[1..] } };\n");
+        }
+    } else if (pattern.len > 0 and pattern[0] == '\\' and pattern.len == 2) {
+        // Escaped single character like \( \) \+ \*
+        try writer.writeAll("    if (input[0] == '");
+        try writer.writeByte(pattern[1]);
+        try writer.writeAll("') return .{ .");
+        try writer.writeAll(branch_name);
+        if (is_void_type) {
+            try writer.writeAll(" = .{ .value = {}, .remaining = input[1..] } };\n");
+        } else {
+            try writer.writeAll(" = .{ .remaining = input[1..] } };\n");
+        }
+    } else if (std.mem.eql(u8, pattern, "\\s+")) {
+        // Whitespace sequence
+        try writer.writeAll("    {\n");
+        try writer.writeAll("        var i: usize = 0;\n");
+        try writer.writeAll("        while (i < input.len and (input[i] == ' ' or input[i] == '\\t' or input[i] == '\\n' or input[i] == '\\r')) : (i += 1) {}\n");
+        try writer.writeAll("        if (i > 0) return .{ .");
+        try writer.writeAll(branch_name);
+        if (is_void_type) {
+            try writer.writeAll(" = .{ .value = {}, .remaining = input[i..] } };\n");
+        } else {
+            try writer.writeAll(" = .{ .remaining = input[i..] } };\n");
+        }
+        try writer.writeAll("    }\n");
+    } else if (std.mem.startsWith(u8, pattern, "[a-zA-Z_]")) {
+        // Identifier pattern
+        try writer.writeAll("    if (input.len > 0 and (std.ascii.isAlphabetic(input[0]) or input[0] == '_')) {\n");
+        try writer.writeAll("        var i: usize = 1;\n");
+        try writer.writeAll("        while (i < input.len and (std.ascii.isAlphanumeric(input[i]) or input[i] == '_')) : (i += 1) {}\n");
+        try writer.writeAll("        return .{ .");
+        try writer.writeAll(branch_name);
+        try writer.writeAll(" = .{ .");
+        try writer.writeAll(field_name);
+        try writer.writeAll(" = input[0..i], .remaining = input[i..] } };\n");
+        try writer.writeAll("    }\n");
+    } else if (std.mem.startsWith(u8, pattern, "\"") and std.mem.endsWith(u8, pattern, "\"")) {
+        // String literal pattern (simplified - just match quoted strings)
+        try writer.writeAll("    if (input[0] == '\"') {\n");
+        try writer.writeAll("        var i: usize = 1;\n");
+        try writer.writeAll("        while (i < input.len and input[i] != '\"') : (i += 1) {}\n");
+        try writer.writeAll("        if (i < input.len) {\n");
+        try writer.writeAll("            return .{ .");
+        try writer.writeAll(branch_name);
+        try writer.writeAll(" = .{ .");
+        try writer.writeAll(field_name);
+        try writer.writeAll(" = input[0..i+1], .remaining = input[i+1..] } };\n");
+        try writer.writeAll("        }\n");
+        try writer.writeAll("    }\n");
+    } else {
+        // Unknown pattern - emit a comment
+        try writer.writeAll("    // TODO: Unrecognized pattern: ");
+        try writer.writeAll(pattern);
+        try writer.writeAll("\n");
+    }
+}
