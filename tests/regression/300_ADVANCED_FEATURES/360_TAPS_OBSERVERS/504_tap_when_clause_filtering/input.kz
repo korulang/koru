@@ -1,20 +1,17 @@
 // ============================================================================
-// BUG DOCUMENTATION TEST - Tap `when` clause not generating conditionals
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
 // ============================================================================
 // Test 504: Tap when clause filtering
-// BUG: The `when` clause in tap definitions does NOT generate conditional code
+// Tests that tap `when` clauses generate conditional code
 //
-// EXPECTED BEHAVIOR:
-// - `~tap(foo -> *) | branch b when b.flag |> handler(...)` should generate:
+// The `when` clause in tap definitions filters which events trigger the tap:
+// - `~tap(foo -> *) | branch b when b.flag |> handler(...)` generates:
 //     if (b.flag) { handler(...); }
 //
-// CURRENT BEHAVIOR:
-// - The `when` clause is parsed but completely IGNORED in codegen
-// - handler(...) is called unconditionally for ALL branch matches
-//
-// WORKAROUND: None currently. The when clause is non-functional.
-//
-// WHEN FIXED: Update expected.txt to show only entities 2 and 4
+// This test verifies:
+// - Only entities with has_damage=true trigger handle_damage
+// - Entities 1 and 3 (has_damage=false) are filtered out
+// - Entities 2 and 4 (has_damage=true) trigger the tap handler
 
 ~import "$std/io"
 ~import "$std/control"
