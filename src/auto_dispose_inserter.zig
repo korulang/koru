@@ -47,9 +47,7 @@ pub const AutoDisposeInserter = struct {
 
     /// Check if a NamedBranch has @scope annotation (marks scope boundary)
     fn branchHasScope(branch: *const ast.NamedBranch) bool {
-        std.debug.print("[SCOPE] Checking NamedBranch '{s}' for @scope, has {d} annotations\n", .{branch.name, branch.annotations.len});
         for (branch.annotations) |ann| {
-            std.debug.print("[SCOPE]   annotation: '{s}'\n", .{ann});
             if (std.mem.eql(u8, ann, "@scope")) return true;
         }
         return false;

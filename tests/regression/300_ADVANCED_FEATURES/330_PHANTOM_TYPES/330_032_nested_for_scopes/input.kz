@@ -1,0 +1,27 @@
+// TEST: Nested for-loops with resources at different scope levels
+// STATUS: TESTING
+//
+// Three scope levels:
+// 1. outermost_f - opened BEFORE outer loop, manually closed AFTER both loops
+// 2. inner_f - opened IN inner loop, auto-closed in inner each branch
+//
+// This tests that @scope nesting works correctly with auto-dispose.
+
+~import "$std/control"
+~import "$app/fs"
+
+~app.fs:open(path: "outermost.txt")
+| opened outermost_f |>
+    std.control:for(0..2)
+    | each _ |>
+        std.control:for(0..2)
+        | each _ |>
+            app.fs:open(path: "inner.txt")
+            | opened _ |>
+                _  // inner_f auto-closed here (innermost @scope)
+        | done |> _
+    | done |>
+        app.fs:close(file: outermost_f.file)
+        | closed |> _
+
+pub fn main() void {}

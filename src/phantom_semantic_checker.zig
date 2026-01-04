@@ -360,7 +360,6 @@ pub const PhantomSemanticChecker = struct {
                 // Mark as outer scope - these cannot be satisfied inside @scope
                 const outer_key = try allocator.dupe(u8, key.*);
                 try child.outer_scope_obligations.put(outer_key, {});
-                std.debug.print("[SCOPE] Marking '{s}' as outer-scope obligation\n", .{key.*});
             }
 
             // Inherit disposed bindings

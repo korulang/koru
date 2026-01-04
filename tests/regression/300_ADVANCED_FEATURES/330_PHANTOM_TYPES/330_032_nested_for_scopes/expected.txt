@@ -1,0 +1,10 @@
+Opening file: outermost.txt
+Opening file: inner.txt
+Closing file
+Opening file: inner.txt
+Closing file
+Opening file: inner.txt
+Closing file
+Opening file: inner.txt
+Closing file
+Closing file

@@ -414,7 +414,6 @@ const std = @import("std");
         // from outer scopes cannot be satisfied inside this scope.
         const scope_annotations = allocator.alloc([]const u8, 1) catch unreachable;
         scope_annotations[0] = allocator.dupe(u8, "@scope") catch unreachable;
-        std.debug.print("[FOR-TRANSFORM] Setting @scope annotation on 'each' branch\n", .{});
 
         branches[0] = .{
             .name = "each",
@@ -422,7 +421,6 @@ const std = @import("std");
             .binding = each_binding,
             .annotations = scope_annotations,
         };
-        std.debug.print("[FOR-TRANSFORM] Branch annotations len: {d}\n", .{branches[0].annotations.len});
 
         // Done branch if present - wrap full continuation
         if (done_cont) |dc| {
@@ -596,7 +594,6 @@ const std = @import("std");
         // Add @scope annotation to mark this as a scope boundary for obligation tracking
         const scope_annotations = allocator.alloc([]const u8, 1) catch unreachable;
         scope_annotations[0] = allocator.dupe(u8, "@scope") catch unreachable;
-        std.debug.print("[FOR-TRANSFORM-NESTED] Setting @scope annotation on 'each' branch\n", .{});
 
         branches[0] = .{
             .name = "each",
@@ -604,7 +601,6 @@ const std = @import("std");
             .binding = search_result.each_binding,  // The loop variable binding
             .annotations = scope_annotations,
         };
-        std.debug.print("[FOR-TRANSFORM-NESTED] Branch annotations len: {d}\n", .{branches[0].annotations.len});
 
         if (search_result.done_cont) |dc| {
             const done_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
