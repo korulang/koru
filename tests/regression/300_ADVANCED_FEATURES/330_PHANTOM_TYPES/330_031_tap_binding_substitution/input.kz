@@ -1,0 +1,32 @@
+// TEST: Tap binding substitution (MUST_FAIL - documents current limitation)
+//
+// ISSUE: When a tap uses a binding to access payload data, the tap transform
+// does not substitute the binding name when splicing into the target flow.
+//
+// The tap declares: | opened f |> log_open(handle: f.file.handle)
+// The main flow has: | opened _ |> (which becomes _auto_0 via auto-dispose)
+//
+// When spliced, the tap's code still references 'f', but the actual binding
+// is '_auto_0'. This causes "use of undeclared identifier 'f'" in codegen.
+//
+// FIX NEEDED: The tap transform should rewrite binding references when
+// splicing the tap's continuation into the target flow. The tap's binding
+// name should be substituted with the actual binding from the matched
+// continuation.
+//
+// When this test PASSES, the limitation has been fixed!
+
+~import "$std/taps"
+~import "$app/fs"
+
+// Tap that USES the binding to access file data
+// This should work: the tap reads f.file.handle and passes it to log_open
+~tap(app.fs:open -> *)
+| opened f |> app.fs:log_open(handle: f.file.handle)
+    | done |> _
+
+// Main flow with auto-dispose
+~app.fs:open(path: "test.txt")
+| opened _ |> _
+
+pub fn main() void {}
