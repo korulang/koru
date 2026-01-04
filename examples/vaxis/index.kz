@@ -34,6 +34,10 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 
+// Phantom handle for TTY lifecycle tracking
+// The actual state is global, but this handle carries the obligation
+const TtyHandle = struct { _phantom: u8 = 0 };
+
 // Zig types for event payloads
 const KeyMods = struct {
     ctrl: bool = false,
@@ -121,9 +125,9 @@ const VaxisEvent = union(enum) {
     }
 }
 
-// Initialize vaxis
+// Initialize vaxis - produces tty_initialized obligation that MUST be cleaned up
 ~pub event run { title: []const u8 }
-| ready {}
+| ready { tty: TtyHandle[tty_initialized!] }
 | err { message: []const u8 }
 
 ~proc run {
@@ -154,7 +158,7 @@ const VaxisEvent = union(enum) {
     vx.enterAltScreen(tty.writer()) catch {};
 
     is_initialized = true;
-    return .{ .ready = .{} };
+    return .{ .ready = .{ .tty = .{} } };
 }
 
 // Request quit
@@ -166,11 +170,12 @@ const VaxisEvent = union(enum) {
     return .{ .done = .{} };
 }
 
-// Clean up
-~pub event cleanup {}
+// Clean up - consumes tty_initialized obligation
+~pub event cleanup { handle: TtyHandle[!tty_initialized] }
 | done {}
 
 ~proc cleanup {
+    // handle is a phantom - actual cleanup uses global state
     if (is_initialized) {
         vx.deinit(alloc, tty.writer());
         tty.deinit();

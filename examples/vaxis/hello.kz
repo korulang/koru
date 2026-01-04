@@ -1,19 +1,24 @@
 // Hello Vaxis - Minimal TUI demo
 // ==============================
+//
+// PHANTOM OBLIGATIONS IN ACTION:
+// - vaxis:run produces [tty_initialized!] obligation
+// - vaxis:cleanup consumes [!tty_initialized]
+// - Auto-dispose inserts cleanup at ALL exit paths!
 
 ~import "$vaxis"
 
 // Main flow: Setup -> Draw -> Event loop
 ~vaxis:run(title: "Hello Vaxis")
-| ready |> vaxis:clear()
+| ready t |> vaxis:clear()
     | done |> vaxis:write_at(x: 10, y: 5, text: "Hello from Koru + Vaxis!")
         | done |> vaxis:write_at(x: 10, y: 7, text: "Press any key to exit...")
             | done |> vaxis:render()
                 | done |> #loop vaxis:poll()
-                    | key _ |> vaxis:cleanup()
+                    | key _ |> vaxis:cleanup(handle: t.tty)
                         | done |> _
                     | resize _ |> @loop()
                     | focus_in |> @loop()
                     | focus_out |> @loop()
-                    | quit |> _
-| err _ |> _
+                    | quit |> _  // Auto-dispose: cleanup inserted here!
+| err _ |> _  // Auto-dispose: cleanup inserted here too!
