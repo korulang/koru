@@ -459,7 +459,7 @@ pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name:
         }
         
         // AST Types -> __koru_ast.Type
-        const ast_types = [_][]const u8{ "Program", "Item", "Source", "Invocation", "ASTNode" };
+        const ast_types = [_][]const u8{ "Program", "Item", "Source", "Invocation", "ASTNode", "EventDecl", "ProcDecl", "Flow", "Branch", "Continuation" };
         inline for (ast_types) |ast_type| {
              if (std.mem.indexOf(u8, type_name, ast_type) != null) {
                  // Avoid double prefixing
@@ -3559,8 +3559,10 @@ pub fn emitContinuationBody(
                 }
 
                 // Emit switch with only looping branches
+                // NOTE: Must pass true for is_partial_switch since we only emit looping branches,
+                // but the event output type has all branches - Zig requires else => unreachable
                 if (looping_conts.items.len > 0) {
-                    try emitContinuationList(emitter, ctx, looping_conts.items, result_var, result_counter, false);
+                    try emitContinuationList(emitter, ctx, looping_conts.items, result_var, result_counter, true);
                 }
             }
         }

@@ -1,0 +1,46 @@
+// TEST: Literate Annotations
+// STATUS: ASPIRATIONAL
+//
+// Annotation blocks as micro-documents: markdown prose + directives.
+// Parser extracts `-` prefixed lines as directives, ignores prose.
+//
+// This brings literate programming to metadata - the annotation
+// explains AND instructs in one place.
+
+~[
+# Token Grammar
+
+Defines a lexer for simple arithmetic expressions. Each branch
+represents a token type with its regex pattern embedded in the
+phantom type annotation.
+
+- derive(parser)
+
+## Generated Events
+
+The parser transform will generate:
+- `token.parse` - stream -> token branch
+- `token.serialize` - token -> bytes
+
+## Performance
+
+- optimize(level: 3)
+- inline
+
+## Whitespace
+
+We skip whitespace tokens rather than emitting them.
+This keeps the token stream clean for the parser.
+
+- whitespace(skip)
+] event token {}
+| number { value: u64[\d+] }
+| string { content: []const u8["[^"]*"] }
+| identifier { name: []const u8[[a-zA-Z_][a-zA-Z0-9_]*] }
+| lparen { _: void[(] }
+| rparen { _: void[)] }
+| plus { _: void[+] }
+| star { _: void[*] }
+| whitespace { _: void[\s+] }
+
+pub fn main() void {}

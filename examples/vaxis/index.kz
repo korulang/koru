@@ -67,9 +67,9 @@ var alloc: std.mem.Allocator = undefined;
 var tty_buffer: [4096]u8 = undefined; // Buffer for TTY init
 
 // Internal event type for vaxis loop
+// NOTE: key_release removed - terminal responses to queryTerminal come as key events
 const VaxisEvent = union(enum) {
     key_press: vaxis.Key,
-    key_release: vaxis.Key,
     winsize: vaxis.Winsize,
     focus_in,
     focus_out,
@@ -92,36 +92,41 @@ const VaxisEvent = union(enum) {
         return .{ .quit = .{} };
     }
 
-    // Get next event from the global event loop
-    const event = event_loop.nextEvent();
+    // Loop until we get a "real" event (skip terminal response keys)
+    while (true) {
+        const event = event_loop.nextEvent();
 
-    switch (event) {
-        .key_press => |k| {
-            return .{ .key = .{
-                .data = .{
-                    .codepoint = k.codepoint,
-                    .char = if (k.codepoint < 128) @intCast(k.codepoint) else null,
-                    .mods = .{
-                        .ctrl = k.mods.ctrl,
-                        .alt = k.mods.alt,
-                        .shift = k.mods.shift,
-                        .super_key = k.mods.super,
+        switch (event) {
+            .key_press => |k| {
+                // Skip terminal response "keys" - they have high codepoints (e.g. 57366 = 0xE006)
+                // Normal printable chars are < 0x3000. Skip anything above that.
+                if (k.codepoint > 0x3000 or k.codepoint == 0) continue;
+
+                return .{ .key = .{
+                    .data = .{
+                        .codepoint = k.codepoint,
+                        .char = if (k.codepoint < 128 and k.codepoint > 0) @intCast(k.codepoint) else null,
+                        .mods = .{
+                            .ctrl = k.mods.ctrl,
+                            .alt = k.mods.alt,
+                            .shift = k.mods.shift,
+                            .super_key = k.mods.super,
+                        },
                     },
-                },
-            }};
-        },
-        .winsize => |ws| {
-            vx.resize(alloc, tty.writer(), ws) catch {};
-            return .{ .resize = .{
-                .size = .{
-                    .width = ws.cols,
-                    .height = ws.rows,
-                },
-            }};
-        },
-        .focus_in => return .{ .focus_in = .{} },
-        .focus_out => return .{ .focus_out = .{} },
-        else => return .{ .focus_in = .{} },
+                }};
+            },
+            .winsize => |ws| {
+                vx.resize(alloc, tty.writer(), ws) catch {};
+                return .{ .resize = .{
+                    .size = .{
+                        .width = ws.cols,
+                        .height = ws.rows,
+                    },
+                }};
+            },
+            .focus_in => return .{ .focus_in = .{} },
+            .focus_out => return .{ .focus_out = .{} },
+        }
     }
 }
 
@@ -131,8 +136,6 @@ const VaxisEvent = union(enum) {
 | err { message: []const u8 }
 
 ~proc run {
-    // TODO: set window title using 'title' parameter
-
     alloc = std.heap.page_allocator;
 
     // Initialize TTY
@@ -141,7 +144,7 @@ const VaxisEvent = union(enum) {
     };
 
     // Initialize Vaxis
-    vx = vaxis.Vaxis.init(alloc, .{}) catch |e| {
+    vx = vaxis.init(alloc, .{}) catch |e| {
         return .{ .err = .{ .message = @errorName(e) } };
     };
 
@@ -154,8 +157,22 @@ const VaxisEvent = union(enum) {
         return .{ .err = .{ .message = @errorName(e) } };
     };
 
-    // Enter alt screen
+    // Enter alt screen and query terminal capabilities
     vx.enterAltScreen(tty.writer()) catch {};
+    vx.queryTerminal(tty.writer(), 1 * std.time.ns_per_s) catch {};
+
+    // CRITICAL: Wait for initial resize to size the window buffers
+    // Without this, window is 0x0 and nothing renders!
+    while (true) {
+        const event = event_loop.nextEvent();
+        switch (event) {
+            .winsize => |ws| {
+                vx.resize(alloc, tty.writer(), ws) catch {};
+                break;
+            },
+            else => {},  // Skip terminal response keys etc
+        }
+    }
 
     is_initialized = true;
     return .{ .ready = .{ .tty = .{} } };
@@ -207,18 +224,51 @@ const VaxisEvent = union(enum) {
     return .{ .done = .{} };
 }
 
-// Write text at position
+// Write text at position (same pattern as libvaxis main.zig example)
 ~pub event write_at { x: u16, y: u16, text: []const u8 }
 | done {}
 
+// Debug file for write_at
+var debug_file: ?std.fs.File = null;
+
+fn debugLog(msg: []const u8) void {
+    if (debug_file == null) {
+        debug_file = std.fs.cwd().createFile("vaxis_debug.log", .{}) catch null;
+    }
+    if (debug_file) |f| {
+        f.writeAll(msg) catch {};
+    }
+}
+
 ~proc write_at {
+    debugLog("write_at called\n");
+
     if (is_initialized) {
+        debugLog("  is_initialized=true\n");
         const win = vx.window();
+
+        // Log window dimensions
+        var buf: [100]u8 = undefined;
+        const dim_msg = std.fmt.bufPrint(&buf, "  window: {}x{}\n", .{win.width, win.height}) catch "?";
+        debugLog(dim_msg);
+
+        const pos_msg = std.fmt.bufPrint(&buf, "  pos: x={}, y={}\n", .{x, y}) catch "?";
+        debugLog(pos_msg);
+
+        const len_msg = std.fmt.bufPrint(&buf, "  text len: {}\n", .{text.len}) catch "?";
+        debugLog(len_msg);
+
+        // Create child window at position (like libvaxis examples)
+        const child = win.child(.{ .x_off = x, .y_off = y });
+        // Write each character as a cell
         for (text, 0..) |_, i| {
-            win.writeCell(x + @as(u16, @intCast(i)), y, .{
-                .char = .{ .grapheme = text[i..i+1] },
+            child.writeCell(@intCast(i), 0, .{
+                .char = .{ .grapheme = text[i .. i + 1] },
             });
         }
+        debugLog("  cells written\n");
+    } else {
+        debugLog("  is_initialized=false!\n");
     }
     return .{ .done = .{} };
 }
