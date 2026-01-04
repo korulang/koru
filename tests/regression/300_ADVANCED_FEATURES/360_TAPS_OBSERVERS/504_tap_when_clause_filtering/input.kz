@@ -1,0 +1,68 @@
+// ============================================================================
+// BUG DOCUMENTATION TEST - Tap `when` clause not generating conditionals
+// ============================================================================
+// Test 504: Tap when clause filtering
+// BUG: The `when` clause in tap definitions does NOT generate conditional code
+//
+// EXPECTED BEHAVIOR:
+// - `~tap(foo -> *) | branch b when b.flag |> handler(...)` should generate:
+//     if (b.flag) { handler(...); }
+//
+// CURRENT BEHAVIOR:
+// - The `when` clause is parsed but completely IGNORED in codegen
+// - handler(...) is called unconditionally for ALL branch matches
+//
+// WORKAROUND: None currently. The when clause is non-functional.
+//
+// WHEN FIXED: Update expected.txt to show only entities 2 and 4
+
+~import "$std/io"
+~import "$std/control"
+~import "$std/taps"
+
+const std = @import("std");
+
+const Entity = struct {
+    id: u32,
+    health: i32,
+    has_damage: bool,
+};
+
+// Producer event - broadcasts entities
+~pub event process_entity { e: Entity }
+| entity { e: Entity }
+
+~proc process_entity {
+    return .{ .entity = .{ .e = e } };
+}
+
+// TAP: Should ONLY fire when entity has damage
+// BUG: The `when ent.e.has_damage` is completely ignored
+~tap(process_entity -> *)
+| entity ent when ent.e.has_damage |> handle_damage(e: ent.e)
+
+~event handle_damage { e: Entity }
+~proc handle_damage {
+    std.debug.print("DAMAGE on Entity {d}!\n", .{ e.id });
+}
+
+// Test entities - 2 with damage, 2 without
+const entities = [_]Entity{
+    .{ .id = 1, .health = 100, .has_damage = false },  // Should NOT trigger
+    .{ .id = 2, .health = 80, .has_damage = true },    // Should trigger
+    .{ .id = 3, .health = 50, .has_damage = false },   // Should NOT trigger
+    .{ .id = 4, .health = 30, .has_damage = true },    // Should trigger
+};
+
+~event noop {}
+~proc noop {}
+
+~event print_done {}
+~proc print_done {
+    std.debug.print("Done!\n", .{});
+}
+
+~for(&entities)
+| each e |> process_entity(e: e)
+    | entity _ |> noop()
+| done |> print_done()
