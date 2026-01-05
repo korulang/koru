@@ -1,0 +1,43 @@
+// Library module: fs with nested obligations
+// Tests that nested obligations are tracked correctly
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+const Data = struct { content: []const u8 };
+
+// Open a file - returns opened! state
+~pub event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+// Read - returns data! state (nested obligation)
+~pub event read { file: *File[opened!] }
+| data { file: *File[opened!], content: *Data[data!] }
+
+~proc read {
+    const d = std.heap.page_allocator.create(Data) catch unreachable;
+    d.* = Data{ .content = "test content" };
+    return .{ .data = .{ .file = file, .content = d } };
+}
+
+// Close file - consumes opened!
+~pub event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}
+
+// Free data - consumes data!
+~pub event free { content: *Data[!data] }
+
+~proc free {
+    std.heap.page_allocator.destroy(content);
+}

@@ -125,16 +125,22 @@ const Statement = struct {
     }
 }
 
-// Finalize statement early (auto-dispose target)
-~pub event finalize { stmt: *Statement[!prepared] }
-| done {}
+// Finalize text - acknowledges we're done with borrowed text pointer
+// Must be called BEFORE finalize.stmt (text becomes invalid after stmt finalize)
+~pub event finalize.text { text: []const u8[!text] }
 
-~proc finalize {
+~proc finalize.text {
+    _ = &text;
+}
+
+// Finalize statement - releases the prepared statement
+~pub event finalize.stmt { stmt: *Statement[!prepared] }
+
+~proc finalize.stmt {
     if (stmt.handle) |h| {
         _ = c.sqlite3_finalize(h);
     }
     std.heap.page_allocator.destroy(stmt);
-    return .{ .done = .{} };
 }
 
 // ============================================================================
@@ -150,13 +156,13 @@ const Statement = struct {
 }
 
 ~pub event col.text { stmt: *Statement[prepared!], index: i32 }
-| value { stmt: *Statement[prepared!], val: []const u8 }
+| value { stmt: *Statement[prepared!], text: []const u8[text!] }
 
 ~proc col.text {
-    const text = c.sqlite3_column_text(stmt.handle, index);
+    const ptr = c.sqlite3_column_text(stmt.handle, index);
     const len = c.sqlite3_column_bytes(stmt.handle, index);
-    const val = if (text) |t| t[0..@intCast(len)] else "";
-    return .{ .value = .{ .stmt = stmt, .val = val } };
+    const text = if (ptr) |p| p[0..@intCast(len)] else "";
+    return .{ .value = .{ .stmt = stmt, .text = text } };
 }
 
 ~pub event col.real { stmt: *Statement[prepared!], index: i32 }

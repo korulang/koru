@@ -1,0 +1,18 @@
+// TEST: Undisposed nested obligation MUST error
+//
+// BUG: When an inner event returns an obligation, and the outer flow
+// terminates without disposing it, the phantom checker should error.
+// Currently it says "No uncleaned resources" incorrectly.
+//
+// MUST_FAIL: KORU030
+
+~import "$app/fs"
+
+// open returns file with [opened!]
+// read returns content with [data!]
+// We dispose file but NOT content - MUST error with KORU030!
+
+~app.fs:open(path: "test.txt")
+| opened f |> app.fs:read(f.file)
+    | data d |> app.fs:close(d.file)
+        | closed |> _  // BUG: d.content has [data!] not disposed - should error!
