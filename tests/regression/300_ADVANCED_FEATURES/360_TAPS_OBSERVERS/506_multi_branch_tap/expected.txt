@@ -1,0 +1,3 @@
+AUDIT: success with 10
+LOG: success with 10
+LOG: error - negative value

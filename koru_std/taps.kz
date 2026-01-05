@@ -77,24 +77,27 @@ const std = @import("std");
         return .{ .transformed = .{ .program = program } };
     }
 
-    // The tap's continuation defines: which branch to match, what call to insert
-    const tap_cont = &tap_flow.continuations[0];
-    const match_branch = tap_cont.branch;
-    const tap_step = tap_cont.node orelse {
-        std.debug.print("[tap] ERROR: No node in tap continuation\n", .{});
-        return .{ .transformed = .{ .program = program } };
-    };
+    // All tap branches - we support multiple handlers for same branch (fan-out)
+    const all_tap_branches = tap_flow.continuations;
 
     // Pattern matching config
     const source_is_wildcard = std.mem.eql(u8, source, "*");
     const dest_is_wildcard = std.mem.eql(u8, destination, "*");
     _ = dest_is_wildcard; // TODO: use for destination matching
-    const is_metatype = std.mem.eql(u8, match_branch, "Transition") or
-                        std.mem.eql(u8, match_branch, "Profile") or
-                        std.mem.eql(u8, match_branch, "Audit");
 
-    std.debug.print("[tap] source='{s}' dest='{s}' branch='{s}' metatype={}\n",
-        .{ source, destination, match_branch, is_metatype });
+    // Check if any tap branch is a metatype (matches all source branches)
+    var is_metatype = false;
+    for (all_tap_branches) |*tc| {
+        if (std.mem.eql(u8, tc.branch, "Transition") or
+            std.mem.eql(u8, tc.branch, "Profile") or
+            std.mem.eql(u8, tc.branch, "Audit")) {
+            is_metatype = true;
+            break;
+        }
+    }
+
+    std.debug.print("[tap] source='{s}' dest='{s}' branches={d} metatype={}\n",
+        .{ source, destination, all_tap_branches.len, is_metatype });
 
     // ========================================================================
     // STEP 2: Walk program, transform matching flows
@@ -319,31 +322,54 @@ const std = @import("std");
             };
         }
 
+        /// Transform continuations by wrapping with matching tap handlers
+        /// Supports multi-branch fan-out: multiple tap handlers for same branch all fire
         fn transformContinuations(
             alloc: std.mem.Allocator,
             continuations: []const ast.Continuation,
-            match_br: []const u8,
+            tap_branches: []const ast.Continuation,  // ALL tap continuations
             is_meta: bool,
-            tap_stp: ast.Step,
-            tap_nested_conts: []const ast.Continuation,
-            tap_binding: ?[]const u8,  // The tap's binding for rewriting
-            tap_condition: ?[]const u8,  // The tap's when clause condition (string)
-            tap_condition_expr: ?*ast.Expression,  // The tap's when clause parsed expression
         ) !struct { conts: []ast.Continuation, modified: bool } {
             var new_conts = try alloc.alloc(ast.Continuation, continuations.len);
             var any_modified = false;
 
             for (continuations, 0..) |*cont, i| {
-                const branch_matches = is_meta or std.mem.eql(u8, cont.branch, match_br);
+                if (cont.node == null) {
+                    // No node to wrap, just recurse
+                    const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta);
+                    new_conts[i] = cont.*;
+                    new_conts[i].continuations = nested.conts;
+                    if (nested.modified) any_modified = true;
+                    continue;
+                }
 
-                if (branch_matches and cont.node != null) {
-                    // Match! Wrap this continuation
-                    new_conts[i] = try wrapContinuation(alloc, cont, tap_stp, tap_nested_conts, tap_binding, tap_condition, tap_condition_expr);
+                // Find ALL matching tap branches for this continuation
+                // This enables fan-out: multiple handlers for same branch
+                var wrapped_cont = cont.*;
+                var wrap_count: usize = 0;
+
+                for (tap_branches) |*tap_cont| {
+                    const branch_matches = is_meta or std.mem.eql(u8, cont.branch, tap_cont.branch);
+                    if (!branch_matches) continue;
+
+                    const tap_step = tap_cont.node orelse continue;
+                    const tap_nested = tap_cont.continuations;
+                    const tap_binding = tap_cont.binding;
+                    const tap_condition = tap_cont.condition;
+                    const tap_condition_expr = tap_cont.condition_expr;
+
+                    // Wrap with this tap handler (chain multiple wraps)
+                    wrapped_cont = try wrapContinuation(alloc, &wrapped_cont, tap_step, tap_nested, tap_binding, tap_condition, tap_condition_expr);
+                    wrap_count += 1;
+                    std.debug.print("[tap] Wrapped continuation at branch '{s}' (tap {d})\n", .{cont.branch, wrap_count});
+                }
+
+                if (wrap_count > 0) {
+                    new_conts[i] = wrapped_cont;
                     any_modified = true;
-                    std.debug.print("[tap] Wrapped continuation at branch '{s}'\n", .{cont.branch});
                 } else {
-                    // No match, but recurse into nested continuations
-                    const nested = try transformContinuations(alloc, cont.continuations, match_br, is_meta, tap_stp, tap_nested_conts, tap_binding, tap_condition, tap_condition_expr);
+                    // No matching taps, but recurse into nested continuations
+                    const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta);
                     new_conts[i] = cont.*;
                     new_conts[i].continuations = nested.conts;
                     if (nested.modified) any_modified = true;
@@ -359,13 +385,8 @@ const std = @import("std");
             source_pattern: []const u8,
             source_wildcard: bool,
             containing_module: ?[]const u8,
-            match_br: []const u8,
+            tap_branches: []const ast.Continuation,  // ALL tap continuations
             is_meta: bool,
-            tap_stp: ast.Step,
-            tap_nested_conts: []const ast.Continuation,
-            tap_binding: ?[]const u8,  // The tap's binding for rewriting
-            tap_condition: ?[]const u8,  // The tap's when clause condition (string)
-            tap_condition_expr: ?*ast.Expression,  // The tap's when clause parsed expression
         ) !struct { conts: []ast.Continuation, modified: bool } {
             var new_conts = try alloc.alloc(ast.Continuation, continuations.len);
             var any_modified = false;
@@ -391,7 +412,7 @@ const std = @import("std");
                                 // Found a nested invocation matching source!
                                 // Transform its continuations (what happens after it returns)
                                 const nested_result = try transformContinuations(
-                                    alloc, cont.continuations, match_br, is_meta, tap_stp, tap_nested_conts, tap_binding, tap_condition, tap_condition_expr
+                                    alloc, cont.continuations, tap_branches, is_meta
                                 );
                                 this_cont.continuations = nested_result.conts;
                                 if (nested_result.modified) {
@@ -409,7 +430,7 @@ const std = @import("std");
                 const conts_to_recurse = if (matched_here) cont.continuations else this_cont.continuations;
                 const deeper = try transformNestedInvocations(
                     alloc, conts_to_recurse, source_pattern, source_wildcard,
-                    containing_module, match_br, is_meta, tap_stp, tap_nested_conts, tap_binding, tap_condition, tap_condition_expr
+                    containing_module, tap_branches, is_meta
                 );
 
                 // If we matched here, we need to splice deeper results into the wrapped structure
@@ -439,11 +460,6 @@ const std = @import("std");
     var new_items = std.ArrayList(ast.Item).initCapacity(allocator, program.items.len) catch unreachable;
     var any_tap_inserted = false;
 
-    const tap_nested_conts = tap_flow.continuations[0].continuations;
-    const tap_binding = tap_cont.binding;  // The tap's binding (e.g., "f")
-    const tap_condition = tap_cont.condition;  // The tap's when clause (e.g., "ent.e.has_damage")
-    const tap_condition_expr = tap_cont.condition_expr;  // The tap's when expression
-
     for (program.items) |*prog_item| {
         // Skip the tap declaration itself (it compiles away)
         if (prog_item == item) continue;
@@ -456,7 +472,7 @@ const std = @import("std");
             // CASE 1: Top-level flow matches source - transform its continuations
             if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
                 const result = Helper.transformContinuations(
-                    allocator, flow.continuations, match_branch, is_metatype, tap_step, tap_nested_conts, tap_binding, tap_condition, tap_condition_expr
+                    allocator, flow.continuations, all_tap_branches, is_metatype
                 ) catch unreachable;
 
                 if (result.modified) {
@@ -468,7 +484,7 @@ const std = @import("std");
             // CASE 2: Check for NESTED invocations matching source
             const nested_result = Helper.transformNestedInvocations(
                 allocator, new_continuations, source, source_is_wildcard,
-                flow.module, match_branch, is_metatype, tap_step, tap_nested_conts, tap_binding, tap_condition, tap_condition_expr
+                flow.module, all_tap_branches, is_metatype
             ) catch unreachable;
 
             if (nested_result.modified) {
@@ -516,7 +532,7 @@ const std = @import("std");
                     // Check if flow matches source pattern
                     if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
                         const result = Helper.transformContinuations(
-                            allocator, flow.continuations, match_branch, is_metatype, tap_step, tap_nested_conts, tap_binding, tap_condition, tap_condition_expr
+                            allocator, flow.continuations, all_tap_branches, is_metatype
                         ) catch unreachable;
 
                         if (result.modified) {
@@ -528,7 +544,7 @@ const std = @import("std");
                     // Check nested invocations
                     const nested_result = Helper.transformNestedInvocations(
                         allocator, new_continuations, source, source_is_wildcard,
-                        flow.module, match_branch, is_metatype, tap_step, tap_nested_conts, tap_binding, tap_condition, tap_condition_expr
+                        flow.module, all_tap_branches, is_metatype
                     ) catch unreachable;
 
                     if (nested_result.modified) {

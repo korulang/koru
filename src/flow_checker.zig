@@ -113,11 +113,16 @@ pub const FlowChecker = struct {
     fn validateFlow(self: *FlowChecker, flow: *const ast.Flow, location: errors.SourceLocation) !void {
         const is_transformed = flow.inline_body != null or flow.preamble_code != null;
 
+        // Check if this flow is a transform invocation (like ~tap)
+        // Transform flows allow multi-branch fan-out (multiple handlers for same branch)
+        const is_transform_flow = self.isTransformFlow(flow);
+
         // === FRONTEND CHECKS (syntactic, always run) ===
         // These run even for transformed flows
 
         // Skip when-clause checks for transformed flows (structure has changed)
-        if (!is_transformed) {
+        // Also skip for transform invocations (like ~tap) which use fan-out semantics
+        if (!is_transformed and !is_transform_flow) {
             // Validate when-clause exhaustiveness for all continuations (KORU050, KORU051)
             try self.validateWhenClauseExhaustiveness(flow.continuations, location);
         }
@@ -203,6 +208,16 @@ pub const FlowChecker = struct {
             return annotation_parser.hasPart(event_decl.annotations, "transform");
         }
 
+        return false;
+    }
+
+    /// Check if a flow's top-level invocation is a transform event (like ~tap)
+    /// Transform flows use fan-out semantics: multiple handlers for the same branch all fire
+    fn isTransformFlow(self: *FlowChecker, flow: *const ast.Flow) bool {
+        // Look up the event declaration for the flow's invocation
+        if (self.findEventDecl(&flow.invocation.path)) |event_decl| {
+            return annotation_parser.hasPart(event_decl.annotations, "transform");
+        }
         return false;
     }
 

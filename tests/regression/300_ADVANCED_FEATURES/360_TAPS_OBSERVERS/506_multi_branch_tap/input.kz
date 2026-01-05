@@ -1,0 +1,54 @@
+// Test 506: Multi-branch taps with fan-out
+// Multiple tap handlers for the same branch should ALL fire
+//
+// ~tap(foo -> *)
+// | success s |> log_success(s)
+// | success s |> audit_success(s)  // BOTH fire on success
+// | error e |> log_error(e)
+
+const std = @import("std");
+~import "$std/taps"
+
+~event process { value: i32 }
+| success { result: i32 }
+| error { msg: []const u8 }
+
+~proc process {
+    if (value > 0) {
+        return .{ .success = .{ .result = value * 2 } };
+    }
+    return .{ .error = .{ .msg = "negative value" } };
+}
+
+// Multiple handlers for success branch - both should fire
+~event log_success { result: i32 }
+~proc log_success {
+    std.debug.print("LOG: success with {d}\n", .{result});
+}
+
+~event audit_success { result: i32 }
+~proc audit_success {
+    std.debug.print("AUDIT: success with {d}\n", .{result});
+}
+
+// Single handler for error branch
+~event log_error { msg: []const u8 }
+~proc log_error {
+    std.debug.print("LOG: error - {s}\n", .{msg});
+}
+
+// Multi-branch tap: two handlers for success, one for error
+~tap(process -> *)
+| success s |> log_success(result: s.result)
+| success s |> audit_success(result: s.result)
+| error e |> log_error(msg: e.msg)
+
+// Test with positive value (should trigger BOTH success handlers)
+~process(value: 5)
+| success _ |> _
+| error _ |> _
+
+// Test with negative value (should trigger error handler)
+~process(value: -1)
+| success _ |> _
+| error _ |> _
