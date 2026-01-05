@@ -1,5 +1,4 @@
 Hello executed
 Universal observer fired!
-Universal observer fired!
 Goodbye executed
 Universal observer fired!

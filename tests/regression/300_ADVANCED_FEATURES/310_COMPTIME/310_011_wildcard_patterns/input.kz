@@ -1,11 +1,12 @@
 // Test 310_011: Wildcard Patterns in Taps (Library Syntax)
 // Tests universal wildcards with Transition metatype
 //
-// With nested invocation support, `* -> *` matches ALL invocations including:
+// With nested invocation support, `* -> *` matches ALL invocations:
 // - hello (top-level)
 // - goodbye (nested inside hello's continuation)
-// - observer (the tap action, also gets matched!)
-// Result: observer fires 3 times (once after each matched transition)
+// Note: Tap-inserted invocations (observer) are marked with inserted_by_tap
+// to prevent infinite recursion and confusing self-matching.
+// Result: observer fires 2 times (once after hello, once after goodbye)
 
 const std = @import("std");
 ~import "$std/taps"

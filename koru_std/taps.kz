@@ -244,6 +244,7 @@ const std = @import("std");
             tap_binding: ?[]const u8,  // The tap's binding (e.g., "f")
             tap_condition: ?[]const u8,  // The tap's when clause condition (string)
             tap_condition_expr: ?*ast.Expression,  // The tap's when clause parsed expression
+            mark_inserted: bool,  // True if inserted invocations should be marked (wildcard taps only)
         ) !ast.Continuation {
             var final_conts: []ast.Continuation = undefined;
 
@@ -302,6 +303,22 @@ const std = @import("std");
                 }
             }
 
+            // CRITICAL: For WILDCARD taps only, mark the inserted step as inserted_by_tap
+            // to prevent transformNestedInvocations from matching it again (infinite recursion).
+            // Specific taps (e.g., "main_flow -> *") should NOT mark their insertions, allowing
+            // chained taps to work (e.g., tap on logger fires when logger is invoked from another tap).
+            if (mark_inserted) {
+                if (rewritten_step == .invocation) {
+                    var marked_inv = rewritten_step.invocation;
+                    marked_inv.inserted_by_tap = true;
+                    rewritten_step = ast.Step{ .invocation = marked_inv };
+                } else if (rewritten_step == .label_with_invocation) {
+                    var marked_lwi = rewritten_step.label_with_invocation;
+                    marked_lwi.invocation.inserted_by_tap = true;
+                    rewritten_step = ast.Step{ .label_with_invocation = marked_lwi };
+                }
+            }
+
             // Add @scope annotation to mark this as a scope boundary for obligation tracking.
             // Tap code runs in its own scope - it can observe but cannot satisfy outer obligations.
             const scope_annotations = alloc.alloc([]const u8, 1) catch unreachable;
@@ -329,6 +346,7 @@ const std = @import("std");
             continuations: []const ast.Continuation,
             tap_branches: []const ast.Continuation,  // ALL tap continuations
             is_meta: bool,
+            mark_inserted: bool,  // True if inserted invocations should be marked (wildcard taps only)
         ) !struct { conts: []ast.Continuation, modified: bool } {
             var new_conts = try alloc.alloc(ast.Continuation, continuations.len);
             var any_modified = false;
@@ -336,7 +354,7 @@ const std = @import("std");
             for (continuations, 0..) |*cont, i| {
                 if (cont.node == null) {
                     // No node to wrap, just recurse
-                    const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta);
+                    const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta, mark_inserted);
                     new_conts[i] = cont.*;
                     new_conts[i].continuations = nested.conts;
                     if (nested.modified) any_modified = true;
@@ -359,7 +377,7 @@ const std = @import("std");
                     const tap_condition_expr = tap_cont.condition_expr;
 
                     // Wrap with this tap handler (chain multiple wraps)
-                    wrapped_cont = try wrapContinuation(alloc, &wrapped_cont, tap_step, tap_nested, tap_binding, tap_condition, tap_condition_expr);
+                    wrapped_cont = try wrapContinuation(alloc, &wrapped_cont, tap_step, tap_nested, tap_binding, tap_condition, tap_condition_expr, mark_inserted);
                     wrap_count += 1;
                     std.debug.print("[tap] Wrapped continuation at branch '{s}' (tap {d})\n", .{cont.branch, wrap_count});
                 }
@@ -369,7 +387,7 @@ const std = @import("std");
                     any_modified = true;
                 } else {
                     // No matching taps, but recurse into nested continuations
-                    const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta);
+                    const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta, mark_inserted);
                     new_conts[i] = cont.*;
                     new_conts[i].continuations = nested.conts;
                     if (nested.modified) any_modified = true;
@@ -412,7 +430,7 @@ const std = @import("std");
                                 // Found a nested invocation matching source!
                                 // Transform its continuations (what happens after it returns)
                                 const nested_result = try transformContinuations(
-                                    alloc, cont.continuations, tap_branches, is_meta
+                                    alloc, cont.continuations, tap_branches, is_meta, source_wildcard  // mark_inserted = source_wildcard
                                 );
                                 this_cont.continuations = nested_result.conts;
                                 if (nested_result.modified) {
@@ -472,7 +490,7 @@ const std = @import("std");
             // CASE 1: Top-level flow matches source - transform its continuations
             if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
                 const result = Helper.transformContinuations(
-                    allocator, flow.continuations, all_tap_branches, is_metatype
+                    allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard
                 ) catch unreachable;
 
                 if (result.modified) {
@@ -512,9 +530,85 @@ const std = @import("std");
             } else {
                 new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
             }
+        } else if (prog_item.* == .subflow_impl) {
+            // Handle subflow implementations - must descend into the subflow body
+            const subflow = &prog_item.subflow_impl;
+
+            // Only process if body is a flow
+            if (subflow.body == .flow) {
+                const flow = &subflow.body.flow;
+                var flow_modified = false;
+                var new_continuations = flow.continuations;
+
+                // CASE 1: Top-level flow matches source - transform its continuations
+                if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
+                    const result = Helper.transformContinuations(
+                        allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard
+                    ) catch unreachable;
+
+                    if (result.modified) {
+                        new_continuations = result.conts;
+                        flow_modified = true;
+                    }
+                }
+
+                // CASE 2: Check for NESTED invocations matching source
+                const nested_result = Helper.transformNestedInvocations(
+                    allocator, new_continuations, source, source_is_wildcard,
+                    flow.module, all_tap_branches, is_metatype
+                ) catch unreachable;
+
+                if (nested_result.modified) {
+                    new_continuations = nested_result.conts;
+                    flow_modified = true;
+                }
+
+                if (flow_modified) {
+                    // Create modified subflow with transformed flow body
+                    const new_flow = ast.Flow{
+                        .invocation = flow.invocation,
+                        .continuations = new_continuations,
+                        .annotations = flow.annotations,
+                        .pre_label = flow.pre_label,
+                        .post_label = flow.post_label,
+                        .super_shape = flow.super_shape,
+                        .inline_body = flow.inline_body,
+                        .is_pure = flow.is_pure,
+                        .is_transitively_pure = flow.is_transitively_pure,
+                        .location = flow.location,
+                        .module = flow.module,
+                    };
+                    const new_body = ast.SubflowBody{ .flow = new_flow };
+                    const new_subflow = ast.SubflowImpl{
+                        .event_path = subflow.event_path,
+                        .body = new_body,
+                        .is_impl = subflow.is_impl,
+                        .location = subflow.location,
+                        .module = subflow.module,
+                    };
+                    new_items.append(allocator, ast.Item{ .subflow_impl = new_subflow }) catch unreachable;
+                    any_tap_inserted = true;
+                } else {
+                    new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
+                }
+            } else {
+                new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
+            }
         } else if (prog_item.* == .module_decl) {
             // Handle imported modules - must descend to remove tap and transform flows
             const module = &prog_item.module_decl;
+
+            // Skip system modules (compiler/stdlib) - taps should only apply to user code
+            // System modules have their own internal structure that shouldn't be wrapped by user taps
+            // Detect by module path: std.* modules are standard library, koru module is internal
+            const is_std_module = std.mem.startsWith(u8, module.logical_name, "std.") or
+                                  std.mem.eql(u8, module.logical_name, "koru");
+            if (module.is_system or is_std_module) {
+                std.debug.print("[tap] Skipping system module '{s}'\n", .{module.logical_name});
+                new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
+                continue;
+            }
+
             var new_mod_items = std.ArrayList(ast.Item).initCapacity(allocator, module.items.len) catch unreachable;
 
             for (module.items) |*mod_item| {
@@ -532,7 +626,7 @@ const std = @import("std");
                     // Check if flow matches source pattern
                     if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
                         const result = Helper.transformContinuations(
-                            allocator, flow.continuations, all_tap_branches, is_metatype
+                            allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard
                         ) catch unreachable;
 
                         if (result.modified) {
@@ -568,6 +662,68 @@ const std = @import("std");
                         };
                         new_mod_items.append(allocator, ast.Item{ .flow = new_flow }) catch unreachable;
                         any_tap_inserted = true;
+                    } else {
+                        new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
+                    }
+                } else if (mod_item.* == .subflow_impl) {
+                    // Handle subflow implementations inside modules
+                    const subflow = &mod_item.subflow_impl;
+
+                    if (subflow.body == .flow) {
+                        const flow = &subflow.body.flow;
+                        var flow_modified = false;
+                        var new_continuations = flow.continuations;
+
+                        // Check if flow matches source pattern
+                        if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
+                            const result = Helper.transformContinuations(
+                                allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard
+                            ) catch unreachable;
+
+                            if (result.modified) {
+                                new_continuations = result.conts;
+                                flow_modified = true;
+                            }
+                        }
+
+                        // Check nested invocations
+                        const nested_result = Helper.transformNestedInvocations(
+                            allocator, new_continuations, source, source_is_wildcard,
+                            flow.module, all_tap_branches, is_metatype
+                        ) catch unreachable;
+
+                        if (nested_result.modified) {
+                            new_continuations = nested_result.conts;
+                            flow_modified = true;
+                        }
+
+                        if (flow_modified) {
+                            const new_flow = ast.Flow{
+                                .invocation = flow.invocation,
+                                .continuations = new_continuations,
+                                .annotations = flow.annotations,
+                                .pre_label = flow.pre_label,
+                                .post_label = flow.post_label,
+                                .super_shape = flow.super_shape,
+                                .inline_body = flow.inline_body,
+                                .is_pure = flow.is_pure,
+                                .is_transitively_pure = flow.is_transitively_pure,
+                                .location = flow.location,
+                                .module = flow.module,
+                            };
+                            const new_body = ast.SubflowBody{ .flow = new_flow };
+                            const new_subflow = ast.SubflowImpl{
+                                .event_path = subflow.event_path,
+                                .body = new_body,
+                                .is_impl = subflow.is_impl,
+                                .location = subflow.location,
+                                .module = subflow.module,
+                            };
+                            new_mod_items.append(allocator, ast.Item{ .subflow_impl = new_subflow }) catch unreachable;
+                            any_tap_inserted = true;
+                        } else {
+                            new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
+                        }
                     } else {
                         new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
                     }

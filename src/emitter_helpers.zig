@@ -3395,6 +3395,32 @@ fn findLoopingBranches(
     return looping_branches.toOwnedSlice(allocator);
 }
 
+/// Check if any continuation (recursively) contains a terminal step
+/// This is used to detect when taps wrap terminal branches with void continuations,
+/// which can break out of loops even though the top-level branch looks like it loops.
+fn hasNestedTerminalInContinuations(continuations: []const ast.Continuation) bool {
+    for (continuations) |cont| {
+        // Check if this continuation's node is a terminal
+        if (cont.node) |step| {
+            if (step == .terminal) {
+                return true;
+            }
+        }
+
+        // Check if this is a void continuation with no node and no nested continuations
+        // (another form of terminal)
+        if (cont.node == null and cont.continuations.len == 0) {
+            return true;
+        }
+
+        // Recursively check nested continuations
+        if (hasNestedTerminalInContinuations(cont.continuations)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Emit the body of a continuation (pipeline + nested continuations)
 fn isTapInsertedStep(step: *const ast.Step) bool {
     return switch (step.*) {
@@ -3597,6 +3623,11 @@ pub fn emitContinuationBody(
         ctx.label_handler_invocation = &lwi.invocation;
         ctx.label_result_var = result_var;
 
+        // Track current loop label for break statements in terminal branches
+        const saved_label = ctx.current_label;
+        ctx.current_label = lwi.label;
+        defer ctx.current_label = saved_label;
+
         // Emit nested continuations (the switch statement)
         if (cont.continuations.len > 0) {
             // Update current_source_event for tap matching in nested continuations
@@ -3645,6 +3676,10 @@ pub fn emitContinuationBody(
         try emitter.writeIndent();
         try emitter.write("}\n");
 
+        // CRITICAL: Clear current_label AFTER closing the loop!
+        // Non-looping branches are emitted OUTSIDE the loop, so they can't use break :label
+        ctx.current_label = null;
+
         // NOW emit switch for NON-LOOPING branches (after the while)
         const has_non_looping_branches = cont.continuations.len > 0 and looping_branches.len < cont.continuations.len;
         if (has_non_looping_branches) {
@@ -3688,10 +3723,16 @@ pub fn emitContinuationBody(
                 try emitContinuationListWithUnreachableBranches(emitter, ctx, non_looping_conts.items, result_var, result_counter, looping_branches);
             }
         } else if (cont.continuations.len > 0 and looping_branches.len == cont.continuations.len) {
-            // ALL branches are looping - the while loop only exits via return statements
-            // Tell Zig this code path is unreachable
-            try emitter.writeIndent();
-            try emitter.write("unreachable;\n");
+            // ALL top-level branches are looping - but check for nested terminals
+            // (e.g., from taps that wrap terminal branches with void continuations)
+            const has_nested_terminal = hasNestedTerminalInContinuations(cont.continuations);
+            if (!has_nested_terminal) {
+                // No nested terminals - the while loop only exits via return statements
+                // Tell Zig this code path is unreachable
+                try emitter.writeIndent();
+                try emitter.write("unreachable;\n");
+            }
+            // If there ARE nested terminals, the loop can break normally - no unreachable
         }
 
         // Label case is done - no remaining steps to process
@@ -3806,7 +3847,15 @@ fn emitStep(
             try emitter.write(";\n");
         },
         .terminal => {
-            // Terminal steps don't create variables
+            // Terminal steps inside loops should break out of the loop
+            // This handles taps on terminal branches (e.g., | quit |> on_quit() | "" |> _)
+            if (ctx.current_label) |label| {
+                try emitter.writeIndent();
+                try emitter.write("break :");
+                try emitter.write(label);
+                try emitter.write(";\n");
+            }
+            // Outside of loops, terminal steps don't need to emit anything
         },
         .conditional_block => |*cb| {
             // Emit if (condition) { steps }
@@ -4471,7 +4520,15 @@ fn emitStepWithBindingSubstitution(
             try emitter.write(";\n");
         },
         .terminal => {
-            // Terminal steps don't create variables
+            // Terminal steps inside loops should break out of the loop
+            // This handles taps on terminal branches (e.g., | quit |> on_quit() | "" |> _)
+            if (ctx.current_label) |label| {
+                try emitter.writeIndent();
+                try emitter.write("break :");
+                try emitter.write(label);
+                try emitter.write(";\n");
+            }
+            // Outside of loops, terminal steps don't need to emit anything
         },
         .conditional_block => |*cb| {
             // Emit if (condition) { steps } with binding substitution
