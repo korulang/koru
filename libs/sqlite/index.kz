@@ -1,0 +1,168 @@
+// @koru/sqlite - SQLite bindings for Koru
+//
+// First official Koru library package.
+// Demonstrates: phantom obligations, auto-dispose, ~std.build:requires
+
+~import "$std/build"
+
+~std.build:requires {
+    exe.linkSystemLibrary("sqlite3");
+    exe.linkLibC();
+}
+
+const std = @import("std");
+const c = @cImport({
+    @cInclude("sqlite3.h");
+});
+
+const Connection = struct {
+    handle: ?*c.sqlite3,
+};
+
+const Statement = struct {
+    handle: ?*c.sqlite3_stmt,
+};
+
+// ============================================================================
+// Connection Management
+// ============================================================================
+
+~pub event open { path: []const u8 }
+| db { conn: *Connection[opened!] }
+| err { code: i32, msg: []const u8 }
+
+~proc open {
+    var db: ?*c.sqlite3 = null;
+    const rc = c.sqlite3_open(path.ptr, &db);
+    if (rc != c.SQLITE_OK) {
+        const msg = c.sqlite3_errmsg(db);
+        _ = c.sqlite3_close(db);
+        return .{ .err = .{ .code = rc, .msg = std.mem.span(msg) } };
+    }
+    const conn = std.heap.page_allocator.create(Connection) catch unreachable;
+    conn.* = Connection{ .handle = db };
+    return .{ .db = .{ .conn = conn } };
+}
+
+~pub event close { conn: *Connection[!opened] }
+| closed {}
+
+~proc close {
+    if (conn.handle) |h| {
+        _ = c.sqlite3_close(h);
+    }
+    std.heap.page_allocator.destroy(conn);
+    return .{ .closed = .{} };
+}
+
+// ============================================================================
+// Query Execution
+// ============================================================================
+
+~pub event exec { conn: *Connection[opened!], sql: []const u8 }
+| ok { conn: *Connection[opened!] }
+| err { conn: *Connection[opened!], code: i32, msg: []const u8 }
+
+~proc exec {
+    var errmsg: [*c]u8 = null;
+    const rc = c.sqlite3_exec(conn.handle, sql.ptr, null, null, &errmsg);
+    if (rc != c.SQLITE_OK) {
+        const msg = if (errmsg) |e| std.mem.span(e) else "unknown error";
+        if (errmsg) |e| c.sqlite3_free(e);
+        return .{ .err = .{ .conn = conn, .code = rc, .msg = msg } };
+    }
+    return .{ .ok = .{ .conn = conn } };
+}
+
+// Prepared statement query - returns rows one at a time
+~pub event query { conn: *Connection[opened!], sql: []const u8 }
+| row { conn: *Connection[opened!], stmt: *Statement[prepared!] }
+| empty { conn: *Connection[opened!] }
+| err { conn: *Connection[opened!], code: i32, msg: []const u8 }
+
+~proc query {
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(conn.handle, sql.ptr, @intCast(sql.len), &stmt, null);
+    if (rc != c.SQLITE_OK) {
+        const msg = c.sqlite3_errmsg(conn.handle);
+        return .{ .err = .{ .conn = conn, .code = rc, .msg = std.mem.span(msg) } };
+    }
+
+    const step_rc = c.sqlite3_step(stmt);
+    if (step_rc == c.SQLITE_ROW) {
+        const s = std.heap.page_allocator.create(Statement) catch unreachable;
+        s.* = Statement{ .handle = stmt };
+        return .{ .row = .{ .conn = conn, .stmt = s } };
+    } else if (step_rc == c.SQLITE_DONE) {
+        _ = c.sqlite3_finalize(stmt);
+        return .{ .empty = .{ .conn = conn } };
+    } else {
+        const msg = c.sqlite3_errmsg(conn.handle);
+        _ = c.sqlite3_finalize(stmt);
+        return .{ .err = .{ .conn = conn, .code = step_rc, .msg = std.mem.span(msg) } };
+    }
+}
+
+// Get next row from statement
+~pub event next { conn: *Connection[opened!], stmt: *Statement[prepared!] }
+| row { conn: *Connection[opened!], stmt: *Statement[prepared!] }
+| done { conn: *Connection[opened!] }
+| err { conn: *Connection[opened!], code: i32, msg: []const u8 }
+
+~proc next {
+    const rc = c.sqlite3_step(stmt.handle);
+    if (rc == c.SQLITE_ROW) {
+        return .{ .row = .{ .conn = conn, .stmt = stmt } };
+    } else if (rc == c.SQLITE_DONE) {
+        _ = c.sqlite3_finalize(stmt.handle);
+        std.heap.page_allocator.destroy(stmt);
+        return .{ .done = .{ .conn = conn } };
+    } else {
+        const msg = c.sqlite3_errmsg(conn.handle);
+        _ = c.sqlite3_finalize(stmt.handle);
+        std.heap.page_allocator.destroy(stmt);
+        return .{ .err = .{ .conn = conn, .code = rc, .msg = std.mem.span(msg) } };
+    }
+}
+
+// Finalize statement early (auto-dispose target)
+~pub event finalize { stmt: *Statement[!prepared] }
+| done {}
+
+~proc finalize {
+    if (stmt.handle) |h| {
+        _ = c.sqlite3_finalize(h);
+    }
+    std.heap.page_allocator.destroy(stmt);
+    return .{ .done = .{} };
+}
+
+// ============================================================================
+// Column Access (within row context)
+// ============================================================================
+
+~pub event col.int { stmt: *Statement[prepared!], index: i32 }
+| value { stmt: *Statement[prepared!], val: i64 }
+
+~proc col.int {
+    const val = c.sqlite3_column_int64(stmt.handle, index);
+    return .{ .value = .{ .stmt = stmt, .val = val } };
+}
+
+~pub event col.text { stmt: *Statement[prepared!], index: i32 }
+| value { stmt: *Statement[prepared!], val: []const u8 }
+
+~proc col.text {
+    const text = c.sqlite3_column_text(stmt.handle, index);
+    const len = c.sqlite3_column_bytes(stmt.handle, index);
+    const val = if (text) |t| t[0..@intCast(len)] else "";
+    return .{ .value = .{ .stmt = stmt, .val = val } };
+}
+
+~pub event col.real { stmt: *Statement[prepared!], index: i32 }
+| value { stmt: *Statement[prepared!], val: f64 }
+
+~proc col.real {
+    const val = c.sqlite3_column_double(stmt.handle, index);
+    return .{ .value = .{ .stmt = stmt, .val = val } };
+}

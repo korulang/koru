@@ -4,6 +4,7 @@
   "paths": {
     "std": "./koru_std",
     "lib": "./lib",
+    "libs": "./libs",
     "app": "./examples",
     "vaxis": "./examples/vaxis",
     "mock_vaxis": "./examples/mock_vaxis",

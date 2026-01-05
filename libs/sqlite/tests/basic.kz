@@ -1,0 +1,14 @@
+// Basic SQLite test - minimal
+//
+// Tests: open, close with obligation tracking
+
+~import "$libs/sqlite"
+~import "$std/io"
+
+// Simplest possible test: open and close
+~libs.sqlite:open(path: ":memory:")
+| db d |> libs.sqlite:close(conn: d.conn)
+    | closed |> std.io:print.ln("SQLite: opened and closed!")
+| err _ |> std.io:print.ln("SQLite: error opening")
+
+pub fn main() void {}
