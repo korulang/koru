@@ -2866,7 +2866,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
 const usage =
     \\koruc - The Koru Compiler
     \\
-    \\Usage: koruc [options] <input.kz>
+    \\Usage: koruc [options] <input.kz> [command]
     \\       koruc zen
     \\
     \\Options:
@@ -2880,12 +2880,16 @@ const usage =
     \\  -h, --help           Show this help message
     \\
     \\Commands:
+    \\  init                 Initialize a new Koru project in the current directory
     \\  zen                  Display the Zen of Koru
+    \\  i, install           Install npm packages from ~std.package:requires.npm
     \\
     \\Examples:
-    \\  koruc hello.kz              # Creates hello.zig
-    \\  koruc -o output.zig app.kz  # Creates output.zig
+    \\  koruc init                  # Initialize project in current directory
+    \\  koruc hello.kz              # Compile hello.kz
+    \\  koruc -o output.zig app.kz  # Compile to output.zig
     \\  koruc --check app.kz        # Check without emitting
+    \\  koruc app.kz install        # Install npm dependencies
     \\  koruc zen                   # Display Koru philosophy
     \\
 ;
@@ -4130,6 +4134,101 @@ pub fn main() !void {
         return;
     }
 
+    // Check for init command - initialize project in current directory
+    if (std.mem.eql(u8, args[1], "init")) {
+        // Check if koru.json already exists
+        if (std.fs.cwd().access("koru.json", .{})) |_| {
+            try printStderr(allocator, "Error: koru.json already exists in this directory\n", .{});
+            try printStderr(allocator, "This directory is already a Koru project.\n", .{});
+            return;
+        } else |_| {}
+
+        // Check if app.kz already exists
+        if (std.fs.cwd().access("app.kz", .{})) |_| {
+            try printStderr(allocator, "Error: app.kz already exists in this directory\n", .{});
+            return;
+        } else |_| {}
+
+        // Get directory name for project name
+        var cwd_buf: [4096]u8 = undefined;
+        const cwd = std.fs.cwd().realpath(".", &cwd_buf) catch {
+            try printStderr(allocator, "Error: could not determine current directory\n", .{});
+            return;
+        };
+        const project_name = std.fs.path.basename(cwd);
+
+        // Create koru.json
+        const koru_json_content = try std.fmt.allocPrint(allocator,
+            \\{{
+            \\  "name": "{s}",
+            \\  "version": "0.1.0",
+            \\  "entry": "app.kz",
+            \\  "paths": {{
+            \\    "node": "./node_modules"
+            \\  }}
+            \\}}
+            \\
+        , .{project_name});
+        defer allocator.free(koru_json_content);
+
+        const json_file = std.fs.cwd().createFile("koru.json", .{}) catch |err| {
+            try printStderr(allocator, "Error creating koru.json: {}\n", .{err});
+            return;
+        };
+        defer json_file.close();
+        json_file.writeAll(koru_json_content) catch |err| {
+            try printStderr(allocator, "Error writing koru.json: {}\n", .{err});
+            return;
+        };
+
+        // Create app.kz
+        const app_kz_content =
+            \\// A Koru application
+            \\//
+            \\// Run with: koruc app.kz && ./a.out
+            \\
+            \\~import "$std/package"
+            \\
+            \\// Declare npm dependencies (install with: koruc app.kz i)
+            \\// ~std.package:requires.npm {
+            \\//     "@koru/example": "^1.0.0"
+            \\// }
+            \\
+            \\~event main {}
+            \\
+            \\~proc main {
+            \\    const std = @import("std");
+            \\    std.debug.print("Hello from Koru!\n", .{});
+            \\}
+            \\
+            \\// Entry point
+            \\~main()
+            \\|> _
+            \\
+        ;
+
+        const app_file = std.fs.cwd().createFile("app.kz", .{}) catch |err| {
+            try printStderr(allocator, "Error creating app.kz: {}\n", .{err});
+            return;
+        };
+        defer app_file.close();
+        app_file.writeAll(app_kz_content) catch |err| {
+            try printStderr(allocator, "Error writing app.kz: {}\n", .{err});
+            return;
+        };
+
+        try printStdout(allocator, "Initialized Koru project '{s}'\n", .{project_name});
+        try printStdout(allocator, "\n", .{});
+        try printStdout(allocator, "Created:\n", .{});
+        try printStdout(allocator, "  koru.json  - Project configuration\n", .{});
+        try printStdout(allocator, "  app.kz     - Application entry point\n", .{});
+        try printStdout(allocator, "\n", .{});
+        try printStdout(allocator, "Next steps:\n", .{});
+        try printStdout(allocator, "  koruc app.kz       # Compile and run\n", .{});
+        try printStdout(allocator, "  koruc app.kz i     # Install npm dependencies\n", .{});
+        return;
+    }
+
     // Check for create command
     if (std.mem.eql(u8, args[1], "create")) {
         if (args.len < 4) {
@@ -4827,11 +4926,19 @@ pub fn main() !void {
     // Now check for comptime commands (after imports are processed)
     if (potential_command_arg) |potential_command| {
         const comptime_cmd_result = try collectCommands(parse_allocator, &source_file);
+
+        // Resolve command aliases (e.g., "i" -> "install")
+        // TODO: Parse these from command.declare dynamically
+        const resolved_command = if (std.mem.eql(u8, potential_command, "i"))
+            "install"
+        else
+            potential_command;
+
         for (comptime_cmd_result.commands[0..comptime_cmd_result.count]) |cmd| {
-            if (std.mem.eql(u8, cmd.name, potential_command)) {
+            if (std.mem.eql(u8, cmd.name, resolved_command)) {
                 // Found matching comptime command - continue to backend compilation
                 // The command will be passed to the backend and executed there
-                detected_comptime_command = potential_command;
+                detected_comptime_command = resolved_command;
                 break;
             }
         }

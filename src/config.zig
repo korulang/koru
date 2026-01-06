@@ -5,6 +5,7 @@ const KoruJson = struct {
     name: []const u8 = "unnamed",
     version: []const u8 = "0.0.0",
     description: ?[]const u8 = null,
+    entry: ?[]const u8 = null,
     paths: ?std.json.ArrayHashMap([]const u8) = null,
 };
 
