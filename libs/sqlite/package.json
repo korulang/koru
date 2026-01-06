@@ -1,0 +1,27 @@
+{
+  "name": "@korulang/sqlite3",
+  "version": "0.0.1",
+  "description": "SQLite3 bindings for Koru with phantom type obligations",
+  "keywords": ["koru", "korulang", "sqlite", "sqlite3", "database", "zig", "phantom-types"],
+  "author": "Koru Contributors",
+  "license": "MIT",
+  "homepage": "https://korulang.org",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/korulang/koru",
+    "directory": "libs/sqlite"
+  },
+  "bugs": {
+    "url": "https://github.com/korulang/koru/issues"
+  },
+  "files": [
+    "index.kz",
+    "README.md"
+  ],
+  "koru": {
+    "entry": "index.kz",
+    "requires": {
+      "system": ["sqlite3"]
+    }
+  }
+}

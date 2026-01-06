@@ -2289,6 +2289,20 @@ pub const Parser = struct {
             }
         }
 
+        // Check if source arg already exists - don't add duplicate
+        var has_source_arg = false;
+        for (original.args) |arg| {
+            if (std.mem.eql(u8, arg.name, flow_field_name)) {
+                has_source_arg = true;
+                break;
+            }
+        }
+
+        // If source already exists, return original unchanged
+        if (has_source_arg) {
+            return original;
+        }
+
         // Create new args array with the synthetic Source argument
         var new_args = try std.ArrayList(ast.Arg).initCapacity(
             self.allocator,
