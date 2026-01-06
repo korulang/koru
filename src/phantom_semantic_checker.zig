@@ -738,6 +738,73 @@ pub const PhantomSemanticChecker = struct {
             return true;
         }
 
+        // Empty-branch continuations (|> ...) are void chain continuations
+        // They don't reference a branch - they chain after a void event in the pipeline
+        // NOTE: This is different from void EVENTS (0 branches) - this handles the continuation SYNTAX
+        if (cont.branch.len == 0) {
+            std.debug.print("[PHANTOM-FLOW]   (empty-branch void chain continuation - handling step/nested)\n", .{});
+            // Create binding context for void chain continuation
+            var void_chain_context = if (parent_context) |parent|
+                try BindingContext.inherit(parent, self.allocator)
+            else
+                BindingContext.init(self.allocator);
+            defer void_chain_context.deinit();
+
+            // Validate the step if present
+            if (cont.node) |*step| {
+                const step_valid = try self.validateStep(step, &void_chain_context, event_map, flow_module, location);
+                if (!step_valid) {
+                    return false;
+                }
+
+                // If step is an invocation, nested continuations belong to THAT event
+                switch (step.*) {
+                    .invocation => |*inv| {
+                        const step_event_name = try self.pathToString(inv.path);
+                        defer self.allocator.free(step_event_name);
+                        const step_module = inv.path.module_qualifier orelse flow_module;
+                        const step_qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ step_module, step_event_name });
+                        defer self.allocator.free(step_qualified);
+
+                        if (event_map.get(step_qualified)) |step_event_info| {
+                            // Validate nested continuations against the step's event
+                            for (cont.continuations) |*nested| {
+                                const nested_valid = try self.validateContinuation(nested, step_event_info.decl, step_module, flow_module, event_map, location, &void_chain_context, implementing_event);
+                                if (!nested_valid) {
+                                    return false;
+                                }
+                            }
+                            return true;
+                        }
+                    },
+                    .inline_code => {
+                        // inline_code is a void step (e.g., from print.ln transform)
+                        // Nested continuations should still be validated against the PARENT event
+                        // (not as a void chain) because they might be branch handlers for a previous invocation
+                        // For example: |> work() |> print.ln("...") | done |> ...
+                        // The | done |> is a branch of work(), not a void chain
+                        for (cont.continuations) |*nested| {
+                            const nested_valid = try self.validateContinuation(nested, event_decl, event_module, flow_module, event_map, location, &void_chain_context, implementing_event);
+                            if (!nested_valid) {
+                                return false;
+                            }
+                        }
+                        return true;
+                    },
+                    else => {},
+                }
+            }
+
+            // Fallback: validate nested continuations (no step or unrecognized step)
+            for (cont.continuations) |*nested| {
+                const nested_valid = try self.validateContinuation(nested, event_decl, event_module, flow_module, event_map, location, &void_chain_context, implementing_event);
+                if (!nested_valid) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         // Find the branch in the event declaration
         var branch_payload: ?*const ast.Shape = null;
         var branch_decl: ?*const ast.Branch = null;

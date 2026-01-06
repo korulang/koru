@@ -7351,7 +7351,10 @@ pub fn main() !void {
 
     // Default output names
     const emitted_file = "output_emitted.zig";
-    const output_exe = if (args.len > 1) args[1] else "a.out";
+    // NOTE: args[1] is the output exe name when called from frontend,
+    // but when running backend directly, args[1] might be the input .kz file.
+    // Detect this case and default to "a.out" instead of overwriting the source!
+    const output_exe = if (args.len > 1 and !std.mem.endsWith(u8, args[1], ".kz")) args[1] else "a.out";
 
     // Check if fusion is enabled
     const fusion_enabled = CompilerEnv.hasFlag("fusion");
