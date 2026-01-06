@@ -9,12 +9,119 @@
 //       "lodash": "^4.17.21"
 //   }
 //
-// When compiling with --install-packages, the compiler will:
-//   1. Collect all package:requires.* invocations
-//   2. Generate appropriate package files (package.json, Cargo.toml, etc.)
-//   3. Run package managers to install dependencies
+// Then run: koruc main.kz i
+// Or:       koruc main.kz install
+//
+// This will:
+//   1. Collect all package:requires.npm invocations from your code
+//   2. Generate package.json
+//   3. Run npm install
+
+~import "$std/compiler"
 
 ~[comptime]
+
+// ============================================================
+// INSTALL COMMAND - Install npm packages from requires.npm
+// ============================================================
+
+~std.compiler:command.declare {
+    "name": "i",
+    "alias": "install",
+    "description": "Install npm packages from requires.npm declarations"
+}
+
+~[comptime|command]pub event install {
+    program: *const Program,
+    allocator: __koru_std.mem.Allocator,
+    argv: []const []const u8,
+}
+
+~proc install {
+    // argv is available for future use (e.g., --production flag)
+
+    const std = @import("std");
+
+    // Walk AST to collect requires.npm invocations
+    var npm_packages = std.ArrayListUnmanaged([]const u8){};
+    defer npm_packages.deinit(allocator);
+
+    for (program.items) |item| {
+        if (item == .flow) {
+            const flow = item.flow;
+            if (flow.invocation.path.module_qualifier) |mq| {
+                // Check for std.package:requires.npm
+                if (std.mem.eql(u8, mq, "std.package") and
+                    flow.invocation.path.segments.len == 2 and
+                    std.mem.eql(u8, flow.invocation.path.segments[0], "requires") and
+                    std.mem.eql(u8, flow.invocation.path.segments[1], "npm"))
+                {
+                    // Extract source parameter (the JSON-like content)
+                    for (flow.invocation.args) |arg| {
+                        if (std.mem.eql(u8, arg.name, "source")) {
+                            npm_packages.append(allocator, arg.value) catch {
+                                std.debug.print("✗ Out of memory\n", .{});
+                                return;
+                            };
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (npm_packages.items.len == 0) {
+        std.debug.print("No npm packages declared. Use ~std.package:requires.npm {{ ... }}\n", .{});
+        return;
+    }
+
+    std.debug.print("Found {d} npm package declaration(s)\n", .{npm_packages.items.len});
+
+    // Generate package.json
+    const file = std.fs.cwd().createFile("package.json", .{}) catch |err| {
+        std.debug.print("✗ Failed to create package.json: {}\n", .{err});
+        return;
+    };
+    defer file.close();
+
+    file.writeAll("{\n  \"dependencies\": {\n") catch return;
+    for (npm_packages.items, 0..) |pkg_source, idx| {
+        // pkg_source is the raw content like: "@koru/sqlite": "^1.0.0"
+        file.writeAll("    ") catch return;
+        file.writeAll(pkg_source) catch return;
+        if (idx < npm_packages.items.len - 1) {
+            file.writeAll(",") catch return;
+        }
+        file.writeAll("\n") catch return;
+    }
+    file.writeAll("  }\n}\n") catch return;
+
+    std.debug.print("✓ Generated package.json\n", .{});
+
+    // Run npm install
+    const result = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &[_][]const u8{ "npm", "install" },
+    }) catch |err| {
+        std.debug.print("✗ Failed to run npm install: {}\n", .{err});
+        return;
+    };
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
+
+    if (result.stdout.len > 0) {
+        std.debug.print("{s}", .{result.stdout});
+    }
+    if (result.stderr.len > 0) {
+        std.debug.print("{s}", .{result.stderr});
+    }
+
+    if (result.term.Exited == 0) {
+        std.debug.print("✓ npm install complete\n", .{});
+    } else {
+        std.debug.print("✗ npm install failed\n", .{});
+    }
+}
 
 // npm packages (JavaScript/TypeScript via Node Package Manager)
 ~[comptime|norun]pub event requires.npm { source: Source }

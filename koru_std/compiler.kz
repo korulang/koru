@@ -433,6 +433,39 @@ pub const CompilerContext = struct {
 }
 
 // ============================================================
+// COMPILER COMMANDS - User-definable CLI commands
+// ============================================================
+// Modules can declare CLI commands that run instead of normal compilation.
+// Commands have full AST access and run in the backend compilation phase.
+//
+// Usage (in your module, e.g. package.kz):
+//   ~import "$std/compiler"
+//
+//   ~std.compiler:command.declare {
+//     "name": "i",
+//     "alias": "install",
+//     "description": "Install npm packages from requires.npm declarations"
+//   }
+//
+//   ~[comptime|command]pub event install {
+//       program: *const Program,
+//       allocator: std.mem.Allocator,
+//       argv: []const []const u8,
+//   }
+//
+//   ~proc install {
+//       // Full AST access - walk program for requires.npm, etc.
+//   }
+//
+// Invoke: koruc main.kz install [args...]
+// Or:     koruc main.kz i [args...]
+//
+// Commands appear in --help under "Commands:" section.
+// [norun] prevents auto-execution - collected from AST like flags.
+
+~[comptime|norun]pub event command.declare { source: Source }
+
+// ============================================================
 // COMPILER COORDINATION - User-overridable compilation pipeline
 // ============================================================
 

@@ -947,6 +947,70 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\
             \\    // Default output names
             \\    const emitted_file = "output_emitted.zig";
+            \\
+        );
+
+        // Generate command checking code dynamically
+        const cmd_result = try collectCommands(allocator, source_file);
+        if (cmd_result.count > 0) {
+            try writer.writeAll(
+                \\    // Check for CLI commands in argv
+                \\    // Note: backend_output is already imported at file scope
+                \\    if (args.len > 1) {
+                \\        const koru_std = backend_output.koru_std;
+                \\
+            );
+
+            // Generate command checks
+            // Commands call MODULE.EVENT_event.handler(.{ .program = ..., .allocator = ..., .argv = ... })
+            for (cmd_result.commands[0..cmd_result.count]) |cmd| {
+                var buf: [1024]u8 = undefined;
+                if (cmd.module_path) |mod_path| {
+                    // Convert std.X to koru_std.X for proper Zig namespace
+                    var zig_mod_path: [256]u8 = undefined;
+                    const zig_mod = if (std.mem.startsWith(u8, mod_path, "std."))
+                        try std.fmt.bufPrint(&zig_mod_path, "koru_std.{s}", .{mod_path[4..]})
+                    else
+                        mod_path;
+
+                    const line = try std.fmt.bufPrint(&buf,
+                        \\        if (std.mem.eql(u8, args[1], "{s}")) {{
+                        \\            std.debug.print("🔧 Running command: {s}\n", .{{}});
+                        \\            _ = {s}.{s}_event.handler(.{{
+                        \\                .program = &PROGRAM_AST,
+                        \\                .allocator = allocator,
+                        \\                .argv = args[2..],
+                        \\            }});
+                        \\            return;
+                        \\        }}
+                        \\
+                    , .{ cmd.name, cmd.name, zig_mod, cmd.handler_name });
+                    try writer.writeAll(line);
+                } else {
+                    const line = try std.fmt.bufPrint(&buf,
+                        \\        if (std.mem.eql(u8, args[1], "{s}")) {{
+                        \\            std.debug.print("🔧 Running command: {s}\n", .{{}});
+                        \\            _ = {s}_event.handler(.{{
+                        \\                .program = &PROGRAM_AST,
+                        \\                .allocator = allocator,
+                        \\                .argv = args[2..],
+                        \\            }});
+                        \\            return;
+                        \\        }}
+                        \\
+                    , .{ cmd.name, cmd.name, cmd.handler_name });
+                    try writer.writeAll(line);
+                }
+            }
+
+            try writer.writeAll(
+                \\    }
+                \\
+            );
+        }
+
+        // Continue with normal compilation flow
+        try writer.writeAll(
             \\    // NOTE: args[1] is the output exe name when called from frontend,
             \\    // but when running backend directly, args[1] might be the input .kz file.
             \\    // Detect this case and default to "a.out" instead of overwriting the source!
@@ -1195,6 +1259,67 @@ const TransformEvent = struct {
     returns_program: bool,    // Event returns transformed{ program: *const Program }
     has_failed: bool,         // Event has failed{ error: []const u8 } branch
 };
+
+/// CommandInfo stores CLI command metadata for [comptime|command] events
+/// Commands run instead of normal compilation when invoked via `koruc file.kz <command>`
+const CommandInfo = struct {
+    name: []const u8,         // e.g., "install" - command name for CLI
+    handler_name: []const u8, // e.g., "package_install" - Zig function name
+    module_path: ?[]const u8, // e.g., "koru_std.package" for stdlib commands
+};
+
+/// Collect all [comptime|command] events from the AST
+fn collectCommands(allocator: std.mem.Allocator, source_file: *ast.Program) !struct { commands: [16]CommandInfo, count: usize } {
+    var commands: [16]CommandInfo = undefined;
+    var count: usize = 0;
+
+    // Scan top-level events
+    for (source_file.items) |item| {
+        if (item == .event_decl) {
+            const event_decl = item.event_decl;
+            const has_command = annotation_parser.hasPart(event_decl.annotations, "command");
+
+            if (has_command and count < 16) {
+                const name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
+                const handler_name = try joinPathSegments(allocator, event_decl.path.segments);
+
+                commands[count] = .{
+                    .name = name,
+                    .handler_name = handler_name,
+                    .module_path = null,
+                };
+                count += 1;
+            }
+        }
+
+        // Also check imported modules
+        if (item == .module_decl) {
+            const module = item.module_decl;
+            for (module.items) |mod_item| {
+                if (mod_item == .event_decl) {
+                    const event_decl = mod_item.event_decl;
+                    const has_command = annotation_parser.hasPart(event_decl.annotations, "command");
+
+                    if (has_command and count < 16) {
+                        const name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
+                        // Handler name is just the event name (e.g., "install")
+                        // The full path koru_std.package.install_event.handler is built at codegen
+                        const handler_name = try joinPathSegments(allocator, event_decl.path.segments);
+
+                        commands[count] = .{
+                            .name = name,
+                            .handler_name = handler_name,
+                            .module_path = module.logical_name,
+                        };
+                        count += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    return .{ .commands = commands, .count = count };
+}
 
 /// Generate transform handler calling code for [comptime|transform] events
 /// This scans for events with [comptime|transform] annotations and generates
@@ -4399,6 +4524,11 @@ pub fn main() !void {
         parse_allocator.free(zig_commands);
     }
 
+    // Track if we're running a comptime command (passed to backend)
+    // NOTE: comptime_cmd_result is collected AFTER imports are processed
+    var detected_comptime_command: ?[]const u8 = null;
+    var potential_command_arg: ?[]const u8 = null;
+
     // Check if there's a potential command name in args
     // Args pattern: koruc input.kz <command> <...args for command>
     // Find input file position, then check next arg
@@ -4471,6 +4601,10 @@ pub fn main() !void {
                         std.process.exit(1);
                     }
                 }
+
+                // Store potential command for later checking (after imports are processed)
+                // Comptime commands are defined in imported modules, so we check after imports
+                potential_command_arg = potential_command;
             }
             break;
         }
@@ -4689,6 +4823,19 @@ pub fn main() !void {
     // No manual cleanup needed for AST nodes - parse_arena.deinit() will free them all
 
     std.debug.print("AST combined with {} imported modules\n", .{imported_modules.items.len});
+
+    // Now check for comptime commands (after imports are processed)
+    if (potential_command_arg) |potential_command| {
+        const comptime_cmd_result = try collectCommands(parse_allocator, &source_file);
+        for (comptime_cmd_result.commands[0..comptime_cmd_result.count]) |cmd| {
+            if (std.mem.eql(u8, cmd.name, potential_command)) {
+                // Found matching comptime command - continue to backend compilation
+                // The command will be passed to the backend and executed there
+                detected_comptime_command = potential_command;
+                break;
+            }
+        }
+    }
 
     // Canonicalize all DottedPaths - set module_qualifier on everything
     // This enables reliable name resolution for all downstream passes
@@ -5179,17 +5326,28 @@ pub fn main() !void {
         const backend_exe = "zig-out/bin/backend";
 
         // Now run the backend, which generates output_emitted.zig and compiles it
-        const backend_run_args = [_][]const u8{
-            std.fs.path.join(allocator, &.{ ".", backend_exe }) catch backend_exe,
-            exe_name,
-        };
-        defer if (backend_run_args[0].ptr != backend_exe.ptr) allocator.free(backend_run_args[0]);
+        // If a comptime command was detected, pass it to the backend
+        var backend_args_list = try std.ArrayList([]const u8).initCapacity(allocator, 4);
+        defer backend_args_list.deinit(allocator);
+
+        const backend_path = std.fs.path.join(allocator, &.{ ".", backend_exe }) catch backend_exe;
+        try backend_args_list.append(allocator, backend_path);
+
+        if (detected_comptime_command) |cmd| {
+            // Pass command as first argument (backend checks args[1] for commands)
+            try backend_args_list.append(allocator, cmd);
+        } else {
+            // Normal compilation - pass output exe name
+            try backend_args_list.append(allocator, exe_name);
+        }
+
+        defer if (backend_path.ptr != backend_exe.ptr) allocator.free(backend_path);
 
         // Run backend in the output directory
         // Note: default max_output_bytes is only 50KB, way too small for large compilations
         const backend_result = try std.process.Child.run(.{
             .allocator = allocator,
-            .argv = &backend_run_args,
+            .argv = backend_args_list.items,
             .cwd = output_dir_for_build,
             .max_output_bytes = 10 * 1024 * 1024, // 10MB should be plenty
         });
