@@ -269,6 +269,7 @@ pub const CompilerContext = struct {
     emitter_helpers_module.addImport("ast", ast_module);
     emitter_helpers_module.addImport("compiler_config", compiler_config_module);
     emitter_helpers_module.addImport("type_registry", type_registry_module);
+    emitter_helpers_module.addImport("codegen_utils", codegen_utils_module);
 
     // Tap pattern matcher
     const tap_pattern_matcher_module = b.createModule(.{
@@ -320,6 +321,7 @@ pub const CompilerContext = struct {
     visitor_emitter_module.addImport("tap_registry", tap_registry_module);
     visitor_emitter_module.addImport("type_registry", type_registry_module);
     visitor_emitter_module.addImport("annotation_parser", annotation_parser_module);
+    visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
 
     // Fusion detector and optimizer
     const fusion_detector_module = b.createModule(.{
