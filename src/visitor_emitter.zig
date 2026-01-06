@@ -6,6 +6,7 @@ const visitor_mod = @import("ast_visitor");
 const tap_registry_module = @import("tap_registry");
 const type_registry_module = @import("type_registry");
 const annotation_parser = @import("annotation_parser");
+const codegen_utils = @import("codegen_utils");
 
 // Sentinel value for tap function context (prevents infinite recursion)
 const TAP_FUNCTION_CONTEXT: usize = 9999;
@@ -1446,7 +1447,14 @@ pub const VisitorEmitter = struct {
         if (depth == 1) {
             try self.code_emitter.write("koru_");
         }
-        try self.code_emitter.write(node.name);
+        // Escape module names that aren't valid Zig identifiers (e.g., @koru, test-pkg)
+        if (codegen_utils.needsEscaping(node.name)) {
+            try self.code_emitter.write("@\"");
+            try self.code_emitter.write(node.name);
+            try self.code_emitter.write("\"");
+        } else {
+            try self.code_emitter.write(node.name);
+        }
         try self.code_emitter.write(" = struct {\n");
 
         // Increase indent level for module contents

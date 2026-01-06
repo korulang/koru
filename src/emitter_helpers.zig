@@ -9,6 +9,7 @@ const tap_registry_module = @import("tap_registry");
 const type_registry_module = @import("type_registry");
 const purity_helpers = @import("compiler_passes/purity_helpers");
 const compiler_config = @import("compiler_config");
+const codegen_utils = @import("codegen_utils");
 
 /// Controls which modules/taps to emit based on annotations
 /// Duplicated from visitor_emitter.zig to avoid circular dependency
@@ -409,7 +410,8 @@ pub fn writeModulePath(emitter: *CodeEmitter, module_path: []const u8, main_modu
             } else {
                 try emitter.write("koru_");
             }
-            try emitter.write(segment);
+            // Escape segments that need it (e.g., @koru -> @"@koru", test-pkg -> @"test-pkg")
+            try writeEscapedSegment(emitter, segment);
             first = false;
         }
         return;
@@ -425,8 +427,20 @@ pub fn writeModulePath(emitter: *CodeEmitter, module_path: []const u8, main_modu
             // Only prefix the FIRST segment (top-level sibling module)
             try emitter.write("koru_");
         }
-        try emitter.write(segment);
+        // Escape segments that need it (e.g., @koru -> @"@koru", test-pkg -> @"test-pkg")
+        try writeEscapedSegment(emitter, segment);
         first = false;
+    }
+}
+
+/// Write an identifier segment, escaping if needed for Zig
+fn writeEscapedSegment(emitter: *CodeEmitter, name: []const u8) !void {
+    if (codegen_utils.needsEscaping(name)) {
+        try emitter.write("@\"");
+        try emitter.write(name);
+        try emitter.write("\"");
+    } else {
+        try emitter.write(name);
     }
 }
 

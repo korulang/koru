@@ -53,14 +53,28 @@ const zig_keywords = std.StaticStringMap(void).initComptime(.{
 });
 
 /// Check if an identifier needs escaping for Zig
+/// Returns true for:
+/// - Zig keywords (const, fn, etc.)
+/// - Identifiers starting with @ (npm scoped packages like @koru)
+/// - Identifiers containing non-identifier chars (hyphens, etc.)
 pub fn needsEscaping(name: []const u8) bool {
-    return zig_keywords.has(name);
+    if (zig_keywords.has(name)) return true;
+    if (name.len == 0) return false;
+    // Starts with @ (npm scoped packages)
+    if (name[0] == '@') return true;
+    // Contains characters that aren't valid in Zig identifiers
+    for (name) |c| {
+        if (!std.ascii.isAlphanumeric(c) and c != '_') return true;
+    }
+    // Starts with digit
+    if (std.ascii.isDigit(name[0])) return true;
+    return false;
 }
 
-/// Escape a Zig identifier if it's a keyword
+/// Escape a Zig identifier if needed (keyword, @-prefix, special chars)
 /// Caller owns the returned memory
 pub fn escapeZigIdentifier(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
-    if (zig_keywords.has(name)) {
+    if (needsEscaping(name)) {
         return std.fmt.allocPrint(allocator, "@\"{s}\"", .{name});
     }
     // Not a keyword, return the name as-is (caller must dupe if needed)
@@ -69,7 +83,7 @@ pub fn escapeZigIdentifier(allocator: std.mem.Allocator, name: []const u8) ![]co
 
 /// Write an escaped identifier to a writer
 pub fn writeEscapedIdentifier(writer: anytype, name: []const u8) !void {
-    if (zig_keywords.has(name)) {
+    if (needsEscaping(name)) {
         try writer.print("@\"{s}\"", .{name});
     } else {
         try writer.writeAll(name);
@@ -78,7 +92,7 @@ pub fn writeEscapedIdentifier(writer: anytype, name: []const u8) !void {
 
 /// Append an escaped identifier to an ArrayList
 pub fn appendEscapedIdentifier(list: *std.ArrayList(u8), allocator: std.mem.Allocator, name: []const u8) !void {
-    if (zig_keywords.has(name)) {
+    if (needsEscaping(name)) {
         try list.appendSlice(allocator, "@\"");
         try list.appendSlice(allocator, name);
         try list.appendSlice(allocator, "\"");

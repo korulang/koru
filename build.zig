@@ -293,6 +293,7 @@ pub fn build(b: *std.Build) void {
     emitter_helpers_module.addImport("ast", ast_module);
     emitter_helpers_module.addImport("compiler_config", compiler_config_module);
     emitter_helpers_module.addImport("type_registry", type_registry_module);
+    emitter_helpers_module.addImport("codegen_utils", codegen_utils_module);
 
     // Old emitter.zig DELETED - using visitor_emitter now
 
@@ -317,6 +318,7 @@ pub fn build(b: *std.Build) void {
     visitor_emitter_module.addImport("ast_visitor", ast_visitor_module);
     visitor_emitter_module.addImport("type_registry", type_registry_module);
     visitor_emitter_module.addImport("annotation_parser", annotation_parser_module);
+    visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
 
     // Tap Pattern Matcher module - pattern matching for tap registration
     const tap_pattern_matcher_module = b.createModule(.{
