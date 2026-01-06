@@ -1,0 +1,14 @@
+// Test: Chained exec with void events (print.ln) in between
+// This exercises the void pipeline chaining fix
+
+~import "$libs/sqlite"
+~import "$std/io"
+
+~libs.sqlite:open(path: ":memory:")
+| db d |> libs.sqlite:exec(d.conn, "CREATE TABLE users (id INTEGER, name TEXT)")
+    | ok d2 |> std.io:print.ln("Table created") |> libs.sqlite:exec(d2.conn, "INSERT INTO users VALUES (1, 'Alice')")
+        | ok d3 |> std.io:print.ln("Row inserted") |> libs.sqlite:close(d3.conn)
+            | closed |> std.io:print.ln("Done!")
+        | err _ |> std.io:print.ln("Insert error")
+    | err _ |> std.io:print.ln("Create error")
+| err _ |> std.io:print.ln("Open error")

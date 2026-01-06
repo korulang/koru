@@ -3931,29 +3931,46 @@ pub const Parser = struct {
 
         // Parse the pipeline steps from the continuation
         const steps = try self.parsePipelineSteps(continuation_part);
-        const step: ?ast.Step = if (steps.len > 0) steps[0] else null;
 
-        // Create a continuation with empty branch (for void events)
-        var continuations = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
-        var cont = ast.Continuation{
-            .branch = try self.allocator.dupe(u8, ""),  // Empty branch for void event continuation
-            .binding = null,
-            .binding_type = .branch_payload,  // Use branch_payload even though there's no binding
-            .condition = null,
-            .condition_expr = null,
-            .node = step,
-            .indent = indent,
-            .continuations = &[_]ast.Continuation{},  // Temporary - will be replaced
-            .location = self.getCurrentLocation(),
-        };
+        if (steps.len == 0) {
+            return &[_]ast.Continuation{};
+        }
 
-        // Parse nested continuations (multi-line continuations that follow the inline |>)
-        // For example: ~void() |> event()
-        //                  | done |> _       <-- nested continuation
-        cont.continuations = try self.parseNestedContinuationsForLevel(indent);
+        // Build chain of continuations from back to front
+        // Each step becomes a continuation with empty branch, pointing to the next step
+        // Last step gets the nested multi-line continuations
 
-        try continuations.append(self.allocator, cont);
-        return continuations.toOwnedSlice(self.allocator);
+        // Parse nested continuations for the LAST step
+        const nested_continuations = try self.parseNestedContinuationsForLevel(indent);
+
+        // Start with the last step
+        var current_continuations: []ast.Continuation = nested_continuations;
+
+        // Work backwards through steps, building the chain
+        var step_idx: usize = steps.len;
+        while (step_idx > 0) {
+            step_idx -= 1;
+
+            const step = steps[step_idx];
+
+            // Create continuation for this step
+            var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+            try cont_list.append(self.allocator, ast.Continuation{
+                .branch = try self.allocator.dupe(u8, ""),  // Empty branch for void event continuation
+                .binding = null,
+                .binding_type = .branch_payload,
+                .condition = null,
+                .condition_expr = null,
+                .node = step,
+                .indent = indent,
+                .continuations = current_continuations,
+                .location = self.getCurrentLocation(),
+            });
+
+            current_continuations = try cont_list.toOwnedSlice(self.allocator);
+        }
+
+        return current_continuations;
     }
 
     fn parseContinuations(self: *Parser, base_indent: usize) ![]ast.Continuation {
@@ -4046,7 +4063,18 @@ pub const Parser = struct {
 
         // Parse nested continuations - ONLY greater indentation means nesting
         // Same-indent continuations are siblings, period. No magic auto-nesting.
-        cont.continuations = try self.parseNestedContinuationsForLevel(indent);
+        const multi_line_continuations = try self.parseNestedContinuationsForLevel(indent);
+
+        // FIX: If we have inline chained continuations, attach multi-line ones to the deepest
+        if (cont.continuations.len > 0 and multi_line_continuations.len > 0) {
+            var deepest = &cont.continuations[0];
+            while (deepest.continuations.len > 0) {
+                deepest = @constCast(&deepest.continuations[0]);
+            }
+            @constCast(deepest).continuations = multi_line_continuations;
+        } else if (cont.continuations.len == 0) {
+            cont.continuations = multi_line_continuations;
+        }
 
         return cont;
     }
@@ -4085,10 +4113,10 @@ pub const Parser = struct {
     fn parseContinuation(self: *Parser, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         const line = self.lines[self.current];
         const trimmed = lexer.trim(line);
-        
+
         // Skip the | prefix
         const after_bar = lexer.trim(trimmed[1..]);
-        
+
         if (lexer.startsWith(after_bar, ">")) {
             // Pipeline continuation |>
             return self.parsePipelineContinuation(after_bar[1..], indent, location);
@@ -4100,7 +4128,20 @@ pub const Parser = struct {
     
     fn parsePipelineContinuation(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         var cont = try self.parsePipelineContinuationBase(content, indent, location);
-        cont.continuations = try self.parseNestedContinuationsForLevel(indent);
+
+        const multi_line_continuations = try self.parseNestedContinuationsForLevel(indent);
+
+        // If we have inline chained continuations, attach multi-line ones to the deepest
+        if (cont.continuations.len > 0 and multi_line_continuations.len > 0) {
+            var deepest = &cont.continuations[0];
+            while (deepest.continuations.len > 0) {
+                deepest = @constCast(&deepest.continuations[0]);
+            }
+            @constCast(deepest).continuations = multi_line_continuations;
+        } else if (cont.continuations.len == 0) {
+            cont.continuations = multi_line_continuations;
+        }
+
         return cont;
     }
     
@@ -4164,7 +4205,7 @@ pub const Parser = struct {
     
     fn parseBranchContinuationBase(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         // Note: *deref syntax is handled at a higher level, not here
-        
+
         // Parse: branch [binding] [|> pipeline...]
         var parts = std.mem.tokenizeAny(u8, content, " ");
         
@@ -4518,6 +4559,49 @@ pub const Parser = struct {
             defer self.allocator.free(steps);
             if (steps.len > 0) {
                 step = steps[0];
+
+                // FIX: Chain additional steps as nested continuations
+                // | done |> step1 |> step2 |> step3 should create:
+                //   Continuation(step1) -> Continuation(step2) -> Continuation(step3)
+                if (steps.len > 1) {
+                    // Build chain from back to front
+                    var current_nested: []const ast.Continuation = &[_]ast.Continuation{};
+
+                    var step_idx: usize = steps.len;
+                    while (step_idx > 1) {  // Skip steps[0], it's already in 'step'
+                        step_idx -= 1;
+
+                        var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                        try cont_list.append(self.allocator, ast.Continuation{
+                            .branch = try self.allocator.dupe(u8, ""),  // Empty branch for void continuation
+                            .binding = null,
+                            .binding_annotations = &[_][]const u8{},
+                            .binding_type = .branch_payload,
+                            .condition = null,
+                            .condition_expr = null,
+                            .node = steps[step_idx],
+                            .indent = indent,
+                            .continuations = current_nested,
+                            .location = location,
+                        });
+
+                        current_nested = try cont_list.toOwnedSlice(self.allocator);
+                    }
+
+                    // Return continuation with first step and chained nested continuations
+                    return ast.Continuation{
+                        .branch = owned_branch,
+                        .binding = binding,
+                        .binding_annotations = binding_annotations,
+                        .binding_type = .branch_payload,
+                        .condition = condition,
+                        .condition_expr = condition_expr,
+                        .node = step,
+                        .indent = indent,
+                        .continuations = current_nested,  // Points to steps[1] -> steps[2] -> ...
+                        .location = location,
+                    };
+                }
             }
         }
 
@@ -4593,7 +4677,24 @@ pub const Parser = struct {
         // (parseNestedContinuationsForLevel expects self.current to point at potential nested lines)
         self.current += 1;
 
-        cont.continuations = try self.parseNestedContinuationsForLevel(indent);
+        const multi_line_continuations = try self.parseNestedContinuationsForLevel(indent);
+
+        // If we have inline chained continuations (from |> step1 |> step2 |> step3),
+        // attach multi-line continuations to the DEEPEST continuation in the chain
+        if (cont.continuations.len > 0 and multi_line_continuations.len > 0) {
+            // Find the deepest continuation
+            var deepest = &cont.continuations[0];
+            while (deepest.continuations.len > 0) {
+                deepest = @constCast(&deepest.continuations[0]);
+            }
+            // Attach multi-line continuations to the deepest
+            @constCast(deepest).continuations = multi_line_continuations;
+        } else if (cont.continuations.len == 0) {
+            // No inline chaining, just set multi-line continuations directly
+            cont.continuations = multi_line_continuations;
+        }
+        // else: We have inline continuations but no multi-line ones, keep as-is
+
         return cont;
     }
     
@@ -4655,6 +4756,44 @@ pub const Parser = struct {
         
         const steps = try self.parsePipelineSteps(full_content);
         const step: ?ast.Step = if (steps.len > 0) steps[0] else null;
+
+        // FIX: Chain additional steps as nested continuations (same as parseBranchContinuationBase)
+        if (steps.len > 1) {
+            // Build chain from back to front
+            var current_nested: []const ast.Continuation = &[_]ast.Continuation{};
+
+            var step_idx: usize = steps.len;
+            while (step_idx > 1) {  // Skip steps[0], it's already in 'step'
+                step_idx -= 1;
+
+                var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                try cont_list.append(self.allocator, ast.Continuation{
+                    .branch = try self.allocator.dupe(u8, ""),  // Empty branch for void continuation
+                    .binding = null,
+                    .binding_annotations = &[_][]const u8{},
+                    .binding_type = .branch_payload,
+                    .condition = null,
+                    .condition_expr = null,
+                    .node = steps[step_idx],
+                    .indent = indent,
+                    .continuations = current_nested,
+                    .location = location,
+                });
+
+                current_nested = try cont_list.toOwnedSlice(self.allocator);
+            }
+
+            return ast.Continuation{
+                .branch = try self.allocator.dupe(u8, ""),  // Empty branch for pipeline continuation
+                .binding = null,
+                .condition = null,
+                .condition_expr = null,
+                .node = step,
+                .indent = indent,
+                .continuations = current_nested,  // Points to steps[1] -> steps[2] -> ...
+                .location = location,
+            };
+        }
 
         return ast.Continuation{
             .branch = try self.allocator.dupe(u8, ""),  // Empty branch for pipeline continuation
@@ -6104,7 +6243,7 @@ test "parser produces AST from simple event" {
         \\| done { result: i32 }
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -6132,7 +6271,7 @@ test "parser handles flow with continuation" {
         \\| greeting g -> ~print(g.message)
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -6162,7 +6301,7 @@ test "parser handles proc declaration" {
         \\}
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -6204,7 +6343,7 @@ test "parser handles complex nested proc body extraction" {
         \\~something.after.proc()
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -6236,7 +6375,7 @@ test "parser handles import statement" {
     const source = \\~import math = "std/math.kz"
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -6257,7 +6396,7 @@ test "parser handles empty file" {
     
     const source = "";
     
-    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -6274,7 +6413,7 @@ test "parser handles Source in event field" {
         \\| done { result: Source }
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -6296,7 +6435,7 @@ test "parser validates branch names" {
             \\| another_one { msg: []const u8 }
         ;
         
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
         
         var parse_result = try parser.parse();
@@ -6316,7 +6455,7 @@ test "parser validates branch names" {
             \\| this is invalid { data: i32 }
         ;
         
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
         
         const result = parser.parse();
@@ -6333,7 +6472,7 @@ test "parser validates branch names" {
             \\| 123invalid { data: i32 }
         ;
         
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
         
         const result = parser.parse();
@@ -6357,7 +6496,7 @@ test "parser validates branch constructors" {
             \\| ok |> ok { msg: "success" }
         ;
         
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
         
         var parse_result = try parser.parse();
@@ -6376,7 +6515,7 @@ test "parser validates branch constructors" {
             \\| ok |> invalid name { msg: "fail" }
         ;
         
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
         
         const result = parser.parse();
@@ -6396,7 +6535,7 @@ test "parser handles shorthand notation in branch constructors" {
         \\~test = ok { r.user.id }
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -6421,7 +6560,7 @@ test "parser handles event taps" {
             \\~file.read -> * | error e |> log.error(e)
         ;
         
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
         
         var result = try parser.parse();
@@ -6453,7 +6592,7 @@ test "parser handles event taps" {
             \\~* -> db.query | sql s |> log.sql(s)
         ;
         
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
         
         var result = try parser.parse();
@@ -6477,7 +6616,7 @@ test "parser handles event taps" {
             \\~auth.check -> grant.access | user u |> audit.log(u)
         ;
         
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
         
         var result = try parser.parse();
@@ -6500,7 +6639,7 @@ test "parser handles event taps" {
             \\~* -> * |> transition t |> profiler.record(t)
         ;
         
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
         
         var result = try parser.parse();
@@ -6523,7 +6662,7 @@ test "parser handles input taps" {
             \\~* -> auth.validate |> input i |> log.auth(i)
         ;
         
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
         
         var result = try parser.parse();
@@ -6555,7 +6694,7 @@ test "parser handles input taps" {
             \\~user.action -> db.save |> input data |> validate(data)
         ;
         
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{});
+        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
         
         var result = try parser.parse();
@@ -6575,4 +6714,131 @@ test "parser handles input taps" {
         try std.testing.expectEqualStrings("input", tap.continuations[0].branch);
         try std.testing.expectEqualStrings("data", tap.continuations[0].binding.?);
     }
+}
+
+test "parser handles when clause with space" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\~poll()
+        \\| key k when (k.code == 'q') |> quit()
+    ;
+
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer parser.deinit();
+
+    var parse_result = try parser.parse();
+    defer parse_result.deinit();
+
+    try std.testing.expect(parse_result.source_file.items.len == 1);
+
+    const item = parse_result.source_file.items[0];
+    try std.testing.expect(item == .flow);
+
+    const flow = item.flow;
+    try std.testing.expect(flow.continuations.len == 1);
+
+    const cont = flow.continuations[0];
+    try std.testing.expectEqualStrings("key", cont.branch);
+    try std.testing.expect(cont.binding != null);
+    try std.testing.expectEqualStrings("k", cont.binding.?);
+
+    // THIS IS THE KEY CHECK: condition should be populated
+    try std.testing.expect(cont.condition != null);
+    try std.testing.expectEqualStrings("(k.code == 'q')", cont.condition.?);
+}
+
+test "parser handles when clause without parens" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\~poll()
+        \\| key k when k.code == 'q' |> quit()
+    ;
+
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer parser.deinit();
+
+    var parse_result = try parser.parse();
+    defer parse_result.deinit();
+
+    const flow = parse_result.source_file.items[0].flow;
+    const cont = flow.continuations[0];
+
+    try std.testing.expect(cont.condition != null);
+    try std.testing.expectEqualStrings("k.code == 'q'", cont.condition.?);
+}
+
+test "parser handles sibling continuations with when guards" {
+    const allocator = std.testing.allocator;
+
+    // This is the pattern that caused "2 else cases ambiguous" error
+    const source =
+        \\~poll()
+        \\| key k when (k.code == 'q') |> quit()
+        \\| key k |> handle_key(k)
+    ;
+
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer parser.deinit();
+
+    var parse_result = try parser.parse();
+    defer parse_result.deinit();
+
+    const flow = parse_result.source_file.items[0].flow;
+
+    // Should have 2 continuations
+    try std.testing.expect(flow.continuations.len == 2);
+
+    // First continuation: with when guard
+    const cont1 = flow.continuations[0];
+    try std.testing.expectEqualStrings("key", cont1.branch);
+    try std.testing.expectEqualStrings("k", cont1.binding.?);
+    try std.testing.expect(cont1.condition != null);  // HAS when guard
+    try std.testing.expectEqualStrings("(k.code == 'q')", cont1.condition.?);
+
+    // Second continuation: else case (no when guard)
+    const cont2 = flow.continuations[1];
+    try std.testing.expectEqualStrings("key", cont2.branch);
+    try std.testing.expectEqualStrings("k", cont2.binding.?);
+    try std.testing.expect(cont2.condition == null);  // NO when guard - this is the else case
+}
+
+test "parser handles NESTED continuations with when guards" {
+    const allocator = std.testing.allocator;
+
+    // This is the pattern from hello.kz that becomes parse_error
+    const source =
+        \\~run()
+        \\| ready t |> poll()
+        \\    | key k when (k.code == 'q') |> cleanup()
+        \\        | done |> _
+        \\    | key k |> handle_key(k)
+        \\        | done |> _
+        \\| err _ |> _
+    ;
+
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer parser.deinit();
+
+    var parse_result = try parser.parse();
+    defer parse_result.deinit();
+
+    // This test CURRENTLY FAILS - the flow is being parsed as a parse_error
+    // When fixed, this should become a flow with nested continuations
+    try std.testing.expect(parse_result.source_file.items.len == 1);
+    try std.testing.expect(parse_result.source_file.items[0] == .flow);
+
+    const flow = parse_result.source_file.items[0].flow;
+
+    // Top level has 2 continuations: ready and err
+    try std.testing.expect(flow.continuations.len == 2);
+
+    // First top-level continuation: ready t |> poll()
+    const ready_cont = flow.continuations[0];
+    try std.testing.expectEqualStrings("ready", ready_cont.branch);
+    try std.testing.expectEqualStrings("t", ready_cont.binding.?);
+
+    // ready should have nested continuations (key with when, key without when)
+    // The node should be poll(), and poll's continuations should have when guards
 }

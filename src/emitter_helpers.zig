@@ -1483,10 +1483,53 @@ fn emitSubflowContinuationsWithDepth(
                                     try emitter.write(seg);
                                 }
                                 try emitter.write("_event.handler(.{");
+
+                                // Look up event signature for positional arg name resolution
+                                var event_name_buf: [256]u8 = undefined;
+                                var event_name_pos: usize = 0;
+                                // Build canonical event name: module:segment.segment
+                                if (inv.path.module_qualifier) |mq| {
+                                    @memcpy(event_name_buf[event_name_pos..event_name_pos + mq.len], mq);
+                                    event_name_pos += mq.len;
+                                    event_name_buf[event_name_pos] = ':';
+                                    event_name_pos += 1;
+                                } else if (main_module_name) |mmn| {
+                                    @memcpy(event_name_buf[event_name_pos..event_name_pos + mmn.len], mmn);
+                                    event_name_pos += mmn.len;
+                                    event_name_buf[event_name_pos] = ':';
+                                    event_name_pos += 1;
+                                }
+                                for (inv.path.segments, 0..) |seg, seg_i| {
+                                    if (seg_i > 0) {
+                                        event_name_buf[event_name_pos] = '.';
+                                        event_name_pos += 1;
+                                    }
+                                    @memcpy(event_name_buf[event_name_pos..event_name_pos + seg.len], seg);
+                                    event_name_pos += seg.len;
+                                }
+                                const event_canonical = event_name_buf[0..event_name_pos];
+                                const event_type = type_registry.getEventType(event_canonical);
+
                                 for (inv.args, 0..) |arg, idx| {
                                     if (idx > 0) try emitter.write(", ");
                                     try emitter.write(" .");
-                                    try emitter.write(arg.name);
+
+                                    // Check if this is a positional arg (name == value indicates synthesized name)
+                                    // If so, use the parameter name from the event signature
+                                    const param_name = if (std.mem.eql(u8, arg.name, arg.value)) blk: {
+                                        // Positional arg - get name from event signature
+                                        if (event_type) |et| {
+                                            if (et.input_shape) |shape| {
+                                                if (idx < shape.fields.len) {
+                                                    break :blk shape.fields[idx].name;
+                                                }
+                                            }
+                                        }
+                                        // Fallback: use arg.name (might produce invalid Zig)
+                                        break :blk arg.name;
+                                    } else arg.name;
+
+                                    try emitter.write(param_name);
                                     try emitter.write(" = ");
                                     try emitter.write(arg.value);
                                 }
@@ -2503,7 +2546,21 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
             try emitter.write(", ");
         }
         try emitter.write(".");
-        try emitter.write(arg.name);
+
+        // Check if this is a positional arg (name == value indicates synthesized name)
+        // If so, use the parameter name from the event signature
+        const param_name = if (std.mem.eql(u8, arg.name, arg.value)) blk: {
+            // Positional arg - get name from event signature
+            if (event_decl) |event| {
+                if (idx < event.input.fields.len) {
+                    break :blk event.input.fields[idx].name;
+                }
+            }
+            // Fallback: use arg.name (might produce invalid Zig)
+            break :blk arg.name;
+        } else arg.name;
+
+        try emitter.write(param_name);
         try emitter.write(" = ");
 
         // Check if this argument should be emitted as a source or expression string literal
@@ -2511,7 +2568,7 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
         var is_expression_arg = false;
         if (event_decl) |event| {
             for (event.input.fields) |field| {
-                if (std.mem.eql(u8, field.name, arg.name)) {
+                if (std.mem.eql(u8, field.name, param_name)) {
                     if (field.is_source) {
                         is_source_arg = true;
                         break;
@@ -3658,11 +3715,29 @@ pub fn emitContinuationBody(
                 }
 
                 // Emit switch with only looping branches
-                // NOTE: The while loop condition already guarantees only looping branch values are possible.
-                // Zig 0.15+ considers the switch exhaustive for those values, so we must NOT emit
-                // else => unreachable (it would be "unreachable else prong; all cases handled")
+                // NOTE: Zig doesn't track exhaustiveness via while loop condition control flow.
+                // The switch still needs to handle ALL enum variants.
+                // We must mark non-looping branches as unreachable explicitly.
                 if (looping_conts.items.len > 0) {
-                    try emitContinuationList(emitter, ctx, looping_conts.items, result_var, result_counter, false);
+                    // Build list of non-looping branch names
+                    var non_looping_branch_names = try std.ArrayList([]const u8).initCapacity(ctx.allocator, cont.continuations.len);
+                    defer non_looping_branch_names.deinit(ctx.allocator);
+
+                    for (cont.continuations) |nested_cont| {
+                        var is_looping = false;
+                        for (looping_branches) |loop_branch| {
+                            if (std.mem.eql(u8, nested_cont.branch, loop_branch)) {
+                                is_looping = true;
+                                break;
+                            }
+                        }
+                        if (!is_looping) {
+                            try non_looping_branch_names.append(ctx.allocator, nested_cont.branch);
+                        }
+                    }
+
+                    // Emit with non-looping branches marked as unreachable
+                    try emitContinuationListWithUnreachableBranches(emitter, ctx, looping_conts.items, result_var, result_counter, non_looping_branch_names.items);
                 }
             }
         }

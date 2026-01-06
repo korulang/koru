@@ -660,7 +660,7 @@ pub const PhantomSemanticChecker = struct {
         location: errors.SourceLocation,
         parent_context: ?*const BindingContext,  // Optional parent context to inherit from
         implementing_event: ?*const ast.EventDecl,  // Event this flow implements (for branch_constructor escape)
-    ) !bool {
+    ) anyerror!bool {
         var has_errors = false;
 
         std.debug.print("[PHANTOM-FLOW]   Continuation branch: '{s}'\n", .{cont.branch});
@@ -690,8 +690,31 @@ pub const PhantomSemanticChecker = struct {
                 if (!step_valid) {
                     return false;
                 }
+
+                // If step is an invocation, nested continuations belong to THAT event, not the void parent
+                switch (step.*) {
+                    .invocation => |*inv| {
+                        const step_event_name = try self.pathToString(inv.path);
+                        defer self.allocator.free(step_event_name);
+                        const step_module = inv.path.module_qualifier orelse flow_module;
+                        const step_qualified = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ step_module, step_event_name });
+                        defer self.allocator.free(step_qualified);
+
+                        if (event_map.get(step_qualified)) |step_event_info| {
+                            // Validate nested continuations against the step's event
+                            for (cont.continuations) |*nested| {
+                                const nested_valid = try self.validateContinuation(nested, step_event_info.decl, step_module, flow_module, event_map, location, &void_context, implementing_event);
+                                if (!nested_valid) {
+                                    return false;
+                                }
+                            }
+                            return true;
+                        }
+                    },
+                    else => {},
+                }
             }
-            // Validate nested continuations recursively
+            // Validate nested continuations recursively (fallback: against void event)
             for (cont.continuations) |*nested| {
                 const nested_valid = try self.validateContinuation(nested, event_decl, event_module, flow_module, event_map, location, &void_context, implementing_event);
                 if (!nested_valid) {
@@ -1054,16 +1077,131 @@ pub const PhantomSemanticChecker = struct {
                     }
                 }
             } else {
-                // No invocations in pipeline - nested continuations still belong to parent event
-                std.debug.print("[PHANTOM-FLOW]   No invocations in pipeline, nested continuations belong to parent event\n", .{});
-                for (cont.continuations) |nested| {
-                    const nested_valid = try self.validateContinuation(&nested, event_decl, event_module, flow_module, event_map, location, &context, implementing_event);
-                    if (!nested_valid) {
-                        has_errors = true;
-                        // Continue checking for more errors
+                // Check if step is inline_code (from comptime transforms like print.ln)
+                // inline_code represents void completions - nested continuations should be allowed
+                var is_inline_code = false;
+                if (cont.node) |step| {
+                    if (step == .inline_code) {
+                        is_inline_code = true;
+                    }
+                }
+
+                if (is_inline_code) {
+                    // inline_code is a void completion (e.g., from print.ln transform)
+                    // Nested continuations should be validated as void event chain
+                    // validateContinuationAsVoidChain handles invocation steps correctly -
+                    // it looks up the event and validates nested branches against it
+                    std.debug.print("[PHANTOM-FLOW]   Step is inline_code (void completion), validating nested continuations as void event chain\n", .{});
+                    for (cont.continuations) |nested| {
+                        const nested_valid = try self.validateContinuationAsVoidChain(&nested, flow_module, event_map, location, &context, implementing_event);
+                        if (!nested_valid) {
+                            has_errors = true;
+                        }
+                    }
+                } else {
+                    // No invocations in pipeline - nested continuations still belong to parent event
+                    std.debug.print("[PHANTOM-FLOW]   No invocations in pipeline, nested continuations belong to parent event\n", .{});
+                    for (cont.continuations) |nested| {
+                        const nested_valid = try self.validateContinuation(&nested, event_decl, event_module, flow_module, event_map, location, &context, implementing_event);
+                        if (!nested_valid) {
+                            has_errors = true;
+                            // Continue checking for more errors
+                        }
                     }
                 }
             }
+        }
+
+        return !has_errors;
+    }
+
+    /// Validate a continuation as part of a void event chain (e.g., after inline_code)
+    /// This allows empty-branch continuations without checking against a parent event's branches
+    fn validateContinuationAsVoidChain(
+        self: *PhantomSemanticChecker,
+        cont: *const ast.Continuation,
+        flow_module: ?[]const u8,
+        event_map: *std.StringHashMap(EventInfo),
+        location: errors.SourceLocation,
+        parent_context: ?*const BindingContext,
+        implementing_event: ?*const ast.EventDecl,
+    ) anyerror!bool {
+        var has_errors = false;
+
+        std.debug.print("[PHANTOM-FLOW]   Void chain continuation, branch: '{s}'\n", .{cont.branch});
+
+        // Create context for this continuation
+        var context = if (parent_context) |parent|
+            try BindingContext.inherit(parent, self.allocator)
+        else
+            BindingContext.init(self.allocator);
+        defer context.deinit();
+
+        // Empty branch is valid in void chains
+        if (cont.branch.len == 0) {
+            // Validate the step if present
+            if (cont.node) |*step| {
+                const step_valid = try self.validateStep(step, &context, event_map, flow_module, location);
+                if (!step_valid) {
+                    has_errors = true;
+                }
+
+                // Check if step is an invocation - if so, nested continuations belong to that event
+                switch (step.*) {
+                    .invocation => |*inv| {
+                        // Look up the event
+                        const event_name = try self.pathToString(inv.path);
+                        defer self.allocator.free(event_name);
+                        const resolved_module = inv.path.module_qualifier orelse flow_module orelse "unknown";
+                        const qualified_name = try std.fmt.allocPrint(
+                            self.allocator,
+                            "{s}:{s}",
+                            .{resolved_module, event_name}
+                        );
+                        defer self.allocator.free(qualified_name);
+
+                        if (event_map.get(qualified_name)) |event_info| {
+                            // Validate nested continuations against this event
+                            for (cont.continuations) |nested| {
+                                const nested_valid = try self.validateContinuation(&nested, event_info.decl, resolved_module, flow_module orelse "unknown", event_map, location, &context, implementing_event);
+                                if (!nested_valid) {
+                                    has_errors = true;
+                                }
+                            }
+                            return !has_errors;
+                        }
+                    },
+                    .inline_code => {
+                        // Another inline_code - recursively validate as void chain
+                        for (cont.continuations) |nested| {
+                            const nested_valid = try self.validateContinuationAsVoidChain(&nested, flow_module, event_map, location, &context, implementing_event);
+                            if (!nested_valid) {
+                                has_errors = true;
+                            }
+                        }
+                        return !has_errors;
+                    },
+                    else => {},
+                }
+            }
+
+            // No step or unknown step type - recursively validate nested as void chain
+            for (cont.continuations) |nested| {
+                const nested_valid = try self.validateContinuationAsVoidChain(&nested, flow_module, event_map, location, &context, implementing_event);
+                if (!nested_valid) {
+                    has_errors = true;
+                }
+            }
+        } else {
+            // Non-empty branch in void chain is an error
+            try self.reporter.addError(
+                .KORU030,
+                location.line,
+                location.column,
+                "Continuation expects branch '{s}' but void event chain has no branches",
+                .{cont.branch}
+            );
+            has_errors = true;
         }
 
         return !has_errors;

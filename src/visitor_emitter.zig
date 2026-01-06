@@ -202,6 +202,18 @@ pub const VisitorEmitter = struct {
 
         if (DEBUG) std.debug.print("\n==== VisitorEmitter.emit() START ====\n", .{});
         if (DEBUG) std.debug.print("Total items in source_file: {}\n", .{source_file.items.len});
+        if (DEBUG) {
+            for (source_file.items, 0..) |item, idx| {
+                std.debug.print("  [{}] Item type: {s}\n", .{idx, @tagName(item)});
+                if (item == .flow) {
+                    std.debug.print("       Flow invokes: {s}\n", .{item.flow.invocation.path.segments[0]});
+                }
+                if (item == .parse_error) {
+                    std.debug.print("       PARSE ERROR MESSAGE: {s}\n", .{item.parse_error.message});
+                    std.debug.print("       Raw text: {s}\n", .{item.parse_error.raw_text});
+                }
+            }
+        }
 
         // Store main_module_name for use in tap canonical event naming
         self.main_module_name = source_file.main_module_name;
@@ -1185,10 +1197,31 @@ pub const VisitorEmitter = struct {
                                         try self.code_emitter.write("_event.handler(.{");
 
                                         // Write arguments, mapping from input parameters
+                                        // Look up event signature to get parameter names for positional args
+                                        const event_canonical_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
+                                        defer self.allocator.free(event_canonical_name);
+                                        const event_type = self.type_registry.getEventType(event_canonical_name);
+
                                         for (flow.invocation.args, 0..) |arg, k| {
                                             if (k > 0) try self.code_emitter.write(", ");
                                             try self.code_emitter.write(" .");
-                                            try self.code_emitter.write(arg.name);
+
+                                            // Check if this is a positional arg (name == value indicates synthesized name)
+                                            // If so, use the parameter name from the event signature
+                                            const param_name = if (std.mem.eql(u8, arg.name, arg.value)) blk: {
+                                                // Positional arg - get name from event signature
+                                                if (event_type) |et| {
+                                                    if (et.input_shape) |shape| {
+                                                        if (k < shape.fields.len) {
+                                                            break :blk shape.fields[k].name;
+                                                        }
+                                                    }
+                                                }
+                                                // Fallback: use arg.name (might produce invalid Zig)
+                                                break :blk arg.name;
+                                            } else arg.name;
+
+                                            try self.code_emitter.write(param_name);
                                             try self.code_emitter.write(" = ");
                                             try self.code_emitter.write(arg.value);
                                         }

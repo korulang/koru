@@ -1002,37 +1002,83 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\    const msg = try std.fmt.bufPrint(&buf, "✓ Generated {s} ({d} bytes)\n", .{emitted_file, generated_code.len});
             \\    try stdout.writeAll(msg);
             \\
-            \\    // Now compile the emitted code
-            \\    var emit_path_buf: [256]u8 = undefined;
-            \\    const emit_path = try std.fmt.bufPrint(&emit_path_buf, "-femit-bin={s}", .{output_exe});
-            \\    const argv = [_][]const u8{ "zig", "build-exe", emitted_file, "-O", "ReleaseFast", emit_path };
-            \\    const result = std.process.Child.run(.{
-            \\        .allocator = allocator,
-            \\        .argv = &argv,
-            \\    }) catch |err| {
-            \\        const stderr = std.fs.File.stderr();
-            \\        var err_buf: [512]u8 = undefined;
-            \\        const err_msg = try std.fmt.bufPrint(&err_buf, "✗ Failed to spawn zig compiler: {}\n", .{err});
-            \\        try stderr.writeAll(err_msg);
-            \\        std.process.exit(1);
+            \\    // Now compile the emitted code using build_output.zig (which has user dependencies like vaxis)
+            \\    // First check if build_output.zig exists (has user build requirements)
+            \\    const has_build_output = blk: {
+            \\        std.fs.cwd().access("build_output.zig", .{}) catch break :blk false;
+            \\        break :blk true;
             \\    };
-            \\    defer allocator.free(result.stdout);
-            \\    defer allocator.free(result.stderr);
             \\
-            \\    const stdout2 = std.fs.File.stdout();
-            \\    var buf2: [512]u8 = undefined;
-            \\    if (result.term.Exited == 0) {
-            \\        const msg2 = try std.fmt.bufPrint(&buf2, "✓ Compiled to {s}\n", .{output_exe});
-            \\        try stdout2.writeAll(msg2);
-            \\    } else {
-            \\        const msg2 = try std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{});
-            \\        try stdout2.writeAll(msg2);
-            \\        if (result.stderr.len > 0) {
-            \\            var err_buf2: [65536]u8 = undefined;
-            \\            const err_msg2 = try std.fmt.bufPrint(&err_buf2, "Error: {s}\n", .{result.stderr});
-            \\            try std.fs.File.stderr().writeAll(err_msg2);
+            \\    if (has_build_output) {
+            \\        // Use zig build with build_output.zig (includes user dependencies)
+            \\        const argv = [_][]const u8{ "zig", "build", "--build-file", "build_output.zig" };
+            \\        const result = std.process.Child.run(.{
+            \\            .allocator = allocator,
+            \\            .argv = &argv,
+            \\        }) catch |err| {
+            \\            const stderr = std.fs.File.stderr();
+            \\            var err_buf: [512]u8 = undefined;
+            \\            const err_msg = try std.fmt.bufPrint(&err_buf, "✗ Failed to spawn zig compiler: {}\n", .{err});
+            \\            try stderr.writeAll(err_msg);
+            \\            std.process.exit(1);
+            \\        };
+            \\        defer allocator.free(result.stdout);
+            \\        defer allocator.free(result.stderr);
+            \\
+            \\        const stdout2 = std.fs.File.stdout();
+            \\        var buf2: [512]u8 = undefined;
+            \\        if (result.term.Exited == 0) {
+            \\            // Copy from zig-out/bin/output to the requested output name
+            \\            std.fs.cwd().copyFile("zig-out/bin/output", std.fs.cwd(), output_exe, .{}) catch |copy_err| {
+            \\                const msg2 = try std.fmt.bufPrint(&buf2, "✗ Failed to copy output: {}\n", .{copy_err});
+            \\                try std.fs.File.stderr().writeAll(msg2);
+            \\                std.process.exit(1);
+            \\            };
+            \\            const msg2 = try std.fmt.bufPrint(&buf2, "✓ Compiled to {s}\n", .{output_exe});
+            \\            try stdout2.writeAll(msg2);
+            \\        } else {
+            \\            const msg2 = try std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{});
+            \\            try stdout2.writeAll(msg2);
+            \\            if (result.stderr.len > 0) {
+            \\                var err_buf2: [65536]u8 = undefined;
+            \\                const err_msg2 = try std.fmt.bufPrint(&err_buf2, "Error: {s}\n", .{result.stderr});
+            \\                try std.fs.File.stderr().writeAll(err_msg2);
+            \\            }
+            \\            std.process.exit(1);
             \\        }
-            \\        std.process.exit(1);
+            \\    } else {
+            \\        // Fall back to direct zig build-exe (no user dependencies)
+            \\        var emit_path_buf: [256]u8 = undefined;
+            \\        const emit_path = try std.fmt.bufPrint(&emit_path_buf, "-femit-bin={s}", .{output_exe});
+            \\        const argv = [_][]const u8{ "zig", "build-exe", emitted_file, "-O", "ReleaseFast", emit_path };
+            \\        const result = std.process.Child.run(.{
+            \\            .allocator = allocator,
+            \\            .argv = &argv,
+            \\        }) catch |err| {
+            \\            const stderr = std.fs.File.stderr();
+            \\            var err_buf: [512]u8 = undefined;
+            \\            const err_msg = try std.fmt.bufPrint(&err_buf, "✗ Failed to spawn zig compiler: {}\n", .{err});
+            \\            try stderr.writeAll(err_msg);
+            \\            std.process.exit(1);
+            \\        };
+            \\        defer allocator.free(result.stdout);
+            \\        defer allocator.free(result.stderr);
+            \\
+            \\        const stdout2 = std.fs.File.stdout();
+            \\        var buf2: [512]u8 = undefined;
+            \\        if (result.term.Exited == 0) {
+            \\            const msg2 = try std.fmt.bufPrint(&buf2, "✓ Compiled to {s}\n", .{output_exe});
+            \\            try stdout2.writeAll(msg2);
+            \\        } else {
+            \\            const msg2 = try std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{});
+            \\            try stdout2.writeAll(msg2);
+            \\            if (result.stderr.len > 0) {
+            \\                var err_buf2: [65536]u8 = undefined;
+            \\                const err_msg2 = try std.fmt.bufPrint(&err_buf2, "Error: {s}\n", .{result.stderr});
+            \\                try std.fs.File.stderr().writeAll(err_msg2);
+            \\            }
+            \\            std.process.exit(1);
+            \\        }
             \\    }
             \\}
         );

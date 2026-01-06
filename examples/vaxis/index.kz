@@ -23,6 +23,16 @@
 // Build system dependency - libvaxis from Zig package manager
 ~import "$std/build"
 
+// For BACKEND compilation (so it can validate the generated code)
+~std.compiler:requires {
+    const vaxis_dep = b.dependency("vaxis", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("vaxis", vaxis_dep.module("vaxis"));
+}
+
+// For OUTPUT binary (the final executable)
 ~std.build:requires {
     const vaxis_dep = b.dependency("vaxis", .{
         .target = target,
@@ -88,7 +98,9 @@ const VaxisEvent = union(enum) {
 | quit {}
 
 ~proc poll {
+    std.debug.print("poll: should_quit={}, is_initialized={}\n", .{should_quit, is_initialized});
     if (should_quit or !is_initialized) {
+        std.debug.print("poll: returning quit (early exit)\n", .{});
         return .{ .quit = .{} };
     }
 
@@ -98,6 +110,7 @@ const VaxisEvent = union(enum) {
 
         switch (event) {
             .key_press => |k| {
+                std.debug.print("poll: key_press codepoint={}\n", .{k.codepoint});
                 // Skip terminal response "keys" - they have high codepoints (e.g. 57366 = 0xE006)
                 // Normal printable chars are < 0x3000. Skip anything above that.
                 if (k.codepoint > 0x3000 or k.codepoint == 0) continue;
@@ -136,6 +149,7 @@ const VaxisEvent = union(enum) {
 | err { message: []const u8 }
 
 ~proc run {
+    std.debug.print("run: starting\n", .{});
     alloc = std.heap.page_allocator;
 
     // Initialize TTY
@@ -175,6 +189,7 @@ const VaxisEvent = union(enum) {
     }
 
     is_initialized = true;
+    std.debug.print("run: returning ready, is_initialized={}\n", .{is_initialized});
     return .{ .ready = .{ .tty = .{} } };
 }
 
@@ -228,6 +243,10 @@ const VaxisEvent = union(enum) {
 ~pub event write_at { x: u16, y: u16, text: []const u8 }
 | done {}
 
+// Display key info at position (formatted for demos)
+~pub event show_key { x: u16, y: u16, k: KeyData }
+| done {}
+
 // Debug file for write_at
 var debug_file: ?std.fs.File = null;
 
@@ -269,6 +288,51 @@ fn debugLog(msg: []const u8) void {
         debugLog("  cells written\n");
     } else {
         debugLog("  is_initialized=false!\n");
+    }
+    return .{ .done = .{} };
+}
+
+~proc show_key {
+    if (is_initialized) {
+        const win = vx.window();
+        const child = win.child(.{ .x_off = x, .y_off = y });
+
+        // Format: "Key: X  Code: 12345  Mods: [ctrl][alt]"
+        var buf: [64]u8 = undefined;
+        var mods_buf: [32]u8 = undefined;
+        var mods_len: usize = 0;
+
+        if (k.mods.ctrl) {
+            @memcpy(mods_buf[mods_len..][0..6], "[ctrl]");
+            mods_len += 6;
+        }
+        if (k.mods.alt) {
+            @memcpy(mods_buf[mods_len..][0..5], "[alt]");
+            mods_len += 5;
+        }
+        if (k.mods.shift) {
+            @memcpy(mods_buf[mods_len..][0..7], "[shift]");
+            mods_len += 7;
+        }
+        if (k.mods.super_key) {
+            @memcpy(mods_buf[mods_len..][0..7], "[super]");
+            mods_len += 7;
+        }
+
+        const char_display: u8 = if (k.char) |c| (if (c >= 32 and c < 127) c else '.') else '.';
+        const mods_str = mods_buf[0..mods_len];
+
+        const formatted = std.fmt.bufPrint(&buf, "Key: {c}  Code: {d:<5}  {s}", .{
+            char_display,
+            k.codepoint,
+            mods_str,
+        }) catch "?";
+
+        for (formatted, 0..) |_, i| {
+            child.writeCell(@intCast(i), 0, .{
+                .char = .{ .grapheme = formatted[i .. i + 1] },
+            });
+        }
     }
     return .{ .done = .{} };
 }

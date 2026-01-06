@@ -1,20 +1,17 @@
-// Hello Vaxis - Minimal TUI demo
-// ==============================
-
+// Test WITH when guards
 ~import "$vaxis"
 
-// Main flow: Setup -> Draw -> Event loop
-~vaxis:run(title: "Hello Vaxis")
-| ready t |> vaxis:clear()
-    | done |> vaxis:write_at(x: 10, y: 5, text: "Hello from Koru + Vaxis!")
-        | done |> vaxis:write_at(x: 10, y: 7, text: "Press 'q' to exit...")
-            | done |> vaxis:render()
-                | done |> #loop vaxis:poll()
-                    | key _ |> vaxis:cleanup(handle: t.tty)
-                        | done |> _
-                    | resize _ |> vaxis:render()
-                        | done |> @loop()
-                    | focus_in |> @loop()
-                    | focus_out |> @loop()
-                    | quit |> _
+~vaxis:run(title: "Test Poll")
+| ready t |> vaxis:poll()
+    | key k when (k.codepoint == 'q') |> vaxis:cleanup(handle: t.tty)
+        | done |> _
+    | key k |> vaxis:cleanup(handle: t.tty)
+        | done |> _
+    | resize _ |> vaxis:cleanup(handle: t.tty)
+        | done |> _
+    | focus_in |> vaxis:cleanup(handle: t.tty)
+        | done |> _
+    | focus_out |> vaxis:cleanup(handle: t.tty)
+        | done |> _
+    | quit |> _
 | err _ |> _
