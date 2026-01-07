@@ -1,5 +1,6 @@
 // Test when clauses - conditional tap execution
 const std = @import("std");
+~import "$std/taps"
 
 ~event process { value: usize }
 | done { result: usize }
@@ -19,7 +20,7 @@ const std = @import("std");
 }
 
 // Only fire tap when result is > 50
-~process -> *
+~tap(process -> *)
 | done d when d.result > 50 |> alert(result: d.result)
     | done |> _
 

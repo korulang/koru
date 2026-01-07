@@ -16,6 +16,7 @@
 //   tap.continuations[1] = { branch: "done", ... }  // WRONG - should be nested!
 
 const std = @import("std");
+~import "$std/taps"
 
 ~event log { data: ?[]const u8 }
 | done {}
@@ -27,6 +28,6 @@ const std = @import("std");
 // THE TAP TO ANALYZE:
 // This has a nested continuation: | Transition |> log() | done |> _
 // The | done |> line is INDENTED, so it should be NESTED under Transition
-~* -> *
+~tap(* -> *)
 | Profile p |> log(data: p.destination)
     | done |> _

@@ -141,6 +141,18 @@ const std = @import("std");
                 pos += seg.len;
             }
 
+            // Check for namespace wildcard pattern: "namespace.*" matches "namespace.anything"
+            if (std.mem.endsWith(u8, pattern_path, ".*")) {
+                const prefix = pattern_path[0..pattern_path.len - 2]; // Remove ".*"
+                // Path must start with prefix followed by a dot
+                if (path_str.len > prefix.len and
+                    std.mem.startsWith(u8, path_str, prefix) and
+                    path_str[prefix.len] == '.') {
+                    return true;
+                }
+                return false;
+            }
+
             return std.mem.eql(u8, pattern_path, path_str);
         }
 
@@ -279,12 +291,17 @@ const std = @import("std");
                     // If original binding is "_", synthesize a unique binding for the tap
                     // This matches what auto-dispose does, allowing references to work
                     if (std.mem.eql(u8, ob, "_")) {
-                        // Synthesize unique binding: _tap_0, _tap_1, etc.
-                        // Use a simple counter based on branch name hash for uniqueness
+                        // Synthesize unique binding using hash of branch + indent + tap step path
                         var hash: u32 = 0;
                         for (original.branch) |c| hash = hash *% 31 +% c;
+                        hash = hash *% 31 +% @as(u32, @intCast(original.indent));
+                        if (tap_stp == .invocation) {
+                            for (tap_stp.invocation.path.segments) |seg| {
+                                for (seg) |c| hash = hash *% 31 +% c;
+                            }
+                        }
                         var buf: [32]u8 = undefined;
-                        const synth_binding = std.fmt.bufPrint(&buf, "_tap_{d}", .{hash % 1000}) catch "_tap_0";
+                        const synth_binding = std.fmt.bufPrint(&buf, "_tap_{d}", .{hash % 100000}) catch "_tap_0";
                         effective_binding = alloc.dupe(u8, synth_binding) catch ob;
                         rewritten_step = try rewriteStepBinding(alloc, tap_stp, tb, effective_binding.?);
                         // Also rewrite the condition string
@@ -299,6 +316,30 @@ const std = @import("std");
                             rewritten_condition = try rewriteBindingInValue(alloc, cond, tb, ob);
                         }
                         std.debug.print("[tap] Rewrote binding '{s}' → '{s}' in tap step\n", .{tb, ob});
+                    }
+                } else {
+                    // Original has no binding (null), but tap uses one - synthesize a binding
+                    // This happens when original is `| done |> _` (no capture) but tap has `| done d when ... |>`
+                    // Use a hash that includes branch name, indent level, and location for uniqueness
+                    var hash: u32 = 0;
+                    for (original.branch) |c| hash = hash *% 31 +% c;
+                    hash = hash *% 31 +% @as(u32, @intCast(original.indent));
+                    // Also include tap step info for uniqueness (different invocations get different names)
+                    if (tap_stp == .invocation) {
+                        for (tap_stp.invocation.path.segments) |seg| {
+                            for (seg) |c| hash = hash *% 31 +% c;
+                        }
+                    }
+                    var buf: [32]u8 = undefined;
+                    const synth_binding = std.fmt.bufPrint(&buf, "_tap_{d}", .{hash % 100000}) catch "_tap_0";
+                    effective_binding = alloc.dupe(u8, synth_binding) catch null;
+                    if (effective_binding) |eb| {
+                        rewritten_step = try rewriteStepBinding(alloc, tap_stp, tb, eb);
+                        // Also rewrite the condition string
+                        if (tap_condition) |cond| {
+                            rewritten_condition = try rewriteBindingInValue(alloc, cond, tb, eb);
+                        }
+                        std.debug.print("[tap] Synthesized binding (null → '{s}'), rewrote '{s}' → '{s}'\n", .{eb, tb, eb});
                     }
                 }
             }

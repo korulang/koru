@@ -1,5 +1,6 @@
 // Test namespace wildcards - observe all events in a namespace
 const std = @import("std");
+~import "$std/taps"
 
 ~event http.request {}
 | done {}
@@ -34,7 +35,7 @@ const std = @import("std");
 }
 
 // Tap only http.* events (not db.query)
-~http.* -> *
+~tap(http.* -> *)
 | Profile p |> logger(p.source)
     | done |> _
 

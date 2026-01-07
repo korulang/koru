@@ -166,6 +166,15 @@
             }
         },
         {
+            "type": "import_decl",
+            "path": "$std/taps",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
+                "line": 21,
+                "col": 0
+            }
+        },
+        {
             "type": "event_decl",
             "name": "log",
             "path": ["log"],
@@ -193,7 +202,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
-                "line": 23,
+                "line": 24,
                 "col": 0
             }
         },
@@ -207,15 +216,6 @@
 
             ],
             "is_pure": false,
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
-                "line": 27,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
                 "line": 28,
@@ -241,9 +241,25 @@
             }
         },
         {
-            "type": "event_tap",
-            "source": "*",
-            "destination": "*",
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
+                "line": 31,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["tap"],
+                "args": [
+                    {
+                        "name": "* -> *",
+                        "value": "* -> *"
+                    }
+                ]
+            },
             "continuations": [
                 {
                     "branch": "Profile",
@@ -276,10 +292,11 @@
                     ]
                 }
             ],
-            "is_input_tap": false,
+            "pre_label": null,
+            "post_label": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
-                "line": 34,
+                "line": 32,
                 "col": 0
             }
         }

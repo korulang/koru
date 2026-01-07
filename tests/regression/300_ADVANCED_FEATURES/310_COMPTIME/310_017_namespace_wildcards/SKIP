@@ -1,1 +1,1 @@
-Migrate to ~tap() library syntax
+Metatype Profile synthesis not implemented - namespace wildcards work but Profile struct needs to be generated with source/destination fields
