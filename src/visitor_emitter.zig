@@ -196,6 +196,71 @@ pub const VisitorEmitter = struct {
         return false;  // No emittable items from main
     }
 
+    /// Result of scanning for metatypes in AST
+    const MetatypeScanResult = struct {
+        profile: bool = false,
+        transition: bool = false,
+        audit: bool = false,
+    };
+
+    /// Scan AST items for metatype_binding steps to detect Profile/Transition/Audit metatypes
+    /// This is needed because ~tap() transforms the AST directly without using the tap registry
+    fn scanForMetatypes(items: []const ast.Item) MetatypeScanResult {
+        var result = MetatypeScanResult{};
+        for (items) |item| {
+            switch (item) {
+                .flow => |flow| {
+                    const found = scanContinuationsForMetatypes(flow.continuations);
+                    if (found.profile) result.profile = true;
+                    if (found.transition) result.transition = true;
+                    if (found.audit) result.audit = true;
+                },
+                .module_decl => |mod| {
+                    const nested = scanForMetatypes(mod.items);
+                    if (nested.profile) result.profile = true;
+                    if (nested.transition) result.transition = true;
+                    if (nested.audit) result.audit = true;
+                },
+                .subflow_impl => |sub| {
+                    if (sub.body == .flow) {
+                        const found = scanContinuationsForMetatypes(sub.body.flow.continuations);
+                        if (found.profile) result.profile = true;
+                        if (found.transition) result.transition = true;
+                        if (found.audit) result.audit = true;
+                    }
+                },
+                else => {},
+            }
+        }
+        return result;
+    }
+
+    fn scanContinuationsForMetatypes(conts: []const ast.Continuation) MetatypeScanResult {
+        var result = MetatypeScanResult{};
+        for (conts) |cont| {
+            if (cont.node) |step| {
+                if (step == .metatype_binding) {
+                    const mb = step.metatype_binding;
+                    if (std.mem.eql(u8, mb.metatype, "Profile")) {
+                        result.profile = true;
+                    } else if (std.mem.eql(u8, mb.metatype, "Transition")) {
+                        result.transition = true;
+                    } else if (std.mem.eql(u8, mb.metatype, "Audit")) {
+                        result.audit = true;
+                    }
+                }
+            }
+            // Recurse into nested continuations
+            if (cont.continuations.len > 0) {
+                const found = scanContinuationsForMetatypes(cont.continuations);
+                if (found.profile) result.profile = true;
+                if (found.transition) result.transition = true;
+                if (found.audit) result.audit = true;
+            }
+        }
+        return result;
+    }
+
     /// Emit code for a Program using the visitor pattern
     pub fn emit(self: *VisitorEmitter, source_file: *const ast.Program) !void {
         // TODO: Use the visitor pattern properly with context threading
@@ -247,11 +312,13 @@ pub const VisitorEmitter = struct {
         // Phase 1.6: Generate tap functions (event observers)
         // These wrap tap continuations and are called at tap injection points
 
-        // Check tap registry for metatype usage (not AST, since taps may have been transformed)
+        // Check tap registry for metatype usage (old tap transformer)
+        // AND scan AST for metatype_binding steps (new ~tap() library syntax)
         // These are "magical ambient types" emitted at top level when needed
-        const has_base_transition = self.tap_registry.hasTransitionTaps();
-        const has_profiling_transition = self.tap_registry.hasProfileTaps();
-        const has_audit_transition = self.tap_registry.hasAuditTaps();
+        const ast_metatypes = scanForMetatypes(self.all_items);
+        const has_base_transition = self.tap_registry.hasTransitionTaps() or ast_metatypes.transition;
+        const has_profiling_transition = self.tap_registry.hasProfileTaps() or ast_metatypes.profile;
+        const has_audit_transition = self.tap_registry.hasAuditTaps() or ast_metatypes.audit;
         const has_taps = self.tap_registry.entries.items.len > 0;
 
         // Emit TapRegistry if there are any taps (inside main_module)
