@@ -1007,6 +1007,20 @@ pub fn build(b: *std.Build) void {
     tap_transformer_tests.root_module.addImport("tap_registry", tap_registry_module);
     const run_tap_transformer_tests = b.addRunArtifact(tap_transformer_tests);
 
+    // Phantom semantic checker tests - obligation tracking and @scope boundaries
+    const phantom_semantic_checker_tests = b.addTest(.{
+        .name = "phantom_semantic_checker_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/phantom_semantic_checker.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    phantom_semantic_checker_tests.root_module.addImport("ast", ast_module);
+    phantom_semantic_checker_tests.root_module.addImport("errors", errors_module);
+    phantom_semantic_checker_tests.root_module.addImport("phantom_parser", phantom_parser_module);
+    const run_phantom_semantic_checker_tests = b.addRunArtifact(phantom_semantic_checker_tests);
+
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&run_lexer_tests.step);
     test_step.dependOn(&run_parser_tests.step);
@@ -1016,6 +1030,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_purity_checker_tests.step);
     test_step.dependOn(&run_tap_codegen_tests.step);
     test_step.dependOn(&run_tap_transformer_tests.step);
+    test_step.dependOn(&run_phantom_semantic_checker_tests.step);
     test_step.dependOn(&run_visitor_emitter_tests.step);
     test_step.dependOn(&run_integration_tests.step);
     test_step.dependOn(&run_shape_checker_integration_tests.step);

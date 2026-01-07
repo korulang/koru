@@ -1180,6 +1180,27 @@ pub const AutoDisposeInserter = struct {
                             }
                         },
                         .variable => {},
+                        .state_union => |u| {
+                            if (u.consumes_obligation) {
+                                // Check if any member of the union matches the base_state
+                                for (u.members) |member| {
+                                    const consumer_state = if (member.module_path) |mod|
+                                        try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ mod, member.name })
+                                    else
+                                        try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ entry.value_ptr.module_name, member.name });
+                                    defer self.allocator.free(consumer_state);
+
+                                    if (std.mem.eql(u8, consumer_state, base_state)) {
+                                        try results.append(self.allocator, .{
+                                            .qualified_name = try self.allocator.dupe(u8, entry.key_ptr.*),
+                                            .event_decl = event_decl,
+                                            .field_name = try self.allocator.dupe(u8, field.name),
+                                        });
+                                        break; // Found a match, don't add duplicates
+                                    }
+                                }
+                            }
+                        },
                     }
                 }
             }
@@ -1449,7 +1470,10 @@ pub const AutoDisposeInserter = struct {
 
     /// Canonicalize a phantom state with module prefix
     fn canonicalizePhantom(self: *AutoDisposeInserter, phantom_str: []const u8, module: []const u8) ![]const u8 {
-        var parsed = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
+        var parsed = phantom_parser.PhantomState.parse(self.allocator, phantom_str) catch {
+            // If parsing fails, return unchanged
+            return try self.allocator.dupe(u8, phantom_str);
+        };
         defer parsed.deinit(self.allocator);
 
         switch (parsed) {
@@ -1459,6 +1483,10 @@ pub const AutoDisposeInserter = struct {
                 return try std.fmt.allocPrint(self.allocator, "{s}:{s}{s}", .{ mod, concrete.name, cleanup_suffix });
             },
             .variable => {
+                return try self.allocator.dupe(u8, phantom_str);
+            },
+            .state_union => {
+                // Unions are not canonicalized - they may have mixed modules
                 return try self.allocator.dupe(u8, phantom_str);
             },
         }

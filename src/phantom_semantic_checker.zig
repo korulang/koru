@@ -169,6 +169,23 @@ pub const PhantomSemanticChecker = struct {
             .variable => {
                 // State variables are always valid (they're constraints, not concrete states)
             },
+            .state_union => |u| {
+                // Validate each member of the union
+                for (u.members) |member| {
+                    if (member.module_path) |mod_path| {
+                        if (!self.module_map.contains(mod_path)) {
+                            try self.reporter.addError(
+                                .KORU040,
+                                location.line,
+                                location.column,
+                                "Unknown module '{s}' in phantom type annotation '{s}' (event: {s}). Module not imported.",
+                                .{mod_path, phantom_str, event_name}
+                            );
+                            return false;
+                        }
+                    }
+                }
+            },
         }
 
         return true;
@@ -217,6 +234,11 @@ pub const PhantomSemanticChecker = struct {
             },
             .variable => {
                 // State variables don't get canonicalized - they're constraints
+                return try self.allocator.dupe(u8, phantom_str);
+            },
+            .state_union => {
+                // State unions don't get canonicalized - they're for input validation
+                // TODO: Could canonicalize each member if needed
                 return try self.allocator.dupe(u8, phantom_str);
             },
         }
@@ -296,6 +318,11 @@ pub const PhantomSemanticChecker = struct {
                     }
                 },
                 .variable => {},
+                .state_union => {
+                    // State unions cannot have cleanup obligations (they can't be output)
+                    // They may have consumes_obligation (! prefix) for input, but that's
+                    // handled at invocation time, not binding time
+                },
             }
         }
 
@@ -1017,6 +1044,7 @@ pub const PhantomSemanticChecker = struct {
                                             }
                                         },
                                         .variable => {},
+                                        .state_union => {}, // Unions can't have cleanup markers
                                     }
                                 }
                             }
@@ -1065,6 +1093,7 @@ pub const PhantomSemanticChecker = struct {
                                                 }
                                             },
                                             .variable => {},
+                                            .state_union => {}, // Unions can't have cleanup markers
                                         }
                                     }
                                 }
@@ -1670,6 +1699,15 @@ pub const PhantomSemanticChecker = struct {
                 }
             },
             .variable => {},
+            .state_union => |u| {
+                if (u.consumes_obligation) {
+                    std.debug.print("[CLEANUP] Event parameter has union with [!] - consumes obligation\n", .{});
+                    // Union with consume marker - clear the cleanup obligation
+                    context.clearCleanupObligation(arg.value);
+                    // Mark the binding as disposed
+                    try context.markDisposed(arg.value);
+                }
+            },
         }
 
         return true;
@@ -1706,6 +1744,10 @@ pub const PhantomSemanticChecker = struct {
                 // State variables are not qualified with modules
                 return phantom_str;
             },
+            .state_union => {
+                // State unions are not qualified - they may have mixed modules
+                return phantom_str;
+            },
         }
     }
 
@@ -1736,3 +1778,315 @@ pub const PhantomSemanticChecker = struct {
         return result;
     }
 };
+
+// ============================================================================
+// Unit Tests for BindingContext
+// ============================================================================
+// These tests verify the core obligation tracking logic that powers Koru's
+// phantom type system. BindingContext tracks:
+// - Variable bindings and their phantom states
+// - Cleanup obligations (resources with ! suffix that must be disposed)
+// - Disposed bindings (poisoned - cannot be reused after disposal)
+// - Scope boundaries (@scope annotation handling)
+
+// Use full path to avoid ambiguity with internal declaration
+const TestBindingContext = PhantomSemanticChecker.BindingContext;
+
+test "BindingContext - basic set and get" {
+    const allocator = std.testing.allocator;
+    var ctx = TestBindingContext.init(allocator);
+    defer ctx.deinit();
+
+    // Set a binding without obligation
+    try ctx.set("file", "open");
+
+    // Get should return the value
+    const value = ctx.get("file");
+    try std.testing.expect(value != null);
+    try std.testing.expectEqualStrings("open", value.?);
+
+    // Unknown binding returns null
+    try std.testing.expect(ctx.get("unknown") == null);
+}
+
+test "BindingContext - overwrite binding" {
+    const allocator = std.testing.allocator;
+    var ctx = TestBindingContext.init(allocator);
+    defer ctx.deinit();
+
+    try ctx.set("file", "open");
+    try ctx.set("file", "closed"); // Overwrite
+
+    const value = ctx.get("file");
+    try std.testing.expectEqualStrings("closed", value.?);
+}
+
+test "BindingContext - cleanup obligation tracking with ! suffix" {
+    const allocator = std.testing.allocator;
+    var ctx = TestBindingContext.init(allocator);
+    defer ctx.deinit();
+
+    // State WITHOUT obligation marker
+    try ctx.set("safe_file", "closed");
+    try std.testing.expect(!ctx.hasUncleanedResources());
+
+    // State WITH obligation marker (! suffix)
+    try ctx.set("risky_file", "opened!");
+    try std.testing.expect(ctx.hasUncleanedResources());
+
+    // Verify the obligation is tracked
+    const uncleaned = try ctx.getUncleanedResources(allocator);
+    defer allocator.free(uncleaned);
+    try std.testing.expectEqual(@as(usize, 1), uncleaned.len);
+    try std.testing.expectEqualStrings("risky_file", uncleaned[0]);
+}
+
+test "BindingContext - module-qualified obligation tracking" {
+    const allocator = std.testing.allocator;
+    var ctx = TestBindingContext.init(allocator);
+    defer ctx.deinit();
+
+    // Module-qualified state with obligation
+    try ctx.set("handle", "fs:opened!");
+    try std.testing.expect(ctx.hasUncleanedResources());
+
+    const uncleaned = try ctx.getUncleanedResources(allocator);
+    defer allocator.free(uncleaned);
+    try std.testing.expectEqual(@as(usize, 1), uncleaned.len);
+}
+
+test "BindingContext - clear cleanup obligation" {
+    const allocator = std.testing.allocator;
+    var ctx = TestBindingContext.init(allocator);
+    defer ctx.deinit();
+
+    try ctx.set("file", "opened!");
+    try std.testing.expect(ctx.hasUncleanedResources());
+
+    // Clear the obligation (simulating disposal)
+    ctx.clearCleanupObligation("file");
+    try std.testing.expect(!ctx.hasUncleanedResources());
+}
+
+test "BindingContext - disposal poisoning" {
+    const allocator = std.testing.allocator;
+    var ctx = TestBindingContext.init(allocator);
+    defer ctx.deinit();
+
+    try ctx.set("file", "opened!");
+
+    // Not disposed yet
+    try std.testing.expect(!ctx.isDisposed("file"));
+
+    // Mark as disposed
+    try ctx.markDisposed("file");
+
+    // Now it's poisoned
+    try std.testing.expect(ctx.isDisposed("file"));
+
+    // Unknown bindings are not disposed
+    try std.testing.expect(!ctx.isDisposed("other"));
+}
+
+test "BindingContext - multiple obligations" {
+    const allocator = std.testing.allocator;
+    var ctx = TestBindingContext.init(allocator);
+    defer ctx.deinit();
+
+    try ctx.set("file1", "opened!");
+    try ctx.set("file2", "opened!");
+    try ctx.set("file3", "closed"); // No obligation
+
+    try std.testing.expect(ctx.hasUncleanedResources());
+
+    const uncleaned = try ctx.getUncleanedResources(allocator);
+    defer allocator.free(uncleaned);
+    try std.testing.expectEqual(@as(usize, 2), uncleaned.len);
+
+    // Clear one
+    ctx.clearCleanupObligation("file1");
+
+    const remaining = try ctx.getUncleanedResources(allocator);
+    defer allocator.free(remaining);
+    try std.testing.expectEqual(@as(usize, 1), remaining.len);
+}
+
+test "BindingContext - inherit from parent" {
+    const allocator = std.testing.allocator;
+
+    // Create parent context
+    var parent = TestBindingContext.init(allocator);
+    defer parent.deinit();
+
+    try parent.set("inherited_file", "opened!");
+    try parent.set("safe_data", "valid");
+
+    // Create child that inherits
+    var child = try TestBindingContext.inherit(&parent, allocator);
+    defer child.deinit();
+
+    // Child should see parent's bindings
+    try std.testing.expectEqualStrings("opened!", child.get("inherited_file").?);
+    try std.testing.expectEqualStrings("valid", child.get("safe_data").?);
+
+    // Child inherits cleanup obligations
+    try std.testing.expect(child.hasUncleanedResources());
+
+    // Child modifications don't affect parent
+    try child.set("child_only", "new!");
+    try std.testing.expect(parent.get("child_only") == null);
+}
+
+test "BindingContext - inherit disposed state" {
+    const allocator = std.testing.allocator;
+
+    var parent = TestBindingContext.init(allocator);
+    defer parent.deinit();
+
+    try parent.set("file", "opened!");
+    try parent.markDisposed("file");
+
+    var child = try TestBindingContext.inherit(&parent, allocator);
+    defer child.deinit();
+
+    // Child inherits disposed state - file is poisoned
+    try std.testing.expect(child.isDisposed("file"));
+}
+
+test "BindingContext - inheritWithScope marks obligations as outer" {
+    const allocator = std.testing.allocator;
+
+    var parent = TestBindingContext.init(allocator);
+    defer parent.deinit();
+
+    try parent.set("outer_file", "opened!");
+
+    // Create child with @scope boundary
+    var scoped_child = try TestBindingContext.inheritWithScope(&parent, allocator);
+    defer scoped_child.deinit();
+
+    // Child sees the binding
+    try std.testing.expectEqualStrings("opened!", scoped_child.get("outer_file").?);
+
+    // Child has the obligation
+    try std.testing.expect(scoped_child.hasUncleanedResources());
+
+    // But it's marked as outer scope!
+    try std.testing.expect(scoped_child.isOuterScope("outer_file"));
+    try std.testing.expect(scoped_child.hasOuterScopeObligations());
+}
+
+test "BindingContext - new obligations inside scope are not outer" {
+    const allocator = std.testing.allocator;
+
+    var parent = TestBindingContext.init(allocator);
+    defer parent.deinit();
+
+    try parent.set("outer_file", "opened!");
+
+    var scoped_child = try TestBindingContext.inheritWithScope(&parent, allocator);
+    defer scoped_child.deinit();
+
+    // Add new obligation inside the scope
+    try scoped_child.set("inner_file", "opened!");
+
+    // outer_file is outer scope
+    try std.testing.expect(scoped_child.isOuterScope("outer_file"));
+
+    // inner_file is NOT outer scope (created inside)
+    try std.testing.expect(!scoped_child.isOuterScope("inner_file"));
+
+    // Both have uncleaned resources
+    try std.testing.expect(scoped_child.hasUncleanedResources());
+}
+
+test "BindingContext - getOuterScopeObligations" {
+    const allocator = std.testing.allocator;
+
+    var parent = TestBindingContext.init(allocator);
+    defer parent.deinit();
+
+    try parent.set("outer1", "opened!");
+    try parent.set("outer2", "opened!");
+
+    var scoped_child = try TestBindingContext.inheritWithScope(&parent, allocator);
+    defer scoped_child.deinit();
+
+    try scoped_child.set("inner", "opened!");
+
+    const outer_obligations = try scoped_child.getOuterScopeObligations(allocator);
+    defer allocator.free(outer_obligations);
+
+    // Should have 2 outer obligations
+    try std.testing.expectEqual(@as(usize, 2), outer_obligations.len);
+
+    // Total uncleaned is 3 (2 outer + 1 inner)
+    const all_uncleaned = try scoped_child.getUncleanedResources(allocator);
+    defer allocator.free(all_uncleaned);
+    try std.testing.expectEqual(@as(usize, 3), all_uncleaned.len);
+}
+
+test "BindingContext - clearing outer scope obligation" {
+    const allocator = std.testing.allocator;
+
+    var parent = TestBindingContext.init(allocator);
+    defer parent.deinit();
+
+    try parent.set("file", "opened!");
+
+    var scoped_child = try TestBindingContext.inheritWithScope(&parent, allocator);
+    defer scoped_child.deinit();
+
+    try std.testing.expect(scoped_child.isOuterScope("file"));
+
+    // Clear the obligation (e.g., if we call dispose inside scope - which is allowed)
+    scoped_child.clearCleanupObligation("file");
+
+    // No longer has uncleaned resources
+    try std.testing.expect(!scoped_child.hasUncleanedResources());
+    try std.testing.expect(!scoped_child.hasOuterScopeObligations());
+}
+
+test "BindingContext - nested scope inheritance" {
+    const allocator = std.testing.allocator;
+
+    // Grandparent
+    var gp = TestBindingContext.init(allocator);
+    defer gp.deinit();
+    try gp.set("gp_file", "opened!");
+
+    // Parent with @scope
+    var parent = try TestBindingContext.inheritWithScope(&gp, allocator);
+    defer parent.deinit();
+    try parent.set("parent_file", "opened!");
+
+    // Child with another @scope
+    var child = try TestBindingContext.inheritWithScope(&parent, allocator);
+    defer child.deinit();
+    try child.set("child_file", "opened!");
+
+    // gp_file is outer to both parent and child
+    try std.testing.expect(parent.isOuterScope("gp_file"));
+    try std.testing.expect(child.isOuterScope("gp_file"));
+
+    // parent_file is outer to child (because of second @scope)
+    try std.testing.expect(!parent.isOuterScope("parent_file"));
+    try std.testing.expect(child.isOuterScope("parent_file"));
+
+    // child_file is not outer to anyone
+    try std.testing.expect(!child.isOuterScope("child_file"));
+}
+
+test "BindingContext - state variable does not create obligation" {
+    const allocator = std.testing.allocator;
+    var ctx = TestBindingContext.init(allocator);
+    defer ctx.deinit();
+
+    // State variable (no obligation - it's a constraint, not a concrete state)
+    try ctx.set("generic", "M'owned|borrowed");
+    try std.testing.expect(!ctx.hasUncleanedResources());
+
+    // Wildcard state variable
+    try ctx.set("any", "F'_");
+    try std.testing.expect(!ctx.hasUncleanedResources());
+}
