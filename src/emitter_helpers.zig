@@ -3308,8 +3308,36 @@ fn emitContinuationCase(
     ctx.current_branch = cont.branch;
     defer ctx.current_branch = saved_branch;
 
-    // Taps are now in the AST via tap_transformer
-    try emitContinuationBody(emitter, ctx, cont, result_counter);
+    // Check if continuation has a when-clause condition
+    // (e.g., from tap: ~tap(foo -> *) | branch b when b.flag |> handler())
+    if (cont.condition) |condition| {
+        // Wrap in if statement
+        try emitter.writeIndent();
+        try emitter.write("if (");
+        if (cont.condition_expr) |expr| {
+            try emitExpression(emitter, ctx, expr, null);
+        } else {
+            try emitter.write(condition);
+        }
+        try emitter.write(") {\n");
+        emitter.indent();
+        try emitContinuationBody(emitter, ctx, cont, result_counter);
+        emitter.dedent();
+        try emitter.writeIndent();
+        try emitter.write("} else {\n");
+        // When condition is false, skip the tap step but still execute
+        // the nested continuations (which contain the spliced original flow)
+        emitter.indent();
+        for (cont.continuations) |*nested| {
+            try emitContinuationBody(emitter, ctx, nested, result_counter);
+        }
+        emitter.dedent();
+        try emitter.writeIndent();
+        try emitter.write("}\n");
+    } else {
+        // No when-clause - execute continuation body directly
+        try emitContinuationBody(emitter, ctx, cont, result_counter);
+    }
 
     emitter.dedent();
     try emitter.writeIndent();

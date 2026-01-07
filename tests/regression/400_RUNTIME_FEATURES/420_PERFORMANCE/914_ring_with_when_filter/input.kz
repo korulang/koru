@@ -8,6 +8,7 @@
 // Only process EVEN numbers!
 
 const std = @import("std");
+~import "$std/taps"
 
 // Generic ring buffer (Zig function returning type)
 pub fn Ring(comptime T: type, comptime size: usize) type {
@@ -82,7 +83,8 @@ const MyRing = Ring(u32, 1024);
 
 // EVENT TAP with WHEN CLAUSE: Only process EVEN numbers!
 // This is the filtered consumer - observe dequeue, but only act on evens
-~ring.dequeue -> * | value v when v.data % 2 == 0 |> process(data: v.data)
+~tap(ring.dequeue -> *)
+| value v when v.data % 2 == 0 |> process(data: v.data)
     | done |> _
 
 // Producer: Fill the ring with values
