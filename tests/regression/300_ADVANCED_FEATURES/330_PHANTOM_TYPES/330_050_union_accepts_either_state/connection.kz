@@ -1,0 +1,58 @@
+// Library module: connection
+// Demonstrates phantom state unions - events that accept multiple states
+
+const std = @import("std");
+
+// Connection type with phantom states
+const Connection = struct {
+    id: i32,
+};
+
+// Create a new connection - starts in 'idle' state
+~event create {}
+| created { conn: *Connection[idle] }
+
+~proc create {
+    std.debug.print("Creating connection\n", .{});
+    const allocator = std.heap.page_allocator;
+    const c = allocator.create(Connection) catch unreachable;
+    c.* = Connection{ .id = 1 };
+    return .{ .created = .{ .conn = c } };
+}
+
+// Connect - transitions from idle to active
+~event connect { conn: *Connection[idle] }
+| connected { conn: *Connection[active] }
+
+~proc connect {
+    std.debug.print("Connecting: {d}\n", .{conn.id});
+    return .{ .connected = .{ .conn = conn } };
+}
+
+// Pause - transitions from active to paused
+~event pause { conn: *Connection[active] }
+| paused { conn: *Connection[paused] }
+
+~proc pause {
+    std.debug.print("Pausing: {d}\n", .{conn.id});
+    return .{ .paused = .{ .conn = conn } };
+}
+
+// Resume - accepts EITHER paused OR active (union!) - always returns active
+// This demonstrates the core union feature: flexible input acceptance
+~event resume { conn: *Connection[paused|active] }
+| resumed { conn: *Connection[active] }
+
+~proc resume {
+    std.debug.print("Resuming/continuing: {d}\n", .{conn.id});
+    return .{ .resumed = .{ .conn = conn } };
+}
+
+// Close - accepts active OR paused (union!) - cleans up connection
+~event close { conn: *Connection[active|paused] }
+| closed {}
+
+~proc close {
+    std.debug.print("Closing: {d}\n", .{conn.id});
+    return .{ .closed = .{} };
+}

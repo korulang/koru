@@ -236,10 +236,36 @@ pub const PhantomSemanticChecker = struct {
                 // State variables don't get canonicalized - they're constraints
                 return try self.allocator.dupe(u8, phantom_str);
             },
-            .state_union => {
-                // State unions don't get canonicalized - they're for input validation
-                // TODO: Could canonicalize each member if needed
-                return try self.allocator.dupe(u8, phantom_str);
+            .state_union => |u| {
+                // Canonicalize each member of the union
+                var result: std.ArrayListUnmanaged(u8) = .{};
+                errdefer result.deinit(self.allocator);
+
+                // Add consume prefix if present
+                if (u.consumes_obligation) {
+                    try result.append(self.allocator, '!');
+                }
+
+                for (u.members, 0..) |member, i| {
+                    if (i > 0) try result.append(self.allocator, '|');
+
+                    const canonical_module = if (member.module_path) |mod_path| blk: {
+                        if (self.module_map.get(mod_path)) |canonical| {
+                            break :blk canonical;
+                        } else {
+                            break :blk mod_path;
+                        }
+                    } else blk: {
+                        break :blk defining_module;
+                    };
+
+                    // Append module:state
+                    try result.appendSlice(self.allocator, canonical_module);
+                    try result.append(self.allocator, ':');
+                    try result.appendSlice(self.allocator, member.name);
+                }
+
+                return result.toOwnedSlice(self.allocator);
             },
         }
     }
@@ -666,8 +692,8 @@ pub const PhantomSemanticChecker = struct {
         // For each continuation, validate phantom state flows
         // Pass both: current_module (where flow is defined, for name resolution)
         // and module_name (where event is defined, for phantom qualification)
-        for (flow.continuations) |cont_item| {
-            const cont_valid = try self.validateContinuation(&cont_item, event_info.decl, module_name, current_module, event_map, flow.location, null, implementing_event);
+        for (flow.continuations) |*cont_ptr| {
+            const cont_valid = try self.validateContinuation(cont_ptr, event_info.decl, module_name, current_module, event_map, flow.location, null, implementing_event);
             if (!cont_valid) {
                 has_errors = true;
                 // Continue checking for more errors
@@ -1165,8 +1191,8 @@ pub const PhantomSemanticChecker = struct {
 
                 // Validate nested continuations against the invoked event (not parent event)
                 // Pass the current context down so disposed bindings propagate
-                for (cont.continuations) |nested| {
-                    const nested_valid = try self.validateContinuation(&nested, nested_event_info.decl, module_name, flow_module, event_map, location, &context, implementing_event);
+                for (cont.continuations) |*nested| {
+                    const nested_valid = try self.validateContinuation(nested, nested_event_info.decl, module_name, flow_module, event_map, location, &context, implementing_event);
                     if (!nested_valid) {
                         has_errors = true;
                         // Continue checking for more errors
@@ -1188,8 +1214,8 @@ pub const PhantomSemanticChecker = struct {
                     // validateContinuationAsVoidChain handles invocation steps correctly -
                     // it looks up the event and validates nested branches against it
                     std.debug.print("[PHANTOM-FLOW]   Step is inline_code (void completion), validating nested continuations as void event chain\n", .{});
-                    for (cont.continuations) |nested| {
-                        const nested_valid = try self.validateContinuationAsVoidChain(&nested, flow_module, event_map, location, &context, implementing_event);
+                    for (cont.continuations) |*nested| {
+                        const nested_valid = try self.validateContinuationAsVoidChain(nested, flow_module, event_map, location, &context, implementing_event);
                         if (!nested_valid) {
                             has_errors = true;
                         }
@@ -1197,8 +1223,8 @@ pub const PhantomSemanticChecker = struct {
                 } else {
                     // No invocations in pipeline - nested continuations still belong to parent event
                     std.debug.print("[PHANTOM-FLOW]   No invocations in pipeline, nested continuations belong to parent event\n", .{});
-                    for (cont.continuations) |nested| {
-                        const nested_valid = try self.validateContinuation(&nested, event_decl, event_module, flow_module, event_map, location, &context, implementing_event);
+                    for (cont.continuations) |*nested| {
+                        const nested_valid = try self.validateContinuation(nested, event_decl, event_module, flow_module, event_map, location, &context, implementing_event);
                         if (!nested_valid) {
                             has_errors = true;
                             // Continue checking for more errors
@@ -1258,8 +1284,8 @@ pub const PhantomSemanticChecker = struct {
 
                         if (event_map.get(qualified_name)) |event_info| {
                             // Validate nested continuations against this event
-                            for (cont.continuations) |nested| {
-                                const nested_valid = try self.validateContinuation(&nested, event_info.decl, resolved_module, flow_module orelse "unknown", event_map, location, &context, implementing_event);
+                            for (cont.continuations) |*nested| {
+                                const nested_valid = try self.validateContinuation(nested, event_info.decl, resolved_module, flow_module orelse "unknown", event_map, location, &context, implementing_event);
                                 if (!nested_valid) {
                                     has_errors = true;
                                 }
@@ -1269,8 +1295,8 @@ pub const PhantomSemanticChecker = struct {
                     },
                     .inline_code => {
                         // Another inline_code - recursively validate as void chain
-                        for (cont.continuations) |nested| {
-                            const nested_valid = try self.validateContinuationAsVoidChain(&nested, flow_module, event_map, location, &context, implementing_event);
+                        for (cont.continuations) |*nested| {
+                            const nested_valid = try self.validateContinuationAsVoidChain(nested, flow_module, event_map, location, &context, implementing_event);
                             if (!nested_valid) {
                                 has_errors = true;
                             }
@@ -1282,8 +1308,8 @@ pub const PhantomSemanticChecker = struct {
             }
 
             // No step or unknown step type - recursively validate nested as void chain
-            for (cont.continuations) |nested| {
-                const nested_valid = try self.validateContinuationAsVoidChain(&nested, flow_module, event_map, location, &context, implementing_event);
+            for (cont.continuations) |*nested| {
+                const nested_valid = try self.validateContinuationAsVoidChain(nested, flow_module, event_map, location, &context, implementing_event);
                 if (!nested_valid) {
                     has_errors = true;
                 }

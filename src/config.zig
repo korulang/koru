@@ -1,19 +1,21 @@
 const std = @import("std");
 
 /// JSON file structure for koru.json
+/// Note: paths can be either string or array of strings, handled in parsePathsFromJson
 const KoruJson = struct {
     name: []const u8 = "unnamed",
     version: []const u8 = "0.0.0",
     description: ?[]const u8 = null,
     entry: ?[]const u8 = null,
-    paths: ?std.json.ArrayHashMap([]const u8) = null,
+    // paths handled separately via raw JSON parsing to support string | []string
 };
 
 /// Koru project configuration loaded from koru.json
+/// paths maps alias -> array of fallback paths (tried in order until one exists)
 pub const Config = struct {
     name: []const u8,
     version: []const u8,
-    paths: std.StringHashMap([]const u8),
+    paths: std.StringHashMap([][]const u8),  // alias -> [path1, path2, ...]
     allocator: std.mem.Allocator,
 
     pub fn deinit(self: *Config) void {
@@ -23,6 +25,10 @@ pub const Config = struct {
         var iter = self.paths.iterator();
         while (iter.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
+            // Free each path in the array
+            for (entry.value_ptr.*) |path| {
+                self.allocator.free(path);
+            }
             self.allocator.free(entry.value_ptr.*);
         }
         self.paths.deinit();
@@ -49,36 +55,88 @@ pub const Config = struct {
 
     /// Parse koru.json content using Zig's built-in JSON parser
     fn parse(allocator: std.mem.Allocator, source: []const u8) !Config {
-        // Use Zig's native JSON parsing
+        // Parse as dynamic JSON first to handle paths flexibility
         const parsed = try std.json.parseFromSlice(
-            KoruJson,
+            std.json.Value,
             allocator,
             source,
             .{},
         );
         defer parsed.deinit();
 
-        const json = parsed.value;
+        const root = parsed.value;
+        if (root != .object) return error.InvalidJson;
+
+        // Extract name and version with defaults
+        const name = if (root.object.get("name")) |v| switch (v) {
+            .string => |s| s,
+            else => "unnamed",
+        } else "unnamed";
+
+        const version = if (root.object.get("version")) |v| switch (v) {
+            .string => |s| s,
+            else => "0.0.0",
+        } else "0.0.0";
 
         // Convert to Config
-        var paths = std.StringHashMap([]const u8).init(allocator);
-        errdefer paths.deinit();
-
-        // Copy paths from JSON if present
-        if (json.paths) |json_paths| {
-            var iter = json_paths.map.iterator();
+        var paths = std.StringHashMap([][]const u8).init(allocator);
+        errdefer {
+            var iter = paths.iterator();
             while (iter.next()) |entry| {
-                const key = try allocator.dupe(u8, entry.key_ptr.*);
-                const value = try allocator.dupe(u8, entry.value_ptr.*);
+                allocator.free(entry.key_ptr.*);
+                for (entry.value_ptr.*) |p| allocator.free(p);
+                allocator.free(entry.value_ptr.*);
+            }
+            paths.deinit();
+        }
 
-                // Validate: 'main' is reserved
-                if (std.mem.eql(u8, key, "main")) {
-                    std.debug.print("ERROR: Reserved namespace in koru.json:\n", .{});
-                    std.debug.print("  Path alias 'main' is reserved for the entry module\n", .{});
-                    return error.ReservedNamespace;
+        // Parse paths - supports both string and array values
+        if (root.object.get("paths")) |paths_value| {
+            if (paths_value == .object) {
+                var iter = paths_value.object.iterator();
+                while (iter.next()) |entry| {
+                    const key = try allocator.dupe(u8, entry.key_ptr.*);
+                    errdefer allocator.free(key);
+
+                    // Validate: 'main' is reserved
+                    if (std.mem.eql(u8, key, "main")) {
+                        std.debug.print("ERROR: Reserved namespace in koru.json:\n", .{});
+                        std.debug.print("  Path alias 'main' is reserved for the entry module\n", .{});
+                        allocator.free(key);
+                        return error.ReservedNamespace;
+                    }
+
+                    const path_array = switch (entry.value_ptr.*) {
+                        // Single string -> wrap in array
+                        .string => |s| blk: {
+                            var arr = try allocator.alloc([]const u8, 1);
+                            arr[0] = try allocator.dupe(u8, s);
+                            break :blk arr;
+                        },
+                        // Array of strings -> copy each
+                        .array => |arr| blk: {
+                            var result = try allocator.alloc([]const u8, arr.items.len);
+                            for (arr.items, 0..) |item, i| {
+                                if (item == .string) {
+                                    result[i] = try allocator.dupe(u8, item.string);
+                                } else {
+                                    // Invalid: array contains non-string
+                                    for (result[0..i]) |p| allocator.free(p);
+                                    allocator.free(result);
+                                    allocator.free(key);
+                                    return error.InvalidPathValue;
+                                }
+                            }
+                            break :blk result;
+                        },
+                        else => {
+                            allocator.free(key);
+                            return error.InvalidPathValue;
+                        },
+                    };
+
+                    try paths.put(key, path_array);
                 }
-
-                try paths.put(key, value);
             }
         }
 
@@ -90,14 +148,18 @@ pub const Config = struct {
         while (defaults_iter.next()) |entry| {
             if (!paths.contains(entry.key_ptr.*)) {
                 const key = try allocator.dupe(u8, entry.key_ptr.*);
-                const value = try allocator.dupe(u8, entry.value_ptr.*);
-                try paths.put(key, value);
+                // Copy the array of paths
+                var path_array = try allocator.alloc([]const u8, entry.value_ptr.*.len);
+                for (entry.value_ptr.*, 0..) |p, i| {
+                    path_array[i] = try allocator.dupe(u8, p);
+                }
+                try paths.put(key, path_array);
             }
         }
 
         return Config{
-            .name = try allocator.dupe(u8, json.name),
-            .version = try allocator.dupe(u8, json.version),
+            .name = try allocator.dupe(u8, name),
+            .version = try allocator.dupe(u8, version),
             .paths = paths,
             .allocator = allocator,
         };
@@ -105,13 +167,22 @@ pub const Config = struct {
 
     /// Get default configuration with built-in aliases
     pub fn default(allocator: std.mem.Allocator) !Config {
-        var paths = std.StringHashMap([]const u8).init(allocator);
+        var paths = std.StringHashMap([][]const u8).init(allocator);
+
+        // Helper to create single-element path array
+        const makePath = struct {
+            fn make(alloc: std.mem.Allocator, path: []const u8) ![][]const u8 {
+                var arr = try alloc.alloc([]const u8, 1);
+                arr[0] = try alloc.dupe(u8, path);
+                return arr;
+            }
+        }.make;
 
         // Default: $std points to global koru_std installation
-        try paths.put(try allocator.dupe(u8, "std"), try allocator.dupe(u8, "/usr/local/lib/koru_std"));
-        try paths.put(try allocator.dupe(u8, "lib"), try allocator.dupe(u8, "./lib"));
-        try paths.put(try allocator.dupe(u8, "root"), try allocator.dupe(u8, "."));
-        try paths.put(try allocator.dupe(u8, "app"), try allocator.dupe(u8, "{ENTRY}"));
+        try paths.put(try allocator.dupe(u8, "std"), try makePath(allocator, "/usr/local/lib/koru_std"));
+        try paths.put(try allocator.dupe(u8, "lib"), try makePath(allocator, "./lib"));
+        try paths.put(try allocator.dupe(u8, "root"), try makePath(allocator, "."));
+        try paths.put(try allocator.dupe(u8, "app"), try makePath(allocator, "{ENTRY}"));
 
         return Config{
             .name = try allocator.dupe(u8, "unnamed"),

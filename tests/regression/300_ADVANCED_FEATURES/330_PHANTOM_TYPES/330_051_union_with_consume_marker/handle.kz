@@ -1,0 +1,41 @@
+// Library module: handle
+// Demonstrates phantom state unions - events that accept multiple states
+
+const std = @import("std");
+
+// Handle type with phantom states
+const Handle = struct {
+    id: i32,
+};
+
+// Open a handle - produces obligation (must be finalized)
+~event open {}
+| opened { h: *Handle[opened!] }
+
+~proc open {
+    std.debug.print("Opening handle\n", .{});
+    const allocator = std.heap.page_allocator;
+    const h = allocator.create(Handle) catch unreachable;
+    h.* = Handle{ .id = 42 };
+    return .{ .opened = .{ .h = h } };
+}
+
+// Start closing - transitions to 'closing' state (keeps obligation)
+~event start_close { h: *Handle[opened] }
+| closing { h: *Handle[closing] }
+
+~proc start_close {
+    std.debug.print("Starting close: {d}\n", .{h.id});
+    return .{ .closing = .{ .h = h } };
+}
+
+// Finalize - accepts EITHER opened OR closing with consume marker
+// The !prefix means this DISCHARGES the obligation
+~event finalize { h: *Handle[!opened|closing] }
+| done {}
+
+~proc finalize {
+    std.debug.print("Finalizing handle: {d}\n", .{h.id});
+    // Clean up the handle
+    return .{ .done = .{} };
+}

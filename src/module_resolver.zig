@@ -255,7 +255,7 @@ pub const ModuleResolver = struct {
         };
 
         // Handle $alias path prefixes
-        var resolved_import_path = import_path;
+        const resolved_import_path = import_path;
 
         if (import_path.len > 0 and import_path[0] == '$') {
             const slash_pos = std.mem.indexOf(u8, import_path, "/");
@@ -264,18 +264,18 @@ pub const ModuleResolver = struct {
 
             if (DEBUG) std.debug.print("  Resolving alias: ${s}\n", .{alias});
 
-            if (self.config.paths.get(alias)) |alias_path_raw| {
-                // Interpolate {ENTRY} if present
-                const alias_path = if (try self.interpolateEntry(alias_path_raw)) |interpolated|
-                    interpolated
-                else
-                    alias_path_raw;
-                defer if (alias_path.ptr != alias_path_raw.ptr) self.allocator.free(alias_path);
+            if (self.config.paths.get(alias)) |alias_paths| {
+                // Iterate through fallback chain - try each path until one exists
+                for (alias_paths, 0..) |alias_path_raw, path_idx| {
+                    // Interpolate {ENTRY} if present
+                    const alias_path = if (try self.interpolateEntry(alias_path_raw)) |interpolated|
+                        interpolated
+                    else
+                        alias_path_raw;
+                    defer if (alias_path.ptr != alias_path_raw.ptr) self.allocator.free(alias_path);
 
-                if (DEBUG) std.debug.print("  ✓ Alias found: ${s} -> {s}\n", .{alias, alias_path});
+                    if (DEBUG) std.debug.print("  [FALLBACK {}/{}] Trying: {s}\n", .{ path_idx + 1, alias_paths.len, alias_path });
 
-                // Build and resolve path - this creates owned memory that needs cleanup
-                {
                     // Build the path to check (alias + remainder if any)
                     const path_to_resolve = if (slash_pos) |pos| blk: {
                         const remainder = import_path[pos + 1..];
@@ -296,28 +296,28 @@ pub const ModuleResolver = struct {
                         try std.fs.path.resolve(self.allocator, &[_][]const u8{ self.project_root, path_to_resolve });
                     defer self.allocator.free(absolute_path);
 
-                    resolved_import_path = absolute_path;
-                    if (DEBUG) std.debug.print("  Resolved to (absolute): {s}\n", .{resolved_import_path});
+                    if (DEBUG) std.debug.print("    Resolved to: {s}\n", .{absolute_path});
 
                     // Check for BOTH file and directory
-                    if (DEBUG) std.debug.print("  [ALIAS] Checking for both file and directory...\n", .{});
+                    var found_something = false;
 
                     // Check directory
-                    if (isDirectory(resolved_import_path)) {
+                    if (isDirectory(absolute_path)) {
                         const dir_resolved = try std.fs.path.resolve(
                             self.allocator,
-                            &[_][]const u8{resolved_import_path}
+                            &[_][]const u8{absolute_path}
                         );
                         result.dir_path = dir_resolved;
                         if (DEBUG) std.debug.print("    ✓ FOUND directory: {s}\n", .{dir_resolved});
+                        found_something = true;
                     }
 
                     // Check file
-                    const needs_ext = !std.mem.endsWith(u8, resolved_import_path, ".kz");
+                    const needs_ext = !std.mem.endsWith(u8, absolute_path, ".kz");
                     const path_with_ext = if (needs_ext)
-                        try std.fmt.allocPrint(self.allocator, "{s}.kz", .{resolved_import_path})
+                        try std.fmt.allocPrint(self.allocator, "{s}.kz", .{absolute_path})
                     else
-                        try self.allocator.dupe(u8, resolved_import_path);
+                        try self.allocator.dupe(u8, absolute_path);
                     defer self.allocator.free(path_with_ext);
 
                     if (std.fs.cwd().access(path_with_ext, .{})) |_| {
@@ -327,21 +327,27 @@ pub const ModuleResolver = struct {
                         );
                         result.file_path = file_resolved;
                         if (DEBUG) std.debug.print("    ✓ FOUND file: {s}\n", .{file_resolved});
+                        found_something = true;
                     } else |_| {}
 
-                    if (result.file_path == null and result.dir_path == null) {
-                        if (DEBUG) std.debug.print("\n✗✗✗ FATAL: Alias ${s} resolved to '{s}' but nothing found ✗✗✗\n", .{alias, resolved_import_path});
-                        return error.ModuleNotFound;
+                    // If we found something at this fallback path, return it
+                    if (found_something) {
+                        if (DEBUG) std.debug.print("  ✓ Resolved via fallback {}/{}\n", .{ path_idx + 1, alias_paths.len });
+                        return result;
                     }
-                } // absolute_path and path_to_resolve freed here
 
-                return result;
+                    if (DEBUG) std.debug.print("    ✗ Nothing found, trying next fallback...\n", .{});
+                }
+
+                // None of the fallback paths worked
+                if (DEBUG) std.debug.print("\n✗✗✗ FATAL: Alias ${s} - all {} fallback paths exhausted ✗✗✗\n", .{ alias, alias_paths.len });
+                return error.ModuleNotFound;
             } else {
                 if (DEBUG) std.debug.print("✗✗✗ FATAL: Unknown import alias: ${s}\n", .{alias});
                 if (DEBUG) std.debug.print("Available aliases from koru.json:\n", .{});
                 var iter = self.config.paths.iterator();
                 while (iter.next()) |entry| {
-                    if (DEBUG) std.debug.print("  ${s} -> {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+                    if (DEBUG) std.debug.print("  ${s} -> [{} paths]\n", .{ entry.key_ptr.*, entry.value_ptr.*.len });
                 }
                 return error.UnknownImportAlias;
             }
@@ -445,9 +451,7 @@ pub const ModuleResolver = struct {
         }
 
         // Handle $alias path prefixes
-        var resolved_import_path = import_path;
-        var alias_resolved: ?[]u8 = null;
-        defer if (alias_resolved) |p| self.allocator.free(p);
+        const resolved_import_path = import_path;
 
         if (import_path.len > 0 and import_path[0] == '$') {
             // Find the end of the alias (first '/' or end of string)
@@ -457,85 +461,79 @@ pub const ModuleResolver = struct {
 
             if (DEBUG) std.debug.print("  Resolving alias: ${s}\n", .{alias});
 
-            // Look up alias in config.paths
-            if (self.config.paths.get(alias)) |alias_path_raw| {
-                // Interpolate {ENTRY} if present
-                const alias_path = if (try self.interpolateEntry(alias_path_raw)) |interpolated|
-                    interpolated
-                else
-                    alias_path_raw;
-                defer if (alias_path.ptr != alias_path_raw.ptr) self.allocator.free(alias_path);
+            // Look up alias in config.paths (now returns array of fallback paths)
+            if (self.config.paths.get(alias)) |alias_paths| {
+                // Iterate through fallback chain - try each path until one exists
+                for (alias_paths) |alias_path_raw| {
+                    // Interpolate {ENTRY} if present
+                    const alias_path = if (try self.interpolateEntry(alias_path_raw)) |interpolated|
+                        interpolated
+                    else
+                        alias_path_raw;
+                    defer if (alias_path.ptr != alias_path_raw.ptr) self.allocator.free(alias_path);
 
-                if (DEBUG) std.debug.print("  ✓ Alias found: ${s} -> {s}\n", .{alias, alias_path});
+                    if (DEBUG) std.debug.print("  ✓ Trying fallback: {s}\n", .{alias_path});
 
-                // Build the path to check (alias + remainder if any)
-                const path_to_resolve = if (slash_pos) |pos| blk: {
-                    const remainder = import_path[pos + 1..];
-                    break :blk try std.fs.path.join(
-                        self.allocator,
-                        &[_][]const u8{ alias_path, remainder }
-                    );
-                } else blk: {
-                    break :blk try self.allocator.dupe(u8, alias_path);
-                };
-                defer self.allocator.free(path_to_resolve);
+                    // Build the path to check (alias + remainder if any)
+                    const path_to_resolve = if (slash_pos) |pos| blk: {
+                        const remainder = import_path[pos + 1..];
+                        break :blk try std.fs.path.join(
+                            self.allocator,
+                            &[_][]const u8{ alias_path, remainder }
+                        );
+                    } else blk: {
+                        break :blk try self.allocator.dupe(u8, alias_path);
+                    };
+                    defer self.allocator.free(path_to_resolve);
 
-                // Alias paths are RELATIVE TO PROJECT ROOT (where koru.json is)
-                const absolute_path = if (std.fs.path.isAbsolute(path_to_resolve))
-                    try self.allocator.dupe(u8, path_to_resolve)
-                else
-                    try std.fs.path.resolve(self.allocator, &[_][]const u8{ self.project_root, path_to_resolve });
+                    // Alias paths are RELATIVE TO PROJECT ROOT (where koru.json is)
+                    const absolute_path = if (std.fs.path.isAbsolute(path_to_resolve))
+                        try self.allocator.dupe(u8, path_to_resolve)
+                    else
+                        try std.fs.path.resolve(self.allocator, &[_][]const u8{ self.project_root, path_to_resolve });
+                    defer self.allocator.free(absolute_path);
 
-                alias_resolved = absolute_path;
-                resolved_import_path = alias_resolved.?;
-                if (DEBUG) std.debug.print("  Resolved to (absolute): {s}\n", .{resolved_import_path});
+                    if (DEBUG) std.debug.print("    Resolved to (absolute): {s}\n", .{absolute_path});
 
-                // CRITICAL: After alias resolution, try the path DIRECTLY!
-                // Don't go through the normal search logic which would double-append to stdlib
-                if (DEBUG) std.debug.print("  [ALIAS] Checking resolved alias path directly...\n", .{});
+                    // Check if it's a directory
+                    if (isDirectory(absolute_path)) {
+                        const resolved = try std.fs.path.resolve(
+                            self.allocator,
+                            &[_][]const u8{absolute_path}
+                        );
+                        if (DEBUG) std.debug.print("    ✓ FOUND directory: {s}\n", .{resolved});
+                        return resolved;
+                    }
 
-                // Check if it's a directory
-                if (DEBUG) std.debug.print("    Checking directory: {s}\n", .{resolved_import_path});
-                if (isDirectory(resolved_import_path)) {
-                    const resolved = try std.fs.path.resolve(
-                        self.allocator,
-                        &[_][]const u8{resolved_import_path}
-                    );
-                    if (DEBUG) std.debug.print("    ✓ FOUND directory: {s}\n", .{resolved});
-                    return resolved;
-                } else {
-                    if (DEBUG) std.debug.print("    ✗ Not a directory\n", .{});
+                    // Check if it's a file (add .kz if needed)
+                    const needs_ext = !std.mem.endsWith(u8, absolute_path, ".kz");
+                    const path_with_ext = if (needs_ext)
+                        try std.fmt.allocPrint(self.allocator, "{s}.kz", .{absolute_path})
+                    else
+                        try self.allocator.dupe(u8, absolute_path);
+                    defer self.allocator.free(path_with_ext);
+
+                    if (std.fs.cwd().access(path_with_ext, .{})) |_| {
+                        const resolved = try std.fs.path.resolve(
+                            self.allocator,
+                            &[_][]const u8{path_with_ext}
+                        );
+                        if (DEBUG) std.debug.print("    ✓ FOUND file: {s}\n", .{resolved});
+                        return resolved;
+                    } else |_| {
+                        if (DEBUG) std.debug.print("    ✗ Not found, trying next fallback...\n", .{});
+                    }
                 }
-
-                // Check if it's a file (add .kz if needed)
-                const needs_ext = !std.mem.endsWith(u8, resolved_import_path, ".kz");
-                const path_with_ext = if (needs_ext)
-                    try std.fmt.allocPrint(self.allocator, "{s}.kz", .{resolved_import_path})
-                else
-                    try self.allocator.dupe(u8, resolved_import_path);
-                defer self.allocator.free(path_with_ext);
-
-                if (DEBUG) std.debug.print("    Checking file: {s}\n", .{path_with_ext});
-                if (std.fs.cwd().access(path_with_ext, .{})) |_| {
-                    const resolved = try std.fs.path.resolve(
-                        self.allocator,
-                        &[_][]const u8{path_with_ext}
-                    );
-                    if (DEBUG) std.debug.print("    ✓ FOUND file: {s}\n", .{resolved});
-                    return resolved;
-                } else |err| {
-                    if (DEBUG) std.debug.print("    ✗ Not found: {}\n", .{err});
-                    // Alias resolved but file not found - this is a FATAL error!
-                    if (DEBUG) std.debug.print("\n✗✗✗ FATAL: Alias ${s} resolved to '{s}' but file not found ✗✗✗\n", .{alias, path_with_ext});
-                    return error.ModuleNotFound;
-                }
+                // None of the fallback paths worked
+                if (DEBUG) std.debug.print("\n✗✗✗ FATAL: Alias ${s} - all fallback paths exhausted ✗✗✗\n", .{alias});
+                return error.ModuleNotFound;
             } else {
                 // Alias not found in config
                 if (DEBUG) std.debug.print("✗✗✗ FATAL: Unknown import alias: ${s}\n", .{alias});
                 if (DEBUG) std.debug.print("Available aliases from koru.json:\n", .{});
                 var iter = self.config.paths.iterator();
                 while (iter.next()) |entry| {
-                    if (DEBUG) std.debug.print("  ${s} -> {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+                    if (DEBUG) std.debug.print("  ${s} -> [{} paths]\n", .{ entry.key_ptr.*, entry.value_ptr.*.len });
                 }
                 return error.UnknownImportAlias;
             }

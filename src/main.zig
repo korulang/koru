@@ -5248,10 +5248,10 @@ pub fn main() !void {
         try printStdout(allocator, "✓ Generated {s} (for output binary)\n", .{build_output_path});
     }
 
-    // Collect package requirements from AST
+    // Collect package requirements from AST (use source_file with imports merged!)
     var package_collector = try PackageRequirementsCollector.init(allocator);
     defer package_collector.deinit();
-    try package_collector.collectFromSourceFile(&parse_result.source_file);
+    try package_collector.collectFromSourceFile(&source_file);
 
     if (package_collector.hasAnyRequirements()) {
         const npm_reqs = package_collector.getNpmRequirements();

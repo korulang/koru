@@ -1,0 +1,33 @@
+// Test 330_050: Union accepts either state
+// Tests that phantom state unions accept any matching member state
+// Demonstrates: [paused|active] accepts both paused AND active states
+
+~import "$app/connection"
+
+// Test 1: resume() accepts 'active' state (second member of union)
+~app.connection:create()
+| created c1 |> app.connection:connect(conn: c1.conn)
+    | connected c2 |> app.connection:resume(conn: c2.conn)  // active -> resume accepts it!
+        | resumed c3 |> app.connection:close(conn: c3.conn)
+            | closed |> _
+
+// Test 2: resume() accepts 'paused' state (first member of union)
+~app.connection:create()
+| created c1 |> app.connection:connect(conn: c1.conn)
+    | connected c2 |> app.connection:pause(conn: c2.conn)
+        | paused c3 |> app.connection:resume(conn: c3.conn)  // paused -> resume accepts it!
+            | resumed c4 |> app.connection:close(conn: c4.conn)
+                | closed |> _
+
+// Test 3: close() accepts 'active' directly (union member)
+~app.connection:create()
+| created c1 |> app.connection:connect(conn: c1.conn)
+    | connected c2 |> app.connection:close(conn: c2.conn)  // active -> close accepts it!
+        | closed |> _
+
+// Test 4: close() accepts 'paused' (other union member)
+~app.connection:create()
+| created c1 |> app.connection:connect(conn: c1.conn)
+    | connected c2 |> app.connection:pause(conn: c2.conn)
+        | paused c3 |> app.connection:close(conn: c3.conn)  // paused -> close accepts it!
+            | closed |> _

@@ -1008,7 +1008,14 @@ pub const AutoDisposeInserter = struct {
                         var parsed = phantom_parser.PhantomState.parse(self.allocator, phantom_str) catch continue;
                         defer parsed.deinit(self.allocator);
 
-                        if (parsed == .concrete and parsed.concrete.consumes_obligation) {
+                        // Check if parameter consumes obligation (concrete or union with ! prefix)
+                        const consumes = switch (parsed) {
+                            .concrete => |c| c.consumes_obligation,
+                            .state_union => |u| u.consumes_obligation,
+                            .variable => false,
+                        };
+
+                        if (consumes) {
                             // ERROR: Cannot manually dispose pre-loop obligation in repeating context
                             if (context.is_repeating) {
                                 // Check if this is a pre-loop obligation
