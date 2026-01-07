@@ -1,0 +1,4 @@
+/tests/*.zig
+/tests/a.out
+/tests/.zig-cache/
+/tests/zig-out/
