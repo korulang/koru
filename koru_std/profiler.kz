@@ -31,6 +31,7 @@
 ~[comptime|runtime]
 
 const std = @import("std");
+~import "$std/taps"
 
 // File handle state - mutable globals for profiler state
 // WARNING: NOT THREAD-SAFE! Will corrupt with concurrent writes.
@@ -177,19 +178,19 @@ var previous_event_name: []const u8 = "";
 }
 
 // TAP: Program start - write header
-// [opaque] prevents other taps from observing profiler's own transitions
-~[opaque]koru:start -> *
+// TODO: [opaque] annotation not yet supported in ~tap() - prevents other taps from observing profiler
+~tap(koru:start -> *)
 | done |> write_header()
     | done |> _
 
 // TAP: Every transition - write event
-// [opaque] prevents infinite recursion (profiler won't observe itself)
-~[opaque]* -> *
+// TODO: [opaque] prevents infinite recursion (profiler won't observe itself)
+~tap(* -> *)
 | Profile p |> write_event(source: p.source, timestamp_ns: p.timestamp_ns)
     | done |> _
 
 // TAP: Program end - write footer and close
-// [opaque] prevents other taps from observing profiler's own transitions
-~[opaque]koru:end -> *
+// TODO: [opaque] annotation not yet supported in ~tap()
+~tap(koru:end -> *)
 | done |> write_footer()
     | done |> _

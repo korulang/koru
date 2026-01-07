@@ -1,0 +1,20 @@
+// Test: $std/rings - MPMC ring buffer with identity branches
+// This test imports the actual $std/rings library
+
+~import "$std/rings"
+~import "$std/io"
+
+const std = @import("std");
+
+// Use the ring type from $std/rings
+const Ring = std.rings.MpmcRing(u64, 16);
+var ring = Ring.init();
+
+// Test enqueue/dequeue with identity branches
+~std.rings:enqueue(ring: &ring, value: 42)
+| ok |> std.rings:enqueue(ring: &ring, value: 100)
+    | ok |> std.rings:dequeue(ring: &ring)
+        | some v |> std.io:print.ln("First: {{ v:d }}")
+        | none |> std.io:print.ln("ERROR: empty")
+    | full |> std.io:print.ln("ERROR: full")
+| full |> std.io:print.ln("ERROR: full")

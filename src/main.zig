@@ -271,7 +271,8 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                         break;
                     }
                     if (std.mem.eql(u8, field.type, "ProgramAST") or
-                        std.mem.eql(u8, field.type, "Program"))
+                        std.mem.eql(u8, field.type, "Program") or
+                        std.mem.eql(u8, field.type, "*const Program"))
                     {
                         is_comptime = true;
                         break;
@@ -325,7 +326,8 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                                 break;
                             }
                             if (std.mem.eql(u8, field.type, "ProgramAST") or
-                                std.mem.eql(u8, field.type, "Program"))
+                                std.mem.eql(u8, field.type, "Program") or
+                                std.mem.eql(u8, field.type, "*const Program"))
                             {
                                 is_comptime = true;
                                 break;
@@ -333,21 +335,17 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                         }
 
                         if (is_comptime) {
-                            // Build event name with module qualifier from module's logical_name
-                            // For $std/build, logical_name is "std.build", we want "build:requires"
+                            // Build event name with FULL module qualifier from module's logical_name
+                            // For $std/taps, logical_name is "std.taps", we want "std.taps:tap"
+                            // This matches what keyword resolution produces
                             var event_name_buf: [256]u8 = undefined;
                             var event_name_len: usize = 0;
 
-                            // Extract the last segment of module logical_name as qualifier
-                            // "std.build" -> "build"
-                            var module_qualifier: ?[]const u8 = null;
-                            if (std.mem.lastIndexOf(u8, module.logical_name, ".")) |dot_idx| {
-                                module_qualifier = module.logical_name[dot_idx + 1 ..];
-                            } else {
-                                module_qualifier = module.logical_name;
-                            }
+                            // Use full module logical_name as qualifier
+                            const module_qualifier = module.logical_name;
 
-                            if (module_qualifier) |mq| {
+                            if (module_qualifier.len > 0) {
+                                const mq = module_qualifier;
                                 @memcpy(event_name_buf[0..mq.len], mq);
                                 event_name_len += mq.len;
                                 event_name_buf[event_name_len] = ':';
@@ -415,7 +413,8 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
 
                 const inv_name = inv_name_buf[0..inv_name_len];
 
-                // Check if this flow invokes a comptime event
+                // Check if this flow invokes a comptime event OR a transform event
+                var matched = false;
                 for (comptime_event_names.items) |comptime_name| {
                     if (std.mem.eql(u8, inv_name, comptime_name)) {
                         std.debug.print("  [MATCH] Flow '{s}' (idx={}) matches comptime event '{s}'\n", .{ inv_name, idx, comptime_name });
@@ -424,7 +423,22 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                             .flow = flow,
                         });
                         std.debug.print("    → Appended to comptime_flows, now {} items\n", .{comptime_flows.items.len});
+                        matched = true;
                         break;
+                    }
+                }
+                // Also check transform events (like std.taps:tap)
+                if (!matched) {
+                    for (transform_event_names.items) |transform_name| {
+                        if (std.mem.eql(u8, inv_name, transform_name)) {
+                            std.debug.print("  [MATCH-TRANSFORM] Flow '{s}' (idx={}) matches transform event '{s}'\n", .{ inv_name, idx, transform_name });
+                            try comptime_flows.append(allocator, .{
+                                .ast_index = idx,
+                                .flow = flow,
+                            });
+                            std.debug.print("    → Appended to comptime_flows, now {} items\n", .{comptime_flows.items.len});
+                            break;
+                        }
                     }
                 }
             }
@@ -432,9 +446,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             // Also check flows in imported modules (though typically flows are top-level)
             if (item.* == .module_decl) {
                 const module = item.module_decl;
-                for (module.items) |mod_item| {
-                    if (mod_item == .flow) {
-                        const flow = mod_item.flow;
+                for (module.items) |*mod_item| {
+                    if (mod_item.* == .flow) {
+                        const flow = &mod_item.flow;
 
                         // Build invoked event name
                         var inv_name_buf: [256]u8 = undefined;
@@ -458,7 +472,8 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
 
                         const inv_name = inv_name_buf[0..inv_name_len];
 
-                        // Check if this flow invokes a comptime event
+                        // Check if this flow invokes a comptime event OR transform event
+                        var matched = false;
                         for (comptime_event_names.items) |comptime_name| {
                             if (std.mem.eql(u8, inv_name, comptime_name)) {
                                 std.debug.print("  [MATCH-MODULE] Flow '{s}' in module matches comptime event '{s}'\n", .{ inv_name, comptime_name });
@@ -466,9 +481,23 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                                 // The AST walker will need to handle this correctly
                                 try comptime_flows.append(allocator, .{
                                     .ast_index = idx, // Points to the module_decl item
-                                    .flow = &flow,
+                                    .flow = flow,
                                 });
+                                matched = true;
                                 break;
+                            }
+                        }
+                        // Also check transform events (like std.taps:tap)
+                        if (!matched) {
+                            for (transform_event_names.items) |transform_name| {
+                                if (std.mem.eql(u8, inv_name, transform_name)) {
+                                    std.debug.print("  [MATCH-MODULE-TRANSFORM] Flow '{s}' in module matches transform event '{s}'\n", .{ inv_name, transform_name });
+                                    try comptime_flows.append(allocator, .{
+                                        .ast_index = idx,
+                                        .flow = flow,
+                                    });
+                                    break;
+                                }
                             }
                         }
                     }
@@ -2178,6 +2207,11 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     try code_emitter.write("    \n");
     try code_emitter.write("    return result;\n");
     try code_emitter.write("}\n\n");
+
+    // Add alias for backward compatibility with backend.zig which imports process_all_transforms
+    try code_emitter.write("// Alias for backward compatibility\n");
+    try code_emitter.write("pub const process_all_transforms = run_pass;\n\n");
+
     return transform_count;
 }
 
@@ -3867,8 +3901,10 @@ fn resolveKeywordsInItem(
             }
         },
         .module_decl => |*module| {
-            // Process items in imported modules
-            _ = module;
+            // Process items in imported modules - recurse into module items
+            for (module.items) |*mod_item| {
+                try resolveKeywordsInItem(@constCast(mod_item), registry, allocator, main_module, all_items);
+            }
         },
         .subflow_impl => |*subflow| {
             // CRITICAL: Resolve keywords in subflow bodies!
@@ -4058,18 +4094,13 @@ fn resolveKeywordInPath(
     allocator: std.mem.Allocator,
     main_module: []const u8,
 ) !void {
-    // Only resolve single-segment paths that were auto-qualified to the main module
-    // After canonicalization, ~greet becomes input:greet (where input is main module)
-    // We want to check if 'greet' is a keyword and replace 'input' with the keyword's module
+    // Only resolve single-segment paths
+    // After canonicalization, ~greet becomes module:greet (where module is the containing module)
+    // We want to check if 'greet' is a keyword and replace the module with the keyword's module
+    // This works for BOTH main module flows AND flows in imported modules
     if (path.segments.len != 1) return;
 
-    // Must be either unqualified OR qualified to the main module
-    const is_auto_qualified = if (path.module_qualifier) |qual|
-        std.mem.eql(u8, qual, main_module)
-    else
-        true;
-
-    if (!is_auto_qualified) return;
+    _ = main_module; // Not used anymore - keywords resolve regardless of containing module
 
     const potential_keyword = path.segments[0];
 

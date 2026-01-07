@@ -497,12 +497,42 @@ const std = @import("std");
             var any_modified = false;
 
             for (continuations, 0..) |*cont, i| {
+
+                // Handle TERMINAL continuations (node == null)
+                // For terminals, we can INSERT the tap handler as the new node
                 if (cont.node == null) {
-                    // No node to wrap, just recurse
-                    const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta, mark_inserted, source_event);
-                    new_conts[i] = cont.*;
-                    new_conts[i].continuations = nested.conts;
-                    if (nested.modified) any_modified = true;
+                    // Check if any tap branch matches this terminal
+                    var tap_inserted = false;
+                    for (tap_branches) |*tap_cont| {
+                        const branch_matches = is_meta or std.mem.eql(u8, cont.branch, tap_cont.branch);
+                        if (!branch_matches) continue;
+
+                        const tap_step = tap_cont.node orelse continue;
+
+                        // Create new continuation with tap as the node
+                        // The tap's nested continuations become the new nested continuations
+                        new_conts[i] = ast.Continuation{
+                            .branch = cont.branch,
+                            .binding = cont.binding,
+                            .condition = cont.condition,
+                            .condition_expr = cont.condition_expr,
+                            .node = tap_step,
+                            .indent = cont.indent,
+                            .continuations = tap_cont.continuations,
+                            .location = cont.location,
+                        };
+                        any_modified = true;
+                        tap_inserted = true;
+                        break;  // Only insert first matching tap for terminals
+                    }
+
+                    if (!tap_inserted) {
+                        // No matching tap, recurse into nested continuations
+                        const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta, mark_inserted, source_event);
+                        new_conts[i] = cont.*;
+                        new_conts[i].continuations = nested.conts;
+                        if (nested.modified) any_modified = true;
+                    }
                     continue;
                 }
 
@@ -752,14 +782,39 @@ const std = @import("std");
             // Handle imported modules - must descend to remove tap and transform flows
             const module = &prog_item.module_decl;
 
-            // Skip system modules (compiler/stdlib) - taps should only apply to user code
-            // System modules have their own internal structure that shouldn't be wrapped by user taps
-            // Detect by module path: std.* modules are standard library, koru module is internal
+            // System modules: don't transform their flows, but DO remove the tap declaration
+            // The tap itself must be removed to prevent infinite loops, even in system modules
             const is_std_module = std.mem.startsWith(u8, module.logical_name, "std.") or
                                   std.mem.eql(u8, module.logical_name, "koru");
             if (module.is_system or is_std_module) {
-                std.debug.print("[tap] Skipping system module '{s}'\n", .{module.logical_name});
-                new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
+                // Check if this module contains the tap we're processing
+                var contains_tap = false;
+                for (module.items) |*mod_item| {
+                    if (mod_item == item) {
+                        contains_tap = true;
+                        break;
+                    }
+                }
+
+                if (contains_tap) {
+                    // Clone module BUT remove the tap
+                    var new_mod_items = std.ArrayList(ast.Item).initCapacity(allocator, module.items.len) catch unreachable;
+                    for (module.items) |*mod_item| {
+                        if (mod_item == item) continue; // Remove the tap
+                        new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
+                    }
+                    const new_module = ast.ModuleDecl{
+                        .logical_name = allocator.dupe(u8, module.logical_name) catch unreachable,
+                        .canonical_path = allocator.dupe(u8, module.canonical_path) catch unreachable,
+                        .items = new_mod_items.toOwnedSlice(allocator) catch unreachable,
+                        .is_system = module.is_system,
+                        .location = module.location,
+                    };
+                    new_items.append(allocator, ast.Item{ .module_decl = new_module }) catch unreachable;
+                } else {
+                    // No tap in this module, just clone it
+                    new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
+                }
                 continue;
             }
 
@@ -767,10 +822,7 @@ const std = @import("std");
 
             for (module.items) |*mod_item| {
                 // Skip the tap if it's in this module
-                if (mod_item == item) {
-                    std.debug.print("[tap] Removing tap from module '{s}'\n", .{module.logical_name});
-                    continue;
-                }
+                if (mod_item == item) continue;
 
                 if (mod_item.* == .flow) {
                     const flow = &mod_item.flow;

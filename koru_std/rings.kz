@@ -1,0 +1,225 @@
+// Koru Standard Library: Lock-Free Ring Buffers
+// ==============================================
+//
+// High-performance MPMC (multi-producer, multi-consumer) ring buffers
+// based on Dmitry Vyukov's bounded queue algorithm.
+//
+// DESIGN PHILOSOPHY:
+// - Events are implicitly tappable - no hooks, no callbacks
+// - Users observe via ~tap() without modifying this library
+// - Multicast: multiple taps = multiple observers, ALL see every message
+// - `when` clauses fuse predicates into the producer (zero-cost filtering)
+//
+// USAGE:
+//   const std = @import("std");
+//   ~import "$std/rings"
+//
+//   // Instantiate with your type (Zig generics - fully specialized at comptime)
+//   const MyRing = std.rings.MpmcRing(u64, 1024);
+//   var ring = MyRing.init();
+//
+//   // Enqueue (tappable!) - identity branches
+//   ~std.rings:enqueue(ring: &ring, value: 42)
+//   | ok |> ...
+//   | full |> handle_backpressure()
+//
+//   // Dequeue (tappable!) - identity branch with value
+//   ~std.rings:dequeue(ring: &ring)
+//   | some v |> process(v)    // v IS the u64, not v.value
+//   | none |> wait_for_producer()
+//
+// OBSERVABILITY (implicit - no library changes needed):
+//   ~tap(std.rings:enqueue -> *) | ok e |> telemetry:record_enqueue()
+//   ~tap(std.rings:enqueue -> *) | full |> metrics:backpressure()
+//   ~tap(std.rings:dequeue -> *) | some v when v.ring == my_ring |> log(v)
+//
+// MULTICAST:
+//   Unlike traditional MPMC where one consumer wins, taps enable TRUE multicast:
+//   - Multiple taps on same event = ALL observers see EVERY message
+//   - Perfect for telemetry, logging, PGO, debugging
+//   - Zero cost when no taps attached
+
+const std = @import("std");
+
+// ============================================================================
+// RING BUFFER IMPLEMENTATION (Vyukov's bounded MPMC queue)
+// ============================================================================
+//
+// Zig generic - instantiate with your type:
+//   const MyRing = MpmcRing(u64, 1024);
+//
+// Compiles to fully specialized code - zero abstraction cost.
+
+const CacheLine = 64;
+
+pub fn MpmcRing(comptime T: type, comptime capacity: usize) type {
+    if (capacity & (capacity - 1) != 0) {
+        @compileError("Ring capacity must be power of 2");
+    }
+
+    const Slot = struct {
+        seq: std.atomic.Value(usize),
+        value: T,
+    };
+
+    return struct {
+        const Self = @This();
+
+        head: std.atomic.Value(usize) align(CacheLine),
+        _pad1: [CacheLine - @sizeOf(std.atomic.Value(usize))]u8 = undefined,
+
+        tail: std.atomic.Value(usize) align(CacheLine),
+        _pad2: [CacheLine - @sizeOf(std.atomic.Value(usize))]u8 = undefined,
+
+        slots: [capacity]Slot align(CacheLine),
+
+        pub fn init() Self {
+            var self = Self{
+                .head = std.atomic.Value(usize).init(0),
+                .tail = std.atomic.Value(usize).init(0),
+                .slots = undefined,
+            };
+
+            for (&self.slots, 0..) |*slot, i| {
+                slot.seq = std.atomic.Value(usize).init(i);
+                slot.value = undefined;
+            }
+
+            return self;
+        }
+
+        pub fn tryEnqueue(self: *Self, value: T) bool {
+            var pos = self.head.load(.monotonic);
+
+            while (true) {
+                const slot = &self.slots[pos & (capacity - 1)];
+                const seq = slot.seq.load(.acquire);
+                const dif = @as(isize, @intCast(seq)) -% @as(isize, @intCast(pos));
+
+                if (dif == 0) {
+                    if (self.head.cmpxchgWeak(
+                        pos,
+                        pos + 1,
+                        .monotonic,
+                        .monotonic,
+                    ) == null) {
+                        slot.value = value;
+                        slot.seq.store(pos + 1, .release);
+                        return true;
+                    }
+                    pos = self.head.load(.monotonic);
+                } else if (dif < 0) {
+                    return false;
+                } else {
+                    pos = self.head.load(.monotonic);
+                    std.Thread.yield() catch {};
+                }
+            }
+        }
+
+        pub fn tryDequeue(self: *Self) ?T {
+            var pos = self.tail.load(.monotonic);
+
+            while (true) {
+                const slot = &self.slots[pos & (capacity - 1)];
+                const seq = slot.seq.load(.acquire);
+                const dif = @as(isize, @intCast(seq)) -% @as(isize, @intCast(pos + 1));
+
+                if (dif == 0) {
+                    if (self.tail.cmpxchgWeak(
+                        pos,
+                        pos + 1,
+                        .monotonic,
+                        .monotonic,
+                    ) == null) {
+                        const value = slot.value;
+                        slot.seq.store(pos + capacity, .release);
+                        return value;
+                    }
+                    pos = self.tail.load(.monotonic);
+                } else if (dif < 0) {
+                    return null;
+                } else {
+                    pos = self.tail.load(.monotonic);
+                    std.Thread.yield() catch {};
+                }
+            }
+        }
+    };
+}
+
+// ============================================================================
+// KORU EVENTS (implicitly tappable)
+// ============================================================================
+//
+// These events wrap the ring operations. Users instantiate MpmcRing with their
+// concrete type, then use these events with that type.
+//
+// Example:
+//   const Ring = MpmcRing(u64, 1024);
+//   var ring = Ring.init();
+//   ~std.rings:enqueue(ring: &ring, value: 42)
+
+// Generic type alias for event signatures
+// Users replace with their concrete Ring type
+// (Future: derive handler to auto-generate typed events)
+
+~pub event enqueue { ring: *anyopaque, value: u64 }
+| ok
+| full
+
+~proc enqueue {
+    // Cast to concrete ring type - user ensures type safety
+    const typed_ring: *MpmcRing(u64, 1024) = @ptrCast(@alignCast(ring));
+    if (typed_ring.tryEnqueue(value)) {
+        return .ok;  // Identity branch - no payload
+    }
+    return .full;
+}
+
+~pub event dequeue { ring: *anyopaque }
+| some u64
+| none
+
+~proc dequeue {
+    const typed_ring: *MpmcRing(u64, 1024) = @ptrCast(@alignCast(ring));
+    if (typed_ring.tryDequeue()) |v| {
+        return .{ .some = v };  // Identity branch - value IS the payload
+    }
+    return .none;
+}
+
+// ============================================================================
+// TYPED PATTERN (recommended)
+// ============================================================================
+//
+// For type-safe usage, define your own events with concrete types:
+//
+//   const MyRing = MpmcRing(MyData, 256);
+//
+//   // Identity branches: | branch Type (not | branch { field: Type })
+//   ~event my.enqueue { ring: *MyRing, value: MyData }
+//   | ok
+//   | full
+//
+//   ~proc my.enqueue {
+//       if (ring.tryEnqueue(value)) return .ok;
+//       return .full;
+//   }
+//
+//   ~event my.dequeue { ring: *MyRing }
+//   | some MyData
+//   | none
+//
+//   ~proc my.dequeue {
+//       if (ring.tryDequeue()) |v| return .{ .some = v };
+//       return .none;
+//   }
+//
+// Subflow constructors for identity branches:
+//   ~my.transform = my.dequeue(ring: r)
+//   | some v |> result { v * 2 }   // Expression directly, no field name
+//   | none |> default { 0 }
+//
+// This gives you full type safety AND tappability.
+// The std.rings events above are convenience wrappers for u64.
