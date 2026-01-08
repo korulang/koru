@@ -794,8 +794,9 @@ pub const CompilerContext = struct {
 }
 
 // Helper: Join path segments with dots
-const joinPath = struct {
-    fn call(path: []const []const u8) []const u8 {
+// IMPORTANT: Takes an allocator to return heap-allocated memory (stack memory was causing corruption!)
+const joinPathAlloc = struct {
+    fn call(allocator: std.mem.Allocator, path: []const []const u8) []const u8 {
         if (path.len == 0) return "";
         if (path.len == 1) return path[0];
 
@@ -806,8 +807,8 @@ const joinPath = struct {
             total_len += 1 + path[i].len; // dot + segment
         }
 
-        // Build result
-        var result: [256]u8 = undefined;
+        // Allocate result buffer
+        const result = allocator.alloc(u8, total_len) catch return path[0]; // Fallback to first segment if alloc fails
         var pos: usize = 0;
         @memcpy(result[pos..pos + path[0].len], path[0]);
         pos += path[0].len;
@@ -882,12 +883,8 @@ const joinPath = struct {
                 }
 
                 if (is_comptime and comptime_count < 64) {
-                    // Build event name from path segments
-                    // MUST allocate event name with allocator, NOT use joinPath stack allocation!
-                    const event_name = std.fmt.allocPrint(ctx.allocator, "{s}", .{joinPath(event_decl.path.segments)}) catch {
-                        std.debug.print("ERROR: Failed to allocate event name\n", .{});
-                        continue; // Skip this event if allocation fails
-                    };
+                    // Build event name from path segments using heap allocation
+                    const event_name = joinPathAlloc(ctx.allocator, event_decl.path.segments);
                     comptime_events[comptime_count] = event_name;
                     comptime_count += 1;
                 }
@@ -911,11 +908,11 @@ const joinPath = struct {
 
                         if (is_comptime and comptime_count < 64) {
                             // For module events, include the module name: "std.build:requires"
-                            const event_name = if (module.logical_name.len > 0) blk: {
-                                // Try to format with module prefix, fall back to plain name if allocation fails
-                                break :blk std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{module.logical_name, joinPath(event_decl.path.segments)}) catch joinPath(event_decl.path.segments);
-                            } else
-                                joinPath(event_decl.path.segments);
+                            const path_str = joinPathAlloc(ctx.allocator, event_decl.path.segments);
+                            const event_name = if (module.logical_name.len > 0)
+                                std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{module.logical_name, path_str}) catch path_str
+                            else
+                                path_str;
                             comptime_events[comptime_count] = event_name;
                             comptime_count += 1;
                         }
@@ -932,11 +929,11 @@ const joinPath = struct {
         if (item == .flow) {
             const flow = item.flow;
             // For module-qualified flows, include the module name: "std.build:requires"
-            const inv_path = if (flow.invocation.path.module_qualifier) |mq| blk: {
-                break :blk std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, joinPath(flow.invocation.path.segments)}) catch joinPath(flow.invocation.path.segments);
-            } else
-                joinPath(flow.invocation.path.segments);
-            defer if (flow.invocation.path.module_qualifier != null) ctx.allocator.free(inv_path);
+            const path_str = joinPathAlloc(ctx.allocator, flow.invocation.path.segments);
+            const inv_path = if (flow.invocation.path.module_qualifier) |mq|
+                std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, path_str}) catch path_str
+            else
+                path_str;
             // std.debug.print("    Flow invokes: {s}\n", .{inv_path});
 
             // Check if this invocation is to a comptime event
@@ -1017,11 +1014,8 @@ const joinPath = struct {
                 }
 
                 if (is_comptime and comptime_count < 64) {
-                    // MUST allocate event name with allocator, NOT use joinPath stack allocation!
-                    const event_name = std.fmt.allocPrint(ctx.allocator, "{s}", .{joinPath(event_decl.path.segments)}) catch {
-                        std.debug.print("ERROR: Failed to allocate event name during rescan\n", .{});
-                        continue; // Skip this event if allocation fails
-                    };
+                    // Use heap-allocated path string
+                    const event_name = joinPathAlloc(ctx.allocator, event_decl.path.segments);
                     std.debug.print("  Found comptime event: {s} (fields: {})\n", .{event_name, event_decl.input.fields.len});
                     comptime_events[comptime_count] = event_name;
                     comptime_count += 1;
@@ -1044,18 +1038,11 @@ const joinPath = struct {
                         }
 
                         if (is_comptime and comptime_count < 64) {
-                            const event_name = if (module.logical_name.len > 0) blk2: {
-                                break :blk2 std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{module.logical_name, joinPath(event_decl.path.segments)}) catch {
-                                    std.debug.print("ERROR: Failed to allocate module event name during rescan\n", .{});
-                                    continue; // Skip this event if allocation fails
-                                };
-                            } else blk2: {
-                                // MUST allocate! Don't use joinPath directly
-                                break :blk2 std.fmt.allocPrint(ctx.allocator, "{s}", .{joinPath(event_decl.path.segments)}) catch {
-                                    std.debug.print("ERROR: Failed to allocate event name during rescan\n", .{});
-                                    continue; // Skip this event if allocation fails
-                                };
-                            };
+                            const path_str = joinPathAlloc(ctx.allocator, event_decl.path.segments);
+                            const event_name = if (module.logical_name.len > 0)
+                                std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{module.logical_name, path_str}) catch path_str
+                            else
+                                path_str;
                             comptime_events[comptime_count] = event_name;
                             comptime_count += 1;
                         }
@@ -1078,11 +1065,11 @@ const joinPath = struct {
         if (item == .flow) {
             const flow = item.flow;
             // For module-qualified flows, include the module name: "std.build:requires"
-            const inv_path = if (flow.invocation.path.module_qualifier) |mq| blk: {
-                break :blk std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, joinPath(flow.invocation.path.segments)}) catch joinPath(flow.invocation.path.segments);
-            } else
-                joinPath(flow.invocation.path.segments);
-            defer if (flow.invocation.path.module_qualifier != null) ctx.allocator.free(inv_path);
+            const path_str = joinPathAlloc(ctx.allocator, flow.invocation.path.segments);
+            const inv_path = if (flow.invocation.path.module_qualifier) |mq|
+                std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, path_str}) catch path_str
+            else
+                path_str;
 
             // Check if comptime flow
             for (0..comptime_count) |i| {
@@ -1099,7 +1086,7 @@ const joinPath = struct {
             const proc = item.proc_decl;
 
             // Check if this proc is comptime (in comptime_events list)
-            const proc_path = joinPath(proc.path.segments);
+            const proc_path = joinPathAlloc(ctx.allocator, proc.path.segments);
             for (0..comptime_count) |i| {
                 if (std.mem.eql(u8, proc_path, comptime_events[i])) {
                     // This is a comptime proc - filter it out (already executed)
@@ -1130,11 +1117,11 @@ const joinPath = struct {
         if (item == .flow) {
             const flow = item.flow;
             // For module-qualified flows, include the module name: "std.build:requires"
-            const inv_path = if (flow.invocation.path.module_qualifier) |mq| blk: {
-                break :blk std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, joinPath(flow.invocation.path.segments)}) catch joinPath(flow.invocation.path.segments);
-            } else
-                joinPath(flow.invocation.path.segments);
-            defer if (flow.invocation.path.module_qualifier != null) ctx.allocator.free(inv_path);
+            const path_str2 = joinPathAlloc(ctx.allocator, flow.invocation.path.segments);
+            const inv_path = if (flow.invocation.path.module_qualifier) |mq|
+                std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, path_str2}) catch path_str2
+            else
+                path_str2;
 
             // Check if comptime flow
             for (0..comptime_count) |i| {
@@ -1151,7 +1138,7 @@ const joinPath = struct {
             const proc = item.proc_decl;
 
             // Check if this proc is comptime (in comptime_events list)
-            const proc_path = joinPath(proc.path.segments);
+            const proc_path = joinPathAlloc(ctx.allocator, proc.path.segments);
             for (0..comptime_count) |i| {
                 if (std.mem.eql(u8, proc_path, comptime_events[i])) {
                     // This is a comptime proc - filter it out (already executed)

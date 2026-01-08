@@ -1,0 +1,42 @@
+// Test: Braceless branch constructor syntax
+//
+// NEW syntax:
+//   ok           (empty identity branch)
+//   ok expr      (branch with single value)
+//
+// OLD syntax (still works):
+//   ok {}        (empty identity branch)
+//   ok { value } (branch with single value)
+
+~import "$std/io"
+
+// Event with identity branch
+~pub event empty_result {}
+| ok
+| fail
+
+// Event with value branch
+~pub event value_result {}
+| success i32
+| fail
+
+// Subflow impl using braceless syntax for empty identity branch
+// OLD syntax: ~empty_result = ok {}
+// NEW syntax:
+~empty_result = ok
+
+// Subflow impl using braceless syntax with value
+// OLD syntax: ~value_result = success { 42 }
+// NEW syntax:
+~value_result = success 42
+
+// Main entry point
+~std.io:print.ln("Testing empty braceless:")
+~empty_result()
+| ok |> std.io:print.ln("  Got ok!")
+| fail |> std.io:print.ln("  Got fail!")
+
+~std.io:print.ln("Testing value braceless:")
+~value_result()
+| success n |> std.io:print.ln("  Got success: {{ n:d }}")
+| fail |> std.io:print.ln("  Got fail!")

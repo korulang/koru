@@ -3548,7 +3548,50 @@ pub const Parser = struct {
                     }
                 }
             }
-            
+
+            // Check for braceless branch constructor: just identifier or identifier + expression
+            // Pattern: no { no () no : means it could be a braceless branch constructor
+            const has_brace = std.mem.indexOf(u8, body_str, "{") != null;
+            const has_parens = std.mem.indexOf(u8, body_str, "(") != null;
+            const has_colon = std.mem.indexOf(u8, body_str, ":") != null;
+
+            if (!has_brace and !has_parens and !has_colon) {
+                const first_space = std.mem.indexOfAny(u8, body_str, &[_]u8{ ' ', '\t' });
+                const branch_name = if (first_space) |idx| lexer.trim(body_str[0..idx]) else body_str;
+
+                if (branch_name.len > 0 and isValidIdentifier(branch_name)) {
+                    // Braceless branch constructor!
+                    if (first_space) |idx| {
+                        // Has expression: "ok expr"
+                        const expr_part = lexer.trim(body_str[idx..]);
+                        return ast.SubflowImpl{
+                            .event_path = event_path,
+                            .body = ast.SubflowBody{ .immediate = .{
+                                .branch_name = try self.allocator.dupe(u8, branch_name),
+                                .fields = &.{},
+                                .plain_value = try self.allocator.dupe(u8, expr_part),
+                                .has_expressions = true,
+                            } },
+                            .location = self.getCurrentLocation(),
+                            .module = try self.allocator.dupe(u8, self.module_name),
+                        };
+                    } else {
+                        // Just branch name: "ok"
+                        return ast.SubflowImpl{
+                            .event_path = event_path,
+                            .body = ast.SubflowBody{ .immediate = .{
+                                .branch_name = try self.allocator.dupe(u8, branch_name),
+                                .fields = &.{},
+                                .plain_value = null,
+                                .has_expressions = false,
+                            } },
+                            .location = self.getCurrentLocation(),
+                            .module = try self.allocator.dupe(u8, self.module_name),
+                        };
+                    }
+                }
+            }
+
             // Otherwise parse as normal flow with invocation
             // Push in_subflow_impl context to allow full expressions in branch constructors
             try self.context_stack.append(self.allocator, .in_subflow_impl);
@@ -4987,7 +5030,42 @@ pub const Parser = struct {
                 return ast.Step{ .branch_constructor = try self.parseBranchConstructorWithContext(clean_content, in_proc) };
             }
         }
-        
+
+        // Check for braceless branch constructor: identifier OR identifier expression
+        // Pattern: no { no () no : means it could be a braceless branch constructor
+        // Examples: "ok" or "ok a.value" or "some_branch result"
+        const has_parens = std.mem.indexOf(u8, clean_content, "(") != null;
+        const has_colon = std.mem.indexOf(u8, clean_content, ":") != null;
+
+        if (!has_parens and !has_colon) {
+            // Could be braceless branch constructor
+            // Extract the first token (potential branch name)
+            const first_space = std.mem.indexOfAny(u8, clean_content, &[_]u8{ ' ', '\t' });
+            const branch_name = if (first_space) |idx| lexer.trim(clean_content[0..idx]) else clean_content;
+
+            // Validate it's a valid identifier (not starting with special chars)
+            if (branch_name.len > 0 and isValidIdentifier(branch_name)) {
+                if (first_space) |idx| {
+                    // Has expression: "ok expr"
+                    const expr_part = lexer.trim(clean_content[idx..]);
+                    return ast.Step{ .branch_constructor = .{
+                        .branch_name = try self.allocator.dupe(u8, branch_name),
+                        .fields = &.{},
+                        .plain_value = try self.allocator.dupe(u8, expr_part),
+                        .has_expressions = true,
+                    } };
+                } else {
+                    // Just branch name: "ok"
+                    return ast.Step{ .branch_constructor = .{
+                        .branch_name = try self.allocator.dupe(u8, branch_name),
+                        .fields = &.{},
+                        .plain_value = null,
+                        .has_expressions = false,
+                    } };
+                }
+            }
+        }
+
         // Otherwise it's an invocation - always an event now
         return ast.Step{ .invocation = try self.parseEventInvocation(clean_content) };
     }

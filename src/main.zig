@@ -5343,7 +5343,7 @@ pub fn main() !void {
         // Generate build_output.zig - this will be used to compile output_emitted.zig
         const build_output_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "build_output.zig" });
         defer allocator.free(build_output_path);
-        try emit_build_zig.emitOutputBuildZig(allocator, output_build_reqs.items, build_output_path);
+        try emit_build_zig.emitOutputBuildZig(allocator, output_build_reqs.items, build_output_path, koru_lib_path);
         try printStdout(allocator, "✓ Generated {s} (for output binary)\n", .{build_output_path});
     }
 

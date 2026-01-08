@@ -170,9 +170,10 @@ pub fn emitBuildZig(
 /// Generate a build.zig file for the OUTPUT binary (compiled from output_emitted.zig)
 /// This is separate from the backend build.zig as it uses user dependencies (build:requires)
 pub fn emitOutputBuildZig(
-    _: std.mem.Allocator, // Reserved for future use
+    allocator: std.mem.Allocator,
     requires: []const BuildRequirement,
     output_path: []const u8,
+    rel_to_root: []const u8,
 ) !void {
     std.debug.print("📦 Generating output build.zig with {d} requirements\n", .{requires.len});
 
@@ -245,8 +246,10 @@ pub fn emitOutputBuildZig(
             \\
         );
 
-        // Add the user's build code directly (no REL_TO_ROOT substitution needed)
-        append(&buffer, &pos, req.source_code);
+        // Replace ${REL_TO_ROOT} with the actual relative path (same as emitBuildZig)
+        const substituted_code = try std.mem.replaceOwned(u8, allocator, req.source_code, "${REL_TO_ROOT}", rel_to_root);
+        defer allocator.free(substituted_code);
+        append(&buffer, &pos, substituted_code);
 
         append(&buffer, &pos,
             \\

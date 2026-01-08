@@ -1,0 +1,4 @@
+Testing empty braceless:
+  Got ok!
+Testing value braceless:
+  Got success: 42

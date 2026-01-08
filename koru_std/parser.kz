@@ -1,15 +1,108 @@
 // Parser Wrapper - Koru Events for Parser Zig Library
 // ====================================================
-// Makes the Zig parser available as Koru events at backend runtime.
+// Makes the Zig parser available as Koru events at RUNTIME.
 //
 // Usage:
 //   ~import "$std/parser"
-//   ~parse.source(source: code, file_name: "test.kz", allocator: allocator)
+//   ~std.parser:parse.source(source: code, file_name: "test.kz", allocator: allocator)
 //   | parsed p |> use(p.ast)
-//   | error e |> handle(e.message)
+//   | parse_error e |> handle(e.message)
+//
+// This enables:
+//   - REPLs that parse and execute Koru at runtime
+//   - Wire protocols that accept Koru as input
+//   - Dynamic code loading and evaluation
+//   - AI agents that can parse and understand Koru
+
+~import "$std/build"
 
 const std = @import("std");
 const parser_impl = @import("parser");
+
+// =============================================================================
+// BUILD REQUIREMENTS - Include parser module in output binary
+// =============================================================================
+// When user code imports $std/parser, these requirements are collected
+// and the parser module (with all its dependencies) is included in the
+// final executable's build.zig.
+
+~std.build:requires {
+    const REL_TO_ROOT = "${REL_TO_ROOT}";
+
+    // Errors module - error reporting
+    const errors_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // AST module - core AST data structures
+    const ast_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_module.addImport("errors", errors_module);
+
+    // Lexer module - tokenization
+    const lexer_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Annotation parser - parses parametrized annotations
+    const annotation_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/annotation_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Type registry - type metadata tracking
+    const type_registry_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/type_registry.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    type_registry_module.addImport("ast", ast_module);
+
+    // Expression parser
+    const expression_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    expression_parser_module.addImport("lexer", lexer_module);
+    expression_parser_module.addImport("ast", ast_module);
+
+    // Union collector
+    const union_collector_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/union_collector.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    union_collector_module.addImport("ast", ast_module);
+
+    // Parser module - the main parser with all its dependencies
+    const parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    parser_module.addImport("ast", ast_module);
+    parser_module.addImport("lexer", lexer_module);
+    parser_module.addImport("errors", errors_module);
+    parser_module.addImport("type_registry", type_registry_module);
+    parser_module.addImport("expression_parser", expression_parser_module);
+    parser_module.addImport("union_collector", union_collector_module);
+
+    // Add parser to the executable
+    exe.root_module.addImport("parser", parser_module);
+}
+
+// =============================================================================
+// PARSER EVENTS
+// =============================================================================
 
 // Parse Koru source code into AST
 ~pub event parse.source {
