@@ -16,18 +16,15 @@ const SAMPLE_CODE =
     \\}
 ;
 
-// Event to inspect AST - returns done when complete
-~event inspect_ast { ptr: *const anyopaque }
+// Event to inspect AST - properly typed!
+const parser_impl = @import("parser");
+
+~event inspect_ast { result: parser_impl.ParseResult }
 
 ~proc inspect_ast {
-    // Cast back to ParseResult
-    const parser_impl = @import("parser");
-    const parse_result: *const parser_impl.ParseResult = @ptrCast(@alignCast(ptr));
+    std.debug.print("Parsed {} items\n", .{result.source_file.items.len});
 
-    std.debug.print("Parsed {} items\n", .{parse_result.source_file.items.len});
-
-    // Find the event and proc declarations
-    for (parse_result.source_file.items) |item| {
+    for (result.source_file.items) |item| {
         switch (item) {
             .event_decl => |event| {
                 std.debug.print("Found event: ", .{});
@@ -57,5 +54,5 @@ const SAMPLE_CODE =
 
 // Modern Koru: proc = flow composition
 ~std.parser:parse.source(source: SAMPLE_CODE, file_name: "sample.kz", allocator: std.heap.page_allocator)
-| parsed result |> inspect_ast(ptr: &result.ast)
+| parsed p |> inspect_ast(result: p.ast)
 | parse_error err |> report_error(message: err.message)
