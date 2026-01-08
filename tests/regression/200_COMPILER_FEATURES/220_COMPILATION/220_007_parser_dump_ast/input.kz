@@ -1,0 +1,35 @@
+// Test: AST dump to JSON
+//
+// Parses Koru source code and dumps the AST as JSON.
+// This enables tools to inspect parsed structure.
+
+~import "$std/parser"
+
+const std = @import("std");
+
+// Sample code to parse
+const SAMPLE =
+    \\~event hello {}
+    \\| done {}
+;
+
+// Print the full JSON
+~event print_json { json: []const u8 }
+
+~proc print_json {
+    std.debug.print("{s}\n", .{json});
+}
+
+// Report error
+~event report_error { message: []const u8 }
+
+~proc report_error {
+    std.debug.print("Error: {s}\n", .{message});
+}
+
+// Flow: parse → dump → print
+~std.parser:parse.source(source: SAMPLE, file_name: "test.kz", allocator: std.heap.page_allocator)
+| parsed p |> std.parser:dump.ast(ast: p.ast, allocator: std.heap.page_allocator)
+    | dumped d |> print_json(json: d.json)
+    | dump_error e |> report_error(message: e.message)
+| parse_error e |> report_error(message: e.message)

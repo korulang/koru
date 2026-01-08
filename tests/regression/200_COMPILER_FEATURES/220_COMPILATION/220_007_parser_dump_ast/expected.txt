@@ -1,0 +1,35 @@
+
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "event_decl",
+            "name": "hello",
+            "path": ["hello"],
+            "module": "test",
+            "input": {
+                "fields": [
+
+                ]
+            },
+            "branches": [
+                {
+                    "name": "done",
+                    "payload": {
+                        "fields": [
+
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "test.kz",
+                "line": 2,
+                "col": 0
+            }
+        }
+    ]
+}
+

@@ -18,6 +18,7 @@
 
 const std = @import("std");
 const parser_impl = @import("parser");
+const ast_serializer = @import("ast_serializer");
 
 // Re-export types for use with module:Type syntax
 // Usage: ~event my_event { result: std.parser:ParseResult }
@@ -109,8 +110,18 @@ pub const ParseResult = parser_impl.ParseResult;
     parser_module.addImport("union_collector", union_collector_module);
     parser_module.addImport("module_resolver", module_resolver_module);
 
-    // Add parser to the executable
+    // AST Serializer module - JSON serialization of AST
+    const ast_serializer_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast_serializer.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_serializer_module.addImport("ast", ast_module);
+    ast_serializer_module.addImport("parser", parser_module);
+
+    // Add modules to the executable
     exe.root_module.addImport("parser", parser_module);
+    exe.root_module.addImport("ast_serializer", ast_serializer_module);
 }
 
 // =============================================================================
@@ -139,4 +150,25 @@ pub const ParseResult = parser_impl.ParseResult;
     };
 
     return .{ .parsed = .{ .ast = result } };
+}
+
+// Serialize AST to JSON string
+~pub event dump.ast {
+    ast: parser_impl.ParseResult,
+    allocator: std.mem.Allocator
+}
+| dumped { json: []const u8 }
+| dump_error { message: []const u8 }
+
+~proc dump.ast {
+    var serializer = ast_serializer.AstSerializer.init(allocator) catch |err| {
+        return .{ .dump_error = .{ .message = @errorName(err) } };
+    };
+    defer serializer.deinit();
+
+    const json = serializer.serializeToJson(&ast.source_file) catch |err| {
+        return .{ .dump_error = .{ .message = @errorName(err) } };
+    };
+
+    return .{ .dumped = .{ .json = json } };
 }
