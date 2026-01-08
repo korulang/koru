@@ -4156,17 +4156,19 @@ fn resolveKeywordInPath(
     allocator: std.mem.Allocator,
     main_module: []const u8,
 ) !void {
-    // Skip paths that already have explicit module qualifiers
-    // ~lib_a:process() has module_qualifier="lib_a", so user explicitly chose which module
-    if (path.module_qualifier != null) return;
-
     // Only resolve single-segment paths
-    // After canonicalization, ~greet becomes module:greet (where module is the containing module)
-    // We want to check if 'greet' is a keyword and replace the module with the keyword's module
-    // This works for BOTH main module flows AND flows in imported modules
     if (path.segments.len != 1) return;
 
-    _ = main_module; // Not used anymore - keywords resolve regardless of containing module
+    // Check if path has an explicit user-provided qualifier vs canonicalization-assigned one
+    // After canonicalization, unqualified paths get main_module as their qualifier
+    // Paths like ~lib_a:process have a different qualifier (set by parser, not canonicalization)
+    if (path.module_qualifier) |qualifier| {
+        // If qualifier is NOT the main module, user explicitly chose a module - skip keyword resolution
+        // This prevents ~lib_a:process from triggering keyword collision when 'process' is ambiguous
+        if (!std.mem.eql(u8, qualifier, main_module)) {
+            return;
+        }
+    }
 
     const potential_keyword = path.segments[0];
 
@@ -5049,7 +5051,7 @@ pub fn main() !void {
 
     // Build keyword registry and resolve [keyword] events
     // This enables unqualified invocation of events marked with [keyword]
-    // Must happen AFTER canonicalization so we have canonical paths
+    // Must happen AFTER canonicalization so we have canonical paths for registration
     std.debug.print("Building keyword registry...\n", .{});
     var kw_registry = keyword_registry.KeywordRegistry.init(parse_allocator);
     defer kw_registry.deinit();
