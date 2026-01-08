@@ -256,10 +256,11 @@ const std = @import("std");
             tap_binding: ?[]const u8,  // The tap's binding (e.g., "f")
             tap_condition: ?[]const u8,  // The tap's when clause condition (string)
             tap_condition_expr: ?*ast.Expression,  // The tap's when clause parsed expression
-            mark_inserted: bool,  // True if inserted invocations should be marked (wildcard taps only)
+            mark_inserted: bool,  // Kept for API compatibility but no longer used - all invocations are marked
             tap_branch: []const u8,  // The tap's branch (e.g., "Profile", "Transition", or regular branch)
             source_event: ?[]const u8,  // Canonical source event for metatypes
         ) !ast.Continuation {
+            _ = mark_inserted;  // All invocations are now marked, so this parameter is unused
             // Check if this is a metatype tap (Profile, Transition, Audit)
             const is_metatype_tap = std.mem.eql(u8, tap_branch, "Profile") or
                                std.mem.eql(u8, tap_branch, "Transition") or
@@ -268,7 +269,31 @@ const std = @import("std");
 
             if (tap_conts.len > 0) {
                 // Case B: Splice original flow into tap's terminal points
-                final_conts = try spliceContinuations(alloc, tap_conts, original.node, original.continuations);
+                // SPECIAL CASE: If original.node is metatype_binding (from a previous metatype tap)
+                // and this is NOT a metatype tap, skip wrapping entirely to preserve the profiler.
+                // Specific taps (like koru:end -> write_footer) won't fire when profiling is active,
+                // but the profiler will correctly capture all transitions.
+                if (original.node) |orig_step| {
+                    const orig_is_metatype = orig_step == .metatype_binding;
+                    const orig_type_name: []const u8 = switch (orig_step) {
+                        .invocation => "invocation",
+                        .metatype_binding => "metatype_binding",
+                        .terminal => "terminal",
+                        else => "other",
+                    };
+                    std.debug.print("[tap] Case B check: orig_type='{s}', orig_is_metatype={}, is_metatype_tap={}, tap_branch='{s}'\n",
+                        .{orig_type_name, orig_is_metatype, is_metatype_tap, tap_branch});
+                    if (orig_is_metatype and !is_metatype_tap) {
+                        // Already wrapped by metatype tap and we're not a metatype tap - skip wrapping
+                        // Return original unchanged to preserve the profiler's wrapping
+                        std.debug.print("[tap] Skipping non-metatype tap wrap - original already has metatype_binding\n", .{});
+                        return original.*;
+                    } else {
+                        final_conts = try spliceContinuations(alloc, tap_conts, original.node, original.continuations);
+                    }
+                } else {
+                    final_conts = try spliceContinuations(alloc, tap_conts, original.node, original.continuations);
+                }
             } else {
                 // Case A: Simple void tap, resume original flow on void branch ""
                 const inner_cont = try alloc.create(ast.Continuation);
@@ -372,20 +397,18 @@ const std = @import("std");
                 }
             }
 
-            // CRITICAL: For WILDCARD taps only, mark the inserted step as inserted_by_tap
-            // to prevent transformNestedInvocations from matching it again (infinite recursion).
-            // Specific taps (e.g., "main_flow -> *") should NOT mark their insertions, allowing
-            // chained taps to work (e.g., tap on logger fires when logger is invoked from another tap).
-            if (mark_inserted) {
-                if (rewritten_step == .invocation) {
-                    var marked_inv = rewritten_step.invocation;
-                    marked_inv.inserted_by_tap = true;
-                    rewritten_step = ast.Step{ .invocation = marked_inv };
-                } else if (rewritten_step == .label_with_invocation) {
-                    var marked_lwi = rewritten_step.label_with_invocation;
-                    marked_lwi.invocation.inserted_by_tap = true;
-                    rewritten_step = ast.Step{ .label_with_invocation = marked_lwi };
-                }
+            // CRITICAL: Mark ALL tap-inserted invocations to prevent double-wrapping
+            // by transformNestedInvocations. Without this, non-wildcard taps like
+            // "koru:end -> * | done |> write_footer()" would have write_footer() wrapped
+            // AGAIN by the universal tap, causing duplicate profile/write_event calls.
+            if (rewritten_step == .invocation) {
+                var marked_inv = rewritten_step.invocation;
+                marked_inv.inserted_by_tap = true;
+                rewritten_step = ast.Step{ .invocation = marked_inv };
+            } else if (rewritten_step == .label_with_invocation) {
+                var marked_lwi = rewritten_step.label_with_invocation;
+                marked_lwi.invocation.inserted_by_tap = true;
+                rewritten_step = ast.Step{ .label_with_invocation = marked_lwi };
             }
 
             // Add @scope annotation to mark this as a scope boundary for obligation tracking.
@@ -498,6 +521,17 @@ const std = @import("std");
 
             for (continuations, 0..) |*cont, i| {
 
+                // Skip void branches ("") - these are internal plumbing from tap wrappers
+                // Metatype taps should only wrap actual event transitions, not intermediate connectors
+                if (cont.branch.len == 0) {
+                    // Don't wrap void branches, just recurse into nested continuations
+                    const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta, mark_inserted, source_event);
+                    new_conts[i] = cont.*;
+                    new_conts[i].continuations = nested.conts;
+                    if (nested.modified) any_modified = true;
+                    continue;
+                }
+
                 // Handle TERMINAL continuations (node == null)
                 // For terminals, we can INSERT the tap handler as the new node
                 if (cont.node == null) {
@@ -510,7 +544,7 @@ const std = @import("std");
                         const tap_step = tap_cont.node orelse continue;
 
                         // Create new continuation with tap as the node
-                        // The tap's nested continuations become the new nested continuations
+                        // Keep original continuations - tap step is inserted as new node
                         new_conts[i] = ast.Continuation{
                             .branch = cont.branch,
                             .binding = cont.binding,
@@ -518,7 +552,7 @@ const std = @import("std");
                             .condition_expr = cont.condition_expr,
                             .node = tap_step,
                             .indent = cont.indent,
-                            .continuations = tap_cont.continuations,
+                            .continuations = cont.continuations,
                             .location = cont.location,
                         };
                         any_modified = true;
@@ -599,23 +633,26 @@ const std = @import("std");
                         null;
 
                     if (maybe_inv) |inv| {
-                        // Skip invocations inserted by a tap (avoid infinite recursion)
-                        if (!inv.inserted_by_tap) {
-                            if (pathMatches(source_pattern, source_wildcard, &inv.path, containing_module, alloc)) {
-                                // Found a nested invocation matching source!
-                                // Build canonical source event name for metatypes
-                                const src_event = buildCanonicalName(alloc, &inv.path, containing_module) catch null;
+                        // Skip tap-inserted invocations ONLY for wildcard taps (to prevent infinite recursion)
+                        // Non-wildcard taps (like "logger -> *") can safely wrap tap-inserted invocations
+                        // because they only match specific events, enabling tap chains
+                        if (inv.inserted_by_tap and source_wildcard) {
+                            // Wildcard tap would match any invocation including its own insertions
+                            // Skip to prevent infinite recursion during AST transformation
+                        } else if (pathMatches(source_pattern, source_wildcard, &inv.path, containing_module, alloc)) {
+                            // Found a nested invocation matching source!
+                            // Build canonical source event name for metatypes
+                            const src_event = buildCanonicalName(alloc, &inv.path, containing_module) catch null;
 
-                                // Transform its continuations (what happens after it returns)
-                                const nested_result = try transformContinuations(
-                                    alloc, cont.continuations, tap_branches, is_meta, source_wildcard, src_event  // mark_inserted = source_wildcard
-                                );
-                                this_cont.continuations = nested_result.conts;
-                                if (nested_result.modified) {
-                                    any_modified = true;
-                                    matched_here = true;
-                                    std.debug.print("[tap] Wrapped NESTED invocation '{s}'\n", .{source_pattern});
-                                }
+                            // Transform its continuations (what happens after it returns)
+                            const nested_result = try transformContinuations(
+                                alloc, cont.continuations, tap_branches, is_meta, source_wildcard, src_event  // mark_inserted = source_wildcard
+                            );
+                            this_cont.continuations = nested_result.conts;
+                            if (nested_result.modified) {
+                                any_modified = true;
+                                matched_here = true;
+                                std.debug.print("[tap] Wrapped NESTED invocation '{s}'\n", .{source_pattern});
                             }
                         }
                     }
@@ -629,17 +666,23 @@ const std = @import("std");
                     containing_module, tap_branches, is_meta
                 );
 
-                // If we matched here, we need to splice deeper results into the wrapped structure
-                if (matched_here) {
-                    // The wrapped structure is: this_cont.continuations = [{ .branch="", .step=ORIGINAL, .continuations=NESTED }]
-                    // We need to update NESTED with deeper results
-                    if (this_cont.continuations.len > 0 and deeper.modified) {
+                // If we matched here, the deeper recursion found nested invocations
+                // For metatype taps, the wrapper already preserves original branches - don't splice
+                // Only splice for simple void taps where wrapper has single void continuation
+                if (matched_here and deeper.modified) {
+                    // Check if wrapper has single void branch (simple tap structure)
+                    const is_simple_void_wrapper = this_cont.continuations.len == 1 and
+                                                   this_cont.continuations[0].branch.len == 0;
+                    if (is_simple_void_wrapper) {
+                        // Simple void tap: can safely splice deeper results
                         var new_inner = try alloc.alloc(ast.Continuation, 1);
                         new_inner[0] = this_cont.continuations[0];
                         new_inner[0].continuations = deeper.conts;
                         this_cont.continuations = new_inner;
                     }
-                } else {
+                    // For metatype taps (multiple branches or non-void), don't splice
+                    // transformContinuations already wrapped the nested continuations correctly
+                } else if (!matched_here) {
                     this_cont.continuations = deeper.conts;
                 }
 

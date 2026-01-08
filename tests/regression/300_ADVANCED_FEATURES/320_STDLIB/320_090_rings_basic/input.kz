@@ -6,8 +6,8 @@
 
 const std = @import("std");
 
-// Use the ring type from $std/rings
-const Ring = std.rings.MpmcRing(u64, 16);
+// Use the ring type from $std/rings (internal Zig naming convention)
+const Ring = koru_std.rings.MpmcRing(u64, 16);
 var ring = Ring.init();
 
 // Test enqueue/dequeue with identity branches

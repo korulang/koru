@@ -39,29 +39,36 @@ var profile_file: ?std.fs.File = null;
 var first_event: bool = true;
 var previous_timestamp_ns: i128 = 0;
 var previous_event_name: []const u8 = "";
+var profiler_finished: bool = false;  // Prevents write_event from creating new file after footer
 
 // Event: Write Chrome Tracing header
 ~[comptime|runtime] event write_header {}
 | done {}
 
 ~proc write_header {
-    // Create profile file
-    profile_file = std.fs.cwd().createFile("/tmp/koru_profile.json", .{}) catch {
-        std.debug.print("ERROR: Failed to create profile file\n", .{});
-        return .{ .done = .{} };
-    };
+    // Only create file if not already created by write_event
+    // (write_event runs BEFORE write_header due to universal tap ordering)
+    if (profile_file == null) {
+        profile_file = std.fs.cwd().createFile("/tmp/koru_profile.json", .{}) catch {
+            std.debug.print("ERROR: Failed to create profile file\n", .{});
+            return .{ .done = .{} };
+        };
 
-    // Write Chrome Tracing JSON header
-    const header = "{\"traceEvents\":[\n";
-    _ = profile_file.?.write(header) catch {
-        std.debug.print("ERROR: Failed to write profile header\n", .{});
-        return .{ .done = .{} };
-    };
+        // Write Chrome Tracing JSON header
+        const header = "{\"traceEvents\":[\n";
+        _ = profile_file.?.write(header) catch {
+            std.debug.print("ERROR: Failed to write profile header\n", .{});
+            return .{ .done = .{} };
+        };
+    }
 
-    // Reset profiler state for new trace
-    first_event = true;
-    previous_timestamp_ns = 0;
-    previous_event_name = "";
+    // Initialize profiler state for new trace (only if not already started)
+    // Don't reset if previous_timestamp_ns is set - that means we already buffered an event
+    // (the universal tap wraps koru:start -> done BEFORE write_header fires)
+    if (previous_timestamp_ns == 0) {
+        first_event = true;
+        previous_event_name = "";
+    }
     return .{ .done = .{} };
 }
 
@@ -73,6 +80,26 @@ var previous_event_name: []const u8 = "";
 | done {}
 
 ~proc write_event {
+    // Don't create new file after profiler has finished (prevents truncating data)
+    if (profiler_finished) {
+        return .{ .done = .{} };
+    }
+
+    // Auto-create file if needed (handles case where universal tap's write_event
+    // fires BEFORE koru:start tap's write_header)
+    if (profile_file == null) {
+        profile_file = std.fs.cwd().createFile("/tmp/koru_profile.json", .{}) catch {
+            std.debug.print("ERROR: Failed to create profile file in write_event\n", .{});
+            return .{ .done = .{} };
+        };
+        // Write JSON header
+        const header = "{\"traceEvents\":[\n";
+        _ = profile_file.?.write(header) catch {
+            std.debug.print("ERROR: Failed to write profile header\n", .{});
+            return .{ .done = .{} };
+        };
+        first_event = true;
+    }
     const file = profile_file orelse return .{ .done = .{} };
 
     // First event: just buffer it, don't write yet
@@ -168,6 +195,10 @@ var previous_event_name: []const u8 = "";
 
     file.close();
 
+    // Mark profiler as finished FIRST - prevents write_event from creating new file
+    // (universal tap will fire for write_footer's completion after this returns)
+    profiler_finished = true;
+
     // Reset profiler state
     profile_file = null;
     first_event = true;
@@ -183,14 +214,16 @@ var previous_event_name: []const u8 = "";
 | done |> write_header()
     | done |> _
 
-// TAP: Every transition - write event
-// TODO: [opaque] prevents infinite recursion (profiler won't observe itself)
-~tap(* -> *)
-| Profile p |> write_event(source: p.source, timestamp_ns: p.timestamp_ns)
-    | done |> _
-
 // TAP: Program end - write footer and close
+// NOTE: This tap MUST come BEFORE the universal tap so write_footer gets profiled
 // TODO: [opaque] annotation not yet supported in ~tap()
 ~tap(koru:end -> *)
 | done |> write_footer()
+    | done |> _
+
+// TAP: Every transition - write event
+// NOTE: Universal tap runs LAST so it wraps all other tap-inserted calls (like write_footer)
+// TODO: [opaque] prevents infinite recursion (profiler won't observe itself)
+~tap(* -> *)
+| Profile p |> write_event(source: p.source, timestamp_ns: p.timestamp_ns)
     | done |> _

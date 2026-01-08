@@ -942,6 +942,7 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
             return .{ .label_with_invocation = .{
                 .label = try allocator.dupe(u8, lwi.label),
                 .invocation = try cloneInvocation(allocator, &lwi.invocation),
+                .is_declaration = lwi.is_declaration,
             }};
         },
         .label_jump => |lj| {

@@ -30,6 +30,39 @@ const FlowChecker = flow_checker.FlowChecker;
 
 const version = "0.1.0";
 
+/// Check if a word is a Zig keyword (requires @"..." escaping in enums)
+fn isZigKeyword(word: []const u8) bool {
+    const keywords = [_][]const u8{
+        "error",      "type",        "async",     "await",       "suspend",  "resume",
+        "try",        "catch",       "if",        "else",        "switch",   "while",
+        "for",        "break",       "continue",  "return",      "defer",    "errdefer",
+        "test",       "pub",         "export",    "extern",      "packed",   "inline",
+        "noinline",   "comptime",    "nosuspend", "volatile",    "allowzero",
+        "align",      "linksection", "callconv",  "noalias",
+        "struct",     "enum",        "union",     "opaque",      "fn",       "const",
+        "var",        "anyframe",    "anytype",   "anyerror",    "unreachable",
+        "undef",      "null",        "true",      "false",       "and",      "or",
+        "orelse",     "threadlocal",
+    };
+    for (keywords) |kw| {
+        if (std.mem.eql(u8, word, kw)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Write a branch name, escaping Zig keywords with @"..."
+fn writeBranchName(writer: anytype, name: []const u8) !void {
+    if (isZigKeyword(name)) {
+        try writer.writeAll("@\"");
+        try writer.writeAll(name);
+        try writer.writeAll("\"");
+    } else {
+        try writer.writeAll(name);
+    }
+}
+
 /// Compiler configuration - captures all flags and environment for backend embedding
 const CompilerConfig = struct {
     allocator: std.mem.Allocator,
@@ -572,7 +605,8 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                 try writer.writeAll("() void {\n");
 
                 // Call handler from backend_output with full module path
-                try writer.writeAll("        const result = ");
+                // Use __thunk_result to avoid shadowing user bindings like |result|
+                try writer.writeAll("        const __thunk_result = ");
                 if (flow.invocation.path.module_qualifier) |mq| {
                     // Module-qualified event: backend_output.koru_<module>.<event>_event
                     try writer.writeAll("backend_output.koru_");
@@ -620,11 +654,11 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                 }
 
                 try writer.writeAll(" });\n");
-                try writer.writeAll("        switch (result) {\n");
+                try writer.writeAll("        switch (__thunk_result) {\n");
 
                 for (flow.continuations) |cont| {
                     try writer.writeAll("            .");
-                    try writer.writeAll(cont.branch);
+                    try writeBranchName(writer, cont.branch);
                     try writer.writeAll(" => ");
 
                     if (cont.binding) |binding| {
@@ -634,6 +668,13 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                     }
 
                     try writer.writeAll("{\n");
+
+                    // Suppress unused binding warning
+                    if (cont.binding) |binding| {
+                        try writer.writeAll("                _ = &");
+                        try writer.writeAll(binding);
+                        try writer.writeAll(";\n");
+                    }
 
                     if (cont.node) |step| {
                         try writer.writeAll("                ");
@@ -676,7 +717,28 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                                         try writer.writeAll(arg.name);
                                     }
                                     try writer.writeAll(" = ");
-                                    try writer.writeAll(arg.value);
+                                    // Heuristic: values that are Koru syntax need to be stringified
+                                    // - Struct literals: { ... }
+                                    // - Range literals: 0..3
+                                    // Other values (identifiers, field access) should remain as expressions
+                                    const needs_quoting = arg.value.len > 0 and
+                                        (arg.value[0] == '{' or std.mem.indexOf(u8, arg.value, "..") != null);
+                                    if (needs_quoting) {
+                                        try writer.writeAll("\"");
+                                        for (arg.value) |c| {
+                                            switch (c) {
+                                                '\n' => try writer.writeAll("\\n"),
+                                                '\r' => try writer.writeAll("\\r"),
+                                                '\t' => try writer.writeAll("\\t"),
+                                                '\\' => try writer.writeAll("\\\\"),
+                                                '"' => try writer.writeAll("\\\""),
+                                                else => try writer.writeByte(c),
+                                            }
+                                        }
+                                        try writer.writeAll("\"");
+                                    } else {
+                                        try writer.writeAll(arg.value);
+                                    }
                                 }
                                 try writer.writeAll(" });\n");
                             },
@@ -4094,6 +4156,10 @@ fn resolveKeywordInPath(
     allocator: std.mem.Allocator,
     main_module: []const u8,
 ) !void {
+    // Skip paths that already have explicit module qualifiers
+    // ~lib_a:process() has module_qualifier="lib_a", so user explicitly chose which module
+    if (path.module_qualifier != null) return;
+
     // Only resolve single-segment paths
     // After canonicalization, ~greet becomes module:greet (where module is the containing module)
     // We want to check if 'greet' is a keyword and replace the module with the keyword's module

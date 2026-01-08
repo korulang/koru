@@ -1,0 +1,16 @@
+// Test: Empty identity branches should NOT generate captures
+//
+// BUG: When | full is NESTED inside another branch, it generates
+//      .full => |full| { ... } instead of .full => { ... }
+//
+// This test replicates the exact structure from $std/rings.
+
+~import "$std/io"
+~import "$app/test_lib"
+
+// Nested structure like rings: | ok |> inner_call() | full |>
+~app.test_lib.ops:try_op()
+| ok |> app.test_lib.ops:try_op()
+    | ok |> std.io:print.ln("Both ok!")
+    | full |> std.io:print.ln("Inner full!")
+| full |> std.io:print.ln("Outer full!")
