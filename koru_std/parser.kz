@@ -19,6 +19,10 @@
 const std = @import("std");
 const parser_impl = @import("parser");
 
+// Re-export types for use with module:Type syntax
+// Usage: ~event my_event { result: std.parser:ParseResult }
+pub const ParseResult = parser_impl.ParseResult;
+
 // =============================================================================
 // BUILD REQUIREMENTS - Include parser module in output binary
 // =============================================================================

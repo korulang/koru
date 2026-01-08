@@ -1,0 +1,43 @@
+// Test: Reference types from $std imports using module:Type syntax
+//
+// When we import a standard library module that exposes Zig types,
+// we should be able to reference those types in event signatures
+// using the same module:Type syntax as local imports.
+//
+// Example: std.parser:ParseResult should resolve to parser_impl.ParseResult
+//
+// This enables type-safe integration with runtime libraries without
+// needing a redundant Zig @import.
+
+~import "$std/parser"
+
+const std = @import("std");
+
+// Event that processes a parse result - uses TYPE from std import
+~event process_ast {
+    result: std.parser:ParseResult,
+}
+| processed { item_count: usize }
+
+~proc process_ast {
+    return .{ .processed = .{ .item_count = result.source_file.items.len }};
+}
+
+// Event to report count
+~event report { count: usize }
+
+~proc report {
+    std.debug.print("AST has {} items\n", .{count});
+}
+
+// Sample code to parse
+const SAMPLE =
+    \\~event test {}
+    \\| done {}
+;
+
+// Flow: parse → process → report
+~std.parser:parse.source(source: SAMPLE, file_name: "test.kz", allocator: std.heap.page_allocator)
+| parsed p |> process_ast(result: p.ast)
+    | processed r |> report(count: r.item_count)
+| parse_error |> report(count: 0)

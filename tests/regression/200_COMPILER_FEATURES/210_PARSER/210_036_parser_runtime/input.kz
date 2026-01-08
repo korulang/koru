@@ -16,10 +16,8 @@ const SAMPLE_CODE =
     \\}
 ;
 
-// Event to inspect AST - properly typed!
-const parser_impl = @import("parser");
-
-~event inspect_ast { result: parser_impl.ParseResult }
+// Event to inspect AST - using module:Type syntax!
+~event inspect_ast { result: std.parser:ParseResult }
 
 ~proc inspect_ast {
     std.debug.print("Parsed {} items\n", .{result.source_file.items.len});
