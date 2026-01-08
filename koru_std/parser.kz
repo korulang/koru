@@ -51,13 +51,6 @@ const parser_impl = @import("parser");
         .optimize = optimize,
     });
 
-    // Annotation parser - parses parametrized annotations
-    const annotation_parser_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/annotation_parser.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
     // Type registry - type metadata tracking
     const type_registry_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/type_registry.zig" },
@@ -83,6 +76,21 @@ const parser_impl = @import("parser");
     });
     union_collector_module.addImport("ast", ast_module);
 
+    // Config module - project configuration
+    const config_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/config.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Module resolver - resolves import paths
+    const module_resolver_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/module_resolver.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    module_resolver_module.addImport("config", config_module);
+
     // Parser module - the main parser with all its dependencies
     const parser_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
@@ -95,6 +103,7 @@ const parser_impl = @import("parser");
     parser_module.addImport("type_registry", type_registry_module);
     parser_module.addImport("expression_parser", expression_parser_module);
     parser_module.addImport("union_collector", union_collector_module);
+    parser_module.addImport("module_resolver", module_resolver_module);
 
     // Add parser to the executable
     exe.root_module.addImport("parser", parser_module);

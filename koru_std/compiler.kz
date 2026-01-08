@@ -1247,7 +1247,15 @@ const joinPathAlloc = struct {
             error.ProcWithoutEvent => "Proc without matching event",
             error.SubflowWithoutEvent => "Subflow without matching event",
             error.DuplicateBranchHandler => "Duplicate branch handler at same indentation level",
-            else => "Structural validation failed",
+            error.ValidationFailed => "Validation failed (see errors above)",
+            error.InvalidPath => "Invalid path",
+            error.DuplicateLabel => "Duplicate label defined",
+            error.UnknownLabel => "Unknown label referenced",
+            error.DeprecatedInlineFlowPath => "Deprecated inline flow path",
+            error.LabelRequiresParameters => "Label requires parameters",
+            error.LabelDoesNotAcceptParameters => "Label does not accept parameters",
+            error.InvalidBranchConstructor => "Invalid branch constructor",
+            else => "Structural validation failed (unknown error)",
         };
 
         // Return failed branch - stops the pipeline!

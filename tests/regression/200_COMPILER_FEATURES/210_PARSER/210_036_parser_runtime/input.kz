@@ -16,7 +16,7 @@ const SAMPLE_CODE =
     \\}
 ;
 
-// Void event to inspect AST - uses opaque pointer to avoid type issues
+// Event to inspect AST - returns done when complete
 ~event inspect_ast { ptr: *const anyopaque }
 
 ~proc inspect_ast {
@@ -48,25 +48,14 @@ const SAMPLE_CODE =
     }
 }
 
-// Void event to report error
+// Event to report error - returns done when complete
 ~event report_error { message: []const u8 }
 
 ~proc report_error {
     std.debug.print("Parse error: {s}\n", .{message});
 }
 
-~event main {}
-| done {}
-
-~proc main {
-    // Parse the sample code using page_allocator
-    // Use fully qualified event name
-    ~std.parser:parse.source(source: SAMPLE_CODE, file_name: "sample.kz", allocator: std.heap.page_allocator)
-    | parsed result |> inspect_ast(ptr: &result.ast)
-    | parse_error err |> report_error(message: err.message)
-
-    return .{ .done = .{} };
-}
-
-~main()
-| done |> _
+// Modern Koru: proc = flow composition
+~std.parser:parse.source(source: SAMPLE_CODE, file_name: "sample.kz", allocator: std.heap.page_allocator)
+| parsed result |> inspect_ast(ptr: &result.ast)
+| parse_error err |> report_error(message: err.message)

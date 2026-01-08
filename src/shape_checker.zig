@@ -1055,10 +1055,30 @@ pub const ShapeChecker = struct {
             return;
         }
 
-        // Regular inline flow without branch constructors - this is a deprecated code path
-        // Modern procs always use super_shapes for union returns
-        // This path is unreachable in practice, would need source_file parameter to validate properly
-        return error.DeprecatedInlineFlowPath;
+        // Inline flow without super_shape - valid if continuations handle the branches
+        // This is the case for fire-and-forget flows inside procs that invoke other events
+        // Example:
+        //   ~parse.source(...)
+        //   | parsed result |> handle_success(result)
+        //   | parse_error err |> handle_error(err)
+        //
+        // We still need to validate the event exists and branches are covered
+        const event_name = try self.pathToString(flow.invocation.path);
+        defer self.allocator.free(event_name);
+
+        const event_info = self.events.get(event_name) orelse {
+            return error.UnknownEvent;
+        };
+
+        // Check branch coverage for the inline flow
+        const covered = try self.checkBranchCoverage(
+            event_info.decl.branches,
+            flow.continuations,
+        );
+        if (!covered) {
+            return error.IncompleteBranchCoverage;
+        }
+        _ = proc_event;
     }
 
     /// Check for duplicate branch handlers at the same level (recursively)
