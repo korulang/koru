@@ -1251,14 +1251,20 @@ fn emitSubflowContinuationsWithDepth(
                                 }
                             }
                 
-                            if (needs_binding) {
+                            // Check if branch has payload fields - empty payloads shouldn't be captured
+                            const has_payload_fields = if (source_event_name) |event_name|
+                                branchHasPayloadFieldsFromItems(all_items, event_name, cont.branch, main_module_name)
+                            else
+                                true;
+
+                            if (needs_binding and has_payload_fields) {
                                 try emitter.write("|");
                                 try writeBranchName(emitter, binding_name);
                                 try emitter.write("| ");
                             }
-                
+
                             try emitter.write("{\n");
-                
+
                             // Use emitContinuationBody which handles labels!
                             var deeper_indent_buf: [128]u8 = undefined;
                             @memcpy(deeper_indent_buf[0..indent.len], indent);
@@ -1316,8 +1322,14 @@ fn emitSubflowContinuationsWithDepth(
                 try writeBranchName(emitter, group.branch_name);
                 try emitter.write(" => ");
 
+                // Check if branch has payload fields - empty payloads shouldn't be captured
+                const has_payload_fields = if (source_event_name) |event_name|
+                    branchHasPayloadFieldsFromItems(all_items, event_name, group.branch_name, main_module_name)
+                else
+                    true;
+
                 // Add binding if needed
-                if (needs_binding) {
+                if (needs_binding and has_payload_fields) {
                     try emitter.write("|");
                     try writeBranchName(emitter, binding_name);
                     try emitter.write("| ");
@@ -1450,7 +1462,13 @@ fn emitSubflowContinuationsWithDepth(
                 needs_binding = bindingIsUsedInContinuations(actual_binding, cont.continuations);
             }
 
-            if (needs_binding) {
+            // Check if branch has payload fields - empty payloads shouldn't be captured
+            const has_payload_fields = if (source_event_name) |event_name|
+                branchHasPayloadFieldsFromItems(all_items, event_name, cont.branch, main_module_name)
+            else
+                true;
+
+            if (needs_binding and has_payload_fields) {
                 try emitter.write("|");
                 try writeBranchName(emitter, actual_binding);
                 try emitter.write("| ");
@@ -1745,8 +1763,14 @@ fn emitSubflowContinuationsWithDepth(
             try writeBranchName(emitter, group.branch_name);
             try emitter.write(" => ");
 
+            // Check if branch has payload fields - empty payloads shouldn't be captured
+            const has_payload_fields = if (source_event_name) |event_name|
+                branchHasPayloadFieldsFromItems(all_items, event_name, group.branch_name, main_module_name)
+            else
+                true;
+
             // Add binding if needed
-            if (needs_binding) {
+            if (needs_binding and has_payload_fields) {
                 try emitter.write("|");
                 try writeBranchName(emitter, actual_binding);
                 try emitter.write("| ");
@@ -2423,26 +2447,81 @@ fn branchHasPayloadFields(ctx: *EmissionContext, event_name: []const u8, branch_
 
     const items = ctx.ast_items.?;
 
-    // Find the event declaration by canonical name
+    // Use the standalone function which handles module recursion
+    return branchHasPayloadFieldsFromItems(items, event_name, branch_name, ctx.main_module_name);
+}
+
+/// Check if a branch has payload fields (standalone version for subflow emission)
+/// This variant takes items directly instead of EmissionContext, for use in
+/// emitSubflowContinuationsWithDepth which doesn't have a full context.
+/// event_name is in canonical form "module:event.path" (e.g., "app.test_lib.ops:try_op")
+fn branchHasPayloadFieldsFromItems(
+    items: []const ast.Item,
+    event_name: []const u8,
+    branch_name: []const u8,
+    main_module_name: ?[]const u8,
+) bool {
+    _ = main_module_name; // Not needed for path-based lookup
+
+    // Parse the event name to extract event segments (part after colon)
+    // Format: "module.path:event.name" or just "event.name"
+    var event_segments_str: []const u8 = event_name;
+
+    if (std.mem.indexOf(u8, event_name, ":")) |colon_pos| {
+        event_segments_str = event_name[colon_pos + 1 ..];
+    }
+
+    // Split event segments by dots
+    var segments_buf: [16][]const u8 = undefined;
+    var segment_count: usize = 0;
+    var iter = std.mem.splitScalar(u8, event_segments_str, '.');
+    while (iter.next()) |seg| {
+        if (segment_count < segments_buf.len) {
+            segments_buf[segment_count] = seg;
+            segment_count += 1;
+        }
+    }
+    const event_segments = segments_buf[0..segment_count];
+
+    // Search all items recursively for an event with matching segments
+    // This is a conservative search that finds the event regardless of module nesting
+    return branchHasPayloadFieldsSearchAll(items, event_segments, branch_name);
+}
+
+/// Search all items (and nested modules) for an event by segments
+fn branchHasPayloadFieldsSearchAll(
+    items: []const ast.Item,
+    event_segments: []const []const u8,
+    branch_name: []const u8,
+) bool {
     for (items) |item| {
         if (item == .event_decl) {
-            const event_decl = item.event_decl;
-            // Build canonical name from path
-            const canonical = buildCanonicalEventName(&event_decl.path, ctx.allocator, ctx.main_module_name) catch return true;
-            defer ctx.allocator.free(canonical);
-
-            if (std.mem.eql(u8, canonical, event_name)) {
-                // Found the event, now check if the specific branch has payload fields
-                for (event_decl.branches) |branch| {
-                    if (std.mem.eql(u8, branch.name, branch_name)) {
-                        return branch.payload.fields.len > 0;
+            const event = item.event_decl;
+            // Check if segments match
+            if (event.path.segments.len == event_segments.len) {
+                var matches = true;
+                for (event.path.segments, 0..) |seg, i| {
+                    if (!std.mem.eql(u8, seg, event_segments[i])) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) {
+                    // Found the event - check if branch has payload
+                    for (event.branches) |branch| {
+                        if (std.mem.eql(u8, branch.name, branch_name)) {
+                            return branch.payload.fields.len > 0;
+                        }
                     }
                 }
             }
+        } else if (item == .module_decl) {
+            // Recurse into modules
+            const result = branchHasPayloadFieldsSearchAll(item.module_decl.items, event_segments, branch_name);
+            if (!result) return false; // Found with empty payload
         }
     }
-
-    return true; // Conservative: assume has fields if branch not found
+    return true; // Conservative: assume has fields if not found
 }
 
 /// Emit an invocation (const result = event.handler(...))
