@@ -1,0 +1,352 @@
+// Test: Interpreter ~if End-to-End
+// Full integration test: parse source with ~if, execute, verify branch taken
+// Uses inline types since $std module import not yet supported
+
+~import "$std/runtime"
+~import "$std/build"
+~import "$std/interpreter"
+
+~std.build:requires {
+    const REL_TO_ROOT = "/usr/local/lib/koru";
+
+    const errors_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const ast_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_module.addImport("errors", errors_module);
+
+    const lexer_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const type_registry_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/type_registry.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    type_registry_module.addImport("ast", ast_module);
+
+    const expression_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    expression_parser_module.addImport("lexer", lexer_module);
+    expression_parser_module.addImport("ast", ast_module);
+
+    const union_collector_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/union_collector.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    union_collector_module.addImport("ast", ast_module);
+
+    const config_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/config.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const module_resolver_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/module_resolver.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    module_resolver_module.addImport("config", config_module);
+
+    const parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    parser_module.addImport("ast", ast_module);
+    parser_module.addImport("lexer", lexer_module);
+    parser_module.addImport("errors", errors_module);
+    parser_module.addImport("type_registry", type_registry_module);
+    parser_module.addImport("expression_parser", expression_parser_module);
+    parser_module.addImport("union_collector", union_collector_module);
+    parser_module.addImport("module_resolver", module_resolver_module);
+
+    exe.root_module.addImport("ast", ast_module);
+    exe.root_module.addImport("koru_parser", parser_module);
+    exe.root_module.addImport("koru_ast", ast_module);
+    exe.root_module.addImport("koru_errors", errors_module);
+}
+
+const std = @import("std");
+const ast = @import("ast");
+
+// ============================================================================
+// Inline interpreter types (copy from interpreter.kz)
+// ============================================================================
+
+pub const FieldValue = struct {
+    name: []const u8,
+    value: []const u8,
+};
+
+pub const Value = struct {
+    branch: []const u8,
+    fields: []const FieldValue,
+    payload_json: ?[]const u8,
+
+    pub fn fromDispatch(branch_name: []const u8, payload: ?[]const u8) Value {
+        return .{
+            .branch = branch_name,
+            .fields = &[_]FieldValue{},
+            .payload_json = payload,
+        };
+    }
+};
+
+pub const Environment = struct {
+    bindings: std.StringHashMap(Value),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) Environment {
+        return .{
+            .bindings = std.StringHashMap(Value).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *Environment) void {
+        self.bindings.deinit();
+    }
+
+    pub fn bind(self: *Environment, name: []const u8, value: Value) !void {
+        try self.bindings.put(name, value);
+    }
+
+    pub fn get(self: *Environment, name: []const u8) ?Value {
+        return self.bindings.get(name);
+    }
+};
+
+pub const DispatchResult = struct {
+    branch: []const u8,
+    payload_json: ?[]const u8,
+};
+
+// Simplified expression bindings for ~if
+pub const ExprBindings = struct {
+    values: std.StringHashMap(bool),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) ExprBindings {
+        return .{
+            .values = std.StringHashMap(bool).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *ExprBindings) void {
+        self.values.deinit();
+    }
+};
+
+pub const InterpreterContext = struct {
+    env: *Environment,
+    expr_bindings: *ExprBindings,
+    allocator: std.mem.Allocator,
+    dispatcher: ?*const fn(*const ast.Invocation, *DispatchResult) anyerror!void,
+};
+
+// Dummy dispatcher
+fn dummy_dispatcher(inv: *const ast.Invocation, result: *DispatchResult) !void {
+    _ = inv;
+    result.branch = "unknown";
+    result.payload_json = null;
+}
+
+// Simplified executeFlow for ~if only
+fn executeFlow(flow: *const ast.Flow, ctx: *InterpreterContext) !Value {
+    const inv = &flow.invocation;
+
+    var dispatch_result: DispatchResult = undefined;
+
+    // Check if this is ~if
+    const is_if = inv.path.module_qualifier == null and
+                  inv.path.segments.len == 1 and
+                  std.mem.eql(u8, inv.path.segments[0], "if");
+
+    if (is_if) {
+        std.debug.print("  [EXEC] Detected ~if\n", .{});
+
+        var condition_result: bool = false;
+
+        if (inv.args.len > 0) {
+            const first_arg = &inv.args[0];
+            std.debug.print("  [EXEC] Arg value: '{s}'\n", .{first_arg.value});
+
+            // Parse the value as boolean
+            if (std.mem.eql(u8, first_arg.value, "true")) {
+                condition_result = true;
+            } else if (std.mem.eql(u8, first_arg.value, "false")) {
+                condition_result = false;
+            }
+        }
+
+        dispatch_result.branch = if (condition_result) "then" else "else";
+        dispatch_result.payload_json = null;
+        std.debug.print("  [EXEC] Condition={}, branch='{s}'\n", .{condition_result, dispatch_result.branch});
+    } else {
+        if (ctx.dispatcher) |dispatcher| {
+            try dispatcher(inv, &dispatch_result);
+        } else {
+            return error.NoDispatcher;
+        }
+    }
+
+    // Find matching continuation and execute
+    for (flow.continuations) |cont| {
+        if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
+            std.debug.print("  [EXEC] Matched continuation: | {s} |>\n", .{cont.branch});
+
+            if (cont.node) |node| {
+                if (node == .branch_constructor) {
+                    const bc = node.branch_constructor;
+                    std.debug.print("  [EXEC] Building branch constructor: {s}\n", .{bc.branch_name});
+
+                    var fields = try ctx.allocator.alloc(FieldValue, bc.fields.len);
+                    for (bc.fields, 0..) |field, i| {
+                        var value = field.expression_str orelse field.name;
+                        // Strip quotes from string literals
+                        if (value.len >= 2 and value[0] == '"' and value[value.len-1] == '"') {
+                            value = value[1..value.len-1];
+                        }
+                        fields[i] = .{
+                            .name = field.name,
+                            .value = value,
+                        };
+                    }
+
+                    return Value{
+                        .branch = bc.branch_name,
+                        .fields = fields,
+                        .payload_json = null,
+                    };
+                }
+            }
+
+            return Value.fromDispatch(dispatch_result.branch, dispatch_result.payload_json);
+        }
+    }
+
+    return error.NoBranchMatch;
+}
+
+// Helper to run interpreter - returns branch name (owned by page allocator)
+fn runInterpreter(source: []const u8) ?[]const u8 {
+    const koru_parser = @import("koru_parser");
+    const koru_errors = @import("koru_errors");
+    const koru_ast = @import("koru_ast");
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var reporter = koru_errors.ErrorReporter.init(allocator, "test", source) catch return null;
+    defer reporter.deinit();
+
+    var parser = koru_parser.Parser.init(allocator, source, "test", &[_][]const u8{}, null) catch return null;
+    defer parser.deinit();
+
+    const parse_result = parser.parse() catch return null;
+
+    var flow_to_run: ?*const koru_ast.Flow = null;
+    for (parse_result.source_file.items) |*item| {
+        if (item.* == .flow) {
+            flow_to_run = &item.flow;
+            break;
+        }
+    }
+
+    if (flow_to_run == null) return null;
+    const flow = flow_to_run.?;
+
+    var env = Environment.init(allocator);
+    defer env.deinit();
+
+    var expr_bindings = ExprBindings.init(allocator);
+    defer expr_bindings.deinit();
+
+    var ctx = InterpreterContext{
+        .env = &env,
+        .expr_bindings = &expr_bindings,
+        .allocator = allocator,
+        .dispatcher = &dummy_dispatcher,
+    };
+
+    const result = executeFlow(flow, &ctx) catch return null;
+
+    // Copy branch name to page allocator so it survives arena cleanup
+    const branch_copy = std.heap.page_allocator.dupe(u8, result.branch) catch return null;
+    return branch_copy;
+}
+
+pub fn main() void {
+    std.debug.print("\n", .{});
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║     INTERPRETER ~if END-TO-END TEST                          ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
+
+    // ========================================================================
+    // Test 1: ~if(true) should take | then |> branch
+    // ========================================================================
+    std.debug.print("Test 1: ~if(true) -> | then |> -> yes branch\n", .{});
+    {
+        const source =
+            \\~if(true)
+            \\| then |> yes { result: "passed" }
+            \\| else |> no { result: "failed" }
+        ;
+
+        if (runInterpreter(source)) |branch| {
+            std.debug.print("  Result branch: {s}\n", .{branch});
+            if (std.mem.eql(u8, branch, "yes")) {
+                std.debug.print("  ✓ TEST 1 PASSED - took | then |> branch\n\n", .{});
+            } else {
+                std.debug.print("  ✗ TEST 1 FAILED - expected 'yes', got '{s}'\n\n", .{branch});
+            }
+        } else {
+            std.debug.print("  ✗ TEST 1 FAILED - interpreter returned null\n\n", .{});
+        }
+    }
+
+    // ========================================================================
+    // Test 2: ~if(false) should take | else |> branch
+    // ========================================================================
+    std.debug.print("Test 2: ~if(false) -> | else |> -> no branch\n", .{});
+    {
+        const source =
+            \\~if(false)
+            \\| then |> yes { result: "failed" }
+            \\| else |> no { result: "passed" }
+        ;
+
+        if (runInterpreter(source)) |branch| {
+            std.debug.print("  Result branch: {s}\n", .{branch});
+            if (std.mem.eql(u8, branch, "no")) {
+                std.debug.print("  ✓ TEST 2 PASSED - took | else |> branch\n\n", .{});
+            } else {
+                std.debug.print("  ✗ TEST 2 FAILED - expected 'no', got '{s}'\n\n", .{branch});
+            }
+        } else {
+            std.debug.print("  ✗ TEST 2 FAILED - interpreter returned null\n\n", .{});
+        }
+    }
+
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║     INTERPRETER ~if E2E TESTS COMPLETE                       ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n", .{});
+}

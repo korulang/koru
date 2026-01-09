@@ -1,0 +1,26 @@
+
+╔══════════════════════════════════════════════════════════════╗
+║     INTERPRETER ~if END-TO-END TEST                          ║
+╚══════════════════════════════════════════════════════════════╝
+
+Test 1: ~if(true) -> | then |> -> yes branch
+  [EXEC] Detected ~if
+  [EXEC] Arg value: 'true'
+  [EXEC] Condition=true, branch='then'
+  [EXEC] Matched continuation: | then |>
+  [EXEC] Building branch constructor: yes
+  Result branch: yes
+  ✓ TEST 1 PASSED - took | then |> branch
+
+Test 2: ~if(false) -> | else |> -> no branch
+  [EXEC] Detected ~if
+  [EXEC] Arg value: 'false'
+  [EXEC] Condition=false, branch='else'
+  [EXEC] Matched continuation: | else |>
+  [EXEC] Building branch constructor: no
+  Result branch: no
+  ✓ TEST 2 PASSED - took | else |> branch
+
+╔══════════════════════════════════════════════════════════════╗
+║     INTERPRETER ~if E2E TESTS COMPLETE                       ║
+╚══════════════════════════════════════════════════════════════╝
