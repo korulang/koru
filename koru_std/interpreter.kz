@@ -114,82 +114,20 @@ pub const FieldValue = struct {
 
 pub const Value = struct {
     branch: []const u8,           // Which branch was taken/constructed
-    fields: []const FieldValue,   // Structured fields (from branch constructor)
-    payload_json: ?[]const u8,    // Raw payload from dispatch (if no fields)
+    fields: []const FieldValue,   // Structured fields (direct from dispatcher - no JSON!)
 
     pub fn empty(branch_name: []const u8) Value {
         return .{
             .branch = branch_name,
             .fields = &[_]FieldValue{},
-            .payload_json = null,
         };
     }
 
-    pub fn fromDispatch(branch_name: []const u8, payload: ?[]const u8, allocator: std.mem.Allocator) Value {
-        if (payload) |json_str| {
-            // Parse JSON payload into fields
-            var fields_list = std.ArrayList(FieldValue).init(allocator);
-
-            // Simple JSON object parser: {"key": value, ...}
-            // We look for "key": patterns and extract values
-            var i: usize = 0;
-            while (i < json_str.len) : (i += 1) {
-                // Find opening quote for key
-                if (json_str[i] == '"') {
-                    const key_start = i + 1;
-                    i += 1;
-                    // Find closing quote for key
-                    while (i < json_str.len and json_str[i] != '"') : (i += 1) {}
-                    const key_end = i;
-                    const key = json_str[key_start..key_end];
-
-                    // Skip to colon and whitespace
-                    i += 1;
-                    while (i < json_str.len and (json_str[i] == ':' or json_str[i] == ' ')) : (i += 1) {}
-
-                    // Extract value (until comma or closing brace)
-                    const val_start = i;
-                    const in_string = json_str[i] == '"';
-                    if (in_string) i += 1;
-
-                    while (i < json_str.len) : (i += 1) {
-                        if (in_string) {
-                            if (json_str[i] == '"') break;
-                        } else {
-                            if (json_str[i] == ',' or json_str[i] == '}') break;
-                        }
-                    }
-                    const val_end = i;
-                    if (in_string) {
-                        // Include closing quote, then strip both quotes
-                        const val_with_quotes = json_str[val_start..val_end + 1];
-                        const val = if (val_with_quotes.len >= 2)
-                            val_with_quotes[1..val_with_quotes.len - 1]
-                        else
-                            val_with_quotes;
-
-                        fields_list.append(.{ .name = key, .value = val }) catch continue;
-                    } else {
-                        // Trim trailing whitespace from value
-                        var trim_end = val_end;
-                        while (trim_end > val_start and json_str[trim_end - 1] == ' ') trim_end -= 1;
-                        const val = json_str[val_start..trim_end];
-                        fields_list.append(.{ .name = key, .value = val }) catch continue;
-                    }
-                }
-            }
-
-            return .{
-                .branch = branch_name,
-                .fields = fields_list.toOwnedSlice() catch &[_]FieldValue{},
-                .payload_json = payload,
-            };
-        }
-
+    /// Create a Value from dispatcher results - direct field handoff, zero parsing!
+    pub fn fromDispatch(branch_name: []const u8, fields: []const FieldValue) Value {
         return .{
             .branch = branch_name,
-            .fields = &[_]FieldValue{},
-            .payload_json = payload,
+            .fields = fields,
         };
     }
 };
@@ -228,7 +166,7 @@ pub const Environment = struct {
 
 pub const DispatchResult = struct {
     branch: []const u8,
-    payload_json: ?[]const u8,
+    fields: []const FieldValue,  // Direct field values - NO JSON overhead!
 };
 
 // ============================================================================
@@ -722,9 +660,8 @@ fn evaluateExpr(expr_str: []const u8, env: *Environment, allocator: std.mem.Allo
                     return fv.value;
                 }
             }
-            // Field not in explicit fields - check payload_json
-            // For now, return the field name as placeholder
-            // TODO: Parse payload_json to extract field
+            // Field not found in dispatcher-provided fields
+            // Return placeholder - dispatcher should have included this field
             return try std.fmt.allocPrint(allocator, "<{s}.{s}>", .{binding_name, field_name});
         }
         return try std.fmt.allocPrint(allocator, "<unbound:{s}>", .{binding_name});
@@ -819,7 +756,7 @@ fn executeFlow(
 
         // Set the branch based on condition result
         dispatch_result.branch = if (condition_result) "then" else "else";
-        dispatch_result.payload_json = null;
+        dispatch_result.fields = &[_]FieldValue{};
         std.debug.print("[INTERPRETER] ~if taking branch: | {s} |>\n", .{dispatch_result.branch});
     } else {
         // Normal dispatch for other events
@@ -837,8 +774,7 @@ fn executeFlow(
             if (cont.binding) |binding_name| {
                 const bound_value = Value.fromDispatch(
                     dispatch_result.branch,
-                    dispatch_result.payload_json,
-                    ctx.allocator,
+                    dispatch_result.fields,
                 );
                 try ctx.env.bind(binding_name, bound_value);
 
@@ -885,8 +821,7 @@ fn executeFlow(
                         // End of flow - return current dispatch result
                         return Value.fromDispatch(
                             dispatch_result.branch,
-                            dispatch_result.payload_json,
-                            ctx.allocator,
+                            dispatch_result.fields,
                         );
                     },
                     .branch_constructor => |bc| {
@@ -907,7 +842,6 @@ fn executeFlow(
                         return Value{
                             .branch = try ctx.allocator.dupe(u8, bc.branch_name),
                             .fields = fields,
-                            .payload_json = null,
                         };
                     },
                     else => {
@@ -919,8 +853,7 @@ fn executeFlow(
                 // No next node - return current dispatch result
                 return Value.fromDispatch(
                     dispatch_result.branch,
-                    dispatch_result.payload_json,
-                    ctx.allocator,
+                    dispatch_result.fields,
                 );
             }
         }
