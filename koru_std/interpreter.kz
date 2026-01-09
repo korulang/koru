@@ -125,7 +125,67 @@ pub const Value = struct {
         };
     }
 
-    pub fn fromDispatch(branch_name: []const u8, payload: ?[]const u8) Value {
+    pub fn fromDispatch(branch_name: []const u8, payload: ?[]const u8, allocator: std.mem.Allocator) Value {
+        if (payload) |json_str| {
+            // Parse JSON payload into fields
+            var fields_list = std.ArrayList(FieldValue).init(allocator);
+
+            // Simple JSON object parser: {"key": value, ...}
+            // We look for "key": patterns and extract values
+            var i: usize = 0;
+            while (i < json_str.len) : (i += 1) {
+                // Find opening quote for key
+                if (json_str[i] == '"') {
+                    const key_start = i + 1;
+                    i += 1;
+                    // Find closing quote for key
+                    while (i < json_str.len and json_str[i] != '"') : (i += 1) {}
+                    const key_end = i;
+                    const key = json_str[key_start..key_end];
+
+                    // Skip to colon and whitespace
+                    i += 1;
+                    while (i < json_str.len and (json_str[i] == ':' or json_str[i] == ' ')) : (i += 1) {}
+
+                    // Extract value (until comma or closing brace)
+                    const val_start = i;
+                    const in_string = json_str[i] == '"';
+                    if (in_string) i += 1;
+
+                    while (i < json_str.len) : (i += 1) {
+                        if (in_string) {
+                            if (json_str[i] == '"') break;
+                        } else {
+                            if (json_str[i] == ',' or json_str[i] == '}') break;
+                        }
+                    }
+                    const val_end = i;
+                    if (in_string) {
+                        // Include closing quote, then strip both quotes
+                        const val_with_quotes = json_str[val_start..val_end + 1];
+                        const val = if (val_with_quotes.len >= 2)
+                            val_with_quotes[1..val_with_quotes.len - 1]
+                        else
+                            val_with_quotes;
+
+                        fields_list.append(.{ .name = key, .value = val }) catch continue;
+                    } else {
+                        // Trim trailing whitespace from value
+                        var trim_end = val_end;
+                        while (trim_end > val_start and json_str[trim_end - 1] == ' ') trim_end -= 1;
+                        const val = json_str[val_start..trim_end];
+                        fields_list.append(.{ .name = key, .value = val }) catch continue;
+                    }
+                }
+            }
+
+            return .{
+                .branch = branch_name,
+                .fields = fields_list.toOwnedSlice() catch &[_]FieldValue{},
+                .payload_json = payload,
+            };
+        }
+
         return .{
             .branch = branch_name,
             .fields = &[_]FieldValue{},
@@ -188,6 +248,56 @@ pub const InterpreterContext = struct {
 // ============================================================================
 
 pub const DispatchFn = *const fn(*const ast.Invocation, *DispatchResult) anyerror!void;
+
+// ============================================================================
+// AST VALIDATION - Pre-execution validation (shadowing, etc.)
+// ============================================================================
+
+pub const ValidationError = struct {
+    message: []const u8,
+    binding_name: []const u8,
+};
+
+/// Validates a flow AST before execution.
+/// Checks for shadowing (duplicate bindings) and other semantic errors.
+/// Returns null if valid, or ValidationError if invalid.
+pub fn validateFlow(flow: *const ast.Flow, allocator: std.mem.Allocator) ?ValidationError {
+    var seen_bindings = std.StringHashMap(void).init(allocator);
+    defer seen_bindings.deinit();
+
+    return validateFlowRecursive(flow, &seen_bindings);
+}
+
+fn validateFlowRecursive(flow: *const ast.Flow, seen: *std.StringHashMap(void)) ?ValidationError {
+    // Check each continuation for bindings
+    for (flow.continuations) |cont| {
+        if (cont.binding) |binding_name| {
+            // Check for shadowing
+            if (seen.contains(binding_name)) {
+                return .{
+                    .message = "Shadowing not allowed: binding already exists",
+                    .binding_name = binding_name,
+                };
+            }
+            // Record this binding
+            seen.put(binding_name, {}) catch {
+                return .{
+                    .message = "Validation internal error",
+                    .binding_name = binding_name,
+                };
+            };
+        }
+
+        // Recurse into nested continuations
+        if (cont.node) |nested_flow| {
+            if (validateFlowRecursive(nested_flow, seen)) |err| {
+                return err;
+            }
+        }
+    }
+
+    return null; // Valid!
+}
 
 // ============================================================================
 // EXPRESSION VALUE - For runtime expression evaluation (different from Value)
@@ -532,6 +642,18 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     const flow = flow_to_run.?;
     std.debug.print("[INTERPRETER] Found flow to execute\n", .{});
 
+    // =========================================================================
+    // VALIDATION PASS - Check for errors BEFORE execution
+    // =========================================================================
+    if (validateFlow(flow, allocator)) |validation_err| {
+        std.debug.print("[INTERPRETER] Validation failed: {s} (binding: {s})\n",
+            .{validation_err.message, validation_err.binding_name});
+        return .{ .validation_error = .{
+            .message = validation_err.message,
+        }};
+    }
+    std.debug.print("[INTERPRETER] Validation passed\n", .{});
+
     // Create environment and context
     var env = Environment.init(allocator);
     defer env.deinit();
@@ -716,6 +838,7 @@ fn executeFlow(
                 const bound_value = Value.fromDispatch(
                     dispatch_result.branch,
                     dispatch_result.payload_json,
+                    ctx.allocator,
                 );
                 try ctx.env.bind(binding_name, bound_value);
 
@@ -763,6 +886,7 @@ fn executeFlow(
                         return Value.fromDispatch(
                             dispatch_result.branch,
                             dispatch_result.payload_json,
+                            ctx.allocator,
                         );
                     },
                     .branch_constructor => |bc| {
@@ -796,6 +920,7 @@ fn executeFlow(
                 return Value.fromDispatch(
                     dispatch_result.branch,
                     dispatch_result.payload_json,
+                    ctx.allocator,
                 );
             }
         }
