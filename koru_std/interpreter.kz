@@ -485,11 +485,10 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 }
 
 // ============================================================================
-// MAIN INTERPRETER EVENT
+// MAIN INTERPRETER EVENTS
 // ============================================================================
 
-// v1: Takes dispatcher function directly (explicit, simple)
-// User passes &dispatch_X from their generated scope
+// Parse and execute in one step - convenience wrapper
 ~pub event run {
     source: []const u8,
     dispatcher: DispatchFn
@@ -498,6 +497,17 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 | parse_error { message: []const u8, line: u32, column: u32 }
 | validation_error { message: []const u8 }
 | dispatch_error { event_name: []const u8, message: []const u8 }
+
+// Execute pre-parsed AST - for benchmarks and advanced use
+// This is the fast path: no parsing overhead, just execution!
+~pub event eval {
+    flow: *const ast.Flow,
+    dispatcher: DispatchFn
+}
+| result { value: Value }
+| validation_error { message: []const u8 }
+| dispatch_error { event_name: []const u8, message: []const u8 }
+| scope_not_found { scope_name: []const u8 }
 
 ~proc run {
     const koru_errors = @import("koru_errors");
@@ -860,4 +870,68 @@ fn executeFlow(
     }
 
     return error.NoBranchMatch;
+}
+
+// ============================================================================
+// EVAL PROC - Execute pre-parsed AST (fast path, no parsing!)
+// ============================================================================
+
+~proc eval {
+    std.debug.print("[EVAL] Starting execution of pre-parsed flow\n", .{});
+
+    // Create allocator for execution
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // Validation pass - check for errors BEFORE execution
+    if (validateFlow(flow, allocator)) |validation_err| {
+        std.debug.print("[EVAL] Validation failed: {s} (binding: {s})\n",
+            .{validation_err.message, validation_err.binding_name});
+        return .{ .validation_error = .{
+            .message = validation_err.message,
+        }};
+    }
+    std.debug.print("[EVAL] Validation passed\n", .{});
+
+    // Create environment and context
+    var env = Environment.init(allocator);
+    defer env.deinit();
+
+    var expr_bindings = ExprBindings.init(allocator);
+    defer expr_bindings.deinit();
+
+    var ctx = InterpreterContext{
+        .env = &env,
+        .expr_bindings = &expr_bindings,
+        .allocator = allocator,
+        .dispatcher = dispatcher,
+    };
+
+    // Execute the flow!
+    const result_value = executeFlow(flow, &ctx) catch |err| {
+        // Build event name for error reporting
+        const inv = &flow.invocation;
+        var name_buf: [256]u8 = undefined;
+        var name_len: usize = 0;
+        if (inv.path.module_qualifier) |mq| {
+            @memcpy(name_buf[name_len..][0..mq.len], mq);
+            name_len += mq.len;
+            name_buf[name_len] = ':';
+            name_len += 1;
+        }
+        for (inv.path.segments, 0..) |seg, i| {
+            if (i > 0) { name_buf[name_len] = '.'; name_len += 1; }
+            @memcpy(name_buf[name_len..][0..seg.len], seg);
+            name_len += seg.len;
+        }
+
+        return .{ .dispatch_error = .{
+            .event_name = name_buf[0..name_len],
+            .message = @errorName(err),
+        }};
+    };
+
+    std.debug.print("[EVAL] Execution complete, branch: {s}\n", .{result_value.branch});
+    return .{ .result = .{ .value = result_value }};
 }
