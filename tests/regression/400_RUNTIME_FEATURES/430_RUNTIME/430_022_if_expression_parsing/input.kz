@@ -1,0 +1,294 @@
+// Test: Runtime Expression Parsing for ~if
+// Parse expression strings into AST and evaluate against bindings
+
+~import "$std/runtime"
+~import "$std/build"
+
+~std.build:requires {
+    const REL_TO_ROOT = "/usr/local/lib/koru";
+
+    const errors_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const ast_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_module.addImport("errors", errors_module);
+
+    const lexer_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Expression parser - the key module!
+    const expression_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    expression_parser_module.addImport("lexer", lexer_module);
+    expression_parser_module.addImport("ast", ast_module);
+
+    exe.root_module.addImport("ast", ast_module);
+    exe.root_module.addImport("expression_parser", expression_parser_module);
+}
+
+const std = @import("std");
+const ast = @import("ast");
+const expression_parser = @import("expression_parser");
+
+// ============================================================================
+// Expression evaluator (inline for testing)
+// ============================================================================
+
+pub const ExprValue = union(enum) {
+    bool_val: bool,
+    int_val: i64,
+    float_val: f64,
+    string_val: []const u8,
+    null_val: void,
+
+    pub fn isTruthy(self: ExprValue) bool {
+        return switch (self) {
+            .bool_val => |b| b,
+            .int_val => |n| n != 0,
+            .float_val => |f| f != 0.0,
+            .string_val => |s| s.len > 0,
+            .null_val => false,
+        };
+    }
+};
+
+pub const ExprBindings = struct {
+    values: std.StringHashMap(ExprValue),
+
+    pub fn init(allocator: std.mem.Allocator) ExprBindings {
+        return .{ .values = std.StringHashMap(ExprValue).init(allocator) };
+    }
+
+    pub fn deinit(self: *ExprBindings) void {
+        self.values.deinit();
+    }
+
+    pub fn set(self: *ExprBindings, name: []const u8, value: ExprValue) !void {
+        try self.values.put(name, value);
+    }
+
+    pub fn get(self: *const ExprBindings, name: []const u8) ?ExprValue {
+        return self.values.get(name);
+    }
+};
+
+pub const EvalError = error{ UnknownBinding, TypeMismatch, DivisionByZero, InvalidExpression, UnsupportedOperator };
+
+pub fn evaluate(expr: *const ast.Expression, bindings: *const ExprBindings) EvalError!ExprValue {
+    return evaluateNode(&expr.node, bindings);
+}
+
+fn evaluateNode(node: *const ast.ExprNode, bindings: *const ExprBindings) EvalError!ExprValue {
+    return switch (node.*) {
+        .literal => |lit| switch (lit) {
+            .number => |n| blk: {
+                if (std.fmt.parseInt(i64, n, 10)) |i| break :blk .{ .int_val = i } else |_| {}
+                if (std.fmt.parseFloat(f64, n)) |f| break :blk .{ .float_val = f } else |_| {}
+                break :blk .{ .int_val = 0 };
+            },
+            .string => |s| .{ .string_val = s },
+            .boolean => |b| .{ .bool_val = b },
+        },
+        .identifier => |id| bindings.get(id) orelse EvalError.UnknownBinding,
+        .binary => |bin| evaluateBinary(&bin, bindings),
+        .unary => |un| evaluateUnary(&un, bindings),
+        .field_access => |fa| evaluateFieldAccess(&fa, bindings),
+        .grouped => |g| evaluate(g, bindings),
+    };
+}
+
+fn evaluateBinary(bin: *const ast.BinaryOp, bindings: *const ExprBindings) EvalError!ExprValue {
+    const left = try evaluate(bin.left, bindings);
+    const right = try evaluate(bin.right, bindings);
+
+    return switch (bin.op) {
+        .equal => blk: {
+            const eq = switch (left) {
+                .int_val => |l| switch (right) { .int_val => |r| l == r, else => false },
+                .string_val => |l| switch (right) { .string_val => |r| std.mem.eql(u8, l, r), else => false },
+                .bool_val => |l| switch (right) { .bool_val => |r| l == r, else => false },
+                else => false,
+            };
+            break :blk .{ .bool_val = eq };
+        },
+        .not_equal => blk: {
+            const eq = switch (left) {
+                .int_val => |l| switch (right) { .int_val => |r| l == r, else => false },
+                .string_val => |l| switch (right) { .string_val => |r| std.mem.eql(u8, l, r), else => false },
+                else => false,
+            };
+            break :blk .{ .bool_val = !eq };
+        },
+        .greater => switch (left) {
+            .int_val => |l| switch (right) { .int_val => |r| .{ .bool_val = l > r }, else => EvalError.TypeMismatch },
+            else => EvalError.TypeMismatch,
+        },
+        .less => switch (left) {
+            .int_val => |l| switch (right) { .int_val => |r| .{ .bool_val = l < r }, else => EvalError.TypeMismatch },
+            else => EvalError.TypeMismatch,
+        },
+        .greater_equal => switch (left) {
+            .int_val => |l| switch (right) { .int_val => |r| .{ .bool_val = l >= r }, else => EvalError.TypeMismatch },
+            else => EvalError.TypeMismatch,
+        },
+        .less_equal => switch (left) {
+            .int_val => |l| switch (right) { .int_val => |r| .{ .bool_val = l <= r }, else => EvalError.TypeMismatch },
+            else => EvalError.TypeMismatch,
+        },
+        .and_op => .{ .bool_val = left.isTruthy() and right.isTruthy() },
+        .or_op => .{ .bool_val = left.isTruthy() or right.isTruthy() },
+        else => EvalError.UnsupportedOperator,
+    };
+}
+
+fn evaluateUnary(un: *const ast.UnaryOp, bindings: *const ExprBindings) EvalError!ExprValue {
+    const operand = try evaluate(un.operand, bindings);
+    return switch (un.op) {
+        .not => .{ .bool_val = !operand.isTruthy() },
+        .negate => switch (operand) {
+            .int_val => |n| .{ .int_val = -n },
+            else => EvalError.TypeMismatch,
+        },
+    };
+}
+
+fn evaluateFieldAccess(fa: *const ast.FieldAccess, bindings: *const ExprBindings) EvalError!ExprValue {
+    const obj_node = &fa.object.node;
+    if (obj_node.* == .identifier) {
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{obj_node.identifier, fa.field}) catch return EvalError.InvalidExpression;
+        if (bindings.get(key)) |val| return val;
+    }
+    return EvalError.UnknownBinding;
+}
+
+// ============================================================================
+// Test helper: parse expression string and evaluate
+// ============================================================================
+
+fn testExpression(expr_str: []const u8, bindings: *const ExprBindings, allocator: std.mem.Allocator) !bool {
+    std.debug.print("  Parsing: '{s}'\n", .{expr_str});
+
+    var parser = expression_parser.ExpressionParser.init(allocator, expr_str);
+    defer parser.deinit();
+
+    const expr = parser.parse() catch |err| {
+        std.debug.print("  Parse error: {s}\n", .{@errorName(err)});
+        return false;
+    };
+
+    std.debug.print("  Parsed successfully!\n", .{});
+
+    const result = evaluate(expr, bindings) catch |err| {
+        std.debug.print("  Eval error: {s}\n", .{@errorName(err)});
+        return false;
+    };
+
+    const truthy = result.isTruthy();
+    std.debug.print("  Result: {} (truthy={})\n", .{result, truthy});
+
+    return truthy;
+}
+
+pub fn main() void {
+    std.debug.print("\n", .{});
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║     RUNTIME EXPRESSION PARSING TEST                          ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var bindings = ExprBindings.init(allocator);
+    defer bindings.deinit();
+
+    // Set up bindings
+    bindings.set("score", .{ .int_val = 75 }) catch {};
+    bindings.set("threshold", .{ .int_val = 50 }) catch {};
+    bindings.set("active", .{ .bool_val = true }) catch {};
+    bindings.set("role", .{ .string_val = "admin" }) catch {};
+    bindings.set("user.role", .{ .string_val = "admin" }) catch {};
+
+    // ========================================================================
+    // Test 1: Simple comparison - score > 50 (75 > 50 = true)
+    // ========================================================================
+    std.debug.print("Test 1: score > 50 (with score=75)\n", .{});
+    {
+        const result = testExpression("score > 50", &bindings, allocator) catch false;
+        if (result) {
+            std.debug.print("  ✓ TEST 1 PASSED\n\n", .{});
+        } else {
+            std.debug.print("  ✗ TEST 1 FAILED\n\n", .{});
+        }
+    }
+
+    // ========================================================================
+    // Test 2: Comparison with binding - score > threshold
+    // ========================================================================
+    std.debug.print("Test 2: score > threshold (75 > 50)\n", .{});
+    {
+        const result = testExpression("score > threshold", &bindings, allocator) catch false;
+        if (result) {
+            std.debug.print("  ✓ TEST 2 PASSED\n\n", .{});
+        } else {
+            std.debug.print("  ✗ TEST 2 FAILED\n\n", .{});
+        }
+    }
+
+    // ========================================================================
+    // Test 3: String equality
+    // ========================================================================
+    std.debug.print("Test 3: role == \"admin\"\n", .{});
+    {
+        const result = testExpression("role == \"admin\"", &bindings, allocator) catch false;
+        if (result) {
+            std.debug.print("  ✓ TEST 3 PASSED\n\n", .{});
+        } else {
+            std.debug.print("  ✗ TEST 3 FAILED\n\n", .{});
+        }
+    }
+
+    // ========================================================================
+    // Test 4: Boolean and
+    // ========================================================================
+    std.debug.print("Test 4: active and score > 50\n", .{});
+    {
+        const result = testExpression("active and score > 50", &bindings, allocator) catch false;
+        if (result) {
+            std.debug.print("  ✓ TEST 4 PASSED\n\n", .{});
+        } else {
+            std.debug.print("  ✗ TEST 4 FAILED\n\n", .{});
+        }
+    }
+
+    // ========================================================================
+    // Test 5: Field access
+    // ========================================================================
+    std.debug.print("Test 5: user.role == \"admin\"\n", .{});
+    {
+        const result = testExpression("user.role == \"admin\"", &bindings, allocator) catch false;
+        if (result) {
+            std.debug.print("  ✓ TEST 5 PASSED\n\n", .{});
+        } else {
+            std.debug.print("  ✗ TEST 5 FAILED\n\n", .{});
+        }
+    }
+
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║     EXPRESSION PARSING TESTS COMPLETE                        ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n", .{});
+}

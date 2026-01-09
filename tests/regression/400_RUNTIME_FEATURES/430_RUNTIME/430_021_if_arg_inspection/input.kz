@@ -1,0 +1,161 @@
+// Test: Inspect ~if argument structure
+// Check what fields are populated when parsing ~if(expr)
+
+~import "$std/runtime"
+~import "$std/build"
+
+~std.build:requires {
+    const REL_TO_ROOT = "/usr/local/lib/koru";
+
+    const errors_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const ast_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_module.addImport("errors", errors_module);
+
+    const lexer_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const type_registry_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/type_registry.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    type_registry_module.addImport("ast", ast_module);
+
+    const expression_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    expression_parser_module.addImport("lexer", lexer_module);
+    expression_parser_module.addImport("ast", ast_module);
+
+    const union_collector_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/union_collector.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    union_collector_module.addImport("ast", ast_module);
+
+    const config_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/config.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const module_resolver_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/module_resolver.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    module_resolver_module.addImport("config", config_module);
+
+    const parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    parser_module.addImport("ast", ast_module);
+    parser_module.addImport("lexer", lexer_module);
+    parser_module.addImport("errors", errors_module);
+    parser_module.addImport("type_registry", type_registry_module);
+    parser_module.addImport("expression_parser", expression_parser_module);
+    parser_module.addImport("union_collector", union_collector_module);
+    parser_module.addImport("module_resolver", module_resolver_module);
+
+    exe.root_module.addImport("ast", ast_module);
+    exe.root_module.addImport("koru_parser", parser_module);
+    exe.root_module.addImport("koru_ast", ast_module);
+    exe.root_module.addImport("koru_errors", errors_module);
+}
+
+const std = @import("std");
+
+fn inspectFlow(source: []const u8, label: []const u8) void {
+    const koru_parser = @import("koru_parser");
+    const koru_errors = @import("koru_errors");
+
+    std.debug.print("  Source: {s}\n", .{label});
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var reporter = koru_errors.ErrorReporter.init(allocator, "test", source) catch return;
+    defer reporter.deinit();
+
+    var parser = koru_parser.Parser.init(allocator, source, "test", &[_][]const u8{}, null) catch return;
+    defer parser.deinit();
+
+    const parse_result = parser.parse() catch |err| {
+        std.debug.print("  Parse error: {}\n", .{err});
+        return;
+    };
+
+    for (parse_result.source_file.items) |item| {
+        if (item == .flow) {
+            const flow = &item.flow;
+            const inv = &flow.invocation;
+
+            std.debug.print("  Path: {s}\n", .{inv.path.segments[0]});
+            std.debug.print("  Args count: {d}\n", .{inv.args.len});
+
+            for (inv.args, 0..) |arg, i| {
+                std.debug.print("  Arg[{d}]:\n", .{i});
+                std.debug.print("    .name = '{s}'\n", .{arg.name});
+                std.debug.print("    .value = '{s}'\n", .{arg.value});
+
+                if (arg.expression_value) |expr_val| {
+                    std.debug.print("    .expression_value = PRESENT\n", .{});
+                    std.debug.print("      .text = '{s}'\n", .{expr_val.text});
+                } else {
+                    std.debug.print("    .expression_value = null\n", .{});
+                }
+            }
+            break;
+        }
+    }
+    std.debug.print("\n", .{});
+}
+
+pub fn main() void {
+    std.debug.print("\n", .{});
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║     ~if ARGUMENT INSPECTION TEST                             ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
+
+    // Test 1: Simple boolean
+    std.debug.print("Test 1: ~if(true)\n", .{});
+    inspectFlow("~if(true)\n| then |> _\n| else |> _", "~if(true)");
+
+    // Test 2: Simple boolean false
+    std.debug.print("Test 2: ~if(false)\n", .{});
+    inspectFlow("~if(false)\n| then |> _\n| else |> _", "~if(false)");
+
+    // Test 3: Identifier
+    std.debug.print("Test 3: ~if(active)\n", .{});
+    inspectFlow("~if(active)\n| then |> _\n| else |> _", "~if(active)");
+
+    // Test 4: Comparison expression
+    std.debug.print("Test 4: ~if(score > 50)\n", .{});
+    inspectFlow("~if(score > 50)\n| then |> _\n| else |> _", "~if(score > 50)");
+
+    // Test 5: Complex expression
+    std.debug.print("Test 5: ~if(user.role == \"admin\")\n", .{});
+    inspectFlow("~if(user.role == \"admin\")\n| then |> _\n| else |> _", "~if(user.role == \"admin\")");
+
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║     INSPECTION COMPLETE                                      ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n", .{});
+}
