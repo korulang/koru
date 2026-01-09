@@ -1,0 +1,29 @@
+
+╔══════════════════════════════════════════════════════════════╗
+║           RUNTIME IF TEST                                    ║
+╚══════════════════════════════════════════════════════════════╝
+
+Test 1: Boolean true condition
+  active = true
+  isTruthy() = true
+  Branch: | then |>
+  ✓ TEST 1 PASSED
+
+Test 2: Numeric comparison (75 > 50)
+  score (75) > threshold (50) = true
+  Branch: | then |>
+  ✓ TEST 2 PASSED
+
+Test 3: Numeric comparison (25 > 50) - else branch
+  score (25) > threshold (50) = false
+  Branch: | else |>
+  ✓ TEST 3 PASSED
+
+Test 4: String equality (role == "admin")
+  role == "admin" = true
+  Branch: | then |>
+  ✓ TEST 4 PASSED
+
+╔══════════════════════════════════════════════════════════════╗
+║           RUNTIME IF TESTS COMPLETE                          ║
+╚══════════════════════════════════════════════════════════════╝

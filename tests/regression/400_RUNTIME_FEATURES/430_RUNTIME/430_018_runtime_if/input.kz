@@ -1,0 +1,446 @@
+// Test: Runtime If with Expression Evaluation
+// Tests runtime conditionals using expression evaluation against bindings
+// Note: Uses inline types since module import not yet supported
+
+~import "$std/runtime"
+~import "$std/build"
+~import "$std/runtime_control"
+
+~std.build:requires {
+    const REL_TO_ROOT = "/usr/local/lib/koru";
+
+    const errors_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const ast_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_module.addImport("errors", errors_module);
+
+    exe.root_module.addImport("ast", ast_module);
+}
+
+const std = @import("std");
+const ast = @import("ast");
+
+// ============================================================================
+// VALUE TYPE - Runtime expression values
+// ============================================================================
+
+pub const Value = union(enum) {
+    bool_val: bool,
+    int_val: i64,
+    float_val: f64,
+    string_val: []const u8,
+    null_val: void,
+
+    pub fn isTruthy(self: Value) bool {
+        return switch (self) {
+            .bool_val => |b| b,
+            .int_val => |n| n != 0,
+            .float_val => |f| f != 0.0,
+            .string_val => |s| s.len > 0,
+            .null_val => false,
+        };
+    }
+};
+
+// ============================================================================
+// BINDINGS - Name to value mapping
+// ============================================================================
+
+pub const Bindings = struct {
+    values: std.StringHashMap(Value),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) Bindings {
+        return .{
+            .values = std.StringHashMap(Value).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *Bindings) void {
+        self.values.deinit();
+    }
+
+    pub fn set(self: *Bindings, name: []const u8, value: Value) !void {
+        try self.values.put(name, value);
+    }
+
+    pub fn get(self: *const Bindings, name: []const u8) ?Value {
+        return self.values.get(name);
+    }
+};
+
+// ============================================================================
+// EXPRESSION EVALUATOR
+// ============================================================================
+
+pub const EvalError = error{
+    UnknownBinding,
+    TypeMismatch,
+    DivisionByZero,
+    InvalidExpression,
+    UnsupportedOperator,
+};
+
+pub fn evaluate(expression: *const ast.Expression, bindings: *const Bindings) EvalError!Value {
+    return evaluateNode(&expression.node, bindings);
+}
+
+fn evaluateNode(node: *const ast.ExprNode, bindings: *const Bindings) EvalError!Value {
+    return switch (node.*) {
+        .literal => |lit| evaluateLiteral(lit),
+        .identifier => |id| evaluateIdentifier(id, bindings),
+        .binary => |bin| evaluateBinaryOp(&bin, bindings),
+        .unary => |un| evaluateUnaryOp(&un, bindings),
+        .field_access => |fa| evaluateFieldAccess(&fa, bindings),
+        .grouped => |g| evaluate(g, bindings),
+    };
+}
+
+fn evaluateLiteral(lit: ast.Literal) Value {
+    return switch (lit) {
+        .number => |n| blk: {
+            if (std.fmt.parseInt(i64, n, 10)) |i| {
+                break :blk .{ .int_val = i };
+            } else |_| {}
+            if (std.fmt.parseFloat(f64, n)) |f| {
+                break :blk .{ .float_val = f };
+            } else |_| {}
+            break :blk .{ .int_val = 0 };
+        },
+        .string => |s| .{ .string_val = s },
+        .boolean => |b| .{ .bool_val = b },
+    };
+}
+
+fn evaluateIdentifier(id: []const u8, bindings: *const Bindings) EvalError!Value {
+    return bindings.get(id) orelse EvalError.UnknownBinding;
+}
+
+fn evaluateFieldAccess(fa: *const ast.FieldAccess, bindings: *const Bindings) EvalError!Value {
+    const obj_node = &fa.object.node;
+    if (obj_node.* == .identifier) {
+        const obj_name = obj_node.identifier;
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{obj_name, fa.field}) catch {
+            return EvalError.InvalidExpression;
+        };
+        if (bindings.get(key)) |val| {
+            return val;
+        }
+    }
+    return EvalError.UnknownBinding;
+}
+
+fn evaluateBinaryOp(bin: *const ast.BinaryOp, bindings: *const Bindings) EvalError!Value {
+    const left = try evaluate(bin.left, bindings);
+    const right = try evaluate(bin.right, bindings);
+
+    return switch (bin.op) {
+        .equal => compareEq(left, right),
+        .not_equal => compareNeq(left, right),
+        .less => compareLt(left, right),
+        .greater => compareGt(left, right),
+        .less_equal => compareLte(left, right),
+        .greater_equal => compareGte(left, right),
+        .and_op => .{ .bool_val = left.isTruthy() and right.isTruthy() },
+        .or_op => .{ .bool_val = left.isTruthy() or right.isTruthy() },
+        .add => arithmeticOp(left, right, .add),
+        .subtract => arithmeticOp(left, right, .sub),
+        .multiply => arithmeticOp(left, right, .mul),
+        .divide => arithmeticOp(left, right, .div),
+        .modulo => arithmeticOp(left, right, .mod),
+        .string_concat => EvalError.UnsupportedOperator,
+    };
+}
+
+fn evaluateUnaryOp(un: *const ast.UnaryOp, bindings: *const Bindings) EvalError!Value {
+    const operand = try evaluate(un.operand, bindings);
+    return switch (un.op) {
+        .not => .{ .bool_val = !operand.isTruthy() },
+        .negate => switch (operand) {
+            .int_val => |n| .{ .int_val = -n },
+            .float_val => |f| .{ .float_val = -f },
+            else => EvalError.TypeMismatch,
+        },
+    };
+}
+
+fn compareEq(left: Value, right: Value) Value {
+    const result = switch (left) {
+        .bool_val => |l| switch (right) { .bool_val => |r| l == r, else => false },
+        .int_val => |l| switch (right) {
+            .int_val => |r| l == r,
+            .float_val => |r| @as(f64, @floatFromInt(l)) == r,
+            else => false,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| l == @as(f64, @floatFromInt(r)),
+            .float_val => |r| l == r,
+            else => false,
+        },
+        .string_val => |l| switch (right) { .string_val => |r| std.mem.eql(u8, l, r), else => false },
+        .null_val => switch (right) { .null_val => true, else => false },
+    };
+    return .{ .bool_val = result };
+}
+
+fn compareNeq(left: Value, right: Value) Value {
+    return .{ .bool_val = !compareEq(left, right).bool_val };
+}
+
+fn compareLt(left: Value, right: Value) EvalError!Value {
+    return switch (left) {
+        .int_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l < r },
+            .float_val => |r| .{ .bool_val = @as(f64, @floatFromInt(l)) < r },
+            else => EvalError.TypeMismatch,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l < @as(f64, @floatFromInt(r)) },
+            .float_val => |r| .{ .bool_val = l < r },
+            else => EvalError.TypeMismatch,
+        },
+        else => EvalError.TypeMismatch,
+    };
+}
+
+fn compareGt(left: Value, right: Value) EvalError!Value {
+    return switch (left) {
+        .int_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l > r },
+            .float_val => |r| .{ .bool_val = @as(f64, @floatFromInt(l)) > r },
+            else => EvalError.TypeMismatch,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l > @as(f64, @floatFromInt(r)) },
+            .float_val => |r| .{ .bool_val = l > r },
+            else => EvalError.TypeMismatch,
+        },
+        else => EvalError.TypeMismatch,
+    };
+}
+
+fn compareLte(left: Value, right: Value) EvalError!Value {
+    return .{ .bool_val = !(try compareGt(left, right)).bool_val };
+}
+
+fn compareGte(left: Value, right: Value) EvalError!Value {
+    return .{ .bool_val = !(try compareLt(left, right)).bool_val };
+}
+
+const ArithOp = enum { add, sub, mul, div, mod };
+
+fn arithmeticOp(left: Value, right: Value, op: ArithOp) EvalError!Value {
+    return switch (left) {
+        .int_val => |l| switch (right) {
+            .int_val => |r| intOp(l, r, op),
+            .float_val => |r| floatOp(@as(f64, @floatFromInt(l)), r, op),
+            else => EvalError.TypeMismatch,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| floatOp(l, @as(f64, @floatFromInt(r)), op),
+            .float_val => |r| floatOp(l, r, op),
+            else => EvalError.TypeMismatch,
+        },
+        else => EvalError.TypeMismatch,
+    };
+}
+
+fn intOp(l: i64, r: i64, op: ArithOp) EvalError!Value {
+    return .{ .int_val = switch (op) {
+        .add => l + r,
+        .sub => l - r,
+        .mul => l * r,
+        .div => if (r == 0) return EvalError.DivisionByZero else @divTrunc(l, r),
+        .mod => if (r == 0) return EvalError.DivisionByZero else @mod(l, r),
+    } };
+}
+
+fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
+    return .{ .float_val = switch (op) {
+        .add => l + r,
+        .sub => l - r,
+        .mul => l * r,
+        .div => if (r == 0.0) return EvalError.DivisionByZero else l / r,
+        .mod => @mod(l, r),
+    } };
+}
+
+// ============================================================================
+// MAIN TEST
+// ============================================================================
+
+pub fn main() void {
+    std.debug.print("\n", .{});
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║           RUNTIME IF TEST                                    ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // ========================================================================
+    // Test 1: Simple boolean true
+    // ========================================================================
+    std.debug.print("Test 1: Boolean true condition\n", .{});
+    {
+        var bindings = Bindings.init(allocator);
+        defer bindings.deinit();
+
+        bindings.set("active", .{ .bool_val = true }) catch unreachable;
+
+        const expr_node = ast.ExprNode{ .identifier = "active" };
+        const expression = ast.Expression{ .node = expr_node };
+
+        const result = evaluate(&expression, &bindings) catch |err| {
+            std.debug.print("  ERROR: {s}\n", .{@errorName(err)});
+            return;
+        };
+
+        std.debug.print("  active = {}\n", .{result.bool_val});
+        std.debug.print("  isTruthy() = {}\n", .{result.isTruthy()});
+
+        if (result.isTruthy()) {
+            std.debug.print("  Branch: | then |>\n", .{});
+            std.debug.print("  ✓ TEST 1 PASSED\n\n", .{});
+        } else {
+            std.debug.print("  ✗ TEST 1 FAILED\n\n", .{});
+        }
+    }
+
+    // ========================================================================
+    // Test 2: Numeric comparison - score > 50 (true case)
+    // ========================================================================
+    std.debug.print("Test 2: Numeric comparison (75 > 50)\n", .{});
+    {
+        var bindings = Bindings.init(allocator);
+        defer bindings.deinit();
+
+        bindings.set("score", .{ .int_val = 75 }) catch unreachable;
+        bindings.set("threshold", .{ .int_val = 50 }) catch unreachable;
+
+        const left_node = ast.ExprNode{ .identifier = "score" };
+        const left_expr = allocator.create(ast.Expression) catch unreachable;
+        left_expr.* = .{ .node = left_node };
+
+        const right_node = ast.ExprNode{ .identifier = "threshold" };
+        const right_expr = allocator.create(ast.Expression) catch unreachable;
+        right_expr.* = .{ .node = right_node };
+
+        const binary_node = ast.ExprNode{ .binary = .{
+            .op = .greater,
+            .left = left_expr,
+            .right = right_expr,
+        }};
+        const expression = ast.Expression{ .node = binary_node };
+
+        const result = evaluate(&expression, &bindings) catch |err| {
+            std.debug.print("  ERROR: {s}\n", .{@errorName(err)});
+            return;
+        };
+
+        std.debug.print("  score (75) > threshold (50) = {}\n", .{result.bool_val});
+
+        if (result.isTruthy()) {
+            std.debug.print("  Branch: | then |>\n", .{});
+            std.debug.print("  ✓ TEST 2 PASSED\n\n", .{});
+        } else {
+            std.debug.print("  ✗ TEST 2 FAILED\n\n", .{});
+        }
+    }
+
+    // ========================================================================
+    // Test 3: Numeric comparison - score > threshold (false case)
+    // ========================================================================
+    std.debug.print("Test 3: Numeric comparison (25 > 50) - else branch\n", .{});
+    {
+        var bindings = Bindings.init(allocator);
+        defer bindings.deinit();
+
+        bindings.set("score", .{ .int_val = 25 }) catch unreachable;
+        bindings.set("threshold", .{ .int_val = 50 }) catch unreachable;
+
+        const left_node = ast.ExprNode{ .identifier = "score" };
+        const left_expr = allocator.create(ast.Expression) catch unreachable;
+        left_expr.* = .{ .node = left_node };
+
+        const right_node = ast.ExprNode{ .identifier = "threshold" };
+        const right_expr = allocator.create(ast.Expression) catch unreachable;
+        right_expr.* = .{ .node = right_node };
+
+        const binary_node = ast.ExprNode{ .binary = .{
+            .op = .greater,
+            .left = left_expr,
+            .right = right_expr,
+        }};
+        const expression = ast.Expression{ .node = binary_node };
+
+        const result = evaluate(&expression, &bindings) catch |err| {
+            std.debug.print("  ERROR: {s}\n", .{@errorName(err)});
+            return;
+        };
+
+        std.debug.print("  score (25) > threshold (50) = {}\n", .{result.bool_val});
+
+        if (!result.isTruthy()) {
+            std.debug.print("  Branch: | else |>\n", .{});
+            std.debug.print("  ✓ TEST 3 PASSED\n\n", .{});
+        } else {
+            std.debug.print("  ✗ TEST 3 FAILED\n\n", .{});
+        }
+    }
+
+    // ========================================================================
+    // Test 4: String equality
+    // ========================================================================
+    std.debug.print("Test 4: String equality (role == \"admin\")\n", .{});
+    {
+        var bindings = Bindings.init(allocator);
+        defer bindings.deinit();
+
+        bindings.set("role", .{ .string_val = "admin" }) catch unreachable;
+
+        const left_node = ast.ExprNode{ .identifier = "role" };
+        const left_expr = allocator.create(ast.Expression) catch unreachable;
+        left_expr.* = .{ .node = left_node };
+
+        const right_node = ast.ExprNode{ .literal = .{ .string = "admin" } };
+        const right_expr = allocator.create(ast.Expression) catch unreachable;
+        right_expr.* = .{ .node = right_node };
+
+        const binary_node = ast.ExprNode{ .binary = .{
+            .op = .equal,
+            .left = left_expr,
+            .right = right_expr,
+        }};
+        const expression = ast.Expression{ .node = binary_node };
+
+        const result = evaluate(&expression, &bindings) catch |err| {
+            std.debug.print("  ERROR: {s}\n", .{@errorName(err)});
+            return;
+        };
+
+        std.debug.print("  role == \"admin\" = {}\n", .{result.bool_val});
+
+        if (result.isTruthy()) {
+            std.debug.print("  Branch: | then |>\n", .{});
+            std.debug.print("  ✓ TEST 4 PASSED\n\n", .{});
+        } else {
+            std.debug.print("  ✗ TEST 4 FAILED\n\n", .{});
+        }
+    }
+
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║           RUNTIME IF TESTS COMPLETE                          ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n", .{});
+}

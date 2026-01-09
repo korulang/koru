@@ -1,0 +1,344 @@
+// Runtime Control Flow Standard Library
+// Provides runtime ~if for interpreted Koru code
+//
+// DESIGN:
+// - Unlike control.kz (comptime transform), this evaluates at RUNTIME
+// - Uses the expression evaluator ($std/eval) to evaluate conditions
+// - Matches the same branch names: | then |> and | else |>
+// - For use with the interpreter when executing parsed Koru source
+//
+// Usage:
+//   ~import "$std/runtime_control"
+//   ~import "$std/runtime"
+//
+//   ~std.runtime:register(scope: "api") {
+//       std.runtime_control:if
+//   }
+//
+//   // Then at runtime:
+//   ~if(score > 50)
+//   | then |> approved { status: "high" }
+//   | else |> rejected { status: "low" }
+
+~[runtime]
+
+~import "$std/build"
+
+~std.build:requires {
+    const REL_TO_ROOT = "/usr/local/lib/koru";
+
+    // Errors module (needed by ast)
+    const errors_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // AST module
+    const ast_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_module.addImport("errors", errors_module);
+
+    // Add to executable
+    exe.root_module.addImport("ast", ast_module);
+}
+
+const std = @import("std");
+const ast = @import("ast");
+
+// ============================================================================
+// VALUE TYPE - Matches $std/eval
+// ============================================================================
+
+pub const Value = union(enum) {
+    bool_val: bool,
+    int_val: i64,
+    float_val: f64,
+    string_val: []const u8,
+    null_val: void,
+
+    pub fn isTruthy(self: Value) bool {
+        return switch (self) {
+            .bool_val => |b| b,
+            .int_val => |n| n != 0,
+            .float_val => |f| f != 0.0,
+            .string_val => |s| s.len > 0,
+            .null_val => false,
+        };
+    }
+};
+
+// ============================================================================
+// BINDINGS - Matches $std/eval
+// ============================================================================
+
+pub const Bindings = struct {
+    values: std.StringHashMap(Value),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) Bindings {
+        return .{
+            .values = std.StringHashMap(Value).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *Bindings) void {
+        self.values.deinit();
+    }
+
+    pub fn set(self: *Bindings, name: []const u8, value: Value) !void {
+        try self.values.put(name, value);
+    }
+
+    pub fn get(self: *const Bindings, name: []const u8) ?Value {
+        return self.values.get(name);
+    }
+};
+
+// ============================================================================
+// EXPRESSION EVALUATOR - Simplified for runtime if
+// ============================================================================
+
+pub const EvalError = error{
+    UnknownBinding,
+    TypeMismatch,
+    DivisionByZero,
+    InvalidExpression,
+    UnsupportedOperator,
+};
+
+pub fn evaluate(expression: *const ast.Expression, bindings: *const Bindings) EvalError!Value {
+    return evaluateNode(&expression.node, bindings);
+}
+
+fn evaluateNode(node: *const ast.ExprNode, bindings: *const Bindings) EvalError!Value {
+    return switch (node.*) {
+        .literal => |lit| evaluateLiteral(lit),
+        .identifier => |id| evaluateIdentifier(id, bindings),
+        .binary => |bin| evaluateBinaryOp(&bin, bindings),
+        .unary => |un| evaluateUnaryOp(&un, bindings),
+        .field_access => |fa| evaluateFieldAccess(&fa, bindings),
+        .grouped => |g| evaluate(g, bindings),
+    };
+}
+
+fn evaluateLiteral(lit: ast.Literal) Value {
+    return switch (lit) {
+        .number => |n| blk: {
+            if (std.fmt.parseInt(i64, n, 10)) |i| {
+                break :blk .{ .int_val = i };
+            } else |_| {}
+            if (std.fmt.parseFloat(f64, n)) |f| {
+                break :blk .{ .float_val = f };
+            } else |_| {}
+            break :blk .{ .int_val = 0 };
+        },
+        .string => |s| .{ .string_val = s },
+        .boolean => |b| .{ .bool_val = b },
+    };
+}
+
+fn evaluateIdentifier(id: []const u8, bindings: *const Bindings) EvalError!Value {
+    return bindings.get(id) orelse EvalError.UnknownBinding;
+}
+
+fn evaluateFieldAccess(fa: *const ast.FieldAccess, bindings: *const Bindings) EvalError!Value {
+    const obj_node = &fa.object.node;
+    if (obj_node.* == .identifier) {
+        const obj_name = obj_node.identifier;
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{obj_name, fa.field}) catch {
+            return EvalError.InvalidExpression;
+        };
+        if (bindings.get(key)) |val| {
+            return val;
+        }
+    }
+    return EvalError.UnknownBinding;
+}
+
+fn evaluateBinaryOp(bin: *const ast.BinaryOp, bindings: *const Bindings) EvalError!Value {
+    const left = try evaluate(bin.left, bindings);
+    const right = try evaluate(bin.right, bindings);
+
+    return switch (bin.op) {
+        // Comparison operators
+        .equal => compareEq(left, right),
+        .not_equal => compareNeq(left, right),
+        .less => compareLt(left, right),
+        .greater => compareGt(left, right),
+        .less_equal => compareLte(left, right),
+        .greater_equal => compareGte(left, right),
+
+        // Boolean operators
+        .and_op => .{ .bool_val = left.isTruthy() and right.isTruthy() },
+        .or_op => .{ .bool_val = left.isTruthy() or right.isTruthy() },
+
+        // Arithmetic operators
+        .add => arithmeticOp(left, right, .add),
+        .subtract => arithmeticOp(left, right, .sub),
+        .multiply => arithmeticOp(left, right, .mul),
+        .divide => arithmeticOp(left, right, .div),
+        .modulo => arithmeticOp(left, right, .mod),
+
+        .string_concat => EvalError.UnsupportedOperator,
+    };
+}
+
+fn evaluateUnaryOp(un: *const ast.UnaryOp, bindings: *const Bindings) EvalError!Value {
+    const operand = try evaluate(un.operand, bindings);
+
+    return switch (un.op) {
+        .not => .{ .bool_val = !operand.isTruthy() },
+        .negate => switch (operand) {
+            .int_val => |n| .{ .int_val = -n },
+            .float_val => |f| .{ .float_val = -f },
+            else => EvalError.TypeMismatch,
+        },
+    };
+}
+
+// Comparison helpers
+fn compareEq(left: Value, right: Value) Value {
+    const result = switch (left) {
+        .bool_val => |l| switch (right) {
+            .bool_val => |r| l == r,
+            else => false,
+        },
+        .int_val => |l| switch (right) {
+            .int_val => |r| l == r,
+            .float_val => |r| @as(f64, @floatFromInt(l)) == r,
+            else => false,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| l == @as(f64, @floatFromInt(r)),
+            .float_val => |r| l == r,
+            else => false,
+        },
+        .string_val => |l| switch (right) {
+            .string_val => |r| std.mem.eql(u8, l, r),
+            else => false,
+        },
+        .null_val => switch (right) {
+            .null_val => true,
+            else => false,
+        },
+    };
+    return .{ .bool_val = result };
+}
+
+fn compareNeq(left: Value, right: Value) Value {
+    const eq = compareEq(left, right);
+    return .{ .bool_val = !eq.bool_val };
+}
+
+fn compareLt(left: Value, right: Value) EvalError!Value {
+    return switch (left) {
+        .int_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l < r },
+            .float_val => |r| .{ .bool_val = @as(f64, @floatFromInt(l)) < r },
+            else => EvalError.TypeMismatch,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l < @as(f64, @floatFromInt(r)) },
+            .float_val => |r| .{ .bool_val = l < r },
+            else => EvalError.TypeMismatch,
+        },
+        else => EvalError.TypeMismatch,
+    };
+}
+
+fn compareGt(left: Value, right: Value) EvalError!Value {
+    return switch (left) {
+        .int_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l > r },
+            .float_val => |r| .{ .bool_val = @as(f64, @floatFromInt(l)) > r },
+            else => EvalError.TypeMismatch,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l > @as(f64, @floatFromInt(r)) },
+            .float_val => |r| .{ .bool_val = l > r },
+            else => EvalError.TypeMismatch,
+        },
+        else => EvalError.TypeMismatch,
+    };
+}
+
+fn compareLte(left: Value, right: Value) EvalError!Value {
+    const gt = try compareGt(left, right);
+    return .{ .bool_val = !gt.bool_val };
+}
+
+fn compareGte(left: Value, right: Value) EvalError!Value {
+    const lt = try compareLt(left, right);
+    return .{ .bool_val = !lt.bool_val };
+}
+
+// Arithmetic helpers
+const ArithOp = enum { add, sub, mul, div, mod };
+
+fn arithmeticOp(left: Value, right: Value, op: ArithOp) EvalError!Value {
+    return switch (left) {
+        .int_val => |l| switch (right) {
+            .int_val => |r| intOp(l, r, op),
+            .float_val => |r| floatOp(@as(f64, @floatFromInt(l)), r, op),
+            else => EvalError.TypeMismatch,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| floatOp(l, @as(f64, @floatFromInt(r)), op),
+            .float_val => |r| floatOp(l, r, op),
+            else => EvalError.TypeMismatch,
+        },
+        else => EvalError.TypeMismatch,
+    };
+}
+
+fn intOp(l: i64, r: i64, op: ArithOp) EvalError!Value {
+    return .{ .int_val = switch (op) {
+        .add => l + r,
+        .sub => l - r,
+        .mul => l * r,
+        .div => if (r == 0) return EvalError.DivisionByZero else @divTrunc(l, r),
+        .mod => if (r == 0) return EvalError.DivisionByZero else @mod(l, r),
+    } };
+}
+
+fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
+    return .{ .float_val = switch (op) {
+        .add => l + r,
+        .sub => l - r,
+        .mul => l * r,
+        .div => if (r == 0.0) return EvalError.DivisionByZero else l / r,
+        .mod => @mod(l, r),
+    } };
+}
+
+// ============================================================================
+// RUNTIME IF EVENT - For interpreter use
+// ============================================================================
+//
+// Takes an expression and evaluates it against provided bindings.
+// Returns | then |> or | else |> to match control.kz conventions.
+
+~pub event if {
+    expression: Expression,
+    bindings: *const Bindings
+}
+| then {}
+| else {}
+| error { message: []const u8 }
+
+~proc if {
+    const result = evaluate(expression, bindings) catch |err| {
+        return .{ .error = .{ .message = @errorName(err) } };
+    };
+
+    if (result.isTruthy()) {
+        return .{ .then = .{} };
+    }
+    return .{ .else = .{} };
+}
