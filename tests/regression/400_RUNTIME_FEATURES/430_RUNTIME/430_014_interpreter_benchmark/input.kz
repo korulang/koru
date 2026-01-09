@@ -151,7 +151,6 @@ const std = @import("std");
 }
 
 pub fn main() void {
-    const ast_mod = @import("ast");
     const koru_parser = @import("koru_parser");
     const koru_errors = @import("koru_errors");
 
@@ -160,7 +159,10 @@ pub fn main() void {
     std.debug.print("║           KORU INTERPRETER BENCHMARK                         ║\n", .{});
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
-    const dispatcher_fn = __koru_scope_bench.dispatch;
+    const dispatcher_fn = __koru_get_scope("bench") orelse {
+        std.debug.print("ERROR: Scope 'bench' not found\n", .{});
+        return;
+    };
     const test_source = "~ping(value: \"test\")";
     const ITERATIONS: u64 = 10_000;
 
@@ -169,15 +171,16 @@ pub fn main() void {
     // ========================================================================
     std.debug.print("Benchmark 1: Dispatch only ({d} iterations)\n", .{ITERATIONS});
     {
+        // Use inline types from generated registry
         const segments = [_][]const u8{"ping"};
-        const path = ast_mod.DottedPath{
+        const path = Path{
             .module_qualifier = null,
             .segments = &segments,
         };
-        var args_array = [_]ast_mod.Arg{
+        var args_array = [_]Arg{
             .{ .name = "value", .value = "test" },
         };
-        const inv = ast_mod.Invocation{
+        const inv = Invocation{
             .path = path,
             .args = &args_array,
         };
@@ -255,8 +258,10 @@ pub fn main() void {
 
             for (parse_result.source_file.items) |item| {
                 if (item == .flow) {
+                    const ast_inv = &item.flow.invocation;
+                    const inv: *const Invocation = @ptrCast(ast_inv);
                     var result: DispatchResult = undefined;
-                    dispatcher_fn(&item.flow.invocation, &result) catch {};
+                    dispatcher_fn(inv, &result) catch {};
                     break;
                 }
             }

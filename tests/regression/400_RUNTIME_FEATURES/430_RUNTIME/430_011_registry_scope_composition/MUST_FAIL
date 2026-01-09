@@ -1,0 +1,2 @@
+Uses std.runtime:eval and std.parser:parse.source which are not implemented yet.
+This is an aspirational test for scope composition features.

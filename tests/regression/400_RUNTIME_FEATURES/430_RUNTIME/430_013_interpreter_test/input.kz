@@ -128,29 +128,32 @@ pub fn main() void {
     std.debug.print("=== INTERPRETER TEST ===\n\n", .{});
 
     // Get imports
-    const ast_mod = @import("ast");
     const koru_parser = @import("koru_parser");
     const koru_errors = @import("koru_errors");
 
-    // Get the dispatcher function
-    const dispatcher_fn = __koru_scope_test.dispatch;
+    // Get the dispatcher function using scope lookup
+    const dispatcher_fn = __koru_get_scope("test") orelse {
+        std.debug.print("ERROR: Scope 'test' not found\n", .{});
+        return;
+    };
 
     // ========================================================================
     // Test 1: Manual dispatch (baseline)
     // ========================================================================
     std.debug.print("Test 1: Manual dispatch 'greet'\n", .{});
     {
+        // Use inline types from the generated registry
         const segments = [_][]const u8{"greet"};
-        const path = ast_mod.DottedPath{
+        const path = Path{
             .module_qualifier = null,
             .segments = &segments,
         };
 
-        var args_array = [_]ast_mod.Arg{
+        var args_array = [_]Arg{
             .{ .name = "name", .value = "World" },
         };
 
-        const inv = ast_mod.Invocation{
+        const inv = Invocation{
             .path = path,
             .args = &args_array,
         };
@@ -219,12 +222,15 @@ pub fn main() void {
             if (item == .flow) {
                 flow_found = true;
                 const flow = item.flow;
-                const inv = &flow.invocation;
+                const ast_inv = &flow.invocation;
 
                 std.debug.print("Found flow: {s} with {d} args\n", .{
-                    if (inv.path.segments.len > 0) inv.path.segments[0] else "?",
-                    inv.args.len
+                    if (ast_inv.path.segments.len > 0) ast_inv.path.segments[0] else "?",
+                    ast_inv.args.len
                 });
+
+                // Cast ast.Invocation to inline Invocation (same memory layout)
+                const inv: *const Invocation = @ptrCast(ast_inv);
 
                 // Dispatch it!
                 var result: DispatchResult = undefined;
@@ -270,7 +276,8 @@ pub fn main() void {
 
         for (parse_result.source_file.items) |item| {
             if (item == .flow) {
-                const inv = &item.flow.invocation;
+                const ast_inv = &item.flow.invocation;
+                const inv: *const Invocation = @ptrCast(ast_inv);
 
                 var result: DispatchResult = undefined;
                 dispatcher_fn(inv, &result) catch |err| {

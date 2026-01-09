@@ -113,7 +113,10 @@ pub fn main() void {
     std.debug.print("║     INTERPRETER RUNTIME ~if TEST                             ║\n", .{});
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
-    const dispatcher_fn = __koru_scope_test.dispatch;
+    const dispatcher_fn = __koru_get_scope("test") orelse {
+        std.debug.print("ERROR: Scope 'test' not found\n", .{});
+        return;
+    };
 
     // ========================================================================
     // Test 1: ~if(true) should take | then |> branch
@@ -153,8 +156,10 @@ pub fn main() void {
                 }
 
                 // Dispatch (will use special if handling)
+                const ast_inv = &flow.invocation;
+                const inv: *const Invocation = @ptrCast(ast_inv);
                 var dispatch_result: DispatchResult = undefined;
-                dispatcher_fn(&flow.invocation, &dispatch_result) catch |err| {
+                dispatcher_fn(inv, &dispatch_result) catch |err| {
                     // Expected - if is not in our registered scope
                     // The interpreter handles it specially
                     std.debug.print("  Dispatch result: {s} (handled specially)\n", .{@errorName(err)});

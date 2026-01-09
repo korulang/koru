@@ -125,7 +125,10 @@ pub fn main() void {
     std.debug.print("║           INTERPRETER DATAFLOW TEST                          ║\n", .{});
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
-    const dispatcher_fn = __koru_scope_api.dispatch;
+    const dispatcher_fn = __koru_get_scope("api") orelse {
+        std.debug.print("ERROR: Scope 'api' not found\n", .{});
+        return;
+    };
 
     // ========================================================================
     // Test 1: Simple dispatch, terminal on branch
@@ -158,11 +161,12 @@ pub fn main() void {
 
         for (parse_result.source_file.items) |item| {
             if (item == .flow) {
-                const inv = &item.flow.invocation;
-                std.debug.print("  Found flow: {s}\n", .{inv.path.segments[0]});
+                const ast_inv = &item.flow.invocation;
+                std.debug.print("  Found flow: {s}\n", .{ast_inv.path.segments[0]});
                 std.debug.print("  Continuations: {d}\n", .{item.flow.continuations.len});
 
-                // Dispatch
+                // Cast and dispatch
+                const inv: *const Invocation = @ptrCast(ast_inv);
                 var result: DispatchResult = undefined;
                 dispatcher_fn(inv, &result) catch |err| {
                     std.debug.print("  ERROR: Dispatch failed: {}\n", .{err});
@@ -209,8 +213,10 @@ pub fn main() void {
                 const flow = &item.flow;
 
                 // Step 1: Dispatch the invocation
+                const ast_inv = &flow.invocation;
+                const inv: *const Invocation = @ptrCast(ast_inv);
                 var dispatch_result: DispatchResult = undefined;
-                dispatcher_fn(&flow.invocation, &dispatch_result) catch |err| {
+                dispatcher_fn(inv, &dispatch_result) catch |err| {
                     std.debug.print("  ERROR: Dispatch failed: {}\n", .{err});
                     return;
                 };

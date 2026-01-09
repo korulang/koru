@@ -1,15 +1,9 @@
-// DESIGN: Registry Scope - Basic
+// Test: Registry Scope - Basic
 //
-// This test captures the design for runtime event registries.
-// Events must be explicitly registered to be available for runtime eval.
-//
-// Key concepts:
-// - Named scopes: ~[registry:scope(name)]
-// - Explicit allowlist: only registered events can be called
-// - Glob patterns: app.users:* includes all user events
-// - Scope composition: scope(other) includes another scope
+// Verifies that ~std.runtime:register generates:
+// 1. Dispatcher functions for each scope
+// 2. __koru_get_scope() lookup function
 
-~import "$std/parser"
 ~import "$std/runtime"
 ~import "$std/io"
 
@@ -32,45 +26,37 @@ const std = @import("std");
     return .{ .done = .{} };
 }
 
-// SECRET event - should NOT be in registry
-~pub event secret_admin { code: []const u8 }
-| accessed {}
-
-~proc secret_admin {
-    std.debug.print("ADMIN ACCESS: {s}\n", .{code});
-    return .{ .accessed = .{} };
-}
-
-// Define a registry scope - ONLY these events are available at runtime
+// Register a scope with these events
 ~std.runtime:register(scope: "api") {
-    greet           // Our greet event
-    farewell        // Our farewell event
-    std.io:print.ln // Stdlib printing
-    // NOTE: secret_admin is NOT included!
+    greet
+    farewell
 }
 
-// Sample code to eval - this should WORK
-const ALLOWED_CODE =
-    \\~greet(name: "World")
-    \\| greeted g |> std.io:print.ln("{{g.message}}")
-;
+// Test: Verify the registry was generated
+pub fn main() void {
+    std.debug.print("\n", .{});
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║     REGISTRY SCOPE BASIC TEST                                ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
-// Sample code to eval - this should FAIL (event not in registry)
-const DENIED_CODE =
-    \\~secret_admin(code: "hunter2")
-    \\| accessed |> std.io:print.ln("Got access!")
-;
+    // Test 1: __koru_get_scope should find "api" scope
+    std.debug.print("Test 1: Looking up scope 'api'...\n", .{});
+    if (__koru_get_scope("api")) |dispatcher| {
+        std.debug.print("  ✓ Found dispatcher for 'api' scope\n", .{});
+        _ = dispatcher;
+    } else {
+        std.debug.print("  ✗ FAILED: Could not find 'api' scope\n", .{});
+    }
 
-// Parse and eval with scope
-~std.parser:parse.source(source: ALLOWED_CODE, file_name: "allowed.kz", allocator: std.heap.page_allocator)
-| parsed p |> std.runtime:eval(ast: p.ast, scope: "api")
-    | result |> std.io:print.ln("Allowed code executed successfully")
-    | event_denied e |> std.io:print.ln("UNEXPECTED: {{e.name}} was denied")
-| parse_error e |> std.io:print.ln("Parse error: {{e.message}}")
+    // Test 2: __koru_get_scope should NOT find "nonexistent" scope
+    std.debug.print("\nTest 2: Looking up scope 'nonexistent'...\n", .{});
+    if (__koru_get_scope("nonexistent")) |_| {
+        std.debug.print("  ✗ FAILED: Found unexpected scope\n", .{});
+    } else {
+        std.debug.print("  ✓ Correctly returned null for nonexistent scope\n", .{});
+    }
 
-// This should be denied
-~std.parser:parse.source(source: DENIED_CODE, file_name: "denied.kz", allocator: std.heap.page_allocator)
-| parsed p |> std.runtime:eval(ast: p.ast, scope: "api")
-    | result |> std.io:print.ln("UNEXPECTED: Denied code executed!")
-    | event_denied e |> std.io:print.ln("Correctly denied: {{e.name}}")
-| parse_error e |> std.io:print.ln("Parse error: {{e.message}}")
+    std.debug.print("\n╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║     REGISTRY TESTS COMPLETE                                  ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n", .{});
+}

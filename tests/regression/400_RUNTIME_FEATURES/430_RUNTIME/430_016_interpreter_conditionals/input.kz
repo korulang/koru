@@ -125,7 +125,10 @@ pub fn main() void {
     std.debug.print("║     INTERPRETER CONDITIONALS TEST (ASPIRATIONAL)             ║\n", .{});
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
-    const dispatcher_fn = __koru_scope_test.dispatch;
+    const dispatcher_fn = __koru_get_scope("test") orelse {
+        std.debug.print("ERROR: Scope 'test' not found\n", .{});
+        return;
+    };
 
     // ========================================================================
     // Test 1: See what ~if parses to
@@ -234,8 +237,10 @@ pub fn main() void {
                 const flow = &item.flow;
 
                 // Dispatch
+                const ast_inv = &flow.invocation;
+                const inv: *const Invocation = @ptrCast(ast_inv);
                 var dispatch_result: DispatchResult = undefined;
-                dispatcher_fn(&flow.invocation, &dispatch_result) catch |err| {
+                dispatcher_fn(inv, &dispatch_result) catch |err| {
                     std.debug.print("  ERROR: Dispatch failed: {}\n", .{err});
                     return;
                 };
@@ -298,8 +303,10 @@ pub fn main() void {
             if (item == .flow) {
                 const flow = &item.flow;
 
+                const ast_inv = &flow.invocation;
+                const inv: *const Invocation = @ptrCast(ast_inv);
                 var dispatch_result: DispatchResult = undefined;
-                dispatcher_fn(&flow.invocation, &dispatch_result) catch return;
+                dispatcher_fn(inv, &dispatch_result) catch return;
 
                 std.debug.print("  Dispatched: branch={s}\n", .{dispatch_result.branch});
 
