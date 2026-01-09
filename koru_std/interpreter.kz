@@ -176,6 +176,7 @@ pub const DispatchResult = struct {
 
 pub const InterpreterContext = struct {
     env: *Environment,
+    expr_bindings: *ExprBindings,  // For expression evaluation in ~if
     allocator: std.mem.Allocator,
     // Dispatcher function pointer - set by the scope
     dispatcher: ?*const fn(*const ast.Invocation, *DispatchResult) anyerror!void,
@@ -186,6 +187,253 @@ pub const InterpreterContext = struct {
 // ============================================================================
 
 pub const DispatchFn = *const fn(*const ast.Invocation, *DispatchResult) anyerror!void;
+
+// ============================================================================
+// EXPRESSION VALUE - For runtime expression evaluation (different from Value)
+// ============================================================================
+
+pub const ExprValue = union(enum) {
+    bool_val: bool,
+    int_val: i64,
+    float_val: f64,
+    string_val: []const u8,
+    null_val: void,
+
+    pub fn isTruthy(self: ExprValue) bool {
+        return switch (self) {
+            .bool_val => |b| b,
+            .int_val => |n| n != 0,
+            .float_val => |f| f != 0.0,
+            .string_val => |s| s.len > 0,
+            .null_val => false,
+        };
+    }
+};
+
+// ============================================================================
+// EXPRESSION BINDINGS - Maps names to ExprValues for expression evaluation
+// ============================================================================
+
+pub const ExprBindings = struct {
+    values: std.StringHashMap(ExprValue),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) ExprBindings {
+        return .{
+            .values = std.StringHashMap(ExprValue).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *ExprBindings) void {
+        self.values.deinit();
+    }
+
+    pub fn set(self: *ExprBindings, name: []const u8, value: ExprValue) !void {
+        try self.values.put(name, value);
+    }
+
+    pub fn get(self: *const ExprBindings, name: []const u8) ?ExprValue {
+        return self.values.get(name);
+    }
+};
+
+// ============================================================================
+// EXPRESSION EVALUATOR - Evaluates AST Expression against ExprBindings
+// ============================================================================
+
+pub const ExprEvalError = error{
+    UnknownBinding,
+    TypeMismatch,
+    DivisionByZero,
+    InvalidExpression,
+    UnsupportedOperator,
+};
+
+pub fn evaluateExpression(expression: *const ast.Expression, bindings: *const ExprBindings) ExprEvalError!ExprValue {
+    return evaluateExprNode(&expression.node, bindings);
+}
+
+fn evaluateExprNode(node: *const ast.ExprNode, bindings: *const ExprBindings) ExprEvalError!ExprValue {
+    return switch (node.*) {
+        .literal => |lit| evaluateExprLiteral(lit),
+        .identifier => |id| evaluateExprIdentifier(id, bindings),
+        .binary => |bin| evaluateExprBinaryOp(&bin, bindings),
+        .unary => |un| evaluateExprUnaryOp(&un, bindings),
+        .field_access => |fa| evaluateExprFieldAccess(&fa, bindings),
+        .grouped => |g| evaluateExpression(g, bindings),
+    };
+}
+
+fn evaluateExprLiteral(lit: ast.Literal) ExprValue {
+    return switch (lit) {
+        .number => |n| blk: {
+            if (std.fmt.parseInt(i64, n, 10)) |i| {
+                break :blk .{ .int_val = i };
+            } else |_| {}
+            if (std.fmt.parseFloat(f64, n)) |f| {
+                break :blk .{ .float_val = f };
+            } else |_| {}
+            break :blk .{ .int_val = 0 };
+        },
+        .string => |s| .{ .string_val = s },
+        .boolean => |b| .{ .bool_val = b },
+    };
+}
+
+fn evaluateExprIdentifier(id: []const u8, bindings: *const ExprBindings) ExprEvalError!ExprValue {
+    return bindings.get(id) orelse ExprEvalError.UnknownBinding;
+}
+
+fn evaluateExprFieldAccess(fa: *const ast.FieldAccess, bindings: *const ExprBindings) ExprEvalError!ExprValue {
+    const obj_node = &fa.object.node;
+    if (obj_node.* == .identifier) {
+        const obj_name = obj_node.identifier;
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{obj_name, fa.field}) catch {
+            return ExprEvalError.InvalidExpression;
+        };
+        if (bindings.get(key)) |val| {
+            return val;
+        }
+    }
+    return ExprEvalError.UnknownBinding;
+}
+
+fn evaluateExprBinaryOp(bin: *const ast.BinaryOp, bindings: *const ExprBindings) ExprEvalError!ExprValue {
+    const left = try evaluateExpression(bin.left, bindings);
+    const right = try evaluateExpression(bin.right, bindings);
+
+    return switch (bin.op) {
+        .equal => exprCompareEq(left, right),
+        .not_equal => exprCompareNeq(left, right),
+        .less => exprCompareLt(left, right),
+        .greater => exprCompareGt(left, right),
+        .less_equal => exprCompareLte(left, right),
+        .greater_equal => exprCompareGte(left, right),
+        .and_op => .{ .bool_val = left.isTruthy() and right.isTruthy() },
+        .or_op => .{ .bool_val = left.isTruthy() or right.isTruthy() },
+        .add => exprArithmeticOp(left, right, .add),
+        .subtract => exprArithmeticOp(left, right, .sub),
+        .multiply => exprArithmeticOp(left, right, .mul),
+        .divide => exprArithmeticOp(left, right, .div),
+        .modulo => exprArithmeticOp(left, right, .mod),
+        .string_concat => ExprEvalError.UnsupportedOperator,
+    };
+}
+
+fn evaluateExprUnaryOp(un: *const ast.UnaryOp, bindings: *const ExprBindings) ExprEvalError!ExprValue {
+    const operand = try evaluateExpression(un.operand, bindings);
+    return switch (un.op) {
+        .not => .{ .bool_val = !operand.isTruthy() },
+        .negate => switch (operand) {
+            .int_val => |n| .{ .int_val = -n },
+            .float_val => |f| .{ .float_val = -f },
+            else => ExprEvalError.TypeMismatch,
+        },
+    };
+}
+
+fn exprCompareEq(left: ExprValue, right: ExprValue) ExprValue {
+    const result = switch (left) {
+        .bool_val => |l| switch (right) { .bool_val => |r| l == r, else => false },
+        .int_val => |l| switch (right) {
+            .int_val => |r| l == r,
+            .float_val => |r| @as(f64, @floatFromInt(l)) == r,
+            else => false,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| l == @as(f64, @floatFromInt(r)),
+            .float_val => |r| l == r,
+            else => false,
+        },
+        .string_val => |l| switch (right) { .string_val => |r| std.mem.eql(u8, l, r), else => false },
+        .null_val => switch (right) { .null_val => true, else => false },
+    };
+    return .{ .bool_val = result };
+}
+
+fn exprCompareNeq(left: ExprValue, right: ExprValue) ExprValue {
+    return .{ .bool_val = !exprCompareEq(left, right).bool_val };
+}
+
+fn exprCompareLt(left: ExprValue, right: ExprValue) ExprEvalError!ExprValue {
+    return switch (left) {
+        .int_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l < r },
+            .float_val => |r| .{ .bool_val = @as(f64, @floatFromInt(l)) < r },
+            else => ExprEvalError.TypeMismatch,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l < @as(f64, @floatFromInt(r)) },
+            .float_val => |r| .{ .bool_val = l < r },
+            else => ExprEvalError.TypeMismatch,
+        },
+        else => ExprEvalError.TypeMismatch,
+    };
+}
+
+fn exprCompareGt(left: ExprValue, right: ExprValue) ExprEvalError!ExprValue {
+    return switch (left) {
+        .int_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l > r },
+            .float_val => |r| .{ .bool_val = @as(f64, @floatFromInt(l)) > r },
+            else => ExprEvalError.TypeMismatch,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| .{ .bool_val = l > @as(f64, @floatFromInt(r)) },
+            .float_val => |r| .{ .bool_val = l > r },
+            else => ExprEvalError.TypeMismatch,
+        },
+        else => ExprEvalError.TypeMismatch,
+    };
+}
+
+fn exprCompareLte(left: ExprValue, right: ExprValue) ExprEvalError!ExprValue {
+    return .{ .bool_val = !(try exprCompareGt(left, right)).bool_val };
+}
+
+fn exprCompareGte(left: ExprValue, right: ExprValue) ExprEvalError!ExprValue {
+    return .{ .bool_val = !(try exprCompareLt(left, right)).bool_val };
+}
+
+const ExprArithOp = enum { add, sub, mul, div, mod };
+
+fn exprArithmeticOp(left: ExprValue, right: ExprValue, op: ExprArithOp) ExprEvalError!ExprValue {
+    return switch (left) {
+        .int_val => |l| switch (right) {
+            .int_val => |r| exprIntOp(l, r, op),
+            .float_val => |r| exprFloatOp(@as(f64, @floatFromInt(l)), r, op),
+            else => ExprEvalError.TypeMismatch,
+        },
+        .float_val => |l| switch (right) {
+            .int_val => |r| exprFloatOp(l, @as(f64, @floatFromInt(r)), op),
+            .float_val => |r| exprFloatOp(l, r, op),
+            else => ExprEvalError.TypeMismatch,
+        },
+        else => ExprEvalError.TypeMismatch,
+    };
+}
+
+fn exprIntOp(l: i64, r: i64, op: ExprArithOp) ExprEvalError!ExprValue {
+    return .{ .int_val = switch (op) {
+        .add => l + r,
+        .sub => l - r,
+        .mul => l * r,
+        .div => if (r == 0) return ExprEvalError.DivisionByZero else @divTrunc(l, r),
+        .mod => if (r == 0) return ExprEvalError.DivisionByZero else @mod(l, r),
+    } };
+}
+
+fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
+    return .{ .float_val = switch (op) {
+        .add => l + r,
+        .sub => l - r,
+        .mul => l * r,
+        .div => if (r == 0.0) return ExprEvalError.DivisionByZero else l / r,
+        .mod => @mod(l, r),
+    } };
+}
 
 // ============================================================================
 // MAIN INTERPRETER EVENT
@@ -288,8 +536,12 @@ pub const DispatchFn = *const fn(*const ast.Invocation, *DispatchResult) anyerro
     var env = Environment.init(allocator);
     defer env.deinit();
 
+    var expr_bindings = ExprBindings.init(allocator);
+    defer expr_bindings.deinit();
+
     var ctx = InterpreterContext{
         .env = &env,
+        .expr_bindings = &expr_bindings,
         .allocator = allocator,
         .dispatcher = dispatcher,
     };
@@ -379,11 +631,63 @@ fn executeFlow(
     // Build invocation for dispatcher
     var dispatch_result: DispatchResult = undefined;
 
-    // Call dispatcher
-    if (ctx.dispatcher) |dispatcher| {
-        try dispatcher(inv, &dispatch_result);
+    // =========================================================================
+    // SPECIAL HANDLING: ~if - Runtime conditional evaluation
+    // =========================================================================
+    const is_if = inv.path.module_qualifier == null and
+                  inv.path.segments.len == 1 and
+                  std.mem.eql(u8, inv.path.segments[0], "if");
+
+    if (is_if) {
+        std.debug.print("[INTERPRETER] Detected ~if, evaluating condition\n", .{});
+
+        // Get expression from the first arg (should be the condition)
+        var condition_result: bool = false;
+
+        if (inv.args.len > 0) {
+            const first_arg = &inv.args[0];
+
+            // Check if there's a parsed expression (Expression type args)
+            if (first_arg.expression) |expr| {
+                // Evaluate the parsed expression against our bindings
+                if (evaluateExpression(expr, ctx.expr_bindings)) |eval_result| {
+                    condition_result = eval_result.isTruthy();
+                    std.debug.print("[INTERPRETER] Condition evaluated to: {}\n", .{condition_result});
+                } else |err| {
+                    std.debug.print("[INTERPRETER] Expression eval error: {s}\n", .{@errorName(err)});
+                    // On error, default to false (else branch)
+                    condition_result = false;
+                }
+            } else {
+                // Fallback: try to parse the value string as a boolean
+                if (std.mem.eql(u8, first_arg.value, "true")) {
+                    condition_result = true;
+                } else if (std.mem.eql(u8, first_arg.value, "false")) {
+                    condition_result = false;
+                } else {
+                    // Try to evaluate as identifier from bindings
+                    if (ctx.expr_bindings.get(first_arg.value)) |val| {
+                        condition_result = val.isTruthy();
+                    } else {
+                        // Default to non-empty string being truthy
+                        condition_result = first_arg.value.len > 0;
+                    }
+                }
+                std.debug.print("[INTERPRETER] Condition (from string '{s}'): {}\n", .{first_arg.value, condition_result});
+            }
+        }
+
+        // Set the branch based on condition result
+        dispatch_result.branch = if (condition_result) "then" else "else";
+        dispatch_result.payload_json = null;
+        std.debug.print("[INTERPRETER] ~if taking branch: | {s} |>\n", .{dispatch_result.branch});
     } else {
-        return error.NoDispatcher;
+        // Normal dispatch for other events
+        if (ctx.dispatcher) |dispatcher| {
+            try dispatcher(inv, &dispatch_result);
+        } else {
+            return error.NoDispatcher;
+        }
     }
 
     // Find matching continuation
@@ -391,10 +695,37 @@ fn executeFlow(
         if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
             // Bind the result if there's a binding name
             if (cont.binding) |binding_name| {
-                try ctx.env.bind(binding_name, Value.fromDispatch(
+                const bound_value = Value.fromDispatch(
                     dispatch_result.branch,
                     dispatch_result.payload_json,
-                ));
+                );
+                try ctx.env.bind(binding_name, bound_value);
+
+                // Also populate expr_bindings for ~if conditions
+                // The binding itself gets the branch name as a string
+                try ctx.expr_bindings.set(binding_name, .{ .string_val = dispatch_result.branch });
+
+                // If we have fields, add them as binding.field entries
+                for (bound_value.fields) |fv| {
+                    var field_key_buf: [256]u8 = undefined;
+                    const field_key = std.fmt.bufPrint(&field_key_buf, "{s}.{s}", .{binding_name, fv.name}) catch continue;
+                    const field_key_owned = try ctx.allocator.dupe(u8, field_key);
+
+                    // Try to parse the field value as a number or boolean
+                    if (std.mem.eql(u8, fv.value, "true")) {
+                        try ctx.expr_bindings.set(field_key_owned, .{ .bool_val = true });
+                    } else if (std.mem.eql(u8, fv.value, "false")) {
+                        try ctx.expr_bindings.set(field_key_owned, .{ .bool_val = false });
+                    } else if (std.fmt.parseInt(i64, fv.value, 10)) |n| {
+                        try ctx.expr_bindings.set(field_key_owned, .{ .int_val = n });
+                    } else |_| {
+                        if (std.fmt.parseFloat(f64, fv.value)) |f| {
+                            try ctx.expr_bindings.set(field_key_owned, .{ .float_val = f });
+                        } else |_| {
+                            try ctx.expr_bindings.set(field_key_owned, .{ .string_val = fv.value });
+                        }
+                    }
+                }
             }
 
             // If there's a next node, execute it

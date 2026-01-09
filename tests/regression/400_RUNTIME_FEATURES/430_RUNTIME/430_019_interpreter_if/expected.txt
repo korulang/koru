@@ -1,0 +1,25 @@
+
+╔══════════════════════════════════════════════════════════════╗
+║     INTERPRETER RUNTIME ~if TEST                             ║
+╚══════════════════════════════════════════════════════════════╝
+
+Test 1: ~if(true) - then branch
+  Parsed 1 items
+  Flow: path=if
+  Continuations: 2
+    | then |>
+    | else |>
+[DISPATCH] DENIED: if
+  Dispatch result: EventDenied (handled specially)
+  ✓ TEST 1 PARSED SUCCESSFULLY
+
+Test 2: ~if(false) - else branch
+  Parsed successfully
+  Flow: path=if
+  Args: 1
+    arg[0].value = false
+  ✓ TEST 2 PARSED SUCCESSFULLY
+
+╔══════════════════════════════════════════════════════════════╗
+║     INTERPRETER ~if TESTS COMPLETE                           ║
+╚══════════════════════════════════════════════════════════════╝
