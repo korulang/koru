@@ -1,0 +1,77 @@
+// Test: Runtime Registry Dispatch
+// Minimal test to verify the generated dispatcher works
+
+~import "$std/runtime"
+~import "$std/build"
+
+// Add ast module as runtime dependency (ast needs errors)
+~std.build:requires {
+    const errors_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "/usr/local/lib/koru/src/errors.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const ast_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "/usr/local/lib/koru/src/ast.zig" },
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{ .{ .name = "errors", .module = errors_module } },
+    });
+    exe.root_module.addImport("ast", ast_module);
+}
+
+const std = @import("std");
+
+// Simple event to dispatch to
+~pub event greet { name: []const u8 }
+| greeted { message: []const u8 }
+
+~proc greet {
+    std.debug.print("GREET CALLED with name: {s}\n", .{name});
+    return .{ .greeted = .{ .message = "Hello!" } };
+}
+
+// Register just this one event
+~std.runtime:register(scope: "test") {
+    greet
+}
+
+// Entry point - uses the dispatcher's ast import
+pub fn main() void {
+    std.debug.print("=== DISPATCH TEST ===\n", .{});
+
+    // Create a fake invocation for "greet" using the dispatcher's ast types
+    const segments = [_][]const u8{"greet"};
+    const path = __dispatch_ast.DottedPath{
+        .module_qualifier = null,
+        .segments = &segments,
+    };
+
+    var args_array = [_]__dispatch_ast.Arg{
+        .{
+            .name = "name",
+            .value = "World",
+        },
+    };
+
+    const inv = __dispatch_ast.Invocation{
+        .path = path,
+        .args = &args_array,
+    };
+
+    // Call the dispatcher with result output!
+    var result: DispatchResult = undefined;
+    dispatch_test(&inv, &result) catch |err| {
+        std.debug.print("Dispatch error: {}\n", .{err});
+        return;
+    };
+
+    // Print the result - this is what the interpreter would use!
+    std.debug.print("=== DISPATCH SUCCESS ===\n", .{});
+    std.debug.print("Branch: {s}\n", .{result.branch});
+    if (result.payload_json) |payload| {
+        std.debug.print("Payload: {s}\n", .{payload});
+    } else {
+        std.debug.print("Payload: (none)\n", .{});
+    }
+}

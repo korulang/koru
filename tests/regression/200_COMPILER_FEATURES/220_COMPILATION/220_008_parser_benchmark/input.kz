@@ -1,0 +1,57 @@
+// Benchmark: Parser Performance
+//
+// Parses a realistic Koru module and verifies success.
+// Run with hyperfine for accurate timing.
+
+~import "$std/parser"
+~import "$std/io"
+
+const std = @import("std");
+
+// Realistic Koru module (~50 lines, multiple events, nested flows)
+const SAMPLE =
+    \\// User authentication module
+    \\const std = @import("std");
+    \\
+    \\~event authenticate { username: []const u8, password: []const u8 }
+    \\| authenticated { user_id: u64, token: []const u8 }
+    \\| invalid_credentials { reason: []const u8 }
+    \\| account_locked { until: u64 }
+    \\
+    \\~event validate_token { token: []const u8 }
+    \\| valid { user_id: u64, expires: u64 }
+    \\| expired { user_id: u64 }
+    \\| invalid {}
+    \\
+    \\~event refresh_token { token: []const u8 }
+    \\| refreshed { new_token: []const u8, expires: u64 }
+    \\| denied { reason: []const u8 }
+    \\
+    \\~event get_user { user_id: u64 }
+    \\| found { name: []const u8, email: []const u8, role: []const u8 }
+    \\| not_found {}
+    \\
+    \\~event check_permission { user_id: u64, resource: []const u8, action: []const u8 }
+    \\| allowed {}
+    \\| denied { reason: []const u8 }
+    \\
+    \\~event log_access { user_id: u64, resource: []const u8, action: []const u8, allowed: bool }
+    \\| logged {}
+    \\
+    \\// Main authentication flow
+    \\~authenticate(username: "admin", password: "secret")
+    \\| authenticated a |> get_user(user_id: a.user_id)
+    \\    | found u |> check_permission(user_id: a.user_id, resource: "/api/data", action: "read")
+    \\        | allowed |> log_access(user_id: a.user_id, resource: "/api/data", action: "read", allowed: true)
+    \\            | logged |> respond_ok(token: a.token)
+    \\        | denied d |> log_access(user_id: a.user_id, resource: "/api/data", action: "read", allowed: false)
+    \\            | logged |> respond_forbidden(reason: d.reason)
+    \\    | not_found |> respond_error(code: 404, message: "User not found")
+    \\| invalid_credentials i |> respond_error(code: 401, message: i.reason)
+    \\| account_locked l |> respond_error(code: 423, message: "Account locked")
+;
+
+// Parse and verify success
+~std.parser:parse.source(source: SAMPLE, file_name: "auth.kz", allocator: std.heap.page_allocator)
+| parsed p |> std.io:print.ln("OK {{p.ast.source_file.items.len}} items")
+| parse_error e |> std.io:print.ln("FAIL {{e.message}}")

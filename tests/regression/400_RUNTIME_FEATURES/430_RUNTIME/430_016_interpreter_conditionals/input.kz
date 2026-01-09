@@ -1,0 +1,337 @@
+// Test: Interpreter Conditionals (ASPIRATIONAL)
+// Runtime evaluation of ~if conditionals
+//
+// THE GOAL: Parse and execute conditional flows at runtime
+//
+// ~validate(data: input)
+// | valid v |> ~if(v.score > 50)
+//     | true |> approved { data: v.value }
+//     | false |> rejected { reason: "score too low" }
+// | invalid e |> error { message: e.reason }
+
+~import "$std/runtime"
+~import "$std/build"
+
+~std.build:requires {
+    const REL_TO_ROOT = "/usr/local/lib/koru";
+
+    const errors_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const ast_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_module.addImport("errors", errors_module);
+
+    const lexer_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const type_registry_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/type_registry.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    type_registry_module.addImport("ast", ast_module);
+
+    const expression_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    expression_parser_module.addImport("lexer", lexer_module);
+    expression_parser_module.addImport("ast", ast_module);
+
+    const union_collector_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/union_collector.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    union_collector_module.addImport("ast", ast_module);
+
+    const config_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/config.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const module_resolver_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/module_resolver.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    module_resolver_module.addImport("config", config_module);
+
+    const parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    parser_module.addImport("ast", ast_module);
+    parser_module.addImport("lexer", lexer_module);
+    parser_module.addImport("errors", errors_module);
+    parser_module.addImport("type_registry", type_registry_module);
+    parser_module.addImport("expression_parser", expression_parser_module);
+    parser_module.addImport("union_collector", union_collector_module);
+    parser_module.addImport("module_resolver", module_resolver_module);
+
+    exe.root_module.addImport("ast", ast_module);
+    exe.root_module.addImport("koru_parser", parser_module);
+    exe.root_module.addImport("koru_ast", ast_module);
+    exe.root_module.addImport("koru_errors", errors_module);
+}
+
+const std = @import("std");
+
+// ============================================================================
+// Events for testing
+// ============================================================================
+
+~pub event check { value: []const u8 }
+| high { score: []const u8 }
+| low { score: []const u8 }
+
+~proc check {
+    // Parse value as number, return high if > 50
+    const num = std.fmt.parseInt(i32, value, 10) catch 0;
+    if (num > 50) {
+        return .{ .high = .{ .score = value } };
+    }
+    return .{ .low = .{ .score = value } };
+}
+
+// Register events
+~std.runtime:register(scope: "test") {
+    check
+}
+
+// ============================================================================
+// Entry point
+// ============================================================================
+
+pub fn main() void {
+    const koru_parser = @import("koru_parser");
+    const koru_errors = @import("koru_errors");
+
+    std.debug.print("\n", .{});
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║     INTERPRETER CONDITIONALS TEST (ASPIRATIONAL)             ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
+
+    const dispatcher_fn = __koru_scope_test.dispatch;
+
+    // ========================================================================
+    // Test 1: See what ~if parses to
+    // ========================================================================
+    std.debug.print("Test 1: Parse ~if and inspect AST\n", .{});
+    {
+        // Simple conditional flow
+        const test_source =
+            \\~if(true)
+            \\| true |> yes {}
+            \\| false |> no {}
+        ;
+
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
+
+        var reporter = koru_errors.ErrorReporter.init(allocator, "test", test_source) catch return;
+        defer reporter.deinit();
+
+        var parser = koru_parser.Parser.init(allocator, test_source, "test", &[_][]const u8{}, null) catch return;
+        defer parser.deinit();
+
+        const parse_result = parser.parse() catch |err| {
+            std.debug.print("  Parse error: {}\n", .{err});
+            if (parser.reporter.hasErrors()) {
+                for (parser.reporter.errors.items) |parse_err| {
+                    std.debug.print("    {s} at {}:{}\n", .{parse_err.message, parse_err.location.line, parse_err.location.column});
+                }
+            }
+            std.debug.print("  (This is expected if ~if needs special handling)\n\n", .{});
+            return;
+        };
+
+        std.debug.print("  Parsed {d} items!\n", .{parse_result.source_file.items.len});
+
+        for (parse_result.source_file.items) |item| {
+            std.debug.print("  Item type: {s}\n", .{@tagName(item)});
+
+            if (item == .flow) {
+                const flow = &item.flow;
+                const inv = &flow.invocation;
+                std.debug.print("  Flow invocation: ", .{});
+                if (inv.path.module_qualifier) |mq| {
+                    std.debug.print("{s}:", .{mq});
+                }
+                for (inv.path.segments, 0..) |seg, i| {
+                    if (i > 0) std.debug.print(".", .{});
+                    std.debug.print("{s}", .{seg});
+                }
+                std.debug.print("\n", .{});
+                std.debug.print("  Args: {d}\n", .{inv.args.len});
+                for (inv.args) |arg| {
+                    std.debug.print("    {s} = {s}\n", .{arg.name, arg.value});
+                }
+                std.debug.print("  Continuations: {d}\n", .{flow.continuations.len});
+                for (flow.continuations) |cont| {
+                    std.debug.print("    | {s}", .{cont.branch});
+                    if (cont.binding) |b| std.debug.print(" {s}", .{b});
+                    std.debug.print(" |>\n", .{});
+                    if (cont.node) |node| {
+                        std.debug.print("      node: {s}\n", .{@tagName(node)});
+                    }
+                }
+            }
+        }
+
+        std.debug.print("  ✓ TEST 1 COMPLETE\n\n", .{});
+    }
+
+    // ========================================================================
+    // Test 2: Chain with conditional (ASPIRATIONAL)
+    // ========================================================================
+    std.debug.print("Test 2: Dataflow with conditional branching\n", .{});
+    {
+        // What we WANT to support:
+        // ~check(value: "75")
+        // | high h |> approved { score: h.score }
+        // | low l |> rejected { score: l.score }
+
+        const test_source =
+            \\~check(value: "75")
+            \\| high h |> approved { score: "high" }
+            \\| low l |> rejected { score: "low" }
+        ;
+
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
+
+        var reporter = koru_errors.ErrorReporter.init(allocator, "test", test_source) catch return;
+        defer reporter.deinit();
+
+        var parser = koru_parser.Parser.init(allocator, test_source, "test", &[_][]const u8{}, null) catch return;
+        defer parser.deinit();
+
+        const parse_result = parser.parse() catch |err| {
+            std.debug.print("  ERROR: Parse failed: {}\n", .{err});
+            return;
+        };
+
+        std.debug.print("  Parsed successfully!\n", .{});
+
+        for (parse_result.source_file.items) |item| {
+            if (item == .flow) {
+                const flow = &item.flow;
+
+                // Dispatch
+                var dispatch_result: DispatchResult = undefined;
+                dispatcher_fn(&flow.invocation, &dispatch_result) catch |err| {
+                    std.debug.print("  ERROR: Dispatch failed: {}\n", .{err});
+                    return;
+                };
+
+                std.debug.print("  Dispatched: branch={s}\n", .{dispatch_result.branch});
+
+                // Find matching continuation
+                for (flow.continuations) |cont| {
+                    if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
+                        std.debug.print("  Matched: | {s} |>\n", .{cont.branch});
+
+                        if (cont.node) |node| {
+                            if (node == .branch_constructor) {
+                                const bc = node.branch_constructor;
+                                std.debug.print("  RESULT:\n", .{});
+                                std.debug.print("    branch: {s}\n", .{bc.branch_name});
+                                for (bc.fields) |field| {
+                                    var value = field.expression_str orelse "";
+                                    if (value.len >= 2 and value[0] == '"' and value[value.len-1] == '"') {
+                                        value = value[1..value.len-1];
+                                    }
+                                    std.debug.print("    {s}: {s}\n", .{field.name, value});
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                std.debug.print("  ✓ TEST 2 PASSED\n\n", .{});
+                break;
+            }
+        }
+    }
+
+    // ========================================================================
+    // Test 3: Now with low value
+    // ========================================================================
+    std.debug.print("Test 3: Same flow, different input (low path)\n", .{});
+    {
+        const test_source =
+            \\~check(value: "25")
+            \\| high h |> approved { score: "high" }
+            \\| low l |> rejected { score: "low" }
+        ;
+
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
+
+        var reporter = koru_errors.ErrorReporter.init(allocator, "test", test_source) catch return;
+        defer reporter.deinit();
+
+        var parser = koru_parser.Parser.init(allocator, test_source, "test", &[_][]const u8{}, null) catch return;
+        defer parser.deinit();
+
+        const parse_result = parser.parse() catch return;
+
+        for (parse_result.source_file.items) |item| {
+            if (item == .flow) {
+                const flow = &item.flow;
+
+                var dispatch_result: DispatchResult = undefined;
+                dispatcher_fn(&flow.invocation, &dispatch_result) catch return;
+
+                std.debug.print("  Dispatched: branch={s}\n", .{dispatch_result.branch});
+
+                for (flow.continuations) |cont| {
+                    if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
+                        std.debug.print("  Matched: | {s} |>\n", .{cont.branch});
+
+                        if (cont.node) |node| {
+                            if (node == .branch_constructor) {
+                                const bc = node.branch_constructor;
+                                std.debug.print("  RESULT:\n", .{});
+                                std.debug.print("    branch: {s}\n", .{bc.branch_name});
+                                for (bc.fields) |field| {
+                                    var value = field.expression_str orelse "";
+                                    if (value.len >= 2 and value[0] == '"' and value[value.len-1] == '"') {
+                                        value = value[1..value.len-1];
+                                    }
+                                    std.debug.print("    {s}: {s}\n", .{field.name, value});
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                std.debug.print("  ✓ TEST 3 PASSED\n\n", .{});
+                break;
+            }
+        }
+    }
+
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║              CONDITIONAL TESTS COMPLETE                      ║\n", .{});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n", .{});
+}

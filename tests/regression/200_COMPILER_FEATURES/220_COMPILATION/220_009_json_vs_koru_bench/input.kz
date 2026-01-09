@@ -1,0 +1,42 @@
+// Benchmark: JSON vs Koru parsing
+//
+// Compare parsing equivalent data structures.
+
+~import "$std/io"
+
+const std = @import("std");
+
+// Equivalent data as JSON (~same size as Koru sample)
+const JSON_SAMPLE =
+    \\{
+    \\  "events": [
+    \\    {"name": "authenticate", "inputs": ["username", "password"], "branches": ["authenticated", "invalid_credentials", "account_locked"]},
+    \\    {"name": "validate_token", "inputs": ["token"], "branches": ["valid", "expired", "invalid"]},
+    \\    {"name": "refresh_token", "inputs": ["token"], "branches": ["refreshed", "denied"]},
+    \\    {"name": "get_user", "inputs": ["user_id"], "branches": ["found", "not_found"]},
+    \\    {"name": "check_permission", "inputs": ["user_id", "resource", "action"], "branches": ["allowed", "denied"]},
+    \\    {"name": "log_access", "inputs": ["user_id", "resource", "action", "allowed"], "branches": ["logged"]}
+    \\  ],
+    \\  "flows": [
+    \\    {"event": "authenticate", "args": {"username": "admin", "password": "secret"}},
+    \\    {"on": "authenticated", "then": {"event": "get_user", "args": {"user_id": "$a.user_id"}}},
+    \\    {"on": "found", "then": {"event": "check_permission", "args": {"user_id": "$a.user_id", "resource": "/api/data", "action": "read"}}}
+    \\  ]
+    \\}
+;
+
+~event bench_json {}
+| done { items: usize }
+
+~proc bench_json {
+    const parsed = std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, JSON_SAMPLE, .{}) catch {
+        return .{ .done = .{ .items = 0 } };
+    };
+    defer parsed.deinit();
+
+    const events = parsed.value.object.get("events") orelse return .{ .done = .{ .items = 0 } };
+    return .{ .done = .{ .items = events.array.items.len } };
+}
+
+~bench_json()
+| done d |> std.io:print.ln("JSON: {{d.items}} events")

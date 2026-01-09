@@ -1,0 +1,456 @@
+// Koru Interpreter Standard Library
+// Enables runtime evaluation of Koru source code
+//
+// DESIGN:
+// - Parses Koru source at runtime using the same parser as the compiler
+// - Walks the AST and executes events via registered dispatchers
+// - Tracks bindings in an environment as flow progresses
+// - Uses the shape_checker for optional validation before execution
+//
+// Usage:
+//   ~import "$std/interpreter"
+//   ~import "$std/runtime"
+//
+//   // Register events you want callable at runtime
+//   ~std.runtime:register(scope: "api") {
+//       greet
+//       process_order
+//   }
+//
+//   // Interpret Koru source
+//   ~std.interpreter:run(source: user_input, scope: "api")
+//   | result r |> handle_result(value: r.value)
+//   | parse_error e |> respond(status: 400, body: e.message)
+//   | validation_error e |> respond(status: 400, body: e.message)
+//   | dispatch_error e |> respond(status: 500, body: e.event)
+
+~[runtime]
+
+const std = @import("std");
+const ast = @import("ast");
+
+// ============================================================================
+// BUILD REQUIREMENTS - Parser and checkers for runtime use
+// ============================================================================
+
+~std.build:requires {
+    const REL_TO_ROOT = "/usr/local/lib/koru";
+
+    // Errors module (needed by parser and ast)
+    const errors_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // AST module
+    const ast_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_module.addImport("errors", errors_module);
+
+    // Lexer module (needed by parser)
+    const lexer_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Type registry (needed by parser)
+    const type_registry_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/type_registry.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    type_registry_module.addImport("ast", ast_module);
+
+    // Expression parser (needed by parser)
+    const expression_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    expression_parser_module.addImport("lexer", lexer_module);
+    expression_parser_module.addImport("ast", ast_module);
+
+    // Union collector (needed by parser)
+    const union_collector_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/union_collector.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    union_collector_module.addImport("ast", ast_module);
+
+    // Parser module - the core!
+    const parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    parser_module.addImport("ast", ast_module);
+    parser_module.addImport("lexer", lexer_module);
+    parser_module.addImport("errors", errors_module);
+    parser_module.addImport("type_registry", type_registry_module);
+    parser_module.addImport("expression_parser", expression_parser_module);
+    parser_module.addImport("union_collector", union_collector_module);
+
+    // Add to executable
+    exe.root_module.addImport("koru_parser", parser_module);
+    exe.root_module.addImport("koru_ast", ast_module);
+    exe.root_module.addImport("koru_errors", errors_module);
+}
+
+// ============================================================================
+// INTERPRETER VALUE - Runtime representation of Koru values
+// ============================================================================
+
+pub const FieldValue = struct {
+    name: []const u8,
+    value: []const u8,  // String representation of value
+};
+
+pub const Value = struct {
+    branch: []const u8,           // Which branch was taken/constructed
+    fields: []const FieldValue,   // Structured fields (from branch constructor)
+    payload_json: ?[]const u8,    // Raw payload from dispatch (if no fields)
+
+    pub fn empty(branch_name: []const u8) Value {
+        return .{
+            .branch = branch_name,
+            .fields = &[_]FieldValue{},
+            .payload_json = null,
+        };
+    }
+
+    pub fn fromDispatch(branch_name: []const u8, payload: ?[]const u8) Value {
+        return .{
+            .branch = branch_name,
+            .fields = &[_]FieldValue{},
+            .payload_json = payload,
+        };
+    }
+};
+
+// ============================================================================
+// ENVIRONMENT - Tracks bindings during interpretation
+// ============================================================================
+
+pub const Environment = struct {
+    bindings: std.StringHashMap(Value),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) Environment {
+        return .{
+            .bindings = std.StringHashMap(Value).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *Environment) void {
+        self.bindings.deinit();
+    }
+
+    pub fn bind(self: *Environment, name: []const u8, value: Value) !void {
+        try self.bindings.put(name, value);
+    }
+
+    pub fn get(self: *Environment, name: []const u8) ?Value {
+        return self.bindings.get(name);
+    }
+};
+
+// ============================================================================
+// DISPATCH RESULT - What dispatchers return to the interpreter
+// ============================================================================
+
+pub const DispatchResult = struct {
+    branch: []const u8,
+    payload_json: ?[]const u8,
+};
+
+// ============================================================================
+// INTERPRETER CONTEXT - Passed to the execution loop
+// ============================================================================
+
+pub const InterpreterContext = struct {
+    env: *Environment,
+    allocator: std.mem.Allocator,
+    // Dispatcher function pointer - set by the scope
+    dispatcher: ?*const fn(*const ast.Invocation, *DispatchResult) anyerror!void,
+};
+
+// ============================================================================
+// DISPATCHER TYPE - Function signature for scope dispatchers
+// ============================================================================
+
+pub const DispatchFn = *const fn(*const ast.Invocation, *DispatchResult) anyerror!void;
+
+// ============================================================================
+// MAIN INTERPRETER EVENT
+// ============================================================================
+
+// v1: Takes dispatcher function directly (explicit, simple)
+// User passes &dispatch_X from their generated scope
+~pub event run {
+    source: []const u8,
+    dispatcher: DispatchFn
+}
+| result { value: Value }
+| parse_error { message: []const u8, line: u32, column: u32 }
+| validation_error { message: []const u8 }
+| dispatch_error { event_name: []const u8, message: []const u8 }
+
+~proc run {
+    const koru_parser = @import("koru_parser");
+    const koru_errors = @import("koru_errors");
+    const koru_ast = @import("koru_ast");
+
+    std.debug.print("[INTERPRETER] Parsing source ({d} bytes)\n", .{source.len});
+
+    // Create allocator for parsing
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // Create error reporter
+    var reporter = koru_errors.ErrorReporter.init(
+        allocator,
+        "interpreter",
+        source
+    ) catch {
+        return .{ .parse_error = .{
+            .message = "Failed to initialize error reporter",
+            .line = 0,
+            .column = 0
+        }};
+    };
+    defer reporter.deinit();
+
+    // Initialize parser
+    var parser = koru_parser.Parser.init(
+        allocator,
+        source,
+        "runtime_input",
+        &[_][]const u8{},  // No compiler flags
+        null               // No resolver
+    ) catch {
+        return .{ .parse_error = .{
+            .message = "Failed to initialize parser",
+            .line = 0,
+            .column = 0
+        }};
+    };
+    defer parser.deinit();
+
+    // Parse!
+    const parse_result = parser.parse() catch {
+        // Get error details from reporter
+        if (parser.reporter.hasErrors()) {
+            const err = parser.reporter.errors.items[0];
+            return .{ .parse_error = .{
+                .message = err.message,
+                .line = @intCast(err.location.line),
+                .column = @intCast(err.location.column),
+            }};
+        }
+        return .{ .parse_error = .{
+            .message = "Parse failed",
+            .line = 0,
+            .column = 0
+        }};
+    };
+
+    std.debug.print("[INTERPRETER] Parsed {d} items\n", .{parse_result.source_file.items.len});
+
+    // Find the first flow to execute
+    var flow_to_run: ?*const koru_ast.Flow = null;
+    for (parse_result.source_file.items) |*item| {
+        if (item.* == .flow) {
+            flow_to_run = &item.flow;
+            break;
+        }
+    }
+
+    if (flow_to_run == null) {
+        return .{ .parse_error = .{
+            .message = "No flow found in source",
+            .line = 0,
+            .column = 0
+        }};
+    }
+
+    const flow = flow_to_run.?;
+    std.debug.print("[INTERPRETER] Found flow to execute\n", .{});
+
+    // Create environment and context
+    var env = Environment.init(allocator);
+    defer env.deinit();
+
+    var ctx = InterpreterContext{
+        .env = &env,
+        .allocator = allocator,
+        .dispatcher = dispatcher,
+    };
+
+    // Execute the flow!
+    const result_value = executeFlow(flow, &ctx) catch |err| {
+        // Build event name for error reporting
+        const inv = &flow.invocation;
+        var name_buf: [256]u8 = undefined;
+        var name_len: usize = 0;
+        if (inv.path.module_qualifier) |mq| {
+            @memcpy(name_buf[name_len..][0..mq.len], mq);
+            name_len += mq.len;
+            name_buf[name_len] = ':';
+            name_len += 1;
+        }
+        for (inv.path.segments, 0..) |seg, i| {
+            if (i > 0) { name_buf[name_len] = '.'; name_len += 1; }
+            @memcpy(name_buf[name_len..][0..seg.len], seg);
+            name_len += seg.len;
+        }
+
+        return .{ .dispatch_error = .{
+            .event_name = name_buf[0..name_len],
+            .message = @errorName(err),
+        }};
+    };
+
+    std.debug.print("[INTERPRETER] Execution complete, branch: {s}\n", .{result_value.branch});
+    return .{ .result = .{ .value = result_value }};
+}
+
+// ============================================================================
+// FLOW EXECUTION - The core interpreter loop
+// ============================================================================
+
+// Evaluate a simple expression against the environment
+// Handles: literals ("hello"), bindings (r), field access (r.message)
+fn evaluateExpr(expr_str: []const u8, env: *Environment, allocator: std.mem.Allocator) ![]const u8 {
+    const trimmed = std.mem.trim(u8, expr_str, " \t");
+
+    // String literal - return without quotes
+    if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
+        return try allocator.dupe(u8, trimmed[1..trimmed.len - 1]);
+    }
+
+    // Check for field access (binding.field)
+    if (std.mem.indexOf(u8, trimmed, ".")) |dot_pos| {
+        const binding_name = trimmed[0..dot_pos];
+        const field_name = trimmed[dot_pos + 1..];
+
+        if (env.get(binding_name)) |bound_value| {
+            // Look up field in bound value
+            for (bound_value.fields) |fv| {
+                if (std.mem.eql(u8, fv.name, field_name)) {
+                    return fv.value;
+                }
+            }
+            // Field not in explicit fields - check payload_json
+            // For now, return the field name as placeholder
+            // TODO: Parse payload_json to extract field
+            return try std.fmt.allocPrint(allocator, "<{s}.{s}>", .{binding_name, field_name});
+        }
+        return try std.fmt.allocPrint(allocator, "<unbound:{s}>", .{binding_name});
+    }
+
+    // Simple binding reference
+    if (env.get(trimmed)) |bound_value| {
+        // Return the branch name or first field value
+        if (bound_value.fields.len > 0) {
+            return bound_value.fields[0].value;
+        }
+        return bound_value.branch;
+    }
+
+    // Return as-is (number, boolean, etc.)
+    return try allocator.dupe(u8, trimmed);
+}
+
+// Execute a single flow node, returning the final value
+fn executeFlow(
+    flow: *const ast.Flow,
+    ctx: *InterpreterContext,
+) !Value {
+    const inv = &flow.invocation;
+
+    // Build invocation for dispatcher
+    var dispatch_result: DispatchResult = undefined;
+
+    // Call dispatcher
+    if (ctx.dispatcher) |dispatcher| {
+        try dispatcher(inv, &dispatch_result);
+    } else {
+        return error.NoDispatcher;
+    }
+
+    // Find matching continuation
+    for (flow.continuations) |cont| {
+        if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
+            // Bind the result if there's a binding name
+            if (cont.binding) |binding_name| {
+                try ctx.env.bind(binding_name, Value.fromDispatch(
+                    dispatch_result.branch,
+                    dispatch_result.payload_json,
+                ));
+            }
+
+            // If there's a next node, execute it
+            if (cont.node) |node| {
+                switch (node) {
+                    .invocation => |next_inv| {
+                        // Create a synthetic flow for the next invocation
+                        const next_flow = ast.Flow{
+                            .invocation = next_inv,
+                            .continuations = cont.continuations,
+                            .module = flow.module,
+                        };
+                        return executeFlow(&next_flow, ctx);
+                    },
+                    .terminal => {
+                        // End of flow - return current dispatch result
+                        return Value.fromDispatch(
+                            dispatch_result.branch,
+                            dispatch_result.payload_json,
+                        );
+                    },
+                    .branch_constructor => |bc| {
+                        // Construct a new value from the branch constructor!
+                        var fields = try ctx.allocator.alloc(FieldValue, bc.fields.len);
+                        for (bc.fields, 0..) |field, i| {
+                            const value = if (field.expression_str) |expr|
+                                try evaluateExpr(expr, ctx.env, ctx.allocator)
+                            else
+                                try ctx.allocator.dupe(u8, field.name);
+
+                            fields[i] = .{
+                                .name = try ctx.allocator.dupe(u8, field.name),
+                                .value = value,
+                            };
+                        }
+
+                        return Value{
+                            .branch = try ctx.allocator.dupe(u8, bc.branch_name),
+                            .fields = fields,
+                            .payload_json = null,
+                        };
+                    },
+                    else => {
+                        // TODO: Handle labels, derefs
+                        return error.UnsupportedNode;
+                    },
+                }
+            } else {
+                // No next node - return current dispatch result
+                return Value.fromDispatch(
+                    dispatch_result.branch,
+                    dispatch_result.payload_json,
+                );
+            }
+        }
+    }
+
+    return error.NoBranchMatch;
+}

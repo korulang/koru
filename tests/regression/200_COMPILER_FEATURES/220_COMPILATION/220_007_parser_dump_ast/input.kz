@@ -2,8 +2,11 @@
 //
 // Parses Koru source code and dumps the AST as JSON.
 // This enables tools to inspect parsed structure.
+//
+// Pure Koru - no Zig procs needed!
 
 ~import "$std/parser"
+~import "$std/io"
 
 const std = @import("std");
 
@@ -13,23 +16,9 @@ const SAMPLE =
     \\| done {}
 ;
 
-// Print the full JSON
-~event print_json { json: []const u8 }
-
-~proc print_json {
-    std.debug.print("{s}\n", .{json});
-}
-
-// Report error
-~event report_error { message: []const u8 }
-
-~proc report_error {
-    std.debug.print("Error: {s}\n", .{message});
-}
-
-// Flow: parse → dump → print
+// Flow: parse → dump → print (pure Koru!)
 ~std.parser:parse.source(source: SAMPLE, file_name: "test.kz", allocator: std.heap.page_allocator)
 | parsed p |> std.parser:dump.ast(ast: p.ast, allocator: std.heap.page_allocator)
-    | dumped d |> print_json(json: d.json)
-    | dump_error e |> report_error(message: e.message)
-| parse_error e |> report_error(message: e.message)
+    | dumped d |> std.io:print.ln("{{d.json:s}}")
+    | dump_error e |> std.io:print.ln("Dump error: {{e.message}}")
+| parse_error e |> std.io:print.ln("Parse error: {{e.message}}")

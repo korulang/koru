@@ -1,0 +1,290 @@
+// Test: Koru Interpreter
+// Tests the interpreter parsing and executing Koru code at runtime
+
+~import "$std/runtime"
+~import "$std/build"
+~import "$std/interpreter"
+
+// Add all required modules for runtime use
+~std.build:requires {
+    const REL_TO_ROOT = "/usr/local/lib/koru";
+
+    // Errors module
+    const errors_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // AST module
+    const ast_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ast_module.addImport("errors", errors_module);
+
+    // Lexer module
+    const lexer_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Type registry
+    const type_registry_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/type_registry.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    type_registry_module.addImport("ast", ast_module);
+
+    // Expression parser
+    const expression_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    expression_parser_module.addImport("lexer", lexer_module);
+    expression_parser_module.addImport("ast", ast_module);
+
+    // Union collector
+    const union_collector_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/union_collector.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    union_collector_module.addImport("ast", ast_module);
+
+    // Config (needed by module_resolver)
+    const config_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/config.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Module resolver (needed by parser for imports)
+    const module_resolver_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/module_resolver.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    module_resolver_module.addImport("config", config_module);
+
+    // Parser module
+    const parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    parser_module.addImport("ast", ast_module);
+    parser_module.addImport("lexer", lexer_module);
+    parser_module.addImport("errors", errors_module);
+    parser_module.addImport("type_registry", type_registry_module);
+    parser_module.addImport("expression_parser", expression_parser_module);
+    parser_module.addImport("union_collector", union_collector_module);
+    parser_module.addImport("module_resolver", module_resolver_module);
+
+    // Add imports with specific names for interpreter
+    exe.root_module.addImport("ast", ast_module);
+    exe.root_module.addImport("koru_parser", parser_module);
+    exe.root_module.addImport("koru_ast", ast_module);
+    exe.root_module.addImport("koru_errors", errors_module);
+}
+
+const std = @import("std");
+
+// ============================================================================
+// Events to dispatch to
+// ============================================================================
+
+~pub event greet { name: []const u8 }
+| greeted { message: []const u8 }
+
+~proc greet {
+    std.debug.print("GREET handler: Hello, {s}!\n", .{name});
+    return .{ .greeted = .{ .message = "Hello!" } };
+}
+
+~pub event farewell { name: []const u8 }
+| departed { message: []const u8 }
+
+~proc farewell {
+    std.debug.print("FAREWELL handler: Goodbye, {s}!\n", .{name});
+    return .{ .departed = .{ .message = "Goodbye!" } };
+}
+
+// Register events for runtime dispatch
+~std.runtime:register(scope: "test") {
+    greet
+    farewell
+}
+
+// ============================================================================
+// Entry point - tests the interpreter
+// ============================================================================
+
+pub fn main() void {
+    std.debug.print("=== INTERPRETER TEST ===\n\n", .{});
+
+    // Get imports
+    const ast_mod = @import("ast");
+    const koru_parser = @import("koru_parser");
+    const koru_errors = @import("koru_errors");
+
+    // Get the dispatcher function
+    const dispatcher_fn = __koru_scope_test.dispatch;
+
+    // ========================================================================
+    // Test 1: Manual dispatch (baseline)
+    // ========================================================================
+    std.debug.print("Test 1: Manual dispatch 'greet'\n", .{});
+    {
+        const segments = [_][]const u8{"greet"};
+        const path = ast_mod.DottedPath{
+            .module_qualifier = null,
+            .segments = &segments,
+        };
+
+        var args_array = [_]ast_mod.Arg{
+            .{ .name = "name", .value = "World" },
+        };
+
+        const inv = ast_mod.Invocation{
+            .path = path,
+            .args = &args_array,
+        };
+
+        var result: DispatchResult = undefined;
+        dispatcher_fn(&inv, &result) catch |err| {
+            std.debug.print("ERROR: {}\n", .{err});
+            return;
+        };
+
+        std.debug.print("Result: branch={s}\n", .{result.branch});
+        std.debug.print("=== TEST 1 PASSED ===\n\n", .{});
+    }
+
+    // ========================================================================
+    // Test 2: Parse Koru source and dispatch!
+    // ========================================================================
+    std.debug.print("Test 2: Parse and dispatch '~greet(name: \"Runtime\")'\n", .{});
+    {
+        const test_source = "~greet(name: \"Runtime\")";
+
+        // Create allocator
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
+
+        // Create error reporter
+        var reporter = koru_errors.ErrorReporter.init(
+            allocator,
+            "test",
+            test_source
+        ) catch {
+            std.debug.print("ERROR: Failed to init reporter\n", .{});
+            return;
+        };
+        defer reporter.deinit();
+
+        // Initialize parser
+        var parser = koru_parser.Parser.init(
+            allocator,
+            test_source,
+            "runtime_input",
+            &[_][]const u8{},
+            null
+        ) catch {
+            std.debug.print("ERROR: Failed to init parser\n", .{});
+            return;
+        };
+        defer parser.deinit();
+
+        // Parse!
+        const parse_result = parser.parse() catch {
+            std.debug.print("ERROR: Parse failed\n", .{});
+            if (parser.reporter.hasErrors()) {
+                const err = parser.reporter.errors.items[0];
+                std.debug.print("  {s} at {}:{}\n", .{err.message, err.location.line, err.location.column});
+            }
+            return;
+        };
+
+        std.debug.print("Parsed {d} items\n", .{parse_result.source_file.items.len});
+
+        // Find the flow
+        var flow_found = false;
+        for (parse_result.source_file.items) |item| {
+            if (item == .flow) {
+                flow_found = true;
+                const flow = item.flow;
+                const inv = &flow.invocation;
+
+                std.debug.print("Found flow: {s} with {d} args\n", .{
+                    if (inv.path.segments.len > 0) inv.path.segments[0] else "?",
+                    inv.args.len
+                });
+
+                // Dispatch it!
+                var result: DispatchResult = undefined;
+                dispatcher_fn(inv, &result) catch |err| {
+                    std.debug.print("ERROR: Dispatch failed: {}\n", .{err});
+                    return;
+                };
+
+                std.debug.print("Result: branch={s}\n", .{result.branch});
+                break;
+            }
+        }
+
+        if (!flow_found) {
+            std.debug.print("ERROR: No flow found in parsed source\n", .{});
+            return;
+        }
+
+        std.debug.print("=== TEST 2 PASSED ===\n\n", .{});
+    }
+
+    // ========================================================================
+    // Test 3: Parse multi-arg call
+    // ========================================================================
+    std.debug.print("Test 3: Parse '~farewell(name: \"Claude\")'\n", .{});
+    {
+        const test_source = "~farewell(name: \"Claude\")";
+
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
+
+        var reporter = koru_errors.ErrorReporter.init(allocator, "test", test_source) catch return;
+        defer reporter.deinit();
+
+        var parser = koru_parser.Parser.init(allocator, test_source, "runtime", &[_][]const u8{}, null) catch return;
+        defer parser.deinit();
+
+        const parse_result = parser.parse() catch {
+            std.debug.print("ERROR: Parse failed\n", .{});
+            return;
+        };
+
+        for (parse_result.source_file.items) |item| {
+            if (item == .flow) {
+                const inv = &item.flow.invocation;
+
+                var result: DispatchResult = undefined;
+                dispatcher_fn(inv, &result) catch |err| {
+                    std.debug.print("ERROR: {}\n", .{err});
+                    return;
+                };
+
+                std.debug.print("Result: branch={s}\n", .{result.branch});
+                break;
+            }
+        }
+
+        std.debug.print("=== TEST 3 PASSED ===\n\n", .{});
+    }
+
+    std.debug.print("=== ALL INTERPRETER TESTS PASSED ===\n", .{});
+}

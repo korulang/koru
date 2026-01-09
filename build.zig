@@ -337,6 +337,13 @@ pub fn build(b: *std.Build) void {
     tap_registry_module.addImport("errors", errors_module);
     tap_registry_module.addImport("tap_pattern_matcher", tap_pattern_matcher_module);
 
+    // Runtime Registry module - backend pass for runtime scope collection
+    const runtime_registry_module = b.createModule(.{
+        .root_source_file = b.path("src/runtime_registry.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Canonicalize Names module - Qualify all DottedPaths after import resolution
     const canonicalize_names_module = b.createModule(.{
         .root_source_file = b.path("src/canonicalize_names.zig"),
@@ -415,6 +422,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("emitter_helpers", emitter_helpers_module);
     exe.root_module.addImport("visitor_emitter", visitor_emitter_module);
     exe.root_module.addImport("tap_registry", tap_registry_module);
+    exe.root_module.addImport("runtime_registry", runtime_registry_module);
     exe.root_module.addImport("tap_transformer", tap_transformer_module);
     exe.root_module.addImport("canonicalize_names", canonicalize_names_module);
     exe.root_module.addImport("meta_events", meta_events_module);

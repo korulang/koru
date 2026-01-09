@@ -1,0 +1,31 @@
+
+╔══════════════════════════════════════════════════════════════╗
+║           EXPRESSION EVALUATOR TEST                          ║
+╚══════════════════════════════════════════════════════════════╝
+
+Test 1: Bindings and Value types
+  score = 75
+  name = Alice
+  active = true
+  ✓ TEST 1 PASSED
+
+Test 2: Value truthiness
+  true.isTruthy() = true
+  false.isTruthy() = false
+  0.isTruthy() = false
+  42.isTruthy() = true
+  "".isTruthy() = false
+  "hello".isTruthy() = true
+  null.isTruthy() = false
+  ✓ TEST 2 PASSED
+
+Test 3: setAuto type detection
+  'true' -> bool_val = true
+  '123' -> int_val = 123
+  '3.14' -> float_val = 3.14
+  'hello' -> string_val = hello
+  ✓ TEST 3 PASSED
+
+╔══════════════════════════════════════════════════════════════╗
+║           EXPRESSION EVALUATOR TESTS COMPLETE                ║
+╚══════════════════════════════════════════════════════════════╝
