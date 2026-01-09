@@ -28,6 +28,7 @@
 
 const std = @import("std");
 const ast = @import("ast");
+const koru_parser = @import("koru_parser");
 
 // ============================================================================
 // BUILD REQUIREMENTS - Parser and checkers for runtime use
@@ -451,7 +452,6 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 | dispatch_error { event_name: []const u8, message: []const u8 }
 
 ~proc run {
-    const koru_parser = @import("koru_parser");
     const koru_errors = @import("koru_errors");
     const koru_ast = @import("koru_ast");
 
@@ -659,18 +659,36 @@ fn executeFlow(
                     condition_result = false;
                 }
             } else {
-                // Fallback: try to parse the value string as a boolean
+                // Runtime parsing: parse the expression string using ExpressionParser
+                std.debug.print("[INTERPRETER] Parsing expression: '{s}'\n", .{first_arg.value});
+
+                // Quick check for simple literals first
                 if (std.mem.eql(u8, first_arg.value, "true")) {
                     condition_result = true;
                 } else if (std.mem.eql(u8, first_arg.value, "false")) {
                     condition_result = false;
                 } else {
-                    // Try to evaluate as identifier from bindings
-                    if (ctx.expr_bindings.get(first_arg.value)) |val| {
-                        condition_result = val.isTruthy();
-                    } else {
-                        // Default to non-empty string being truthy
-                        condition_result = first_arg.value.len > 0;
+                    // Parse complex expression using ExpressionParser (re-exported from koru_parser)
+                    var expr_parser = koru_parser.ExpressionParser.init(ctx.allocator, first_arg.value);
+                    defer expr_parser.deinit();
+
+                    if (expr_parser.parse()) |parsed_expr| {
+                        // Evaluate the parsed expression against our bindings
+                        if (evaluateExpression(parsed_expr, ctx.expr_bindings)) |eval_result| {
+                            condition_result = eval_result.isTruthy();
+                            std.debug.print("[INTERPRETER] Expression evaluated to: {}\n", .{condition_result});
+                        } else |err| {
+                            std.debug.print("[INTERPRETER] Expression eval error: {s}\n", .{@errorName(err)});
+                            condition_result = false;
+                        }
+                    } else |parse_err| {
+                        std.debug.print("[INTERPRETER] Expression parse error: {s}\n", .{@errorName(parse_err)});
+                        // Fallback: try as simple identifier binding
+                        if (ctx.expr_bindings.get(first_arg.value)) |val| {
+                            condition_result = val.isTruthy();
+                        } else {
+                            condition_result = first_arg.value.len > 0;
+                        }
                     }
                 }
                 std.debug.print("[INTERPRETER] Condition (from string '{s}'): {}\n", .{first_arg.value, condition_result});

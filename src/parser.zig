@@ -6,6 +6,9 @@ const type_registry = @import("type_registry");
 const expression_parser = @import("expression_parser");
 const ModuleResolver = @import("module_resolver").ModuleResolver;
 
+// Re-export ExpressionParser for runtime use (e.g., interpreter ~if)
+pub const ExpressionParser = expression_parser.ExpressionParser;
+
 const DEBUG = false;  // Set to true for verbose parser logging
 
 /// Check if line has a source block pattern: `eventName { ... }` or `eventName(args) { ... }`
