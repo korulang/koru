@@ -18,6 +18,69 @@ const template_utils = @import("template_utils");
 const annotation_parser = @import("annotation_parser");
 const ast_functional = @import("ast_functional");
 
+/// Check if ANY top-level flow in the new program still matches the transform.
+/// This is a circuit breaker to catch transforms that don't properly replace themselves.
+///
+/// IMPORTANT: Transforms must output a DIFFERENT event path (e.g., query.src -> query.src.impl)
+/// or add @pass_ran("transform") annotation. If the output still matches, it's an infinite loop.
+///
+/// We only check TOP-LEVEL flows (not nested invocations in continuations) because:
+/// - Multiple similar invocations in continuations are expected to be transformed one at a time
+/// - The walker handles these via fixed-point iteration
+fn invocationStillMatchesInProgram(original_inv: *const Invocation, transform_name: []const u8, program: *const Program) bool {
+    _ = original_inv; // Not needed - we check ALL matching flows, not just the original
+
+    // Walk the new program looking for ANY top-level flow that would still match
+    for (program.items) |item| {
+        switch (item) {
+            .flow => |flow| {
+                if (flowStillMatchesTransform(&flow.invocation, transform_name)) {
+                    return true;
+                }
+            },
+            .module_decl => |module| {
+                for (module.items) |mod_item| {
+                    if (mod_item == .flow) {
+                        if (flowStillMatchesTransform(&mod_item.flow.invocation, transform_name)) {
+                            return true;
+                        }
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
+fn flowStillMatchesTransform(inv: *const Invocation, transform_name: []const u8) bool {
+    // Check if it would match the transform (uses just segments, not full path)
+    var seg_path_buf: [256]u8 = undefined;
+    var seg_path_len: usize = 0;
+    for (inv.path.segments, 0..) |seg, i| {
+        if (i > 0) {
+            seg_path_buf[seg_path_len] = '.';
+            seg_path_len += 1;
+        }
+        if (seg_path_len + seg.len > seg_path_buf.len) return false;
+        @memcpy(seg_path_buf[seg_path_len..][0..seg.len], seg);
+        seg_path_len += seg.len;
+    }
+    if (!std.mem.eql(u8, seg_path_buf[0..seg_path_len], transform_name)) {
+        return false; // Different event path - transform properly replaced itself
+    }
+
+    // Check if it has @pass_ran annotation (if so, it won't be transformed again)
+    for (inv.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "@pass_ran(\"transform\")")) {
+            return false; // Has @pass_ran, won't match again
+        }
+    }
+
+    // Still matches transform path without @pass_ran -> would infinite loop!
+    return true;
+}
+
 /// Transform handler entry in the dispatch table
 pub const TransformEntry = struct {
     /// Name of the transform event (e.g., "std.control.if", "renderHTML")
@@ -65,7 +128,7 @@ pub fn walkAndTransform(
 ) !*Program {
     var current_program = program;
     var iteration: usize = 0;
-    const MAX_ITERATIONS: usize = 100_000; // Circuit breaker to prevent infinite loops
+    const MAX_ITERATIONS: usize = 1000; // Circuit breaker to prevent infinite loops
 
     // Fixed-point iteration: keep transforming until no more transforms found
     while (true) {
@@ -163,6 +226,25 @@ fn walkNode(
                     std.debug.print("ERROR: Transforms MUST replace their flow with different AST.\n", .{});
                     std.debug.print("ERROR: If this is a [norun] event, remove the [transform] annotation.\n", .{});
                     return error.TransformReturnedSamePointer;
+                }
+
+                // CIRCUIT BREAKER: Verify the transform actually replaced the invocation.
+                // If the same invocation path still matches without @pass_ran, the transform
+                // didn't do its job and we'll infinite loop.
+                if (invocationStillMatchesInProgram(inv, transform.name, transformed)) {
+                    std.debug.print("\n", .{});
+                    std.debug.print("╔══════════════════════════════════════════════════════════════════╗\n", .{});
+                    std.debug.print("║  TRANSFORM ERROR: Invocation not replaced!                       ║\n", .{});
+                    std.debug.print("╚══════════════════════════════════════════════════════════════════╝\n", .{});
+                    std.debug.print("\n", .{});
+                    std.debug.print("Transform '{s}' returned a new program, but the invocation\n", .{transform.name});
+                    std.debug.print("still matches and would be transformed again (infinite loop).\n", .{});
+                    std.debug.print("\n", .{});
+                    std.debug.print("FIX: Your transform must either:\n", .{});
+                    std.debug.print("  1. Change the invocation path (e.g., 'query.src' -> 'query.src.impl')\n", .{});
+                    std.debug.print("  2. Add @pass_ran(\"transform\") annotation to the new invocation\n", .{});
+                    std.debug.print("\n", .{});
+                    return error.TransformDidNotReplace;
                 }
 
                 return WalkResult{ .found = true, .program = transformed };
