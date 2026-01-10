@@ -26,6 +26,8 @@
 
 ~[runtime]
 
+~import "$std/build"
+
 const std = @import("std");
 const ast = @import("ast");
 const koru_parser = @import("koru_parser");
@@ -84,6 +86,21 @@ const koru_parser = @import("koru_parser");
     });
     union_collector_module.addImport("ast", ast_module);
 
+    // Config module (needed by module_resolver)
+    const config_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/config.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Module resolver (needed by parser)
+    const module_resolver_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/module_resolver.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    module_resolver_module.addImport("config", config_module);
+
     // Parser module - the core!
     const parser_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
@@ -96,11 +113,13 @@ const koru_parser = @import("koru_parser");
     parser_module.addImport("type_registry", type_registry_module);
     parser_module.addImport("expression_parser", expression_parser_module);
     parser_module.addImport("union_collector", union_collector_module);
+    parser_module.addImport("module_resolver", module_resolver_module);
 
     // Add to executable
     exe.root_module.addImport("koru_parser", parser_module);
     exe.root_module.addImport("koru_ast", ast_module);
     exe.root_module.addImport("koru_errors", errors_module);
+    exe.root_module.addImport("ast", ast_module);  // Also expose as "ast" for interpreter.kz's own use
 }
 
 // ============================================================================
@@ -226,12 +245,8 @@ fn validateFlowRecursive(flow: *const ast.Flow, seen: *std.StringHashMap(void)) 
             };
         }
 
-        // Recurse into nested continuations
-        if (cont.node) |nested_flow| {
-            if (validateFlowRecursive(nested_flow, seen)) |err| {
-                return err;
-            }
-        }
+        // Note: AST structure changed - cont.node is now ?Node not *Flow
+        // Nested continuations are in cont.continuations, handled in the outer loop
     }
 
     return null; // Valid!
@@ -488,7 +503,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // MAIN INTERPRETER EVENTS
 // ============================================================================
 
-// Parse and execute in one step - convenience wrapper
+// Parse and execute in one step - the main interpreter entry point
+// Use ~get_scope to get the dispatcher first, then pass it here
 ~pub event run {
     source: []const u8,
     dispatcher: DispatchFn
@@ -716,29 +732,24 @@ fn executeFlow(
         if (inv.args.len > 0) {
             const first_arg = &inv.args[0];
 
-            // Check if there's a parsed expression (Expression type args)
-            if (first_arg.expression) |expr| {
-                // Evaluate the parsed expression against our bindings
-                if (evaluateExpression(expr, ctx.expr_bindings)) |eval_result| {
-                    condition_result = eval_result.isTruthy();
-                    std.debug.print("[INTERPRETER] Condition evaluated to: {}\n", .{condition_result});
-                } else |err| {
-                    std.debug.print("[INTERPRETER] Expression eval error: {s}\n", .{@errorName(err)});
-                    // On error, default to false (else branch)
-                    condition_result = false;
-                }
-            } else {
+            // Get expression text - from CapturedExpression if available, else from value
+            const expr_text = if (first_arg.expression_value) |captured|
+                captured.text
+            else
+                first_arg.value;
+
+            {
                 // Runtime parsing: parse the expression string using ExpressionParser
-                std.debug.print("[INTERPRETER] Parsing expression: '{s}'\n", .{first_arg.value});
+                std.debug.print("[INTERPRETER] Parsing expression: '{s}'\n", .{expr_text});
 
                 // Quick check for simple literals first
-                if (std.mem.eql(u8, first_arg.value, "true")) {
+                if (std.mem.eql(u8, expr_text, "true")) {
                     condition_result = true;
-                } else if (std.mem.eql(u8, first_arg.value, "false")) {
+                } else if (std.mem.eql(u8, expr_text, "false")) {
                     condition_result = false;
                 } else {
                     // Parse complex expression using ExpressionParser (re-exported from koru_parser)
-                    var expr_parser = koru_parser.ExpressionParser.init(ctx.allocator, first_arg.value);
+                    var expr_parser = koru_parser.ExpressionParser.init(ctx.allocator, expr_text);
                     defer expr_parser.deinit();
 
                     if (expr_parser.parse()) |parsed_expr| {
@@ -753,14 +764,14 @@ fn executeFlow(
                     } else |parse_err| {
                         std.debug.print("[INTERPRETER] Expression parse error: {s}\n", .{@errorName(parse_err)});
                         // Fallback: try as simple identifier binding
-                        if (ctx.expr_bindings.get(first_arg.value)) |val| {
+                        if (ctx.expr_bindings.get(expr_text)) |val| {
                             condition_result = val.isTruthy();
                         } else {
-                            condition_result = first_arg.value.len > 0;
+                            condition_result = expr_text.len > 0;
                         }
                     }
                 }
-                std.debug.print("[INTERPRETER] Condition (from string '{s}'): {}\n", .{first_arg.value, condition_result});
+                std.debug.print("[INTERPRETER] Condition (from string '{s}'): {}\n", .{expr_text, condition_result});
             }
         }
 
@@ -775,6 +786,14 @@ fn executeFlow(
         } else {
             return error.NoDispatcher;
         }
+    }
+
+    // If no continuations, just return the dispatch result
+    if (flow.continuations.len == 0) {
+        return Value.fromDispatch(
+            dispatch_result.branch,
+            dispatch_result.fields,
+        );
     }
 
     // Find matching continuation

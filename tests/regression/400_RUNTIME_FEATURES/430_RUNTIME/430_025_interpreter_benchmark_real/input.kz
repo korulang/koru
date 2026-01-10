@@ -1,0 +1,91 @@
+// REAL Interpreter Benchmark
+// Tests the FULL pipeline: parse Koru flow string → execute → return result
+// Uses a realistic multi-step flow with continuations
+
+~import "$std/runtime"
+~import "$std/interpreter"
+
+const std = @import("std");
+
+// ============================================================================
+// Events that the flow will dispatch to
+// ============================================================================
+
+~pub event compute { a: []const u8, b: []const u8, op: []const u8 }
+| result { value: []const u8 }
+| error { message: []const u8 }
+
+~proc compute {
+    const a_val = std.fmt.parseInt(i64, a, 10) catch 0;
+    const b_val = std.fmt.parseInt(i64, b, 10) catch 0;
+
+    const value = if (std.mem.eql(u8, op, "add"))
+        a_val + b_val
+    else if (std.mem.eql(u8, op, "mul"))
+        a_val * b_val
+    else if (std.mem.eql(u8, op, "sub"))
+        a_val - b_val
+    else
+        0;
+
+    var buf: [32]u8 = undefined;
+    const result_str = std.fmt.bufPrint(&buf, "{d}", .{value}) catch "0";
+    return .{ .result = .{ .value = result_str } };
+}
+
+~pub event print_result { value: []const u8 }
+| printed {}
+
+~proc print_result {
+    std.debug.print("Result: {s}\n", .{value});
+    return .{ .printed = .{} };
+}
+
+// Register events for runtime dispatch
+~std.runtime:register(scope: "bench") {
+    compute
+    print_result
+}
+
+// ============================================================================
+// The flow we'll parse and execute at runtime
+// This is a REAL flow with continuations
+// ============================================================================
+
+const FLOW_SOURCE =
+    \\~compute(a: "42", b: "17", op: "add")
+    \\| result r |> print_result(value: r.value)
+    \\| error e |> print_result(value: e.message)
+;
+
+// ============================================================================
+// Events for handling interpreter results
+// ============================================================================
+
+~pub event report_success { branch: []const u8 }
+| done {}
+
+~proc report_success {
+    std.debug.print("Interpreter completed: branch={s}\n", .{branch});
+    return .{ .done = .{} };
+}
+
+~pub event report_error { message: []const u8 }
+| done {}
+
+~proc report_error {
+    std.debug.print("Error: {s}\n", .{message});
+    return .{ .done = .{} };
+}
+
+// ============================================================================
+// Benchmark: Parse and execute the flow
+// ============================================================================
+
+~std.runtime:get_scope(name: "bench")
+| scope s |> std.interpreter:run(source: FLOW_SOURCE, dispatcher: s.dispatcher)
+    | result r |> report_success(branch: r.value.branch)
+    | parse_error e |> report_error(message: e.message)
+    | validation_error e |> report_error(message: e.message)
+    | dispatch_error e |> report_error(message: e.message)
+| not_found |> report_error(message: "Scope 'bench' not found")

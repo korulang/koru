@@ -113,10 +113,7 @@ pub fn main() void {
     std.debug.print("║     INTERPRETER RUNTIME ~if TEST                             ║\n", .{});
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
-    const dispatcher_fn = __koru_get_scope("test") orelse {
-        std.debug.print("ERROR: Scope 'test' not found\n", .{});
-        return;
-    };
+    const dispatcher_fn = dispatch_test;
 
     // ========================================================================
     // Test 1: ~if(true) should take | then |> branch

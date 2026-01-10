@@ -1,8 +1,6 @@
 // Test: Registry Scope - Basic
 //
-// Verifies that ~std.runtime:register generates:
-// 1. Dispatcher functions for each scope
-// 2. __koru_get_scope() lookup function
+// Verifies that ~std.runtime:register generates a dispatcher function
 
 ~import "$std/runtime"
 ~import "$std/io"
@@ -39,22 +37,29 @@ pub fn main() void {
     std.debug.print("║     REGISTRY SCOPE BASIC TEST                                ║\n", .{});
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
-    // Test 1: __koru_get_scope should find "api" scope
-    std.debug.print("Test 1: Looking up scope 'api'...\n", .{});
-    if (__koru_get_scope("api")) |dispatcher| {
-        std.debug.print("  ✓ Found dispatcher for 'api' scope\n", .{});
-        _ = dispatcher;
-    } else {
-        std.debug.print("  ✗ FAILED: Could not find 'api' scope\n", .{});
-    }
+    // Test 1: dispatch_api should exist and be callable
+    std.debug.print("Test 1: Calling dispatch_api with 'greet'...\n", .{});
 
-    // Test 2: __koru_get_scope should NOT find "nonexistent" scope
-    std.debug.print("\nTest 2: Looking up scope 'nonexistent'...\n", .{});
-    if (__koru_get_scope("nonexistent")) |_| {
-        std.debug.print("  ✗ FAILED: Found unexpected scope\n", .{});
-    } else {
-        std.debug.print("  ✓ Correctly returned null for nonexistent scope\n", .{});
-    }
+    const segments = [_][]const u8{"greet"};
+    const path = Path{
+        .module_qualifier = null,
+        .segments = &segments,
+    };
+    var args_array = [_]Arg{
+        .{ .name = "name", .value = "World" },
+    };
+    const inv = Invocation{
+        .path = path,
+        .args = &args_array,
+    };
+
+    var result: DispatchResult = undefined;
+    dispatch_api(&inv, &result) catch |err| {
+        std.debug.print("  ✗ FAILED: Dispatch error: {}\n", .{err});
+        return;
+    };
+
+    std.debug.print("  ✓ Dispatched successfully, branch: {s}\n", .{result.branch});
 
     std.debug.print("\n╔══════════════════════════════════════════════════════════════╗\n", .{});
     std.debug.print("║     REGISTRY TESTS COMPLETE                                  ║\n", .{});

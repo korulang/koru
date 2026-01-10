@@ -125,10 +125,7 @@ pub fn main() void {
     std.debug.print("║           INTERPRETER DATAFLOW TEST                          ║\n", .{});
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
-    const dispatcher_fn = __koru_get_scope("api") orelse {
-        std.debug.print("ERROR: Scope 'api' not found\n", .{});
-        return;
-    };
+    const dispatcher_fn = dispatch_api;
 
     // ========================================================================
     // Test 1: Simple dispatch, terminal on branch

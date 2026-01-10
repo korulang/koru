@@ -2,17 +2,20 @@
 // Enables scoped runtime evaluation of parsed Koru code
 //
 // DESIGN:
-// - Registry scopes define which events are callable at runtime
-// - Each scope generates its own dispatcher
-// - __koru_get_scope() lookup is generated per-scope with chaining
+// - ~std.runtime:register(scope: "name") { events } declares a scope (norun)
+// - ~std.runtime:collect_scopes walks AST and generates dispatch tables
+// - ~std.runtime:get_scope(name: "...") looks up a scope at runtime
 
-~[comptime]
+~[comptime|runtime]
+
+~import "$std/compiler_types"
+~import "$std/interpreter"
 
 const std = @import("std");
 const ast = @import("ast");
 
 // ============================================================================
-// REGISTRY DECLARATION - Transform that generates dispatcher code
+// SCOPE DECLARATION - [norun] declaration collected by collect_scopes
 // ============================================================================
 
 ~[comptime|transform]pub event register {
@@ -25,13 +28,11 @@ const ast = @import("ast");
 | transformed { program: *const Program }
 
 ~proc register {
+    const ast_mod = @import("ast");
     const ast_functional = @import("ast_functional");
 
     // Get the flow from the item
-    const flow = if (item.* == .flow)
-        &item.flow
-    else
-        return .{ .transformed = .{ .program = program } };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{ .program = program } };
 
     // Extract scope name from invocation args
     var scope_name: []const u8 = "default";
@@ -46,165 +47,90 @@ const ast = @import("ast");
         }
     }
 
-    std.debug.print("[REGISTRY] Creating scope '{s}'\n", .{scope_name});
+    std.debug.print("[REGISTRY] Creating dispatcher for scope '{s}'\n", .{scope_name});
 
-    // Parse the source block to get event names
-    var events_list = std.ArrayList([]const u8).initCapacity(allocator, 32) catch unreachable;
-
+    // Parse events from source block
+    var events_list = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
     var lines = std.mem.splitScalar(u8, source.text, '\n');
     while (lines.next()) |line| {
         var trimmed = std.mem.trim(u8, line, " \t\r");
         if (trimmed.len == 0) continue;
         if (std.mem.startsWith(u8, trimmed, "//")) continue;
-
-        if (std.mem.indexOf(u8, trimmed, "//")) |comment_start| {
-            trimmed = std.mem.trim(u8, trimmed[0..comment_start], " \t");
-            if (trimmed.len == 0) continue;
+        if (std.mem.indexOf(u8, trimmed, "//")) |idx| {
+            trimmed = std.mem.trim(u8, trimmed[0..idx], " \t");
         }
-
-        var entry = trimmed;
-        if (entry.len > 0 and entry[0] == '[') {
-            if (std.mem.indexOf(u8, entry, "]")) |close| {
-                entry = std.mem.trim(u8, entry[close + 1..], " \t");
-            }
+        if (trimmed.len > 0) {
+            events_list.append(allocator, allocator.dupe(u8, trimmed) catch continue) catch continue;
         }
-
-        if (std.mem.startsWith(u8, entry, "scope(")) continue;
-        if (std.mem.indexOf(u8, entry, "*") != null) continue;
-
-        events_list.append(allocator, allocator.dupe(u8, entry) catch continue) catch continue;
     }
 
     std.debug.print("[REGISTRY] Found {d} events\n", .{events_list.items.len});
 
-    // Sanitize scope name for Zig identifier
-    var sanitized_scope: [64]u8 = undefined;
-    var sanitized_len: usize = 0;
-    for (scope_name) |c| {
-        if (c == '.' or c == ':') {
-            sanitized_scope[sanitized_len] = '_';
-        } else {
-            sanitized_scope[sanitized_len] = c;
-        }
-        sanitized_len += 1;
-    }
-    const scope_ident = sanitized_scope[0..sanitized_len];
+    // Generate dispatcher code (indented for main_module)
+    var code = std.ArrayList(u8){ .items = &.{}, .capacity = 0 };
+    const I = "    "; // 4 spaces for main_module indentation
 
-    // Generate code
-    var code = std.ArrayList(u8).initCapacity(allocator, 4096) catch unreachable;
+    // Import required modules for generated code
+    code.appendSlice(allocator, I ++ "const dispatcher_std = @import(\"std\");\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "const dispatcher_ast = @import(\"ast\");\n\n") catch unreachable;
 
-    // Types - defined inline, no external ast import needed
-    code.appendSlice(allocator, "// Runtime dispatch types (generated inline)\n") catch unreachable;
-    code.appendSlice(allocator, "pub const FieldValue = struct {\n") catch unreachable;
-    code.appendSlice(allocator, "    name: []const u8,\n") catch unreachable;
-    code.appendSlice(allocator, "    value: []const u8,\n") catch unreachable;
-    code.appendSlice(allocator, "};\n\n") catch unreachable;
+    // Export type aliases for user code (so they can use bare names like Path, Invocation, etc.)
+    code.appendSlice(allocator, I ++ "pub const Path = dispatcher_ast.DottedPath;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "pub const Arg = dispatcher_ast.Arg;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "pub const Invocation = dispatcher_ast.Invocation;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "pub const DispatchResult = koru_std.runtime.DispatchResult;\n\n") catch unreachable;
 
-    code.appendSlice(allocator, "pub const DispatchResult = struct {\n") catch unreachable;
-    code.appendSlice(allocator, "    branch: []const u8,\n") catch unreachable;
-    code.appendSlice(allocator, "    fields: []const FieldValue,\n") catch unreachable;
-    code.appendSlice(allocator, "};\n\n") catch unreachable;
+    // Helper function - strips quotes from string values
+    code.appendSlice(allocator, I ++ "fn getArg(args: []const dispatcher_ast.Arg, n: []const u8) ?[]const u8 {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    for (args) |arg| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, arg.name, n)) {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            var v = arg.value;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            if (v.len >= 2 and v[0] == '\"' and v[v.len-1] == '\"') v = v[1..v.len-1];\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            return v;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return null;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
-    // Inline Arg and Invocation types - mirrors ast.zig but standalone
-    code.appendSlice(allocator, "pub const Arg = struct {\n") catch unreachable;
-    code.appendSlice(allocator, "    name: []const u8,\n") catch unreachable;
-    code.appendSlice(allocator, "    value: []const u8,\n") catch unreachable;
-    code.appendSlice(allocator, "};\n\n") catch unreachable;
-
-    code.appendSlice(allocator, "pub const Path = struct {\n") catch unreachable;
-    code.appendSlice(allocator, "    module_qualifier: ?[]const u8,\n") catch unreachable;
-    code.appendSlice(allocator, "    segments: []const []const u8,\n") catch unreachable;
-    code.appendSlice(allocator, "};\n\n") catch unreachable;
-
-    code.appendSlice(allocator, "pub const Invocation = struct {\n") catch unreachable;
-    code.appendSlice(allocator, "    path: Path,\n") catch unreachable;
-    code.appendSlice(allocator, "    args: []const Arg,\n") catch unreachable;
-    code.appendSlice(allocator, "};\n\n") catch unreachable;
-
-    code.appendSlice(allocator, "pub const DispatchFn = *const fn(*const Invocation, *DispatchResult) anyerror!void;\n\n") catch unreachable;
-
-    code.appendSlice(allocator, "fn getArg(args: []const Arg, name: []const u8) ?[]const u8 {\n") catch unreachable;
-    code.appendSlice(allocator, "    for (args) |arg| {\n") catch unreachable;
-    code.appendSlice(allocator, "        if (std.mem.eql(u8, arg.name, name)) return arg.value;\n") catch unreachable;
-    code.appendSlice(allocator, "    }\n") catch unreachable;
-    code.appendSlice(allocator, "    return null;\n") catch unreachable;
-    code.appendSlice(allocator, "}\n\n") catch unreachable;
+    // Helper function - builds Input struct from args using comptime reflection
+    code.appendSlice(allocator, I ++ "fn buildInput(comptime T: type, args: []const dispatcher_ast.Arg) T {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    var input: T = undefined;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (dispatcher_std.meta.fields(T)) |field| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        @field(input, field.name) = getArg(args, field.name) orelse \"\";\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return input;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
     // Dispatcher function
-    code.appendSlice(allocator, "pub fn dispatch_") catch unreachable;
-    code.appendSlice(allocator, scope_ident) catch unreachable;
-    code.appendSlice(allocator, "(inv: *const Invocation, out_result: *DispatchResult) !void {\n") catch unreachable;
-
-    code.appendSlice(allocator, "    var name_buf: [256]u8 = undefined;\n") catch unreachable;
-    code.appendSlice(allocator, "    var name_len: usize = 0;\n") catch unreachable;
-    code.appendSlice(allocator, "    if (inv.path.module_qualifier) |mq| {\n") catch unreachable;
-    code.appendSlice(allocator, "        @memcpy(name_buf[name_len..][0..mq.len], mq);\n") catch unreachable;
-    code.appendSlice(allocator, "        name_len += mq.len; name_buf[name_len] = ':'; name_len += 1;\n") catch unreachable;
-    code.appendSlice(allocator, "    }\n") catch unreachable;
-    code.appendSlice(allocator, "    for (inv.path.segments, 0..) |seg, i| {\n") catch unreachable;
-    code.appendSlice(allocator, "        if (i > 0) { name_buf[name_len] = '.'; name_len += 1; }\n") catch unreachable;
-    code.appendSlice(allocator, "        @memcpy(name_buf[name_len..][0..seg.len], seg);\n") catch unreachable;
-    code.appendSlice(allocator, "        name_len += seg.len;\n") catch unreachable;
-    code.appendSlice(allocator, "    }\n") catch unreachable;
-    code.appendSlice(allocator, "    const event_name = name_buf[0..name_len];\n\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "pub fn dispatch_") catch unreachable;
+    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.runtime.DispatchResult) !void {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    const event_name = if (inv.path.segments.len > 0) inv.path.segments[0] else \"\";\n") catch unreachable;
 
     // Event dispatch branches
     for (events_list.items) |event| {
-        code.appendSlice(allocator, "    if (std.mem.eql(u8, event_name, \"") catch unreachable;
+        code.appendSlice(allocator, I ++ "    if (dispatcher_std.mem.eql(u8, event_name, \"") catch unreachable;
         code.appendSlice(allocator, event) catch unreachable;
         code.appendSlice(allocator, "\")) {\n") catch unreachable;
-
-        if (std.mem.indexOf(u8, event, ":") == null) {
-            var event_decl: ?*const ast.EventDecl = null;
-            for (program.items) |prog_item| {
-                if (prog_item == .event_decl) {
-                    const decl = &prog_item.event_decl;
-                    if (decl.path.segments.len > 0 and std.mem.eql(u8, decl.path.segments[0], event)) {
-                        event_decl = decl;
-                        break;
-                    }
-                }
-            }
-
-            if (event_decl) |decl| {
-                code.appendSlice(allocator, "        const result = main_module.") catch unreachable;
-                code.appendSlice(allocator, event) catch unreachable;
-                code.appendSlice(allocator, "_event.handler(.{\n") catch unreachable;
-
-                for (decl.input.fields) |field| {
-                    code.appendSlice(allocator, "            .") catch unreachable;
-                    code.appendSlice(allocator, field.name) catch unreachable;
-                    code.appendSlice(allocator, " = getArg(inv.args, \"") catch unreachable;
-                    code.appendSlice(allocator, field.name) catch unreachable;
-                    code.appendSlice(allocator, "\") orelse \"\",\n") catch unreachable;
-                }
-
-                code.appendSlice(allocator, "        });\n") catch unreachable;
-                code.appendSlice(allocator, "        out_result.* = .{ .branch = @tagName(result), .fields = &[_]FieldValue{} };\n") catch unreachable;
-                code.appendSlice(allocator, "        return;\n") catch unreachable;
-            }
-        }
-        code.appendSlice(allocator, "    }\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        const Input = main_module.") catch unreachable;
+        code.appendSlice(allocator, event) catch unreachable;
+        code.appendSlice(allocator, "_event.Input;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        const r = main_module.") catch unreachable;
+        code.appendSlice(allocator, event) catch unreachable;
+        code.appendSlice(allocator, "_event.handler(buildInput(Input, inv.args));\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        out.* = .{ .branch = @tagName(r), .fields = &.{} };\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        return;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     }
 
-    code.appendSlice(allocator, "    return error.EventDenied;\n") catch unreachable;
-    code.appendSlice(allocator, "}\n\n") catch unreachable;
-
-    // Scope lookup function
-    code.appendSlice(allocator, "pub fn __koru_get_scope(name: []const u8) ?DispatchFn {\n") catch unreachable;
-    code.appendSlice(allocator, "    if (std.mem.eql(u8, name, \"") catch unreachable;
-    code.appendSlice(allocator, scope_name) catch unreachable;
-    code.appendSlice(allocator, "\")) return &dispatch_") catch unreachable;
-    code.appendSlice(allocator, scope_ident) catch unreachable;
-    code.appendSlice(allocator, ";\n") catch unreachable;
-    code.appendSlice(allocator, "    return null;\n") catch unreachable;
-    code.appendSlice(allocator, "}\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return error.EventNotFound;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "}\n") catch unreachable;
 
     const generated_code = code.toOwnedSlice(allocator) catch unreachable;
     std.debug.print("[REGISTRY] Generated {d} bytes\n", .{generated_code.len});
 
     // Replace this flow with generated code
-    const new_item = ast.Item{
+    const new_item = ast_mod.Item{
         .host_line = .{
             .content = generated_code,
             .location = .{ .file = "runtime:register", .line = 0, .column = 0 },
@@ -214,10 +140,182 @@ const ast = @import("ast");
 
     const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
     if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
+        const result = allocator.create(ast_mod.Program) catch unreachable;
         result.* = new_program;
         return .{ .transformed = .{ .program = result } };
     }
 
     return .{ .transformed = .{ .program = program } };
+}
+
+// ============================================================================
+// GET SCOPE - Runtime event to look up a scope's dispatcher
+// ============================================================================
+
+// Use interpreter's types to ensure compatibility
+// At runtime, koru_std.interpreter is available via root import
+pub const DispatchResult = @import("root").koru_std.interpreter.DispatchResult;
+pub const DispatchFn = @import("root").koru_std.interpreter.DispatchFn;
+
+~pub event get_scope { name: []const u8 }
+| scope { dispatcher: DispatchFn }
+| not_found {}
+
+// Look up scope dispatcher by name
+// Dispatchers are generated into main_module with naming convention: dispatch_<scope>
+~proc get_scope {
+    const root = @import("root");
+
+    // Check for known scopes via comptime string matching
+    // For scope "test", look for main_module.dispatch_test
+    if (std.mem.eql(u8, name, "test")) {
+        if (@hasDecl(root.main_module, "dispatch_test")) {
+            return .{ .scope = .{ .dispatcher = &root.main_module.dispatch_test } };
+        }
+    }
+
+    return .{ .not_found = .{} };
+}
+
+// ============================================================================
+// COLLECT SCOPES - Comptime event that walks AST and generates dispatchers
+// ============================================================================
+
+~[comptime]pub event collect_scopes {}
+| collected {}
+
+~proc collect_scopes {
+    // Access PROGRAM_AST from backend
+    const root = @import("root");
+    const ast_items = root.PROGRAM_AST.items;
+
+    // Use a simple allocator for comptime
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    // Scope info collected from AST
+    const ScopeInfo = struct {
+        name: []const u8,
+        module: []const u8,
+        events: std.ArrayList([]const u8),
+    };
+
+    var scopes = std.ArrayList(ScopeInfo){
+        .items = &.{},
+        .capacity = 0,
+    };
+
+    // Walk AST looking for std.runtime:register flows
+    for (ast_items) |item| {
+        switch (item) {
+            .flow => |flow| {
+                if (flow.invocation.path.module_qualifier) |mq| {
+                    const is_register = (std.mem.eql(u8, mq, "std.runtime") and
+                        flow.invocation.path.segments.len == 1 and
+                        std.mem.eql(u8, flow.invocation.path.segments[0], "register"));
+
+                    if (is_register) {
+                        var scope_name: []const u8 = "default";
+                        var source_text: []const u8 = "";
+
+                        for (flow.invocation.args) |arg| {
+                            if (std.mem.eql(u8, arg.name, "scope")) {
+                                var val = arg.value;
+                                if (val.len >= 2 and val[0] == '"' and val[val.len - 1] == '"') {
+                                    val = val[1..val.len - 1];
+                                }
+                                scope_name = val;
+                            }
+                            if (arg.source_value) |src| {
+                                source_text = src.text;
+                            }
+                        }
+
+                        // Parse events from source block
+                        var events = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
+                        var lines = std.mem.splitScalar(u8, source_text, '\n');
+                        while (lines.next()) |line| {
+                            var trimmed = std.mem.trim(u8, line, " \t\r");
+                            if (trimmed.len == 0) continue;
+                            if (std.mem.startsWith(u8, trimmed, "//")) continue;
+                            if (std.mem.indexOf(u8, trimmed, "//")) |idx| {
+                                trimmed = std.mem.trim(u8, trimmed[0..idx], " \t");
+                            }
+                            if (trimmed.len > 0) {
+                                events.append(allocator, allocator.dupe(u8, trimmed) catch continue) catch continue;
+                            }
+                        }
+
+                        scopes.append(allocator, .{
+                            .name = allocator.dupe(u8, scope_name) catch continue,
+                            .module = "main",
+                            .events = events,
+                        }) catch continue;
+
+                        std.debug.print("[RUNTIME] Found scope '{s}' with {d} events\n", .{scope_name, events.items.len});
+                    }
+                }
+            },
+            .module_decl => |module| {
+                for (module.items) |mod_item| {
+                    if (mod_item == .flow) {
+                        const flow = mod_item.flow;
+                        if (flow.invocation.path.module_qualifier) |mq| {
+                            const is_register = (std.mem.eql(u8, mq, "std.runtime") and
+                                flow.invocation.path.segments.len == 1 and
+                                std.mem.eql(u8, flow.invocation.path.segments[0], "register"));
+
+                            if (is_register) {
+                                var scope_name: []const u8 = "default";
+                                var source_text: []const u8 = "";
+
+                                for (flow.invocation.args) |arg| {
+                                    if (std.mem.eql(u8, arg.name, "scope")) {
+                                        var val = arg.value;
+                                        if (val.len >= 2 and val[0] == '"' and val[val.len - 1] == '"') {
+                                            val = val[1..val.len - 1];
+                                        }
+                                        scope_name = val;
+                                    }
+                                    if (arg.source_value) |src| {
+                                        source_text = src.text;
+                                    }
+                                }
+
+                                var events = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
+                                var lines = std.mem.splitScalar(u8, source_text, '\n');
+                                while (lines.next()) |line| {
+                                    var trimmed = std.mem.trim(u8, line, " \t\r");
+                                    if (trimmed.len == 0) continue;
+                                    if (std.mem.startsWith(u8, trimmed, "//")) continue;
+                                    if (std.mem.indexOf(u8, trimmed, "//")) |idx| {
+                                        trimmed = std.mem.trim(u8, trimmed[0..idx], " \t");
+                                    }
+                                    if (trimmed.len > 0) {
+                                        events.append(allocator, allocator.dupe(u8, trimmed) catch continue) catch continue;
+                                    }
+                                }
+
+                                scopes.append(allocator, .{
+                                    .name = allocator.dupe(u8, scope_name) catch continue,
+                                    .module = module.logical_name,
+                                    .events = events,
+                                }) catch continue;
+
+                                std.debug.print("[RUNTIME] Found scope '{s}' in module '{s}' with {d} events\n",
+                                    .{scope_name, module.logical_name, events.items.len});
+                            }
+                        }
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    std.debug.print("[RUNTIME] Collected {d} scope(s)\n", .{scopes.items.len});
+
+    // TODO: Generate dispatch tables into std.runtime module
+
+    return .{ .collected = .{} };
 }

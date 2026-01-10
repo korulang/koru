@@ -125,10 +125,7 @@ pub fn main() void {
     std.debug.print("║     INTERPRETER CONDITIONALS TEST (ASPIRATIONAL)             ║\n", .{});
     std.debug.print("╚══════════════════════════════════════════════════════════════╝\n\n", .{});
 
-    const dispatcher_fn = __koru_get_scope("test") orelse {
-        std.debug.print("ERROR: Scope 'test' not found\n", .{});
-        return;
-    };
+    const dispatcher_fn = dispatch_test;
 
     // ========================================================================
     // Test 1: See what ~if parses to
