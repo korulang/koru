@@ -161,12 +161,15 @@ pub fn main() void {
             return;
         }
 
-        // Warm up (run a few iterations)
+        // Warm up (run a few iterations) using reusable env/bindings
+        var env = koru_std.interpreter.Environment.init(allocator);
+        defer env.deinit();
+        var expr_bindings = koru_std.interpreter.ExprBindings.init(allocator);
+        defer expr_bindings.deinit();
+
         for (0..3) |_| {
-            var env = koru_std.interpreter.Environment.init(allocator);
-            defer env.deinit();
-            var expr_bindings = koru_std.interpreter.ExprBindings.init(allocator);
-            defer expr_bindings.deinit();
+            env.clear();
+            expr_bindings.clear();
             var ctx = koru_std.interpreter.InterpreterContext{
                 .env = &env,
                 .expr_bindings = &expr_bindings,
@@ -180,10 +183,8 @@ pub fn main() void {
         const start = std.time.nanoTimestamp();
 
         for (0..ITERATIONS) |_| {
-            var env = koru_std.interpreter.Environment.init(allocator);
-            defer env.deinit();
-            var expr_bindings = koru_std.interpreter.ExprBindings.init(allocator);
-            defer expr_bindings.deinit();
+            env.clear();
+            expr_bindings.clear();
             var ctx = koru_std.interpreter.InterpreterContext{
                 .env = &env,
                 .expr_bindings = &expr_bindings,

@@ -134,15 +134,22 @@ const ast = @import("ast");
             code.appendSlice(allocator, "_event.handler(buildInput(Input, inv.args));\n") catch unreachable;
             // Extract fields from active union variant using comptime reflection
             // Use threadlocal static buffer so fields outlive the function call
-            code.appendSlice(allocator, I ++ "        const branch = @tagName(r);\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        const payload = switch (r) { inline else => |p| p };\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        const PayloadType = @TypeOf(payload);\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        const payload_fields = dispatcher_std.meta.fields(PayloadType);\n") catch unreachable;
+            // All extraction must happen INSIDE the inline switch so each branch has its own payload type
+            // Only extract []const u8 fields (interpreter works with strings)
             code.appendSlice(allocator, I ++ "        const S = struct { threadlocal var buf: [16]koru_std.runtime.FieldValue = undefined; };\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        inline for (payload_fields, 0..) |field, i| {\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "            S.buf[i] = .{ .name = field.name, .value = @field(payload, field.name) };\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        out.* = .{ .branch = branch, .fields = S.buf[0..payload_fields.len] };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        const branch = @tagName(r);\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        const field_count = switch (r) { inline else => |p| blk: {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "            const payload_fields = dispatcher_std.meta.fields(@TypeOf(p));\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "            comptime var count: usize = 0;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "            inline for (payload_fields) |field| {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                if (field.type == []const u8) {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                    S.buf[count] = .{ .name = field.name, .value = @field(p, field.name) };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                    count += 1;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                }\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "            }\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "            break :blk count;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        }};\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        out.* = .{ .branch = branch, .fields = S.buf[0..field_count] };\n") catch unreachable;
             code.appendSlice(allocator, I ++ "        return;\n") catch unreachable;
         }
         code.appendSlice(allocator, I ++ "    }\n") catch unreachable;

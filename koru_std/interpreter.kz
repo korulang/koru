@@ -126,24 +126,31 @@ const koru_parser = @import("koru_parser");
 // INTERPRETER VALUE - Runtime representation of Koru values
 // ============================================================================
 
-pub const FieldValue = struct {
+pub const FieldValue = union(enum) {
+    string_val: []const u8,
+    int_val: i64,
+    float_val: f64,
+    bool_val: bool,
+};
+
+pub const NamedField = struct {
     name: []const u8,
-    value: []const u8,  // String representation of value
+    value: FieldValue,
 };
 
 pub const Value = struct {
-    branch: []const u8,           // Which branch was taken/constructed
-    fields: []const FieldValue,   // Structured fields (direct from dispatcher - no JSON!)
+    branch: []const u8,              // Which branch was taken/constructed
+    fields: []const NamedField,      // Structured fields (typed from dispatcher)
 
     pub fn empty(branch_name: []const u8) Value {
         return .{
             .branch = branch_name,
-            .fields = &[_]FieldValue{},
+            .fields = &[_]NamedField{},
         };
     }
 
     /// Create a Value from dispatcher results - direct field handoff, zero parsing!
-    pub fn fromDispatch(branch_name: []const u8, fields: []const FieldValue) Value {
+    pub fn fromDispatch(branch_name: []const u8, fields: []const NamedField) Value {
         return .{
             .branch = branch_name,
             .fields = fields,
@@ -170,6 +177,11 @@ pub const Environment = struct {
         self.bindings.deinit();
     }
 
+    /// Clear bindings but keep capacity to avoid reallocating in hot paths.
+    pub fn clear(self: *Environment) void {
+        self.bindings.clearRetainingCapacity();
+    }
+
     pub fn bind(self: *Environment, name: []const u8, value: Value) !void {
         try self.bindings.put(name, value);
     }
@@ -185,7 +197,7 @@ pub const Environment = struct {
 
 pub const DispatchResult = struct {
     branch: []const u8,
-    fields: []const FieldValue,  // Direct field values - NO JSON overhead!
+    fields: []const NamedField,  // Direct typed field values
 };
 
 // ============================================================================
@@ -291,6 +303,11 @@ pub const ExprBindings = struct {
 
     pub fn deinit(self: *ExprBindings) void {
         self.values.deinit();
+    }
+
+    /// Clear bindings but keep capacity to avoid reallocating in hot paths.
+    pub fn clear(self: *ExprBindings) void {
+        self.values.clearRetainingCapacity();
     }
 
     pub fn set(self: *ExprBindings, name: []const u8, value: ExprValue) !void {
@@ -683,7 +700,7 @@ fn evaluateExpr(expr_str: []const u8, env: *Environment, allocator: std.mem.Allo
             // Look up field in bound value
             for (bound_value.fields) |fv| {
                 if (std.mem.eql(u8, fv.name, field_name)) {
-                    return fv.value;
+                    return try fieldValueToString(fv.value, allocator);
                 }
             }
             // Field not found in dispatcher-provided fields
@@ -704,6 +721,24 @@ fn evaluateExpr(expr_str: []const u8, env: *Environment, allocator: std.mem.Allo
 
     // Return as-is (number, boolean, etc.)
     return try allocator.dupe(u8, trimmed);
+}
+
+fn fieldValueToString(fv: FieldValue, allocator: std.mem.Allocator) ![]const u8 {
+    return switch (fv) {
+        .string_val => |s| allocator.dupe(u8, s),
+        .bool_val => |b| if (b) allocator.dupe(u8, "true") else allocator.dupe(u8, "false"),
+        .int_val => |i| try std.fmt.allocPrint(allocator, "{d}", .{i}),
+        .float_val => |f| try std.fmt.allocPrint(allocator, "{d}", .{f}),
+    };
+}
+
+fn fieldValueToExprValue(fv: FieldValue) ExprValue {
+    return switch (fv) {
+        .string_val => |s| .{ .string_val = s },
+        .bool_val => |b| .{ .bool_val = b },
+        .int_val => |i| .{ .int_val = i },
+        .float_val => |f| .{ .float_val = f },
+    };
 }
 
 // Execute a single flow node, returning the final value
@@ -790,7 +825,7 @@ fn executeFlow(
 
         // Set the branch based on condition result
         dispatch_result.branch = if (condition_result) "then" else "else";
-        dispatch_result.fields = &[_]FieldValue{};
+        dispatch_result.fields = &[_]NamedField{};
         std.debug.print("[INTERPRETER] ~if taking branch: | {s} |>\n", .{dispatch_result.branch});
     } else if (is_for) {
         // =====================================================================
@@ -837,7 +872,7 @@ fn executeFlow(
                     const iter_str = std.fmt.bufPrint(&iter_buf, "{d}", .{i}) catch "0";
                     const iter_value = Value{
                         .branch = "each",
-                        .fields = &[_]FieldValue{.{ .name = "value", .value = iter_str }},
+                        .fields = &[_]NamedField{.{ .name = "value", .value = .{ .string_val = iter_str } }},
                     };
                     try ctx.env.bind(binding_name, iter_value);
 
@@ -867,7 +902,7 @@ fn executeFlow(
 
         // After loop, take | done | branch
         dispatch_result.branch = "done";
-        dispatch_result.fields = &[_]FieldValue{};
+        dispatch_result.fields = &[_]NamedField{};
         // std.debug.print("[INTERPRETER] ~for complete, taking | done |>\n", .{});
 
         // If there's a done continuation with a node, follow it
@@ -883,7 +918,7 @@ fn executeFlow(
                         return try executeFlow(&next_flow, ctx);
                     },
                     .branch_constructor => |bc| {
-                        var fields = try ctx.allocator.alloc(FieldValue, bc.fields.len);
+                        var fields = try ctx.allocator.alloc(NamedField, bc.fields.len);
                         for (bc.fields, 0..) |field, idx| {
                             const value = if (field.expression_str) |expr|
                                 try evaluateExpr(expr, ctx.env, ctx.allocator)
@@ -997,7 +1032,7 @@ fn executeFlow(
                     },
                     .branch_constructor => |bc| {
                         // Construct a new value from the branch constructor!
-                        var fields = try ctx.allocator.alloc(FieldValue, bc.fields.len);
+                        var fields = try ctx.allocator.alloc(NamedField, bc.fields.len);
                         for (bc.fields, 0..) |field, i| {
                             const value = if (field.expression_str) |expr|
                                 try evaluateExpr(expr, ctx.env, ctx.allocator)
