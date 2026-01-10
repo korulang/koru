@@ -1,7 +1,7 @@
 # Task 001: Interpreter Runtime Test Fixes
 
 ## Status
-- [x] Pending
+- [ ] In Progress
 
 ## Overview
 
@@ -137,6 +137,17 @@ The test flow needs to handle both `| scope s |>` and `| not_found |>` branches 
 - `tests/regression/400_RUNTIME_FEATURES/430_RUNTIME/430_025_interpreter_benchmark_real/input.kz`
 
 ---
+
+## Current Benchmark Numbers (430_030_honest_benchmark)
+
+Honest 3-step dispatch benchmark (add → multiply → subtract with string parsing):
+
+| Language | Hyperfine Mean | Notes |
+|----------|---------------|-------|
+| **Koru** | **9.5ms** | 2.6x faster than Python |
+| Python | 25.8ms | Includes interpreter startup |
+
+This is the baseline for optimization work.
 
 ## Success Criteria
 

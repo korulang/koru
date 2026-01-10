@@ -54,3 +54,7 @@
 !**/COMPILER_FLAGS
 !**/*.c
 !**/koru.json
+
+# Keep benchmark comparison files
+!**/*.py
+!**/*.lua
