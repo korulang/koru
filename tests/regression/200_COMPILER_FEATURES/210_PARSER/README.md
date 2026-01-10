@@ -186,10 +186,10 @@ Source parameters capture THREE things:
 3. **Scope** - Available bindings (lexical capture!)
 
 ```koru
-const userName = "Alice";
-~test(name: "example", source: Source) {
+const user_name = "Alice";
+~std.testing:test(name: "example") {
     ~mock.service = success { value: 42 }
-    ~assert.equals(value, userName)  // userName captured from scope!
+    ~assert.equals(value, user_name)
 }
 ```
 

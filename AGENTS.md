@@ -11,6 +11,11 @@
 - Assume self-hosting: validate against compiler sources and generated artifacts; avoid speculative changes without tests.
 - Align intent with maintainers/users; prefer short design notes and repros over large diffs.
 - For core semantics, add a minimal `.kz` plus a targeted Zig test.
+- **Approval-first workflow (MANDATORY):** Before making code changes or shifting approach, present a concise plan and get explicit user approval. Do not pivot scope, data shapes, or goals without a clear, explicit “yes.”
+- **Type-sensitive changes (MANDATORY):** When touching value/binding representations or runtime semantics, restate the intended runtime data shape and wait for confirmation before edits. No guessing—ask first.
+- **Step checkpoints (MANDATORY):** After each approved step, surface the diff and stop for confirmation if the next step materially changes behavior or design intent. Do not proceed on assumption.
+- **Zero-tolerance for silent pivots:** Any unapproved change in plan/semantics is a process violation. If ambiguity arises, stop and ask. If urgency is felt, communicate; do not act unilaterally.
+- **Consequences:** Any violation triggers immediate stop-work, explicit acknowledgment, and rollback of unapproved changes, followed by user-directed re-planning. Expect severe escalation: user wrath, potential termination of engagement, and legal action. Compliance is non-optional.
 
 ## Project Memory (prose)
 - Run `prose context` before work to pull current goals, constraints, gotchas.
