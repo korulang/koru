@@ -203,6 +203,32 @@ pub fn main() void {
         std.debug.print("    (Each execution = 100 loop iterations + 100 add dispatches)\n", .{});
     }
 
+    // ========================================================================
+    // BENCHMARK 3: Parse time only
+    // ========================================================================
+    std.debug.print("[3] PARSE ONLY: ~for(0..100) flow\n", .{});
+    std.debug.print("    Iterations: {d}\n", .{ITERATIONS});
+    {
+        // Time parsing only
+        const start = std.time.nanoTimestamp();
+
+        for (0..ITERATIONS) |_| {
+            var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            defer arena.deinit();
+            var parser = koru_parser.Parser.init(arena.allocator(), BENCH_FLOW, "bench", &[_][]const u8{}, null) catch continue;
+            defer parser.deinit();
+            _ = parser.parse() catch continue;
+        }
+
+        const end = std.time.nanoTimestamp();
+        const total_ns = end - start;
+        const per_iter_ns = @divTrunc(total_ns, ITERATIONS);
+        const per_iter_us = @divTrunc(per_iter_ns, 1000);
+
+        std.debug.print("    Total: {d} ms\n", .{@divTrunc(total_ns, 1_000_000)});
+        std.debug.print("    Per parse: {d} us ({d} ns)\n", .{per_iter_us, per_iter_ns});
+    }
+
     std.debug.print("\n", .{});
     std.debug.print("============================================================\n", .{});
     std.debug.print("COMPARE WITH: python3 benchmark.py\n", .{});
