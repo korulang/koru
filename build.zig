@@ -429,6 +429,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("validate_abstract_impl", validate_abstract_impl_module);
     exe.root_module.addImport("flow_checker", flow_checker_module);
     exe.root_module.addImport("branch_checker", branch_checker_module);
+    exe.root_module.addImport("codegen_utils", codegen_utils_module);
 
     // Functional AST modules
     const ast_functional_module = b.createModule(.{

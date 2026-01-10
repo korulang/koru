@@ -58,9 +58,14 @@ const zig_keywords = std.StaticStringMap(void).initComptime(.{
 /// - Identifiers starting with @ (npm scoped packages like @koru)
 /// - Identifiers containing non-identifier chars (hyphens, etc.)
 pub fn needsEscaping(name: []const u8) bool {
+    // Already escaped: @"..."
+    if (name.len >= 3 and name[0] == '@' and name[1] == '"' and name[name.len - 1] == '"') {
+        return false;
+    }
+
     if (zig_keywords.has(name)) return true;
     if (name.len == 0) return false;
-    // Starts with @ (npm scoped packages)
+    // Starts with @ (npm scoped packages like @koru)
     if (name[0] == '@') return true;
     // Contains characters that aren't valid in Zig identifiers
     for (name) |c| {

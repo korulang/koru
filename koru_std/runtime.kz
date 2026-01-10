@@ -123,7 +123,7 @@ const ast = @import("ast");
         code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     }
 
-    code.appendSlice(allocator, I ++ "    return error.EventNotFound;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return error.EventDenied;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n") catch unreachable;
 
     const generated_code = code.toOwnedSlice(allocator) catch unreachable;

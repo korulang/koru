@@ -204,11 +204,21 @@ const std = @import("std");
                         // Extract source parameter
                         for (flow.invocation.args) |arg| {
                             if (std.mem.eql(u8, arg.name, "source")) {
-                                const requirement = emit_build_zig.BuildRequirement{
-                                    .module_name = "main",  // All user code is in "main" module
-                                    .source_code = arg.value,
-                                };
-                                try requirements.append(allocator, requirement);
+                                // Deduplicate by checking if this source already exists
+                                var found = false;
+                                for (requirements.items) |req| {
+                                    if (std.mem.eql(u8, req.source_code, arg.value)) {
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if (!found) {
+                                    const requirement = emit_build_zig.BuildRequirement{
+                                        .module_name = "main", // All user code is in "main" module
+                                        .source_code = arg.value,
+                                    };
+                                    try requirements.append(allocator, requirement);
+                                }
                             }
                         }
                     }
@@ -227,11 +237,21 @@ const std = @import("std");
                             if (is_build_requires) {
                                 for (flow.invocation.args) |arg| {
                                     if (std.mem.eql(u8, arg.name, "source")) {
-                                        const requirement = emit_build_zig.BuildRequirement{
-                                            .module_name = module.logical_name,
-                                            .source_code = arg.value,
-                                        };
-                                        try requirements.append(allocator, requirement);
+                                        // Deduplicate by checking if this source already exists
+                                        var found = false;
+                                        for (requirements.items) |req| {
+                                            if (std.mem.eql(u8, req.source_code, arg.value)) {
+                                                found = true;
+                                                break;
+                                            }
+                                        }
+                                        if (!found) {
+                                            const requirement = emit_build_zig.BuildRequirement{
+                                                .module_name = module.logical_name,
+                                                .source_code = arg.value,
+                                            };
+                                            try requirements.append(allocator, requirement);
+                                        }
                                     }
                                 }
                             }

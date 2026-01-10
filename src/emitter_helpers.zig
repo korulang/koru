@@ -183,24 +183,7 @@ pub const CodeEmitter = struct {
 
     /// Check if a word is a Zig reserved keyword that needs escaping in field access
     fn isZigKeyword(word: []const u8) bool {
-        const keywords = [_][]const u8{
-            "error",      "type",        "async",     "await",       "suspend",  "resume",
-            "try",        "catch",       "if",        "else",        "switch",   "while",
-            "for",        "break",       "continue",  "return",      "defer",    "errdefer",
-            "test",       "pub",         "export",    "extern",      "packed",   "inline",
-            "noinline",   "comptime",    "nosuspend", "volatile",    "allowzero",
-            "align",      "linksection", "callconv",  "noalias",
-            "struct",     "enum",        "union",     "opaque",      "fn",       "const",
-            "var",        "anyframe",    "anytype",   "anyerror",    "unreachable",
-            "undef",      "null",        "true",      "false",       "and",      "or",
-            "orelse",     "threadlocal",
-        };
-        for (keywords) |kw| {
-            if (std.mem.eql(u8, word, kw)) {
-                return true;
-            }
-        }
-        return false;
+        return codegen_utils.needsEscaping(word);
     }
 
     /// Write a line of text with Zig keyword escaping for field access (.keyword -> .@"keyword")
@@ -306,36 +289,11 @@ pub const CodeEmitter = struct {
 // These are extracted from emitter.zig for use by visitor_emitter.zig
 // The old procedural orchestrators remain in emitter.zig as reference only
 
-/// Helper: Check if a Zig keyword (used by writeBranchName)
-fn isZigKeyword(word: []const u8) bool {
-    const keywords = [_][]const u8{
-        "error",      "type",        "async",     "await",       "suspend",  "resume",
-        "try",        "catch",       "if",        "else",        "switch",   "while",
-        "for",        "break",       "continue",  "return",      "defer",    "errdefer",
-        "test",       "pub",         "export",    "extern",      "packed",   "inline",
-        "noinline",   "comptime",    "nosuspend", "volatile",    "allowzero",
-        "align",      "linksection", "callconv",  "noalias",
-        "struct",     "enum",        "union",     "opaque",      "fn",       "const",
-        "var",        "anyframe",    "anytype",   "anyerror",    "unreachable",
-        "undef",      "null",        "true",      "false",       "and",      "or",
-        "orelse",     "threadlocal",
-    };
-    for (keywords) |kw| {
-        if (std.mem.eql(u8, word, kw)) {
-            return true;
-        }
-    }
-    return false;
-}
+// Redundant isZigKeyword removed (use codegen_utils.needsEscaping)
 
 /// Helper: Write branch name (escaped if needed)
 pub fn writeBranchName(emitter: *CodeEmitter, name: []const u8) !void {
-    // Check if branch name needs escaping
-    const needs_escape = for (name) |c| {
-        if (!std.ascii.isAlphanumeric(c) and c != '_') break true;
-    } else false;
-
-    if (needs_escape or isZigKeyword(name)) {
+    if (codegen_utils.needsEscaping(name)) {
         try emitter.write("@\"");
         try emitter.write(name);
         try emitter.write("\"");
@@ -648,12 +606,7 @@ pub fn emitTapsNamespace(
             if (branch.len == 0) continue;
 
             try emitter.writeIndent();
-            // Escape branch name if needed (same as writeBranchName but for enum field)
-            const needs_escape = for (branch) |c| {
-                if (!std.ascii.isAlphanumeric(c) and c != '_') break true;
-            } else false;
-
-            if (needs_escape or isZigKeyword(branch)) {
+            if (codegen_utils.needsEscaping(branch)) {
                 try emitter.write("@\"");
                 try emitter.write(branch);
                 try emitter.write("\"");
@@ -767,12 +720,7 @@ fn emitEventEnumValue(emitter: *CodeEmitter, canonical: []const u8) !void {
 /// Emit a branch enum value (handles escaping if needed)
 /// Example: "done" → "done", "error-code" → "@\"error-code\""
 fn emitBranchEnumValue(emitter: *CodeEmitter, branch: []const u8) !void {
-    // Check if branch name needs escaping
-    const needs_escape = for (branch) |c| {
-        if (!std.ascii.isAlphanumeric(c) and c != '_') break true;
-    } else false;
-
-    if (needs_escape or isZigKeyword(branch)) {
+    if (codegen_utils.needsEscaping(branch)) {
         try emitter.write("@\"");
         try emitter.write(branch);
         try emitter.write("\"");

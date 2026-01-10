@@ -58,25 +58,7 @@ const FLOW_SOURCE =
     \\| error e |> print_result(value: e.message)
 ;
 
-// ============================================================================
-// Events for handling interpreter results
-// ============================================================================
-
-~pub event report_success { branch: []const u8 }
-| done {}
-
-~proc report_success {
-    std.debug.print("Interpreter completed: branch={s}\n", .{branch});
-    return .{ .done = .{} };
-}
-
-~pub event report_error { message: []const u8 }
-| done {}
-
-~proc report_error {
-    std.debug.print("Error: {s}\n", .{message});
-    return .{ .done = .{} };
-}
+~import "$std/io"
 
 // ============================================================================
 // Benchmark: Parse and execute the flow
@@ -84,8 +66,8 @@ const FLOW_SOURCE =
 
 ~std.runtime:get_scope(name: "bench")
 | scope s |> std.interpreter:run(source: FLOW_SOURCE, dispatcher: s.dispatcher)
-    | result r |> report_success(branch: r.value.branch)
-    | parse_error e |> report_error(message: e.message)
-    | validation_error e |> report_error(message: e.message)
-    | dispatch_error e |> report_error(message: e.message)
-| not_found |> report_error(message: "Scope 'bench' not found")
+    | result r |> std.io:print.ln("Success: branch {{ r.value.branch }}")
+    | parse_error e |> std.io:print.ln("Error: {{ e.message }}")
+    | validation_error e |> std.io:print.ln("Error: {{ e.message }}")
+    | dispatch_error e |> std.io:print.ln("Error: {{ e.message }}")
+| not_found |> std.io:print.ln("Error: Scope 'bench' not found")

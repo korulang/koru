@@ -2,6 +2,7 @@
 // Verify that $std/parser is available at runtime for dynamic parsing
 
 ~import "$std/parser"
+~import "$std/io"
 
 const std = @import("std");
 
@@ -13,10 +14,6 @@ const allocator = gpa.allocator();
 const test_source = "~greet()";
 
 // Main flow - parse and report
-~parser:parse.source(source: test_source, file_name: "test.kz", allocator: allocator)
-| parsed p |> {
-    std.debug.print("Parser works! Got AST with {d} items\n", .{p.ast.items.len});
-}
-| parse_error e |> {
-    std.debug.print("Parse failed: {s}\n", .{e.message});
-}
+~std.parser:parse.source(source: test_source, file_name: "test.kz", allocator: allocator)
+| parsed p |> std.io:print.ln("Parser works! Got AST with {{ p.ast.source_file.items.len }} items")
+| parse_error e |> std.io:print.ln("Parse failed: {{ e.message }}")

@@ -27,34 +27,13 @@ const annotation_parser = @import("annotation_parser");
 const keyword_registry = @import("keyword_registry");
 const flow_checker = @import("flow_checker");
 const FlowChecker = flow_checker.FlowChecker;
+const codegen_utils = @import("codegen_utils");
 
 const version = "0.1.0";
 
-/// Check if a word is a Zig keyword (requires @"..." escaping in enums)
-fn isZigKeyword(word: []const u8) bool {
-    const keywords = [_][]const u8{
-        "error",      "type",        "async",     "await",       "suspend",  "resume",
-        "try",        "catch",       "if",        "else",        "switch",   "while",
-        "for",        "break",       "continue",  "return",      "defer",    "errdefer",
-        "test",       "pub",         "export",    "extern",      "packed",   "inline",
-        "noinline",   "comptime",    "nosuspend", "volatile",    "allowzero",
-        "align",      "linksection", "callconv",  "noalias",
-        "struct",     "enum",        "union",     "opaque",      "fn",       "const",
-        "var",        "anyframe",    "anytype",   "anyerror",    "unreachable",
-        "undef",      "null",        "true",      "false",       "and",      "or",
-        "orelse",     "threadlocal",
-    };
-    for (keywords) |kw| {
-        if (std.mem.eql(u8, word, kw)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 /// Write a branch name, escaping Zig keywords with @"..."
 fn writeBranchName(writer: anytype, name: []const u8) !void {
-    if (isZigKeyword(name)) {
+    if (codegen_utils.needsEscaping(name)) {
         try writer.writeAll("@\"");
         try writer.writeAll(name);
         try writer.writeAll("\"");

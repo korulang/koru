@@ -9,12 +9,14 @@ pub const CompilerRequiresCollector = struct {
     allocator: std.mem.Allocator,
     compiler_requirements: std.ArrayList([]const u8), // For backend.zig
     build_requirements: std.ArrayList([]const u8), // For output binary
+    seen_requirements: std.StringHashMap(void), // Deduplication
 
     pub fn init(allocator: std.mem.Allocator) !CompilerRequiresCollector {
         return CompilerRequiresCollector{
             .allocator = allocator,
             .compiler_requirements = try std.ArrayList([]const u8).initCapacity(allocator, 0),
             .build_requirements = try std.ArrayList([]const u8).initCapacity(allocator, 0),
+            .seen_requirements = std.StringHashMap(void).init(allocator),
         };
     }
 
@@ -28,6 +30,7 @@ pub const CompilerRequiresCollector = struct {
             self.allocator.free(req);
         }
         self.build_requirements.deinit(self.allocator);
+        self.seen_requirements.deinit();
     }
 
     // Legacy alias for backwards compatibility
@@ -102,8 +105,16 @@ pub const CompilerRequiresCollector = struct {
             // Accept both "source" (named) and "" (anonymous block with source_value)
             if (std.mem.eql(u8, arg.name, "source") or (std.mem.eql(u8, arg.name, "") and arg.source_value != null)) {
                 const source_code = if (arg.source_value) |sv| sv.text else arg.value;
+
+                // Deduplicate by content
+                if (self.seen_requirements.contains(source_code)) {
+                    std.debug.print("[CompilerRequiresCollector]   Skipping duplicate requirement\n", .{});
+                    continue;
+                }
+
                 const source_copy = try self.allocator.dupe(u8, source_code);
                 try target_list.append(self.allocator, source_copy);
+                try self.seen_requirements.put(source_copy, {});
                 std.debug.print("[CompilerRequiresCollector]   Added requirement ({d} bytes)\n", .{source_code.len});
             }
         }

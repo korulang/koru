@@ -1,1 +1,1 @@
-Parsed event: greet
+Parser works! Got AST with 1 items

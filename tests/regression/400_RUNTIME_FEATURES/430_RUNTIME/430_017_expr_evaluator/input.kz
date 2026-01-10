@@ -6,25 +6,6 @@
 ~import "$std/build"
 ~import "$std/eval"
 
-~std.build:requires {
-    const REL_TO_ROOT = "/usr/local/lib/koru";
-
-    const errors_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const ast_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    ast_module.addImport("errors", errors_module);
-
-    exe.root_module.addImport("ast", ast_module);
-}
-
 const std = @import("std");
 
 // Re-implement Value and Bindings locally to test the concepts
