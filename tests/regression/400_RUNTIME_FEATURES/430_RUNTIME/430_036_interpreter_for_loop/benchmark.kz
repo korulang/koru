@@ -1,0 +1,210 @@
+// HONEST INTERPRETER BENCHMARK
+//
+// Task: Sum numbers 0..99 using for loop
+// Measure: Parse once, execute N times, report per-execution time
+// Compare: Python doing the same thing
+
+~import "$std/runtime"
+~import "$std/interpreter"
+
+const std = @import("std");
+
+// ============================================================================
+// Events for computation
+// ============================================================================
+
+~pub event add { a: []const u8, b: []const u8 }
+| sum { result: []const u8 }
+
+~proc add {
+    const a_int = std.fmt.parseInt(i64, a, 10) catch 0;
+    const b_int = std.fmt.parseInt(i64, b, 10) catch 0;
+    const result_int = a_int + b_int;
+    var buf: [32]u8 = undefined;
+    const result_str = std.fmt.bufPrint(&buf, "{d}", .{result_int}) catch "0";
+    return .{ .sum = .{ .result = result_str } };
+}
+
+~pub event init_sum {}
+| value { n: []const u8 }
+
+~proc init_sum {
+    return .{ .value = .{ .n = "0" } };
+}
+
+// Register events including for
+~std.runtime:register(scope: "bench") {
+    for
+    add
+    init_sum
+}
+
+// The benchmark flow: sum 0..100
+const BENCH_FLOW =
+    \\~for(0..100)
+    \\| each i |> add(a: "0", b: i)
+    \\| done |> result { status: "complete" }
+;
+
+// Simple flow for comparison (no loop)
+const SIMPLE_FLOW =
+    \\~add(a: "21", b: "21")
+;
+
+// ============================================================================
+// BENCHMARK
+// ============================================================================
+
+pub fn main() void {
+    const koru_parser = @import("koru_parser");
+
+    std.debug.print("\n", .{});
+    std.debug.print("============================================================\n", .{});
+    std.debug.print("HONEST INTERPRETER BENCHMARK\n", .{});
+    std.debug.print("============================================================\n\n", .{});
+
+    const ITERATIONS = 1000;
+
+    // ========================================================================
+    // BENCHMARK 1: Simple dispatch (no loop) - parse once, dispatch N times
+    // ========================================================================
+    std.debug.print("[1] SIMPLE DISPATCH: ~add(a: \"21\", b: \"21\")\n", .{});
+    std.debug.print("    Iterations: {d}\n", .{ITERATIONS});
+    {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
+
+        // Parse once
+        var parser = koru_parser.Parser.init(allocator, SIMPLE_FLOW, "bench", &[_][]const u8{}, null) catch {
+            std.debug.print("    ERROR: Parser init failed\n", .{});
+            return;
+        };
+        defer parser.deinit();
+
+        const parse_result = parser.parse() catch {
+            std.debug.print("    ERROR: Parse failed\n", .{});
+            return;
+        };
+
+        // Find the flow
+        var inv_ptr: ?*const @import("ast").Invocation = null;
+        for (parse_result.source_file.items) |*item| {
+            if (item.* == .flow) {
+                inv_ptr = &item.flow.invocation;
+                break;
+            }
+        }
+
+        if (inv_ptr == null) {
+            std.debug.print("    ERROR: No flow found\n", .{});
+            return;
+        }
+
+        // Warm up
+        for (0..10) |_| {
+            var result: koru_std.runtime.DispatchResult = undefined;
+            dispatch_bench(inv_ptr.?, &result) catch continue;
+        }
+
+        // Time it
+        const start = std.time.nanoTimestamp();
+
+        for (0..ITERATIONS) |_| {
+            var result: koru_std.runtime.DispatchResult = undefined;
+            dispatch_bench(inv_ptr.?, &result) catch continue;
+        }
+
+        const end = std.time.nanoTimestamp();
+        const total_ns = end - start;
+        const per_iter_ns = @divTrunc(total_ns, ITERATIONS);
+
+        std.debug.print("    Total: {d} ms\n", .{@divTrunc(total_ns, 1_000_000)});
+        std.debug.print("    Per dispatch: {d} ns\n", .{per_iter_ns});
+    }
+
+    std.debug.print("\n", .{});
+
+    // ========================================================================
+    // BENCHMARK 2: Full interpreter with for loop
+    // ========================================================================
+    std.debug.print("[2] FULL INTERPRETER: ~for(0..100) with adds\n", .{});
+    std.debug.print("    Iterations: {d}\n", .{ITERATIONS});
+    {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
+
+        // Parse once
+        var parser = koru_parser.Parser.init(allocator, BENCH_FLOW, "bench", &[_][]const u8{}, null) catch {
+            std.debug.print("    ERROR: Parser init failed\n", .{});
+            return;
+        };
+        defer parser.deinit();
+
+        const parse_result = parser.parse() catch {
+            std.debug.print("    ERROR: Parse failed\n", .{});
+            return;
+        };
+
+        // Find the flow
+        var flow_ptr: ?*const @import("ast").Flow = null;
+        for (parse_result.source_file.items) |*item| {
+            if (item.* == .flow) {
+                flow_ptr = &item.flow;
+                break;
+            }
+        }
+
+        if (flow_ptr == null) {
+            std.debug.print("    ERROR: No flow found\n", .{});
+            return;
+        }
+
+        // Warm up (run a few iterations)
+        for (0..3) |_| {
+            var env = koru_std.interpreter.Environment.init(allocator);
+            defer env.deinit();
+            var expr_bindings = koru_std.interpreter.ExprBindings.init(allocator);
+            defer expr_bindings.deinit();
+            var ctx = koru_std.interpreter.InterpreterContext{
+                .env = &env,
+                .expr_bindings = &expr_bindings,
+                .allocator = allocator,
+                .dispatcher = &dispatch_bench,
+            };
+            _ = koru_std.interpreter.executeFlow(flow_ptr.?, &ctx) catch continue;
+        }
+
+        // Time it
+        const start = std.time.nanoTimestamp();
+
+        for (0..ITERATIONS) |_| {
+            var env = koru_std.interpreter.Environment.init(allocator);
+            defer env.deinit();
+            var expr_bindings = koru_std.interpreter.ExprBindings.init(allocator);
+            defer expr_bindings.deinit();
+            var ctx = koru_std.interpreter.InterpreterContext{
+                .env = &env,
+                .expr_bindings = &expr_bindings,
+                .allocator = allocator,
+                .dispatcher = &dispatch_bench,
+            };
+            _ = koru_std.interpreter.executeFlow(flow_ptr.?, &ctx) catch continue;
+        }
+
+        const end = std.time.nanoTimestamp();
+        const total_ns = end - start;
+        const per_iter_ns = @divTrunc(total_ns, ITERATIONS);
+        const per_iter_us = @divTrunc(per_iter_ns, 1000);
+
+        std.debug.print("    Total: {d} ms\n", .{@divTrunc(total_ns, 1_000_000)});
+        std.debug.print("    Per execution: {d} us ({d} ns)\n", .{per_iter_us, per_iter_ns});
+        std.debug.print("    (Each execution = 100 loop iterations + 100 add dispatches)\n", .{});
+    }
+
+    std.debug.print("\n", .{});
+    std.debug.print("============================================================\n", .{});
+    std.debug.print("COMPARE WITH: python3 benchmark.py\n", .{});
+    std.debug.print("============================================================\n", .{});
+}

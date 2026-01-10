@@ -109,27 +109,42 @@ const ast = @import("ast");
 
     // Event dispatch branches
     for (events_list.items) |event| {
+        // Check if this is a control flow event (handled specially by interpreter)
+        const is_control_flow = std.mem.eql(u8, event, "if") or
+                                std.mem.eql(u8, event, "for") or
+                                std.mem.eql(u8, event, "std.control:if") or
+                                std.mem.eql(u8, event, "std.control:for");
+
         code.appendSlice(allocator, I ++ "    if (dispatcher_std.mem.eql(u8, event_name, \"") catch unreachable;
         code.appendSlice(allocator, event) catch unreachable;
         code.appendSlice(allocator, "\")) {\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        const Input = main_module.") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "_event.Input;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        const r = main_module.") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "_event.handler(buildInput(Input, inv.args));\n") catch unreachable;
-        // Extract fields from active union variant using comptime reflection
-        // Use threadlocal static buffer so fields outlive the function call
-        code.appendSlice(allocator, I ++ "        const branch = @tagName(r);\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        const payload = switch (r) { inline else => |p| p };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        const PayloadType = @TypeOf(payload);\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        const payload_fields = dispatcher_std.meta.fields(PayloadType);\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        const S = struct { threadlocal var buf: [16]koru_std.runtime.FieldValue = undefined; };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        inline for (payload_fields, 0..) |field, i| {\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "            S.buf[i] = .{ .name = field.name, .value = @field(payload, field.name) };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        out.* = .{ .branch = branch, .fields = S.buf[0..payload_fields.len] };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        return;\n") catch unreachable;
+
+        if (is_control_flow) {
+            // Control flow events are allowed but handled by interpreter, not dispatcher
+            code.appendSlice(allocator, I ++ "        // Control flow - interpreter handles this\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        out.* = .{ .branch = \"control\", .fields = &.{} };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        return;\n") catch unreachable;
+        } else {
+            // Normal event - call handler
+            code.appendSlice(allocator, I ++ "        const Input = main_module.") catch unreachable;
+            code.appendSlice(allocator, event) catch unreachable;
+            code.appendSlice(allocator, "_event.Input;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        const r = main_module.") catch unreachable;
+            code.appendSlice(allocator, event) catch unreachable;
+            code.appendSlice(allocator, "_event.handler(buildInput(Input, inv.args));\n") catch unreachable;
+            // Extract fields from active union variant using comptime reflection
+            // Use threadlocal static buffer so fields outlive the function call
+            code.appendSlice(allocator, I ++ "        const branch = @tagName(r);\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        const payload = switch (r) { inline else => |p| p };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        const PayloadType = @TypeOf(payload);\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        const payload_fields = dispatcher_std.meta.fields(PayloadType);\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        const S = struct { threadlocal var buf: [16]koru_std.runtime.FieldValue = undefined; };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        inline for (payload_fields, 0..) |field, i| {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "            S.buf[i] = .{ .name = field.name, .value = @field(payload, field.name) };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        out.* = .{ .branch = branch, .fields = S.buf[0..payload_fields.len] };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        return;\n") catch unreachable;
+        }
         code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     }
 

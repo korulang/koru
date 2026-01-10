@@ -1,0 +1,37 @@
+// Test: Interpreter for loop
+//
+// Tests that ~for(0..N) | each i |> body | done |> ... works
+
+~import "$std/runtime"
+~import "$std/interpreter"
+~import "$std/io"
+
+const std = @import("std");
+
+// Event that prints a number
+~pub event print_num { n: []const u8 }
+| printed {}
+
+~proc print_num {
+    std.debug.print("[print_num] n = {s}\n", .{n});
+    return .{ .printed = .{} };
+}
+
+// Register events including control flow
+~std.runtime:register(scope: "test") {
+    for
+    print_num
+}
+
+// Test flow: loop 3 times, print each iteration
+const TEST_FLOW =
+    \\~for(0..3)
+    \\| each i |> print_num(n: i)
+    \\| done |> result { status: "complete" }
+;
+
+~std.interpreter:run(source: TEST_FLOW, dispatcher: dispatch_test)
+| result r |> std.io:print.ln("Result: {{ r.value.branch }}")
+| parse_error e |> std.io:print.ln("Parse error: {{ e.message }}")
+| validation_error e |> std.io:print.ln("Validation error: {{ e.message }}")
+| dispatch_error e |> std.io:print.ln("Dispatch error: {{ e.message }}")
