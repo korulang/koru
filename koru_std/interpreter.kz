@@ -782,7 +782,23 @@ fn executeFlow(
     } else {
         // Normal dispatch for other events
         if (ctx.dispatcher) |dispatcher| {
-            try dispatcher(inv, &dispatch_result);
+            // Evaluate args against environment before dispatching
+            // This resolves binding references like "v.num" to actual values
+            var evaluated_args = try ctx.allocator.alloc(ast.Arg, inv.args.len);
+            for (inv.args, 0..) |arg, i| {
+                evaluated_args[i] = ast.Arg{
+                    .name = arg.name,
+                    .value = try evaluateExpr(arg.value, ctx.env, ctx.allocator),
+                    .source_value = arg.source_value,
+                    .expression_value = arg.expression_value,
+                };
+            }
+
+            // Create invocation with evaluated args
+            var evaluated_inv = inv.*;
+            evaluated_inv.args = evaluated_args;
+
+            try dispatcher(&evaluated_inv, &dispatch_result);
         } else {
             return error.NoDispatcher;
         }

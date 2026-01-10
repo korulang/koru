@@ -1,0 +1,52 @@
+// Test: Interpreter binding reference evaluation in args
+//
+// This tests that when we chain events like:
+//   ~first() | ok x |> second(arg: x.field)
+//
+// The interpreter evaluates x.field against the environment,
+// NOT passing the literal string "x.field".
+
+~import "$std/runtime"
+~import "$std/interpreter"
+~import "$std/io"
+
+const std = @import("std");
+
+// Event that produces a value
+~pub event produce {}
+| value { num: []const u8 }
+
+~proc produce {
+    return .{ .value = .{ .num = "42" } };
+}
+
+// Event that consumes a value and echoes it
+~pub event consume { n: []const u8 }
+| echoed { got: []const u8 }
+
+~proc consume {
+    std.debug.print("[consume] received n = '{s}'\n", .{n});
+    return .{ .echoed = .{ .got = n } };
+}
+
+~std.runtime:register(scope: "test") {
+    produce
+    consume
+}
+
+// The flow we'll interpret:
+// ~produce() | value v |> consume(n: v.num)
+//
+// Expected: consume receives "42" (the actual value)
+// Bug: consume receives "v.num" (the literal string)
+
+const TEST_FLOW =
+    \\~produce()
+    \\| value v |> consume(n: v.num)
+;
+
+~std.interpreter:run(source: TEST_FLOW, dispatcher: dispatch_test)
+| result r |> std.io:print.ln("Result: {{ r.value.branch }}")
+| parse_error e |> std.io:print.ln("Parse error: {{ e.message }}")
+| validation_error e |> std.io:print.ln("Validation error: {{ e.message }}")
+| dispatch_error e |> std.io:print.ln("Dispatch error: {{ e.message }}")

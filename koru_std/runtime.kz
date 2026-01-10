@@ -118,7 +118,17 @@ const ast = @import("ast");
         code.appendSlice(allocator, I ++ "        const r = main_module.") catch unreachable;
         code.appendSlice(allocator, event) catch unreachable;
         code.appendSlice(allocator, "_event.handler(buildInput(Input, inv.args));\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        out.* = .{ .branch = @tagName(r), .fields = &.{} };\n") catch unreachable;
+        // Extract fields from active union variant using comptime reflection
+        // Use threadlocal static buffer so fields outlive the function call
+        code.appendSlice(allocator, I ++ "        const branch = @tagName(r);\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        const payload = switch (r) { inline else => |p| p };\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        const PayloadType = @TypeOf(payload);\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        const payload_fields = dispatcher_std.meta.fields(PayloadType);\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        const S = struct { threadlocal var buf: [16]koru_std.runtime.FieldValue = undefined; };\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        inline for (payload_fields, 0..) |field, i| {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            S.buf[i] = .{ .name = field.name, .value = @field(payload, field.name) };\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        out.* = .{ .branch = branch, .fields = S.buf[0..payload_fields.len] };\n") catch unreachable;
         code.appendSlice(allocator, I ++ "        return;\n") catch unreachable;
         code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     }
@@ -156,6 +166,7 @@ const ast = @import("ast");
 // At runtime, koru_std.interpreter is available via root import
 pub const DispatchResult = @import("root").koru_std.interpreter.DispatchResult;
 pub const DispatchFn = @import("root").koru_std.interpreter.DispatchFn;
+pub const FieldValue = @import("root").koru_std.interpreter.FieldValue;
 
 ~pub event get_scope { name: []const u8 }
 | scope { dispatcher: DispatchFn }

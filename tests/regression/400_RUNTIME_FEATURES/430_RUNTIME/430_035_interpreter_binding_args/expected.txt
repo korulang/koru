@@ -1,0 +1,2 @@
+[consume] received n = '42'
+Result: echoed
