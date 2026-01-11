@@ -3902,16 +3902,25 @@ pub const Parser = struct {
 
         var inside_braces = true;
         var min_indent: ?usize = null;
+        var first_content_indent: ?usize = null;
 
         // First pass: collect lines and find minimum indentation
         while (self.current < self.lines.len and inside_braces) {
             const line = self.lines[self.current];
             const trimmed = lexer.trim(line);
-
-            // Check for closing brace - must be on its own line at or before base_indent
-            // This allows braces inside content as long as they have more indentation
             const line_indent = lexer.getIndent(line);
-            if (std.mem.eql(u8, trimmed, "}") and line_indent <= base_indent) {
+
+            // Track indent of first non-empty content line
+            if (first_content_indent == null and trimmed.len > 0 and !std.mem.eql(u8, trimmed, "}")) {
+                first_content_indent = line_indent;
+            }
+
+            // Check for closing brace - must be on its own line
+            // Accept if: less indented than first content line (or at base_indent if no content yet)
+            // This handles both top-level and nested-in-pipeline cases
+            const close_threshold = first_content_indent orelse base_indent;
+
+            if (std.mem.eql(u8, trimmed, "}") and line_indent < close_threshold) {
                 self.current += 1;
                 inside_braces = false;
                 break;
@@ -4034,7 +4043,7 @@ pub const Parser = struct {
     }
 
     fn parseContinuations(self: *Parser, base_indent: usize) ![]ast.Continuation {
-        _ = base_indent; // Will use this for nested continuations later
+        _ = base_indent;
         var continuations = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 8);
         errdefer {
             for (continuations.items) |*cont| {
@@ -4070,7 +4079,7 @@ pub const Parser = struct {
             const cont = try self.parseContinuationWithNested(indent, location);
             try continuations.append(self.allocator, cont);
         }
-        
+
         return continuations.toOwnedSlice(self.allocator);
     }
     
@@ -4497,7 +4506,9 @@ pub const Parser = struct {
             defer if (allocated_rest) |ar| self.allocator.free(ar);
 
             // If we have an opening brace without closing, collect multi-line content
+            var is_multiline_source_block = false;
             if (std.mem.indexOf(u8, rest, "{") != null and std.mem.indexOf(u8, rest, "}") == null) {
+                is_multiline_source_block = true;
                 var rest_buf = try std.ArrayList(u8).initCapacity(self.allocator, 256);
                 defer rest_buf.deinit(self.allocator);
                 try rest_buf.appendSlice(self.allocator, rest);
@@ -4528,14 +4539,37 @@ pub const Parser = struct {
                     try rest_buf.appendSlice(self.allocator, next_trimmed);
                     self.current += 1;
 
-                    // Check if we found the closing brace
-                    if (std.mem.indexOf(u8, next_trimmed, "}") != null) {
+                    // Check if we found the closing brace (must be standalone, not inside content like {{ }})
+                    if (std.mem.eql(u8, next_trimmed, "}")) {
                         break;
                     }
                 }
 
                 allocated_rest = try rest_buf.toOwnedSlice(self.allocator);
                 full_rest = allocated_rest.?;
+            }
+
+            // After collecting multi-line Source block, parse the event's output branches
+            // The cursor is now past the }, pointing at lines like | row |> ...
+            // These are output branches of the Source block event, not siblings!
+            if (is_multiline_source_block) {
+                const source_block_continuations = try self.parseContinuations(indent);
+                const steps_inner = try self.parsePipelineSteps(full_rest);
+                defer self.allocator.free(steps_inner);
+                if (steps_inner.len > 0) {
+                    return ast.Continuation{
+                        .branch = owned_branch,
+                        .binding = binding,
+                        .binding_annotations = binding_annotations,
+                        .binding_type = .branch_payload,
+                        .condition = condition,
+                        .condition_expr = condition_expr,
+                        .node = steps_inner[0],
+                        .indent = indent,
+                        .continuations = source_block_continuations,
+                        .location = location,
+                    };
+                }
             }
 
             // FIX: Handle |> followed by newline with step on next line
