@@ -119,7 +119,7 @@ const ast = @import("ast");
         code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.runtime.DispatchResult) !void {\n") catch unreachable;
 
         if (is_control_flow) {
-            code.appendSlice(allocator, I ++ "    // Control flow - interpreter handles this\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    _ = inv; // Control flow - interpreter handles this\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    out.* = .{ .branch = \"control\", .fields = &.{} };\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    return;\n") catch unreachable;
         } else {
@@ -140,16 +140,16 @@ const ast = @import("ast");
             code.appendSlice(allocator, I ++ "                S.buf[count] = .{ .name = field.name, .value = FieldValue{ .bool_val = @field(p, field.name) } };\n") catch unreachable;
             code.appendSlice(allocator, I ++ "                count += 1;\n") catch unreachable;
             code.appendSlice(allocator, I ++ "            } else switch (@typeInfo(T)) {\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "                .Int => {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                .int => {\n") catch unreachable;
             code.appendSlice(allocator, I ++ "                    S.buf[count] = .{ .name = field.name, .value = FieldValue{ .int_val = @as(i64, @intCast(@field(p, field.name))) } };\n") catch unreachable;
             code.appendSlice(allocator, I ++ "                    count += 1;\n") catch unreachable;
             code.appendSlice(allocator, I ++ "                },\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "                .Float => {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                .float => {\n") catch unreachable;
             code.appendSlice(allocator, I ++ "                    S.buf[count] = .{ .name = field.name, .value = FieldValue{ .float_val = @as(f64, @floatCast(@field(p, field.name))) } };\n") catch unreachable;
             code.appendSlice(allocator, I ++ "                    count += 1;\n") catch unreachable;
             code.appendSlice(allocator, I ++ "                },\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "                .Pointer => |ptr_info| {\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "                    if (ptr_info.size == .Slice and ptr_info.child == u8) {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                .pointer => |ptr_info| {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                    if (ptr_info.size == .slice and ptr_info.child == u8) {\n") catch unreachable;
             code.appendSlice(allocator, I ++ "                        S.buf[count] = .{ .name = field.name, .value = FieldValue{ .string_val = @field(p, field.name) } };\n") catch unreachable;
             code.appendSlice(allocator, I ++ "                        count += 1;\n") catch unreachable;
             code.appendSlice(allocator, I ++ "                    }\n") catch unreachable;

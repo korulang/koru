@@ -86,6 +86,13 @@ const koru_parser = @import("koru_parser");
     });
     union_collector_module.addImport("ast", ast_module);
 
+    // Liquid templating (used by transform_pass_runner if needed)
+    const liquid_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/liquid.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Config module (needed by module_resolver)
     const config_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/config.zig" },
@@ -120,6 +127,7 @@ const koru_parser = @import("koru_parser");
     exe.root_module.addImport("koru_ast", ast_module);
     exe.root_module.addImport("koru_errors", errors_module);
     exe.root_module.addImport("ast", ast_module);  // Also expose as "ast" for interpreter.kz's own use
+    exe.root_module.addImport("liquid", liquid_module);
 }
 
 // ============================================================================
@@ -155,6 +163,26 @@ pub const Value = struct {
             .branch = branch_name,
             .fields = fields,
         };
+    }
+
+    /// Clone value into a page-allocated persistent copy (survives arena teardown).
+    pub fn clonePersistent(self: Value) Value {
+        const allocator = std.heap.page_allocator;
+        const branch_copy = allocator.dupe(u8, self.branch) catch self.branch;
+        var field_copy = allocator.alloc(NamedField, self.fields.len) catch {
+            return self;
+        };
+        for (self.fields, 0..) |f, i| {
+            const name_copy = allocator.dupe(u8, f.name) catch f.name;
+            const value_copy = switch (f.value) {
+                .string_val => |s| FieldValue{ .string_val = allocator.dupe(u8, s) catch s },
+                .bool_val => |b| FieldValue{ .bool_val = b },
+                .int_val => |n| FieldValue{ .int_val = n },
+                .float_val => |fl| FieldValue{ .float_val = fl },
+            };
+            field_copy[i] = .{ .name = name_copy, .value = value_copy };
+        }
+        return .{ .branch = branch_copy, .fields = field_copy };
     }
 };
 
@@ -673,8 +701,9 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         }};
     };
 
-    std.debug.print("[INTERPRETER] Execution complete, branch: {s}\n", .{result_value.branch});
-    return .{ .result = .{ .value = result_value }};
+    const stable_value = result_value.clonePersistent();
+    std.debug.print("[INTERPRETER] Execution complete, branch: {s}\n", .{stable_value.branch});
+    return .{ .result = .{ .value = stable_value }};
 }
 
 // ============================================================================
@@ -1114,6 +1143,7 @@ fn executeFlow(
         }};
     };
 
-    std.debug.print("[EVAL] Execution complete, branch: {s}\n", .{result_value.branch});
-    return .{ .result = .{ .value = result_value }};
+    const stable_value = result_value.clonePersistent();
+    std.debug.print("[EVAL] Execution complete, branch: {s}\n", .{stable_value.branch});
+    return .{ .result = .{ .value = stable_value }};
 }

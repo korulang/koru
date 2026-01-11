@@ -46,7 +46,7 @@ const TEST_FLOW =
 ;
 
 ~std.interpreter:run(source: TEST_FLOW, dispatcher: dispatch_test)
-| result r |> std.io:print.ln("Result: {{ r.value.branch }}")
+| result r |> std.io:print.ln("Result: {{ r.value.branch:s }}")
 | parse_error e |> std.io:print.ln("Parse error: {{ e.message }}")
 | validation_error e |> std.io:print.ln("Validation error: {{ e.message }}")
 | dispatch_error e |> std.io:print.ln("Dispatch error: {{ e.message }}")

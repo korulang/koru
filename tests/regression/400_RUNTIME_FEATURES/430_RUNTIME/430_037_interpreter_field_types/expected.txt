@@ -1,0 +1,11 @@
+[INTERPRETER] Parsing source (83 bytes)
+[INTERPRETER] Parsed 1 items
+[INTERPRETER] Found flow to execute
+[INTERPRETER] Validation passed
+[INTERPRETER] Detected ~if, evaluating condition
+[INTERPRETER] Parsing expression: 'v.num > 10'
+[INTERPRETER] Expression evaluated to: true
+[INTERPRETER] Condition (from string 'v.num > 10'): true
+[INTERPRETER] ~if taking branch: | then |>
+[INTERPRETER] Execution complete, branch: gt
+SUCCESS branch=gt

@@ -65,7 +65,7 @@ const FLOW_SOURCE =
 // ============================================================================
 
 ~std.interpreter:run(source: FLOW_SOURCE, dispatcher: dispatch_bench)
-| result r |> std.io:print.ln("Success: branch {{ r.value.branch }}")
+| result r |> std.io:print.ln("Success: branch {{ r.value.branch:s }}")
 | parse_error e |> std.io:print.ln("Error: {{ e.message }}")
 | validation_error e |> std.io:print.ln("Error: {{ e.message }}")
 | dispatch_error e |> std.io:print.ln("Error: {{ e.message }}")
