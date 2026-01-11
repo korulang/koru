@@ -1,27 +1,5 @@
 ~import "$std/eval"
 
-~std.build:requires {
-    const REL_TO_ROOT = "/usr/local/lib/koru";
-
-    const lexer_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const expression_parser_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // Link to ast module from std/eval
-    const ast_module = exe.root_module.import_table.get("ast").?;
-    expression_parser_module.addImport("lexer", lexer_module);
-    expression_parser_module.addImport("ast", ast_module);
-
-    exe.root_module.addImport("expression_parser", expression_parser_module);
-}
 
 const std = @import("std");
 const ast = @import("ast");

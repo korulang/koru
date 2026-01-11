@@ -43,8 +43,25 @@
     });
     ast_module.addImport("errors", errors_module);
 
+    // Lexer module (needed by expression_parser)
+    const lexer_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Expression parser
+    const expression_parser_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    expression_parser_module.addImport("lexer", lexer_module);
+    expression_parser_module.addImport("ast", ast_module);
+
     // Add to executable
     exe.root_module.addImport("ast", ast_module);
+    exe.root_module.addImport("expression_parser", expression_parser_module);
 }
 
 const std = @import("std");

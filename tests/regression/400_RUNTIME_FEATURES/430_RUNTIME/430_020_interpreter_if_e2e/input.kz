@@ -3,84 +3,8 @@
 // Uses inline types since $std module import not yet supported
 
 ~import "$std/runtime"
-~import "$std/build"
 ~import "$std/interpreter"
 
-~std.build:requires {
-    const REL_TO_ROOT = "/usr/local/lib/koru";
-
-    const errors_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/errors.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const ast_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    ast_module.addImport("errors", errors_module);
-
-    const lexer_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const type_registry_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/type_registry.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    type_registry_module.addImport("ast", ast_module);
-
-    const expression_parser_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/expression_parser.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    expression_parser_module.addImport("lexer", lexer_module);
-    expression_parser_module.addImport("ast", ast_module);
-
-    const union_collector_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/union_collector.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    union_collector_module.addImport("ast", ast_module);
-
-    const config_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/config.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const module_resolver_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/module_resolver.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    module_resolver_module.addImport("config", config_module);
-
-    const parser_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    parser_module.addImport("ast", ast_module);
-    parser_module.addImport("lexer", lexer_module);
-    parser_module.addImport("errors", errors_module);
-    parser_module.addImport("type_registry", type_registry_module);
-    parser_module.addImport("expression_parser", expression_parser_module);
-    parser_module.addImport("union_collector", union_collector_module);
-    parser_module.addImport("module_resolver", module_resolver_module);
-
-    exe.root_module.addImport("ast", ast_module);
-    exe.root_module.addImport("koru_parser", parser_module);
-    exe.root_module.addImport("koru_ast", ast_module);
-    exe.root_module.addImport("koru_errors", errors_module);
-}
 
 const std = @import("std");
 const ast = @import("ast");
