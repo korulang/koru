@@ -1026,6 +1026,13 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
                 .branches = try cloneNamedBranches(allocator, cap.branches),
             }};
         },
+        .switch_result => |sr| {
+            // Clone switch_result - uses uniform NamedBranch structure
+            return .{ .switch_result = .{
+                .expression = try allocator.dupe(u8, sr.expression),
+                .branches = try cloneNamedBranches(allocator, sr.branches),
+            }};
+        },
         .assignment => |asgn| {
             // Clone assignment - fields need recursive cloning
             var cloned_fields = try allocator.alloc(ast.Field, asgn.fields.len);

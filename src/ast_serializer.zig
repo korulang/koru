@@ -1198,6 +1198,11 @@ pub const AstSerializer = struct {
                 try self.writeString(cap.init_expr);
                 try self.write(", .branches = &[_]NamedBranch{} } }");  // TODO: serialize branches
             },
+            .switch_result => |sr| {
+                try self.write(".{ .switch_result = .{ .expression = ");
+                try self.writeString(sr.expression);
+                try self.write(", .branches = &[_]NamedBranch{} } }");  // TODO: serialize branches
+            },
             .assignment => |asgn| {
                 try self.write(".{ .assignment = .{ .target = ");
                 try self.writeString(asgn.target);
@@ -2158,6 +2163,25 @@ pub const AstSerializer = struct {
                 try self.write("\"branches\": [\n");
                 self.indent();
                 for (cap.branches, 0..) |*branch, i| {
+                    if (i > 0) try self.write(",\n");
+                    try self.serializeNamedBranchJson(branch);
+                }
+                try self.write("\n");
+                self.dedent();
+                try self.writeIndent();
+                try self.write("]");
+            },
+            .switch_result => |*sr| {
+                try self.writeString("switch_result");
+                try self.write(",\n");
+                try self.writeIndent();
+                try self.write("\"expression\": ");
+                try self.writeString(sr.expression);
+                try self.write(",\n");
+                try self.writeIndent();
+                try self.write("\"branches\": [\n");
+                self.indent();
+                for (sr.branches, 0..) |*branch, i| {
                     if (i > 0) try self.write(",\n");
                     try self.serializeNamedBranchJson(branch);
                 }

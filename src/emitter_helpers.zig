@@ -2055,6 +2055,59 @@ pub fn emitFlow(
     // Zero-overhead control flow: if inline_body is set, emit it directly
     // This enables ~if, ~for to emit literal Zig control flow instead of handler calls
     if (flow.inline_body) |inline_code| {
+        // Check if flow also has continuations - if so, generate switch statement
+        // This is used by [expand] events with branches: template provides the expression,
+        // continuations provide the switch arms
+        if (flow.continuations.len > 0) {
+            // Emit: const __expand_result = <inline_code>;
+            try emitter.writeIndent();
+            try emitter.write("const __expand_result = ");
+            try emitter.write(inline_code);
+            try emitter.write(";\n");
+
+            // Emit: switch (__expand_result) { ... }
+            try emitter.writeIndent();
+            try emitter.write("switch (__expand_result) {\n");
+            emitter.indent();
+
+            // Emit each continuation as a switch arm
+            var step_idx: usize = 0;
+            for (flow.continuations) |*cont| {
+                try emitter.writeIndent();
+                try emitter.write(".");
+                try emitter.write(cont.branch);
+                try emitter.write(" => ");
+
+                if (cont.binding) |binding| {
+                    // Check if binding starts with "_" (discard pattern)
+                    // If so, use |_| to avoid unused variable warnings
+                    if (binding.len > 0 and binding[0] == '_') {
+                        try emitter.write("|_| ");
+                    } else {
+                        try emitter.write("|");
+                        try emitter.write(binding);
+                        try emitter.write("| ");
+                    }
+                }
+
+                try emitter.write("{\n");
+                emitter.indent();
+
+                // Emit the continuation body
+                try emitContinuationBody(emitter, ctx, cont, &step_idx);
+
+                emitter.dedent();
+                try emitter.writeIndent();
+                try emitter.write("},\n");
+            }
+
+            emitter.dedent();
+            try emitter.writeIndent();
+            try emitter.write("}\n");
+            return;
+        }
+
+        // No continuations - just emit the inline code directly
         try emitter.write(inline_code);
         return;
     }
@@ -4584,6 +4637,72 @@ fn emitStep(
                     }
                 }
             }
+        },
+        .switch_result => |sr| {
+            // Emit switch on union result type (e.g., from query transform)
+            // Expression is inline code block that produces the union value
+            // Branches contain continuations for each variant (row, empty, err, etc.)
+
+            // First, emit the expression that produces the union value
+            try emitter.writeIndent();
+            try emitter.write("const __switch_result = ");
+            try emitter.write(sr.expression);
+            try emitter.write(";\n");
+
+            // Then emit the switch
+            try emitter.writeIndent();
+            try emitter.write("switch (__switch_result) {\n");
+            emitter.indent();
+
+            // Emit each branch
+            for (sr.branches) |*branch| {
+                try emitter.writeIndent();
+                try emitter.write(".");
+                try emitter.write(branch.name);
+                if (branch.binding) |binding| {
+                    try emitter.write(" => |");
+                    try emitter.write(binding);
+                    try emitter.write("| {\n");
+                } else {
+                    try emitter.write(" => {\n");
+                }
+                emitter.indent();
+
+                // Emit branch body continuations
+                var step_idx: usize = 0;
+                for (branch.body) |*cont| {
+                    if (cont.node) |node| {
+                        var result_buf: [64]u8 = undefined;
+                        const branch_prefix = std.fmt.bufPrint(&result_buf, "{s}_result_", .{branch.name}) catch "br_";
+                        const saved_prefix = ctx.result_prefix;
+                        ctx.result_prefix = branch_prefix;
+                        defer ctx.result_prefix = saved_prefix;
+
+                        var inner_result_buf: [64]u8 = undefined;
+                        const inner_result = std.fmt.bufPrint(&inner_result_buf, "{s}{d}", .{branch_prefix, step_idx}) catch "_";
+                        try emitStep(emitter, ctx, &node, inner_result);
+                        if (node == .invocation) {
+                            try emitter.writeIndent();
+                            try emitter.write("_ = &");
+                            try emitter.write(inner_result);
+                            try emitter.write(";\n");
+                        }
+                        step_idx += 1;
+
+                        if (cont.continuations.len > 0) {
+                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
+                        }
+                    }
+                }
+
+                emitter.dedent();
+                try emitter.writeIndent();
+                try emitter.write("},\n");
+            }
+
+            emitter.dedent();
+            try emitter.writeIndent();
+            try emitter.write("}\n");
         },
         .assignment => |asgn| {
             // Emit direct field assignments: target.field = expr;

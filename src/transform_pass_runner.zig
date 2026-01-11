@@ -503,15 +503,23 @@ fn applyExpandTemplate(
         .from_opaque_tap = flow.invocation.from_opaque_tap,
     };
 
-    // Create new flow with inline_body set and marked invocation
+    // For expand with continuations:
+    // - Set inline_body to the template output (produces union value)
+    // - Keep continuations as-is (for validation and branch bodies)
+    // - The emitter will detect inline_body + continuations and generate a switch
+    //
+    // This preserves flow validation (branches match event definition) while
+    // still allowing the template to provide the switch expression.
+
+    // Create new flow with inline_body set (emitter handles the switch generation)
     const new_flow = ast.Flow{
         .invocation = new_invocation,
-        .continuations = flow.continuations,
+        .continuations = flow.continuations,  // Keep original continuations
         .annotations = flow.annotations,
         .pre_label = flow.pre_label,
         .post_label = flow.post_label,
         .super_shape = flow.super_shape,
-        .inline_body = inline_body,
+        .inline_body = inline_body,  // Template output becomes inline_body
         .preamble_code = flow.preamble_code,
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,

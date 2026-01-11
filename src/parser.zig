@@ -3144,6 +3144,7 @@ pub const Parser = struct {
         // Remove label anchors if present (both # and @ for now)
         var clean = lexer.withoutLabelAnchor(line);
         clean = lexer.withoutLabel(clean);
+        if (DEBUG) std.debug.print("[DEBUG] parseEventInvocation: input='{s}'\n", .{clean});
 
         // Detect Zig code patterns and report error
         if (self.looksLikeZigCode(clean)) {
@@ -3187,6 +3188,7 @@ pub const Parser = struct {
         // Check for Source block syntax: eventName [Type]{ ... }
         // Look for ]{ pattern to distinguish from array types like [100]f64
         const source_block_marker = std.mem.indexOf(u8, invocation_part, "]{");
+        if (DEBUG) std.debug.print("[DEBUG] parseEventInvocation: source_block_marker={?d} invocation_part='{s}'\n", .{source_block_marker, invocation_part});
 
         if (source_block_marker) |marker_idx| {
             // Find the opening [ by searching backwards from ]{
@@ -3215,22 +3217,59 @@ pub const Parser = struct {
 
                 const source_text = lexer.trim(invocation_part[brace_start + 1..close_brace_idx.?]);
 
-                // Parse the event path
-                const parsed_path = try lexer.parseQualifiedPath(self.allocator, before_bracket, ast);
+                // Check if before_bracket has args: event(args)
+                // If so, parse path and args separately
+                var parsed_path: ast.DottedPath = undefined;
+                var existing_args: []const ast.Arg = &[_]ast.Arg{};
+
+                if (std.mem.indexOf(u8, before_bracket, "(")) |paren_idx| {
+                    // Has args - extract path and parse args
+                    const event_name = lexer.trim(before_bracket[0..paren_idx]);
+                    parsed_path = try lexer.parseQualifiedPath(self.allocator, event_name, ast);
+
+                    // Parse arguments from (...)
+                    const args_str = lexer.trim(before_bracket[paren_idx..]);
+                    var args_list = try std.ArrayList(ast.Arg).initCapacity(self.allocator, 4);
+                    defer args_list.deinit(self.allocator);
+
+                    // Find content between ( and )
+                    if (args_str.len > 2 and args_str[0] == '(' and args_str[args_str.len - 1] == ')') {
+                        const args_content = args_str[1 .. args_str.len - 1];
+                        // Simple arg parsing: split by comma, then by colon
+                        var arg_iter = std.mem.tokenizeScalar(u8, args_content, ',');
+                        while (arg_iter.next()) |arg_part| {
+                            const trimmed_arg = lexer.trim(arg_part);
+                            if (std.mem.indexOf(u8, trimmed_arg, ":")) |colon_idx| {
+                                const name = lexer.trim(trimmed_arg[0..colon_idx]);
+                                const value = lexer.trim(trimmed_arg[colon_idx + 1 ..]);
+                                try args_list.append(self.allocator, ast.Arg{
+                                    .name = try self.allocator.dupe(u8, name),
+                                    .value = try self.allocator.dupe(u8, value),
+                                });
+                            }
+                        }
+                    }
+                    existing_args = try args_list.toOwnedSlice(self.allocator);
+                } else {
+                    // No args - just parse the path
+                    parsed_path = try lexer.parseQualifiedPath(self.allocator, before_bracket, ast);
+                }
 
                 // Build path string for registry lookup
                 const path_str = try self.pathToString(parsed_path);
                 defer self.allocator.free(path_str);
 
                 // Look up event type
+                if (DEBUG) std.debug.print("[DEBUG] parseEventInvocation: path_str='{s}' existing_args.len={d} source_text='{s}'\n", .{path_str, existing_args.len, source_text});
                 if (self.registry.getEventType(path_str)) |event_type| {
-                    // Create base invocation with no args
+                    if (DEBUG) std.debug.print("[DEBUG] parseEventInvocation: event found in registry, calling createImplicitSourceInvocation\n", .{});
+                    // Create base invocation with existing args
                     const base_invocation = ast.Invocation{
                         .path = parsed_path,
-                        .args = &[_]ast.Arg{},
+                        .args = existing_args,
                     };
 
-                    // Create invocation with implicit Source parameter
+                    // Create invocation with implicit Source parameter added
                     return try self.createImplicitSourceInvocation(
                         base_invocation,
                         source_text,
@@ -3238,10 +3277,38 @@ pub const Parser = struct {
                         event_type
                     );
                 } else {
-                    // Event not found in registry - return base invocation
+                    // Event not found in registry - use default source param name "source"
+                    if (DEBUG) std.debug.print("[DEBUG] parseEventInvocation: event NOT in registry, adding source with default name\n", .{});
+
+                    // Create new args with source
+                    var new_args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, existing_args.len + 1);
+                    defer new_args.deinit(self.allocator);
+
+                    // Copy existing args
+                    for (existing_args) |arg| {
+                        try new_args.append(self.allocator, arg);
+                    }
+
+                    // Create Source value
+                    const source_value = try self.allocator.create(ast.Source);
+                    const duped_phantom = if (phantom_type.len > 0) try self.allocator.dupe(u8, phantom_type) else null;
+                    source_value.* = ast.Source{
+                        .text = try self.allocator.dupe(u8, source_text),
+                        .location = self.getCurrentLocation(),
+                        .scope = ast.CapturedScope{ .bindings = &[_]ast.ScopeBinding{} },
+                        .phantom_type = duped_phantom,
+                    };
+
+                    // Add source arg
+                    try new_args.append(self.allocator, ast.Arg{
+                        .name = try self.allocator.dupe(u8, "source"),
+                        .value = try self.allocator.dupe(u8, source_text),
+                        .source_value = source_value,
+                    });
+
                     return ast.Invocation{
                         .path = parsed_path,
-                        .args = &[_]ast.Arg{},
+                        .args = try new_args.toOwnedSlice(self.allocator),
                     };
                 }
             }
@@ -4618,6 +4685,7 @@ pub const Parser = struct {
             // Handle multi-line source blocks in continuations
             // If full_rest ends with { (after trimming), collect lines until matching }
             const trimmed_rest = lexer.trim(full_rest);
+            if (DEBUG) std.debug.print("[DEBUG] parseBranchContinuationBase: trimmed_rest='{s}' ends_with_brace={}\n", .{trimmed_rest, trimmed_rest.len > 0 and trimmed_rest[trimmed_rest.len - 1] == '{'});
             if (trimmed_rest.len > 0 and trimmed_rest[trimmed_rest.len - 1] == '{') {
                 // Multi-line source block - collect content
                 var source_buf = try std.ArrayList(u8).initCapacity(self.allocator, 256);
@@ -4797,7 +4865,10 @@ pub const Parser = struct {
 
         // FIRST: Check if this is a Source block invocation (event with Source parameter)
         // Source blocks need special handling - they capture raw text, not collapsed content
-        if (std.mem.indexOf(u8, content, "{") != null and std.mem.indexOf(u8, content, "}") == null) {
+        const has_open_brace = std.mem.indexOf(u8, content, "{") != null;
+        const has_close_brace = std.mem.indexOf(u8, content, "}") != null;
+        if (DEBUG) std.debug.print("[DEBUG] parsePipelineContinuationBase: content='{s}' has_open={} has_close={}\n", .{content, has_open_brace, has_close_brace});
+        if (has_open_brace and !has_close_brace) {
             const brace_idx = std.mem.lastIndexOf(u8, content, "{") orelse unreachable;
             var invocation_str = lexer.trim(content[0..brace_idx]);
 
@@ -4832,7 +4903,9 @@ pub const Parser = struct {
 
             if (has_source_param) {
                 // This IS a Source block - parse it properly!
+                if (DEBUG) std.debug.print("[DEBUG] parsePipelineContinuationBase: has_source_param=true, path={s}\n", .{path_str});
                 const result = try self.parseImplicitSourceBlock(indent, phantom_type);
+                if (DEBUG) std.debug.print("[DEBUG] parseImplicitSourceBlock returned source len={d}\n", .{result.source.len});
 
                 // Create the invocation with source_value
                 var final_invocation: ast.Invocation = undefined;

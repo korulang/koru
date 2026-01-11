@@ -1397,6 +1397,14 @@ pub const PhantomSemanticChecker = struct {
                 }
                 return !has_errors;
             },
+            .switch_result => |sr| {
+                std.debug.print("[PHANTOM-FLOW] Validating switch_result with {} branches\n", .{sr.branches.len});
+                for (sr.branches) |*branch| {
+                    const branch_valid = try self.validateNamedBranchRecursive(branch, context, event_map, current_module, location);
+                    if (!branch_valid) has_errors = true;
+                }
+                return !has_errors;
+            },
             .branch_constructor => |bc| {
                 // Validate phantom states in inline branch construction
                 for (bc.fields) |field| {
@@ -1468,6 +1476,12 @@ pub const PhantomSemanticChecker = struct {
                             if (!valid) has_errors = true;
                         }
                     },
+                    .switch_result => |sr| {
+                        for (sr.branches) |*inner_branch| {
+                            const valid = try self.validateNamedBranchRecursive(inner_branch, &branch_context, event_map, current_module, location);
+                            if (!valid) has_errors = true;
+                        }
+                    },
                     .invocation => |inv| {
                         const valid = try self.validateSingleInvocation(&inv, &branch_context, event_map, current_module, location);
                         if (!valid) has_errors = true;
@@ -1494,6 +1508,12 @@ pub const PhantomSemanticChecker = struct {
                         },
                         .conditional => |cond| {
                             for (cond.branches) |*inner_branch| {
+                                const valid = try self.validateNamedBranchRecursive(inner_branch, &branch_context, event_map, current_module, location);
+                                if (!valid) has_errors = true;
+                            }
+                        },
+                        .switch_result => |sr| {
+                            for (sr.branches) |*inner_branch| {
                                 const valid = try self.validateNamedBranchRecursive(inner_branch, &branch_context, event_map, current_module, location);
                                 if (!valid) has_errors = true;
                             }

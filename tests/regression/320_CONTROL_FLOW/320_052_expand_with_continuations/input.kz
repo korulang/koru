@@ -1,0 +1,45 @@
+// Test: [expand] with continuation support
+//
+// When an [expand] event has branches, the template produces the EXPRESSION
+// that returns the union value. The continuations become switch arms automatically.
+//
+// This pattern:
+// 1. Template produces: blk: { ... break :blk Result{ .some/none = ... }; }
+// 2. Emitter detects inline_body + continuations → generates switch statement
+// 3. Continuation bodies become switch arms
+//
+// This enables [expand] to handle branching constructs without full [transform] procs.
+
+~import "$std/template"
+~import "$std/io"
+
+const std = @import("std");
+
+// Template produces ONLY the expression that returns the union value
+// Type is inlined since [norun] events don't generate event structs
+~std.template:define(name: "maybe") {
+    blk: {
+        const Result = union(enum) {
+            some: struct { val: i32 },
+            none: void,
+        };
+        const __value: ?i32 = ${expr};
+        if (__value) |v| {
+            break :blk Result{ .some = .{ .val = v } };
+        } else {
+            break :blk Result{ .none = {} };
+        }
+    }
+}
+
+// Event with branches - expand detects branches and uses switch_result mode
+~[norun|expand]pub event maybe { expr: Expression }
+| some { val: i32 }
+| none {}
+
+// Usage - continuations become switch arms automatically
+var test_value: ?i32 = 42;
+
+~maybe(expr: test_value)
+| some _ |> std.io:print.ln("Got a value!")
+| none |> std.io:print.ln("Got nothing")
