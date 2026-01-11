@@ -506,6 +506,14 @@ pub fn build(b: *std.Build) void {
     template_utils_module.addImport("ast", ast_module);
     exe.root_module.addImport("template_utils", template_utils_module);
 
+    // Liquid template engine
+    const liquid_module = b.createModule(.{
+        .root_source_file = b.path("src/liquid.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("liquid", liquid_module);
+
     // Transform Pass Runner module - generic AST walker for transforms
     const transform_pass_runner_module = b.createModule(.{
         .root_source_file = b.path("src/transform_pass_runner.zig"),
@@ -516,6 +524,7 @@ pub fn build(b: *std.Build) void {
     transform_pass_runner_module.addImport("ast_functional", ast_functional_module);
     transform_pass_runner_module.addImport("annotation_parser", annotation_parser_module);
     transform_pass_runner_module.addImport("template_utils", template_utils_module);
+    transform_pass_runner_module.addImport("liquid", liquid_module);
     exe.root_module.addImport("transform_pass_runner", transform_pass_runner_module);
 
     // Compiler module for metacircular compilation

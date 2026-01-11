@@ -6,7 +6,7 @@
 
 // Define template in user-land using the imported define event
 ~std.template:define(name: "debug_print") {
-    @import("std").debug.print("value: {d}\n", .{{{ value }}});
+    @import("std").debug.print("value: {d}\n", .{ {{ value }} });
 }
 
 // Event with [norun|expand] - implementation comes from template
