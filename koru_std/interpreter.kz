@@ -714,7 +714,7 @@ fn evaluateExpr(expr_str: []const u8, env: *Environment, allocator: std.mem.Allo
     if (env.get(trimmed)) |bound_value| {
         // Return the branch name or first field value
         if (bound_value.fields.len > 0) {
-            return bound_value.fields[0].value;
+            return try fieldValueToString(bound_value.fields[0].value, allocator);
         }
         return bound_value.branch;
     }
@@ -921,9 +921,9 @@ fn executeFlow(
                         var fields = try ctx.allocator.alloc(NamedField, bc.fields.len);
                         for (bc.fields, 0..) |field, idx| {
                             const value = if (field.expression_str) |expr|
-                                try evaluateExpr(expr, ctx.env, ctx.allocator)
+                                FieldValue{ .string_val = try evaluateExpr(expr, ctx.env, ctx.allocator) }
                             else
-                                try ctx.allocator.dupe(u8, field.name);
+                                FieldValue{ .string_val = try ctx.allocator.dupe(u8, field.name) };
                             fields[idx] = .{
                                 .name = try ctx.allocator.dupe(u8, field.name),
                                 .value = value,
@@ -993,21 +993,7 @@ fn executeFlow(
                     var field_key_buf: [256]u8 = undefined;
                     const field_key = std.fmt.bufPrint(&field_key_buf, "{s}.{s}", .{binding_name, fv.name}) catch continue;
                     const field_key_owned = try ctx.allocator.dupe(u8, field_key);
-
-                    // Try to parse the field value as a number or boolean
-                    if (std.mem.eql(u8, fv.value, "true")) {
-                        try ctx.expr_bindings.set(field_key_owned, .{ .bool_val = true });
-                    } else if (std.mem.eql(u8, fv.value, "false")) {
-                        try ctx.expr_bindings.set(field_key_owned, .{ .bool_val = false });
-                    } else if (std.fmt.parseInt(i64, fv.value, 10)) |n| {
-                        try ctx.expr_bindings.set(field_key_owned, .{ .int_val = n });
-                    } else |_| {
-                        if (std.fmt.parseFloat(f64, fv.value)) |f| {
-                            try ctx.expr_bindings.set(field_key_owned, .{ .float_val = f });
-                        } else |_| {
-                            try ctx.expr_bindings.set(field_key_owned, .{ .string_val = fv.value });
-                        }
-                    }
+                    try ctx.expr_bindings.set(field_key_owned, fieldValueToExprValue(fv.value));
                 }
             }
 
@@ -1035,9 +1021,9 @@ fn executeFlow(
                         var fields = try ctx.allocator.alloc(NamedField, bc.fields.len);
                         for (bc.fields, 0..) |field, i| {
                             const value = if (field.expression_str) |expr|
-                                try evaluateExpr(expr, ctx.env, ctx.allocator)
+                                FieldValue{ .string_val = try evaluateExpr(expr, ctx.env, ctx.allocator) }
                             else
-                                try ctx.allocator.dupe(u8, field.name);
+                                FieldValue{ .string_val = try ctx.allocator.dupe(u8, field.name) };
 
                             fields[i] = .{
                                 .name = try ctx.allocator.dupe(u8, field.name),

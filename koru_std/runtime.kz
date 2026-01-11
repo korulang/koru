@@ -78,7 +78,11 @@ const ast = @import("ast");
     code.appendSlice(allocator, I ++ "pub const Path = dispatcher_ast.DottedPath;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "pub const Arg = dispatcher_ast.Arg;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "pub const Invocation = dispatcher_ast.Invocation;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "pub const DispatchResult = koru_std.runtime.DispatchResult;\n\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "pub const DispatchResult = koru_std.runtime.DispatchResult;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "const ScopeEvent = koru_std.runtime.ScopeEvent;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "const ScopeDescriptor = koru_std.runtime.ScopeDescriptor;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "const FieldValue = koru_std.runtime.FieldValue;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "const NamedField = koru_std.runtime.NamedField;\n\n") catch unreachable;
 
     // Helper function - strips quotes from string values
     code.appendSlice(allocator, I ++ "fn getArg(args: []const dispatcher_ast.Arg, n: []const u8) ?[]const u8 {\n") catch unreachable;
@@ -101,60 +105,95 @@ const ast = @import("ast");
     code.appendSlice(allocator, I ++ "    return input;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
-    // Dispatcher function
-    code.appendSlice(allocator, I ++ "pub fn dispatch_") catch unreachable;
-    code.appendSlice(allocator, scope_name) catch unreachable;
-    code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.runtime.DispatchResult) !void {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    const event_name = if (inv.path.segments.len > 0) inv.path.segments[0] else \"\";\n") catch unreachable;
-
-    // Event dispatch branches
+    // Per-event dispatchers and descriptor table
     for (events_list.items) |event| {
-        // Check if this is a control flow event (handled specially by interpreter)
         const is_control_flow = std.mem.eql(u8, event, "if") or
                                 std.mem.eql(u8, event, "for") or
                                 std.mem.eql(u8, event, "std.control:if") or
                                 std.mem.eql(u8, event, "std.control:for");
 
-        code.appendSlice(allocator, I ++ "    if (dispatcher_std.mem.eql(u8, event_name, \"") catch unreachable;
+        code.appendSlice(allocator, I ++ "fn dispatch_") catch unreachable;
+        code.appendSlice(allocator, scope_name) catch unreachable;
+        code.appendSlice(allocator, "_") catch unreachable;
         code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "\")) {\n") catch unreachable;
+        code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.runtime.DispatchResult) !void {\n") catch unreachable;
 
         if (is_control_flow) {
-            // Control flow events are allowed but handled by interpreter, not dispatcher
-            code.appendSlice(allocator, I ++ "        // Control flow - interpreter handles this\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        out.* = .{ .branch = \"control\", .fields = &.{} };\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        return;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    // Control flow - interpreter handles this\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    out.* = .{ .branch = \"control\", .fields = &.{} };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    return;\n") catch unreachable;
         } else {
-            // Normal event - call handler
-            code.appendSlice(allocator, I ++ "        const Input = main_module.") catch unreachable;
+            code.appendSlice(allocator, I ++ "    const Input = main_module.") catch unreachable;
             code.appendSlice(allocator, event) catch unreachable;
             code.appendSlice(allocator, "_event.Input;\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        const r = main_module.") catch unreachable;
+            code.appendSlice(allocator, I ++ "    const r = main_module.") catch unreachable;
             code.appendSlice(allocator, event) catch unreachable;
             code.appendSlice(allocator, "_event.handler(buildInput(Input, inv.args));\n") catch unreachable;
-            // Extract fields from active union variant using comptime reflection
-            // Use threadlocal static buffer so fields outlive the function call
-            // All extraction must happen INSIDE the inline switch so each branch has its own payload type
-            // Only extract []const u8 fields (interpreter works with strings)
-            code.appendSlice(allocator, I ++ "        const S = struct { threadlocal var buf: [16]koru_std.runtime.FieldValue = undefined; };\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        const branch = @tagName(r);\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        const field_count = switch (r) { inline else => |p| blk: {\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "            const payload_fields = dispatcher_std.meta.fields(@TypeOf(p));\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "            comptime var count: usize = 0;\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "            inline for (payload_fields) |field| {\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "                if (field.type == []const u8) {\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "                    S.buf[count] = .{ .name = field.name, .value = @field(p, field.name) };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    const S = struct { threadlocal var buf: [16]NamedField = undefined; };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    const branch = @tagName(r);\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    const field_count = switch (r) { inline else => |p| blk: {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        const payload_fields = dispatcher_std.meta.fields(@TypeOf(p));\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        comptime var count: usize = 0;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        inline for (payload_fields) |field| {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "            const T = field.type;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "            if (T == bool) {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                S.buf[count] = .{ .name = field.name, .value = FieldValue{ .bool_val = @field(p, field.name) } };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                count += 1;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "            } else switch (@typeInfo(T)) {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                .Int => {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                    S.buf[count] = .{ .name = field.name, .value = FieldValue{ .int_val = @as(i64, @intCast(@field(p, field.name))) } };\n") catch unreachable;
             code.appendSlice(allocator, I ++ "                    count += 1;\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "                }\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                },\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                .Float => {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                    S.buf[count] = .{ .name = field.name, .value = FieldValue{ .float_val = @as(f64, @floatCast(@field(p, field.name))) } };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                    count += 1;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                },\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                .Pointer => |ptr_info| {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                    if (ptr_info.size == .Slice and ptr_info.child == u8) {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                        S.buf[count] = .{ .name = field.name, .value = FieldValue{ .string_val = @field(p, field.name) } };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                        count += 1;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                    }\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                },\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "                else => {},\n") catch unreachable;
             code.appendSlice(allocator, I ++ "            }\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "            break :blk count;\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        }};\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        out.* = .{ .branch = branch, .fields = S.buf[0..field_count] };\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "        return;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        break :blk count;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    }};\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    out.* = .{ .branch = branch, .fields = S.buf[0..field_count] };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    return;\n") catch unreachable;
         }
-        code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+
+        code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
     }
 
+    // Scope descriptor and public dispatcher
+    code.appendSlice(allocator, I ++ "const scope_events = [_]ScopeEvent{\n") catch unreachable;
+    for (events_list.items) |event| {
+        code.appendSlice(allocator, I ++ "    .{ .name = \"") catch unreachable;
+        code.appendSlice(allocator, event) catch unreachable;
+        code.appendSlice(allocator, "\", .dispatcher = dispatch_") catch unreachable;
+        code.appendSlice(allocator, scope_name) catch unreachable;
+        code.appendSlice(allocator, "_") catch unreachable;
+        code.appendSlice(allocator, event) catch unreachable;
+        code.appendSlice(allocator, " },\n") catch unreachable;
+    }
+    code.appendSlice(allocator, I ++ "};\n") catch unreachable;
+
+    code.appendSlice(allocator, I ++ "pub const ") catch unreachable;
+    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, "_descriptor: ScopeDescriptor = .{ .name = \"") catch unreachable;
+    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, "\", .events = &scope_events };\n") catch unreachable;
+
+    code.appendSlice(allocator, I ++ "pub fn dispatch_") catch unreachable;
+    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.runtime.DispatchResult) !void {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    const event_name = if (inv.path.segments.len > 0) inv.path.segments[0] else \"\";\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events) |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            return ev.dispatcher(inv, out);\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    return error.EventDenied;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n") catch unreachable;
 
@@ -189,6 +228,15 @@ const ast = @import("ast");
 pub const DispatchResult = @import("root").koru_std.interpreter.DispatchResult;
 pub const DispatchFn = @import("root").koru_std.interpreter.DispatchFn;
 pub const FieldValue = @import("root").koru_std.interpreter.FieldValue;
+pub const NamedField = @import("root").koru_std.interpreter.NamedField;
+pub const ScopeEvent = struct {
+    name: []const u8,
+    dispatcher: DispatchFn,
+};
+pub const ScopeDescriptor = struct {
+    name: []const u8,
+    events: []const ScopeEvent,
+};
 
 ~pub event get_scope { name: []const u8 }
 | scope { dispatcher: DispatchFn }
