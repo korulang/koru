@@ -649,10 +649,13 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                     try writer.writeAll("{\n");
 
                     // Suppress unused binding warning
+                    // Skip for "_" since that's a discard and can't be referenced
                     if (cont.binding) |binding| {
-                        try writer.writeAll("                _ = &");
-                        try writer.writeAll(binding);
-                        try writer.writeAll(";\n");
+                        if (!std.mem.eql(u8, binding, "_")) {
+                            try writer.writeAll("                _ = &");
+                            try writer.writeAll(binding);
+                            try writer.writeAll(";\n");
+                        }
                     }
 
                     if (cont.node) |step| {
