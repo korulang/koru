@@ -15,6 +15,7 @@ const ASTNode = ast.ASTNode;
 const Program = ast.Program;
 const Invocation = ast.Invocation;
 const template_utils = @import("template_utils");
+const liquid = @import("liquid");
 const annotation_parser = @import("annotation_parser");
 const ast_functional = @import("ast_functional");
 
@@ -441,29 +442,22 @@ fn applyExpandTemplate(
         return WalkResult{ .found = false, .program = program };
     };
 
-    // Build bindings from invocation args (Expression parameters)
-    var bindings: [8]template_utils.Binding = undefined;
-    var binding_count: usize = 0;
+    // Build Liquid context from invocation args (Expression parameters)
+    var ctx = liquid.Context.init(allocator);
+    defer ctx.deinit();
 
     for (invocation.args) |arg| {
         if (arg.expression_value) |expr_val| {
-            if (binding_count < 8) {
-                bindings[binding_count] = .{
-                    .name = arg.name,
-                    .value = expr_val.text,  // Get the expression text
-                };
-                binding_count += 1;
-            }
+            ctx.put(arg.name, .{ .string = expr_val.text }) catch {
+                std.debug.print("[EXPAND] ERROR: Failed to add arg to context\n", .{});
+                return WalkResult{ .found = false, .program = program };
+            };
         }
     }
 
-    // Interpolate template
-    const inline_body = template_utils.interpolate(
-        allocator,
-        template_source,
-        bindings[0..binding_count],
-    ) catch |err| {
-        std.debug.print("[EXPAND] ERROR: Template interpolation failed: {}\n", .{err});
+    // Render template with Liquid engine
+    const inline_body = liquid.render(allocator, template_source, &ctx) catch |err| {
+        std.debug.print("[EXPAND] ERROR: Liquid render failed: {}\n", .{err});
         return WalkResult{ .found = false, .program = program };
     };
 

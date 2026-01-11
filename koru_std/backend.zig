@@ -428,6 +428,7 @@ pub const PROGRAM_AST = Program{
                                 \\transform_pass_runner_module.addImport("annotation_parser", annotation_parser_module);
                                 \\transform_pass_runner_module.addImport("template_utils", template_utils_module);
                                 \\transform_pass_runner_module.addImport("ast_functional", ast_functional_module);
+                                \\transform_pass_runner_module.addImport("liquid", liquid_module);
                                 \\
                                 \\// Add all imports to the backend executable
                                 \\exe.root_module.addImport("ast", ast_module);

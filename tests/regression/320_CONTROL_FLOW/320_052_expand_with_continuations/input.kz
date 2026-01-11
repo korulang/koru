@@ -23,7 +23,7 @@ const std = @import("std");
             some: struct { val: i32 },
             none: void,
         };
-        const __value: ?i32 = ${expr};
+        const __value: ?i32 = {{ expr }};
         if (__value) |v| {
             break :blk Result{ .some = .{ .val = v } };
         } else {
