@@ -1227,6 +1227,31 @@ pub const VisitorEmitter = struct {
 
                                         try self.code_emitter.emitReindentedText(inline_code, indent_str);
                                         try self.code_emitter.write("\n");
+
+                                        // After inline code, check for void continuations with branch constructors
+                                        // This handles: ~event = transform() |> branch { fields }
+                                        for (flow.continuations) |cont| {
+                                            if (cont.branch.len == 0) {  // Void/pipeline continuation
+                                                if (cont.node) |step| {
+                                                    if (step == .branch_constructor) {
+                                                        const bc = &step.branch_constructor;
+                                                        try self.code_emitter.writeIndent();
+                                                        try self.code_emitter.write("return .{ .");
+                                                        try emitter.writeBranchName(self.code_emitter, bc.branch_name);
+                                                        try self.code_emitter.write(" = .{");
+                                                        for (bc.fields, 0..) |field, k| {
+                                                            if (k > 0) try self.code_emitter.write(",");
+                                                            try self.code_emitter.write(" .");
+                                                            try self.code_emitter.write(field.name);
+                                                            try self.code_emitter.write(" = ");
+                                                            const value = if (field.expression_str) |expr| expr else field.type;
+                                                            try self.code_emitter.write(value);
+                                                        }
+                                                        try self.code_emitter.write(" } };\n");
+                                                    }
+                                                }
+                                            }
+                                        }
                                     } else {
                                         // Generate the invocation of the inner event
                                         try self.code_emitter.writeIndent();

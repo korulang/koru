@@ -1,0 +1,94 @@
+// HONEST APPLES-TO-APPLES BENCHMARK
+//
+// Python:   for _ in range(1000): for i in range(100): add("0", str(i))
+// Koru:     ~for(0..1000) | each _ |> for(0..100) | each i |> add(...)
+//
+// Same syntax as compiled Koru. Same parser. Just interpreted.
+
+~import "$std/runtime"
+~import "$std/interpreter"
+~import "$std/io"
+
+const std = @import("std");
+
+// Global accumulator - updated by add()
+var global_sum: i64 = 0;
+
+// add() updates global accumulator - same work as Python
+~pub event add { a: []const u8, b: []const u8 }
+| sum { result: []const u8 }
+
+~proc add {
+    const a_int = std.fmt.parseInt(i64, a, 10) catch 0;
+    const b_int = std.fmt.parseInt(i64, b, 10) catch 0;
+    global_sum += a_int + b_int;
+    return .{ .sum = .{ .result = "0" } };  // Result not used, just like Python
+}
+
+// Get the accumulated sum for verification
+pub fn getSum() i64 {
+    return global_sum;
+}
+
+pub fn resetSum() void {
+    global_sum = 0;
+}
+
+// Register events
+~std.runtime:register(scope: "bench") {
+    for
+    add
+}
+
+// Same pattern as 230_012_for_binding_in_nested_range
+const BENCH_FLOW =
+    \\~for(0..1000)
+    \\| each _ |> for(0..100)
+    \\    | each i |> add(a: "0", b: i)
+    \\| done |> _
+;
+
+pub fn main() void {
+    std.debug.print("\n", .{});
+    std.debug.print("============================================================\n", .{});
+    std.debug.print("HONEST APPLES-TO-APPLES BENCHMARK\n", .{});
+    std.debug.print("Task: for(0..1000) | each |> for(0..100) | each |> add()\n", .{});
+    std.debug.print("      = 100,000 add dispatches\n", .{});
+    std.debug.print("============================================================\n\n", .{});
+
+    const start = std.time.nanoTimestamp();
+
+    const result = koru_std.interpreter.run_event.handler(.{
+        .source = BENCH_FLOW,
+        .dispatcher = &dispatch_bench,
+    });
+
+    const end = std.time.nanoTimestamp();
+    const total_ns = end - start;
+    const total_ms = @divTrunc(total_ns, 1_000_000);
+
+    // Expected: sum(0..99) * 1000 = 4950 * 1000 = 4,950,000
+    const expected: i64 = 4950000;
+    const actual = getSum();
+
+    switch (result) {
+        .result => |r| {
+            std.debug.print("Completed: branch={s}\n", .{r.value.branch});
+            std.debug.print("Sum: {d} (expected: {d})\n", .{actual, expected});
+            std.debug.print("Correct: {}\n", .{actual == expected});
+            std.debug.print("Time: {d} ms\n", .{total_ms});
+        },
+        .parse_error => |e| {
+            std.debug.print("PARSE ERROR: {s} at line {d}\n", .{e.message, e.line});
+        },
+        .validation_error => |e| {
+            std.debug.print("VALIDATION ERROR: {s}\n", .{e.message});
+        },
+        .dispatch_error => |e| {
+            std.debug.print("DISPATCH ERROR: {s} - {s}\n", .{e.event_name, e.message});
+        },
+    }
+
+    std.debug.print("\nCompare: python3 benchmark.py\n", .{});
+    std.debug.print("============================================================\n", .{});
+}

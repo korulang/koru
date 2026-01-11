@@ -24,10 +24,8 @@ const std = @import("std");
 ~pub event consume { n: []const u8 }
 | echoed { got: []const u8 }
 
-~proc consume {
-    std.debug.print("[consume] received n = '{s}'\n", .{n});
-    return .{ .echoed = .{ .got = n } };
-}
+~consume = std.io:print.ln("[consume] received n = '{{n:s}}'")
+    |> echoed { got: n }
 
 ~std.runtime:register(scope: "test") {
     produce
