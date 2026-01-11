@@ -1,0 +1,31 @@
+// TEST: Source block inside a pipeline/continuation
+//
+// When a Source block event is invoked INSIDE a continuation (not top-level),
+// the parser should still detect and parse the Source block correctly.
+//
+// Top-level works:
+//   ~event { source }      <-- WORKS
+//
+// Inside pipeline should also work:
+//   ~first_event()
+//   | branch |> second_event {
+//       source content here
+//     }
+//     | next |> ...   <-- THIS IS WHAT WE'RE TESTING
+//
+
+~import "$std/io"
+
+// First: void event to start a pipeline
+~event setup {}
+| ready {}
+
+~proc setup {
+    return .{ .ready = .{} };
+}
+
+// Now use print.blk INSIDE the pipeline continuation
+~setup()
+| ready |> std.io:print.blk {
+    Hello from inside a pipeline!
+  }

@@ -18,39 +18,78 @@ const template_utils = @import("template_utils");
 const annotation_parser = @import("annotation_parser");
 const ast_functional = @import("ast_functional");
 
-/// Check if ANY top-level flow in the new program still matches the transform.
-/// This is a circuit breaker to catch transforms that don't properly replace themselves.
-///
-/// IMPORTANT: Transforms must output a DIFFERENT event path (e.g., query.src -> query.src.impl)
-/// or add @pass_ran("transform") annotation. If the output still matches, it's an infinite loop.
-///
-/// We only check TOP-LEVEL flows (not nested invocations in continuations) because:
-/// - Multiple similar invocations in continuations are expected to be transformed one at a time
-/// - The walker handles these via fixed-point iteration
-fn invocationStillMatchesInProgram(original_inv: *const Invocation, transform_name: []const u8, program: *const Program) bool {
-    _ = original_inv; // Not needed - we check ALL matching flows, not just the original
+/// Count how many invocations in the program match the transform.
+/// Includes both top-level flows AND nested invocations in continuations.
+/// Used to detect infinite loops: if the count doesn't decrease after a transform,
+/// the transform isn't making progress.
+fn countMatchingFlowsInProgram(transform_name: []const u8, program: *const Program) usize {
+    var count: usize = 0;
 
-    // Walk the new program looking for ANY top-level flow that would still match
     for (program.items) |item| {
         switch (item) {
             .flow => |flow| {
-                if (flowStillMatchesTransform(&flow.invocation, transform_name)) {
-                    return true;
+                count += countMatchingInFlow(&flow, transform_name);
+            },
+            .subflow_impl => |subflow| {
+                if (subflow.body == .flow) {
+                    count += countMatchingInFlow(&subflow.body.flow, transform_name);
                 }
             },
             .module_decl => |module| {
                 for (module.items) |mod_item| {
-                    if (mod_item == .flow) {
-                        if (flowStillMatchesTransform(&mod_item.flow.invocation, transform_name)) {
-                            return true;
-                        }
+                    switch (mod_item) {
+                        .flow => |flow| {
+                            count += countMatchingInFlow(&flow, transform_name);
+                        },
+                        .subflow_impl => |subflow| {
+                            if (subflow.body == .flow) {
+                                count += countMatchingInFlow(&subflow.body.flow, transform_name);
+                            }
+                        },
+                        else => {},
                     }
                 }
             },
             else => {},
         }
     }
-    return false;
+    return count;
+}
+
+/// Count matching invocations in a flow (including its continuations)
+fn countMatchingInFlow(flow: *const ast.Flow, transform_name: []const u8) usize {
+    var count: usize = 0;
+
+    // Check the flow's own invocation
+    if (flowStillMatchesTransform(&flow.invocation, transform_name)) {
+        count += 1;
+    }
+
+    // Check invocations in continuations
+    count += countMatchingInContinuations(flow.continuations, transform_name);
+
+    return count;
+}
+
+/// Recursively count matching invocations in continuations
+fn countMatchingInContinuations(continuations: []const ast.Continuation, transform_name: []const u8) usize {
+    var count: usize = 0;
+
+    for (continuations) |cont| {
+        // Check the continuation's node
+        if (cont.node) |node| {
+            if (node == .invocation) {
+                if (flowStillMatchesTransform(&node.invocation, transform_name)) {
+                    count += 1;
+                }
+            }
+        }
+
+        // Recurse into nested continuations
+        count += countMatchingInContinuations(cont.continuations, transform_name);
+    }
+
+    return count;
 }
 
 fn flowStillMatchesTransform(inv: *const Invocation, transform_name: []const u8) bool {
@@ -228,17 +267,20 @@ fn walkNode(
                     return error.TransformReturnedSamePointer;
                 }
 
-                // CIRCUIT BREAKER: Verify the transform actually replaced the invocation.
-                // If the same invocation path still matches without @pass_ran, the transform
-                // didn't do its job and we'll infinite loop.
-                if (invocationStillMatchesInProgram(inv, transform.name, transformed)) {
+                // CIRCUIT BREAKER: Verify the transform made progress.
+                // Count matching flows before and after - if count didn't decrease,
+                // the transform isn't making progress (infinite loop).
+                const count_before = countMatchingFlowsInProgram(transform.name, program);
+                const count_after = countMatchingFlowsInProgram(transform.name, transformed);
+
+                if (count_after >= count_before and count_before > 0) {
                     std.debug.print("\n", .{});
                     std.debug.print("╔══════════════════════════════════════════════════════════════════╗\n", .{});
                     std.debug.print("║  TRANSFORM ERROR: Invocation not replaced!                       ║\n", .{});
                     std.debug.print("╚══════════════════════════════════════════════════════════════════╝\n", .{});
                     std.debug.print("\n", .{});
-                    std.debug.print("Transform '{s}' returned a new program, but the invocation\n", .{transform.name});
-                    std.debug.print("still matches and would be transformed again (infinite loop).\n", .{});
+                    std.debug.print("Transform '{s}' returned a new program, but matching invocations\n", .{transform.name});
+                    std.debug.print("didn't decrease ({d} before, {d} after) - infinite loop detected.\n", .{count_before, count_after});
                     std.debug.print("\n", .{});
                     std.debug.print("FIX: Your transform must either:\n", .{});
                     std.debug.print("  1. Change the invocation path (e.g., 'query.src' -> 'query.src.impl')\n", .{});

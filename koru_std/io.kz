@@ -477,6 +477,7 @@ const std = @import("std");
 
 ~[comptime|transform]pub event print.blk {
     source: Source,
+    invocation: *const Invocation,  // The specific invocation being transformed
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
@@ -550,6 +551,10 @@ const std = @import("std");
         &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
+
+    // CRITICAL: Use pointer comparison to identify if this is the top-level print.blk
+    // The `invocation` parameter tells us EXACTLY which print.blk is being transformed
+    const is_top_level = (invocation == &flow.invocation);
 
     // Parse the Source content for {{ ... }} placeholders
     var format_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
@@ -704,55 +709,128 @@ const std = @import("std");
         .{ format_buf.items, args_buf.items }
     ) catch unreachable;
 
-    // Create impl path for shape checking
-    const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
-    impl_segments[0] = allocator.dupe(u8, "print") catch unreachable;
-    impl_segments[1] = allocator.dupe(u8, "blk.impl") catch unreachable;
-    const impl_path = ast.DottedPath{
-        .module_qualifier = flow.invocation.path.module_qualifier,
-        .segments = impl_segments,
-    };
+    if (is_top_level) {
+        // =====================================================================
+        // TOP-LEVEL CASE: print.blk is the flow's invocation
+        // =====================================================================
 
-    // Build new invocation with @pass_ran annotation
-    const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
-    for (flow.invocation.annotations, 0..) |ann, idx| {
-        new_inv_annotations[idx] = ann;
+        // Create impl path for shape checking
+        const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
+        impl_segments[0] = allocator.dupe(u8, "print") catch unreachable;
+        impl_segments[1] = allocator.dupe(u8, "blk.impl") catch unreachable;
+        const impl_path = ast.DottedPath{
+            .module_qualifier = flow.invocation.path.module_qualifier,
+            .segments = impl_segments,
+        };
+
+        // Build new invocation with @pass_ran annotation
+        const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+        for (flow.invocation.annotations, 0..) |ann, idx| {
+            new_inv_annotations[idx] = ann;
+        }
+        new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+        const new_invocation = ast.Invocation{
+            .path = impl_path,
+            .args = flow.invocation.args,
+            .annotations = new_inv_annotations,
+            .inserted_by_tap = flow.invocation.inserted_by_tap,
+            .from_opaque_tap = flow.invocation.from_opaque_tap,
+        };
+
+        const transformed_flow = ast.Flow{
+            .invocation = new_invocation,
+            .continuations = flow.continuations,
+            .annotations = flow.annotations,
+            .pre_label = flow.pre_label,
+            .post_label = flow.post_label,
+            .super_shape = flow.super_shape,
+            .inline_body = inline_code,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
+            .location = flow.location,
+            .module = flow.module,
+        };
+
+        const new_item = if (item.* == .subflow_impl) blk: {
+            var new_subflow = item.subflow_impl;
+            new_subflow.body = .{ .flow = transformed_flow };
+            break :blk ast.Item{ .subflow_impl = new_subflow };
+        } else ast.Item{ .flow = transformed_flow };
+
+        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = .{ .program = result } };
+        }
+        return .{ .transformed = .{ .program = program } };
+    } else {
+        // =====================================================================
+        // PIPELINE CASE: print.blk inside a continuation pipeline
+        // =====================================================================
+
+        // Helper to recursively search for THIS SPECIFIC invocation in continuation tree
+        const findInvocationRecursive = struct {
+            fn search(
+                alloc: std.mem.Allocator,
+                continuations: []const ast.Continuation,
+                current_path: []const usize,
+                target_inv: *const ast.Invocation,
+            ) ?[]const usize {
+                for (continuations, 0..) |*cont, cont_idx| {
+                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
+                    @memcpy(path[0..current_path.len], current_path);
+                    path[current_path.len] = cont_idx;
+
+                    if (cont.node) |*step| {
+                        if (step.* == .invocation) {
+                            if (&step.invocation == target_inv) {
+                                return path;
+                            }
+                        }
+                    }
+
+                    if (search(alloc, cont.continuations, path, target_inv)) |result| {
+                        return result;
+                    }
+
+                    alloc.free(path);
+                }
+                return null;
+            }
+        }.search;
+
+        const empty_path = &[_]usize{};
+        const path = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation) orelse {
+            return .{ .transformed = .{ .program = program } };
+        };
+
+        // Replace the invocation with inline_code node
+        const new_node = ast.Node{ .inline_code = inline_code };
+
+        const modified_flow = ast_functional.replacePipelineStepAtPath(
+            allocator,
+            flow,
+            path,
+            0,
+            new_node,
+        ) catch unreachable;
+
+        const new_item = if (item.* == .subflow_impl) blk: {
+            var new_subflow = item.subflow_impl;
+            new_subflow.body = .{ .flow = modified_flow };
+            break :blk ast.Item{ .subflow_impl = new_subflow };
+        } else ast.Item{ .flow = modified_flow };
+
+        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = .{ .program = result } };
+        } else {
+            std.debug.print("ERROR: ~print.blk transform (pipeline case) failed - flow not found in program\n", .{});
+            @panic("print.blk transform: flow not found");
+        }
     }
-    new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
-
-    const new_invocation = ast.Invocation{
-        .path = impl_path,
-        .args = flow.invocation.args,
-        .annotations = new_inv_annotations,
-        .inserted_by_tap = flow.invocation.inserted_by_tap,
-        .from_opaque_tap = flow.invocation.from_opaque_tap,
-    };
-
-    const transformed_flow = ast.Flow{
-        .invocation = new_invocation,
-        .continuations = flow.continuations,
-        .annotations = flow.annotations,
-        .pre_label = flow.pre_label,
-        .post_label = flow.post_label,
-        .super_shape = flow.super_shape,
-        .inline_body = inline_code,
-        .is_pure = flow.is_pure,
-        .is_transitively_pure = flow.is_transitively_pure,
-        .location = flow.location,
-        .module = flow.module,
-    };
-
-    const new_item = if (item.* == .subflow_impl) blk: {
-        var new_subflow = item.subflow_impl;
-        new_subflow.body = .{ .flow = transformed_flow };
-        break :blk ast.Item{ .subflow_impl = new_subflow };
-    } else ast.Item{ .flow = transformed_flow };
-
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-    if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
-    }
-    return .{ .transformed = .{ .program = program } };
 }

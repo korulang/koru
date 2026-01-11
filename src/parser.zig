@@ -4760,11 +4760,84 @@ pub const Parser = struct {
     
     fn parsePipelineContinuationBase(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         // This is a |> continuation (pipeline step on new line)
-        // Check if we have a multi-line branch constructor
+
+        // FIRST: Check if this is a Source block invocation (event with Source parameter)
+        // Source blocks need special handling - they capture raw text, not collapsed content
+        if (std.mem.indexOf(u8, content, "{") != null and std.mem.indexOf(u8, content, "}") == null) {
+            const brace_idx = std.mem.lastIndexOf(u8, content, "{") orelse unreachable;
+            var invocation_str = lexer.trim(content[0..brace_idx]);
+
+            // Check for phantom type annotation [Type]{ and strip it
+            const phantom_type = try self.parseSourcePhantomType(invocation_str);
+            if (phantom_type != null) {
+                const bracket_start = std.mem.lastIndexOf(u8, invocation_str, "[") orelse invocation_str.len;
+                invocation_str = lexer.trim(invocation_str[0..bracket_start]);
+            }
+
+            // Parse the invocation to get the event path
+            const temp_invocation = try self.parseEventInvocation(invocation_str);
+            const path_str = try self.pathToString(temp_invocation.path);
+            defer self.allocator.free(path_str);
+
+            // Check if this event has a Source parameter
+            var has_source_param = false;
+            if (self.registry.getEventType(path_str)) |event_type| {
+                if (event_type.input_shape) |shape| {
+                    for (shape.fields) |field| {
+                        if (field.is_source) {
+                            has_source_param = true;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // Event not in registry - check if it looks like a Source block invocation
+                // (has [Type] annotation or event name suggests Source)
+                has_source_param = phantom_type != null;
+            }
+
+            if (has_source_param) {
+                // This IS a Source block - parse it properly!
+                const result = try self.parseImplicitSourceBlock(indent, phantom_type);
+
+                // Create the invocation with source_value
+                var final_invocation: ast.Invocation = undefined;
+                if (self.registry.getEventType(path_str)) |event_type| {
+                    final_invocation = try self.createImplicitSourceInvocation(
+                        temp_invocation,
+                        result.source,
+                        result.phantom_type,
+                        event_type
+                    );
+                } else {
+                    final_invocation = try self.createImplicitSourceInvocationDefault(
+                        temp_invocation,
+                        result.source,
+                        result.phantom_type
+                    );
+                }
+
+                // Create the step and continuation
+                const step = ast.Step{ .invocation = final_invocation };
+
+                return ast.Continuation{
+                    .branch = try self.allocator.dupe(u8, ""),
+                    .binding = null,
+                    .condition = null,
+                    .condition_expr = null,
+                    .node = step,
+                    .indent = indent,
+                    .continuations = result.continuations,
+                    .location = location,
+                };
+            }
+        }
+
+        // Not a Source block - use regular multi-line branch constructor handling
         var full_content = content;
         var allocated_content: ?[]u8 = null;
         defer if (allocated_content) |ac| self.allocator.free(ac);
-        
+
         // Check if this might be starting a multi-line branch constructor
         if (std.mem.indexOf(u8, content, "{") != null and std.mem.indexOf(u8, content, "}") == null) {
             // We have an opening brace but no closing brace - look for it on subsequent lines

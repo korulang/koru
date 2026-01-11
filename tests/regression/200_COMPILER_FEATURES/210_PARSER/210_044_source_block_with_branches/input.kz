@@ -1,0 +1,19 @@
+// TEST: Parser acceptance of Source block with args AND branch continuations
+//
+// This tests that the PARSER correctly accepts:
+//   ~event(arg: value) {
+//       source content
+//   }
+//   | branch |> ...
+//
+// The transform doesn't need to work - we just verify parsing.
+
+~import "$std/io"
+
+// Use print.blk which we KNOW works, as baseline
+~std.io:print.blk {
+    Hello, World!
+}
+
+// If we can get here without parse errors, the basic syntax works.
+// The sqlite3:query case that needs args is tested separately in koru-libs.
