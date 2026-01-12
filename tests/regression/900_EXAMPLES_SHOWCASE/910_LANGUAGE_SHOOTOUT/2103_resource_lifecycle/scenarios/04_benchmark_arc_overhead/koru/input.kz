@@ -27,7 +27,6 @@ var grand_total: u64 = 0;
 }
 
 ~event work { r: *Resource[active] }
-| done { sum: u64 }
 
 ~proc work {
     // Real work: sum the data array (same as Rust)
@@ -37,15 +36,12 @@ var grand_total: u64 = 0;
     }
     grand_total += sum;  // Accumulate like Rust
     std.mem.doNotOptimizeAway(sum);
-    return .{ .done = .{ .sum = sum } };
 }
 
 ~event destroy { r: *Resource[!active] }
-| done {}
 
 ~proc destroy {
     allocator.destroy(r);
-    return .{ .done = .{} };
 }
 
 ~event print_result {}
@@ -56,23 +52,13 @@ var grand_total: u64 = 0;
     return .{ .done = .{} };
 }
 
-const N: usize = 100_000;
+const N: usize = 1_000_000;
 
 ~for(0..N)
 | each i |>
     create(id: i)
     | created r |>
-        work(r: r.r)
-        | done |>
-            work(r: r.r)
-            | done |>
-                work(r: r.r)
-                | done |>
-                    work(r: r.r)
-                    | done |>
-                        work(r: r.r)
-                        | done |>
-                            destroy(r: r.r)
+        work(r: r.r) |> work(r: r.r) |> work(r: r.r) |> work(r: r.r) |> work(r: r.r) |> destroy(r: r.r)
 | done |>
     print_result()
 
