@@ -609,6 +609,11 @@ fn generateBranchSwitch(
         if (cont.binding) |binding| {
             try buf.append(allocator, '|');
             try buf.appendSlice(allocator, binding);
+            // Suffix with indent level to avoid shadowing in nested switches
+            try buf.append(allocator, '_');
+            var level_buf: [16]u8 = undefined;
+            const level_str = std.fmt.bufPrint(&level_buf, "{d}", .{indent_level}) catch unreachable;
+            try buf.appendSlice(allocator, level_str);
             try buf.appendSlice(allocator, "| {\n");
         } else {
             try buf.appendSlice(allocator, "{\n");

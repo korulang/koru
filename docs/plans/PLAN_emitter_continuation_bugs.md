@@ -11,7 +11,7 @@ Four bugs prevent natural Koru flow patterns. **Two are emitter bugs, one is esc
 | Bug | Test | Component | Status |
 |-----|------|-----------|--------|
 | Void event chaining | `220_021` | **EMITTER** | TODO |
-| Nested branch shadowing | `220_020` | **EMITTER** | TODO |
+| Nested branch shadowing | `220_020` | **EMITTER** | **FIXED** (2026-01-12) |
 | Escape field name mismatch | `330_052` | **ESCAPE CHECKER** | **FIXED** (2026-01-12) |
 | Void chaining syntax | (new) | **PARSER** | TODO |
 

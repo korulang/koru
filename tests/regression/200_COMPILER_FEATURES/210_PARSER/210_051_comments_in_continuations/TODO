@@ -1,0 +1,2 @@
+Parser needs to skip // comment lines when inside flow context.
+Currently they become host_line items which break the flow structure.

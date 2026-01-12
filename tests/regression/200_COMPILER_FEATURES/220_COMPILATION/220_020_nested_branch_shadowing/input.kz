@@ -1,9 +1,9 @@
-// PRIORITY: Nested same-branch name causes Zig shadowing error
+// FIXED: Nested same-branch name no longer causes Zig shadowing error
 //
-// BUG: When the same branch name (e.g., `done`) appears at multiple nesting
-// levels, the emitter generates code where inner `|done|` shadows outer `|done|`.
+// Previously: When the same branch name (e.g., `done`) appeared at multiple nesting
+// levels, the emitter generated captures even when they weren't used.
 //
-// This blocks natural flow patterns where events return common branch names.
+// Fix: Now only captures bindings that are actually referenced in the code.
 
 ~import "$std/control"
 

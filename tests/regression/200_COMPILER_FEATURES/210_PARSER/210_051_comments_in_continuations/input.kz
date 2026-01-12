@@ -1,0 +1,32 @@
+// TEST: Standalone comments inside flow continuations
+//
+// This tests whether the parser correctly handles // comments
+// as standalone lines WITHIN a flow continuation structure.
+//
+// Expected: Parser should skip comment lines and continue parsing the flow
+
+~event step1 {}
+| done {}
+
+~event step2 {}
+| done {}
+
+~event step3 {}
+| done {}
+
+~proc step1 { return .{ .done = .{} }; }
+~proc step2 { return .{ .done = .{} }; }
+~proc step3 { return .{ .done = .{} }; }
+
+// Main flow with standalone comments inside continuations
+~step1()
+| done |>
+    // This is a standalone comment inside the continuation
+    step2()
+    | done |>
+        // Another standalone comment
+        // And another one
+        step3()
+        | done |> _
+
+pub fn main() void {}

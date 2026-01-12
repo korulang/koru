@@ -1166,13 +1166,14 @@ fn emitSubflowContinuationsWithDepth(
                 try writeBranchName(emitter, cont.branch);
                 try emitter.write(" => ");
 
-                            // Check if we need binding - check the step
+                            // Check if THIS binding is actually referenced in the step
+                            // CRITICAL: Only set needs_binding if binding_name is used, not just any "."
                             var needs_binding = false;
                             if (cont.node) |step| {
                                 switch (step) {
                                     .invocation => |inv| {
                                         for (inv.args) |arg| {
-                                            if (std.mem.indexOf(u8, arg.value, ".") != null) {
+                                            if (valueReferencesBinding(arg.value, binding_name)) {
                                                 needs_binding = true;
                                                 break;
                                             }
@@ -1180,7 +1181,7 @@ fn emitSubflowContinuationsWithDepth(
                                     },
                                     .label_with_invocation => |lwi| {
                                         for (lwi.invocation.args) |arg| {
-                                            if (std.mem.indexOf(u8, arg.value, ".") != null) {
+                                            if (valueReferencesBinding(arg.value, binding_name)) {
                                                 needs_binding = true;
                                                 break;
                                             }
@@ -1189,7 +1190,7 @@ fn emitSubflowContinuationsWithDepth(
                                     .branch_constructor => |bc| {
                                         for (bc.fields) |field| {
                                             const value = if (field.expression_str) |expr| expr else field.type;
-                                            if (std.mem.indexOf(u8, value, ".") != null) {
+                                            if (valueReferencesBinding(value, binding_name)) {
                                                 needs_binding = true;
                                                 break;
                                             }
@@ -1197,6 +1198,10 @@ fn emitSubflowContinuationsWithDepth(
                                     },
                                     else => {},
                                 }
+                            }
+                            // Also check nested continuations for binding usage
+                            if (!needs_binding) {
+                                needs_binding = bindingIsUsedInContinuations(binding_name, cont.continuations);
                             }
                 
                             // Check if branch has payload fields - empty payloads shouldn't be captured
@@ -1235,7 +1240,8 @@ fn emitSubflowContinuationsWithDepth(
                 const first_cont = group.continuations[0];
                 const binding_name = first_cont.binding orelse first_cont.branch;
 
-                // Check if ANY continuation in this group needs the binding
+                // Check if ANY continuation in this group actually uses THIS binding
+                // CRITICAL: Only set needs_binding if binding_name is referenced
                 var needs_binding = false;
                 for (group.continuations) |cont_ptr| {
                     const cont = cont_ptr.*;
@@ -1243,7 +1249,7 @@ fn emitSubflowContinuationsWithDepth(
                         switch (step) {
                             .invocation => |inv| {
                                 for (inv.args) |arg| {
-                                    if (std.mem.indexOf(u8, arg.value, ".") != null) {
+                                    if (valueReferencesBinding(arg.value, binding_name)) {
                                         needs_binding = true;
                                         break;
                                     }
@@ -1252,7 +1258,7 @@ fn emitSubflowContinuationsWithDepth(
                             .branch_constructor => |bc| {
                                 for (bc.fields) |field| {
                                     const value = if (field.expression_str) |expr| expr else field.type;
-                                    if (std.mem.indexOf(u8, value, ".") != null) {
+                                    if (valueReferencesBinding(value, binding_name)) {
                                         needs_binding = true;
                                         break;
                                     }
@@ -1260,6 +1266,10 @@ fn emitSubflowContinuationsWithDepth(
                             },
                             else => {},
                         }
+                    }
+                    // Also check nested continuations
+                    if (!needs_binding) {
+                        needs_binding = bindingIsUsedInContinuations(binding_name, cont.continuations);
                     }
                     if (needs_binding) break;
                 }
@@ -1371,29 +1381,25 @@ fn emitSubflowContinuationsWithDepth(
             // Handle binding - if explicit binding exists, use it; otherwise use branch name
             const actual_binding = cont.binding orelse cont.branch;
 
-            // CRITICAL FIX: Check if binding is used in CURRENT pipeline OR nested continuations!
-            // This is essential for deeply nested subflows where outer bindings must stay in scope
+            // CRITICAL FIX: Check if THIS binding is actually referenced
+            // Only capture if actual_binding is used, not just any "."
             var needs_binding = false;
 
-            // Check the step (not just first step)
-            // This is critical when taps are inserted - tap might be at step with no args,
-            // but the step (branch constructor) might use the binding
+            // Check the step - but only if it references THIS binding
             if (cont.node) |step| {
                 switch (step) {
                     .invocation => |inv| {
-                        // Check if any arg references the branch payload
                         for (inv.args) |arg| {
-                            if (std.mem.indexOf(u8, arg.value, ".") != null) {
+                            if (valueReferencesBinding(arg.value, actual_binding)) {
                                 needs_binding = true;
                                 break;
                             }
                         }
                     },
                     .branch_constructor => |bc| {
-                        // Check if any field references the branch payload
                         for (bc.fields) |field| {
                             const value = if (field.expression_str) |expr| expr else field.type;
-                            if (std.mem.indexOf(u8, value, ".") != null) {
+                            if (valueReferencesBinding(value, actual_binding)) {
                                 needs_binding = true;
                                 break;
                             }
@@ -1673,7 +1679,7 @@ fn emitSubflowContinuationsWithDepth(
             const first_cont = group.continuations[0].*;
             const actual_binding = first_cont.binding orelse first_cont.branch;
 
-            // Check if ANY continuation in this group needs the binding
+            // Check if ANY continuation in this group actually uses THIS binding
             var needs_binding = false;
             for (group.continuations) |cont_ptr| {
                 const cont = cont_ptr.*;
@@ -1681,7 +1687,7 @@ fn emitSubflowContinuationsWithDepth(
                     switch (step) {
                         .invocation => |inv| {
                             for (inv.args) |arg| {
-                                if (std.mem.indexOf(u8, arg.value, ".") != null) {
+                                if (valueReferencesBinding(arg.value, actual_binding)) {
                                     needs_binding = true;
                                     break;
                                 }
@@ -1690,7 +1696,7 @@ fn emitSubflowContinuationsWithDepth(
                         .branch_constructor => |bc| {
                             for (bc.fields) |field| {
                                 const value = if (field.expression_str) |expr| expr else field.type;
-                                if (std.mem.indexOf(u8, value, ".") != null) {
+                                if (valueReferencesBinding(value, actual_binding)) {
                                     needs_binding = true;
                                     break;
                                 }
