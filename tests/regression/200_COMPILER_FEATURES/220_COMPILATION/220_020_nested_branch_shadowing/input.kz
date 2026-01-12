@@ -1,0 +1,66 @@
+// PRIORITY: Nested same-branch name causes Zig shadowing error
+//
+// BUG: When the same branch name (e.g., `done`) appears at multiple nesting
+// levels, the emitter generates code where inner `|done|` shadows outer `|done|`.
+//
+// This blocks natural flow patterns where events return common branch names.
+
+~import "$std/control"
+
+const std = @import("std");
+
+const Resource = struct {
+    id: usize,
+    data: [64]u8,
+};
+
+~event create { id: usize }
+| created { r: *Resource[active!] }
+
+~proc create {
+    const r = std.heap.page_allocator.create(Resource) catch unreachable;
+    r.* = Resource{ .id = id, .data = undefined };
+    return .{ .created = .{ .r = r } };
+}
+
+~event work { r: *Resource[active] }
+| done {}
+
+~proc work {
+    r.data[0] +%= 1;
+    return .{ .done = .{} };
+}
+
+~event destroy { r: *Resource[!active] }
+| destroyed {}
+
+~proc destroy {
+    std.heap.page_allocator.destroy(r);
+    return .{ .destroyed = .{} };
+}
+
+~event run_one { id: usize }
+| finished {}
+
+~run_one = create(id: id)
+| created r |>
+    work(r: r.r)
+    | done |>
+        work(r: r.r)
+        | done |>
+            work(r: r.r)
+            | done |>
+                work(r: r.r)
+                | done |>
+                    work(r: r.r)
+                    | done |>
+                        destroy(r: r.r)
+                        | destroyed |> finished {}
+
+~for(0..10)
+| each _ |>
+    run_one(id: 0)
+    | finished |> _
+| done |> _
+
+pub fn main() void {}

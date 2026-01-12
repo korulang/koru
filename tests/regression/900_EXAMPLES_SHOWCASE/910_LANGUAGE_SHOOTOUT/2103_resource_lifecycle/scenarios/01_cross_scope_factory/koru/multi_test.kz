@@ -1,0 +1,53 @@
+// Test: Escape + multiple borrows + cleanup
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+~event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    std.debug.print("Opening\n", .{});
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+~event use { file: *File[opened] }
+| used {}
+
+~proc use {
+    std.debug.print("Using\n", .{});
+    return .{ .used = .{} };
+}
+
+~event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.debug.print("Closing\n", .{});
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}
+
+// Factory that escapes obligation
+~event create { path: []const u8 }
+| created { resource: *File[opened!] }
+
+~create = open(path: path)
+| opened f |> created { resource: f.file }
+
+// Main flow: create -> use -> use -> use -> cleanup
+~create(path: "test.txt")
+| created r |>
+    use(file: r.resource)
+    | used |>
+        use(file: r.resource)
+        | used |>
+            use(file: r.resource)
+            | used |>
+                close(file: r.resource)
+                | closed |> _
+
+pub fn main() void {}

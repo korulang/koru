@@ -1,0 +1,93 @@
+// PRIORITY: Combined test for all continuation codegen bugs
+//
+// This test exercises THREE bugs simultaneously:
+// 1. Void event chaining (220_021) - switch on void
+// 2. Nested branch shadowing (220_020) - |done| shadows |done|
+// 3. Escape field name mismatch (330_052) - escape by name not value
+//
+// When all three are fixed, this test passes and Koru gets its signature syntax.
+
+~import "$std/control"
+
+const std = @import("std");
+
+const Resource = struct {
+    id: usize,
+    data: [64]u8,
+};
+
+const allocator = std.heap.c_allocator;
+
+// ============================================================
+// BUG #1: Void event chaining
+// These are void events - no branches. Should chain with |>
+// ============================================================
+
+~event work_void { r: *Resource }
+
+~proc work_void {
+    r.data[0] +%= 1;
+}
+
+// ============================================================
+// BUG #2: Nested branch shadowing
+// Same branch name "done" at multiple nesting levels
+// ============================================================
+
+~event work_done { r: *Resource }
+| done {}
+
+~proc work_done {
+    r.data[0] +%= 1;
+    return .{ .done = .{} };
+}
+
+// ============================================================
+// BUG #3: Escape field name mismatch
+// Obligation escapes to differently-named field
+// ============================================================
+
+~event create { id: usize }
+| created { r: *Resource[active!] }
+
+~proc create {
+    const r = allocator.create(Resource) catch unreachable;
+    r.* = Resource{ .id = id, .data = undefined };
+    return .{ .created = .{ .r = r } };
+}
+
+~event destroy { r: *Resource[!active] }
+
+~proc destroy {
+    allocator.destroy(r);
+}
+
+// Factory with DIFFERENT field name than create
+~event make_resource { id: usize }
+| ready { resource: *Resource[active!] }  // "resource" not "r"
+
+// BUG #3: f.r -> resource field name mismatch
+~make_resource = create(id: id)
+| created f |> ready { resource: f.r }
+
+// ============================================================
+// COMBINED TEST: Bugs #2 and #3 (void chaining is parser issue)
+// ============================================================
+
+const N: usize = 10;
+
+~for(0..N)
+| each i |>
+    make_resource(id: i)
+    | ready r |>
+        work_done(r: r.resource)
+        | done |>
+            work_done(r: r.resource)
+            | done |>
+                work_done(r: r.resource)
+                | done |>
+                    destroy(r: r.resource)
+
+pub fn main() void {
+    std.debug.print("All continuation bugs fixed!\n", .{});
+}

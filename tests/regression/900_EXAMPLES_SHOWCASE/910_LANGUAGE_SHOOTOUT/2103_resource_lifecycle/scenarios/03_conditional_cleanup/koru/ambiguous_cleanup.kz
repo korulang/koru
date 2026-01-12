@@ -1,0 +1,61 @@
+// TEST: Multiple disposal options - auto-dispose can't help, must be explicit
+//
+// When there are MULTIPLE ways to dispose a resource, the compiler
+// REQUIRES you to be explicit. This catches logic bugs where you
+// might have chosen the wrong disposal path.
+
+~import "$std/control"
+
+const std = @import("std");
+
+const File = struct { handle: i32, dirty: bool };
+
+~event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42, .dirty = false };
+    return .{ .opened = .{ .file = f } };
+}
+
+~event write { file: *File[opened], data: []const u8 }
+| written {}
+
+~proc write {
+    file.dirty = true;
+    return .{ .written = .{} };
+}
+
+// Two different ways to close - user must choose!
+~event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.debug.print("Close (no flush)\n", .{});
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}
+
+~event flush_close { file: *File[!opened] }
+| flushed {}
+
+~proc flush_close {
+    std.debug.print("Flush and close\n", .{});
+    std.heap.page_allocator.destroy(file);
+    return .{ .flushed = .{} };
+}
+
+const should_write = true;
+
+// This should FAIL - auto-dispose can't choose between close and flush_close
+~open(path: "test.txt")
+| opened f |>
+    std.control:if(should_write)
+    | then |>
+        write(file: f.file, data: "hello")
+        | written |> _
+    | else |>
+        _
+
+pub fn main() void {}

@@ -1,0 +1,65 @@
+// File library with phantom types for cross-scope resource management
+//
+// THE KORU SOLUTION:
+// - Obligations [opened!] track what needs cleanup
+// - Obligations ESCAPE scopes naturally through branch constructors
+// - Cleanup happens via explicit events, not implicit Drop
+// - Compiler PROVES all paths satisfy obligations
+
+const std = @import("std");
+
+pub const File = struct {
+    handle: std.fs.File,
+    path: []const u8,
+};
+
+// Open a file - returns with cleanup obligation
+~pub event open { path: []const u8 }
+| opened { file: *File[opened!] }
+| error { msg: []const u8 }
+
+~proc open {
+    const f = std.fs.cwd().createFile(path, .{}) catch |e| {
+        return .{ .@"error" = .{ .msg = @errorName(e) } };
+    };
+    const file_ptr = std.heap.page_allocator.create(File) catch {
+        return .{ .@"error" = .{ .msg = "allocation failed" } };
+    };
+    file_ptr.* = .{ .handle = f, .path = path };
+    return .{ .opened = .{ .file = file_ptr } };
+}
+
+// Close a file - consumes the cleanup obligation
+~pub event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    file.handle.close();
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}
+
+// Write to a file - requires open state but doesn't consume obligation
+~pub event write { file: *File[opened], data: []const u8 }
+| written { bytes: usize }
+| error { msg: []const u8 }
+
+~proc write {
+    const bytes = file.handle.write(data) catch |e| {
+        return .{ .@"error" = .{ .msg = @errorName(e) } };
+    };
+    return .{ .written = .{ .bytes = bytes } };
+}
+
+// Batch close - consumes obligations for ALL files at once
+// This is what RAII cannot express: cleanup multiple resources in one operation
+~pub event close_batch { files: []*File[!opened] }
+| closed { count: usize }
+
+~proc close_batch {
+    for (files) |file_ptr| {
+        file_ptr.handle.close();
+        std.heap.page_allocator.destroy(file_ptr);
+    }
+    return .{ .closed = .{ .count = files.len } };
+}

@@ -1,0 +1,51 @@
+// TEST: Missing cleanup in one branch - Koru catches this at compile time!
+//
+// In Rust: You'd have to remember to call drop() or close() in both branches.
+//          Easy to forget, silent resource leak.
+//
+// In Koru: Compiler error - obligation not satisfied on else branch.
+
+~import "$std/control"
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+~event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+~event write { file: *File[opened], data: []const u8 }
+| written {}
+
+~proc write {
+    return .{ .written = .{} };
+}
+
+~event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}
+
+const should_write = true;
+
+~open(path: "test.txt")
+| opened f |>
+    std.control:if(should_write)
+    | then |>
+        write(file: f.file, data: "hello")
+        | written |>
+            close(file: f.file)
+            | closed |> _
+    | else |>
+        _
+
+pub fn main() void {}

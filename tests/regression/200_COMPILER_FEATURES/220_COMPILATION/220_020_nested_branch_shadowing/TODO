@@ -1,0 +1,4 @@
+Code generator emits shadowing captures when:
+- For loop + phantom types + nested same-branch names
+- output_emitted.zig has: .done => |done| { ... .done => |done| { ... } }
+- Fix: visitor_emitter.zig should uniquify capture variable names

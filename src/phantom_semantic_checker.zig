@@ -1042,35 +1042,66 @@ pub const PhantomSemanticChecker = struct {
 
                     // Only check for escape through signature if NOT a hard terminal
                     if (!is_hard_terminal) {
-                        // Use return_branch_fields if available (branch_constructor case),
-                        // otherwise fall back to incoming branch_payload
-                        const fields_to_check = return_branch_fields orelse (if (branch_payload) |bp| bp.fields else null);
-
-                        if (fields_to_check) |fields| {
-                            for (fields) |field| {
-                                if (field.phantom) |phantom_str| {
-                                    // Parse to check for ! suffix
-                                    var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
-                                    defer phantom.deinit(self.allocator);
-
-                                    switch (phantom) {
-                                        .concrete => |concrete| {
-                                            if (concrete.requires_cleanup) {
-                                                // This field has ! in the signature
-                                                // Check if it matches our uncleaned resource
-                                                // Resource is "binding.field", so extract the field name
-                                                if (std.mem.lastIndexOf(u8, resource, ".")) |dot_idx| {
-                                                    const resource_field = resource[dot_idx + 1..];
-                                                    if (std.mem.eql(u8, resource_field, field.name)) {
-                                                        documented_escape = true;
-                                                        std.debug.print("[CLEANUP]   '{s}' escapes through signature field '{s}' with [!]\n", .{resource, field.name});
+                        // For branch_constructor, check if the VALUE being passed matches the resource
+                        if (is_branch_constructor) {
+                            if (cont.node) |node| {
+                                const bc = &node.branch_constructor;
+                                // Check each field in the constructor
+                                for (bc.fields) |bc_field| {
+                                    // Check if this field's value matches the uncleaned resource
+                                    if (bc_field.expression_str) |expr_str| {
+                                        if (std.mem.eql(u8, expr_str, resource)) {
+                                            // Found the resource being passed - check if output has [!]
+                                            if (return_branch_fields) |sig_fields| {
+                                                for (sig_fields) |sig_field| {
+                                                    if (std.mem.eql(u8, sig_field.name, bc_field.name)) {
+                                                        if (sig_field.phantom) |phantom_str| {
+                                                            var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
+                                                            defer phantom.deinit(self.allocator);
+                                                            switch (phantom) {
+                                                                .concrete => |concrete| {
+                                                                    if (concrete.requires_cleanup) {
+                                                                        documented_escape = true;
+                                                                        std.debug.print("[CLEANUP]   '{s}' escapes through branch constructor field '{s}' with [!]\n", .{resource, bc_field.name});
+                                                                    }
+                                                                },
+                                                                .variable => {},
+                                                                .state_union => {},
+                                                            }
+                                                        }
                                                         break;
                                                     }
                                                 }
                                             }
-                                        },
-                                        .variable => {},
-                                        .state_union => {}, // Unions can't have cleanup markers
+                                            if (documented_escape) break;
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Non-branch-constructor case: use the old field name matching
+                            const fields_to_check = if (branch_payload) |bp| bp.fields else null;
+                            if (fields_to_check) |fields| {
+                                for (fields) |field| {
+                                    if (field.phantom) |phantom_str| {
+                                        var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
+                                        defer phantom.deinit(self.allocator);
+                                        switch (phantom) {
+                                            .concrete => |concrete| {
+                                                if (concrete.requires_cleanup) {
+                                                    if (std.mem.lastIndexOf(u8, resource, ".")) |dot_idx| {
+                                                        const resource_field = resource[dot_idx + 1..];
+                                                        if (std.mem.eql(u8, resource_field, field.name)) {
+                                                            documented_escape = true;
+                                                            std.debug.print("[CLEANUP]   '{s}' escapes through signature field '{s}' with [!]\n", .{resource, field.name});
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            .variable => {},
+                                            .state_union => {},
+                                        }
                                     }
                                 }
                             }
@@ -1102,24 +1133,58 @@ pub const PhantomSemanticChecker = struct {
 
                         // For hard terminals, nothing escapes
                         if (!is_hard_terminal) {
-                            if (fields_for_error) |fields| {
-                                for (fields) |field| {
-                                    if (field.phantom) |phantom_str| {
-                                        var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
-                                        defer phantom.deinit(self.allocator);
-                                        switch (phantom) {
-                                            .concrete => |concrete| {
-                                                if (concrete.requires_cleanup) {
-                                                    if (std.mem.lastIndexOf(u8, resource, ".")) |dot_idx| {
-                                                        if (std.mem.eql(u8, resource[dot_idx + 1..], field.name)) {
-                                                            escapes = true;
+                            // For branch_constructor, check VALUE match (same as detection above)
+                            if (is_branch_constructor) {
+                                if (cont.node) |node| {
+                                    const bc = &node.branch_constructor;
+                                    for (bc.fields) |bc_field| {
+                                        if (bc_field.expression_str) |expr_str| {
+                                            if (std.mem.eql(u8, expr_str, resource)) {
+                                                if (return_branch_fields) |sig_fields| {
+                                                    for (sig_fields) |sig_field| {
+                                                        if (std.mem.eql(u8, sig_field.name, bc_field.name)) {
+                                                            if (sig_field.phantom) |phantom_str| {
+                                                                var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
+                                                                defer phantom.deinit(self.allocator);
+                                                                switch (phantom) {
+                                                                    .concrete => |concrete| {
+                                                                        if (concrete.requires_cleanup) {
+                                                                            escapes = true;
+                                                                        }
+                                                                    },
+                                                                    .variable => {},
+                                                                    .state_union => {},
+                                                                }
+                                                            }
                                                             break;
                                                         }
                                                     }
                                                 }
-                                            },
-                                            .variable => {},
-                                            .state_union => {}, // Unions can't have cleanup markers
+                                                if (escapes) break;
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                if (fields_for_error) |fields| {
+                                    for (fields) |field| {
+                                        if (field.phantom) |phantom_str| {
+                                            var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
+                                            defer phantom.deinit(self.allocator);
+                                            switch (phantom) {
+                                                .concrete => |concrete| {
+                                                    if (concrete.requires_cleanup) {
+                                                        if (std.mem.lastIndexOf(u8, resource, ".")) |dot_idx| {
+                                                            if (std.mem.eql(u8, resource[dot_idx + 1..], field.name)) {
+                                                                escapes = true;
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                .variable => {},
+                                                .state_union => {},
+                                            }
                                         }
                                     }
                                 }

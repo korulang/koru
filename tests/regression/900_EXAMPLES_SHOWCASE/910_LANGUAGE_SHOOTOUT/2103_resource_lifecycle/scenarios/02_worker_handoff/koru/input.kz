@@ -1,0 +1,62 @@
+// KORU: Worker Handoff Pattern
+//
+// THE SCENARIO:
+// 1. Create resource A in factory
+// 2. Create resource B in factory
+// 3. Pass both to worker1 (borrows both)
+// 4. Pass both to worker2 (borrows both)
+// 5. Pass A to cleanup, then B to cleanup
+//
+// In Rust: Arc<A>, Arc<B> minimum. Or callback hell.
+// In Koru: Just pass them through. Zero overhead.
+
+const std = @import("std");
+
+const Conn = struct { id: i32 };
+
+~event connect { name: []const u8 }
+| connected { conn: *Conn[active!] }
+
+~proc connect {
+    std.debug.print("Connect: {s}\n", .{name});
+    const c = std.heap.page_allocator.create(Conn) catch unreachable;
+    c.* = Conn{ .id = 42 };
+    return .{ .connected = .{ .conn = c } };
+}
+
+~event process { conn: *Conn[active] }
+| processed {}
+
+~proc process {
+    std.debug.print("Process: {}\n", .{conn.id});
+    return .{ .processed = .{} };
+}
+
+~event disconnect { conn: *Conn[!active] }
+| disconnected {}
+
+~proc disconnect {
+    std.debug.print("Disconnect: {}\n", .{conn.id});
+    std.heap.page_allocator.destroy(conn);
+    return .{ .disconnected = .{} };
+}
+
+// Main flow: create A, create B, use both, cleanup both
+~connect(name: "A")
+| connected a |>
+    connect(name: "B")
+    | connected b |>
+        process(conn: a.conn)
+        | processed |>
+            process(conn: b.conn)
+            | processed |>
+                process(conn: a.conn)
+                | processed |>
+                    process(conn: b.conn)
+                    | processed |>
+                        disconnect(conn: a.conn)
+                        | disconnected |>
+                            disconnect(conn: b.conn)
+                            | disconnected |> _
+
+pub fn main() void {}

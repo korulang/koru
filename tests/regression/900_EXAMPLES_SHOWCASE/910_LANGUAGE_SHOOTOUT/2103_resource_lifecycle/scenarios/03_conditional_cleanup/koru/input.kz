@@ -1,0 +1,63 @@
+// KORU: Conditional Resource Cleanup
+//
+// THE SCENARIO:
+// 1. Create a resource with obligation
+// 2. Conditionally either:
+//    - Use it and clean up (then branch)
+//    - Just clean up (else branch)
+// 3. Compiler PROVES both paths handle the obligation
+//
+// In Rust: Drop runs at scope end regardless of branch.
+//          Can't express "cleanup in BOTH branches explicitly"
+//          without duplicating cleanup code or using Option<T>.
+//
+// In Koru: Typed branches REQUIRE obligation handling on ALL paths.
+
+~import "$std/control"
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+~event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    std.debug.print("Open\n", .{});
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+~event write { file: *File[opened], data: []const u8 }
+| written {}
+
+~proc write {
+    std.debug.print("Write: {s}\n", .{data});
+    return .{ .written = .{} };
+}
+
+~event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.debug.print("Close\n", .{});
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}
+
+const should_write = true;
+
+~open(path: "test.txt")
+| opened f |>
+    std.control:if(should_write)
+    | then |>
+        write(file: f.file, data: "hello")
+        | written |>
+            close(file: f.file)
+            | closed |> _
+    | else |>
+        close(file: f.file)
+        | closed |> _
+
+pub fn main() void {}

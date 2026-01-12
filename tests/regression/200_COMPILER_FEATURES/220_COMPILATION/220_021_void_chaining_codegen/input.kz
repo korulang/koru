@@ -1,0 +1,48 @@
+// PRIORITY: Void event chaining generates invalid Zig switch on void
+//
+// BUG: When chaining void events (work |> work |> destroy), the emitter
+// generates `switch (nested_result_0) { . => || { ... } }` but:
+//   1. Void types cannot be switched on
+//   2. `. => ||` is invalid syntax
+//
+// Expected: Sequential calls without switch for void continuations
+// Actual: Invalid Zig code that fails to compile
+
+~import "$std/control"
+
+const std = @import("std");
+
+const Resource = struct { id: usize };
+
+~event create {}
+| created { r: *Resource[active!] }
+
+~proc create {
+    const r = std.heap.page_allocator.create(Resource) catch unreachable;
+    r.* = Resource{ .id = 42 };
+    return .{ .created = .{ .r = r } };
+}
+
+~event work { r: *Resource[active] }
+
+~proc work {
+    std.debug.print("Work\n", .{});
+}
+
+~event destroy { r: *Resource[!active] }
+
+~proc destroy {
+    std.heap.page_allocator.destroy(r);
+}
+
+~event run_one {}
+
+~run_one = create()
+| created r |>
+    work(r: r.r) |> work(r: r.r) |> destroy(r: r.r)
+
+~for(0..10)
+| each _ |> run_one()
+| done |> _
+
+pub fn main() void {}

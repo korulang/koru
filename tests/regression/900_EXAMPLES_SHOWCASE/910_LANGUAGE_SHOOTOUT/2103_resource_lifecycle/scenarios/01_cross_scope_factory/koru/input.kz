@@ -1,0 +1,51 @@
+// KORU: Cross-Scope Resource Factory - what RAII cannot do
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+~event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    std.debug.print("Opening\n", .{});
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+~event use { file: *File[opened] }
+| used {}
+
+~proc use {
+    std.debug.print("Using\n", .{});
+    return .{ .used = .{} };
+}
+
+~event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.debug.print("Closing\n", .{});
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}
+
+~event create { path: []const u8 }
+| created { file: *File[opened!] }
+
+~create = open(path: path)
+| opened f |> created { file: f.file }
+
+~create(path: "test.txt")
+| created r |>
+    use(file: r.file)
+    | used |>
+        use(file: r.file)
+        | used |>
+            use(file: r.file)
+            | used |>
+                close(file: r.file)
+                | closed |> _
+
+pub fn main() void {}

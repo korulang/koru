@@ -1,0 +1,50 @@
+// FIXED: Escape checker now matches by value, not field name
+//
+// Previously: Obligation escape via branch constructor required the output field
+// name to match the binding path. Now it correctly checks the VALUE being passed.
+//
+// - open() returns { file: *File[opened!] }
+// - get_resource returns { resource: *File[opened!] }  <- different name!
+// - Subflow passes f.file to field 'resource'
+//
+// Expected: Should compile - obligation escapes via branch constructor
+// Actual: Fails with "Resource 'f.file' was not disposed"
+//
+// The escape should be recognized by VALUE, not by field NAME.
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+~event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+~event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}
+
+// This event uses a DIFFERENT field name than open's output
+~event get_resource { path: []const u8 }
+| got { resource: *File[opened!] }
+
+// BUG: f.file -> resource field name mismatch causes escape to not be recognized
+~get_resource = open(path: path)
+| opened f |> got { resource: f.file }
+
+// Main flow with explicit cleanup
+~get_resource(path: "test.txt")
+| got r |>
+    close(file: r.resource)
+    | closed |> _
+
+pub fn main() void {}

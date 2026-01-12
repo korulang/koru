@@ -1,0 +1,3 @@
+Escape checker matches by field name instead of value.
+f.file escaping to field 'resource' should work but doesn't.
+Fix: phantom_semantic_checker.zig should track escape by binding value, not field name.
