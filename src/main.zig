@@ -2752,13 +2752,14 @@ fn queueParentImports(
 /// Queue index.kz import for aliased paths.
 /// For ANY "$alias/*" import, this queues "$alias/index.kz" as an additional import.
 /// This enables root-level utilities (like keywords) to be available when importing any submodule.
-/// Only queues the index if index.kz actually exists.
+/// Only queues the index if index.kz actually exists AND is not the entry file itself.
 fn queueIndexImport(
     allocator: std.mem.Allocator,
     work_queue: anytype,
     resolver: *ModuleResolver,
     import_decl: ast.ImportDecl,
     base_file: []const u8,
+    entry_file: []const u8,
 ) !void {
     const import_path = import_decl.path;
 
@@ -2785,6 +2786,14 @@ fn queueIndexImport(
 
     // Only queue if there's actually a file to import
     if (resolved.file_path == null) {
+        return;
+    }
+
+    // CRITICAL: Don't queue if the resolved file is the entry file itself!
+    // This prevents the main file from being imported as a module when it
+    // imports something from its own namespace (e.g., $orisha/router from src/index.kz)
+    if (std.mem.eql(u8, resolved.file_path.?, entry_file)) {
+        std.debug.print("AUTO-IMPORT: Skipping index '{s}' (same as entry file)\n", .{resolved.file_path.?});
         return;
     }
 
@@ -4898,7 +4907,7 @@ pub fn main() !void {
 
         // Queue index.kz import for aliased paths (e.g., $std/io -> also import $std/index.kz)
         // This makes root-level stdlib utilities available when importing any submodule
-        try queueIndexImport(allocator, &work_queue, &resolver, work_item.import_decl, work_item.base_file);
+        try queueIndexImport(allocator, &work_queue, &resolver, work_item.import_decl, work_item.base_file, entry_file_absolute);
 
         // Scan this module's AST for transitive imports
         for (module.source_file.items) |item| {
