@@ -1,2 +1,1 @@
-This test must fail because it attempts to use a resource after disposal.
-The file is closed (disposed) but then passed to use_file(), which should be a compile error.
+Backend should fail - no disposal event available or multiple disposal options

@@ -497,11 +497,18 @@ pub const AutoDisposeInserter = struct {
                     // Add each field with phantom annotation
                     for (branch.payload.fields) |field| {
                         if (field.phantom) |phantom_str| {
-                            const field_path = try std.fmt.allocPrint(
-                                self.allocator,
-                                "{s}.{s}",
-                                .{ binding_name, field.name },
-                            );
+                            // For identity branches (field name is __type_ref),
+                            // use just the binding name since the value IS the binding
+                            // For struct branches, use binding.field_name
+                            const is_identity = std.mem.eql(u8, field.name, "__type_ref");
+                            const field_path = if (is_identity)
+                                try self.allocator.dupe(u8, binding_name)
+                            else
+                                try std.fmt.allocPrint(
+                                    self.allocator,
+                                    "{s}.{s}",
+                                    .{ binding_name, field.name },
+                                );
                             defer self.allocator.free(field_path);
 
                             // Canonicalize phantom state with module
@@ -827,11 +834,18 @@ pub const AutoDisposeInserter = struct {
                                 if (std.mem.eql(u8, ev_branch.name, nested.branch)) {
                                     for (ev_branch.payload.fields) |field| {
                                         if (field.phantom) |phantom_str| {
-                                            const field_path = try std.fmt.allocPrint(
-                                                self.allocator,
-                                                "{s}.{s}",
-                                                .{ binding_name, field.name },
-                                            );
+                                            // For identity branches (field name is __type_ref),
+                                            // use just the binding name since the value IS the binding
+                                            // For struct branches, use binding.field_name
+                                            const is_identity = std.mem.eql(u8, field.name, "__type_ref");
+                                            const field_path = if (is_identity)
+                                                try self.allocator.dupe(u8, binding_name)
+                                            else
+                                                try std.fmt.allocPrint(
+                                                    self.allocator,
+                                                    "{s}.{s}",
+                                                    .{ binding_name, field.name },
+                                                );
                                             defer self.allocator.free(field_path);
 
                                             const canonical = try self.canonicalizePhantom(phantom_str, info.module_name);
@@ -857,7 +871,7 @@ pub const AutoDisposeInserter = struct {
                     }
                 }
 
-                return .{ .transformed = false, .program = program };
+                // DON'T return early - fall through to end-of-pipeline check below
             }
 
             // Handle nested foreach
@@ -878,10 +892,42 @@ pub const AutoDisposeInserter = struct {
             }
         }
 
-        // Check nested continuations
-        for (cont.continuations) |*nested| {
-            const result = try self.checkForeachBranchContinuation(nested, &context, program, flow, module_name);
-            if (result.transformed) return result;
+        // Check nested continuations (skip if already handled by invocation processing above)
+        const already_processed_continuations = if (cont.node) |n| n == .invocation else false;
+        if (!already_processed_continuations) {
+            for (cont.continuations) |*nested| {
+                const result = try self.checkForeachBranchContinuation(nested, &context, program, flow, module_name);
+                if (result.transformed) return result;
+            }
+        }
+
+        // CRITICAL: If we reach end of a pipeline (no nested continuations) and this isn't
+        // already a terminator, treat as implicit terminator and check obligations
+        if (cont.continuations.len == 0) {
+            const has_explicit_terminator = if (cont.node) |node|
+                (node == .terminal or node == .branch_constructor)
+            else
+                false;
+
+            if (!has_explicit_terminator and context.hasObligations()) {
+                // Count how many obligations are from current scope
+                var current_scope_count: u32 = 0;
+                var obl_iter = context.obligations();
+                while (obl_iter.next()) |entry| {
+                    if (entry.value_ptr.scope_depth == context.scope_depth) {
+                        current_scope_count += 1;
+                    }
+                }
+
+                if (current_scope_count > 0) {
+                    // We have current-scope obligations at end of pipeline - need to dispose
+                    return try self.insertDisposalsInForeach(cont, &context, program, flow);
+                }
+                // Outer-scope obligations in repeating context will flow to `done`
+                if (!context.is_repeating) {
+                    return try self.insertDisposalsInForeach(cont, &context, program, flow);
+                }
+            }
         }
 
         return .{ .transformed = false, .program = program };
@@ -1249,26 +1295,45 @@ pub const AutoDisposeInserter = struct {
             .annotations = &[_][]const u8{},
         };
 
-        // Find the first branch of the disposal event to create continuation
-        var disposal_branch: []const u8 = "done"; // default
-        for (disposal.event_decl.branches) |branch| {
-            disposal_branch = branch.name;
-            break;
-        }
+        // Handle void events (no branches) vs events with branches
+        const is_void_event = disposal.event_decl.branches.len == 0;
 
-        // Create continuation after disposal - preserve original node (terminal OR branch_constructor)
-        // Use "_" as binding to suppress unused capture warnings
-        var after_disposal_cont = try self.allocator.alloc(ast.Continuation, 1);
-        after_disposal_cont[0] = .{
-            .branch = try self.allocator.dupe(u8, disposal_branch),
-            .binding = try self.allocator.dupe(u8, "_"),
-            .binding_annotations = &[_][]const u8{},
-            .condition = null,
-            .node = original.node,  // Preserve original: .terminal OR .branch_constructor
-            .indent = original.indent + 1,
-            .continuations = &[_]ast.Continuation{},
-            .location = original.location,
-        };
+        var after_disposal_cont: []ast.Continuation = undefined;
+        if (is_void_event) {
+            // Void event - use empty branch (void continuation)
+            after_disposal_cont = try self.allocator.alloc(ast.Continuation, 1);
+            after_disposal_cont[0] = .{
+                .branch = "",  // Empty branch = void continuation
+                .binding = null,
+                .binding_annotations = &[_][]const u8{},
+                .condition = null,
+                .node = original.node,  // Preserve original: .terminal OR .branch_constructor
+                .indent = original.indent + 1,
+                .continuations = &[_]ast.Continuation{},
+                .location = original.location,
+            };
+        } else {
+            // Event with branches - use first branch name
+            var disposal_branch: []const u8 = "done"; // default
+            for (disposal.event_decl.branches) |branch| {
+                disposal_branch = branch.name;
+                break;
+            }
+
+            // Create continuation after disposal - preserve original node (terminal OR branch_constructor)
+            // Use "_" as binding to suppress unused capture warnings
+            after_disposal_cont = try self.allocator.alloc(ast.Continuation, 1);
+            after_disposal_cont[0] = .{
+                .branch = try self.allocator.dupe(u8, disposal_branch),
+                .binding = try self.allocator.dupe(u8, "_"),
+                .binding_annotations = &[_][]const u8{},
+                .condition = null,
+                .node = original.node,  // Preserve original: .terminal OR .branch_constructor
+                .indent = original.indent + 1,
+                .continuations = &[_]ast.Continuation{},
+                .location = original.location,
+            };
+        }
 
         // Return modified continuation with invocation instead of original node
         return .{

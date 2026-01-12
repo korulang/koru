@@ -750,6 +750,19 @@ while IFS= read -r -d '' test_dir; do
         fi
     fi
 
+    # CRITICAL: Check if frontend SUCCESS was unexpected
+    # If EXPECT says FRONTEND_COMPILE_ERROR but compile succeeded, this is a BUG
+    if [ "$COMPILE_KZ_SUCCESS" = true ] && [ -f "$test_dir/EXPECT" ]; then
+        if grep -q "^FRONTEND_COMPILE_ERROR$" "$test_dir/EXPECT"; then
+            echo -e "${RED}❌ Expected frontend compile error but compilation SUCCEEDED${NC}"
+            echo "  This test expects the compiler to reject the code, but it was accepted."
+            echo "  This usually means a compiler feature is not implemented or has a bug."
+            echo "expected-error-missing" > "$test_dir/FAILURE"
+            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(expected-error-missing)"
+            continue
+        fi
+    fi
+
     # Pass 2: Backend - Compiles the backend and runs it to generate and compile final code
     if [ -f "$test_dir/backend.zig" ]; then
         # Compile the backend - use zig build instead for proper module handling

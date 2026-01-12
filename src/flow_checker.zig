@@ -493,6 +493,11 @@ pub const FlowChecker = struct {
                 .{branch_name},
             );
         }
+
+        // Fail if any branch coverage errors were found
+        if (self.reporter.hasErrors()) {
+            return error.FlowValidationFailed;
+        }
     }
 
     /// Find an event declaration by path

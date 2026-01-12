@@ -582,6 +582,10 @@ pub const Parser = struct {
                 // Otherwise, it's an item-level construct
                 const start_line = self.current;
                 const item = self.parseKoruConstruct() catch |err| {
+                    // Always propagate fatal module errors (even in lenient mode)
+                    if (err == error.UnknownImportAlias or err == error.ModuleNotFound) {
+                        return err;
+                    }
                     if (self.fail_fast) {
                         return err;
                     }
@@ -5679,6 +5683,7 @@ pub const Parser = struct {
 
             // Find annotation start (last [ that starts an annotation, not part of type)
             // Annotations are [identifier], array types are [number] or [_]
+            // IMPORTANT: Phantom types [active!] or [!active] contain '!' - don't treat as annotations
             var annotation_start: ?usize = null;
             var i: usize = type_and_annotation.len;
             while (i > 0) {
@@ -5688,9 +5693,16 @@ pub const Parser = struct {
                     if (i + 1 < type_and_annotation.len) {
                         const next_char = type_and_annotation[i + 1];
                         if (std.ascii.isAlphabetic(next_char)) {
-                            // This is an annotation like [mutable]
-                            annotation_start = i;
-                            break;
+                            // Check if this contains '!' - if so, it's a phantom type, not an annotation
+                            const close_bracket = std.mem.indexOf(u8, type_and_annotation[i..], "]") orelse type_and_annotation.len - i;
+                            const bracket_content = type_and_annotation[i + 1 .. i + close_bracket];
+                            const has_bang = std.mem.indexOf(u8, bracket_content, "!") != null;
+                            if (!has_bang) {
+                                // This is an annotation like [mutable], not a phantom like [active!]
+                                annotation_start = i;
+                                break;
+                            }
+                            // Has '!' - it's a phantom type, not an annotation. Continue looking for annotations.
                         }
                     }
                 }

@@ -18,12 +18,12 @@ const allocator = std.heap.c_allocator;
 var grand_total: u64 = 0;
 
 ~event create { id: usize }
-| created { r: *Resource[active!] }
+| created *Resource[active!]
 
 ~proc create {
     const r = allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = id, .data = [_]u8{@truncate(id)} ** 64 };
-    return .{ .created = .{ .r = r } };
+    return .{ .created = r };
 }
 
 ~event work { r: *Resource[active] }
@@ -58,7 +58,7 @@ const N: usize = 1_000_000;
 | each i |>
     create(id: i)
     | created r |>
-        work(r: r.r) |> work(r: r.r) |> work(r: r.r) |> work(r: r.r) |> work(r: r.r) |> destroy(r: r.r)
+        work(r) |> work(r) |> work(r) |> work(r) |> work(r) |> destroy(r)
 | done |>
     print_result()
 

@@ -1,0 +1,49 @@
+// ============================================================================
+// REGRESSION TEST - Obligation escape when no disposal event exists
+// ============================================================================
+// Test: Cleanup obligation created but NO disposal event available
+//
+// BUG DISCOVERED: 2026-01-12
+// Without a disposal event, auto-dispose cannot fix the leak.
+// Should produce KORU031 error: no disposal event found.
+//
+// Expected: Should FAIL with "no disposal event found" error
+// Actual: (after fix) Correctly fails
+
+~import "$std/control"
+
+const std = @import("std");
+
+const Resource = struct {
+    id: usize,
+};
+
+const allocator = std.heap.c_allocator;
+
+~event create { id: usize }
+| created *Resource[active!]
+
+~proc create {
+    const r = allocator.create(Resource) catch unreachable;
+    r.* = Resource{ .id = id };
+    return .{ .created = r };
+}
+
+// NOTE: NO destroy event exists - auto-dispose cannot fix this!
+
+~event use { r: *Resource[active] }
+
+~proc use {
+    std.debug.print("using {}\n", .{r.id});
+}
+
+// ERROR: Obligation [active!] has no disposal event [!active]
+~for(0..10)
+| each i |>
+    create(id: i)
+    | created r |>
+        use(r)  // use it, but can't dispose - no destroy event exists!
+| done |>
+    _
+
+pub fn main() void {}
