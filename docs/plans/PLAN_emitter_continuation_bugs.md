@@ -1,19 +1,19 @@
 # PLAN: Continuation & Obligation Bugs
 
-**Status:** Draft
+**Status:** COMPLETE
 **Created:** 2026-01-12
 **Priority:** CRITICAL - blocks signature Koru syntax
 
 ## Problem Summary
 
-Four bugs prevent natural Koru flow patterns. **Two are emitter bugs, one is escape checker, one is parser.**
+Three bugs prevented natural Koru flow patterns. **All fixed!**
 
 | Bug | Test | Component | Status |
 |-----|------|-----------|--------|
-| Void event chaining | `220_021` | **EMITTER** | TODO |
+| Void event chaining | `220_021` | **EMITTER** | **FIXED** (2026-01-12) |
 | Nested branch shadowing | `220_020` | **EMITTER** | **FIXED** (2026-01-12) |
 | Escape field name mismatch | `330_052` | **ESCAPE CHECKER** | **FIXED** (2026-01-12) |
-| Void chaining syntax | (new) | **PARSER** | TODO |
+| Void chaining syntax | `210_013`, `210_014` | **PARSER** | **ALREADY WORKS** |
 
 ## Why These Matter
 

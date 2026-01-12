@@ -1111,6 +1111,88 @@ fn emitSubflowContinuationsWithDepth(
 ) !void {
     if (start_idx >= continuations.len) return;
 
+    const remaining_conts = continuations[start_idx..];
+
+    // VOID EVENT FIX: Check if this is a void event continuation (empty branch name)
+    // For void events, we don't emit a switch - just execute the step directly
+    const is_void_continuation = remaining_conts.len == 1 and
+        std.mem.eql(u8, remaining_conts[0].branch, "");
+
+    if (is_void_continuation) {
+        // Void event - emit step directly without switch
+        const cont = &remaining_conts[0];
+
+        // Emit the step if present
+        if (cont.node) |step| {
+            switch (step) {
+                .invocation => |inv| {
+                    try emitter.write(indent);
+                    try emitter.write("_ = ");
+
+                    // Emit module qualifier if present
+                    if (inv.path.module_qualifier) |mq| {
+                        try writeModulePath(emitter, mq, main_module_name);
+                        try emitter.write(".");
+                    } else {
+                        try emitter.write("main_module.");
+                    }
+
+                    // Join all segments with underscores to get event name
+                    for (inv.path.segments, 0..) |seg, i| {
+                        if (i > 0) try emitter.write("_");
+                        try emitter.write(seg);
+                    }
+                    try emitter.write("_event.handler(.{ ");
+                    for (inv.args, 0..) |arg, i| {
+                        if (i > 0) try emitter.write(", ");
+                        try emitter.write(".");
+                        try emitter.write(arg.name);
+                        try emitter.write(" = ");
+                        try emitter.write(arg.value);
+                    }
+                    try emitter.write(" });\n");
+                },
+                .branch_constructor => |bc| {
+                    // Terminal - emit return
+                    try emitter.write(indent);
+                    try emitter.write("return .{ .");
+                    try writeBranchName(emitter, bc.branch_name);
+                    try emitter.write(" = .{");
+                    for (bc.fields, 0..) |field, i| {
+                        if (i > 0) try emitter.write(", ");
+                        try emitter.write(" .");
+                        try emitter.write(field.name);
+                        try emitter.write(" = ");
+                        if (field.expression_str) |expr| {
+                            try emitter.write(expr);
+                        } else {
+                            try emitter.write(field.type);
+                        }
+                    }
+                    try emitter.write(" } };\n");
+                },
+                else => {},
+            }
+        }
+
+        // Recurse for nested continuations
+        if (cont.continuations.len > 0) {
+            try emitSubflowContinuationsWithDepth(
+                emitter,
+                cont.continuations,
+                0,
+                indent,
+                all_items,
+                depth,
+                tap_registry,
+                type_registry,
+                main_module_name,
+                source_event_name,
+            );
+        }
+        return;
+    }
+
     // CRITICAL FIX: Check if any continuation has labels
     // If yes, we CANNOT use "return switch" - must use normal continuation emission
     // because labels create loops that must stay within the function

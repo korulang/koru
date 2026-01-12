@@ -35,6 +35,8 @@ const runtime = @import("root").koru_std.runtime;
 const runtime = @import("root").koru_std.runtime;
 const runtime = @import("root").koru_std.runtime;
 const runtime = @import("root").koru_std.runtime;
+const runtime = @import("root").koru_std.runtime;
+const runtime = @import("root").koru_std.runtime;
 
 // ============================================================================
 // BUILD REQUIREMENTS - Parser and checkers for runtime use
@@ -249,6 +251,276 @@ pub const InterpreterContext = struct {
 // ============================================================================
 
 pub const DispatchFn = *const fn(*const ast.Invocation, *DispatchResult) anyerror!void;
+
+// ============================================================================
+// OPTIMIZED FLOW STATE - Typed layout + preallocated buffer
+// ============================================================================
+
+pub const BindingSlot = struct {
+    name: []const u8,
+    offset: usize,
+    branch_desc: *const runtime.BranchDescriptor,
+};
+
+pub const FlowLayout = struct {
+    slots: []BindingSlot,
+    total_size: usize,
+
+    pub fn getSlot(self: *const FlowLayout, name: []const u8) ?*const BindingSlot {
+        for (self.slots) |*slot| {
+            if (std.mem.eql(u8, slot.name, name)) return slot;
+        }
+        return null;
+    }
+};
+
+pub const FlowState = struct {
+    buffer: []u8,
+    layout: *const FlowLayout,
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator, layout: *const FlowLayout) !FlowState {
+        return .{
+            .buffer = try allocator.alloc(u8, layout.total_size),
+            .layout = layout,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *FlowState) void {
+        self.allocator.free(self.buffer);
+    }
+
+    fn writeField(dest: []u8, fd: runtime.FieldDescriptor, value: FieldValue) void {
+        const view = dest[fd.offset .. fd.offset + fd.size];
+        switch (value) {
+            .string_val => |s| {
+                const ptr: *align(1) []const u8 = @ptrCast(view.ptr);
+                ptr.* = s;
+            },
+            .int_val => |i| {
+                const ptr: *align(1) i64 = @ptrCast(view.ptr);
+                ptr.* = i;
+            },
+            .float_val => |f| {
+                const ptr: *align(1) f64 = @ptrCast(view.ptr);
+                ptr.* = f;
+            },
+            .bool_val => |b| {
+                view[0] = if (b) 1 else 0;
+            },
+        }
+    }
+
+    pub fn writeBinding(self: *FlowState, binding_name: []const u8, result: DispatchResult) void {
+        const slot = self.layout.getSlot(binding_name) orelse return;
+        const dest = self.buffer[slot.offset .. slot.offset + slot.branch_desc.total_size];
+        for (slot.branch_desc.fields) |fd| {
+            for (result.fields) |rf| {
+                if (std.mem.eql(u8, rf.name, fd.name)) {
+                    writeField(dest, fd, rf.value);
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn readField(self: *const FlowState, binding_name: []const u8, field_name: []const u8) ?FieldValue {
+        const slot = self.layout.getSlot(binding_name) orelse return null;
+        for (slot.branch_desc.fields) |fd| {
+            if (std.mem.eql(u8, fd.name, field_name)) {
+                const start = slot.offset + fd.offset;
+                const view = self.buffer[start .. start + fd.size];
+                return switch (fd.field_type) {
+                    .string => FieldValue{ .string_val = @as(*align(1) []const u8, @ptrCast(view.ptr)).* },
+                    .int => FieldValue{ .int_val = @as(*align(1) i64, @ptrCast(view.ptr)).* },
+                    .float => FieldValue{ .float_val = @as(*align(1) f64, @ptrCast(view.ptr)).* },
+                    .bool => FieldValue{ .bool_val = view[0] != 0 },
+                };
+            }
+        }
+        return null;
+    }
+};
+
+
+pub const BindingSlot = struct {
+    name: []const u8,
+    offset: usize,
+    branch_desc: *const runtime.BranchDescriptor,
+};
+
+pub const FlowLayout = struct {
+    slots: []BindingSlot,
+    total_size: usize,
+
+    pub fn getSlot(self: *const FlowLayout, name: []const u8) ?*const BindingSlot {
+        for (self.slots) |*slot| {
+            if (std.mem.eql(u8, slot.name, name)) return slot;
+        }
+        return null;
+    }
+};
+
+pub const FlowState = struct {
+    buffer: []u8,
+    layout: *const FlowLayout,
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator, layout: *const FlowLayout) !FlowState {
+        return .{
+            .buffer = try allocator.alloc(u8, layout.total_size),
+            .layout = layout,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *FlowState) void {
+        self.allocator.free(self.buffer);
+    }
+
+    fn writeField(dest: []u8, fd: runtime.FieldDescriptor, value: FieldValue) void {
+        const view = dest[fd.offset .. fd.offset + fd.size];
+        switch (value) {
+            .string_val => |s| {
+                const ptr: *align(1) []const u8 = @ptrCast(view.ptr);
+                ptr.* = s;
+            },
+            .int_val => |i| {
+                const ptr: *align(1) i64 = @ptrCast(view.ptr);
+                ptr.* = i;
+            },
+            .float_val => |f| {
+                const ptr: *align(1) f64 = @ptrCast(view.ptr);
+                ptr.* = f;
+            },
+            .bool_val => |b| {
+                view[0] = if (b) 1 else 0;
+            },
+        }
+    }
+
+    pub fn writeBinding(self: *FlowState, binding_name: []const u8, result: DispatchResult) void {
+        const slot = self.layout.getSlot(binding_name) orelse return;
+        const dest = self.buffer[slot.offset .. slot.offset + slot.branch_desc.total_size];
+        for (slot.branch_desc.fields) |fd| {
+            for (result.fields) |rf| {
+                if (std.mem.eql(u8, rf.name, fd.name)) {
+                    writeField(dest, fd, rf.value);
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn readField(self: *const FlowState, binding_name: []const u8, field_name: []const u8) ?FieldValue {
+        const slot = self.layout.getSlot(binding_name) orelse return null;
+        for (slot.branch_desc.fields) |fd| {
+            if (std.mem.eql(u8, fd.name, field_name)) {
+                const start = slot.offset + fd.offset;
+                const view = self.buffer[start .. start + fd.size];
+                return switch (fd.field_type) {
+                    .string => FieldValue{ .string_val = @as(*align(1) []const u8, @ptrCast(view.ptr)).* },
+                    .int => FieldValue{ .int_val = @as(*align(1) i64, @ptrCast(view.ptr)).* },
+                    .float => FieldValue{ .float_val = @as(*align(1) f64, @ptrCast(view.ptr)).* },
+                    .bool => FieldValue{ .bool_val = view[0] != 0 },
+                };
+            }
+        }
+        return null;
+    }
+};
+
+// ============================================================================
+// OPTIMIZED FLOW STATE - Typed layout + preallocated buffer
+// ============================================================================
+
+pub const BindingSlot = struct {
+    name: []const u8,
+    offset: usize,
+    branch_desc: *const runtime.BranchDescriptor,
+};
+
+pub const FlowLayout = struct {
+    slots: []BindingSlot,
+    total_size: usize,
+
+    pub fn getSlot(self: *const FlowLayout, name: []const u8) ?*const BindingSlot {
+        for (self.slots) |*slot| {
+            if (std.mem.eql(u8, slot.name, name)) return slot;
+        }
+        return null;
+    }
+};
+
+pub const FlowState = struct {
+    buffer: []u8,
+    layout: *const FlowLayout,
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator, layout: *const FlowLayout) !FlowState {
+        return .{
+            .buffer = try allocator.alloc(u8, layout.total_size),
+            .layout = layout,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *FlowState) void {
+        self.allocator.free(self.buffer);
+    }
+
+    fn writeField(dest: []u8, fd: runtime.FieldDescriptor, value: FieldValue) void {
+        const view = dest[fd.offset .. fd.offset + fd.size];
+        switch (value) {
+            .string_val => |s| {
+                const ptr: *align(1) []const u8 = @ptrCast(view.ptr);
+                ptr.* = s;
+            },
+            .int_val => |i| {
+                const ptr: *align(1) i64 = @ptrCast(view.ptr);
+                ptr.* = i;
+            },
+            .float_val => |f| {
+                const ptr: *align(1) f64 = @ptrCast(view.ptr);
+                ptr.* = f;
+            },
+            .bool_val => |b| {
+                view[0] = if (b) 1 else 0;
+            },
+        }
+    }
+
+    pub fn writeBinding(self: *FlowState, binding_name: []const u8, result: DispatchResult) void {
+        const slot = self.layout.getSlot(binding_name) orelse return;
+        const dest = self.buffer[slot.offset .. slot.offset + slot.branch_desc.total_size];
+        for (slot.branch_desc.fields) |fd| {
+            for (result.fields) |rf| {
+                if (std.mem.eql(u8, rf.name, fd.name)) {
+                    writeField(dest, fd, rf.value);
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn readField(self: *const FlowState, binding_name: []const u8, field_name: []const u8) ?FieldValue {
+        const slot = self.layout.getSlot(binding_name) orelse return null;
+        for (slot.branch_desc.fields) |fd| {
+            if (std.mem.eql(u8, fd.name, field_name)) {
+                const start = slot.offset + fd.offset;
+                const view = self.buffer[start .. start + fd.size];
+                return switch (fd.field_type) {
+                    .string => FieldValue{ .string_val = @as(*align(1) []const u8, @ptrCast(view.ptr)).* },
+                    .int => FieldValue{ .int_val = @as(*align(1) i64, @ptrCast(view.ptr)).* },
+                    .float => FieldValue{ .float_val = @as(*align(1) f64, @ptrCast(view.ptr)).* },
+                    .bool => FieldValue{ .bool_val = view[0] != 0 },
+                };
+            }
+        }
+        return null;
+    }
+};
 
 // ============================================================================
 // OPTIMIZED FLOW STATE - Typed layout + preallocated buffer
@@ -685,6 +957,120 @@ fn collectBindings(
 }
 
 // ============================================================================
+// FLOW ANALYSIS (OPTIMIZED PATH) - Compute binding layout from typed scope
+// ============================================================================
+
+pub fn analyzeFlow(
+    flow: *const ast.Flow,
+    scope: *const runtime.ScopeDescriptorTyped,
+    allocator: std.mem.Allocator,
+) !FlowLayout {
+    var slots = std.ArrayList(BindingSlot).init(allocator);
+    var offset: usize = 0;
+    try collectBindings(flow, scope, &slots, &offset, allocator);
+    return .{
+        .slots = try slots.toOwnedSlice(),
+        .total_size = offset,
+    };
+}
+
+fn collectBindings(
+    flow: *const ast.Flow,
+    scope: *const runtime.ScopeDescriptorTyped,
+    slots: *std.ArrayList(BindingSlot),
+    offset: *usize,
+    allocator: std.mem.Allocator,
+) !void {
+    if (flow.invocation.path.segments.len == 0) return;
+    const event_name = flow.invocation.path.segments[0];
+    const type_info = scope.getEventTypeInfo(event_name) orelse return;
+
+    for (flow.continuations) |cont| {
+        if (cont.binding) |binding_name| {
+            for (type_info.branches) |*branch| {
+                if (std.mem.eql(u8, branch.name, cont.branch)) {
+                    try slots.append(.{
+                        .name = try allocator.dupe(u8, binding_name),
+                        .offset = offset.*,
+                        .branch_desc = branch,
+                    });
+                    offset.* += branch.total_size;
+                    break;
+                }
+            }
+        }
+
+        if (cont.node) |node| {
+            if (node == .invocation) {
+                const nested_flow = ast.Flow{
+                    .invocation = node.invocation,
+                    .continuations = cont.continuations,
+                    .module = flow.module,
+                };
+                try collectBindings(&nested_flow, scope, slots, offset, allocator);
+            }
+        }
+    }
+}
+
+// ============================================================================
+// FLOW ANALYSIS (OPTIMIZED PATH) - Compute binding layout from typed scope
+// ============================================================================
+
+pub fn analyzeFlow(
+    flow: *const ast.Flow,
+    scope: *const runtime.ScopeDescriptorTyped,
+    allocator: std.mem.Allocator,
+) !FlowLayout {
+    var slots = std.ArrayList(BindingSlot).init(allocator);
+    var offset: usize = 0;
+    try collectBindings(flow, scope, &slots, &offset, allocator);
+    return .{
+        .slots = try slots.toOwnedSlice(),
+        .total_size = offset,
+    };
+}
+
+fn collectBindings(
+    flow: *const ast.Flow,
+    scope: *const runtime.ScopeDescriptorTyped,
+    slots: *std.ArrayList(BindingSlot),
+    offset: *usize,
+    allocator: std.mem.Allocator,
+) !void {
+    if (flow.invocation.path.segments.len == 0) return;
+    const event_name = flow.invocation.path.segments[0];
+    const type_info = scope.getEventTypeInfo(event_name) orelse return;
+
+    for (flow.continuations) |cont| {
+        if (cont.binding) |binding_name| {
+            for (type_info.branches) |*branch| {
+                if (std.mem.eql(u8, branch.name, cont.branch)) {
+                    try slots.append(.{
+                        .name = try allocator.dupe(u8, binding_name),
+                        .offset = offset.*,
+                        .branch_desc = branch,
+                    });
+                    offset.* += branch.total_size;
+                    break;
+                }
+            }
+        }
+
+        if (cont.node) |node| {
+            if (node == .invocation) {
+                const nested_flow = ast.Flow{
+                    .invocation = node.invocation,
+                    .continuations = cont.continuations,
+                    .module = flow.module,
+                };
+                try collectBindings(&nested_flow, scope, slots, offset, allocator);
+            }
+        }
+    }
+}
+
+// ============================================================================
 // EXPRESSION VALUE - For runtime expression evaluation (different from Value)
 // ============================================================================
 
@@ -960,6 +1346,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 | parse_error { message: []const u8, line: u32, column: u32 }
 | validation_error { message: []const u8 }
 | dispatch_error { event_name: []const u8, message: []const u8 }
+
+
 
 // Typed + optimized entry point using preallocated flow state
 
@@ -1237,6 +1625,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 
 
 
+
+
 // ============================================================================
 // FLOW EXECUTION - The core interpreter loop
 // ============================================================================
@@ -1280,6 +1670,96 @@ fn evaluateExpr(expr_str: []const u8, env: *Environment, allocator: std.mem.Allo
     }
 
     // Return as-is (number, boolean, etc.)
+    return try allocator.dupe(u8, trimmed);
+}
+
+// Optimized evaluator that reads from FlowState first, falling back to env.
+fn evaluateExprOptimized(expr_str: []const u8, state: *const FlowState, env: *Environment, allocator: std.mem.Allocator) ![]const u8 {
+    const trimmed = std.mem.trim(u8, expr_str, " \t");
+
+    if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
+        return try allocator.dupe(u8, trimmed[1..trimmed.len - 1]);
+    }
+
+    if (std.mem.indexOf(u8, trimmed, ".")) |dot_pos| {
+        const binding_name = trimmed[0..dot_pos];
+        const field_name = trimmed[dot_pos + 1 ..];
+
+        if (state.readField(binding_name, field_name)) |fv| {
+            return try fieldValueToString(fv, allocator);
+        }
+        if (env.get(binding_name)) |bound_value| {
+            for (bound_value.fields) |fv| {
+                if (std.mem.eql(u8, fv.name, field_name)) {
+                    return try fieldValueToString(fv.value, allocator);
+                }
+            }
+        }
+        return try std.fmt.allocPrint(allocator, "<unbound:{s}.{s}>", .{ binding_name, field_name });
+    }
+
+    if (state.layout.getSlot(trimmed)) |slot| {
+        if (slot.branch_desc.fields.len > 0) {
+            const fd = slot.branch_desc.fields[0];
+            if (state.readField(trimmed, fd.name)) |fv| {
+                return try fieldValueToString(fv, allocator);
+            }
+        }
+        return try allocator.dupe(u8, slot.branch_desc.name);
+    }
+
+    if (env.get(trimmed)) |bound_value| {
+        if (bound_value.fields.len > 0) {
+            return try fieldValueToString(bound_value.fields[0].value, allocator);
+        }
+        return bound_value.branch;
+    }
+
+    return try allocator.dupe(u8, trimmed);
+}
+
+// Optimized evaluator that reads bindings from FlowState first.
+fn evaluateExprOptimized(expr_str: []const u8, state: *const FlowState, env: *Environment, allocator: std.mem.Allocator) ![]const u8 {
+    const trimmed = std.mem.trim(u8, expr_str, " \t");
+
+    if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
+        return try allocator.dupe(u8, trimmed[1..trimmed.len - 1]);
+    }
+
+    if (std.mem.indexOf(u8, trimmed, ".")) |dot_pos| {
+        const binding_name = trimmed[0..dot_pos];
+        const field_name = trimmed[dot_pos + 1 ..];
+
+        if (state.readField(binding_name, field_name)) |fv| {
+            return try fieldValueToString(fv, allocator);
+        }
+        if (env.get(binding_name)) |bound_value| {
+            for (bound_value.fields) |fv| {
+                if (std.mem.eql(u8, fv.name, field_name)) {
+                    return try fieldValueToString(fv.value, allocator);
+                }
+            }
+        }
+        return try std.fmt.allocPrint(allocator, "<unbound:{s}.{s}>", .{ binding_name, field_name });
+    }
+
+    if (state.layout.getSlot(trimmed)) |slot| {
+        if (slot.branch_desc.fields.len > 0) {
+            const first_fd = slot.branch_desc.fields[0];
+            if (state.readField(trimmed, first_fd.name)) |fv| {
+                return try fieldValueToString(fv, allocator);
+            }
+        }
+        return try allocator.dupe(u8, slot.branch_desc.name);
+    }
+
+    if (env.get(trimmed)) |bound_value| {
+        if (bound_value.fields.len > 0) {
+            return try fieldValueToString(bound_value.fields[0].value, allocator);
+        }
+        return bound_value.branch;
+    }
+
     return try allocator.dupe(u8, trimmed);
 }
 
@@ -1738,6 +2218,521 @@ fn executeFlow(
                 }
             } else {
                 // No next node - return current dispatch result
+                return Value.fromDispatch(
+                    dispatch_result.branch,
+                    dispatch_result.fields,
+                );
+            }
+        }
+    }
+
+    return error.NoBranchMatch;
+}
+
+// Dispatch using typed scope descriptor
+fn dispatchTyped(inv: *const ast.Invocation, scope: *const runtime.ScopeDescriptorTyped, out: *DispatchResult) !void {
+    if (inv.path.segments.len == 0) return error.EventDenied;
+    const event_name = inv.path.segments[0];
+    for (scope.events) |ev| {
+        if (std.mem.eql(u8, ev.name, event_name)) {
+            return ev.dispatcher(inv, out);
+        }
+    }
+    return error.EventDenied;
+}
+
+// Optimized execution using typed layout and FlowState
+fn executeFlowOptimized(
+    flow: *const ast.Flow,
+    ctx: *InterpreterContext,
+    state: *FlowState,
+    typed_scope: *const runtime.ScopeDescriptorTyped,
+) !Value {
+    const inv = &flow.invocation;
+    var dispatch_result: DispatchResult = undefined;
+
+    const is_if = (inv.path.module_qualifier == null and
+                   inv.path.segments.len == 1 and
+                   std.mem.eql(u8, inv.path.segments[0], "if")) or
+                  (inv.path.module_qualifier != null and
+                   std.mem.eql(u8, inv.path.module_qualifier.?, "std.control") and
+                   inv.path.segments.len == 1 and
+                   std.mem.eql(u8, inv.path.segments[0], "if"));
+
+    const is_for = (inv.path.module_qualifier == null and
+                    inv.path.segments.len == 1 and
+                    std.mem.eql(u8, inv.path.segments[0], "for")) or
+                   (inv.path.module_qualifier != null and
+                    std.mem.eql(u8, inv.path.module_qualifier.?, "std.control") and
+                    inv.path.segments.len == 1 and
+                    std.mem.eql(u8, inv.path.segments[0], "for"));
+
+    if (is_if) {
+        var condition_result: bool = false;
+        if (inv.args.len > 0) {
+            const first_arg = &inv.args[0];
+            const expr_text = if (first_arg.expression_value) |captured|
+                captured.text
+            else
+                first_arg.value;
+
+            if (std.mem.eql(u8, expr_text, "true")) {
+                condition_result = true;
+            } else if (std.mem.eql(u8, expr_text, "false")) {
+                condition_result = false;
+            } else {
+                var expr_parser = koru_parser.ExpressionParser.init(ctx.allocator, expr_text);
+                defer expr_parser.deinit();
+
+                if (expr_parser.parse()) |parsed_expr| {
+                    if (evaluateExpression(parsed_expr, ctx.expr_bindings)) |eval_result| {
+                        condition_result = eval_result.isTruthy();
+                    } else |_| {
+                        condition_result = false;
+                    }
+                } else |_| {
+                    if (ctx.expr_bindings.get(expr_text)) |val| {
+                        condition_result = val.isTruthy();
+                    } else {
+                        condition_result = expr_text.len > 0;
+                    }
+                }
+            }
+        }
+        dispatch_result.branch = if (condition_result) "then" else "else";
+        dispatch_result.fields = &[_]NamedField{};
+    } else if (is_for) {
+        var start: i64 = 0;
+        var end: i64 = 0;
+
+        if (inv.args.len > 0) {
+            const range_str = inv.args[0].value;
+            if (std.mem.indexOf(u8, range_str, "..")) |dot_pos| {
+                start = std.fmt.parseInt(i64, range_str[0..dot_pos], 10) catch 0;
+                end = std.fmt.parseInt(i64, range_str[dot_pos + 2 ..], 10) catch 0;
+            }
+        }
+
+        var each_cont: ?*const ast.Continuation = null;
+        var done_cont: ?*const ast.Continuation = null;
+        for (flow.continuations) |*cont| {
+            if (std.mem.eql(u8, cont.branch, "each")) {
+                each_cont = cont;
+            } else if (std.mem.eql(u8, cont.branch, "done")) {
+                done_cont = cont;
+            }
+        }
+
+        if (each_cont) |cont| {
+            var i = start;
+            while (i < end) : (i += 1) {
+                if (cont.binding) |binding_name| {
+                    var iter_buf: [32]u8 = undefined;
+                    const iter_str = std.fmt.bufPrint(&iter_buf, "{d}", .{i}) catch "0";
+                    const iter_value = Value{
+                        .branch = "each",
+                        .fields = &[_]NamedField{.{ .name = "value", .value = .{ .string_val = iter_str } }},
+                    };
+                    try ctx.env.bind(binding_name, iter_value);
+                    try ctx.expr_bindings.set(binding_name, .{ .int_val = i });
+                }
+
+                if (cont.node) |node| {
+                    switch (node) {
+                        .invocation => |next_inv| {
+                            const next_flow = ast.Flow{
+                                .invocation = next_inv,
+                                .continuations = cont.continuations,
+                                .module = flow.module,
+                            };
+                            _ = try executeFlowOptimized(&next_flow, ctx, state, typed_scope);
+                        },
+                        .branch_constructor => {},
+                        else => {},
+                    }
+                }
+            }
+        }
+
+        dispatch_result.branch = "done";
+        dispatch_result.fields = &[_]NamedField{};
+
+        if (done_cont) |cont| {
+            if (cont.node) |node| {
+                switch (node) {
+                    .invocation => |next_inv| {
+                        const next_flow = ast.Flow{
+                            .invocation = next_inv,
+                            .continuations = cont.continuations,
+                            .module = flow.module,
+                        };
+                        return try executeFlowOptimized(&next_flow, ctx, state, typed_scope);
+                    },
+                    .branch_constructor => |bc| {
+                        var fields = try ctx.allocator.alloc(NamedField, bc.fields.len);
+                        for (bc.fields, 0..) |field, idx| {
+                            const value = if (field.expression_str) |expr|
+                                FieldValue{ .string_val = try evaluateExprOptimized(expr, state, ctx.env, ctx.allocator) }
+                            else
+                                FieldValue{ .string_val = try ctx.allocator.dupe(u8, field.name) };
+                            fields[idx] = .{
+                                .name = try ctx.allocator.dupe(u8, field.name),
+                                .value = value,
+                            };
+                        }
+                        return Value{
+                            .branch = try ctx.allocator.dupe(u8, bc.branch_name),
+                            .fields = fields,
+                        };
+                    },
+                    else => {},
+                }
+            }
+        }
+
+        return Value.fromDispatch(dispatch_result.branch, dispatch_result.fields);
+    } else {
+        var evaluated_args = try ctx.allocator.alloc(ast.Arg, inv.args.len);
+        for (inv.args, 0..) |arg, i| {
+            evaluated_args[i] = ast.Arg{
+                .name = arg.name,
+                .value = try evaluateExprOptimized(arg.value, state, ctx.env, ctx.allocator),
+                .source_value = arg.source_value,
+                .expression_value = arg.expression_value,
+            };
+        }
+        var evaluated_inv = inv.*;
+        evaluated_inv.args = evaluated_args;
+        try dispatchTyped(&evaluated_inv, typed_scope, &dispatch_result);
+    }
+
+    if (flow.continuations.len == 0) {
+        return Value.fromDispatch(
+            dispatch_result.branch,
+            dispatch_result.fields,
+        );
+    }
+
+    for (flow.continuations) |cont| {
+        if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
+            if (cont.binding) |binding_name| {
+                if (state.layout.getSlot(binding_name) != null) {
+                    state.writeBinding(binding_name, dispatch_result);
+                } else {
+                    const bound_value = Value.fromDispatch(
+                        dispatch_result.branch,
+                        dispatch_result.fields,
+                    );
+                    try ctx.env.bind(binding_name, bound_value);
+                }
+
+                try ctx.expr_bindings.set(binding_name, .{ .string_val = dispatch_result.branch });
+                for (dispatch_result.fields) |fv| {
+                    var field_key_buf: [256]u8 = undefined;
+                    const field_key = std.fmt.bufPrint(&field_key_buf, "{s}.{s}", .{ binding_name, fv.name }) catch continue;
+                    const field_key_owned = try ctx.allocator.dupe(u8, field_key);
+                    try ctx.expr_bindings.set(field_key_owned, fieldValueToExprValue(fv.value));
+                }
+            }
+
+            if (cont.node) |node| {
+                switch (node) {
+                    .invocation => |next_inv| {
+                        const next_flow = ast.Flow{
+                            .invocation = next_inv,
+                            .continuations = cont.continuations,
+                            .module = flow.module,
+                        };
+                        return executeFlowOptimized(&next_flow, ctx, state, typed_scope);
+                    },
+                    .terminal => {
+                        return Value.fromDispatch(
+                            dispatch_result.branch,
+                            dispatch_result.fields,
+                        );
+                    },
+                    .branch_constructor => |bc| {
+                        var fields = try ctx.allocator.alloc(NamedField, bc.fields.len);
+                        for (bc.fields, 0..) |field, i| {
+                            const value = if (field.expression_str) |expr|
+                                FieldValue{ .string_val = try evaluateExprOptimized(expr, state, ctx.env, ctx.allocator) }
+                            else
+                                FieldValue{ .string_val = try ctx.allocator.dupe(u8, field.name) };
+
+                            fields[i] = .{
+                                .name = try ctx.allocator.dupe(u8, field.name),
+                                .value = value,
+                            };
+                        }
+
+                        return Value{
+                            .branch = try ctx.allocator.dupe(u8, bc.branch_name),
+                            .fields = fields,
+                        };
+                    },
+                    else => {
+                        return error.UnsupportedNode;
+                    },
+                }
+            } else {
+                return Value.fromDispatch(
+                    dispatch_result.branch,
+                    dispatch_result.fields,
+                );
+            }
+        }
+    }
+
+    return error.NoBranchMatch;
+}
+
+// Dispatch using typed scope descriptor
+fn dispatchTyped(inv: *const ast.Invocation, scope: *const runtime.ScopeDescriptorTyped, out: *DispatchResult) !void {
+    if (inv.path.segments.len == 0) return error.EventDenied;
+    const event_name = inv.path.segments[0];
+    for (scope.events) |ev| {
+        if (std.mem.eql(u8, ev.name, event_name)) {
+            return ev.dispatcher(inv, out);
+        }
+    }
+    return error.EventDenied;
+}
+
+// Optimized execution using precomputed layout and FlowState
+fn executeFlowOptimized(
+    flow: *const ast.Flow,
+    ctx: *InterpreterContext,
+    state: *FlowState,
+    typed_scope: *const runtime.ScopeDescriptorTyped,
+) !Value {
+    const inv = &flow.invocation;
+    var dispatch_result: DispatchResult = undefined;
+
+    const is_if = (inv.path.module_qualifier == null and
+                   inv.path.segments.len == 1 and
+                   std.mem.eql(u8, inv.path.segments[0], "if")) or
+                  (inv.path.module_qualifier != null and
+                   std.mem.eql(u8, inv.path.module_qualifier.?, "std.control") and
+                   inv.path.segments.len == 1 and
+                   std.mem.eql(u8, inv.path.segments[0], "if"));
+
+    const is_for = (inv.path.module_qualifier == null and
+                    inv.path.segments.len == 1 and
+                    std.mem.eql(u8, inv.path.segments[0], "for")) or
+                   (inv.path.module_qualifier != null and
+                    std.mem.eql(u8, inv.path.module_qualifier.?, "std.control") and
+                    inv.path.segments.len == 1 and
+                    std.mem.eql(u8, inv.path.segments[0], "for"));
+
+    if (is_if) {
+        var condition_result: bool = false;
+        if (inv.args.len > 0) {
+            const first_arg = &inv.args[0];
+            const expr_text = if (first_arg.expression_value) |captured|
+                captured.text
+            else
+                first_arg.value;
+
+            if (std.mem.eql(u8, expr_text, "true")) {
+                condition_result = true;
+            } else if (std.mem.eql(u8, expr_text, "false")) {
+                condition_result = false;
+            } else {
+                var expr_parser = koru_parser.ExpressionParser.init(ctx.allocator, expr_text);
+                defer expr_parser.deinit();
+
+                if (expr_parser.parse()) |parsed_expr| {
+                    if (evaluateExpression(parsed_expr, ctx.expr_bindings)) |eval_result| {
+                        condition_result = eval_result.isTruthy();
+                    } else |_| {
+                        condition_result = false;
+                    }
+                } else |_| {
+                    if (ctx.expr_bindings.get(expr_text)) |val| {
+                        condition_result = val.isTruthy();
+                    } else {
+                        condition_result = expr_text.len > 0;
+                    }
+                }
+            }
+        }
+        dispatch_result.branch = if (condition_result) "then" else "else";
+        dispatch_result.fields = &[_]NamedField{};
+    } else if (is_for) {
+        var start: i64 = 0;
+        var end: i64 = 0;
+
+        if (inv.args.len > 0) {
+            const range_str = inv.args[0].value;
+            if (std.mem.indexOf(u8, range_str, "..")) |dot_pos| {
+                start = std.fmt.parseInt(i64, range_str[0..dot_pos], 10) catch 0;
+                end = std.fmt.parseInt(i64, range_str[dot_pos + 2 ..], 10) catch 0;
+            }
+        }
+
+        var each_cont: ?*const ast.Continuation = null;
+        var done_cont: ?*const ast.Continuation = null;
+
+        for (flow.continuations) |*cont| {
+            if (std.mem.eql(u8, cont.branch, "each")) {
+                each_cont = cont;
+            } else if (std.mem.eql(u8, cont.branch, "done")) {
+                done_cont = cont;
+            }
+        }
+
+        if (each_cont) |cont| {
+            var i = start;
+            while (i < end) : (i += 1) {
+                if (cont.binding) |binding_name| {
+                    var iter_buf: [32]u8 = undefined;
+                    const iter_str = std.fmt.bufPrint(&iter_buf, "{d}", .{i}) catch "0";
+                    const iter_value = Value{
+                        .branch = "each",
+                        .fields = &[_]NamedField{.{ .name = "value", .value = .{ .string_val = iter_str } }},
+                    };
+                    try ctx.env.bind(binding_name, iter_value);
+                    try ctx.expr_bindings.set(binding_name, .{ .int_val = i });
+                }
+
+                if (cont.node) |node| {
+                    switch (node) {
+                        .invocation => |next_inv| {
+                            const next_flow = ast.Flow{
+                                .invocation = next_inv,
+                                .continuations = cont.continuations,
+                                .module = flow.module,
+                            };
+                            _ = try executeFlowOptimized(&next_flow, ctx, state, typed_scope);
+                        },
+                        .branch_constructor => {},
+                        else => {},
+                    }
+                }
+            }
+        }
+
+        dispatch_result.branch = "done";
+        dispatch_result.fields = &[_]NamedField{};
+
+        if (done_cont) |cont| {
+            if (cont.node) |node| {
+                switch (node) {
+                    .invocation => |next_inv| {
+                        const next_flow = ast.Flow{
+                            .invocation = next_inv,
+                            .continuations = cont.continuations,
+                            .module = flow.module,
+                        };
+                        return try executeFlowOptimized(&next_flow, ctx, state, typed_scope);
+                    },
+                    .branch_constructor => |bc| {
+                        var fields = try ctx.allocator.alloc(NamedField, bc.fields.len);
+                        for (bc.fields, 0..) |field, idx| {
+                            const value = if (field.expression_str) |expr|
+                                FieldValue{ .string_val = try evaluateExprOptimized(expr, state, ctx.env, ctx.allocator) }
+                            else
+                                FieldValue{ .string_val = try ctx.allocator.dupe(u8, field.name) };
+                            fields[idx] = .{
+                                .name = try ctx.allocator.dupe(u8, field.name),
+                                .value = value,
+                            };
+                        }
+                        return Value{
+                            .branch = try ctx.allocator.dupe(u8, bc.branch_name),
+                            .fields = fields,
+                        };
+                    },
+                    else => {},
+                }
+            }
+        }
+
+        return Value.fromDispatch(dispatch_result.branch, dispatch_result.fields);
+    } else {
+        var evaluated_args = try ctx.allocator.alloc(ast.Arg, inv.args.len);
+        for (inv.args, 0..) |arg, i| {
+            evaluated_args[i] = ast.Arg{
+                .name = arg.name,
+                .value = try evaluateExprOptimized(arg.value, state, ctx.env, ctx.allocator),
+                .source_value = arg.source_value,
+                .expression_value = arg.expression_value,
+            };
+        }
+        var evaluated_inv = inv.*;
+        evaluated_inv.args = evaluated_args;
+        try dispatchTyped(&evaluated_inv, typed_scope, &dispatch_result);
+    }
+
+    if (flow.continuations.len == 0) {
+        return Value.fromDispatch(
+            dispatch_result.branch,
+            dispatch_result.fields,
+        );
+    }
+
+    for (flow.continuations) |cont| {
+        if (std.mem.eql(u8, cont.branch, dispatch_result.branch)) {
+            if (cont.binding) |binding_name| {
+                if (state.layout.getSlot(binding_name) != null) {
+                    state.writeBinding(binding_name, dispatch_result);
+                } else {
+                    const bound_value = Value.fromDispatch(
+                        dispatch_result.branch,
+                        dispatch_result.fields,
+                    );
+                    try ctx.env.bind(binding_name, bound_value);
+                }
+
+                try ctx.expr_bindings.set(binding_name, .{ .string_val = dispatch_result.branch });
+                for (dispatch_result.fields) |fv| {
+                    var field_key_buf: [256]u8 = undefined;
+                    const field_key = std.fmt.bufPrint(&field_key_buf, "{s}.{s}", .{ binding_name, fv.name }) catch continue;
+                    const field_key_owned = try ctx.allocator.dupe(u8, field_key);
+                    try ctx.expr_bindings.set(field_key_owned, fieldValueToExprValue(fv.value));
+                }
+            }
+
+            if (cont.node) |node| {
+                switch (node) {
+                    .invocation => |next_inv| {
+                        const next_flow = ast.Flow{
+                            .invocation = next_inv,
+                            .continuations = cont.continuations,
+                            .module = flow.module,
+                        };
+                        return executeFlowOptimized(&next_flow, ctx, state, typed_scope);
+                    },
+                    .terminal => {
+                        return Value.fromDispatch(
+                            dispatch_result.branch,
+                            dispatch_result.fields,
+                        );
+                    },
+                    .branch_constructor => |bc| {
+                        var fields = try ctx.allocator.alloc(NamedField, bc.fields.len);
+                        for (bc.fields, 0..) |field, i| {
+                            const value = if (field.expression_str) |expr|
+                                FieldValue{ .string_val = try evaluateExprOptimized(expr, state, ctx.env, ctx.allocator) }
+                            else
+                                FieldValue{ .string_val = try ctx.allocator.dupe(u8, field.name) };
+
+                            fields[i] = .{
+                                .name = try ctx.allocator.dupe(u8, field.name),
+                                .value = value,
+                            };
+                        }
+
+                        return Value{
+                            .branch = try ctx.allocator.dupe(u8, bc.branch_name),
+                            .fields = fields,
+                        };
+                    },
+                    else => {
+                        return error.UnsupportedNode;
+                    },
+                }
+            } else {
                 return Value.fromDispatch(
                     dispatch_result.branch,
                     dispatch_result.fields,

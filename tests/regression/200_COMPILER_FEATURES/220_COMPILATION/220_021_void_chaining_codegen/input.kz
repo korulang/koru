@@ -1,12 +1,12 @@
-// PRIORITY: Void event chaining generates invalid Zig switch on void
+// FIXED: Void event chaining now generates valid Zig sequential calls
 //
-// BUG: When chaining void events (work |> work |> destroy), the emitter
-// generates `switch (nested_result_0) { . => || { ... } }` but:
+// Previously: When chaining void events (work |> work |> destroy), the emitter
+// generated `switch (nested_result_0) { . => || { ... } }` which was invalid:
 //   1. Void types cannot be switched on
 //   2. `. => ||` is invalid syntax
 //
-// Expected: Sequential calls without switch for void continuations
-// Actual: Invalid Zig code that fails to compile
+// Fix: emitSubflowContinuationsWithDepth now detects void continuations
+// (empty branch name) and emits sequential calls without switch.
 
 ~import "$std/control"
 
