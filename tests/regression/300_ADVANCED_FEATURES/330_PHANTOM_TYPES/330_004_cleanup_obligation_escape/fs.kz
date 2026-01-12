@@ -21,7 +21,7 @@ const File = struct {
 }
 
 // Close a file - accepts opened state, returns closed state
-~event close { file: *File[opened] }
+~event close { file: *File[!opened] }
 | closed {}
 
 ~proc close {

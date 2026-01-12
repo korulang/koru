@@ -81,12 +81,6 @@ const ast = @import("ast");
     code.appendSlice(allocator, I ++ "pub const DispatchResult = koru_std.runtime.DispatchResult;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "const ScopeEvent = koru_std.runtime.ScopeEvent;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "const ScopeDescriptor = koru_std.runtime.ScopeDescriptor;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "const ScopeEventTyped = koru_std.runtime.ScopeEventTyped;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "const ScopeDescriptorTyped = koru_std.runtime.ScopeDescriptorTyped;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "const FieldType = koru_std.runtime.FieldType;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "const FieldDescriptor = koru_std.runtime.FieldDescriptor;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "const BranchDescriptor = koru_std.runtime.BranchDescriptor;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "const EventTypeInfo = koru_std.runtime.EventTypeInfo;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "const FieldValue = koru_std.runtime.FieldValue;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "const NamedField = koru_std.runtime.NamedField;\n\n") catch unreachable;
 
@@ -109,20 +103,6 @@ const ast = @import("ast");
     code.appendSlice(allocator, I ++ "        @field(input, field.name) = getArg(args, field.name) orelse \"\";\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    return input;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
-
-    // Helper: map Zig type to FieldType
-    code.appendSlice(allocator, I ++ "fn fieldType(comptime T: type) FieldType {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    if (T == bool) return .bool;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    switch (@typeInfo(T)) {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "        .int => return .int,\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "        .float => return .float,\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "        .pointer => |p| {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "            if (p.size == .slice and p.child == u8) return .string;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "        },\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "        else => {},\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    return .string;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
     // Per-event dispatchers and descriptor table
@@ -179,50 +159,9 @@ const ast = @import("ast");
             code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
             code.appendSlice(allocator, I ++ "        break :blk count;\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    }};\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    out.* = .{ .branch = branch, .fields = S.buf[0..field_count] };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    return;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    out.* = .{ .branch = branch, .fields = S.buf[0..field_count] };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    return;\n") catch unreachable;
         }
-
-        // Type metadata for this event
-        code.appendSlice(allocator, I ++ "const ") catch unreachable;
-        code.appendSlice(allocator, scope_name) catch unreachable;
-        code.appendSlice(allocator, "_") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "_type_info = blk: {\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    const Output = main_module.") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "_event.Output;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    const uinfo = @typeInfo(Output).Union;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    comptime var max_size: usize = 0;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    comptime var branches: [uinfo.fields.len]BranchDescriptor = undefined;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    inline for (uinfo.fields, 0..) |uf, idx| {\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        const Payload = uf.type;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        const payload_fields = @typeInfo(Payload).Struct.fields;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        comptime var fds: [payload_fields.len]FieldDescriptor = undefined;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        inline for (payload_fields, 0..) |pf, fi| {\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "            fds[fi] = .{\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                .name = pf.name,\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                .field_type = fieldType(pf.type),\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                .size = @sizeOf(pf.type),\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                .offset = @offsetOf(Payload, pf.name),\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "            };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        const total = @sizeOf(Payload);\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        if (total > max_size) max_size = total;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        branches[idx] = .{\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "            .name = uf.name,\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "            .fields = fds[0..payload_fields.len],\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "            .total_size = total,\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    break :blk EventTypeInfo{\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        .event_name = \"") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "\",\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        .branches = &branches,\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        .max_branch_size = max_size,\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "};\n\n") catch unreachable;
 
         code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
     }
@@ -230,90 +169,13 @@ const ast = @import("ast");
     // Scope descriptor and public dispatcher
     code.appendSlice(allocator, I ++ "const scope_events = [_]ScopeEvent{\n") catch unreachable;
     for (events_list.items) |event| {
-    code.appendSlice(allocator, I ++ "    .{ .name = \"") catch unreachable;
-    code.appendSlice(allocator, event) catch unreachable;
-    code.appendSlice(allocator, "\", .dispatcher = dispatch_") catch unreachable;
-    code.appendSlice(allocator, scope_name) catch unreachable;
-        code.appendSlice(allocator, "_") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, " },\n") catch unreachable;
-    }
-    code.appendSlice(allocator, I ++ "};\n") catch unreachable;
-
-    // Typed event metadata for optimized interpreter path
-    for (events_list.items) |event| {
-        code.appendSlice(allocator, I ++ "const ") catch unreachable;
-        code.appendSlice(allocator, scope_name) catch unreachable;
-        code.appendSlice(allocator, "_") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "_type_info: EventTypeInfo = comptime blk: {\n") catch unreachable;
-
-        const is_control_flow = std.mem.eql(u8, event, "if") or
-                                std.mem.eql(u8, event, "for") or
-                                std.mem.eql(u8, event, "std.control:if") or
-                                std.mem.eql(u8, event, "std.control:for");
-
-        if (is_control_flow) {
-            code.appendSlice(allocator, I ++ "    break :blk EventTypeInfo{ .event_name = \"") catch unreachable;
-            code.appendSlice(allocator, event) catch unreachable;
-            code.appendSlice(allocator, "\", .branches = &[_]BranchDescriptor{}, .max_branch_size = 0 };\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "};\n\n") catch unreachable;
-            continue;
-        }
-
-        code.appendSlice(allocator, I ++ "    const Output = main_module.") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "_event.Output;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    switch (@typeInfo(Output)) {\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        .Union => |u| {\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "            var branches: [u.fields.len]BranchDescriptor = undefined;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "            comptime var max_branch_size: usize = 0;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "            inline for (u.fields, 0..) |branch, bi| {\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                const Payload = branch.type;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                if (Payload == void) {\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                    branches[bi] = .{ .name = branch.name, .fields = &[_]FieldDescriptor{}, .total_size = 0 };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                    continue;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                }\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                const payload_fields = dispatcher_std.meta.fields(Payload);\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                var field_buf: [payload_fields.len]FieldDescriptor = undefined;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                inline for (payload_fields, 0..) |field, fi| {\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                    const FT = field.type;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                    const ftype: FieldType = if (FT == bool) .bool else switch (@typeInfo(FT)) {\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                        .int => .int,\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                        .float => .float,\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                        .pointer => |ptr_info| if (ptr_info.size == .slice and ptr_info.child == u8) .string else .string,\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                        else => .string,\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                    };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                    field_buf[fi] = .{ .name = field.name, .field_type = ftype, .size = @sizeOf(FT), .offset = @offsetOf(Payload, field.name) };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                }\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                branches[bi] = .{ .name = branch.name, .fields = field_buf[0..], .total_size = @sizeOf(Payload) };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "                if (@sizeOf(Payload) > max_branch_size) max_branch_size = @sizeOf(Payload);\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "            }\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "            break :blk EventTypeInfo{ .event_name = \"") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "\", .branches = &branches, .max_branch_size = max_branch_size };\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        },\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "        else => break :blk EventTypeInfo{ .event_name = \"") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "\", .branches = &[_]BranchDescriptor{}, .max_branch_size = 0 },\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "};\n\n") catch unreachable;
-    }
-
-    // Typed scope events with metadata
-    code.appendSlice(allocator, I ++ "const scope_events_typed = [_]ScopeEventTyped{\n") catch unreachable;
-    for (events_list.items) |event| {
         code.appendSlice(allocator, I ++ "    .{ .name = \"") catch unreachable;
         code.appendSlice(allocator, event) catch unreachable;
         code.appendSlice(allocator, "\", .dispatcher = dispatch_") catch unreachable;
         code.appendSlice(allocator, scope_name) catch unreachable;
         code.appendSlice(allocator, "_") catch unreachable;
         code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, ", .type_info = &") catch unreachable;
-        code.appendSlice(allocator, scope_name) catch unreachable;
-        code.appendSlice(allocator, "_") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "_type_info },\n") catch unreachable;
+        code.appendSlice(allocator, " },\n") catch unreachable;
     }
     code.appendSlice(allocator, I ++ "};\n") catch unreachable;
 
@@ -322,11 +184,6 @@ const ast = @import("ast");
     code.appendSlice(allocator, "_descriptor: ScopeDescriptor = .{ .name = \"") catch unreachable;
     code.appendSlice(allocator, scope_name) catch unreachable;
     code.appendSlice(allocator, "\", .events = &scope_events };\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "pub const ") catch unreachable;
-    code.appendSlice(allocator, scope_name) catch unreachable;
-    code.appendSlice(allocator, "_descriptor_typed: ScopeDescriptorTyped = .{ .name = \"") catch unreachable;
-    code.appendSlice(allocator, scope_name) catch unreachable;
-    code.appendSlice(allocator, "\", .events = &scope_events_typed };\n") catch unreachable;
 
     code.appendSlice(allocator, I ++ "pub fn dispatch_") catch unreachable;
     code.appendSlice(allocator, scope_name) catch unreachable;
@@ -379,86 +236,6 @@ pub const ScopeEvent = struct {
 pub const ScopeDescriptor = struct {
     name: []const u8,
     events: []const ScopeEvent,
-};
-
-// Typed metadata exposed alongside the legacy untyped descriptors.
-pub const FieldType = enum {
-    string, // []const u8 stored as slice (ptr + len)
-    int,    // i64
-    float,  // f64
-    bool,   // bool (padded by consumer as needed)
-};
-
-pub const FieldDescriptor = struct {
-    name: []const u8,
-    field_type: FieldType,
-    size: usize,
-    offset: usize,
-};
-
-pub const BranchDescriptor = struct {
-    name: []const u8,
-    fields: []const FieldDescriptor,
-    total_size: usize,
-};
-
-pub const EventTypeInfo = struct {
-    event_name: []const u8,
-    branches: []const BranchDescriptor,
-    max_branch_size: usize,
-};
-
-pub const ScopeEventTyped = struct {
-    name: []const u8,
-    dispatcher: DispatchFn,
-    type_info: *const EventTypeInfo,
-};
-
-pub const ScopeDescriptorTyped = struct {
-    name: []const u8,
-    events: []const ScopeEventTyped,
-
-    pub fn getEventTypeInfo(self: *const ScopeDescriptorTyped, event_name: []const u8) ?*const EventTypeInfo {
-        for (self.events) |ev| {
-            if (std.mem.eql(u8, ev.name, event_name)) {
-                return ev.type_info;
-            }
-        }
-        return null;
-    }
-};
-pub const FieldType = enum { string, int, float, bool };
-pub const FieldDescriptor = struct {
-    name: []const u8,
-    field_type: FieldType,
-    size: usize,
-    offset: usize,
-};
-pub const BranchDescriptor = struct {
-    name: []const u8,
-    fields: []const FieldDescriptor,
-    total_size: usize,
-};
-pub const EventTypeInfo = struct {
-    event_name: []const u8,
-    branches: []const BranchDescriptor,
-    max_branch_size: usize,
-};
-pub const ScopeEventTyped = struct {
-    name: []const u8,
-    dispatcher: DispatchFn,
-    type_info: *const EventTypeInfo,
-};
-pub const ScopeDescriptorTyped = struct {
-    name: []const u8,
-    events: []const ScopeEventTyped,
-
-    pub fn getEventTypeInfo(self: *const ScopeDescriptorTyped, event_name: []const u8) ?*const EventTypeInfo {
-        for (self.events) |ev| {
-            if (std.mem.eql(u8, ev.name, event_name)) return ev.type_info;
-        }
-        return null;
-    }
 };
 
 ~pub event get_scope { name: []const u8 }
