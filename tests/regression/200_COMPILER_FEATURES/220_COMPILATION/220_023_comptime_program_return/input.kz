@@ -1,0 +1,47 @@
+// TEST: Comptime events can return modified Program
+//
+// A [comptime] event that declares `program: *const Program` in its OUTPUT
+// should have that Program used as the new AST going forward.
+//
+// This enables holistic AST transformations without needing [transform].
+// Transforms are for surgical replacement of specific invocations.
+// Comptime + Program return is for cross-cutting AST modifications.
+
+const std = @import("std");
+const ast = @import("ast");
+const ast_functional = @import("ast_functional");
+
+// Comptime event that RETURNS a modified Program
+~[comptime] event augment_program {
+    program: *const ast.Program,
+    allocator: std.mem.Allocator
+}
+| done { program: *const ast.Program }
+
+~[comptime] proc augment_program {
+    // Use ast_functional to add a new item to the program
+    // For now, just return the program unchanged
+    std.debug.print("augment_program: received {} items\n", .{program.items.len});
+
+    // TODO: Actually modify the program using ast_functional
+    // const new_program = ast_functional.addItem(allocator, program, new_item);
+    // return .{ .done = .{ .program = new_program } };
+
+    return .{ .done = .{ .program = program } };
+}
+
+// Invoke the augmentation
+~augment_program()
+| done d |> _
+
+// A simple runtime event to verify compilation works
+~event hello {}
+| greeted {}
+
+~proc hello {
+    std.debug.print("Hello from augmented program!\n", .{});
+    return .{ .greeted = .{} };
+}
+
+~hello()
+| greeted |> _
