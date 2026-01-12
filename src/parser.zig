@@ -4624,6 +4624,15 @@ pub const Parser = struct {
             // The cursor is now past the }, pointing at lines like | row |> ...
             // These are output branches of the Source block event, not siblings!
             if (is_multiline_source_block) {
+                // Push continuation context so Source blocks can capture the binding
+                try self.context_stack.append(self.allocator, .{
+                    .in_continuation = .{
+                        .branch = owned_branch,
+                        .binding = binding,
+                    },
+                });
+                defer _ = self.context_stack.pop();
+
                 const source_block_continuations = try self.parseContinuations(indent);
                 const steps_inner = try self.parsePipelineSteps(full_rest);
                 defer self.allocator.free(steps_inner);

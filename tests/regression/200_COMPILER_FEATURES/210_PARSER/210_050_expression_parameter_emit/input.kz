@@ -1,0 +1,28 @@
+// TEST: Expression parameter emission with [norun] events
+// STATUS: PASS
+//
+// FIXED: [norun] events are now correctly skipped from thunk generation.
+// Events with [norun] are metadata only - attached to AST for collectors to read.
+// They should NOT generate handler calls.
+//
+// FIX: main.zig - added [norun] check to skip events when building transform_event_names
+//
+// DISCOVERED: While building Orisha HTTP framework
+
+const std = @import("std");
+
+// Event with Expression parameter
+~[comptime|norun]pub event test_expr {
+    route: Expression,
+    source: Source
+}
+
+// This invocation should emit: .route = "GET /", .source = "..."
+// But currently emits: .GET / = "GET /", .source = "..." (INVALID ZIG)
+~test_expr(GET /) {
+    config: value
+}
+
+pub fn main() void {
+    std.debug.print("Test\n", .{});
+}

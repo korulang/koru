@@ -275,6 +275,18 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                     continue;
                 }
 
+                // Skip [norun] events - they're metadata only, not executable
+                var is_norun = false;
+                for (event.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "norun")) {
+                        is_norun = true;
+                        break;
+                    }
+                }
+                if (is_norun) {
+                    continue;
+                }
+
                 // Check if this is a comptime event (Source/ProgramAST parameters)
                 var is_comptime = false;
                 for (event.input.fields) |field| {
@@ -327,6 +339,18 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
 
                         // Skip compiler.* events
                         if (event.path.segments.len > 0 and std.mem.eql(u8, event.path.segments[0], "compiler")) {
+                            continue;
+                        }
+
+                        // Skip [norun] events - they're metadata only, not executable
+                        var is_norun = false;
+                        for (event.annotations) |ann| {
+                            if (std.mem.eql(u8, ann, "norun")) {
+                                is_norun = true;
+                                break;
+                            }
+                        }
+                        if (is_norun) {
                             continue;
                         }
 

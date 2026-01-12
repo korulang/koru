@@ -1,0 +1,56 @@
+// TEST: Phantom obligation tracking across label jumps
+// STATUS: MUST_FAIL (currently passes but SHOULD fail)
+//
+// BUG: When a label jump (@loop) occurs, phantom obligations from the
+// current scope are not being checked. This allows resource leaks.
+//
+// EXPECTED: Compiler error - obligation not satisfied before @loop
+// ACTUAL: Compiles successfully (BUG!)
+//
+// This test documents the gap discovered while building Orisha HTTP server.
+// The `| failed |> @accept_loop(server: s)` branch leaks the connection.
+
+const std = @import("std");
+
+const Resource = struct { id: i32 };
+
+~event create {}
+| created { res: *Resource[open!] }
+
+~proc create {
+    const r = std.heap.page_allocator.create(Resource) catch unreachable;
+    r.* = .{ .id = 42 };
+    return .{ .created = .{ .res = r } };
+}
+
+~event use { res: *Resource[open] }
+| ok { res: *Resource[open] }
+| failed { res: *Resource[open] }
+
+~proc use {
+    // Simulate sometimes failing
+    if (res.id == 42) {
+        return .{ .ok = .{ .res = res } };
+    }
+    return .{ .failed = .{ .res = res } };
+}
+
+~event close { res: *Resource[!open] }
+| closed {}
+
+~proc close {
+    std.heap.page_allocator.destroy(res);
+    return .{ .closed = .{} };
+}
+
+// THE BUG: This flow should NOT compile!
+// The `| failed |> @loop` branch has an open obligation that is never discharged.
+~#loop create()
+| created c |> use(res: c.res)
+    | ok o |> close(res: o.res)
+        | closed |> _
+    | failed |> @loop  // BUG! c.res has [open!] obligation, not discharged!
+
+pub fn main() void {
+    std.debug.print("Test compiled - BUG: should have been rejected!\n", .{});
+}

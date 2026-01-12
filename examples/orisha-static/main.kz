@@ -1,0 +1,151 @@
+// Orisha Static Server - With Compile-Time Embedded Content
+//
+// The index.html file is embedded INTO THE BINARY at compile time.
+// Zero disk I/O at runtime. The bytes are just... there.
+
+const std = @import("std");
+
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+pub const Server = struct {
+    inner: std.net.Server,
+};
+
+pub const Connection = struct {
+    stream: std.net.Stream,
+    address: std.net.Address,
+};
+
+// ============================================================================
+// COMPILE-TIME EMBEDDED CONTENT
+// ============================================================================
+
+// This is THE MAGIC: @embedFile runs at Zig compile time
+// The entire HTML file becomes const bytes in the binary
+const INDEX_HTML = @embedFile("public/index.html");
+
+// Pre-computed at compile time!
+const INDEX_RESPONSE = "HTTP/1.1 200 OK\r\n" ++
+    "Content-Type: text/html; charset=utf-8\r\n" ++
+    "Content-Length: " ++ std.fmt.comptimePrint("{}", .{INDEX_HTML.len}) ++ "\r\n" ++
+    "Connection: close\r\n" ++
+    "\r\n" ++
+    INDEX_HTML;
+
+// ============================================================================
+// MAIN FLOW
+// ============================================================================
+
+~listen(port: 3000)
+| listening l |> #accept_loop accept(server: l.server)
+    | connection c |> read_request(conn: c.conn)
+        | request r |> send_static(conn: r.conn, path: r.path)
+            | sent s |> close(conn: s.conn)
+                | closed |> @accept_loop(server: c.server)
+            | not_found n |> close(conn: n.conn)
+                | closed |> @accept_loop(server: c.server)
+        | closed |> @accept_loop(server: c.server)
+    | failed |> @accept_loop(server: l.server)
+| failed |> _
+
+// ============================================================================
+// EVENTS WITH PHANTOM OBLIGATIONS
+// ============================================================================
+
+~event listen { port: u16 }
+| listening { server: *Server }
+| failed { msg: []const u8 }
+
+~proc listen {
+    const allocator = std.heap.page_allocator;
+    const address = std.net.Address.parseIp("0.0.0.0", port) catch {
+        return .{ .failed = .{ .msg = "Invalid address" } };
+    };
+
+    const server = address.listen(.{ .reuse_address = true }) catch {
+        return .{ .failed = .{ .msg = "Failed to listen" } };
+    };
+
+    const server_ptr = allocator.create(Server) catch {
+        return .{ .failed = .{ .msg = "Failed to allocate" } };
+    };
+    server_ptr.* = .{ .inner = server };
+
+    std.debug.print("Orisha listening on http://0.0.0.0:{}\n", .{port});
+    std.debug.print("Serving {} bytes of embedded HTML\n", .{INDEX_HTML.len});
+    return .{ .listening = .{ .server = server_ptr } };
+}
+
+~event accept { server: *Server }
+| connection { conn: *Connection[open!], server: *Server }
+| failed { server: *Server }
+
+~proc accept {
+    const allocator = std.heap.page_allocator;
+    const conn = server.inner.accept() catch {
+        return .{ .failed = .{ .server = server } };
+    };
+
+    const conn_ptr = allocator.create(Connection) catch {
+        return .{ .failed = .{ .server = server } };
+    };
+    conn_ptr.* = .{ .stream = conn.stream, .address = conn.address };
+
+    return .{ .connection = .{ .conn = conn_ptr, .server = server } };
+}
+
+~event read_request { conn: *Connection[open] }
+| request { conn: *Connection[open], method: []const u8, path: []const u8 }
+| closed {}
+
+~proc read_request {
+    var buffer: [4096]u8 = undefined;
+    const n = conn.stream.read(&buffer) catch {
+        return .{ .closed = .{} };
+    };
+
+    if (n == 0) {
+        return .{ .closed = .{} };
+    }
+
+    const first_line_end = std.mem.indexOf(u8, buffer[0..n], "\r\n") orelse n;
+    const request_line = buffer[0..first_line_end];
+
+    var parts = std.mem.tokenizeScalar(u8, request_line, ' ');
+    const method = parts.next() orelse "GET";
+    const path = parts.next() orelse "/";
+
+    return .{ .request = .{ .conn = conn, .method = method, .path = path } };
+}
+
+// Route to embedded content - all computed at compile time!
+~event send_static { conn: *Connection[open], path: []const u8 }
+| sent { conn: *Connection[open] }
+| not_found { conn: *Connection[open] }
+
+~proc send_static {
+    // Route matching - could be a compile-time generated table
+    if (std.mem.eql(u8, path, "/") or std.mem.eql(u8, path, "/index.html")) {
+        // Send the pre-computed response (headers + body, all compile-time!)
+        _ = conn.stream.writeAll(INDEX_RESPONSE) catch {
+            return .{ .not_found = .{ .conn = conn } };
+        };
+        return .{ .sent = .{ .conn = conn } };
+    }
+
+    // 404 for anything else
+    const not_found_response = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found";
+    _ = conn.stream.writeAll(not_found_response) catch {};
+    return .{ .not_found = .{ .conn = conn } };
+}
+
+~event close { conn: *Connection[!open] }
+| closed {}
+
+~proc close {
+    conn.stream.close();
+    std.heap.page_allocator.destroy(conn);
+    return .{ .closed = .{} };
+}
