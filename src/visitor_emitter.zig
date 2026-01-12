@@ -383,8 +383,9 @@ pub const VisitorEmitter = struct {
         if (self.emit_mode == .comptime_only) {
             // ========================================================================
             // COMPTIME MODE: Emit comptime_main() that calls all comptime flows
+            // Accepts program AST and allocator to inject into comptime events
             // ========================================================================
-            try self.code_emitter.write("pub fn comptime_main() void {\n");
+            try self.code_emitter.write("pub fn comptime_main(program: *const __koru_ast.Program, allocator: __koru_std.mem.Allocator) void {\n");
             self.code_emitter.indent();
 
             // Emit calls to all comptime flows in sequence
@@ -417,7 +418,8 @@ pub const VisitorEmitter = struct {
                         var num_buf: [32]u8 = undefined;
                         const num_str = try std.fmt.bufPrint(&num_buf, "{}", .{i});
                         try self.code_emitter.write(num_str);
-                        try self.code_emitter.write("();\n");
+                        // Pass program and allocator to comptime flows
+                        try self.code_emitter.write("(program, allocator);\n");
                         i += 1;
                     }
                 }
@@ -740,7 +742,12 @@ pub const VisitorEmitter = struct {
                     try self.code_emitter.write(num_str);
                 }
 
-                try self.code_emitter.write("() void {\n");
+                // Comptime flows receive program and allocator for AST introspection
+                if (invokes_comptime_event and self.emit_mode == .comptime_only) {
+                    try self.code_emitter.write("(program: *const __koru_ast.Program, allocator: __koru_std.mem.Allocator) void {\n");
+                } else {
+                    try self.code_emitter.write("() void {\n");
+                }
                 self.code_emitter.indent();
 
                 // Create emission context for this flow
@@ -1318,6 +1325,8 @@ pub const VisitorEmitter = struct {
                                             try self.code_emitter.write(" = ");
                                             try self.code_emitter.write(arg.value);
                                         }
+                                        // NOTE: Comptime injection of program/allocator is now handled
+                                        // by emitArgs in emitter_helpers.zig
                                         try self.code_emitter.write(" });\n");
 
                                         // Generate switch on result

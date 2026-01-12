@@ -972,10 +972,11 @@ const joinPathAlloc = struct {
 
     // Phase 2.4: Execute comptime flows (if they exist)
     // comptime_main() calls all comptime_flowN() functions at Zig RUNTIME (when ./backend runs)
+    // Pass program AST and allocator for injection into comptime events that need them
     const backend_output = @import("backend_output_emitted.zig");
     if (@hasDecl(backend_output, "comptime_main")) {
         std.debug.print("[PHASE 2.4] Executing comptime_main() - running comptime flows\n", .{});
-        backend_output.comptime_main();
+        backend_output.comptime_main(ctx.ast, ctx.allocator);
         std.debug.print("[PHASE 2.4] Comptime flows execution complete\n", .{});
     }
 

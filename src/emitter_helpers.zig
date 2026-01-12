@@ -2870,6 +2870,49 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
             try emitValue(emitter, ctx, arg.value);
         }
     }
+
+    // COMPTIME INJECTION: If in comptime_only mode, inject program and allocator
+    // if the event declares those parameters and they weren't explicitly provided
+    const is_comptime_emission = if (ctx.emit_mode) |mode| mode == .comptime_only else false;
+    if (is_comptime_emission) {
+        if (event_decl) |event| {
+            var injected_count: usize = 0;
+            for (event.input.fields) |field| {
+                // Check for Program parameter (not already provided)
+                if (std.mem.eql(u8, field.name, "program")) {
+                    // Check if program was already explicitly provided
+                    var already_provided = false;
+                    for (args) |arg| {
+                        if (std.mem.eql(u8, arg.name, "program")) {
+                            already_provided = true;
+                            break;
+                        }
+                    }
+                    if (!already_provided) {
+                        if (args.len > 0 or injected_count > 0) try emitter.write(", ");
+                        try emitter.write(".program = program");
+                        injected_count += 1;
+                    }
+                }
+                // Check for allocator parameter (not already provided)
+                if (std.mem.eql(u8, field.name, "allocator")) {
+                    // Check if allocator was already explicitly provided
+                    var already_provided = false;
+                    for (args) |arg| {
+                        if (std.mem.eql(u8, arg.name, "allocator")) {
+                            already_provided = true;
+                            break;
+                        }
+                    }
+                    if (!already_provided) {
+                        if (args.len > 0 or injected_count > 0) try emitter.write(", ");
+                        try emitter.write(".allocator = allocator");
+                        injected_count += 1;
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Emit a value expression (may reference input fields)
