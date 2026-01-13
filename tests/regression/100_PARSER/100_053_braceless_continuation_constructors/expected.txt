@@ -1,0 +1,2 @@
+Testing braceless in continuation:
+  Got result: 42

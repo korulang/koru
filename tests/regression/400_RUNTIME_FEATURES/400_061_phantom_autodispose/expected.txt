@@ -1,0 +1,4 @@
+Test start
+  Using: Resource: AutoDisposed
+  Auto-dispose called!
+Test done

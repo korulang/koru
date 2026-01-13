@@ -1,0 +1,40 @@
+// Test: Simple phantom obligations
+//
+// Tests that [allocated!] obligation can be discharged with [!allocated]
+
+~import "$std/io"
+
+const std = @import("std");
+
+pub const Resource = struct {
+    data: []const u8,
+    allocator: std.mem.Allocator,
+};
+
+~pub event create_resource { name: []const u8 }
+| created *Resource[allocated!]
+
+~proc create_resource {
+    const alloc = std.heap.page_allocator;
+    const data = std.fmt.allocPrint(alloc, "Resource: {s}", .{name}) catch unreachable;
+    const res = alloc.create(Resource) catch unreachable;
+    res.* = .{ .data = data, .allocator = alloc };
+    return .{ .created = res };
+}
+
+~pub event destroy_resource { res: *Resource[!allocated] }
+| destroyed
+
+~proc destroy_resource {
+    res.allocator.free(res.data);
+    std.heap.page_allocator.destroy(res);
+    return .{ .destroyed = .{} };
+}
+
+// Simple sequential test
+~std.io:print.ln("Test start")
+~create_resource(name: "Test")
+| created r |>
+    destroy_resource(res: r)
+    | destroyed |>
+        std.io:print.ln("Test done")

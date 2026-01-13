@@ -20,7 +20,7 @@ const std = @import("std");
 // Then: multiply(sum.result, c) → done with product
 ~proc calculate = add(x: a, y: b)
 | done sum |> multiply(x: sum.result, factor: c)
-| done product |> done { result: product.result }
+    | done product |> done { result: product.result }
 
 ~event main {}
 ~proc main {

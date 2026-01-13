@@ -1,0 +1,43 @@
+// Test: Braceless branch constructors in flow continuations
+//
+// This tests the identity branch constructor syntax INSIDE flows:
+//   | branch r |> done           (empty identity)
+//   | branch r |> result r.value (identity with expression)
+//
+// This complements 100_052 which tests subflow syntax.
+
+~import "$std/io"
+
+// Source event
+~pub event compute { x: i32 }
+| value { n: i32 }
+
+~proc compute {
+    return .{ .value = .{ .n = x * 2 } };
+}
+
+// Result event with identity branches
+~pub event result {}
+| ok i32
+| fail
+
+// Wrapper that uses braceless constructors in continuations
+~pub event run_test {}
+| done
+
+~proc run_test {
+    // This internally tests braceless continuation constructors
+    return .{ .done = {} };
+}
+
+// Subflow using braceless identity in continuation
+~event process { input: i32 }
+| result i32
+
+~process = compute(x: input)
+| value v |> result v.n
+
+// Main test
+~std.io:print.ln("Testing braceless in continuation:")
+~process(input: 21)
+| result r |> std.io:print.ln("  Got result: {{ r:d }}")

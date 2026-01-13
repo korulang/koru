@@ -1,0 +1,54 @@
+// Test: Auto-dispose for phantom obligations
+//
+// Tests that the compiler automatically inserts cleanup
+// when [allocated!] obligation is not manually discharged
+
+~import "$std/io"
+
+const std = @import("std");
+
+pub const Resource = struct {
+    data: []const u8,
+    allocator: std.mem.Allocator,
+};
+
+~pub event create_resource { name: []const u8 }
+| created *Resource[allocated!]
+
+~proc create_resource {
+    const alloc = std.heap.page_allocator;
+    const data = std.fmt.allocPrint(alloc, "Resource: {s}", .{name}) catch unreachable;
+    const res = alloc.create(Resource) catch unreachable;
+    res.* = .{ .data = data, .allocator = alloc };
+    return .{ .created = res };
+}
+
+~pub event destroy_resource { res: *Resource[!allocated] }
+| destroyed
+
+~proc destroy_resource {
+    std.debug.print("  Auto-dispose called!\n", .{});
+    res.allocator.free(res.data);
+    std.heap.page_allocator.destroy(res);
+    return .{ .destroyed = .{} };
+}
+
+// Helper to use the resource
+~pub event use_resource { res: *Resource }
+| used
+
+~proc use_resource {
+    std.debug.print("  Using: {s}\n", .{res.data});
+    return .{ .used = .{} };
+}
+
+// Test: Create resource, use it, but DON'T manually destroy
+// Auto-dispose should insert destroy_resource
+~std.io:print.ln("Test start")
+~create_resource(name: "AutoDisposed")
+| created r |>
+    use_resource(res: r)
+    | used |> _
+    // Obligation [allocated!] should trigger auto-dispose here
+
+~std.io:print.ln("Test done")

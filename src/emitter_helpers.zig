@@ -972,6 +972,12 @@ fn bindingIsUsedInContinuations(binding_name: []const u8, continuations: []const
                     }
                 },
                 .branch_constructor => |bc| {
+                    // Check plain value first (identity branch constructor)
+                    if (bc.plain_value) |pv| {
+                        if (valueReferencesBinding(pv, binding_name)) {
+                            return true;
+                        }
+                    }
                     for (bc.fields) |field| {
                         const value = if (field.expression_str) |expr| expr else field.type;
                         if (valueReferencesBinding(value, binding_name)) {
@@ -1157,19 +1163,26 @@ fn emitSubflowContinuationsWithDepth(
                     try emitter.write(indent);
                     try emitter.write("return .{ .");
                     try writeBranchName(emitter, bc.branch_name);
-                    try emitter.write(" = .{");
-                    for (bc.fields, 0..) |field, i| {
-                        if (i > 0) try emitter.write(", ");
-                        try emitter.write(" .");
-                        try emitter.write(field.name);
-                        try emitter.write(" = ");
-                        if (field.expression_str) |expr| {
-                            try emitter.write(expr);
-                        } else {
-                            try emitter.write(field.type);
+                    try emitter.write(" = ");
+                    // Check for plain value (identity branch constructor)
+                    if (bc.plain_value) |pv| {
+                        try emitter.write(pv);
+                    } else {
+                        try emitter.write(".{");
+                        for (bc.fields, 0..) |field, i| {
+                            if (i > 0) try emitter.write(", ");
+                            try emitter.write(" .");
+                            try emitter.write(field.name);
+                            try emitter.write(" = ");
+                            if (field.expression_str) |expr| {
+                                try emitter.write(expr);
+                            } else {
+                                try emitter.write(field.type);
+                            }
                         }
+                        try emitter.write(" }");
                     }
-                    try emitter.write(" } };\n");
+                    try emitter.write(" };\n");
                 },
                 else => {},
             }
@@ -1270,11 +1283,19 @@ fn emitSubflowContinuationsWithDepth(
                                         }
                                     },
                                     .branch_constructor => |bc| {
-                                        for (bc.fields) |field| {
-                                            const value = if (field.expression_str) |expr| expr else field.type;
-                                            if (valueReferencesBinding(value, binding_name)) {
+                                        // Check plain value first (identity branch constructor)
+                                        if (bc.plain_value) |pv| {
+                                            if (valueReferencesBinding(pv, binding_name)) {
                                                 needs_binding = true;
-                                                break;
+                                            }
+                                        }
+                                        if (!needs_binding) {
+                                            for (bc.fields) |field| {
+                                                const value = if (field.expression_str) |expr| expr else field.type;
+                                                if (valueReferencesBinding(value, binding_name)) {
+                                                    needs_binding = true;
+                                                    break;
+                                                }
                                             }
                                         }
                                     },
@@ -1338,11 +1359,19 @@ fn emitSubflowContinuationsWithDepth(
                                 }
                             },
                             .branch_constructor => |bc| {
-                                for (bc.fields) |field| {
-                                    const value = if (field.expression_str) |expr| expr else field.type;
-                                    if (valueReferencesBinding(value, binding_name)) {
+                                // Check plain value first (identity branch constructor)
+                                if (bc.plain_value) |pv| {
+                                    if (valueReferencesBinding(pv, binding_name)) {
                                         needs_binding = true;
-                                        break;
+                                    }
+                                }
+                                if (!needs_binding) {
+                                    for (bc.fields) |field| {
+                                        const value = if (field.expression_str) |expr| expr else field.type;
+                                        if (valueReferencesBinding(value, binding_name)) {
+                                            needs_binding = true;
+                                            break;
+                                        }
                                     }
                                 }
                             },
@@ -1479,11 +1508,19 @@ fn emitSubflowContinuationsWithDepth(
                         }
                     },
                     .branch_constructor => |bc| {
-                        for (bc.fields) |field| {
-                            const value = if (field.expression_str) |expr| expr else field.type;
-                            if (valueReferencesBinding(value, actual_binding)) {
+                        // Check plain value first (identity branch constructor)
+                        if (bc.plain_value) |pv| {
+                            if (valueReferencesBinding(pv, actual_binding)) {
                                 needs_binding = true;
-                                break;
+                            }
+                        }
+                        if (!needs_binding) {
+                            for (bc.fields) |field| {
+                                const value = if (field.expression_str) |expr| expr else field.type;
+                                if (valueReferencesBinding(value, actual_binding)) {
+                                    needs_binding = true;
+                                    break;
+                                }
                             }
                         }
                     },
@@ -1689,19 +1726,26 @@ fn emitSubflowContinuationsWithDepth(
                                 try emitter.write(indent);
                                 try emitter.write("        return .{ .");
                                 try writeBranchName(emitter, bc.branch_name);
-                                try emitter.write(" = .{");
-                                for (bc.fields, 0..) |field, idx| {
-                                    if (idx > 0) try emitter.write(", ");
-                                    try emitter.write(" .");
-                                    try emitter.write(field.name);
-                                    try emitter.write(" = ");
-                                    if (field.expression_str) |expr| {
-                                        try emitter.write(expr);
-                                    } else {
-                                        try emitter.write(field.type);
+                                try emitter.write(" = ");
+                                // Check for plain value (identity branch constructor)
+                                if (bc.plain_value) |pv| {
+                                    try emitter.write(pv);
+                                } else {
+                                    try emitter.write(".{");
+                                    for (bc.fields, 0..) |field, idx| {
+                                        if (idx > 0) try emitter.write(", ");
+                                        try emitter.write(" .");
+                                        try emitter.write(field.name);
+                                        try emitter.write(" = ");
+                                        if (field.expression_str) |expr| {
+                                            try emitter.write(expr);
+                                        } else {
+                                            try emitter.write(field.type);
+                                        }
                                     }
+                                    try emitter.write(" }");
                                 }
-                                try emitter.write(" } };\n");
+                                try emitter.write(" };\n");
                             },
                             else => {
                                 // Other step types - not expected in return switch optimization path
@@ -1733,19 +1777,26 @@ fn emitSubflowContinuationsWithDepth(
                             .branch_constructor => |bc2| {
                                 try emitter.write(".{ .");
                                 try writeBranchName(emitter, bc2.branch_name);
-                                try emitter.write(" = .{");
-                                for (bc2.fields, 0..) |field2, idx| {
-                                    if (idx > 0) try emitter.write(", ");
-                                    try emitter.write(" .");
-                                    try emitter.write(field2.name);
-                                    try emitter.write(" = ");
-                                    if (field2.expression_str) |expr| {
-                                        try emitter.write(expr);
-                                    } else {
-                                        try emitter.write(field2.type);
+                                try emitter.write(" = ");
+                                // Check for plain value (identity branch constructor)
+                                if (bc2.plain_value) |pv| {
+                                    try emitter.write(pv);
+                                } else {
+                                    try emitter.write(".{");
+                                    for (bc2.fields, 0..) |field2, idx| {
+                                        if (idx > 0) try emitter.write(", ");
+                                        try emitter.write(" .");
+                                        try emitter.write(field2.name);
+                                        try emitter.write(" = ");
+                                        if (field2.expression_str) |expr| {
+                                            try emitter.write(expr);
+                                        } else {
+                                            try emitter.write(field2.type);
+                                        }
                                     }
+                                    try emitter.write(" }");
                                 }
-                                try emitter.write(" } }");
+                                try emitter.write(" }");
                             },
                             else => {},
                         }
@@ -1776,11 +1827,19 @@ fn emitSubflowContinuationsWithDepth(
                             }
                         },
                         .branch_constructor => |bc| {
-                            for (bc.fields) |field| {
-                                const value = if (field.expression_str) |expr| expr else field.type;
-                                if (valueReferencesBinding(value, actual_binding)) {
+                            // Check plain value first (identity branch constructor)
+                            if (bc.plain_value) |pv| {
+                                if (valueReferencesBinding(pv, actual_binding)) {
                                     needs_binding = true;
-                                    break;
+                                }
+                            }
+                            if (!needs_binding) {
+                                for (bc.fields) |field| {
+                                    const value = if (field.expression_str) |expr| expr else field.type;
+                                    if (valueReferencesBinding(value, actual_binding)) {
+                                        needs_binding = true;
+                                        break;
+                                    }
                                 }
                             }
                         },
@@ -1845,19 +1904,26 @@ fn emitSubflowContinuationsWithDepth(
                         .branch_constructor => |bc| {
                             try emitter.write(".{ .");
                             try writeBranchName(emitter, bc.branch_name);
-                            try emitter.write(" = .{");
-                            for (bc.fields, 0..) |field, field_idx| {
-                                if (field_idx > 0) try emitter.write(", ");
-                                try emitter.write(" .");
-                                try emitter.write(field.name);
-                                try emitter.write(" = ");
-                                if (field.expression_str) |expr| {
-                                    try emitter.write(expr);
-                                } else {
-                                    try emitter.write(field.type);
+                            try emitter.write(" = ");
+                            // Check for plain value (identity branch constructor)
+                            if (bc.plain_value) |pv| {
+                                try emitter.write(pv);
+                            } else {
+                                try emitter.write(".{");
+                                for (bc.fields, 0..) |field, field_idx| {
+                                    if (field_idx > 0) try emitter.write(", ");
+                                    try emitter.write(" .");
+                                    try emitter.write(field.name);
+                                    try emitter.write(" = ");
+                                    if (field.expression_str) |expr| {
+                                        try emitter.write(expr);
+                                    } else {
+                                        try emitter.write(field.type);
+                                    }
                                 }
+                                try emitter.write(" }");
                             }
-                            try emitter.write(" } }");
+                            try emitter.write(" }");
                         },
                         else => {
                             // Fallback for other step types

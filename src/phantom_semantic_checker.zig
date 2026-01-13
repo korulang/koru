@@ -905,12 +905,17 @@ pub const PhantomSemanticChecker = struct {
         {
             for (branch_payload.?.fields) |field| {
                 if (field.phantom) |phantom_str| {
-                    // Construct field access: binding.field_name
-                    const field_path = try std.fmt.allocPrint(
-                        self.allocator,
-                        "{s}.{s}",
-                        .{binding_name, field.name}
-                    );
+                    // For identity branches (__type_ref), use just the binding name
+                    // since the value IS the binding. For struct branches, use binding.field
+                    const is_identity = std.mem.eql(u8, field.name, "__type_ref");
+                    const field_path = if (is_identity)
+                        try self.allocator.dupe(u8, binding_name)
+                    else
+                        try std.fmt.allocPrint(
+                            self.allocator,
+                            "{s}.{s}",
+                            .{binding_name, field.name}
+                        );
                     defer self.allocator.free(field_path);
 
                     // Canonicalize phantom state using event's qualified module name
