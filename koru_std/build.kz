@@ -40,7 +40,7 @@ const std = @import("std");
 // build:command.flow (backend passes, slower but more powerful).
 //
 // Usage:
-//   ~std.build:command.sh(name: "test") {
+//   ~std.build:command.sh(name: "test", description: "Run all tests") {
 //     ./run_regression.sh
 //   }
 //
@@ -48,8 +48,9 @@ const std = @import("std");
 // Executes: ./run_regression.sh --all --verbose
 //
 // The shell command receives all remaining argv as arguments.
+// Use `koruc main.kz help` to list all available commands.
 
-~[comptime|norun]pub event command.sh { name: []const u8, source: Source }
+~[comptime|norun]pub event command.sh { name: []const u8, description: []const u8, source: Source }
 
 // ============================================================================
 // BUILD COMMANDS - Zig Functions (Frontend Compilation + Execution)

@@ -388,6 +388,12 @@ pub const VisitorEmitter = struct {
             try self.code_emitter.write("pub fn comptime_main(program: *const __koru_ast.Program, allocator: __koru_std.mem.Allocator) void {\n");
             self.code_emitter.indent();
 
+            // Suppress unused parameter warnings (using & works whether params are used or not)
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("_ = &program;\n");
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("_ = &allocator;\n");
+
             // Emit calls to all comptime flows in sequence
             // IMPORTANT: Only call flows that were actually emitted (skip [norun])
             var i: usize = 0;
@@ -749,6 +755,14 @@ pub const VisitorEmitter = struct {
                     try self.code_emitter.write("() void {\n");
                 }
                 self.code_emitter.indent();
+
+                // Suppress unused parameter warnings for comptime flows (using & works whether used or not)
+                if (invokes_comptime_event and self.emit_mode == .comptime_only) {
+                    try self.code_emitter.writeIndent();
+                    try self.code_emitter.write("_ = &program;\n");
+                    try self.code_emitter.writeIndent();
+                    try self.code_emitter.write("_ = &allocator;\n");
+                }
 
                 // Create emission context for this flow
                 // NOTE: ast_items uses all_items (full AST) for event declaration lookup (needed for loops)

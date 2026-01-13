@@ -3187,10 +3187,14 @@ fn collectFlagDeclarations(allocator: std.mem.Allocator, program: *const ast.Pro
 const ShellCommand = struct {
     name: []const u8,
     script: []const u8,
+    description: []const u8,
 
     fn deinit(self: *ShellCommand, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
         allocator.free(self.script);
+        if (self.description.len > 0) {
+            allocator.free(self.description);
+        }
     }
 };
 
@@ -3225,21 +3229,30 @@ fn collectShellCommands(allocator: std.mem.Allocator, program: *const ast.Progra
                     std.mem.eql(u8, flow.invocation.path.segments[0], "command") and
                     std.mem.eql(u8, flow.invocation.path.segments[1], "sh"))
                 {
-                    // Extract name and source parameters
+                    // Extract name, source, and description parameters
                     var name: ?[]const u8 = null;
                     var script: ?[]const u8 = null;
+                    var description: ?[]const u8 = null;
 
                     for (flow.invocation.args) |arg| {
                         if (std.mem.eql(u8, arg.name, "name")) {
                             // Strip quotes from name value
                             const raw_name = arg.value;
-                            const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len-1] == '"')
-                                raw_name[1..raw_name.len-1]
+                            const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len - 1] == '"')
+                                raw_name[1 .. raw_name.len - 1]
                             else
                                 raw_name;
                             name = try allocator.dupe(u8, trimmed);
                         } else if (std.mem.eql(u8, arg.name, "source")) {
                             script = try allocator.dupe(u8, arg.value);
+                        } else if (std.mem.eql(u8, arg.name, "description")) {
+                            // Strip quotes from description value
+                            const raw_desc = arg.value;
+                            const trimmed = if (raw_desc.len >= 2 and raw_desc[0] == '"' and raw_desc[raw_desc.len - 1] == '"')
+                                raw_desc[1 .. raw_desc.len - 1]
+                            else
+                                raw_desc;
+                            description = try allocator.dupe(u8, trimmed);
                         }
                     }
 
@@ -3247,6 +3260,7 @@ fn collectShellCommands(allocator: std.mem.Allocator, program: *const ast.Progra
                         try commands.append(allocator, ShellCommand{
                             .name = name.?,
                             .script = script.?,
+                            .description = description orelse "",
                         });
                     }
                 }
@@ -3265,18 +3279,27 @@ fn collectShellCommands(allocator: std.mem.Allocator, program: *const ast.Progra
                         {
                             var name: ?[]const u8 = null;
                             var script: ?[]const u8 = null;
+                            var description: ?[]const u8 = null;
 
                             for (flow.invocation.args) |arg| {
                                 if (std.mem.eql(u8, arg.name, "name")) {
                                     // Strip quotes from name value
                                     const raw_name = arg.value;
-                                    const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len-1] == '"')
-                                        raw_name[1..raw_name.len-1]
+                                    const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len - 1] == '"')
+                                        raw_name[1 .. raw_name.len - 1]
                                     else
                                         raw_name;
                                     name = try allocator.dupe(u8, trimmed);
                                 } else if (std.mem.eql(u8, arg.name, "source")) {
                                     script = try allocator.dupe(u8, arg.value);
+                                } else if (std.mem.eql(u8, arg.name, "description")) {
+                                    // Strip quotes from description value
+                                    const raw_desc = arg.value;
+                                    const trimmed = if (raw_desc.len >= 2 and raw_desc[0] == '"' and raw_desc[raw_desc.len - 1] == '"')
+                                        raw_desc[1 .. raw_desc.len - 1]
+                                    else
+                                        raw_desc;
+                                    description = try allocator.dupe(u8, trimmed);
                                 }
                             }
 
@@ -3284,6 +3307,7 @@ fn collectShellCommands(allocator: std.mem.Allocator, program: *const ast.Progra
                                 try commands.append(allocator, ShellCommand{
                                     .name = name.?,
                                     .script = script.?,
+                                    .description = description orelse "",
                                 });
                             }
                         }
@@ -4751,6 +4775,54 @@ pub fn main() !void {
             // Check if there's a next arg that might be a command
             if (arg_idx + 1 < args.len) {
                 const potential_command = args[arg_idx + 1];
+
+                // Handle "help" command - list all available commands
+                if (std.mem.eql(u8, potential_command, "help")) {
+                    if (shell_commands.len == 0 and zig_commands.len == 0) {
+                        try printStdout(allocator, "No commands defined in {s}\n", .{input});
+                        std.process.exit(0);
+                    }
+
+                    try printStdout(allocator, "\nAvailable commands:\n", .{});
+
+                    // Calculate max command name length for alignment
+                    var max_name_len: usize = 0;
+                    for (shell_commands) |cmd| {
+                        if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
+                    }
+                    for (zig_commands) |cmd| {
+                        if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
+                    }
+
+                    // Print shell commands
+                    for (shell_commands) |cmd| {
+                        const padding = max_name_len - cmd.name.len + 2;
+                        try printStdout(allocator, "  {s}", .{cmd.name});
+                        var pad_idx: usize = 0;
+                        while (pad_idx < padding) : (pad_idx += 1) {
+                            try printStdout(allocator, " ", .{});
+                        }
+                        if (cmd.description.len > 0) {
+                            try printStdout(allocator, "{s}\n", .{cmd.description});
+                        } else {
+                            try printStdout(allocator, "(no description)\n", .{});
+                        }
+                    }
+
+                    // Print zig commands
+                    for (zig_commands) |cmd| {
+                        const padding = max_name_len - cmd.name.len + 2;
+                        try printStdout(allocator, "  {s}", .{cmd.name});
+                        var pad_idx: usize = 0;
+                        while (pad_idx < padding) : (pad_idx += 1) {
+                            try printStdout(allocator, " ", .{});
+                        }
+                        try printStdout(allocator, "(zig command)\n", .{});
+                    }
+
+                    try printStdout(allocator, "\nUsage: koruc {s} <command>\n", .{input});
+                    std.process.exit(0);
+                }
 
                 // Search for matching shell command
                 for (shell_commands) |cmd| {
