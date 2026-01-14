@@ -2820,12 +2820,32 @@ fn branchHasPayloadFieldsSearchAll(
 }
 
 /// Emit an invocation (const result = event.handler(...))
+/// If a SubflowImpl with immediate body exists for this path, inline the value instead
 fn emitInvocation(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
     invocation: *const ast.Invocation,
     result_var: []const u8,
 ) !void {
+    // Check for SubflowImpl with immediate body (mock/constant value)
+    // If found, inline the value instead of calling the handler
+    if (ctx.ast_items) |items| {
+        if (findSubflowImplByPath(items, &invocation.path)) |subflow_impl| {
+            if (subflow_impl.body == .immediate) {
+                // Emit: const result = .{ .branch = .{ fields... } };
+                try emitter.writeIndent();
+                if (!std.mem.eql(u8, result_var, "_")) {
+                    try emitter.write("const ");
+                }
+                try emitter.write(result_var);
+                try emitter.write(" = ");
+                try emitBranchConstructor(emitter, ctx, &subflow_impl.body.immediate, true);
+                try emitter.write(";\n");
+                return;
+            }
+        }
+    }
+
     try emitter.writeIndent();
     // Don't use 'const' if result_var is "_" (discard)
     // Note: Labeled invocations (which need 'var') don't use this function - they emit manually
