@@ -5166,6 +5166,10 @@ pub fn main() !void {
     try user_registry.populateFromAST(source_file.items);
     std.debug.print("TypeRegistry populated with {} events\n", .{user_registry.events.count()});
 
+    // Attach TypeRegistry to Program for transform access
+    // Transforms can clone this for supplemental parsing
+    source_file.type_registry = &user_registry;
+
     // Validate abstract events and implementations
     // This must happen AFTER canonicalization so we can match canonical paths
     std.debug.print("Validating abstract events and implementations...\n", .{});

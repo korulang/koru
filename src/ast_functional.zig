@@ -72,6 +72,7 @@ pub fn mapItems(
         .module_annotations = new_annotations,
         .main_module_name = try allocator.dupe(u8, source.main_module_name),
         .allocator = allocator,
+        .type_registry = null,
     };
 }
 
@@ -110,6 +111,7 @@ pub fn filterItems(
         .module_annotations = new_annotations,
         .main_module_name = try allocator.dupe(u8, source.main_module_name),
         .allocator = allocator,
+        .type_registry = null,
     };
 }
 
@@ -172,6 +174,7 @@ pub fn replaceAt(
         .module_annotations = new_annotations,
         .main_module_name = try allocator.dupe(u8, source.main_module_name),
         .allocator = allocator,
+        .type_registry = null,
     };
 }
 
@@ -327,6 +330,7 @@ pub fn insertAt(
         .module_annotations = new_annotations,
         .main_module_name = try allocator.dupe(u8, source.main_module_name),
         .allocator = allocator,
+        .type_registry = null,
     };
 }
 
@@ -376,6 +380,7 @@ pub fn removeAt(
         .module_annotations = new_annotations,
         .main_module_name = try allocator.dupe(u8, source.main_module_name),
         .allocator = allocator,
+        .type_registry = null,
     };
 }
 
@@ -438,6 +443,7 @@ pub fn transformWhere(
         .module_annotations = new_annotations,
         .main_module_name = try allocator.dupe(u8, source.main_module_name),
         .allocator = allocator,
+        .type_registry = null,
     };
 }
 
@@ -484,6 +490,7 @@ pub fn transformWhereWithContext(
         .module_annotations = new_annotations,
         .main_module_name = try allocator.dupe(u8, source.main_module_name),
         .allocator = allocator,
+        .type_registry = null,
     };
 }
 
@@ -539,6 +546,8 @@ pub fn cloneSourceFile(allocator: std.mem.Allocator, source: *const ast.Program)
         .module_annotations = new_annotations,
         .main_module_name = try allocator.dupe(u8, source.main_module_name),
         .allocator = allocator,
+        // Cloned Programs don't inherit registry - transforms can build/clone if needed
+        .type_registry = null,
     };
 }
 
@@ -1678,6 +1687,7 @@ pub fn filterByAnnotation(
         .module_annotations = new_annotations,
         .main_module_name = try allocator.dupe(u8, source.main_module_name),
         .allocator = allocator,
+        .type_registry = null,
     };
 }
 

@@ -118,6 +118,10 @@ pub const Program = struct {
     main_module_name: []const u8,  // Canonical name of the main module (e.g., "input" from input.kz)
     allocator: std.mem.Allocator,
 
+    /// TypeRegistry for this program (opaque to avoid circular import with type_registry.zig)
+    /// Cast to *TypeRegistry when needed. Enables transforms to do supplemental parsing.
+    type_registry: ?*anyopaque = null,
+
     pub fn deinit(self: *Program) void {
         for (self.items) |*item| {
             var mutable_item = item.*;

@@ -1,0 +1,111 @@
+// Koru Testing Framework
+//
+// Compiler-guided test development with automatic mock detection.
+//
+// Usage:
+//   ~test(User cannot withdraw more than balance) {
+//       ~account.balance = amount 50
+//       ~app:withdraw(amount: 100)
+//       | insufficient_funds |> assert.ok()
+//   }
+//
+// The compiler:
+//   1. Traces the flow to find impure events
+//   2. Errors if impure event not mocked
+//   3. Errors if mock is unused
+//   4. Generates Zig test block
+
+const std = @import("std");
+
+// =============================================================================
+// Test Declaration
+// =============================================================================
+
+// Main test event - takes name as Expression, body as Source
+// The transform parses the body, identifies mocks, rewrites the AST
+~[keyword|comptime|transform] pub event test {
+    expr: Expression,
+    source: Source,
+    category: ?[]const u8
+}
+
+// Test with shared harness (mocks can be unused per-test)
+~[keyword|comptime|transform] pub event test.with_harness {
+    expr: Expression,
+    harness: []const u8,
+    source: Source
+}
+
+// Define a test harness with shared mocks
+~[keyword|comptime|transform] pub event test.harness {
+    expr: Expression,
+    source: Source
+}
+
+// =============================================================================
+// Assertions
+// =============================================================================
+
+// Simple pass - just marks the test as passed at this point
+~[keyword] pub event assert.ok {}
+| ok {}
+
+~proc assert.ok {
+    return .{ .ok = .{} };
+}
+
+// Simple fail - fails the test with optional message
+~[keyword] pub event assert.fail { message: ?[]const u8 }
+| failed {}
+
+~proc assert.fail {
+    const msg = message orelse "Assertion failed";
+    @panic(msg);
+}
+
+// Equality assertion
+~[keyword] pub event assert.eq { expected: Expression, actual: Expression }
+| ok {}
+| failed { expected: []const u8, actual: []const u8 }
+
+// TODO: Transform to generate Zig equality check
+
+// Contains assertion (for strings/slices)
+~[keyword] pub event assert.contains { haystack: Expression, needle: Expression }
+| ok {}
+| failed {}
+
+// TODO: Transform to generate Zig contains check
+
+// =============================================================================
+// Property Testing
+// =============================================================================
+
+// Test that multiple variants produce equivalent results
+// Usage:
+//   ~test.property.equivalent {
+//       ~ast:select(blur|*)
+//   }
+~[comptime|transform] pub event test.property.equivalent {
+    source: Source
+}
+
+// =============================================================================
+// Transform Implementation (Stub)
+// =============================================================================
+
+// The actual transform will:
+// 1. Parse source block as Koru AST
+// 2. Find mock definitions: lines matching `~event = branch { ... }`
+// 3. Extract the flow under test (non-mock lines)
+// 4. Trace flow to find impure events
+// 5. Error if impure event not mocked
+// 6. Error if mock unused
+// 7. Create mangled proc implementations for mocks
+// 8. Rewrite flow to call mangled versions
+// 9. Emit Zig test block
+
+// ~proc test {
+//     // TODO: Implement transform
+//     // For now, just parse and validate structure
+// }

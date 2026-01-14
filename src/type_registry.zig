@@ -83,7 +83,96 @@ pub const TypeRegistry = struct {
         }
         self.public_events.deinit();
     }
-    
+
+    /// Clone this TypeRegistry with a new allocator
+    /// Enables transforms to create local registries for supplemental parsing
+    pub fn clone(self: *const TypeRegistry, allocator: std.mem.Allocator) !TypeRegistry {
+        var new_registry = TypeRegistry.init(allocator);
+        errdefer new_registry.deinit();
+
+        // Clone events
+        var event_iter = self.events.iterator();
+        while (event_iter.next()) |entry| {
+            const key = try allocator.dupe(u8, entry.key_ptr.*);
+            errdefer allocator.free(key);
+
+            const event_type = entry.value_ptr.*;
+            const cloned_event = EventType{
+                .input_shape = try new_registry.duplicateShape(event_type.input_shape),
+                .branches = try new_registry.duplicateBranches(event_type.branches),
+                .is_public = event_type.is_public,
+                .is_implicit_flow = event_type.is_implicit_flow,
+            };
+            try new_registry.events.put(key, cloned_event);
+        }
+
+        // Clone procs
+        var proc_iter = self.procs.iterator();
+        while (proc_iter.next()) |entry| {
+            const key = try allocator.dupe(u8, entry.key_ptr.*);
+            errdefer allocator.free(key);
+
+            const proc_sig = entry.value_ptr.*;
+            const cloned_proc = ProcSignature{
+                .input_shape = try new_registry.duplicateShape(proc_sig.input_shape),
+                .output_branches = if (proc_sig.output_branches) |branches|
+                    try new_registry.duplicateBranches(branches)
+                else
+                    null,
+            };
+            try new_registry.procs.put(key, cloned_proc);
+        }
+
+        // Clone subflows
+        var subflow_iter = self.subflows.iterator();
+        while (subflow_iter.next()) |entry| {
+            const key = try allocator.dupe(u8, entry.key_ptr.*);
+            errdefer allocator.free(key);
+
+            const subflow_type = entry.value_ptr.*;
+            const cloned_subflow = SubflowType{
+                .event_path = try allocator.dupe(u8, subflow_type.event_path),
+                .output_shape = if (subflow_type.output_shape) |shape| blk: {
+                    break :blk ShapeUnion{
+                        .branches = try new_registry.duplicateBranches(shape.branches),
+                    };
+                } else null,
+            };
+            try new_registry.subflows.put(key, cloned_subflow);
+        }
+
+        // Clone labels
+        var label_iter = self.labels.iterator();
+        while (label_iter.next()) |entry| {
+            const key = try allocator.dupe(u8, entry.key_ptr.*);
+            errdefer allocator.free(key);
+
+            const label_type = entry.value_ptr.*;
+            const cloned_label = LabelType{
+                .expected_shape = try new_registry.duplicateShape(label_type.expected_shape),
+            };
+            try new_registry.labels.put(key, cloned_label);
+        }
+
+        // Clone imports
+        var import_iter = self.imports.iterator();
+        while (import_iter.next()) |entry| {
+            const key = try allocator.dupe(u8, entry.key_ptr.*);
+            errdefer allocator.free(key);
+            const value = try allocator.dupe(u8, entry.value_ptr.*);
+            try new_registry.imports.put(key, value);
+        }
+
+        // Clone public_events
+        var public_iter = self.public_events.iterator();
+        while (public_iter.next()) |entry| {
+            const key = try allocator.dupe(u8, entry.key_ptr.*);
+            try new_registry.public_events.put(key, {});
+        }
+
+        return new_registry;
+    }
+
     /// Register an event with its branch types
     pub fn registerEvent(self: *TypeRegistry, path: []const u8, event_decl: *const ast.EventDecl) !void {
         // Check if event already exists
