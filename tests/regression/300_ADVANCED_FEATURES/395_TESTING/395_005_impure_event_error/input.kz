@@ -1,0 +1,38 @@
+// Test: Impure events require overrides
+// MUST_FAIL: has impure events without overrides
+//
+// When a test calls an impure event (Zig proc without ~[pure]),
+// the compiler should error and list ALL impure events at once.
+//
+// This is the "fix/recompile loop killer" - great UX!
+
+~import "$std/testing"
+
+// Impure event - Zig proc without ~[pure]
+~event fetch_user { id: u32 }
+| found { name: []const u8 }
+| not_found {}
+
+~proc fetch_user {
+    // This is impure - does I/O (simulated)
+    return .{ .found = .{ .name = "Alice" } };
+}
+
+// Another impure event
+~event save_log { message: []const u8 }
+| saved {}
+
+~proc save_log {
+    // This is impure - writes to disk
+    return .{ .saved = .{} };
+}
+
+// Test: Should FAIL - calls impure events without overrides
+~test(Impure events should error) {
+    ~fetch_user(id: 1)
+    | found u |>
+        save_log(message: u.name)
+        | saved |> assert.ok()
+}
+
+pub fn main() void {}

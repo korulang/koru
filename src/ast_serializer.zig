@@ -463,6 +463,17 @@ pub const AstSerializer = struct {
         try self.writeString(event.module);
         try self.write(",\n");
 
+        // Purity flags (computed by PurityChecker)
+        try self.writeIndent();
+        try self.write(".is_pure = ");
+        try self.write(if (event.is_pure) "true" else "false");
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write(".is_transitively_pure = ");
+        try self.write(if (event.is_transitively_pure) "true" else "false");
+        try self.write(",\n");
+
         self.dedent();
         try self.writeIndent();
         try self.write("}");

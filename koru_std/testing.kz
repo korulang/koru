@@ -183,6 +183,169 @@ const std = @import("std");
         }
     }
 
+    // ==========================================================================
+    // PURITY-AWARE FLOW WALKER
+    // Walk flows to find impure events that need overrides
+    // ==========================================================================
+    var impure_events = std_import.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
+
+    // Helper to build path string from DottedPath
+    const pathToString = struct {
+        fn convert(path: *const ast.DottedPath, alloc: std_import.mem.Allocator) []const u8 {
+            var buf = std_import.ArrayList(u8).initCapacity(alloc, 64) catch unreachable;
+            if (path.module_qualifier) |mq| {
+                buf.appendSlice(alloc, mq) catch {};
+                buf.append(alloc, ':') catch {};
+            }
+            for (path.segments, 0..) |seg, i| {
+                if (i > 0) buf.append(alloc, '.') catch {};
+                buf.appendSlice(alloc, seg) catch {};
+            }
+            return buf.items;
+        }
+    };
+
+    // Recursive flow walker
+    const FlowWalker = struct {
+        fn walkFlow(
+            flow_to_walk: *const ast.Flow,
+            overrides: *const std_import.StringHashMap(ast.BranchConstructor),
+            impure_list: *std_import.ArrayList([]const u8),
+            all_items: []const ast.Item,
+            alloc: std_import.mem.Allocator,
+        ) void {
+            // Get the invocation path as string
+            const inv_path = pathToString.convert(&flow_to_walk.invocation.path, alloc);
+
+            // Check if this invocation has a constant override
+            if (overrides.get(inv_path)) |bc| {
+                // Has override - prune to known branch, walk only that continuation
+                for (flow_to_walk.continuations) |cont| {
+                    if (std_import.mem.eql(u8, cont.branch, bc.branch_name)) {
+                        // Walk nested flows in this continuation
+                        walkContinuation(&cont, overrides, impure_list, all_items, alloc);
+                        break;
+                    }
+                }
+            } else {
+                // No override - check event implementation
+                // First try to find a proc (Zig implementation)
+                if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.invocation.path)) |proc| {
+                    if (!proc.is_pure) {
+                        // IMPURE Zig proc without override - ERROR
+                        // Check if we already have this path in the list
+                        var already_added = false;
+                        for (impure_list.items) |existing| {
+                            if (std_import.mem.eql(u8, existing, inv_path)) {
+                                already_added = true;
+                                break;
+                            }
+                        }
+                        if (!already_added) {
+                            impure_list.append(alloc, inv_path) catch {};
+                        }
+                    }
+                    // Walk all continuations (pure or already errored)
+                    for (flow_to_walk.continuations) |cont| {
+                        walkContinuation(&cont, overrides, impure_list, all_items, alloc);
+                    }
+                } else if (emitter_helpers.findSubflowImplByPath(all_items, &flow_to_walk.invocation.path)) |sf| {
+                    // Found subflow implementation
+                    if (sf.body == .flow) {
+                        // Koru subflow - walk it recursively
+                        walkFlow(&sf.body.flow, overrides, impure_list, all_items, alloc);
+                    }
+                    // If immediate, should have been in overrides - treat as pruned
+                    // Walk all continuations
+                    for (flow_to_walk.continuations) |cont| {
+                        walkContinuation(&cont, overrides, impure_list, all_items, alloc);
+                    }
+                } else {
+                    // Event with no proc or subflow - check the event's purity
+                    if (emitter_helpers.findEventDeclByPath(all_items, &flow_to_walk.invocation.path)) |event| {
+                        if (!event.is_pure) {
+                            // Impure event without override - ERROR
+                            var already_added = false;
+                            for (impure_list.items) |existing| {
+                                if (std_import.mem.eql(u8, existing, inv_path)) {
+                                    already_added = true;
+                                    break;
+                                }
+                            }
+                            if (!already_added) {
+                                impure_list.append(alloc, inv_path) catch {};
+                            }
+                        }
+                    }
+                    // Walk all continuations
+                    for (flow_to_walk.continuations) |cont| {
+                        walkContinuation(&cont, overrides, impure_list, all_items, alloc);
+                    }
+                }
+            }
+        }
+
+        fn walkContinuation(
+            cont: *const ast.Continuation,
+            overrides: *const std_import.StringHashMap(ast.BranchConstructor),
+            impure_list: *std_import.ArrayList([]const u8),
+            all_items: []const ast.Item,
+            alloc: std_import.mem.Allocator,
+        ) void {
+            // Check if continuation has a nested node (invocation)
+            if (cont.node) |node| {
+                switch (node) {
+                    .invocation => |inv| {
+                        // Create a temporary flow to walk this invocation
+                        // Use the continuation's nested continuations
+                        const temp_flow = ast.Flow{
+                            .invocation = inv,
+                            .continuations = cont.continuations,
+                            .location = cont.location,
+                            .module = "",
+                            .is_pure = true,
+                            .is_transitively_pure = false,
+                        };
+                        walkFlow(&temp_flow, overrides, impure_list, all_items, alloc);
+                    },
+                    else => {
+                        // Other node types - still walk nested continuations
+                        for (cont.continuations) |nested_cont| {
+                            walkContinuation(&nested_cont, overrides, impure_list, all_items, alloc);
+                        }
+                    },
+                }
+            } else {
+                // No node but might have nested continuations (rare)
+                for (cont.continuations) |nested_cont| {
+                    walkContinuation(&nested_cont, overrides, impure_list, all_items, alloc);
+                }
+            }
+        }
+    };
+
+    // Walk all cloned flows to find impure events
+    for (cloned_flows.items) |cloned_item| {
+        if (cloned_item == .flow) {
+            FlowWalker.walkFlow(&cloned_item.flow, &mock_paths, &impure_events, program.items, allocator);
+        }
+    }
+
+    // If there are impure events without overrides, emit compile error
+    if (impure_events.items.len > 0) {
+        var error_msg = std_import.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+        error_msg.appendSlice(allocator, "Test '") catch {};
+        error_msg.appendSlice(allocator, test_name) catch {};
+        error_msg.appendSlice(allocator, "' has impure events without overrides:\n") catch {};
+        for (impure_events.items) |event_path| {
+            error_msg.appendSlice(allocator, "  - ") catch {};
+            error_msg.appendSlice(allocator, event_path) catch {};
+            error_msg.appendSlice(allocator, "\n") catch {};
+        }
+        error_msg.appendSlice(allocator, "\nAdd overrides like: ~event_name = branch { field: value }") catch {};
+        @panic(error_msg.items);
+    }
+
     // Emit each cloned flow, substituting mocks inline
     var result_counter: usize = 0;
     for (cloned_flows.items) |cloned_item| {

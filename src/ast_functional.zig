@@ -720,6 +720,8 @@ fn cloneProcDecl(allocator: std.mem.Allocator, proc: *const ast.ProcDecl) !ast.P
         .annotations = annotations,
         .target = if (proc.target) |t| try allocator.dupe(u8, t) else null,
         .is_impl = proc.is_impl,
+        .is_pure = proc.is_pure,
+        .is_transitively_pure = proc.is_transitively_pure,
         .location = proc.location,
         .module = try allocator.dupe(u8, proc.module),
     };

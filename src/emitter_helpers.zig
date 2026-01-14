@@ -2010,7 +2010,7 @@ pub fn findEventModule(event_path: []const []const u8, items: []const ast.Item) 
 
 /// Find an event declaration by its path
 /// Handles both local events (no module_qualifier) and imported module events (with module_qualifier)
-fn findEventDeclByPath(items: []const ast.Item, path: *const ast.DottedPath) ?*const ast.EventDecl {
+pub fn findEventDeclByPath(items: []const ast.Item, path: *const ast.DottedPath) ?*const ast.EventDecl {
     // If path has a module_qualifier (e.g., "vaxis" in "vaxis:poll"),
     // we need to find the matching module first
     if (path.module_qualifier) |module_qual| {
@@ -2076,6 +2076,146 @@ fn findEventDeclByPathInModule(items: []const ast.Item, segments: []const []cons
                     }
                     if (matches) {
                         return event;
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// Find a proc declaration by its path
+/// Used for checking purity of event implementations
+pub fn findProcDeclByPath(items: []const ast.Item, path: *const ast.DottedPath) ?*const ast.ProcDecl {
+    // Handle module qualifier
+    if (path.module_qualifier) |module_qual| {
+        for (items) |*item| {
+            switch (item.*) {
+                .module_decl => |*module| {
+                    if (std.mem.eql(u8, module.logical_name, module_qual)) {
+                        return findProcDeclByPathInModule(module.items, path.segments);
+                    }
+                },
+                else => {},
+            }
+        }
+        return findProcDeclByPathInModule(items, path.segments);
+    }
+
+    // No module qualifier - search for local procs
+    for (items) |*item| {
+        switch (item.*) {
+            .proc_decl => |*proc| {
+                if (proc.path.segments.len == path.segments.len) {
+                    var matches = true;
+                    for (proc.path.segments, 0..) |segment, i| {
+                        if (!std.mem.eql(u8, segment, path.segments[i])) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if (matches) {
+                        return proc;
+                    }
+                }
+            },
+            .module_decl => |*module| {
+                if (findProcDeclByPath(module.items, path)) |found| {
+                    return found;
+                }
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// Helper: Find proc by segments within a specific module's items
+fn findProcDeclByPathInModule(items: []const ast.Item, segments: []const []const u8) ?*const ast.ProcDecl {
+    for (items) |*item| {
+        switch (item.*) {
+            .proc_decl => |*proc| {
+                if (proc.path.segments.len == segments.len) {
+                    var matches = true;
+                    for (proc.path.segments, 0..) |segment, i| {
+                        if (!std.mem.eql(u8, segment, segments[i])) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if (matches) {
+                        return proc;
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// Find a subflow implementation by its event path
+/// Returns the SubflowImpl if found (could have flow or immediate body)
+pub fn findSubflowImplByPath(items: []const ast.Item, path: *const ast.DottedPath) ?*const ast.SubflowImpl {
+    // Handle module qualifier
+    if (path.module_qualifier) |module_qual| {
+        for (items) |*item| {
+            switch (item.*) {
+                .module_decl => |*module| {
+                    if (std.mem.eql(u8, module.logical_name, module_qual)) {
+                        return findSubflowImplByPathInModule(module.items, path.segments);
+                    }
+                },
+                else => {},
+            }
+        }
+        return findSubflowImplByPathInModule(items, path.segments);
+    }
+
+    // No module qualifier - search for local subflow impls
+    for (items) |*item| {
+        switch (item.*) {
+            .subflow_impl => |*sf| {
+                if (sf.event_path.segments.len == path.segments.len) {
+                    var matches = true;
+                    for (sf.event_path.segments, 0..) |segment, i| {
+                        if (!std.mem.eql(u8, segment, path.segments[i])) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if (matches) {
+                        return sf;
+                    }
+                }
+            },
+            .module_decl => |*module| {
+                if (findSubflowImplByPath(module.items, path)) |found| {
+                    return found;
+                }
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// Helper: Find subflow impl by segments within a specific module's items
+fn findSubflowImplByPathInModule(items: []const ast.Item, segments: []const []const u8) ?*const ast.SubflowImpl {
+    for (items) |*item| {
+        switch (item.*) {
+            .subflow_impl => |*sf| {
+                if (sf.event_path.segments.len == segments.len) {
+                    var matches = true;
+                    for (sf.event_path.segments, 0..) |segment, i| {
+                        if (!std.mem.eql(u8, segment, segments[i])) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if (matches) {
+                        return sf;
                     }
                 }
             },

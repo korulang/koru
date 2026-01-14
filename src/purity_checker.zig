@@ -80,34 +80,52 @@ pub const PurityChecker = struct {
 
     /// Phase 2: Build call graph - walk AST and track event invocations
     fn buildCallGraph(self: *PurityChecker, source: *ast.Program) !void {
-        // First pass: register all events
-        for (source.items) |*item| {
-            if (item.* == .event_decl) {
-                const event = &item.event_decl;
-                const name = try self.pathToString(event.path);
-                try self.events.put(name, event);
+        // First pass: register all events (including in modules)
+        try self.registerEventsRecursive(source.items);
+
+        // Second pass: build call graph for procs (including in modules)
+        try self.buildCallGraphRecursive(source.items);
+    }
+
+    /// Helper: Register all events recursively, including in modules
+    fn registerEventsRecursive(self: *PurityChecker, items: []const ast.Item) !void {
+        for (items) |*item| {
+            switch (item.*) {
+                .event_decl => |*event| {
+                    const name = try self.pathToString(event.path);
+                    try self.events.put(name, event);
+                },
+                .module_decl => |*module| {
+                    try self.registerEventsRecursive(module.items);
+                },
+                else => {},
             }
         }
+    }
 
-        // Second pass: build call graph for procs
-        for (source.items) |*item| {
-            if (item.* == .proc_decl) {
-                const proc = &item.proc_decl;
-                const proc_name = try self.pathToString(proc.path);
+    /// Helper: Build call graph recursively, including in modules
+    fn buildCallGraphRecursive(self: *PurityChecker, items: []const ast.Item) !void {
+        for (items) |*item| {
+            switch (item.*) {
+                .proc_decl => |*proc| {
+                    const proc_name = try self.pathToString(proc.path);
 
-                var call_info = try CallInfo.init(self.allocator);
+                    var call_info = try CallInfo.init(self.allocator);
 
-                // Walk inline flows to find event invocations
-                for (proc.inline_flows) |*flow| {
-                    const invoked_event = try self.pathToString(flow.invocation.path);
-                    try call_info.calls.append(self.allocator, try self.allocator.dupe(u8, invoked_event));
-                }
+                    // Walk inline flows to find event invocations
+                    for (proc.inline_flows) |*flow| {
+                        const invoked_event = try self.pathToString(flow.invocation.path);
+                        try call_info.calls.append(self.allocator, try self.allocator.dupe(u8, invoked_event));
+                    }
 
-                try self.call_graph.put(proc_name, call_info);
+                    try self.call_graph.put(proc_name, call_info);
+                },
+                .module_decl => |*module| {
+                    try self.buildCallGraphRecursive(module.items);
+                },
+                else => {},
             }
         }
-
-        // TODO: Also handle top-level flows
     }
 
     /// Helper: Recursively collect all event invocations from a flow
@@ -245,24 +263,8 @@ pub const PurityChecker = struct {
             var all_procs_trans_pure = true;
             var found_any_proc = false;
 
-            // Find all procs for this event
-            for (source.items) |*item| {
-                if (item.* == .proc_decl) {
-                    const proc = &item.proc_decl;
-                    const proc_name = try self.pathToString(proc.path);
-
-                    if (std.mem.eql(u8, proc_name, event_name)) {
-                        found_any_proc = true;
-
-                        if (!proc.is_pure) {
-                            all_procs_pure = false;
-                        }
-                        if (!proc.is_transitively_pure) {
-                            all_procs_trans_pure = false;
-                        }
-                    }
-                }
-            }
+            // Find all procs for this event (including in modules)
+            self.findProcsForEvent(source.items, event_name, &all_procs_pure, &all_procs_trans_pure, &found_any_proc) catch {};
 
             // Set event purity based on proc implementations
             if (found_any_proc) {
@@ -270,6 +272,39 @@ pub const PurityChecker = struct {
                 var mutable_event = @constCast(event);
                 mutable_event.is_pure = all_procs_pure;
                 mutable_event.is_transitively_pure = all_procs_trans_pure;
+            }
+        }
+    }
+
+    /// Helper: Find all procs for an event, recursively including modules
+    fn findProcsForEvent(
+        self: *PurityChecker,
+        items: []const ast.Item,
+        event_name: []const u8,
+        all_procs_pure: *bool,
+        all_procs_trans_pure: *bool,
+        found_any_proc: *bool,
+    ) !void {
+        for (items) |*item| {
+            switch (item.*) {
+                .proc_decl => |*proc| {
+                    const proc_name = try self.pathToString(proc.path);
+
+                    if (std.mem.eql(u8, proc_name, event_name)) {
+                        found_any_proc.* = true;
+
+                        if (!proc.is_pure) {
+                            all_procs_pure.* = false;
+                        }
+                        if (!proc.is_transitively_pure) {
+                            all_procs_trans_pure.* = false;
+                        }
+                    }
+                },
+                .module_decl => |*module| {
+                    try self.findProcsForEvent(module.items, event_name, all_procs_pure, all_procs_trans_pure, found_any_proc);
+                },
+                else => {},
             }
         }
     }

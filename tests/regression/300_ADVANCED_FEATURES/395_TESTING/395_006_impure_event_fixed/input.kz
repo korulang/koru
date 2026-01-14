@@ -1,0 +1,38 @@
+// Test: Impure events with overrides work
+//
+// Same as 395_005 but WITH overrides provided.
+// This should compile and pass.
+
+~import "$std/testing"
+
+// Impure event - Zig proc without ~[pure]
+~event fetch_user { id: u32 }
+| found { name: []const u8 }
+| not_found {}
+
+~proc fetch_user {
+    // This is impure - does I/O (simulated)
+    return .{ .found = .{ .name = "Alice" } };
+}
+
+// Another impure event
+~event save_log { message: []const u8 }
+| saved {}
+
+~proc save_log {
+    // This is impure - writes to disk
+    return .{ .saved = .{} };
+}
+
+// Test: Should PASS - overrides provided for impure events
+~test(Impure events with overrides work) {
+    ~fetch_user = found { name: "TestUser" }
+    ~save_log = saved {}
+
+    ~fetch_user(id: 1)
+    | found u |>
+        save_log(message: u.name)
+        | saved |> assert.ok()
+}
+
+pub fn main() void {}
