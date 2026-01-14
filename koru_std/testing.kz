@@ -23,10 +23,136 @@ const std = @import("std");
 
 // Main test event - takes name as Expression, body as Source
 // The transform parses the body, identifies mocks, rewrites the AST
+// TODO: Add category parameter once codegen handles regular params
 ~[keyword|comptime|transform] pub event test {
     expr: Expression,
     source: Source,
-    category: ?[]const u8
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+// Internal impl event for transformed tests (no-op, code is inline)
+~[norun] pub event test.impl {}
+
+~proc test {
+    const std_import = @import("std");
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+    const parser_impl = @import("parser");
+
+    // Get the flow from the item
+    const flow = if (item.* == .flow)
+        &item.flow
+    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
+        &item.subflow_impl.body.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    const is_top_level = (invocation == &flow.invocation);
+    if (!is_top_level) {
+        // Only transform top-level test invocations
+        return .{ .transformed = .{ .program = program } };
+    }
+
+    // Get test name from expr parameter
+    const test_name = expr;
+
+    // Parse the source block to extract mocks and test flows
+    var mocks = std_import.ArrayList([]const u8).initCapacity(allocator, 16) catch unreachable;
+    defer mocks.deinit(allocator);
+    var flows = std_import.ArrayList([]const u8).initCapacity(allocator, 16) catch unreachable;
+    defer flows.deinit(allocator);
+    var parse_info = std_import.ArrayList(u8).initCapacity(allocator, 16) catch unreachable;
+    defer parse_info.deinit(allocator);
+
+    // Try to parse the source block
+    parse_block: {
+        if (source.text.len == 0) break :parse_block;
+
+        var p = parser_impl.Parser.init(allocator, source.text, "__test__.kz", &[_][]const u8{}, null) catch {
+            parse_info.appendSlice(allocator, "// Parser init failed\n") catch {};
+            break :parse_block;
+        };
+        defer p.deinit();
+
+        var result = p.parse() catch {
+            parse_info.appendSlice(allocator, "// Parse failed\n") catch {};
+            break :parse_block;
+        };
+        defer result.deinit();
+
+        // Walk the parsed items and categorize them
+        for (result.source_file.items) |parsed_item| {
+            switch (parsed_item) {
+                .subflow_impl => |sf| {
+                    // This is a mock! Record the event path
+                    const event_name = std_import.fmt.allocPrint(allocator, "{any}", .{sf.event_path}) catch "?";
+                    mocks.append(allocator, event_name) catch {};
+
+                    const msg = std_import.fmt.allocPrint(allocator, "// Mock: {s}\n", .{event_name}) catch "";
+                    parse_info.appendSlice(allocator, msg) catch {};
+                },
+                .flow => {
+                    // This is a test flow
+                    flows.append(allocator, "flow") catch {};
+                    parse_info.appendSlice(allocator, "// Flow found\n") catch {};
+                },
+                else => {
+                    // Other items (comments, etc.)
+                    parse_info.appendSlice(allocator, "// Other item\n") catch {};
+                },
+            }
+        }
+    }
+
+    // Build info string for debugging
+    const mock_count = mocks.items.len;
+    const flow_count = flows.items.len;
+    const parsed_info = parse_info.items;
+
+    // Comment out each line of source text
+    var commented_source = std_import.ArrayList(u8).initCapacity(allocator, source.text.len * 2) catch unreachable;
+    defer commented_source.deinit(allocator);
+    commented_source.appendSlice(allocator, "    // ") catch {};
+    for (source.text) |c| {
+        if (c == '\n') {
+            commented_source.appendSlice(allocator, "\n    // ") catch {};
+        } else {
+            commented_source.append(allocator, c) catch {};
+        }
+    }
+
+    // Generate the Zig test block with parse results
+    const test_code = std_import.fmt.allocPrint(
+        allocator,
+        \\test "{s}" {{
+        \\    // Parsed: {d} mocks, {d} flows
+        \\{s}
+        \\    // Source block:
+        \\{s}
+        \\}}
+        ,
+        .{ test_name, mock_count, flow_count, parsed_info, commented_source.items }
+    ) catch unreachable;
+
+    // Create an InlineCode item (emits verbatim at top level)
+    const new_item = ast.Item{ .inline_code = ast.InlineCode{
+        .code = test_code,
+        .location = flow.location,
+        .module = allocator.dupe(u8, flow.module) catch unreachable,
+    } };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    // No replacement made, return original program
+    return .{ .transformed = .{ .program = program } };
 }
 
 // Test with shared harness (mocks can be unused per-test)
