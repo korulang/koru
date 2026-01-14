@@ -136,8 +136,38 @@ const std = @import("std");
     };
     code_emitter.indent_level = 2; // Match context indent
 
-    // Build mock event paths for lookup
+    // Build constant event paths for lookup
+    // First: scan program AST for SubflowImpls with immediate bodies (constant events)
     var mock_paths = std_import.StringHashMap(ast.BranchConstructor).init(allocator);
+
+    // Helper to scan items for constant SubflowImpls
+    const scanForConstants = struct {
+        fn scan(items: []const ast.Item, paths: *std_import.StringHashMap(ast.BranchConstructor), alloc: std_import.mem.Allocator) void {
+            for (items) |prog_item| {
+                switch (prog_item) {
+                    .subflow_impl => |sf| {
+                        if (sf.body == .immediate) {
+                            // Found constant event! Add to lookup
+                            var path_buf = std_import.ArrayList(u8).initCapacity(alloc, 64) catch unreachable;
+                            for (sf.event_path.segments, 0..) |seg, i| {
+                                if (i > 0) path_buf.append(alloc, '.') catch {};
+                                path_buf.appendSlice(alloc, seg) catch {};
+                            }
+                            paths.put(path_buf.items, sf.body.immediate) catch {};
+                        }
+                    },
+                    .module_decl => |mod| {
+                        // Recurse into modules
+                        scan(mod.items, paths, alloc);
+                    },
+                    else => {},
+                }
+            }
+        }
+    };
+    scanForConstants.scan(program.items, &mock_paths, allocator);
+
+    // Second: add explicit test mocks (override any module-level constants)
     for (cloned_mocks.items) |mock_item| {
         if (mock_item == .subflow_impl) {
             const sf = mock_item.subflow_impl;

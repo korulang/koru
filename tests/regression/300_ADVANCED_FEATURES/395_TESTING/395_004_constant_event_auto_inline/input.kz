@@ -1,0 +1,22 @@
+// Test: Constant events auto-inline without explicit mock
+//
+// Events defined with immediate branch constructors (SubflowImpl.body.immediate)
+// are automatically inlined in tests - no mock needed!
+// This is the TOTAL FLEX - compile-time flow pruning for free.
+
+~import "$std/testing"
+
+// Event with constant implementation (immediate branch constructor)
+~event get_config {}
+| config { timeout: u32, retries: u32 }
+
+// Constant implementation - always returns the same value
+~get_config = config { timeout: 30, retries: 3 }
+
+// Test: NO MOCK NEEDED - constant is auto-detected and inlined!
+~test(Constant event auto-inlined) {
+    ~get_config()
+    | config c |> assert.ok()
+}
+
+pub fn main() void {}
