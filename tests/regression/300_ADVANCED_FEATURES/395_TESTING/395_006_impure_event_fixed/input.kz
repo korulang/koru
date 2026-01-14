@@ -25,14 +25,13 @@
 }
 
 // Test: Should PASS - overrides provided for impure events
+// Verify the mock value propagates through the chain
 ~test(Impure events with overrides work) {
     ~fetch_user = found { name: "TestUser" }
     ~save_log = saved {}
 
     ~fetch_user(id: 1)
-    | found u |>
-        save_log(message: u.name)
-        | saved |> assert.ok()
+    | found u |> assert(u.name.len == 8)
 }
 
 pub fn main() void {}

@@ -11,18 +11,19 @@
 | insufficient_funds {}
 | account_locked {}
 
-// Test: Mock forces success branch
+// Test: Mock forces success branch - verify the mocked value
 ~test(Withdrawal succeeds when mocked) {
     ~withdraw = success { new_balance: 50 }
     ~withdraw(amount: 100)
-    | success s |> assert.ok()
+    | success s |> assert(s.new_balance == 50)
 }
 
 // Test: Mock forces failure branch (different branch same event)
+// For empty branches, just assert true to confirm branch was taken
 ~test(Withdrawal fails when funds insufficient) {
     ~withdraw = insufficient_funds {}
     ~withdraw(amount: 100)
-    | insufficient_funds |> assert.ok()
+    | insufficient_funds |> assert(true)
 }
 
 pub fn main() void {}

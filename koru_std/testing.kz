@@ -292,13 +292,30 @@ const emitFlowWithMocks = struct {
         counter: *usize,
     ) !void {
         const emitter_helpers = @import("emitter_helpers");
+        const std_local = @import("std");
 
-        var path_buf = @import("std").ArrayList(u8).initCapacity(ctx.allocator, 64) catch unreachable;
+        var path_buf = std_local.ArrayList(u8).initCapacity(ctx.allocator, 64) catch unreachable;
         for (flow_to_emit.invocation.path.segments, 0..) |seg, i| {
             if (i > 0) try path_buf.append(ctx.allocator, '.');
             try path_buf.appendSlice(ctx.allocator, seg);
         }
         const inv_path = path_buf.items;
+
+        // Handle assert transform inline - emit if(!expr) @panic
+        if (std_local.mem.eql(u8, inv_path, "assert")) {
+            // Get the expression from first arg's value (parser stores it there)
+            if (flow_to_emit.invocation.args.len > 0) {
+                const expr_text = flow_to_emit.invocation.args[0].value;
+                if (expr_text.len > 0) {
+                    try emitter.writeIndent();
+                    try emitter.write("if (!(");
+                    try emitter.write(expr_text);
+                    try emitter.write(")) @panic(\"Assertion failed\");\n");
+                    return;
+                }
+            }
+            return; // Skip if no expression found
+        }
 
         if (mocks.get(inv_path)) |bc| {
             const result_var = try @import("std").fmt.allocPrint(ctx.allocator, "result_{d}", .{counter.*});
@@ -371,12 +388,139 @@ const emitFlowWithMocks = struct {
 // Assertions
 // =============================================================================
 
-// Simple pass - just marks the test as passed at this point
-~[keyword] pub event assert.ok {}
-| ok {}
+// Pass-through assertion checkpoint
+// Usage: assert(u.name == "Alice") |> next_step()
+// Panics with message if expression is false, otherwise continues
+~[keyword|comptime|transform|pure] pub event assert {
+    expr: Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
 
-~[pure] proc assert.ok {
-    return .{ .ok = .{} };
+~proc assert {
+    const std_import = @import("std");
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // Get the flow from the item
+    const flow = if (item.* == .flow)
+        &item.flow
+    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
+        &item.subflow_impl.body.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    // Check if this is top-level (flow.invocation IS the assert)
+    const is_top_level = (invocation == &flow.invocation);
+
+    // Build assertion code - simple panic message without expression echo for now
+    const assert_code = std_import.fmt.allocPrint(
+        allocator,
+        "if (!({s})) @panic(\"Assertion failed\")",
+        .{ expr }
+    ) catch unreachable;
+
+    if (is_top_level) {
+        // Top-level case: flow.invocation is the assert
+        // Set preamble_code and empty continuations (assert has no branches)
+        const transformed_flow = ast.Flow{
+            .invocation = flow.invocation,
+            .continuations = &[_]ast.Continuation{},
+            .annotations = flow.annotations,
+            .pre_label = flow.pre_label,
+            .post_label = flow.post_label,
+            .super_shape = flow.super_shape,
+            .inline_body = null,
+            .preamble_code = assert_code,
+            .is_pure = true,
+            .is_transitively_pure = true,
+            .location = flow.location,
+            .module = flow.module,
+        };
+
+        const new_item = if (item.* == .subflow_impl) blk: {
+            var new_subflow = item.subflow_impl;
+            new_subflow.body = .{ .flow = transformed_flow };
+            break :blk ast.Item{ .subflow_impl = new_subflow };
+        } else ast.Item{ .flow = transformed_flow };
+
+        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = .{ .program = result } };
+        }
+        return .{ .transformed = .{ .program = program } };
+    } else {
+        // Pipeline case: assert is a step inside a continuation
+        // Find the assert invocation and replace it with inline_code node
+
+        const SearchResult = struct {
+            path: []const usize,
+        };
+
+        const findInvocationRecursive = struct {
+            fn search(
+                alloc: std_import.mem.Allocator,
+                continuations: []const ast.Continuation,
+                current_path: []const usize,
+                target_inv: *const ast.Invocation,
+            ) ?SearchResult {
+                for (continuations, 0..) |*cont, cont_idx| {
+                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
+                    @memcpy(path[0..current_path.len], current_path);
+                    path[current_path.len] = cont_idx;
+
+                    if (cont.node) |*node| {
+                        if (node.* == .invocation) {
+                            if (&node.invocation == target_inv) {
+                                return SearchResult{ .path = path };
+                            }
+                        }
+                    }
+
+                    if (search(alloc, cont.continuations, path, target_inv)) |result| {
+                        return result;
+                    }
+                    alloc.free(path);
+                }
+                return null;
+            }
+        }.search;
+
+        const empty_path = &[_]usize{};
+        const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation) orelse {
+            return .{ .transformed = .{ .program = program } };
+        };
+
+        // Replace the invocation with inline_code node
+        const inline_node = ast.Node{ .inline_code = assert_code };
+
+        const modified_flow = ast_functional.replacePipelineStepAtPath(
+            allocator,
+            flow,
+            search_result.path,
+            0,
+            inline_node,
+        ) catch unreachable;
+
+        const new_item = if (item.* == .subflow_impl) blk: {
+            var new_subflow = item.subflow_impl;
+            new_subflow.body = .{ .flow = modified_flow };
+            break :blk ast.Item{ .subflow_impl = new_subflow };
+        } else ast.Item{ .flow = modified_flow };
+
+        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = .{ .program = result } };
+        }
+        return .{ .transformed = .{ .program = program } };
+    }
 }
 
 // Simple fail - fails the test with optional message

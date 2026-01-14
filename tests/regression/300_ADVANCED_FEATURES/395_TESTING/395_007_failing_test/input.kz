@@ -3,18 +3,18 @@
 ~event do_thing {}
 | done {}
 
-// Test that passes
+// Test that passes - assert true
 ~test(This test passes) {
     ~do_thing = done {}
     ~do_thing()
-    | done |> assert.ok()
+    | done |> assert(true)
 }
 
-// Test that fails deliberately
+// Test that fails deliberately - assert false
 ~test(This test should fail) {
     ~do_thing = done {}
     ~do_thing()
-    | done |> assert.fail(message: "Expected failure!")
+    | done |> assert(false)
 }
 
 pub fn main() void {}

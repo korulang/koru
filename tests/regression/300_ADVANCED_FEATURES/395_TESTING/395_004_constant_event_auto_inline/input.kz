@@ -14,9 +14,10 @@
 ~get_config = config { timeout: 30, retries: 3 }
 
 // Test: NO MOCK NEEDED - constant is auto-detected and inlined!
+// Verify the constant values are correct
 ~test(Constant event auto-inlined) {
     ~get_config()
-    | config c |> assert.ok()
+    | config c |> assert(c.timeout == 30)
 }
 
 pub fn main() void {}

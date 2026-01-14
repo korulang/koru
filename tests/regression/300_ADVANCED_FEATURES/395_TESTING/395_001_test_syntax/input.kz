@@ -3,7 +3,7 @@
 // Tests that:
 // 1. Mocks are substituted inline (flow pruning)
 // 2. Bindings are extracted from mocked branch values
-// 3. Pure events (assert.ok) work without mocks
+// 3. Assert can verify actual values
 
 ~import "$std/testing"
 
@@ -11,11 +11,11 @@
 ~event get_balance {}
 | amount { value: u32 }
 
-// Test: Mock value is inlined, binding extracted
+// Test: Mock value is inlined, binding extracted, value verified
 ~test(Mock value inlined with binding) {
     ~get_balance = amount { value: 100 }
     ~get_balance()
-    | amount a |> assert.ok()
+    | amount a |> assert(a.value == 100)
 }
 
 pub fn main() void {}
