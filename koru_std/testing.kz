@@ -22,8 +22,7 @@ const std = @import("std");
 // =============================================================================
 
 // Main test event - takes name as Expression, body as Source
-// The transform parses the body, identifies mocks, rewrites the AST
-// TODO: Add category parameter once codegen handles regular params
+// Transform generates Zig test blocks using real emitter infrastructure
 ~[keyword|comptime|transform] pub event test {
     expr: Expression,
     source: Source,
@@ -34,9 +33,8 @@ const std = @import("std");
 }
 | transformed { program: *const Program }
 
-// Internal impl event for transformed tests (no-op, code is inline)
-~[norun] pub event test.impl {}
-
+// Test transform - generates proper Zig test blocks
+// Uses real emitter infrastructure for code generation
 ~proc test {
     const std_import = @import("std");
     const ast = @import("ast");
@@ -54,100 +52,56 @@ const std = @import("std");
 
     const is_top_level = (invocation == &flow.invocation);
     if (!is_top_level) {
-        // Only transform top-level test invocations
         return .{ .transformed = .{ .program = program } };
     }
 
     // Get test name from expr parameter
     const test_name = expr;
 
-    // Storage for cloned items (owned by allocator, survives parse result deinit)
+    // Storage for parsed items
     var cloned_mocks = std_import.ArrayList(ast.Item).initCapacity(allocator, 8) catch unreachable;
     var cloned_flows = std_import.ArrayList(ast.Item).initCapacity(allocator, 8) catch unreachable;
-    var parse_info = std_import.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
 
-    // Try to parse the source block
+    // Parse the source block
     parse_block: {
         if (source.text.len == 0) break :parse_block;
 
         var p = parser_impl.Parser.init(allocator, source.text, "__test__.kz", &[_][]const u8{}, null) catch {
-            parse_info.appendSlice(allocator, "// Parser init failed\n") catch {};
             break :parse_block;
         };
         defer p.deinit();
 
         var result = p.parse() catch {
-            parse_info.appendSlice(allocator, "// Parse failed\n") catch {};
             break :parse_block;
         };
         defer result.deinit();
 
-        // Walk the parsed items, clone them BEFORE result.deinit() runs
+        // Clone parsed items to owned memory
         for (result.source_file.items) |*parsed_item| {
             switch (parsed_item.*) {
-                .subflow_impl => |sf| {
-                    // This is a mock! Clone it to owned memory
-                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch {
-                        parse_info.appendSlice(allocator, "// Failed to clone mock\n") catch {};
-                        continue;
-                    };
+                .subflow_impl => {
+                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch continue;
                     cloned_mocks.append(allocator, cloned) catch {};
-
-                    // Format the event path for debug output
-                    var path_buf = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
-                    defer path_buf.deinit(allocator);
-                    for (sf.event_path.segments, 0..) |seg, i| {
-                        if (i > 0) path_buf.append(allocator, '.') catch {};
-                        path_buf.appendSlice(allocator, seg) catch {};
-                    }
-                    const msg = std_import.fmt.allocPrint(allocator, "// Mock: {s}\n", .{path_buf.items}) catch "";
-                    parse_info.appendSlice(allocator, msg) catch {};
                 },
                 .flow => {
-                    // This is a test flow - clone it to owned memory
-                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch {
-                        parse_info.appendSlice(allocator, "// Failed to clone flow\n") catch {};
-                        continue;
-                    };
+                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch continue;
                     cloned_flows.append(allocator, cloned) catch {};
-                    parse_info.appendSlice(allocator, "// Flow cloned\n") catch {};
                 },
-                else => {
-                    // Other items (comments, etc.)
-                },
+                else => {},
             }
         }
     }
 
-    // Now we have cloned data that survives past the parse result deinit
-
-    // Emit the cloned flows using emitter_helpers
-    const EMIT_BUFFER_SIZE = 16 * 1024; // 16KB should be enough for test code
-    const emit_buffer = allocator.alloc(u8, EMIT_BUFFER_SIZE) catch unreachable;
-    var code_emitter = emitter_helpers.CodeEmitter.init(emit_buffer);
-
-    // Set up minimal EmissionContext
-    var emit_ctx = emitter_helpers.EmissionContext{
-        .allocator = allocator,
-        .indent_level = 2,  // Start indented inside test block
-        .ast_items = program.items, // Full AST for event resolution
-        .main_module_name = "input", // TODO: get actual module name
-        .is_sync = true, // Test code is synchronous (no try/!)
-    };
-    code_emitter.indent_level = 2; // Match context indent
-
-    // Build constant event paths for lookup
-    // First: scan program AST for SubflowImpls with immediate bodies (constant events)
+    // Build mock lookup map
     var mock_paths = std_import.StringHashMap(ast.BranchConstructor).init(allocator);
 
-    // Helper to scan items for constant SubflowImpls
+    // First: scan program AST for constant events (SubflowImpl.body.immediate)
     const scanForConstants = struct {
         fn scan(items: []const ast.Item, paths: *std_import.StringHashMap(ast.BranchConstructor), alloc: std_import.mem.Allocator) void {
             for (items) |prog_item| {
                 switch (prog_item) {
                     .subflow_impl => |sf| {
                         if (sf.body == .immediate) {
-                            // Found constant event! Add to lookup
                             var path_buf = std_import.ArrayList(u8).initCapacity(alloc, 64) catch unreachable;
                             for (sf.event_path.segments, 0..) |seg, i| {
                                 if (i > 0) path_buf.append(alloc, '.') catch {};
@@ -157,7 +111,6 @@ const std = @import("std");
                         }
                     },
                     .module_decl => |mod| {
-                        // Recurse into modules
                         scan(mod.items, paths, alloc);
                     },
                     else => {},
@@ -172,7 +125,6 @@ const std = @import("std");
         if (mock_item == .subflow_impl) {
             const sf = mock_item.subflow_impl;
             if (sf.body == .immediate) {
-                // Build event path string (e.g., "get_balance")
                 var path_buf = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
                 for (sf.event_path.segments, 0..) |seg, i| {
                     if (i > 0) path_buf.append(allocator, '.') catch {};
@@ -183,287 +135,62 @@ const std = @import("std");
         }
     }
 
-    // ==========================================================================
-    // PURITY-AWARE FLOW WALKER
-    // Walk flows to find impure events that need overrides
-    // ==========================================================================
+    // Walk flows for purity checking
     var impure_events = std_import.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
-
-    // Helper to build path string from DottedPath
-    const pathToString = struct {
-        fn convert(path: *const ast.DottedPath, alloc: std_import.mem.Allocator) []const u8 {
-            var buf = std_import.ArrayList(u8).initCapacity(alloc, 64) catch unreachable;
-            if (path.module_qualifier) |mq| {
-                buf.appendSlice(alloc, mq) catch {};
-                buf.append(alloc, ':') catch {};
-            }
-            for (path.segments, 0..) |seg, i| {
-                if (i > 0) buf.append(alloc, '.') catch {};
-                buf.appendSlice(alloc, seg) catch {};
-            }
-            return buf.items;
-        }
-    };
-
-    // Recursive flow walker
-    const FlowWalker = struct {
-        fn walkFlow(
-            flow_to_walk: *const ast.Flow,
-            overrides: *const std_import.StringHashMap(ast.BranchConstructor),
-            impure_list: *std_import.ArrayList([]const u8),
-            all_items: []const ast.Item,
-            alloc: std_import.mem.Allocator,
-        ) void {
-            // Get the invocation path as string
-            const inv_path = pathToString.convert(&flow_to_walk.invocation.path, alloc);
-
-            // Check if this invocation has a constant override
-            if (overrides.get(inv_path)) |bc| {
-                // Has override - prune to known branch, walk only that continuation
-                for (flow_to_walk.continuations) |cont| {
-                    if (std_import.mem.eql(u8, cont.branch, bc.branch_name)) {
-                        // Walk nested flows in this continuation
-                        walkContinuation(&cont, overrides, impure_list, all_items, alloc);
-                        break;
-                    }
-                }
-            } else {
-                // No override - check event implementation
-                // First try to find a proc (Zig implementation)
-                if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.invocation.path)) |proc| {
-                    if (!proc.is_pure) {
-                        // IMPURE Zig proc without override - ERROR
-                        // Check if we already have this path in the list
-                        var already_added = false;
-                        for (impure_list.items) |existing| {
-                            if (std_import.mem.eql(u8, existing, inv_path)) {
-                                already_added = true;
-                                break;
-                            }
-                        }
-                        if (!already_added) {
-                            impure_list.append(alloc, inv_path) catch {};
-                        }
-                    }
-                    // Walk all continuations (pure or already errored)
-                    for (flow_to_walk.continuations) |cont| {
-                        walkContinuation(&cont, overrides, impure_list, all_items, alloc);
-                    }
-                } else if (emitter_helpers.findSubflowImplByPath(all_items, &flow_to_walk.invocation.path)) |sf| {
-                    // Found subflow implementation
-                    if (sf.body == .flow) {
-                        // Koru subflow - walk it recursively
-                        walkFlow(&sf.body.flow, overrides, impure_list, all_items, alloc);
-                    }
-                    // If immediate, should have been in overrides - treat as pruned
-                    // Walk all continuations
-                    for (flow_to_walk.continuations) |cont| {
-                        walkContinuation(&cont, overrides, impure_list, all_items, alloc);
-                    }
-                } else {
-                    // Event with no proc or subflow - check the event's purity
-                    if (emitter_helpers.findEventDeclByPath(all_items, &flow_to_walk.invocation.path)) |event| {
-                        if (!event.is_pure) {
-                            // Impure event without override - ERROR
-                            var already_added = false;
-                            for (impure_list.items) |existing| {
-                                if (std_import.mem.eql(u8, existing, inv_path)) {
-                                    already_added = true;
-                                    break;
-                                }
-                            }
-                            if (!already_added) {
-                                impure_list.append(alloc, inv_path) catch {};
-                            }
-                        }
-                    }
-                    // Walk all continuations
-                    for (flow_to_walk.continuations) |cont| {
-                        walkContinuation(&cont, overrides, impure_list, all_items, alloc);
-                    }
-                }
-            }
-        }
-
-        fn walkContinuation(
-            cont: *const ast.Continuation,
-            overrides: *const std_import.StringHashMap(ast.BranchConstructor),
-            impure_list: *std_import.ArrayList([]const u8),
-            all_items: []const ast.Item,
-            alloc: std_import.mem.Allocator,
-        ) void {
-            // Check if continuation has a nested node (invocation)
-            if (cont.node) |node| {
-                switch (node) {
-                    .invocation => |inv| {
-                        // Create a temporary flow to walk this invocation
-                        // Use the continuation's nested continuations
-                        const temp_flow = ast.Flow{
-                            .invocation = inv,
-                            .continuations = cont.continuations,
-                            .location = cont.location,
-                            .module = "",
-                            .is_pure = true,
-                            .is_transitively_pure = false,
-                        };
-                        walkFlow(&temp_flow, overrides, impure_list, all_items, alloc);
-                    },
-                    else => {
-                        // Other node types - still walk nested continuations
-                        for (cont.continuations) |nested_cont| {
-                            walkContinuation(&nested_cont, overrides, impure_list, all_items, alloc);
-                        }
-                    },
-                }
-            } else {
-                // No node but might have nested continuations (rare)
-                for (cont.continuations) |nested_cont| {
-                    walkContinuation(&nested_cont, overrides, impure_list, all_items, alloc);
-                }
-            }
-        }
-    };
-
-    // Walk all cloned flows to find impure events
-    for (cloned_flows.items) |cloned_item| {
-        if (cloned_item == .flow) {
-            FlowWalker.walkFlow(&cloned_item.flow, &mock_paths, &impure_events, program.items, allocator);
+    for (cloned_flows.items) |flow_item| {
+        if (flow_item == .flow) {
+            walkFlowForPurity(&flow_item.flow, &mock_paths, &impure_events, program.items, allocator);
         }
     }
 
-    // If there are impure events without overrides, emit compile error
+    // Error on impure events without mocks
     if (impure_events.items.len > 0) {
-        var error_msg = std_import.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-        error_msg.appendSlice(allocator, "Test '") catch {};
-        error_msg.appendSlice(allocator, test_name) catch {};
-        error_msg.appendSlice(allocator, "' has impure events without overrides:\n") catch {};
+        var err_msg = std_import.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+        err_msg.appendSlice(allocator, "Test '") catch {};
+        err_msg.appendSlice(allocator, test_name) catch {};
+        err_msg.appendSlice(allocator, "' has impure events without mocks:\n") catch {};
         for (impure_events.items) |event_path| {
-            error_msg.appendSlice(allocator, "  - ") catch {};
-            error_msg.appendSlice(allocator, event_path) catch {};
-            error_msg.appendSlice(allocator, "\n") catch {};
+            err_msg.appendSlice(allocator, "  - ") catch {};
+            err_msg.appendSlice(allocator, event_path) catch {};
+            err_msg.appendSlice(allocator, "\n") catch {};
         }
-        error_msg.appendSlice(allocator, "\nAdd overrides like: ~event_name = branch { field: value }") catch {};
-        @panic(error_msg.items);
+        @panic(err_msg.items);
     }
 
-    // Emit each cloned flow, substituting mocks inline
+    // Generate test code using emitter infrastructure
+    const EMIT_BUFFER_SIZE = 16 * 1024;
+    const emit_buffer = allocator.alloc(u8, EMIT_BUFFER_SIZE) catch unreachable;
+    var code_emitter = emitter_helpers.CodeEmitter.init(emit_buffer);
+
+    var emit_ctx = emitter_helpers.EmissionContext{
+        .allocator = allocator,
+        .indent_level = 1,
+        .ast_items = program.items,
+        .main_module_name = "input",
+        .is_sync = true,
+    };
+    code_emitter.indent_level = 1;
+
+    // Emit each flow with mock substitution
     var result_counter: usize = 0;
-    for (cloned_flows.items) |cloned_item| {
-        if (cloned_item == .flow) {
-            const cloned_flow = &cloned_item.flow;
-            // Check if this flow's invocation matches a mocked event
-            var inv_path = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
-            for (cloned_flow.invocation.path.segments, 0..) |seg, i| {
-                if (i > 0) inv_path.append(allocator, '.') catch {};
-                inv_path.appendSlice(allocator, seg) catch {};
-            }
-
-            if (mock_paths.get(inv_path.items)) |bc| {
-                // Emit mock value directly instead of handler call
-                code_emitter.writeIndent() catch {};
-                const result_var = std_import.fmt.allocPrint(allocator, "result_{d}", .{result_counter}) catch unreachable;
-                result_counter += 1;
-                code_emitter.write("const ") catch {};
-                code_emitter.write(result_var) catch {};
-                code_emitter.write(" = ") catch {};
-                emitter_helpers.emitBranchConstructor(&code_emitter, &emit_ctx, &bc, true) catch {};
-                code_emitter.write(";\n") catch {};
-
-                // Process continuations with the mock result
-                // We know the branch is bc.branch_name, so find and emit that continuation
-                var found_binding = false;
-                for (cloned_flow.continuations) |cont| {
-                    if (std_import.mem.eql(u8, cont.branch, bc.branch_name)) {
-                        // Found matching continuation - emit binding and nested code
-                        if (cont.binding) |binding| {
-                            found_binding = true;
-                            code_emitter.writeIndent() catch {};
-                            code_emitter.write("const ") catch {};
-                            code_emitter.write(binding) catch {};
-                            code_emitter.write(" = ") catch {};
-                            code_emitter.write(result_var) catch {};
-                            code_emitter.write(".") catch {};
-                            code_emitter.write(bc.branch_name) catch {};
-                            code_emitter.write(";\n") catch {};
-                            // Suppress unused binding warning
-                            code_emitter.writeIndent() catch {};
-                            code_emitter.write("_ = &") catch {};
-                            code_emitter.write(binding) catch {};
-                            code_emitter.write(";\n") catch {};
-                        }
-
-                        // Emit nested steps/flows in this continuation
-                        if (cont.node) |step| {
-                            switch (step) {
-                                .invocation => |inv| {
-                                    // Emit as flow call
-                                    code_emitter.writeIndent() catch {};
-                                    code_emitter.write("_ = ") catch {};
-                                    // Build path - for now just emit as module path
-                                    if (inv.path.module_qualifier) |mq| {
-                                        code_emitter.write(mq) catch {};
-                                        code_emitter.write(".") catch {};
-                                    }
-                                    code_emitter.write("koru_std.testing.") catch {};
-                                    for (inv.path.segments, 0..) |seg, i| {
-                                        if (i > 0) code_emitter.write("_") catch {};
-                                        code_emitter.write(seg) catch {};
-                                    }
-                                    // Emit arguments
-                                    code_emitter.write("_event.handler(.{ ") catch {};
-                                    for (inv.args, 0..) |arg, arg_i| {
-                                        if (arg_i > 0) code_emitter.write(", ") catch {};
-                                        code_emitter.write(".") catch {};
-                                        code_emitter.write(arg.name) catch {};
-                                        code_emitter.write(" = ") catch {};
-                                        code_emitter.write(arg.value) catch {};
-                                    }
-                                    code_emitter.write(" });\n") catch {};
-                                },
-                                else => {
-                                    // Other step types - fall through
-                                },
-                            }
-                        }
-                        break;
-                    }
-                }
-                // Suppress unused result if no binding was extracted
-                if (!found_binding) {
-                    code_emitter.writeIndent() catch {};
-                    code_emitter.write("_ = &") catch {};
-                    code_emitter.write(result_var) catch {};
-                    code_emitter.write(";\n") catch {};
-                }
-            } else {
-                // Not mocked - emit normally
-                emitter_helpers.emitFlow(&code_emitter, &emit_ctx, cloned_flow) catch {
-                    code_emitter.write("        // emitFlow failed\n") catch {};
-                };
-            }
+    for (cloned_flows.items) |flow_item| {
+        if (flow_item == .flow) {
+            emitFlowWithMocks(&code_emitter, &emit_ctx, &flow_item.flow, &mock_paths, &result_counter) catch {};
         }
     }
 
-    // Get the emitted flow code
     const flow_code = code_emitter.getOutput();
 
-    // Build info string for debugging
-    const mock_count = cloned_mocks.items.len;
-    const flow_count = cloned_flows.items.len;
-    const parsed_info = parse_info.items;
-
-    // Generate the Zig test block with emitted flow code
+    // Build final test block
     const test_code = std_import.fmt.allocPrint(
         allocator,
         \\test "{s}" {{
-        \\    // Generated from {d} mocks, {d} flows
-        \\{s}{s}
-        \\}}
+        \\{s}}}
         ,
-        .{ test_name, mock_count, flow_count, parsed_info, flow_code }
+        .{ test_name, flow_code }
     ) catch unreachable;
 
-    // Create an InlineCode item (emits verbatim at top level)
+    // Create inline_code item
     const new_item = ast.Item{ .inline_code = ast.InlineCode{
         .code = test_code,
         .location = flow.location,
@@ -476,9 +203,156 @@ const std = @import("std");
         result_program.* = new_program;
         return .{ .transformed = .{ .program = result_program } };
     }
-    // No replacement made, return original program
     return .{ .transformed = .{ .program = program } };
 }
+
+// Helper: Walk flow checking purity
+const walkFlowForPurity = struct {
+    fn call(
+        flow_to_walk: *const @import("ast").Flow,
+        mocks: *const @import("std").StringHashMap(@import("ast").BranchConstructor),
+        impure_list: *@import("std").ArrayList([]const u8),
+        all_items: []const @import("ast").Item,
+        allocator: @import("std").mem.Allocator,
+    ) void {
+        const emitter_helpers = @import("emitter_helpers");
+
+        var path_buf = @import("std").ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+        if (flow_to_walk.invocation.path.module_qualifier) |mq| {
+            path_buf.appendSlice(allocator, mq) catch {};
+            path_buf.append(allocator, ':') catch {};
+        }
+        for (flow_to_walk.invocation.path.segments, 0..) |seg, i| {
+            if (i > 0) path_buf.append(allocator, '.') catch {};
+            path_buf.appendSlice(allocator, seg) catch {};
+        }
+        const inv_path = path_buf.items;
+
+        if (mocks.get(inv_path)) |_| return;
+
+        if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.invocation.path)) |proc| {
+            if (!proc.is_pure) {
+                for (impure_list.items) |existing| {
+                    if (@import("std").mem.eql(u8, existing, inv_path)) return;
+                }
+                impure_list.append(allocator, inv_path) catch {};
+            }
+        } else if (emitter_helpers.findEventDeclByPath(all_items, &flow_to_walk.invocation.path)) |event| {
+            if (!event.is_pure) {
+                for (impure_list.items) |existing| {
+                    if (@import("std").mem.eql(u8, existing, inv_path)) return;
+                }
+                impure_list.append(allocator, inv_path) catch {};
+            }
+        }
+
+        for (flow_to_walk.continuations) |cont| {
+            walkContinuation(&cont, mocks, impure_list, all_items, allocator);
+        }
+    }
+
+    fn walkContinuation(
+        cont: *const @import("ast").Continuation,
+        mocks: *const @import("std").StringHashMap(@import("ast").BranchConstructor),
+        impure_list: *@import("std").ArrayList([]const u8),
+        all_items: []const @import("ast").Item,
+        allocator: @import("std").mem.Allocator,
+    ) void {
+        if (cont.node) |node| {
+            if (node == .invocation) {
+                const temp_flow = @import("ast").Flow{
+                    .invocation = node.invocation,
+                    .continuations = cont.continuations,
+                    .location = cont.location,
+                    .module = "",
+                    .is_pure = true,
+                    .is_transitively_pure = false,
+                };
+                call(&temp_flow, mocks, impure_list, all_items, allocator);
+            } else {
+                for (cont.continuations) |nested| {
+                    walkContinuation(&nested, mocks, impure_list, all_items, allocator);
+                }
+            }
+        } else {
+            for (cont.continuations) |nested| {
+                walkContinuation(&nested, mocks, impure_list, all_items, allocator);
+            }
+        }
+    }
+}.call;
+
+// Helper: Emit flow with mock substitution using real emitter
+const emitFlowWithMocks = struct {
+    fn call(
+        emitter: *@import("emitter_helpers").CodeEmitter,
+        ctx: *@import("emitter_helpers").EmissionContext,
+        flow_to_emit: *const @import("ast").Flow,
+        mocks: *const @import("std").StringHashMap(@import("ast").BranchConstructor),
+        counter: *usize,
+    ) !void {
+        const emitter_helpers = @import("emitter_helpers");
+
+        var path_buf = @import("std").ArrayList(u8).initCapacity(ctx.allocator, 64) catch unreachable;
+        for (flow_to_emit.invocation.path.segments, 0..) |seg, i| {
+            if (i > 0) try path_buf.append(ctx.allocator, '.');
+            try path_buf.appendSlice(ctx.allocator, seg);
+        }
+        const inv_path = path_buf.items;
+
+        if (mocks.get(inv_path)) |bc| {
+            const result_var = try @import("std").fmt.allocPrint(ctx.allocator, "result_{d}", .{counter.*});
+            counter.* += 1;
+
+            try emitter.writeIndent();
+            try emitter.write("const ");
+            try emitter.write(result_var);
+            try emitter.write(" = ");
+            try emitter_helpers.emitBranchConstructor(emitter, ctx, &bc, true);
+            try emitter.write(";\n");
+
+            for (flow_to_emit.continuations) |cont| {
+                if (@import("std").mem.eql(u8, cont.branch, bc.branch_name)) {
+                    if (cont.binding) |binding| {
+                        try emitter.writeIndent();
+                        try emitter.write("const ");
+                        try emitter.write(binding);
+                        try emitter.write(" = ");
+                        try emitter.write(result_var);
+                        try emitter.write(".");
+                        try emitter.write(bc.branch_name);
+                        try emitter.write(";\n");
+                        try emitter.writeIndent();
+                        try emitter.write("_ = &");
+                        try emitter.write(binding);
+                        try emitter.write(";\n");
+                    }
+                    if (cont.node) |node| {
+                        if (node == .invocation) {
+                            const nested_flow = @import("ast").Flow{
+                                .invocation = node.invocation,
+                                .continuations = cont.continuations,
+                                .location = cont.location,
+                                .module = "",
+                                .is_pure = true,
+                                .is_transitively_pure = false,
+                            };
+                            try call(emitter, ctx, &nested_flow, mocks, counter);
+                        }
+                    }
+                    break;
+                }
+            }
+
+            try emitter.writeIndent();
+            try emitter.write("_ = &");
+            try emitter.write(result_var);
+            try emitter.write(";\n");
+        } else {
+            try emitter_helpers.emitFlow(emitter, ctx, flow_to_emit);
+        }
+    }
+}.call;
 
 // Test with shared harness (mocks can be unused per-test)
 ~[keyword|comptime|transform] pub event test.with_harness {

@@ -627,6 +627,459 @@ pub const CompilerContext = struct {
     return .{ .continued = .{ .ctx = updated_ctx } };
 }
 
+// Test generation segment: Generates Zig test blocks from ~test declarations
+// Runs AFTER analysis (purity is propagated) but BEFORE optimization
+// This uses the SAME emitter as emission - no hand-rolled code generation!
+~pub event compiler.coordinate.test_generation { ctx: CompilerContext }
+| continued { ctx: CompilerContext }
+
+// Test generation implementation
+// Finds ~test invocations in AST and generates Zig test blocks
+~proc compiler.coordinate.test_generation {
+    var mutable_ctx = ctx;
+
+    // Import needed modules
+    const ast_mod = @import("ast");
+
+    // Storage for test items we'll generate
+    var test_inline_codes = std.ArrayList(ast_mod.Item).initCapacity(mutable_ctx.allocator, 8) catch unreachable;
+    var test_flows_to_remove = std.ArrayList(*const ast_mod.Flow).initCapacity(mutable_ctx.allocator, 8) catch unreachable;
+
+    // Scan AST for test invocations
+    // A test invocation is a flow that calls the "test" event from std.testing
+    for (mutable_ctx.ast.items) |item| {
+        if (item == .flow) {
+            const flow = &item.flow;
+            // Check if this is a test invocation
+            if (isTestInvocation(&flow.invocation)) {
+                // Found a test! Process it
+                const inline_code = processTestFlow(flow, mutable_ctx.ast, mutable_ctx.allocator);
+                if (inline_code) |code| {
+                    test_inline_codes.append(mutable_ctx.allocator, code) catch {};
+                    test_flows_to_remove.append(mutable_ctx.allocator, flow) catch {};
+                }
+            }
+        }
+        // Also check inside modules
+        if (item == .module_decl) {
+            const mod = item.module_decl;
+            for (mod.items) |mod_item| {
+                if (mod_item == .flow) {
+                    const flow = &mod_item.flow;
+                    if (isTestInvocation(&flow.invocation)) {
+                        const inline_code = processTestFlow(flow, mutable_ctx.ast, mutable_ctx.allocator);
+                        if (inline_code) |code| {
+                            test_inline_codes.append(mutable_ctx.allocator, code) catch {};
+                            test_flows_to_remove.append(mutable_ctx.allocator, flow) catch {};
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // If we found tests, build new AST with them replaced
+    if (test_flows_to_remove.items.len > 0) {
+        std.debug.print("[TEST-GEN] Found {} test(s) to generate\n", .{test_flows_to_remove.items.len});
+
+        // Build new items array with test flows replaced by inline_codes
+        var new_items = std.ArrayList(ast_mod.Item).initCapacity(mutable_ctx.allocator, mutable_ctx.ast.items.len) catch unreachable;
+        var test_idx: usize = 0;
+
+        for (mutable_ctx.ast.items) |item| {
+            if (item == .flow) {
+                const flow = &item.flow;
+                // Check if this flow should be replaced
+                var should_replace = false;
+                for (test_flows_to_remove.items) |test_flow| {
+                    if (test_flow == flow) {
+                        should_replace = true;
+                        break;
+                    }
+                }
+                if (should_replace) {
+                    // Add the generated inline_code instead
+                    if (test_idx < test_inline_codes.items.len) {
+                        new_items.append(mutable_ctx.allocator, test_inline_codes.items[test_idx]) catch {};
+                        test_idx += 1;
+                    }
+                } else {
+                    new_items.append(mutable_ctx.allocator, item) catch {};
+                }
+            } else {
+                new_items.append(mutable_ctx.allocator, item) catch {};
+            }
+        }
+
+        // Create new Program with updated items
+        const new_program = mutable_ctx.allocator.create(ast_mod.Program) catch unreachable;
+        new_program.* = ast_mod.Program{
+            .items = new_items.items,
+            .module_annotations = mutable_ctx.ast.module_annotations,
+            .main_module_name = mutable_ctx.ast.main_module_name,
+            .allocator = mutable_ctx.allocator,
+        };
+        mutable_ctx.ast = new_program;
+    }
+
+    mutable_ctx.passes_completed += 1;
+    return .{ .continued = .{ .ctx = mutable_ctx } };
+}
+
+// Helper: Check if an invocation is calling the test event
+const isTestInvocation = struct {
+    fn call(inv: *const @import("ast").Invocation) bool {
+        // Check if path is "test" from std.testing
+        if (inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], "test")) {
+            return true;
+        }
+        // Could also check for module-qualified: std_testing:test
+        if (inv.path.module_qualifier) |mq| {
+            if (std.mem.indexOf(u8, mq, "testing") != null and
+                inv.path.segments.len == 1 and
+                std.mem.eql(u8, inv.path.segments[0], "test"))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+}.call;
+
+// Helper: Process a test flow and generate Zig test block
+// Uses the REAL emitter infrastructure - not hand-rolled code!
+const processTestFlow = struct {
+    fn call(flow: *const @import("ast").Flow, program: *const @import("ast").Program, allocator: std.mem.Allocator) ?@import("ast").Item {
+        const ast_mod = @import("ast");
+        const ast_functional = @import("ast_functional");
+        const parser_impl = @import("parser");
+        const emitter_helpers = @import("emitter_helpers");
+        // Suppress unused import warnings (these are used in nested functions)
+        _ = &ast_functional;
+
+        // Get test name from invocation args (first arg named "expr")
+        var test_name: []const u8 = "unnamed test";
+        for (flow.invocation.args) |arg| {
+            if (std.mem.eql(u8, arg.name, "expr")) {
+                test_name = arg.value;
+                break;
+            }
+        }
+
+        // Get source body from invocation args - stored in source_value field
+        var source_text: []const u8 = "";
+        for (flow.invocation.args) |arg| {
+            if (arg.source_value) |src| {
+                source_text = src.text;
+                break;
+            }
+        }
+
+        if (source_text.len == 0) {
+            std.debug.print("[TEST-GEN] Warning: No source body found for test '{s}'\n", .{test_name});
+            return null;
+        }
+
+        std.debug.print("[TEST-GEN] Processing test '{s}' with {d} bytes of source\n", .{test_name, source_text.len});
+
+        // Parse the source body
+        var parser = parser_impl.Parser.init(allocator, source_text, "__test__.kz", &[_][]const u8{}, null) catch {
+            std.debug.print("[TEST-GEN] Failed to init parser for test '{s}'\n", .{test_name});
+            return null;
+        };
+        defer parser.deinit();
+
+        var parse_result = parser.parse() catch {
+            std.debug.print("[TEST-GEN] Failed to parse source for test '{s}'\n", .{test_name});
+            return null;
+        };
+        defer parse_result.deinit();
+
+        // Clone parsed items to owned memory (survive parser deinit)
+        var mocks = std.ArrayList(ast_mod.Item).initCapacity(allocator, 8) catch unreachable;
+        var test_flows = std.ArrayList(ast_mod.Item).initCapacity(allocator, 8) catch unreachable;
+
+        for (parse_result.source_file.items) |*parsed_item| {
+            switch (parsed_item.*) {
+                .subflow_impl => {
+                    // This is a mock! Clone it
+                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch continue;
+                    mocks.append(allocator, cloned) catch {};
+                },
+                .flow => {
+                    // This is a test flow - clone it
+                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch continue;
+                    test_flows.append(allocator, cloned) catch {};
+                },
+                else => {},
+            }
+        }
+
+        std.debug.print("[TEST-GEN] Parsed {d} mocks and {d} flows\n", .{mocks.items.len, test_flows.items.len});
+
+        // Build mock lookup map (event path -> branch constructor)
+        var mock_map = std.StringHashMap(ast_mod.BranchConstructor).init(allocator);
+        for (mocks.items) |mock_item| {
+            if (mock_item == .subflow_impl) {
+                const sf = mock_item.subflow_impl;
+                if (sf.body == .immediate) {
+                    // Build event path string
+                    var path_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                    for (sf.event_path.segments, 0..) |seg, i| {
+                        if (i > 0) path_buf.append(allocator, '.') catch {};
+                        path_buf.appendSlice(allocator, seg) catch {};
+                    }
+                    mock_map.put(path_buf.items, sf.body.immediate) catch {};
+                }
+            }
+        }
+
+        // Walk test flows and check purity
+        var impure_events = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
+        for (test_flows.items) |flow_item| {
+            if (flow_item == .flow) {
+                walkFlowForPurity(&flow_item.flow, &mock_map, &impure_events, program.items, allocator);
+            }
+        }
+
+        // If there are impure events without mocks, error
+        if (impure_events.items.len > 0) {
+            var err_msg = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+            err_msg.appendSlice(allocator, "Test '") catch {};
+            err_msg.appendSlice(allocator, test_name) catch {};
+            err_msg.appendSlice(allocator, "' has impure events without mocks:\n") catch {};
+            for (impure_events.items) |event_path| {
+                err_msg.appendSlice(allocator, "  - ") catch {};
+                err_msg.appendSlice(allocator, event_path) catch {};
+                err_msg.appendSlice(allocator, "\n") catch {};
+            }
+            @panic(err_msg.items);
+        }
+
+        // Now emit the test using REAL emitter infrastructure
+        const EMIT_BUFFER_SIZE = 16 * 1024;
+        const emit_buffer = allocator.alloc(u8, EMIT_BUFFER_SIZE) catch return null;
+        var code_emitter = emitter_helpers.CodeEmitter.init(emit_buffer);
+
+        // Set up emission context
+        var emit_ctx = emitter_helpers.EmissionContext{
+            .allocator = allocator,
+            .indent_level = 1,  // Inside test block
+            .ast_items = program.items,
+            .main_module_name = "input",
+            .is_sync = true,
+        };
+        code_emitter.indent_level = 1;
+
+        // Emit each test flow, substituting mocks
+        for (test_flows.items) |flow_item| {
+            if (flow_item == .flow) {
+                emitFlowWithMocks(&code_emitter, &emit_ctx, &flow_item.flow, &mock_map) catch {};
+            }
+        }
+
+        const flow_code = code_emitter.getOutput();
+
+        // Build final test block
+        const test_code = std.fmt.allocPrint(
+            allocator,
+            \\test "{s}" {{
+            \\{s}}}
+            ,
+            .{ test_name, flow_code }
+        ) catch return null;
+
+        return ast_mod.Item{
+            .inline_code = ast_mod.InlineCode{
+                .code = test_code,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch "",
+            }
+        };
+    }
+}.call;
+
+// Helper: Walk a flow checking for impure events without mocks
+const walkFlowForPurity = struct {
+    fn call(
+        flow_to_walk: *const @import("ast").Flow,
+        mocks: *const std.StringHashMap(@import("ast").BranchConstructor),
+        impure_list: *std.ArrayList([]const u8),
+        all_items: []const @import("ast").Item,
+        allocator: std.mem.Allocator,
+    ) void {
+        const emitter_helpers = @import("emitter_helpers");
+
+        // Get invocation path as string
+        var path_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+        if (flow_to_walk.invocation.path.module_qualifier) |mq| {
+            path_buf.appendSlice(allocator, mq) catch {};
+            path_buf.append(allocator, ':') catch {};
+        }
+        for (flow_to_walk.invocation.path.segments, 0..) |seg, i| {
+            if (i > 0) path_buf.append(allocator, '.') catch {};
+            path_buf.appendSlice(allocator, seg) catch {};
+        }
+        const inv_path = path_buf.items;
+
+        // Check if this invocation has a mock
+        if (mocks.get(inv_path)) |_| {
+            // Has mock - walk only matching continuation
+            // (mock value is known, prune other branches)
+            return;
+        }
+
+        // No mock - check if event/proc is pure
+        if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.invocation.path)) |proc| {
+            if (!proc.is_pure) {
+                // Impure proc without mock!
+                var already_added = false;
+                for (impure_list.items) |existing| {
+                    if (std.mem.eql(u8, existing, inv_path)) {
+                        already_added = true;
+                        break;
+                    }
+                }
+                if (!already_added) {
+                    impure_list.append(allocator, inv_path) catch {};
+                }
+            }
+        } else if (emitter_helpers.findEventDeclByPath(all_items, &flow_to_walk.invocation.path)) |event| {
+            if (!event.is_pure) {
+                var already_added = false;
+                for (impure_list.items) |existing| {
+                    if (std.mem.eql(u8, existing, inv_path)) {
+                        already_added = true;
+                        break;
+                    }
+                }
+                if (!already_added) {
+                    impure_list.append(allocator, inv_path) catch {};
+                }
+            }
+        }
+
+        // Walk continuations recursively
+        for (flow_to_walk.continuations) |cont| {
+            walkContinuation(&cont, mocks, impure_list, all_items, allocator);
+        }
+    }
+
+    fn walkContinuation(
+        cont: *const @import("ast").Continuation,
+        mocks: *const std.StringHashMap(@import("ast").BranchConstructor),
+        impure_list: *std.ArrayList([]const u8),
+        all_items: []const @import("ast").Item,
+        allocator: std.mem.Allocator,
+    ) void {
+        const ast_mod = @import("ast");
+        if (cont.node) |node| {
+            switch (node) {
+                .invocation => |inv| {
+                    // Create temp flow to walk
+                    const temp_flow = ast_mod.Flow{
+                        .invocation = inv,
+                        .continuations = cont.continuations,
+                        .location = cont.location,
+                        .module = "",
+                        .is_pure = true,
+                        .is_transitively_pure = false,
+                    };
+                    call(&temp_flow, mocks, impure_list, all_items, allocator);
+                },
+                else => {
+                    for (cont.continuations) |nested| {
+                        walkContinuation(&nested, mocks, impure_list, all_items, allocator);
+                    }
+                },
+            }
+        } else {
+            for (cont.continuations) |nested| {
+                walkContinuation(&nested, mocks, impure_list, all_items, allocator);
+            }
+        }
+    }
+}.call;
+
+// Helper: Emit a flow with mock substitution using REAL emitter
+const emitFlowWithMocks = struct {
+    fn call(
+        emitter: *@import("emitter_helpers").CodeEmitter,
+        ctx: *@import("emitter_helpers").EmissionContext,
+        flow_to_emit: *const @import("ast").Flow,
+        mocks: *const std.StringHashMap(@import("ast").BranchConstructor),
+    ) !void {
+        const ast_mod = @import("ast");
+        const emitter_helpers = @import("emitter_helpers");
+
+        // Get invocation path as string
+        var path_buf = std.ArrayList(u8).initCapacity(ctx.allocator, 64) catch unreachable;
+        for (flow_to_emit.invocation.path.segments, 0..) |seg, i| {
+            if (i > 0) try path_buf.append(ctx.allocator, '.');
+            try path_buf.appendSlice(ctx.allocator, seg);
+        }
+        const inv_path = path_buf.items;
+
+        // Check if this invocation has a mock
+        if (mocks.get(inv_path)) |bc| {
+            // Emit mock value directly
+            const result_var = try std.fmt.allocPrint(ctx.allocator, "result_{d}", .{ctx.indent_level});
+
+            try emitter.writeIndent();
+            try emitter.write("const ");
+            try emitter.write(result_var);
+            try emitter.write(" = ");
+            try emitter_helpers.emitBranchConstructor(emitter, ctx, &bc, true);
+            try emitter.write(";\n");
+
+            // Emit matching continuation
+            for (flow_to_emit.continuations) |cont| {
+                if (std.mem.eql(u8, cont.branch, bc.branch_name)) {
+                    if (cont.binding) |binding| {
+                        // Emit binding extraction: const x = result.branch;
+                        try emitter.writeIndent();
+                        try emitter.write("const ");
+                        try emitter.write(binding);
+                        try emitter.write(" = ");
+                        try emitter.write(result_var);
+                        try emitter.write(".");
+                        try emitter.write(bc.branch_name);
+                        try emitter.write(";\n");
+                        // Suppress unused binding warning
+                        try emitter.writeIndent();
+                        try emitter.write("_ = &");
+                        try emitter.write(binding);
+                        try emitter.write(";\n");
+                    }
+                    // Emit nested flows
+                    if (cont.node) |node| {
+                        if (node == .invocation) {
+                            const nested_flow = ast_mod.Flow{
+                                .invocation = node.invocation,
+                                .continuations = cont.continuations,
+                                .location = cont.location,
+                                .module = "",
+                                .is_pure = true,
+                                .is_transitively_pure = false,
+                            };
+                            try call(emitter, ctx, &nested_flow, mocks);
+                        }
+                    }
+                    break;
+                }
+            }
+
+            try emitter.writeIndent();
+            try emitter.write("_ = &");
+            try emitter.write(result_var);
+            try emitter.write(";\n");
+        } else {
+            // No mock - emit flow normally using real emitter
+            try emitter_helpers.emitFlow(emitter, ctx, flow_to_emit);
+        }
+    }
+}.call;
+
 // Optimization segment: AST transformations for performance
 // This is where we create IR nodes (NativeLoop, FusedEvent, etc.)
 ~pub event compiler.coordinate.optimize { ctx: CompilerContext }
@@ -657,10 +1110,11 @@ pub const CompilerContext = struct {
     | created c0 |> compiler.coordinate.frontend(ctx: c0.ctx)
       | continued c1 |> compiler.coordinate.transform_taps(ctx: c1.ctx)
         | continued c2 |> compiler.coordinate.analysis(ctx: c2.ctx)
-          | continued c3 |> compiler.coordinate.optimize(ctx: c3.ctx)
-            | continued c4 |> compiler.coordinate.emission(ctx: c4.ctx)
-              | continued c5 |> compiler.metrics.format(passes_completed: c5.ctx.passes_completed, allocator: allocator)
-                | formatted m |> coordinated { ast: c5.ctx.ast, code: c5.code, metrics: m.metrics }
+          | continued c3 |> compiler.coordinate.test_generation(ctx: c3.ctx)
+            | continued c4 |> compiler.coordinate.optimize(ctx: c4.ctx)
+              | continued c5 |> compiler.coordinate.emission(ctx: c5.ctx)
+                | continued c6 |> compiler.metrics.format(passes_completed: c6.ctx.passes_completed, allocator: allocator)
+                  | formatted m |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }
           | failed f |> error { message: f.message }
 
 // NOTE: compiler.coordinate is intentionally left UNIMPLEMENTED here!
