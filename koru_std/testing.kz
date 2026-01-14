@@ -409,7 +409,16 @@ const std = @import("std");
                                         if (i > 0) code_emitter.write("_") catch {};
                                         code_emitter.write(seg) catch {};
                                     }
-                                    code_emitter.write("_event.handler(.{  });\n") catch {};
+                                    // Emit arguments
+                                    code_emitter.write("_event.handler(.{ ") catch {};
+                                    for (inv.args, 0..) |arg, arg_i| {
+                                        if (arg_i > 0) code_emitter.write(", ") catch {};
+                                        code_emitter.write(".") catch {};
+                                        code_emitter.write(arg.name) catch {};
+                                        code_emitter.write(" = ") catch {};
+                                        code_emitter.write(arg.value) catch {};
+                                    }
+                                    code_emitter.write(" });\n") catch {};
                                 },
                                 else => {
                                     // Other step types - fall through
@@ -500,7 +509,7 @@ const std = @import("std");
 ~[keyword] pub event assert.fail { message: ?[]const u8 }
 | failed {}
 
-~proc assert.fail {
+~[pure] proc assert.fail {
     const msg = message orelse "Assertion failed";
     @panic(msg);
 }

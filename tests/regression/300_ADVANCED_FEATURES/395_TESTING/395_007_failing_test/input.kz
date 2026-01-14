@@ -1,0 +1,20 @@
+~import "$std/testing"
+
+~event do_thing {}
+| done {}
+
+// Test that passes
+~test(This test passes) {
+    ~do_thing = done {}
+    ~do_thing()
+    | done |> assert.ok()
+}
+
+// Test that fails deliberately
+~test(This test should fail) {
+    ~do_thing = done {}
+    ~do_thing()
+    | done |> assert.fail(message: "Expected failure!")
+}
+
+pub fn main() void {}
