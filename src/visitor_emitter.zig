@@ -578,6 +578,9 @@ pub const VisitorEmitter = struct {
 
             // Close regular main()
             try emitter.emitMainFunctionEnd(self.code_emitter);
+
+            // Test discovery block - enables zig test to find tests nested in main_module
+            try self.code_emitter.write("\ntest {\n    @import(\"std\").testing.refAllDeclsRecursive(@This());\n}\n");
         }
     }
 

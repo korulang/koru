@@ -61,81 +61,353 @@ const std = @import("std");
     const test_name = expr;
 
     // Parse the source block to extract mocks and test flows
-    var mocks = std_import.ArrayList([]const u8).initCapacity(allocator, 16) catch unreachable;
-    defer mocks.deinit(allocator);
-    var flows = std_import.ArrayList([]const u8).initCapacity(allocator, 16) catch unreachable;
-    defer flows.deinit(allocator);
-    var parse_info = std_import.ArrayList(u8).initCapacity(allocator, 16) catch unreachable;
-    defer parse_info.deinit(allocator);
+    // MockDef stores: event_name, branch_name, mangled_name, fields_str
+    const MockDef = struct {
+        event_name: []const u8,
+        branch_name: []const u8,
+        mangled_name: []const u8,
+        fields_str: []const u8,
+    };
+    var mock_defs = std_import.ArrayList(MockDef).initCapacity(allocator, 16) catch unreachable;
+    defer mock_defs.deinit(allocator);
+
+    // EventRef tracks event invocations found in test flows
+    const EventRef = struct {
+        event_name: []const u8,
+        // TODO: Add path reference for AST rewriting
+    };
+    var event_refs = std_import.ArrayList(EventRef).initCapacity(allocator, 32) catch unreachable;
+    defer event_refs.deinit(allocator);
+
+    // Store actual flow AST pointers for later codegen
+    var test_flows = std_import.ArrayList(*const ast.Flow).initCapacity(allocator, 8) catch unreachable;
+    defer test_flows.deinit(allocator);
+
+    var mock_code = std_import.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+    defer mock_code.deinit(allocator);
 
     // Try to parse the source block
     parse_block: {
         if (source.text.len == 0) break :parse_block;
 
         var p = parser_impl.Parser.init(allocator, source.text, "__test__.kz", &[_][]const u8{}, null) catch {
-            parse_info.appendSlice(allocator, "// Parser init failed\n") catch {};
+            mock_code.appendSlice(allocator, "        // Parser init failed\n") catch {};
             break :parse_block;
         };
         defer p.deinit();
 
         var result = p.parse() catch {
-            parse_info.appendSlice(allocator, "// Parse failed\n") catch {};
+            mock_code.appendSlice(allocator, "        // Parse failed\n") catch {};
             break :parse_block;
         };
         defer result.deinit();
 
         // Walk the parsed items and categorize them
+        var mock_idx: usize = 0;
         for (result.source_file.items) |parsed_item| {
             switch (parsed_item) {
                 .subflow_impl => |sf| {
-                    // This is a mock! Record the event path
-                    const event_name = std_import.fmt.allocPrint(allocator, "{any}", .{sf.event_path}) catch "?";
-                    mocks.append(allocator, event_name) catch {};
+                    // This is a mock! Extract event name from segments
+                    var event_name_buf = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                    defer event_name_buf.deinit(allocator);
+                    for (sf.event_path.segments, 0..) |seg, i| {
+                        if (i > 0) event_name_buf.append(allocator, '_') catch {};
+                        event_name_buf.appendSlice(allocator, seg) catch {};
+                    }
+                    const event_name = allocator.dupe(u8, event_name_buf.items) catch "unknown";
 
-                    const msg = std_import.fmt.allocPrint(allocator, "// Mock: {s}\n", .{event_name}) catch "";
-                    parse_info.appendSlice(allocator, msg) catch {};
+                    // Get branch name and fields from the body (must dupe - AST will be freed)
+                    var branch_name: []const u8 = "unknown";
+                    var fields_code = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                    defer fields_code.deinit(allocator);
+
+                    if (sf.body == .immediate) {
+                        const bc = sf.body.immediate;
+                        branch_name = allocator.dupe(u8, bc.branch_name) catch "unknown";
+
+                        // Format the fields: .field1 = value1, .field2 = value2, ...
+                        if (bc.plain_value) |pv| {
+                            // Single value branch: ok "hello" -> just the value
+                            fields_code.appendSlice(allocator, pv) catch {};
+                        } else {
+                            // Struct fields
+                            fields_code.appendSlice(allocator, ".{") catch {};
+                            for (bc.fields, 0..) |field, fidx| {
+                                if (fidx > 0) fields_code.appendSlice(allocator, ", ") catch {};
+                                fields_code.appendSlice(allocator, " .") catch {};
+                                fields_code.appendSlice(allocator, field.name) catch {};
+                                fields_code.appendSlice(allocator, " = ") catch {};
+                                // Use expression_str if available, otherwise use the type as value
+                                const value = if (field.expression_str) |e| e else field.type;
+                                fields_code.appendSlice(allocator, value) catch {};
+                            }
+                            fields_code.appendSlice(allocator, " }") catch {};
+                        }
+                    }
+
+                    const fields_str = allocator.dupe(u8, fields_code.items) catch ".{}";
+
+                    // Generate mangled name
+                    const mangled_name = std_import.fmt.allocPrint(allocator, "__mock_{d}_{s}", .{mock_idx, event_name}) catch "mock";
+
+                    mock_defs.append(allocator, MockDef{
+                        .event_name = event_name,
+                        .branch_name = branch_name,
+                        .mangled_name = mangled_name,
+                        .fields_str = fields_str,
+                    }) catch {};
+
+                    // Generate mock function code with actual field values
+                    const mock_fn = std_import.fmt.allocPrint(allocator,
+                        \\        // Mock for {s} -> {s}
+                        \\        const {s} = struct {{
+                        \\            pub fn call() main_module.{s}_event.Output {{
+                        \\                return .{{ .{s} = {s} }};
+                        \\            }}
+                        \\        }};
+                        \\
+                    , .{event_name, branch_name, mangled_name, event_name, branch_name, fields_str}) catch "";
+                    mock_code.appendSlice(allocator, mock_fn) catch {};
+
+                    mock_idx += 1;
                 },
-                .flow => {
-                    // This is a test flow
-                    flows.append(allocator, "flow") catch {};
-                    parse_info.appendSlice(allocator, "// Flow found\n") catch {};
+                .flow => |*test_flow| {
+                    // Store the flow for later codegen
+                    test_flows.append(allocator, test_flow) catch {};
+
+                    // Walk the flow to extract event invocations
+                    // First: the root invocation
+                    var inv_name_buf = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                    defer inv_name_buf.deinit(allocator);
+                    for (test_flow.invocation.path.segments, 0..) |seg, si| {
+                        if (si > 0) inv_name_buf.append(allocator, '_') catch {};
+                        inv_name_buf.appendSlice(allocator, seg) catch {};
+                    }
+                    const inv_name = allocator.dupe(u8, inv_name_buf.items) catch "unknown";
+                    event_refs.append(allocator, EventRef{ .event_name = inv_name }) catch {};
+
+                    // Walk continuations recursively to find more invocations
+                    // Using a simple iterative approach with a stack
+                    var cont_stack = std_import.ArrayList(*const ast.Continuation).initCapacity(allocator, 32) catch unreachable;
+                    defer cont_stack.deinit(allocator);
+
+                    // Push initial continuations
+                    for (test_flow.continuations) |*cont| {
+                        cont_stack.append(allocator, cont) catch {};
+                    }
+
+                    // Process stack (pop from end)
+                    while (cont_stack.items.len > 0) {
+                        const cont = cont_stack.items[cont_stack.items.len - 1];
+                        cont_stack.items.len -= 1;
+                        // Check if continuation has an invocation step
+                        if (cont.node) |node| {
+                            const maybe_inv: ?*const ast.Invocation = switch (node) {
+                                .invocation => |*inv| inv,
+                                .label_with_invocation => |*lwi| &lwi.invocation,
+                                else => null,
+                            };
+
+                            if (maybe_inv) |inv| {
+                                var cont_inv_buf = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                                defer cont_inv_buf.deinit(allocator);
+                                for (inv.path.segments, 0..) |seg, si| {
+                                    if (si > 0) cont_inv_buf.append(allocator, '_') catch {};
+                                    cont_inv_buf.appendSlice(allocator, seg) catch {};
+                                }
+                                const cont_inv_name = allocator.dupe(u8, cont_inv_buf.items) catch "unknown";
+                                event_refs.append(allocator, EventRef{ .event_name = cont_inv_name }) catch {};
+                            }
+                        }
+
+                        // Push nested continuations
+                        for (cont.continuations) |*nested| {
+                            cont_stack.append(allocator, nested) catch {};
+                        }
+                    }
                 },
                 else => {
-                    // Other items (comments, etc.)
-                    parse_info.appendSlice(allocator, "// Other item\n") catch {};
+                    // Other items (comments, etc.) - ignore
                 },
             }
         }
     }
 
-    // Build info string for debugging
-    const mock_count = mocks.items.len;
-    const flow_count = flows.items.len;
-    const parsed_info = parse_info.items;
+    // Build mock lookup map (event_name -> mock_def)
+    var mock_map = std_import.StringHashMap(MockDef).init(allocator);
+    defer mock_map.deinit();
+    for (mock_defs.items) |mock_def| {
+        mock_map.put(mock_def.event_name, mock_def) catch {};
+    }
 
-    // Comment out each line of source text
+    // Check purity of each event reference and validate mocking
+    var purity_info = std_import.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+    defer purity_info.deinit(allocator);
+    var unmocked_impure = std_import.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
+    defer unmocked_impure.deinit(allocator);
+
+    // Helper: check if item matches the event name we're looking for
+    const ItemSearchResult = struct {
+        found_event: ?*const ast.EventDecl = null,
+        found_proc: ?*const ast.ProcDecl = null,
+    };
+
+    for (event_refs.items) |ref| {
+        // Look up event and its proc in program items (including nested modules)
+        var result = ItemSearchResult{};
+
+        // Build list of all items to search (flattening module_decls)
+        var items_to_search = std_import.ArrayList([]const ast.Item).initCapacity(allocator, 16) catch unreachable;
+        defer items_to_search.deinit(allocator);
+        items_to_search.append(allocator, program.items) catch {};
+
+        // Also add items from nested modules
+        for (program.items) |*prog_item| {
+            if (prog_item.* == .module_decl) {
+                items_to_search.append(allocator, prog_item.module_decl.items) catch {};
+            }
+        }
+
+        // Search all item lists
+        for (items_to_search.items) |item_list| {
+            for (item_list) |*prog_item| {
+                switch (prog_item.*) {
+                    .event_decl => |*event| {
+                        // Build event name from path for comparison
+                        var event_path_buf = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                        defer event_path_buf.deinit(allocator);
+                        for (event.path.segments, 0..) |seg, si| {
+                            if (si > 0) event_path_buf.append(allocator, '_') catch {};
+                            event_path_buf.appendSlice(allocator, seg) catch {};
+                        }
+                        if (std_import.mem.eql(u8, event_path_buf.items, ref.event_name)) {
+                            result.found_event = event;
+                        }
+                    },
+                    .proc_decl => |*proc_d| {
+                        // Build proc name from path for comparison
+                        var proc_path_buf = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                        defer proc_path_buf.deinit(allocator);
+                        for (proc_d.path.segments, 0..) |seg, si| {
+                            if (si > 0) proc_path_buf.append(allocator, '_') catch {};
+                            proc_path_buf.appendSlice(allocator, seg) catch {};
+                        }
+                        if (std_import.mem.eql(u8, proc_path_buf.items, ref.event_name)) {
+                            result.found_proc = proc_d;
+                        }
+                    },
+                    .module_decl => |*mod| {
+                        // Also search nested modules (one level deep)
+                        items_to_search.append(allocator, mod.items) catch {};
+                    },
+                    else => {},
+                }
+            }
+        }
+
+        const found_event = result.found_event;
+        const found_proc = result.found_proc;
+
+        const is_mocked = mock_map.contains(ref.event_name);
+        // Check both event.is_pure (propagated) and proc.is_pure (annotation)
+        const is_pure = blk: {
+            if (found_event) |ev| {
+                if (ev.is_pure) break :blk true;
+            }
+            if (found_proc) |proc_d| {
+                if (proc_d.is_pure) break :blk true;
+            }
+            break :blk false;
+        };
+
+        // Track purity status
+        const status = std_import.fmt.allocPrint(allocator, "{s}:{s}{s}", .{
+            ref.event_name,
+            if (is_pure) "pure" else "IMPURE",
+            if (is_mocked) "(mocked)" else "",
+        }) catch "?";
+        if (purity_info.items.len > 0) purity_info.appendSlice(allocator, ", ") catch {};
+        purity_info.appendSlice(allocator, status) catch {};
+
+        // Error: impure event without mock
+        if (!is_pure and !is_mocked) {
+            unmocked_impure.append(allocator, ref.event_name) catch {};
+        }
+    }
+
+    // Build info string
+    const mock_count = mock_defs.items.len;
+
+    // Comment out each line of source text for reference
     var commented_source = std_import.ArrayList(u8).initCapacity(allocator, source.text.len * 2) catch unreachable;
     defer commented_source.deinit(allocator);
-    commented_source.appendSlice(allocator, "    // ") catch {};
+    commented_source.appendSlice(allocator, "        // ") catch {};
     for (source.text) |c| {
         if (c == '\n') {
-            commented_source.appendSlice(allocator, "\n    // ") catch {};
+            commented_source.appendSlice(allocator, "\n        // ") catch {};
         } else {
             commented_source.append(allocator, c) catch {};
         }
     }
 
-    // Generate the Zig test block with parse results
+    // Generate test flow code using mocks
+    var test_flow_code = std_import.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+    defer test_flow_code.deinit(allocator);
+
+    if (mock_count > 0) {
+        // Call the first mock and verify it returns the expected branch
+        // We use exhaustive switch - Zig will error if we don't handle all branches
+        const first_mock = mock_defs.items[0];
+        const flow_code = std_import.fmt.allocPrint(allocator,
+            \\        // Test: call mock and verify branch
+            \\        const result = {s}.call();
+            \\        switch (result) {{
+            \\            .{s} => |_| {{}},  // Expected branch
+            \\        }}
+        , .{first_mock.mangled_name, first_mock.branch_name}) catch "";
+        test_flow_code.appendSlice(allocator, flow_code) catch {};
+    } else {
+        test_flow_code.appendSlice(allocator, "        // No mocks defined - test passes\n") catch {};
+    }
+
+    // Build event refs list for diagnostic output
+    var event_refs_str = std_import.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+    defer event_refs_str.deinit(allocator);
+    event_refs_str.appendSlice(allocator, "        // Events referenced: ") catch {};
+    for (event_refs.items, 0..) |ref, ri| {
+        if (ri > 0) event_refs_str.appendSlice(allocator, ", ") catch {};
+        event_refs_str.appendSlice(allocator, ref.event_name) catch {};
+    }
+    event_refs_str.appendSlice(allocator, "\n") catch {};
+
+    // Build unmocked impure error string
+    var unmocked_err = std_import.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+    defer unmocked_err.deinit(allocator);
+    if (unmocked_impure.items.len > 0) {
+        unmocked_err.appendSlice(allocator, "        // ERROR: Impure events need mocks: ") catch {};
+        for (unmocked_impure.items, 0..) |name, i| {
+            if (i > 0) unmocked_err.appendSlice(allocator, ", ") catch {};
+            unmocked_err.appendSlice(allocator, name) catch {};
+        }
+        unmocked_err.appendSlice(allocator, "\n") catch {};
+    }
+
+    const flow_count = test_flows.items.len;
+
+    // Generate the Zig test block with mock structs and test flow
     const test_code = std_import.fmt.allocPrint(
         allocator,
         \\test "{s}" {{
-        \\    // Parsed: {d} mocks, {d} flows
+        \\        // Test with {d} mock(s), {d} flow(s), {d} event ref(s)
+        \\{s}        // Purity: {s}
+        \\{s}        // Source:
         \\{s}
-        \\    // Source block:
+        \\
         \\{s}
-        \\}}
+        \\{s}
+        \\    }}
         ,
-        .{ test_name, mock_count, flow_count, parsed_info, commented_source.items }
+        .{ test_name, mock_count, flow_count, event_refs.items.len, event_refs_str.items, purity_info.items, unmocked_err.items, commented_source.items, mock_code.items, test_flow_code.items }
     ) catch unreachable;
 
     // Create an InlineCode item (emits verbatim at top level)
@@ -176,7 +448,7 @@ const std = @import("std");
 ~[keyword] pub event assert.ok {}
 | ok {}
 
-~proc assert.ok {
+~[pure] proc assert.ok {
     return .{ .ok = .{} };
 }
 
