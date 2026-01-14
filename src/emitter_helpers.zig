@@ -5218,7 +5218,7 @@ fn emitStepWithBindingSubstitution(
 }
 
 /// Emit a branch constructor (.branch = .{ fields })
-fn emitBranchConstructor(
+pub fn emitBranchConstructor(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
     bc: *const ast.BranchConstructor,

@@ -42,6 +42,7 @@ const std = @import("std");
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
     const parser_impl = @import("parser");
+    const emitter_helpers = @import("emitter_helpers");
 
     // Get the flow from the item
     const flow = if (item.* == .flow)
@@ -60,13 +61,10 @@ const std = @import("std");
     // Get test name from expr parameter
     const test_name = expr;
 
-    // Parse the source block to extract mocks and test flows
-    var mocks = std_import.ArrayList([]const u8).initCapacity(allocator, 16) catch unreachable;
-    defer mocks.deinit(allocator);
-    var flows = std_import.ArrayList([]const u8).initCapacity(allocator, 16) catch unreachable;
-    defer flows.deinit(allocator);
-    var parse_info = std_import.ArrayList(u8).initCapacity(allocator, 16) catch unreachable;
-    defer parse_info.deinit(allocator);
+    // Storage for cloned items (owned by allocator, survives parse result deinit)
+    var cloned_mocks = std_import.ArrayList(ast.Item).initCapacity(allocator, 8) catch unreachable;
+    var cloned_flows = std_import.ArrayList(ast.Item).initCapacity(allocator, 8) catch unreachable;
+    var parse_info = std_import.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
 
     // Try to parse the source block
     parse_block: {
@@ -84,58 +82,174 @@ const std = @import("std");
         };
         defer result.deinit();
 
-        // Walk the parsed items and categorize them
-        for (result.source_file.items) |parsed_item| {
-            switch (parsed_item) {
+        // Walk the parsed items, clone them BEFORE result.deinit() runs
+        for (result.source_file.items) |*parsed_item| {
+            switch (parsed_item.*) {
                 .subflow_impl => |sf| {
-                    // This is a mock! Record the event path
-                    const event_name = std_import.fmt.allocPrint(allocator, "{any}", .{sf.event_path}) catch "?";
-                    mocks.append(allocator, event_name) catch {};
+                    // This is a mock! Clone it to owned memory
+                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch {
+                        parse_info.appendSlice(allocator, "// Failed to clone mock\n") catch {};
+                        continue;
+                    };
+                    cloned_mocks.append(allocator, cloned) catch {};
 
-                    const msg = std_import.fmt.allocPrint(allocator, "// Mock: {s}\n", .{event_name}) catch "";
+                    // Format the event path for debug output
+                    var path_buf = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                    defer path_buf.deinit(allocator);
+                    for (sf.event_path.segments, 0..) |seg, i| {
+                        if (i > 0) path_buf.append(allocator, '.') catch {};
+                        path_buf.appendSlice(allocator, seg) catch {};
+                    }
+                    const msg = std_import.fmt.allocPrint(allocator, "// Mock: {s}\n", .{path_buf.items}) catch "";
                     parse_info.appendSlice(allocator, msg) catch {};
                 },
                 .flow => {
-                    // This is a test flow
-                    flows.append(allocator, "flow") catch {};
-                    parse_info.appendSlice(allocator, "// Flow found\n") catch {};
+                    // This is a test flow - clone it to owned memory
+                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch {
+                        parse_info.appendSlice(allocator, "// Failed to clone flow\n") catch {};
+                        continue;
+                    };
+                    cloned_flows.append(allocator, cloned) catch {};
+                    parse_info.appendSlice(allocator, "// Flow cloned\n") catch {};
                 },
                 else => {
                     // Other items (comments, etc.)
-                    parse_info.appendSlice(allocator, "// Other item\n") catch {};
                 },
             }
         }
     }
 
-    // Build info string for debugging
-    const mock_count = mocks.items.len;
-    const flow_count = flows.items.len;
-    const parsed_info = parse_info.items;
+    // Now we have cloned data that survives past the parse result deinit
 
-    // Comment out each line of source text
-    var commented_source = std_import.ArrayList(u8).initCapacity(allocator, source.text.len * 2) catch unreachable;
-    defer commented_source.deinit(allocator);
-    commented_source.appendSlice(allocator, "    // ") catch {};
-    for (source.text) |c| {
-        if (c == '\n') {
-            commented_source.appendSlice(allocator, "\n    // ") catch {};
-        } else {
-            commented_source.append(allocator, c) catch {};
+    // Emit the cloned flows using emitter_helpers
+    const EMIT_BUFFER_SIZE = 16 * 1024; // 16KB should be enough for test code
+    const emit_buffer = allocator.alloc(u8, EMIT_BUFFER_SIZE) catch unreachable;
+    var code_emitter = emitter_helpers.CodeEmitter.init(emit_buffer);
+
+    // Set up minimal EmissionContext
+    var emit_ctx = emitter_helpers.EmissionContext{
+        .allocator = allocator,
+        .indent_level = 2,  // Start indented inside test block
+        .ast_items = program.items, // Full AST for event resolution
+        .main_module_name = "input", // TODO: get actual module name
+        .is_sync = true, // Test code is synchronous (no try/!)
+    };
+    code_emitter.indent_level = 2; // Match context indent
+
+    // Build mock event paths for lookup
+    var mock_paths = std_import.StringHashMap(ast.BranchConstructor).init(allocator);
+    for (cloned_mocks.items) |mock_item| {
+        if (mock_item == .subflow_impl) {
+            const sf = mock_item.subflow_impl;
+            if (sf.body == .immediate) {
+                // Build event path string (e.g., "get_balance")
+                var path_buf = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                for (sf.event_path.segments, 0..) |seg, i| {
+                    if (i > 0) path_buf.append(allocator, '.') catch {};
+                    path_buf.appendSlice(allocator, seg) catch {};
+                }
+                mock_paths.put(path_buf.items, sf.body.immediate) catch {};
+            }
         }
     }
 
-    // Generate the Zig test block with parse results
+    // Emit each cloned flow, substituting mocks inline
+    var result_counter: usize = 0;
+    for (cloned_flows.items) |cloned_item| {
+        if (cloned_item == .flow) {
+            const cloned_flow = &cloned_item.flow;
+            // Check if this flow's invocation matches a mocked event
+            var inv_path = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+            for (cloned_flow.invocation.path.segments, 0..) |seg, i| {
+                if (i > 0) inv_path.append(allocator, '.') catch {};
+                inv_path.appendSlice(allocator, seg) catch {};
+            }
+
+            if (mock_paths.get(inv_path.items)) |bc| {
+                // Emit mock value directly instead of handler call
+                code_emitter.writeIndent() catch {};
+                const result_var = std_import.fmt.allocPrint(allocator, "result_{d}", .{result_counter}) catch unreachable;
+                result_counter += 1;
+                code_emitter.write("const ") catch {};
+                code_emitter.write(result_var) catch {};
+                code_emitter.write(" = ") catch {};
+                emitter_helpers.emitBranchConstructor(&code_emitter, &emit_ctx, &bc, true) catch {};
+                code_emitter.write(";\n") catch {};
+
+                // Process continuations with the mock result
+                // We know the branch is bc.branch_name, so find and emit that continuation
+                for (cloned_flow.continuations) |cont| {
+                    if (std_import.mem.eql(u8, cont.branch, bc.branch_name)) {
+                        // Found matching continuation - emit binding and nested code
+                        if (cont.binding) |binding| {
+                            code_emitter.writeIndent() catch {};
+                            code_emitter.write("const ") catch {};
+                            code_emitter.write(binding) catch {};
+                            code_emitter.write(" = ") catch {};
+                            code_emitter.write(result_var) catch {};
+                            code_emitter.write(".") catch {};
+                            code_emitter.write(bc.branch_name) catch {};
+                            code_emitter.write(";\n") catch {};
+                            // Suppress unused binding warning
+                            code_emitter.writeIndent() catch {};
+                            code_emitter.write("_ = &") catch {};
+                            code_emitter.write(binding) catch {};
+                            code_emitter.write(";\n") catch {};
+                        }
+
+                        // Emit nested steps/flows in this continuation
+                        if (cont.node) |step| {
+                            switch (step) {
+                                .invocation => |inv| {
+                                    // Emit as flow call
+                                    code_emitter.writeIndent() catch {};
+                                    code_emitter.write("_ = ") catch {};
+                                    // Build path - for now just emit as module path
+                                    if (inv.path.module_qualifier) |mq| {
+                                        code_emitter.write(mq) catch {};
+                                        code_emitter.write(".") catch {};
+                                    }
+                                    code_emitter.write("koru_std.testing.") catch {};
+                                    for (inv.path.segments, 0..) |seg, i| {
+                                        if (i > 0) code_emitter.write("_") catch {};
+                                        code_emitter.write(seg) catch {};
+                                    }
+                                    code_emitter.write("_event.handler(.{  });\n") catch {};
+                                },
+                                else => {
+                                    // Other step types - fall through
+                                },
+                            }
+                        }
+                        break;
+                    }
+                }
+            } else {
+                // Not mocked - emit normally
+                emitter_helpers.emitFlow(&code_emitter, &emit_ctx, cloned_flow) catch {
+                    code_emitter.write("        // emitFlow failed\n") catch {};
+                };
+            }
+        }
+    }
+
+    // Get the emitted flow code
+    const flow_code = code_emitter.getOutput();
+
+    // Build info string for debugging
+    const mock_count = cloned_mocks.items.len;
+    const flow_count = cloned_flows.items.len;
+    const parsed_info = parse_info.items;
+
+    // Generate the Zig test block with emitted flow code
     const test_code = std_import.fmt.allocPrint(
         allocator,
         \\test "{s}" {{
-        \\    // Parsed: {d} mocks, {d} flows
-        \\{s}
-        \\    // Source block:
-        \\{s}
+        \\    // Generated from {d} mocks, {d} flows
+        \\{s}{s}
         \\}}
         ,
-        .{ test_name, mock_count, flow_count, parsed_info, commented_source.items }
+        .{ test_name, mock_count, flow_count, parsed_info, flow_code }
     ) catch unreachable;
 
     // Create an InlineCode item (emits verbatim at top level)
@@ -147,9 +261,9 @@ const std = @import("std");
 
     const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
     if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch unreachable;
-        result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        const result_program = allocator.create(ast.Program) catch unreachable;
+        result_program.* = new_program;
+        return .{ .transformed = .{ .program = result_program } };
     }
     // No replacement made, return original program
     return .{ .transformed = .{ .program = program } };
