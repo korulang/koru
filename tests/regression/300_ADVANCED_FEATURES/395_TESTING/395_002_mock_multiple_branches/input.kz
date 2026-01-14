@@ -1,0 +1,28 @@
+// Test: Mock forces specific branch path (flow pruning)
+//
+// When an event has multiple branches, mocking forces ONE branch.
+// This enables compile-time flow pruning - no switch statement needed.
+
+~import "$std/testing"
+
+// Event with multiple possible outcomes
+~event withdraw { amount: u32 }
+| success { new_balance: u32 }
+| insufficient_funds {}
+| account_locked {}
+
+// Test: Mock forces success branch
+~test(Withdrawal succeeds when mocked) {
+    ~withdraw = success { new_balance: 50 }
+    ~withdraw(amount: 100)
+    | success s |> assert.ok()
+}
+
+// Test: Mock forces failure branch (different branch same event)
+~test(Withdrawal fails when funds insufficient) {
+    ~withdraw = insufficient_funds {}
+    ~withdraw(amount: 100)
+    | insufficient_funds |> assert.ok()
+}
+
+pub fn main() void {}

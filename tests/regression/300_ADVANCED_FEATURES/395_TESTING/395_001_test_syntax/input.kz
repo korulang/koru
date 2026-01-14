@@ -1,16 +1,18 @@
-// Test: Basic test transform
+// Test: Basic test transform with mock substitution
 //
-// Tests the test transform generates a Zig test block.
-// The transform currently generates a stub - full mock support comes later.
+// Tests that:
+// 1. Mocks are substituted inline (flow pruning)
+// 2. Bindings are extracted from mocked branch values
+// 3. Pure events (assert.ok) work without mocks
 
 ~import "$std/testing"
 
-// Event to be mocked in tests
+// Impure event - needs mock in tests (no proc = impure by default)
 ~event get_balance {}
 | amount { value: u32 }
 
-// Basic test with mock and assertion
-~test(User balance is mocked correctly) {
+// Test: Mock value is inlined, binding extracted
+~test(Mock value inlined with binding) {
     ~get_balance = amount { value: 100 }
     ~get_balance()
     | amount a |> assert.ok()

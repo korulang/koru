@@ -1,0 +1,22 @@
+// Test: Pure events don't require mocks
+//
+// Events with ~[pure] procs can be called in tests without mocking.
+// Only impure events (side effects) need mocks.
+
+~import "$std/testing"
+
+// Pure computation - no side effects
+~event add_numbers { a: u32, b: u32 }
+| result { sum: u32 }
+
+~[pure] proc add_numbers {
+    return .{ .result = .{ .sum = a + b } };
+}
+
+// Test: Pure event called directly, no mock needed
+~test(Pure event works without mock) {
+    ~add_numbers(a: 5, b: 3)
+    | result r |> assert.ok()
+}
+
+pub fn main() void {}

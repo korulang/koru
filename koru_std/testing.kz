@@ -178,10 +178,12 @@ const std = @import("std");
 
                 // Process continuations with the mock result
                 // We know the branch is bc.branch_name, so find and emit that continuation
+                var found_binding = false;
                 for (cloned_flow.continuations) |cont| {
                     if (std_import.mem.eql(u8, cont.branch, bc.branch_name)) {
                         // Found matching continuation - emit binding and nested code
                         if (cont.binding) |binding| {
+                            found_binding = true;
                             code_emitter.writeIndent() catch {};
                             code_emitter.write("const ") catch {};
                             code_emitter.write(binding) catch {};
@@ -223,6 +225,13 @@ const std = @import("std");
                         }
                         break;
                     }
+                }
+                // Suppress unused result if no binding was extracted
+                if (!found_binding) {
+                    code_emitter.writeIndent() catch {};
+                    code_emitter.write("_ = &") catch {};
+                    code_emitter.write(result_var) catch {};
+                    code_emitter.write(";\n") catch {};
                 }
             } else {
                 // Not mocked - emit normally
