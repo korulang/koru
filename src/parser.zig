@@ -796,6 +796,12 @@ pub const Parser = struct {
         } else if (lexer.startsWith(remaining, "event ")) {
             // Private event declaration with annotations
             return .{ .event_decl = try self.parseEventDeclWithAnnotations(false, annotations.items, false) };
+        } else if (lexer.startsWith(remaining, "pub proc ")) {
+            // Public proc declaration with annotations
+            var proc = try self.parseProcDeclWithAnnotations(annotations.items);
+            proc.is_impl = is_impl;
+            proc.is_public = true;
+            return .{ .proc_decl = proc };
         } else if (lexer.startsWith(remaining, "proc ")) {
             var proc = try self.parseProcDeclWithAnnotations(annotations.items);
             proc.is_impl = is_impl;
@@ -1489,7 +1495,10 @@ pub const Parser = struct {
             remaining = lexer.trim(result.remaining);
         }
 
-        const after_proc = if (lexer.afterPrefix(remaining, "proc")) |ap|
+        // Handle both "proc" and "pub proc" prefixes
+        const after_proc = if (lexer.afterPrefix(remaining, "pub proc")) |ap|
+            ap
+        else if (lexer.afterPrefix(remaining, "proc")) |ap|
             ap
         else {
             try self.reporter.addError(

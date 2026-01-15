@@ -328,6 +328,7 @@ pub const ProcDecl = struct {
     annotations: []const []const u8 = &[_][]const u8{}, // Proc annotations like [pure|async]
     target: ?[]const u8 = null, // Language target: "gpu", "js", "python", null = Zig
     is_impl: bool = false,  // True if this implements an abstract event (~impl proc)
+    is_public: bool = false, // True if declared with ~pub proc
 
     // Purity tracking
     is_pure: bool = false,  // True if marked ~[pure] or inline-only pattern
