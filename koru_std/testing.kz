@@ -93,49 +93,115 @@ const std = @import("std");
     }
 
     // ==========================================================================
-    // NEW: Create mini-program with mocks + flows + program items
-    // Mocks come first so they shadow existing implementations
+    // NEW ARCHITECTURE: Clone program, substitute mocks, emit test module
     // ==========================================================================
 
-    var combined_items = std_import.ArrayList(ast.Item).initCapacity(allocator, 64) catch unreachable;
+    // Generate unique test module name from test_name
+    var test_module_name_buf: [128]u8 = undefined;
+    var test_module_name_len: usize = 0;
+    const prefix = "test_";
+    @memcpy(test_module_name_buf[0..prefix.len], prefix);
+    test_module_name_len = prefix.len;
+    // Sanitize test name: replace spaces/special chars with underscores
+    for (test_name) |c| {
+        if (test_module_name_len >= test_module_name_buf.len - 8) break;
+        if ((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9')) {
+            test_module_name_buf[test_module_name_len] = c;
+            test_module_name_len += 1;
+        } else if (c == ' ' or c == '-' or c == '_') {
+            test_module_name_buf[test_module_name_len] = '_';
+            test_module_name_len += 1;
+        }
+    }
+    const suffix = "_module";
+    @memcpy(test_module_name_buf[test_module_name_len..test_module_name_len + suffix.len], suffix);
+    test_module_name_len += suffix.len;
+    const test_module_name = test_module_name_buf[0..test_module_name_len];
 
-    // 1. Add mocks first (they shadow existing impls)
-    for (cloned_mocks.items) |m| combined_items.append(allocator, m) catch {};
+    // Clone program AST
+    const cloned_program = ast_functional.cloneSourceFile(allocator, program) catch {
+        return .{ .transformed = .{ .program = program } };
+    };
 
-    // 2. Add test flows (these contain assert() etc.)
-    for (cloned_flows.items) |f| combined_items.append(allocator, f) catch {};
+    // Build test module items: program items with mocks substituted
+    var test_module_items = std_import.ArrayList(ast.Item).initCapacity(allocator, cloned_program.items.len + cloned_mocks.items.len) catch unreachable;
 
-    // 3. Add original program items (for event declarations, types, etc.)
-    // BUT NOT flows - they would trigger infinite recursion!
-    for (program.items) |p_item| {
+    // Helper to check if a SubflowImpl matches any mock
+    const matchesMock = struct {
+        fn check(subflow_path: *const ast.DottedPath, mocks: []const ast.Item) bool {
+            for (mocks) |mock_item| {
+                if (mock_item == .subflow_impl) {
+                    const mock_path = &mock_item.subflow_impl.event_path;
+                    if (subflow_path.segments.len == mock_path.segments.len) {
+                        var all_match = true;
+                        for (subflow_path.segments, mock_path.segments) |a, b| {
+                            if (!std_import.mem.eql(u8, a, b)) {
+                                all_match = false;
+                                break;
+                            }
+                        }
+                        if (all_match) return true;
+                    }
+                }
+            }
+            return false;
+        }
+    };
+
+    // Add cloned program items, filtering out SubflowImpls that are mocked
+    // Also skip flows, module_decls, and imports that shouldn't be in the flat test module
+    for (cloned_program.items) |p_item| {
         switch (p_item) {
-            .flow => {},  // Skip flows - they contain ~test which would recurse
-            else => combined_items.append(allocator, p_item) catch {},
+            .flow => {},  // Skip top-level flows (they contain ~test)
+            .module_decl => {},  // Skip module declarations (test module is flat)
+            .import_decl => {},  // Skip imports (test module uses parent's imports)
+            .subflow_impl => |sf| {
+                // Only add if NOT mocked
+                if (!matchesMock.check(&sf.event_path, cloned_mocks.items)) {
+                    test_module_items.append(allocator, p_item) catch {};
+                }
+            },
+            else => test_module_items.append(allocator, p_item) catch {},
         }
     }
 
-    // Create mini-program for transform pass
-    const mini_program = allocator.create(ast.Program) catch unreachable;
-    mini_program.* = ast.Program{
-        .items = combined_items.items,
+    // Add mock SubflowImpls (these override any filtered out)
+    for (cloned_mocks.items) |m| {
+        test_module_items.append(allocator, m) catch {};
+    }
+
+    // Emit the test module using emitModuleSubset
+    // Pass the original main module name so event references are redirected to test module
+    const test_module_code = emitter_helpers.emitModuleSubset(
+        allocator,
+        test_module_items.items,
+        test_module_name,
+        null,  // type_registry not needed for basic test emission
+        program.main_module_name,  // original main module name for event redirection
+    ) catch {
+        return .{ .transformed = .{ .program = program } };
+    };
+
+    // Run transforms on test flows (for assert -> inline_code, etc.)
+    var flow_items = std_import.ArrayList(ast.Item).initCapacity(allocator, cloned_flows.items.len + test_module_items.items.len) catch unreachable;
+    for (cloned_flows.items) |f| flow_items.append(allocator, f) catch {};
+    // Include test module items for event resolution during transform
+    for (test_module_items.items) |ti| flow_items.append(allocator, ti) catch {};
+
+    const flow_program = allocator.create(ast.Program) catch unreachable;
+    flow_program.* = ast.Program{
+        .items = flow_items.items,
         .module_annotations = &[_][]const u8{},
-        .main_module_name = "__test__",
+        .main_module_name = test_module_name,
         .allocator = allocator,
         .type_registry = program.type_registry,
     };
 
-    // ==========================================================================
-    // NEW: Run transforms on mini-program
-    // This transforms assert() -> inline_code, if() -> ConditionalNode, etc.
-    // ==========================================================================
-
     const backend_output = @import("backend_output_emitted.zig");
-    std_import.debug.print("[TEST] Calling run_pass on mini-program with {d} items\n", .{mini_program.items.len});
-    const transformed_program = backend_output.run_pass("transform", mini_program, allocator) catch |err| {
+    const transformed_program = backend_output.run_pass("transform", flow_program, allocator) catch |err| {
         std_import.debug.print("Transform pass failed in test: {}\n", .{err});
         return .{ .transformed = .{ .program = program } };
     };
-    std_import.debug.print("[TEST] run_pass complete, transformed program has {d} items\n", .{transformed_program.items.len});
 
     // ==========================================================================
     // NEW: Walk TRANSFORMED flows for purity (after transforms!)
@@ -241,46 +307,41 @@ const std = @import("std");
     }
 
     // ==========================================================================
-    // NEW: Emit using normal emitter on TRANSFORMED flows
-    // No custom emitFlowWithMocks - just regular emitFlow!
+    // Emit test flow using test module prefix
     // ==========================================================================
 
     const EMIT_BUFFER_SIZE = 16 * 1024;
     const emit_buffer = allocator.alloc(u8, EMIT_BUFFER_SIZE) catch unreachable;
     var code_emitter = emitter_helpers.CodeEmitter.init(emit_buffer);
 
+    // Dupe the test module name for the context (it needs to outlive the stack buffer)
+    const module_prefix_owned = allocator.dupe(u8, test_module_name) catch unreachable;
+
     var emit_ctx = emitter_helpers.EmissionContext{
         .allocator = allocator,
         .indent_level = 1,
-        .ast_items = transformed_program.items,  // Use transformed items!
-        .main_module_name = "__test__",
+        .ast_items = test_module_items.items,  // Use test module items for resolution
+        .main_module_name = module_prefix_owned,
+        .module_prefix = module_prefix_owned,  // KEY: Use test module for local references!
         .is_sync = true,
     };
     code_emitter.indent_level = 1;
 
-    std_import.debug.print("[TEST] Emitting {d} flows\n", .{transformed_flows.items.len});
-
-    // Emit each transformed flow using the NORMAL emitter
+    // Emit each transformed flow using the test module prefix
     for (transformed_flows.items) |t_flow| {
-        std_import.debug.print("[TEST] Emitting flow with invocation path segments: {d}\n", .{t_flow.invocation.path.segments.len});
-        for (t_flow.invocation.path.segments) |seg| {
-            std_import.debug.print("[TEST]   segment: {s}\n", .{seg});
-        }
-        std_import.debug.print("[TEST]   preamble_code: {s}\n", .{if (t_flow.preamble_code) |pc| pc else "(null)"});
-        std_import.debug.print("[TEST]   continuations: {d}\n", .{t_flow.continuations.len});
         emitter_helpers.emitFlow(&code_emitter, &emit_ctx, t_flow) catch {};
     }
 
-    std_import.debug.print("[TEST] Emit complete\n", .{});
     const flow_code = code_emitter.getOutput();
 
-    // Build final test block
+    // Build final test code: test module + test block
     const test_code = std_import.fmt.allocPrint(
         allocator,
+        \\{s}
         \\test "{s}" {{
         \\{s}}}
         ,
-        .{ test_name, flow_code }
+        .{ test_module_code, test_name, flow_code }
     ) catch unreachable;
 
     // Create inline_code item

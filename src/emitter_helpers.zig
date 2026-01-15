@@ -2877,13 +2877,31 @@ fn emitInvocationTarget(emitter: *CodeEmitter, ctx: *EmissionContext, path: *con
 
     // Use explicit module_qualifier if present
     if (path.module_qualifier) |mq| {
-        // Try to resolve the alias to the actual module path
-        const resolved_path = if (ctx.ast_items) |items|
-            resolveModuleAlias(mq, items) orelse mq
-        else
-            mq;
-        try writeModulePath(emitter, resolved_path, ctx.main_module_name);
-        try emitter.write(".");
+        // CRITICAL: If module_qualifier equals the main module name, treat as local
+        // This ensures test modules reference their own versions of events
+        if (ctx.main_module_name) |mmn| {
+            if (std.mem.eql(u8, mq, mmn)) {
+                // This is a local event from the main module - use module_prefix
+                try emitter.write(ctx.module_prefix);
+                try emitter.write(".");
+            } else {
+                // Try to resolve the alias to the actual module path
+                const resolved_path = if (ctx.ast_items) |items|
+                    resolveModuleAlias(mq, items) orelse mq
+                else
+                    mq;
+                try writeModulePath(emitter, resolved_path, ctx.main_module_name);
+                try emitter.write(".");
+            }
+        } else {
+            // No main_module_name set - use the original path
+            const resolved_path = if (ctx.ast_items) |items|
+                resolveModuleAlias(mq, items) orelse mq
+            else
+                mq;
+            try writeModulePath(emitter, resolved_path, ctx.main_module_name);
+            try emitter.write(".");
+        }
     } else if (ctx.ast_items) |items| {
         // CRITICAL: Check LOCAL events FIRST before checking imported modules
         // This ensures unqualified names resolve to local events when they exist
@@ -5538,6 +5556,7 @@ pub fn emitModuleSubset(
     items: []const ast.Item,
     module_name: []const u8,
     type_registry: ?*type_registry_module.TypeRegistry,
+    original_main_module_name: ?[]const u8,
 ) ![]const u8 {
     _ = type_registry; // TODO: use for type resolution
 
@@ -5549,11 +5568,14 @@ pub fn emitModuleSubset(
     var code_emitter = CodeEmitter.init(buffer);
 
     // Create emission context with the test module prefix
+    // main_module_name is set to the ORIGINAL main module so that event references
+    // from the original code are recognized and redirected to the test module
     var ctx = EmissionContext{
         .allocator = allocator,
         .indent_level = 0,
         .ast_items = items,
         .module_prefix = module_name,
+        .main_module_name = original_main_module_name,
         .is_sync = true,
     };
 
@@ -5700,9 +5722,9 @@ fn emitEventDeclForModule(
             .proc_decl => |proc| {
                 if (pathsEqual(&proc.path, &event.path)) {
                     // Found proc implementation - emit inline code
-                    if (proc.body) |body| {
+                    if (proc.body.len > 0) {
                         try code_emitter.writeIndent();
-                        try code_emitter.write(body);
+                        try code_emitter.write(proc.body);
                         try code_emitter.write("\n");
                     }
                     found_impl = true;
