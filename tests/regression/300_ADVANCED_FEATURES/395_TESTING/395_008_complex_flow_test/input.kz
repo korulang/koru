@@ -1,0 +1,76 @@
+// Test: Complex flow with chained events and mocks
+//
+// This is the REAL test of the testing framework:
+// - Real program events defined outside tests
+// - Subflow chains multiple events together
+// - Tests mock impure events, call real flows
+// - Pure events called directly (no mock needed)
+
+~import "$std/testing"
+
+// ============================================
+// THE ACTUAL PROGRAM
+// ============================================
+
+// Database layer (impure - external DB)
+~event db.get_user { id: u32 }
+| found { id: u32, balance: u32 }
+| not_found
+
+// Payment service (impure - external API)
+~event payment.charge { user_id: u32, amount: u32 }
+| success { transaction_id: []const u8 }
+| failed { reason: []const u8 }
+
+// Pure validation (no side effects)
+~event validate.amount { amount: u32, balance: u32 }
+| valid
+| insufficient
+
+~[pure] proc validate.amount {
+    if (amount <= balance) {
+        return .{ .valid = .{} };
+    } else {
+        return .{ .insufficient = .{} };
+    }
+}
+
+// The main flow - chains everything together
+~event process_payment { user_id: u32, amount: u32 }
+| success { transaction_id: []const u8 }
+| user_not_found
+| insufficient_funds
+
+~process_payment = db.get_user(id: user_id)
+| found u |> validate.amount(amount: amount, balance: u.balance)
+    | valid |> payment.charge(user_id: u.id, amount: amount)
+        | success tx |> success { transaction_id: tx.transaction_id }
+        | failed |> insufficient_funds
+    | insufficient |> insufficient_funds
+| not_found |> user_not_found
+
+// ============================================
+// THE TESTS
+// ============================================
+
+~test(Successful payment) {
+    ~db.get_user = found { id: 42, balance: 100 }
+    ~payment.charge = success { transaction_id: "tx123" }
+
+    ~process_payment(user_id: 42, amount: 50)
+    | success s |> assert(s.transaction_id.len == 5)  // "tx123" has 5 chars
+}
+
+~test(Insufficient funds rejected) {
+    ~db.get_user = found { id: 42, balance: 30 }
+
+    ~process_payment(user_id: 42, amount: 50)
+    | insufficient_funds |> assert.ok()
+}
+
+~test(User not found) {
+    ~db.get_user = not_found
+
+    ~process_payment(user_id: 999, amount: 50)
+    | user_not_found |> assert.ok()
+}

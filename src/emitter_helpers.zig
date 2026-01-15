@@ -79,6 +79,7 @@ pub const EmissionContext = struct {
     label_result_var: ?[]const u8 = null, // Result variable name for current label (for updating in label_jump)
     label_contexts: ?*std.StringHashMap(LabelContext) = null, // Map of label names to their contexts (for cross-level jumps)
     main_module_name: ?[]const u8 = null, // Main module name for qualifying unqualified events
+    module_prefix: []const u8 = "main_module", // Prefix for local event references (e.g., "main_module" or "test_0_module")
     emit_mode: ?EmitMode = null, // Emission mode for filtering taps by phase annotations
     module_annotations: ?[]const []const u8 = null, // Module-level annotations for tap filtering
     skip_tap_inserted_steps: bool = false, // Skip steps inserted by tap transformation (for opaque modules)
@@ -900,8 +901,9 @@ pub fn emitSubflowContinuations(
     type_registry: *type_registry_module.TypeRegistry,
     main_module_name: ?[]const u8,
     source_event_name: ?[]const u8,
+    module_prefix: []const u8,
 ) !void {
-    try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name);
+    try emitSubflowContinuationsWithDepth(emitter, continuations, start_idx, indent, all_items, 0, tap_registry, type_registry, main_module_name, source_event_name, module_prefix);
 }
 
 /// Helper to check if any continuation in a list has a label
@@ -1114,6 +1116,7 @@ fn emitSubflowContinuationsWithDepth(
     type_registry: *type_registry_module.TypeRegistry,
     main_module_name: ?[]const u8,
     source_event_name: ?[]const u8,
+    module_prefix: []const u8,
 ) !void {
     if (start_idx >= continuations.len) return;
 
@@ -1140,7 +1143,8 @@ fn emitSubflowContinuationsWithDepth(
                         try writeModulePath(emitter, mq, main_module_name);
                         try emitter.write(".");
                     } else {
-                        try emitter.write("main_module.");
+                        try emitter.write(module_prefix);
+                        try emitter.write(".");
                     }
 
                     // Join all segments with underscores to get event name
@@ -1201,6 +1205,7 @@ fn emitSubflowContinuationsWithDepth(
                 type_registry,
                 main_module_name,
                 source_event_name,
+                module_prefix,
             );
         }
         return;
@@ -1764,7 +1769,7 @@ fn emitSubflowContinuationsWithDepth(
                         const extra = "        ";
                         @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
                         const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
-                        try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name);
+                        try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix);
                     }
             
                     try emitter.write(indent);
@@ -2885,26 +2890,29 @@ fn emitInvocationTarget(emitter: *CodeEmitter, ctx: *EmissionContext, path: *con
         const is_local = findLocalEvent(path.segments, items);
 
         if (is_local) {
-            // Event exists locally - always use main_module
-            try emitter.write("main_module.");
+            // Event exists locally - use module prefix (main_module or test_N_module)
+            try emitter.write(ctx.module_prefix);
+            try emitter.write(".");
         } else if (findEventModule(path.segments, items)) |module_name| {
             // Not found locally, check imported modules
             try writeModulePath(emitter, module_name, ctx.main_module_name);
             try emitter.write(".");
         } else if (at_module_level) {
             // At module level (main()) and not found anywhere
-            // Assume main_module (unless it's a compiler event)
+            // Assume module prefix (unless it's a compiler event)
             const is_compiler_event = path.segments.len > 0 and std.mem.eql(u8, path.segments[0], "compiler");
             if (!is_compiler_event) {
-                try emitter.write("main_module.");
+                try emitter.write(ctx.module_prefix);
+                try emitter.write(".");
             }
         }
     } else if (at_module_level) {
         // At module level but no ast_items to search
-        // Assume main_module (unless compiler event)
+        // Assume module prefix (unless compiler event)
         const is_compiler_event = path.segments.len > 0 and std.mem.eql(u8, path.segments[0], "compiler");
         if (!is_compiler_event) {
-            try emitter.write("main_module.");
+            try emitter.write(ctx.module_prefix);
+            try emitter.write(".");
         }
     }
 
@@ -5515,4 +5523,232 @@ fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) b
     }
 
     return false;
+}
+
+// ============================================================================
+// MODULE SUBSET EMISSION
+// Emit a subset of AST items as a standalone module struct
+// Used for test modules with mocked implementations
+// ============================================================================
+
+/// Emit a subset of AST items as a module struct, returning the generated code
+/// This is used for emitting test-specific modules with mocked implementations
+pub fn emitModuleSubset(
+    allocator: std.mem.Allocator,
+    items: []const ast.Item,
+    module_name: []const u8,
+    type_registry: ?*type_registry_module.TypeRegistry,
+) ![]const u8 {
+    _ = type_registry; // TODO: use for type resolution
+
+    // Allocate a buffer for the emitted code (64KB should be plenty for a test module)
+    const BUFFER_SIZE = 64 * 1024;
+    const buffer = try allocator.alloc(u8, BUFFER_SIZE);
+    errdefer allocator.free(buffer);
+
+    var code_emitter = CodeEmitter.init(buffer);
+
+    // Create emission context with the test module prefix
+    var ctx = EmissionContext{
+        .allocator = allocator,
+        .indent_level = 0,
+        .ast_items = items,
+        .module_prefix = module_name,
+        .is_sync = true,
+    };
+
+    // Emit module struct header
+    try code_emitter.write("const ");
+    try code_emitter.write(module_name);
+    try code_emitter.write(" = struct {\n");
+    code_emitter.indent_level = 1;
+    ctx.indent_level = 1;
+
+    // First pass: emit all event declarations
+    for (items) |item| {
+        switch (item) {
+            .event_decl => |event| {
+                try emitEventDeclForModule(&code_emitter, &ctx, &event, items);
+            },
+            else => {},
+        }
+    }
+
+    // Close module struct
+    code_emitter.indent_level = 0;
+    try code_emitter.write("};\n");
+
+    // Get the output and dupe it to owned memory
+    const output = code_emitter.getOutput();
+    const result = try allocator.dupe(u8, output);
+
+    // Free the buffer since we duped the result
+    allocator.free(buffer);
+
+    return result;
+}
+
+/// Emit a single event declaration for a module subset
+fn emitEventDeclForModule(
+    code_emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    event: *const ast.EventDecl,
+    all_items: []const ast.Item,
+) !void {
+    // Event struct header: pub const foo_event = struct {
+    try code_emitter.writeIndent();
+    try code_emitter.write("pub const ");
+    for (event.path.segments, 0..) |segment, idx| {
+        if (idx > 0) try code_emitter.write("_");
+        try code_emitter.write(segment);
+    }
+    try code_emitter.write("_event = struct {\n");
+    code_emitter.indent_level += 1;
+
+    // Input struct
+    try code_emitter.writeIndent();
+    try code_emitter.write("pub const Input = struct {\n");
+    code_emitter.indent_level += 1;
+    for (event.input.fields) |field| {
+        try code_emitter.writeIndent();
+        try writeBranchName(code_emitter, field.name);
+        try code_emitter.write(": ");
+        try writeFieldType(code_emitter, field, ctx.main_module_name);
+        try code_emitter.write(",\n");
+    }
+    code_emitter.indent_level -= 1;
+    try code_emitter.writeIndent();
+    try code_emitter.write("};\n");
+
+    // Output union
+    try code_emitter.writeIndent();
+    if (event.branches.len == 0) {
+        try code_emitter.write("pub const Output = void;\n");
+    } else {
+        try code_emitter.write("pub const Output = union(enum) {\n");
+        code_emitter.indent_level += 1;
+        for (event.branches) |branch| {
+            try code_emitter.writeIndent();
+            try writeBranchName(code_emitter, branch.name);
+            try code_emitter.write(": struct {\n");
+            code_emitter.indent_level += 1;
+            for (branch.payload.fields) |field| {
+                try code_emitter.writeIndent();
+                try writeBranchName(code_emitter, field.name);
+                try code_emitter.write(": ");
+                try writeFieldType(code_emitter, field, ctx.main_module_name);
+                try code_emitter.write(",\n");
+            }
+            code_emitter.indent_level -= 1;
+            try code_emitter.writeIndent();
+            try code_emitter.write("},\n");
+        }
+        code_emitter.indent_level -= 1;
+        try code_emitter.writeIndent();
+        try code_emitter.write("};\n");
+    }
+
+    // Handler function
+    try code_emitter.writeIndent();
+    try code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
+    code_emitter.indent_level += 1;
+
+    // Emit input field bindings
+    for (event.input.fields) |field| {
+        try code_emitter.writeIndent();
+        try code_emitter.write("const ");
+        try code_emitter.write(field.name);
+        try code_emitter.write(" = __koru_event_input.");
+        try code_emitter.write(field.name);
+        try code_emitter.write(";\n");
+    }
+
+    // Suppress unused variable warnings
+    for (event.input.fields) |field| {
+        try code_emitter.writeIndent();
+        try code_emitter.write("_ = &");
+        try code_emitter.write(field.name);
+        try code_emitter.write(";\n");
+    }
+    try code_emitter.writeIndent();
+    try code_emitter.write("_ = &__koru_event_input;\n");
+
+    // Find and emit implementation (subflow_impl or proc_decl)
+    var found_impl = false;
+    for (all_items) |impl_item| {
+        switch (impl_item) {
+            .subflow_impl => |subflow| {
+                if (pathsEqual(&subflow.event_path, &event.path)) {
+                    // Found subflow implementation
+                    switch (subflow.body) {
+                        .immediate => |bc| {
+                            // Mock with immediate value - emit return statement
+                            try code_emitter.writeIndent();
+                            try code_emitter.write("return ");
+                            try emitBranchConstructor(code_emitter, ctx, &bc, true);
+                            try code_emitter.write(";\n");
+                        },
+                        .flow => |flow| {
+                            // Full subflow - emit the flow body
+                            try emitFlow(code_emitter, ctx, &flow);
+                        },
+                    }
+                    found_impl = true;
+                    break;
+                }
+            },
+            .proc_decl => |proc| {
+                if (pathsEqual(&proc.path, &event.path)) {
+                    // Found proc implementation - emit inline code
+                    if (proc.body) |body| {
+                        try code_emitter.writeIndent();
+                        try code_emitter.write(body);
+                        try code_emitter.write("\n");
+                    }
+                    found_impl = true;
+                    break;
+                }
+            },
+            else => {},
+        }
+    }
+
+    // If no implementation found, emit a placeholder return
+    if (!found_impl) {
+        try code_emitter.writeIndent();
+        if (event.branches.len > 0) {
+            // Return first branch with undefined values
+            try code_emitter.write("return .{ .");
+            try code_emitter.write(event.branches[0].name);
+            try code_emitter.write(" = .{} };\n");
+        } else {
+            try code_emitter.write("return;\n");
+        }
+    }
+
+    code_emitter.indent_level -= 1;
+    try code_emitter.writeIndent();
+    try code_emitter.write("}\n");
+
+    // Close event struct
+    code_emitter.indent_level -= 1;
+    try code_emitter.writeIndent();
+    try code_emitter.write("};\n");
+}
+
+/// Compare two DottedPaths for equality
+fn pathsEqual(a: *const ast.DottedPath, b: *const ast.DottedPath) bool {
+    // Compare module qualifiers
+    if (a.module_qualifier != null and b.module_qualifier != null) {
+        if (!std.mem.eql(u8, a.module_qualifier.?, b.module_qualifier.?)) return false;
+    } else if (a.module_qualifier != null or b.module_qualifier != null) {
+        return false;
+    }
+
+    // Compare segments
+    if (a.segments.len != b.segments.len) return false;
+    for (a.segments, b.segments) |seg_a, seg_b| {
+        if (!std.mem.eql(u8, seg_a, seg_b)) return false;
+    }
+    return true;
 }
