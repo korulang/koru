@@ -2851,7 +2851,7 @@ fn emitInvocation(
             if (std.mem.eql(u8, second, "fail")) {
                 // assert.fail() - unconditional failure
                 try emitter.writeIndent();
-                try emitter.write("@panic(\"Test failed: assert.fail() reached\");\n");
+                try emitter.write("return error.TestUnexpectedResult;\n");
                 return;
             }
         }

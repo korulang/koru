@@ -1,0 +1,21 @@
+// Test: Unexpected branch causes test failure
+//
+// This test verifies that if a mock returns a DIFFERENT branch than
+// what the test expects, the test FAILS (not silently passes).
+//
+// The test expects `ok` but the mock returns `error_result`.
+// This should cause a test failure due to union field access mismatch.
+
+~import "$std/testing"
+
+~event get_data {}
+| ok { value: u32 }
+| error_result { code: u32 }
+
+~test(Unexpected branch should fail) {
+    // Mock returns error_result, but test only handles ok branch
+    ~get_data = error_result { code: 500 }
+
+    ~get_data()
+    | ok result |> assert(result.value == 42)
+}

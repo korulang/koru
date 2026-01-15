@@ -462,9 +462,9 @@ const emitFlowWithMocks = struct {
                 const expr_text = flow_to_emit.invocation.args[0].value;
                 if (expr_text.len > 0) {
                     try emitter.writeIndent();
-                    try emitter.write("if (!(");
+                    try emitter.write("try @import(\"std\").testing.expect(");
                     try emitter.write(expr_text);
-                    try emitter.write(")) @panic(\"Assertion failed\");\n");
+                    try emitter.write(");\n");
                     return;
                 }
             }
@@ -481,7 +481,7 @@ const emitFlowWithMocks = struct {
         // Handle assert.fail - unconditional failure
         if (std_local.mem.eql(u8, inv_path, "assert.fail")) {
             try emitter.writeIndent();
-            try emitter.write("@panic(\"Test failed: assert.fail() reached\");\n");
+            try emitter.write("return error.TestUnexpectedResult;\n");
             return;
         }
 
@@ -584,10 +584,10 @@ const emitFlowWithMocks = struct {
     // Check if this is top-level (flow.invocation IS the assert)
     const is_top_level = (invocation == &flow.invocation);
 
-    // Build assertion code - simple panic message without expression echo for now
+    // Build assertion code - use idiomatic Zig testing assertions
     const assert_code = std_import.fmt.allocPrint(
         allocator,
-        "if (!({s})) @panic(\"Assertion failed\");",
+        "try @import(\"std\").testing.expect({s});",
         .{ expr }
     ) catch unreachable;
 
