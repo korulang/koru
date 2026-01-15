@@ -97,6 +97,41 @@ const std = @import("std");
 ~[comptime|norun]pub event command.zig { name: []const u8, source: Source }
 
 // ============================================================================
+// BUILD COMMANDS - Native Koru Flows (Zero Context Switch)
+// ============================================================================
+// FRONTEND EXECUTION: Write build commands in pure Koru!
+// The command body IS a flow continuation - no Source block, no Zig, just Koru.
+//
+// Usage:
+//   ~std.build:command(name: "greet", description: "Say hello")
+//   | execute ctx |>
+//       if(ctx.argv.len > 1)
+//       | then |> std.io:println("Hello, " ++ ctx.argv[1] ++ "!")
+//       | else |> std.io:println("Usage: greet <name>")
+//
+// Invoke: koruc main.kz greet World
+//   Output: Hello, World!
+//
+// The execute branch receives:
+//   - ctx.argv: [][]const u8 - command line arguments after command name
+//   - ctx.program: *const Program - full AST access (optional)
+//
+// Unlike command.sh (shell) or command.zig (raw Zig), command uses normal
+// Koru flow syntax. Same patterns as everything else - events, branches, ~if.
+//
+// Examples:
+//   ~std.build:command(name: "check", description: "Run all checks")
+//   | execute ctx |>
+//       std.build:run_step("lint")
+//       | done |> std.build:run_step("test")
+//           | done |> std.io:println("All checks passed!")
+//           | failed e |> std.io:println("Tests failed: " ++ e)
+//       | failed e |> std.io:println("Lint failed: " ++ e)
+
+~[comptime|norun]pub event command { name: []const u8, description: []const u8 }
+| execute { argv: [][]const u8 }
+
+// ============================================================================
 // BUILD STEPS - Declarative Build Pipeline with Dependencies
 // ============================================================================
 // FRONTEND EXECUTION: Build steps are collected and executed in dependency order

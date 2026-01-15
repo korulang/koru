@@ -3208,6 +3208,84 @@ const ZigCommand = struct {
     }
 };
 
+const KoruCommand = struct {
+    name: []const u8,
+    description: []const u8,
+    flow: *const ast.Flow,  // The flow continuation (| execute ctx |> ...)
+
+    fn deinit(self: *KoruCommand, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        if (self.description.len > 0) {
+            allocator.free(self.description);
+        }
+        // flow is part of AST, not separately allocated
+    }
+};
+
+/// Emit a Koru AST Node as Zig code for command execution
+/// This is a simplified emitter for build:command flows (MVP)
+fn emitNodeAsZig(allocator: std.mem.Allocator, zig_source: *std.ArrayList(u8), node: ast.Node, indent: []const u8) !void {
+    switch (node) {
+        .invocation => |inv| {
+            // Check for std.io:println - emit as std.debug.print
+            const is_std_io = inv.path.module_qualifier != null and
+                std.mem.eql(u8, inv.path.module_qualifier.?, "std.io");
+            const is_println = inv.path.segments.len == 1 and
+                std.mem.eql(u8, inv.path.segments[0], "println");
+
+            if (is_std_io and is_println) {
+                try zig_source.appendSlice(allocator, indent);
+                try zig_source.appendSlice(allocator, "std.debug.print(");
+
+                // Get the message argument
+                if (inv.args.len > 0) {
+                    const msg = inv.args[0].value;
+                    // Check if it's already a string literal (starts with ")
+                    if (msg.len > 0 and msg[0] == '"') {
+                        try zig_source.appendSlice(allocator, msg);
+                    } else {
+                        // Wrap in quotes
+                        try zig_source.append(allocator, '"');
+                        try zig_source.appendSlice(allocator, msg);
+                        try zig_source.append(allocator, '"');
+                    }
+                } else {
+                    try zig_source.appendSlice(allocator, "\"\"");
+                }
+
+                try zig_source.appendSlice(allocator, " ++ \"\\n\", .{});\n");
+                return;
+            }
+
+            // Unknown invocation - emit as comment with debug info
+            try zig_source.appendSlice(allocator, indent);
+            try zig_source.appendSlice(allocator, "// TODO: emit invocation ");
+            if (inv.path.module_qualifier) |mq| {
+                try zig_source.appendSlice(allocator, mq);
+                try zig_source.append(allocator, ':');
+            }
+            for (inv.path.segments, 0..) |seg, i| {
+                if (i > 0) try zig_source.append(allocator, '.');
+                try zig_source.appendSlice(allocator, seg);
+            }
+            try zig_source.append(allocator, '\n');
+        },
+        .branch_constructor => |bc| {
+            try zig_source.appendSlice(allocator, indent);
+            try zig_source.appendSlice(allocator, "// branch constructor: ");
+            try zig_source.appendSlice(allocator, bc.branch_name);
+            try zig_source.append(allocator, '\n');
+        },
+        .terminal => {
+            // Do nothing - flow terminates
+        },
+        else => {
+            try zig_source.appendSlice(allocator, indent);
+            try zig_source.appendSlice(allocator, "// TODO: emit node type\n");
+        },
+    }
+}
+
 /// Collect all build:command.sh invocations from AST
 fn collectShellCommands(allocator: std.mem.Allocator, program: *const ast.Program) ![]ShellCommand {
     var commands = try std.ArrayList(ShellCommand).initCapacity(allocator, 4);
@@ -3400,6 +3478,108 @@ fn collectZigCommands(allocator: std.mem.Allocator, program: *const ast.Program)
                                 try commands.append(allocator, ZigCommand{
                                     .name = name.?,
                                     .source = source.?,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return try commands.toOwnedSlice(allocator);
+}
+
+/// Collect all build:command invocations (native Koru commands) from AST
+fn collectKoruCommands(allocator: std.mem.Allocator, program: *const ast.Program) ![]KoruCommand {
+    var commands = try std.ArrayList(KoruCommand).initCapacity(allocator, 4);
+    errdefer {
+        for (commands.items) |*cmd| {
+            cmd.deinit(allocator);
+        }
+        commands.deinit(allocator);
+    }
+
+    // Walk top-level items (use index to get stable pointer)
+    for (program.items, 0..) |item, item_idx| {
+        if (item == .flow) {
+            // Get pointer to the actual item in the slice, not a copy
+            const flow = &program.items[item_idx].flow;
+            // Check if this is std.build:command (not command.sh or command.zig)
+            if (flow.invocation.path.module_qualifier) |mq| {
+                if (std.mem.eql(u8, mq, "std.build") and
+                    flow.invocation.path.segments.len == 1 and
+                    std.mem.eql(u8, flow.invocation.path.segments[0], "command"))
+                {
+                    // Extract name and description parameters
+                    var name: ?[]const u8 = null;
+                    var description: ?[]const u8 = null;
+
+                    for (flow.invocation.args) |arg| {
+                        if (std.mem.eql(u8, arg.name, "name")) {
+                            const raw = arg.value;
+                            const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len-1] == '"')
+                                raw[1..raw.len-1]
+                            else
+                                raw;
+                            name = try allocator.dupe(u8, trimmed);
+                        } else if (std.mem.eql(u8, arg.name, "description")) {
+                            const raw = arg.value;
+                            const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len-1] == '"')
+                                raw[1..raw.len-1]
+                            else
+                                raw;
+                            description = try allocator.dupe(u8, trimmed);
+                        }
+                    }
+
+                    // Must have name and at least one continuation (the execute branch)
+                    if (name != null and flow.continuations.len > 0) {
+                        try commands.append(allocator, KoruCommand{
+                            .name = name.?,
+                            .description = description orelse "",
+                            .flow = flow,
+                        });
+                    }
+                }
+            }
+        } else if (item == .module_decl) {
+            // Also check imported modules - get stable pointer via index
+            const module = &program.items[item_idx].module_decl;
+            for (module.items, 0..) |mod_item, mod_item_idx| {
+                if (mod_item == .flow) {
+                    const flow = &module.items[mod_item_idx].flow;
+                    if (flow.invocation.path.module_qualifier) |mq| {
+                        if (std.mem.eql(u8, mq, "std.build") and
+                            flow.invocation.path.segments.len == 1 and
+                            std.mem.eql(u8, flow.invocation.path.segments[0], "command"))
+                        {
+                            var name: ?[]const u8 = null;
+                            var description: ?[]const u8 = null;
+
+                            for (flow.invocation.args) |arg| {
+                                if (std.mem.eql(u8, arg.name, "name")) {
+                                    const raw = arg.value;
+                                    const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len-1] == '"')
+                                        raw[1..raw.len-1]
+                                    else
+                                        raw;
+                                    name = try allocator.dupe(u8, trimmed);
+                                } else if (std.mem.eql(u8, arg.name, "description")) {
+                                    const raw = arg.value;
+                                    const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len-1] == '"')
+                                        raw[1..raw.len-1]
+                                    else
+                                        raw;
+                                    description = try allocator.dupe(u8, trimmed);
+                                }
+                            }
+
+                            if (name != null and flow.continuations.len > 0) {
+                                try commands.append(allocator, KoruCommand{
+                                    .name = name.?,
+                                    .description = description orelse "",
+                                    .flow = flow,
                                 });
                             }
                         }
@@ -4762,6 +4942,14 @@ pub fn main() !void {
         parse_allocator.free(zig_commands);
     }
 
+    const koru_commands = try collectKoruCommands(parse_allocator, &source_file);
+    defer {
+        for (koru_commands) |*cmd| {
+            cmd.deinit(parse_allocator);
+        }
+        parse_allocator.free(koru_commands);
+    }
+
     // Track if we're running a comptime command (passed to backend)
     // NOTE: comptime_cmd_result is collected AFTER imports are processed
     var detected_comptime_command: ?[]const u8 = null;
@@ -4778,7 +4966,7 @@ pub fn main() !void {
 
                 // Handle "help" command - list all available commands
                 if (std.mem.eql(u8, potential_command, "help")) {
-                    if (shell_commands.len == 0 and zig_commands.len == 0) {
+                    if (shell_commands.len == 0 and zig_commands.len == 0 and koru_commands.len == 0) {
                         try printStdout(allocator, "No commands defined in {s}\n", .{input});
                         std.process.exit(0);
                     }
@@ -4791,6 +4979,9 @@ pub fn main() !void {
                         if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
                     }
                     for (zig_commands) |cmd| {
+                        if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
+                    }
+                    for (koru_commands) |cmd| {
                         if (cmd.name.len > max_name_len) max_name_len = cmd.name.len;
                     }
 
@@ -4818,6 +5009,21 @@ pub fn main() !void {
                             try printStdout(allocator, " ", .{});
                         }
                         try printStdout(allocator, "(zig command)\n", .{});
+                    }
+
+                    // Print koru commands
+                    for (koru_commands) |cmd| {
+                        const padding = max_name_len - cmd.name.len + 2;
+                        try printStdout(allocator, "  {s}", .{cmd.name});
+                        var pad_idx: usize = 0;
+                        while (pad_idx < padding) : (pad_idx += 1) {
+                            try printStdout(allocator, " ", .{});
+                        }
+                        if (cmd.description.len > 0) {
+                            try printStdout(allocator, "{s}\n", .{cmd.description});
+                        } else {
+                            try printStdout(allocator, "(koru command)\n", .{});
+                        }
                     }
 
                     try printStdout(allocator, "\nUsage: koruc {s} <command>\n", .{input});
@@ -4885,6 +5091,90 @@ pub fn main() !void {
                         std.debug.print("⚠️  Zig command execution not yet implemented\n", .{});
                         std.debug.print("Command '{s}' found but needs compilation support\n", .{cmd.name});
                         std.process.exit(1);
+                    }
+                }
+
+                // If no zig command matched, check for Koru commands
+                for (koru_commands) |cmd| {
+                    if (std.mem.eql(u8, cmd.name, potential_command)) {
+                        // Found matching Koru command! Emit and execute it
+                        std.debug.print("🌿 Executing Koru command: {s}\n", .{cmd.name});
+
+                        // Find the execute continuation
+                        var execute_cont: ?*const ast.Continuation = null;
+                        for (cmd.flow.continuations) |*cont| {
+                            if (std.mem.eql(u8, cont.branch, "execute")) {
+                                execute_cont = cont;
+                                break;
+                            }
+                        }
+
+                        if (execute_cont == null) {
+                            std.debug.print("Error: No 'execute' branch found in command\n", .{});
+                            std.process.exit(1);
+                        }
+
+                        // For MVP: emit a simple Zig file with the command body
+                        // The continuation.node contains the flow body
+                        const tmp_path = "/tmp/koru_cmd.zig";
+
+                        // Create the Zig source
+                        var zig_source = try std.ArrayList(u8).initCapacity(allocator, 1024);
+                        defer zig_source.deinit(allocator);
+
+                        // Write header
+                        try zig_source.appendSlice(allocator, "const std = @import(\"std\");\n\n");
+                        try zig_source.appendSlice(allocator, "pub fn main() void {\n");
+
+                        // Emit the continuation body
+                        const cont = execute_cont.?;
+                        if (cont.node) |node| {
+                            try emitNodeAsZig(allocator, &zig_source, node, "    ");
+                        } else {
+                            // Empty body - just emit a comment
+                            try zig_source.appendSlice(allocator, "    // (empty command body)\n");
+                        }
+
+                        try zig_source.appendSlice(allocator, "}\n");
+
+                        // Write to temp file
+                        const tmp_file = std.fs.createFileAbsolute(tmp_path, .{}) catch |err| {
+                            std.debug.print("Error creating temp file: {}\n", .{err});
+                            std.process.exit(1);
+                        };
+                        defer tmp_file.close();
+                        tmp_file.writeAll(zig_source.items) catch |err| {
+                            std.debug.print("Error writing temp file: {}\n", .{err});
+                            std.process.exit(1);
+                        };
+
+                        // Execute with zig run
+                        var exec_argv = [_][]const u8{ "zig", "run", tmp_path };
+                        const result = std.process.Child.run(.{
+                            .allocator = allocator,
+                            .argv = &exec_argv,
+                        }) catch |err| {
+                            std.debug.print("Error running command: {}\n", .{err});
+                            std.process.exit(1);
+                        };
+                        defer {
+                            allocator.free(result.stdout);
+                            allocator.free(result.stderr);
+                        }
+
+                        // Print output
+                        if (result.stdout.len > 0) {
+                            try printStdout(allocator, "{s}", .{result.stdout});
+                        }
+                        if (result.stderr.len > 0) {
+                            try printStderr(allocator, "{s}", .{result.stderr});
+                        }
+
+                        // Exit with command's exit code
+                        switch (result.term) {
+                            .Exited => |code| std.process.exit(code),
+                            else => std.process.exit(1),
+                        }
                     }
                 }
 
