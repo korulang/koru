@@ -4347,18 +4347,59 @@ pub const Parser = struct {
         // Note: *deref syntax is handled at a higher level, not here
 
         // Parse: branch [binding] [|> pipeline...]
-        var parts = std.mem.tokenizeAny(u8, content, " ");
-        
-        const branch_name = parts.next() orelse {
-            try self.reporter.addError(
-                .PARSE003,
-                self.current + 1,
-                indent + 2,
-                "missing branch name in continuation",
-                .{},
-            );
-            return error.ParseError;
-        };
+        // Also handles pattern branches: [pattern expression] binding |> pipeline
+
+        const trimmed_content = lexer.trim(content);
+
+        // Check for pattern branch: [...]
+        const is_pattern_branch = trimmed_content.len > 0 and trimmed_content[0] == '[';
+
+        var branch_name: []const u8 = undefined;
+        var rest_after_branch: []const u8 = undefined;
+
+        if (is_pattern_branch) {
+            // Pattern branch: find matching ] with bracket counting
+            var depth: usize = 1;
+            var end_pos: usize = 1;
+            while (end_pos < trimmed_content.len and depth > 0) : (end_pos += 1) {
+                if (trimmed_content[end_pos] == '[') {
+                    depth += 1;
+                } else if (trimmed_content[end_pos] == ']') {
+                    depth -= 1;
+                }
+            }
+
+            if (depth != 0) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current + 1,
+                    indent + 2,
+                    "unmatched '[' in pattern branch",
+                    .{},
+                );
+                return error.ParseError;
+            }
+
+            branch_name = trimmed_content[0..end_pos];
+            rest_after_branch = lexer.trim(trimmed_content[end_pos..]);
+        } else {
+            // Normal branch: tokenize on space
+            var parts = std.mem.tokenizeAny(u8, content, " ");
+            branch_name = parts.next() orelse {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current + 1,
+                    indent + 2,
+                    "missing branch name in continuation",
+                    .{},
+                );
+                return error.ParseError;
+            };
+            rest_after_branch = parts.rest();
+        }
+
+        // For non-pattern parsing, we still need a tokenizer for the rest
+        var parts = std.mem.tokenizeAny(u8, rest_after_branch, " ");
 
         // Check for |? catch-all continuation
         if (std.mem.eql(u8, branch_name, "?")) {
@@ -4437,7 +4478,8 @@ pub const Parser = struct {
         }
 
         // Normal branch continuation - validate branch name is a valid identifier
-        if (!isValidIdentifier(branch_name)) {
+        // Pattern branches ([...]) skip this check - the pattern is opaque data for transforms
+        if (!is_pattern_branch and !isValidIdentifier(branch_name)) {
             try self.reporter.addError(
                 .PARSE003,
                 self.current + 1,

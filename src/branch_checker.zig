@@ -89,6 +89,10 @@ pub const BranchChecker = struct {
         for (handled) |h| {
             if (h.is_catchall) continue; // Catchall is always valid
 
+            // Pattern branches ([...]) are opaque - skip validation
+            // They're meant for comptime transforms to interpret
+            if (h.name.len > 0 and h.name[0] == '[') continue;
+
             var found = false;
             for (declared) |decl| {
                 if (std.mem.eql(u8, decl.name, h.name)) {

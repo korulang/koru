@@ -1,0 +1,33 @@
+// ============================================================================
+// TEST: Pattern Branches Parser Support
+// ============================================================================
+// Verifies that the parser correctly handles [...] pattern branch syntax.
+// Pattern branches allow opaque expressions as branch names for DSL transforms.
+//
+// The [...] content is passed through as the branch name - transforms interpret it.
+// ============================================================================
+
+// Simple event to test pattern branches
+~event test_patterns {}
+| ok {}
+
+~proc test_patterns {
+    return .{ .ok = .{} };
+}
+
+// Test that pattern branches parse correctly
+// The branch names are [GET /users/:id] etc - opaque to the compiler
+~test_patterns()
+| [GET /users/:id] |> ok {}
+| [POST /users] |> ok {}
+| [nested [brackets] work] |> ok {}
+| [* -> stopped] |> ok {}  // State machine style
+| ok |> _  // Normal branch still works
+
+// Verify nested patterns work
+~test_patterns()
+| [/admin/*] |>
+    test_patterns()
+    | [GET /dashboard] |> ok {}
+    | ok |> _
+| ok |> _
