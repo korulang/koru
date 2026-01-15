@@ -471,6 +471,20 @@ const emitFlowWithMocks = struct {
             return; // Skip if no expression found
         }
 
+        // Handle assert.ok - unconditional pass (noop)
+        if (std_local.mem.eql(u8, inv_path, "assert.ok")) {
+            // assert.ok() is a pass-through checkpoint - just continue
+            // Emit nothing (the test passed this branch)
+            return;
+        }
+
+        // Handle assert.fail - unconditional failure
+        if (std_local.mem.eql(u8, inv_path, "assert.fail")) {
+            try emitter.writeIndent();
+            try emitter.write("@panic(\"Test failed: assert.fail() reached\");\n");
+            return;
+        }
+
         if (mocks.get(inv_path)) |bc| {
             const result_var = try @import("std").fmt.allocPrint(ctx.allocator, "result_{d}", .{counter.*});
             counter.* += 1;
@@ -675,6 +689,14 @@ const emitFlowWithMocks = struct {
         }
         return .{ .transformed = .{ .program = program } };
     }
+}
+
+// Simple pass - marks a test branch as passing (noop)
+~[keyword|comptime|transform|pure] pub event assert.ok {}
+
+~proc assert.ok {
+    // assert.ok is a pass-through checkpoint - do nothing
+    // The test passed this branch by reaching this point
 }
 
 // Simple fail - fails the test with optional message

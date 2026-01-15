@@ -2832,18 +2832,48 @@ fn emitInvocation(
     invocation: *const ast.Invocation,
     result_var: []const u8,
 ) !void {
+    // Handle special test assertions that should be inlined
+    if (invocation.path.segments.len == 2) {
+        const first = invocation.path.segments[0];
+        const second = invocation.path.segments[1];
+        if (std.mem.eql(u8, first, "assert")) {
+            if (std.mem.eql(u8, second, "ok")) {
+                // assert.ok() - pass-through checkpoint, emit nothing
+                // Assign void to suppress unused variable warning if needed
+                if (!std.mem.eql(u8, result_var, "_")) {
+                    try emitter.writeIndent();
+                    try emitter.write("_ = ");
+                    try emitter.write(result_var);
+                    try emitter.write(";\n");
+                }
+                return;
+            }
+            if (std.mem.eql(u8, second, "fail")) {
+                // assert.fail() - unconditional failure
+                try emitter.writeIndent();
+                try emitter.write("@panic(\"Test failed: assert.fail() reached\");\n");
+                return;
+            }
+        }
+    }
+
     // Check for SubflowImpl with immediate body (mock/constant value)
     // If found, inline the value instead of calling the handler
     if (ctx.ast_items) |items| {
         if (findSubflowImplByPath(items, &invocation.path)) |subflow_impl| {
             if (subflow_impl.body == .immediate) {
-                // Emit: const result = .{ .branch = .{ fields... } };
+                // Emit: const result: EventType.Output = .{ .branch = .{ fields... } };
+                // The type annotation is CRITICAL - otherwise it's an anonymous struct
+                // and Zig can't switch on it
                 try emitter.writeIndent();
                 if (!std.mem.eql(u8, result_var, "_")) {
                     try emitter.write("const ");
                 }
                 try emitter.write(result_var);
-                try emitter.write(" = ");
+                try emitter.write(": ");
+                // Emit the event type path for the Output type
+                try emitInvocationTarget(emitter, ctx, &invocation.path);
+                try emitter.write(".Output = ");
                 try emitBranchConstructor(emitter, ctx, &subflow_impl.body.immediate, true);
                 try emitter.write(";\n");
                 return;
@@ -5696,53 +5726,73 @@ fn emitEventDeclForModule(
     try code_emitter.write("_ = &__koru_event_input;\n");
 
     // Find and emit implementation (subflow_impl or proc_decl)
+    // Use findSubflowImplByPath which correctly handles module_qualifier differences
     var found_impl = false;
-    for (all_items) |impl_item| {
-        switch (impl_item) {
-            .subflow_impl => |subflow| {
-                if (pathsEqual(&subflow.event_path, &event.path)) {
-                    // Found subflow implementation
-                    switch (subflow.body) {
-                        .immediate => |bc| {
-                            // Mock with immediate value - emit return statement
-                            try code_emitter.writeIndent();
-                            try code_emitter.write("return ");
-                            try emitBranchConstructor(code_emitter, ctx, &bc, true);
-                            try code_emitter.write(";\n");
-                        },
-                        .flow => |flow| {
-                            // Full subflow - emit the flow body
-                            try emitFlow(code_emitter, ctx, &flow);
-                        },
+
+    // First check for SubflowImpl (mock or flow body)
+    if (findSubflowImplByPath(all_items, &event.path)) |subflow| {
+        switch (subflow.body) {
+            .immediate => |bc| {
+                // Mock with immediate value - emit return statement
+                if (DEBUG) {
+                    std.debug.print("[DEBUG emitEventDeclForModule] Found immediate mock for event, branch={s}, fields.len={d}\n", .{ bc.branch_name, bc.fields.len });
+                    for (bc.fields, 0..) |field, i| {
+                        std.debug.print("[DEBUG emitEventDeclForModule]   field[{d}]: name={s}, expr_str={s}\n", .{ i, field.name, if (field.expression_str) |e| e else "(null)" });
                     }
-                    found_impl = true;
-                    break;
                 }
+                try code_emitter.writeIndent();
+                try code_emitter.write("return ");
+                try emitBranchConstructor(code_emitter, ctx, &bc, true);
+                try code_emitter.write(";\n");
             },
-            .proc_decl => |proc| {
-                if (pathsEqual(&proc.path, &event.path)) {
-                    // Found proc implementation - emit inline code
-                    if (proc.body.len > 0) {
-                        try code_emitter.writeIndent();
-                        try code_emitter.write(proc.body);
-                        try code_emitter.write("\n");
-                    }
-                    found_impl = true;
-                    break;
-                }
+            .flow => |flow| {
+                // Full subflow - emit the flow body
+                try emitFlow(code_emitter, ctx, &flow);
             },
-            else => {},
+        }
+        found_impl = true;
+    }
+
+    // Then check for proc_decl (Zig inline implementation)
+    if (!found_impl) {
+        if (findProcDeclByPath(all_items, &event.path)) |proc| {
+            if (proc.body.len > 0) {
+                try code_emitter.writeIndent();
+                try code_emitter.write(proc.body);
+                try code_emitter.write("\n");
+            }
+            found_impl = true;
         }
     }
 
     // If no implementation found, emit a placeholder return
     if (!found_impl) {
+        if (DEBUG) {
+            std.debug.print("[DEBUG emitEventDeclForModule] No impl found for event path: ", .{});
+            for (event.path.segments) |seg| {
+                std.debug.print("{s}.", .{seg});
+            }
+            std.debug.print("\n", .{});
+        }
         try code_emitter.writeIndent();
         if (event.branches.len > 0) {
-            // Return first branch with undefined values
+            // Return first branch with undefined values for all fields
+            const first_branch = &event.branches[0];
             try code_emitter.write("return .{ .");
-            try code_emitter.write(event.branches[0].name);
-            try code_emitter.write(" = .{} };\n");
+            try writeBranchName(code_emitter, first_branch.name);
+            try code_emitter.write(" = .{");
+            for (first_branch.payload.fields, 0..) |field, i| {
+                if (i > 0) {
+                    try code_emitter.write(",");
+                }
+                try code_emitter.write(" .");
+                try code_emitter.write(field.name);
+                try code_emitter.write(" = undefined");
+            }
+            if (first_branch.payload.fields.len > 0) {
+                try code_emitter.write(",");
+            }
+            try code_emitter.write("} };\n");
         } else {
             try code_emitter.write("return;\n");
         }
