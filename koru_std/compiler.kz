@@ -1,5 +1,7 @@
 ~[comptime]
 
+~import "$std/testing"
+
 const std = @import("std");
 const ast = @import("ast");
 const Program = ast.Program;
@@ -768,9 +770,11 @@ const processTestFlow = struct {
 
         // Get source body from invocation args - stored in source_value field
         var source_text: []const u8 = "";
+        var source_ptr: ?*const ast_mod.Source = null;
         for (flow.invocation.args) |arg| {
             if (arg.source_value) |src| {
                 source_text = src.text;
+                source_ptr = src;
                 break;
             }
         }
@@ -816,6 +820,20 @@ const processTestFlow = struct {
         }
 
         std.debug.print("[TEST-GEN] Parsed {d} mocks and {d} flows\n", .{mocks.items.len, test_flows.items.len});
+
+        // Validate mock shapes via testing module
+        if (source_ptr) |src| {
+            const backend_output = @import("backend_output_emitted.zig");
+            const validation_result = backend_output.koru_std.testing.validate_mocks_event.handler(.{
+                .program = program,
+                .mocks = mocks.items,
+                .source = src,
+                .allocator = allocator,
+            });
+            if (validation_result == .failed) {
+                @panic(validation_result.failed.message);
+            }
+        }
 
         // Build mock lookup map (event path -> branch constructor)
         var mock_map = std.StringHashMap(ast_mod.BranchConstructor).init(allocator);

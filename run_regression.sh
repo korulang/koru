@@ -54,6 +54,18 @@ VERBOSE=false
 # Use --priority to list all priority items
 SHOW_PRIORITY=false
 
+# Helper: Mark test as passed and clean up PRIORITY file if present
+mark_test_passed() {
+    local test_dir="$1"
+    echo "PASS" > "$test_dir/SUCCESS"
+
+    # Clean up PRIORITY file - work is done
+    if [ -f "$test_dir/PRIORITY" ]; then
+        rm "$test_dir/PRIORITY"
+        echo -e "  ${CYAN}(PRIORITY resolved)${NC}"
+    fi
+}
+
 echo "════════════════════════════════════════"
 echo "    KORU REGRESSION TEST SUITE"
 echo "════════════════════════════════════════"
@@ -662,7 +674,7 @@ while IFS= read -r -d '' test_dir; do
         # In future: parse both JSONs and do structural comparison
         if diff -q "$test_dir/expected.json" "$test_dir/actual.json" > /dev/null 2>&1; then
             echo -e "${GREEN}✅ PASS (AST validated)${NC}"
-            echo "PASS" > "$test_dir/SUCCESS"
+            mark_test_passed "$test_dir"
             PASSED_TESTS=$((PASSED_TESTS + 1))
         else
             echo -e "${RED}❌ AST mismatch${NC}"
@@ -711,7 +723,7 @@ while IFS= read -r -d '' test_dir; do
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
                     else
                         echo -e "${GREEN}✅ PASS (expected frontend compile error)${NC}"
-                        echo "PASS" > "$test_dir/SUCCESS"
+                        mark_test_passed "$test_dir"
                         PASSED_TESTS=$((PASSED_TESTS + 1))
                         if [ "$HAS_MEMORY_LEAK" = true ]; then
                             LEAKED_TESTS=$((LEAKED_TESTS + 1))
@@ -1046,7 +1058,7 @@ EOF
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
                     else
                         echo -e "${GREEN}✅ PASS (expected failure - MUST_FAIL)${NC}"
-                        echo "PASS" > "$test_dir/SUCCESS"
+                        mark_test_passed "$test_dir"
                         PASSED_TESTS=$((PASSED_TESTS + 1))
                         if [ "$HAS_MEMORY_LEAK" = true ]; then
                             LEAKED_TESTS=$((LEAKED_TESTS + 1))
@@ -1066,7 +1078,7 @@ EOF
                             LEAKED_TESTS=$((LEAKED_TESTS + 1))
                         else
                             echo -e "${GREEN}✅ PASS (expected backend error)${NC}"
-                            echo "PASS" > "$test_dir/SUCCESS"
+                            mark_test_passed "$test_dir"
                             PASSED_TESTS=$((PASSED_TESTS + 1))
                             if [ "$HAS_MEMORY_LEAK" = true ]; then
                                 LEAKED_TESTS=$((LEAKED_TESTS + 1))
@@ -1086,7 +1098,7 @@ EOF
                             LEAKED_TESTS=$((LEAKED_TESTS + 1))
                         else
                             echo -e "${GREEN}✅ PASS (expected backend compile error)${NC}"
-                            echo "PASS" > "$test_dir/SUCCESS"
+                            mark_test_passed "$test_dir"
                             PASSED_TESTS=$((PASSED_TESTS + 1))
                             if [ "$HAS_MEMORY_LEAK" = true ]; then
                                 LEAKED_TESTS=$((LEAKED_TESTS + 1))
@@ -1189,7 +1201,7 @@ EOF
                             LEAKED_TESTS=$((LEAKED_TESTS + 1))
                         else
                             echo -e "${GREEN}✅ PASS (post-validated)${NC}"
-                            echo "PASS" > "$test_dir/SUCCESS"
+                            mark_test_passed "$test_dir"
                             PASSED_TESTS=$((PASSED_TESTS + 1))
                             if [ "$HAS_MEMORY_LEAK" = true ]; then
                                 LEAKED_TESTS=$((LEAKED_TESTS + 1))
@@ -1210,7 +1222,7 @@ EOF
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
                     else
                         echo -e "${GREEN}✅ PASS${NC}"
-                        echo "PASS" > "$test_dir/SUCCESS"
+                        mark_test_passed "$test_dir"
                         PASSED_TESTS=$((PASSED_TESTS + 1))
                         if [ "$HAS_MEMORY_LEAK" = true ]; then
                             LEAKED_TESTS=$((LEAKED_TESTS + 1))
@@ -1239,7 +1251,7 @@ EOF
                     LEAKED_TESTS=$((LEAKED_TESTS + 1))
                 else
                     echo -e "${GREEN}✅ PASS (post-validated)${NC}"
-                    echo "PASS" > "$test_dir/SUCCESS"
+                    mark_test_passed "$test_dir"
                     PASSED_TESTS=$((PASSED_TESTS + 1))
                     if [ "$HAS_MEMORY_LEAK" = true ]; then
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
@@ -1259,7 +1271,7 @@ EOF
                 LEAKED_TESTS=$((LEAKED_TESTS + 1))
             else
                 echo -e "${GREEN}✅ PASS (ran successfully)${NC}"
-                echo "PASS" > "$test_dir/SUCCESS"
+                mark_test_passed "$test_dir"
                 PASSED_TESTS=$((PASSED_TESTS + 1))
                 if [ "$HAS_MEMORY_LEAK" = true ]; then
                     LEAKED_TESTS=$((LEAKED_TESTS + 1))
@@ -1290,7 +1302,7 @@ EOF
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
                     else
                         echo -e "${GREEN}✅ PASS (post-validated)${NC}"
-                        echo "PASS" > "$test_dir/SUCCESS"
+                        mark_test_passed "$test_dir"
                         PASSED_TESTS=$((PASSED_TESTS + 1))
                         if [ "$HAS_MEMORY_LEAK" = true ]; then
                             LEAKED_TESTS=$((LEAKED_TESTS + 1))
@@ -1311,7 +1323,7 @@ EOF
                     LEAKED_TESTS=$((LEAKED_TESTS + 1))
                 else
                     echo -e "${GREEN}✅ PASS (compile only)${NC}"
-                    echo "PASS" > "$test_dir/SUCCESS"
+                    mark_test_passed "$test_dir"
                     PASSED_TESTS=$((PASSED_TESTS + 1))
                     if [ "$HAS_MEMORY_LEAK" = true ]; then
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))

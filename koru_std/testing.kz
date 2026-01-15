@@ -17,6 +17,139 @@
 
 const std = @import("std");
 
+const validateMocks = struct {
+    fn call(
+        allocator: std.mem.Allocator,
+        program: *const @import("ast").Program,
+        mocks: []const @import("ast").Item,
+        source: *const @import("ast").Source,
+    ) bool {
+        const std_import = @import("std");
+        const ast = @import("ast");
+        const emitter_helpers = @import("emitter_helpers");
+        const errors_mod = @import("errors");
+
+        if (mocks.len == 0) return true;
+
+        const source_file_name = if (source.location.file.len > 0) source.location.file else "__test__.kz";
+        var reporter = errors_mod.ErrorReporter.init(allocator, source_file_name, source.text) catch {
+            std_import.debug.print("ERROR: Failed to initialize mock shape reporter\n", .{});
+            return false;
+        };
+        defer reporter.deinit();
+
+        const fieldExists = struct {
+            fn check(fields: []const ast.Field, name: []const u8) bool {
+                for (fields) |field| {
+                    if (std_import.mem.eql(u8, field.name, name)) return true;
+                }
+                return false;
+            }
+        }.check;
+
+        for (mocks) |mock_item| {
+            if (mock_item != .subflow_impl) continue;
+            const sf = mock_item.subflow_impl;
+            if (sf.body != .immediate) continue;
+
+            const bc = sf.body.immediate;
+            const mock_line = if (source.location.line > 0)
+                source.location.line + sf.location.line - 1
+            else
+                sf.location.line;
+            const mock_column = sf.location.column;
+
+            const event_decl = emitter_helpers.findEventDeclByPath(program.items, &sf.event_path) orelse {
+                reporter.addError(
+                    .KORU040,
+                    mock_line,
+                    mock_column,
+                    "mock references unknown event",
+                    .{},
+                ) catch {
+                    @panic("Mock shape validation failed");
+                };
+                continue;
+            };
+
+            var branch_ptr: ?*const ast.Branch = null;
+            for (event_decl.branches) |*branch| {
+                if (std_import.mem.eql(u8, branch.name, bc.branch_name)) {
+                    branch_ptr = branch;
+                    break;
+                }
+            }
+
+            const branch = branch_ptr orelse {
+                reporter.addError(
+                    .KORU021,
+                    mock_line,
+                    mock_column,
+                    "unknown branch '{s}' in mock",
+                    .{bc.branch_name},
+                ) catch {
+                    @panic("Mock shape validation failed");
+                };
+                continue;
+            };
+
+            if (branch.payload.is_wildcard) continue;
+
+            if (bc.plain_value != null and bc.fields.len == 0) {
+                if (branch.payload.fields.len != 1) {
+                    reporter.addError(
+                        .KORU081,
+                        mock_line,
+                        mock_column,
+                        "mock branch '{s}' expects fields, not a bare value",
+                        .{bc.branch_name},
+                    ) catch {
+                        @panic("Mock shape validation failed");
+                    };
+                }
+                continue;
+            }
+
+            for (branch.payload.fields) |expected_field| {
+                if (!fieldExists(bc.fields, expected_field.name)) {
+                    reporter.addError(
+                        .KORU080,
+                        mock_line,
+                        mock_column,
+                        "missing required field '{s}' in mock branch '{s}'",
+                        .{expected_field.name, bc.branch_name},
+                    ) catch {
+                        @panic("Mock shape validation failed");
+                    };
+                }
+            }
+
+            for (bc.fields) |provided_field| {
+                if (!fieldExists(branch.payload.fields, provided_field.name)) {
+                    reporter.addError(
+                        .KORU081,
+                        mock_line,
+                        mock_column,
+                        "unknown field '{s}' in mock branch '{s}'",
+                        .{provided_field.name, bc.branch_name},
+                    ) catch {
+                        @panic("Mock shape validation failed");
+                    };
+                }
+            }
+        }
+
+        if (reporter.hasErrors()) {
+            const stderr_writer = std_import.debug.lockStderrWriter(&.{});
+            defer std_import.debug.unlockStderrWriter();
+            reporter.printErrors(stderr_writer) catch {};
+            return false;
+        }
+
+        return true;
+    }
+}.call;
+
 // =============================================================================
 // Test Declaration
 // =============================================================================
@@ -32,6 +165,22 @@ const std = @import("std");
     allocator: std.mem.Allocator
 }
 | transformed { program: *const Program }
+
+~[comptime] pub event validate_mocks {
+    program: *const Program,
+    mocks: []const Item,
+    source: *const Source,
+    allocator: std.mem.Allocator
+}
+| ok {}
+| failed { message: []const u8 }
+
+~proc validate_mocks {
+    if (validateMocks(allocator, program, mocks, source)) {
+        return .{ .ok = .{} };
+    }
+    return .{ .failed = .{ .message = "Mock shape validation failed" } };
+}
 
 // Test transform - generates proper Zig test blocks
 // NEW ARCHITECTURE: Run transforms on parsed Source, then use normal emitter
@@ -168,6 +317,10 @@ const std = @import("std");
     // Add mock SubflowImpls (these override any filtered out)
     for (cloned_mocks.items) |m| {
         test_module_items.append(allocator, m) catch {};
+    }
+
+    if (!validateMocks(allocator, &cloned_program, cloned_mocks.items, &source)) {
+        @panic("Mock shape validation failed");
     }
 
     // Emit the test module using emitModuleSubset
