@@ -57,6 +57,7 @@
     return .{ .done = .{ .result = x * 2 } };
 }
 
-~doWork(x: 21) | done d |> std.io:println(text: "Result: 42")
+~doWork(x: 21)
+| done _ |> std.io:println(text: "Result: 42")
 
 ~std.io:println(text: "Test 108: ProgramAST transformation verified!")

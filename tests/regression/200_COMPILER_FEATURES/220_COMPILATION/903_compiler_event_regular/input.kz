@@ -4,6 +4,8 @@
 | done {}
 
 // Try to invoke a regular compiler event
-~compiler.context.create | created |> _
+~compiler.context.create
+| created |> _
 
-~hello() | done |> _
+~hello()
+| done |> _
