@@ -111,7 +111,7 @@ pub const CompilerBootstrap = struct {
         
         // Generate the koruCompile function
         try code.appendSlice(
-            \\pub fn koruCompile(comptime ast: ProgramAST, comptime config: CompileConfig) ProgramAST {
+            \\pub fn koruCompile(comptime ast: Program, comptime config: CompileConfig) Program {
             \\    comptime {
             \\
         );
@@ -165,7 +165,7 @@ pub const CompilerBootstrap = struct {
 
     fn generateDefaultCoordinator(_: *CompilerBootstrap, code: *std.ArrayList(u8)) !void {
         try code.appendSlice(
-            \\fn defaultCoordinate(comptime ast: ProgramAST, comptime config: CompileConfig) ProgramAST {
+            \\fn defaultCoordinate(comptime ast: Program, comptime config: CompileConfig) Program {
             \\    // Analyze the AST
             \\    const analysis = analyzeAST(ast, config);
             \\    
@@ -189,7 +189,7 @@ pub const CompilerBootstrap = struct {
     
     fn generateUserCoordinatorCaller(_: *CompilerBootstrap, code: *std.ArrayList(u8)) !void {
         try code.appendSlice(
-            \\fn callUserCoordinator(comptime ast: ProgramAST, comptime config: CompileConfig) ProgramAST {
+            \\fn callUserCoordinator(comptime ast: Program, comptime config: CompileConfig) Program {
             \\    // This would invoke the user's ~compiler.coordinate implementation
             \\    // The actual implementation depends on how we translate Koru flows to Zig
             \\    return userCoordinate(ast, config);
@@ -201,7 +201,7 @@ pub const CompilerBootstrap = struct {
     fn generatePassImplementations(_: *CompilerBootstrap, code: *std.ArrayList(u8)) !void {
         // Generate inline pass
         try code.appendSlice(
-            \\fn inlinePass(comptime ast: ProgramAST, comptime config: InlineConfig) ProgramAST {
+            \\fn inlinePass(comptime ast: Program, comptime config: InlineConfig) Program {
             \\    // Use the functional inline transformer
             \\    const inline_functional = @import("transforms/inline_small_events_functional");
             \\    return inline_functional.inlineSmallEvents(ast, config);
@@ -211,7 +211,7 @@ pub const CompilerBootstrap = struct {
         
         // Generate deadcode elimination pass
         try code.appendSlice(
-            \\fn deadcodePass(comptime ast: ProgramAST) ProgramAST {
+            \\fn deadcodePass(comptime ast: Program) Program {
             \\    // Remove unreachable code
             \\    var result = ast;
             \\    // Implementation would analyze and remove dead branches
@@ -222,7 +222,7 @@ pub const CompilerBootstrap = struct {
         
         // Generate fusion pass
         try code.appendSlice(
-            \\fn fusionPass(comptime ast: ProgramAST) ProgramAST {
+            \\fn fusionPass(comptime ast: Program) Program {
             \\    // Fuse similar branches
             \\    var result = ast;
             \\    // Implementation would detect and merge similar branches
@@ -233,7 +233,7 @@ pub const CompilerBootstrap = struct {
         
         // Generate loop optimization pass
         try code.appendSlice(
-            \\fn loopOptimizationPass(comptime ast: ProgramAST) ProgramAST {
+            \\fn loopOptimizationPass(comptime ast: Program) Program {
             \\    // Optimize loops through unrolling and vectorization
             \\    var result = ast;
             \\    // Implementation would detect loops and optimize them

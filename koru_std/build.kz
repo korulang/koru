@@ -63,7 +63,7 @@ const std = @import("std");
 //   pub fn execute(
 //       allocator: std.mem.Allocator,
 //       argv: [][]const u8,
-//       ast: *const ProgramAST
+//       ast: *const Program
 //   ) !void
 //
 // Usage:

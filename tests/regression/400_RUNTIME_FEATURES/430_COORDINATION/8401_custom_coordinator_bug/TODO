@@ -1,0 +1,46 @@
+Feature: Replace compiler.coordinate special-case with abstract/impl
+
+The current approach uses a hack:
+- compiler.coordinate is intentionally left unimplemented
+- compiler.coordinate.default has the actual pipeline
+- main.zig bootstrap logic falls back to .default
+
+The proper solution uses Koru's abstract/impl feature (see test 210_015):
+
+```koru
+// In koru_std/compiler.kz:
+~abstract pub event compiler.coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
+| coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
+| error { message: []const u8 }
+
+// Default subflow implementation (same file, no ~impl keyword)
+~compiler.coordinate =
+    compiler.context.create(program_ast: program_ast, allocator: allocator)
+    | created c0 |> compiler.coordinate.frontend(ctx: c0.ctx)
+      | continued c1 |> compiler.coordinate.transform_taps(ctx: c1.ctx)
+        | continued c2 |> compiler.coordinate.analysis(ctx: c2.ctx)
+          | continued c3 |> compiler.coordinate.test_generation(ctx: c3.ctx)
+            | continued c4 |> compiler.coordinate.optimize(ctx: c4.ctx)
+              | continued c5 |> compiler.coordinate.emission(ctx: c5.ctx)
+                | continued c6 |> coordinated { ... }
+          | failed f |> error { message: f.message }
+```
+
+User override (in user code):
+```koru
+~impl compiler.coordinate =
+    // Custom pipeline - can delegate to default via compiler.coordinate(...)
+    compiler.coordinate(program_ast: program_ast, allocator: allocator)
+    | coordinated c |> // ... extend or wrap ...
+```
+
+This removes:
+1. The compiler.coordinate.default indirection
+2. Special bootstrap logic in main.zig
+3. The "intentionally unimplemented" hack
+
+Benefits:
+- Uses standard abstract/impl machinery (validate_abstract_impl.zig)
+- Consistent with how other extensibility works in Koru
+- Explicit delegation (not hidden like OOP super())
+- Single implementation enforced at compile time

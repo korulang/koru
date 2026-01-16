@@ -112,11 +112,6 @@ pub const AstSerializer = struct {
         // Write type definitions
         try self.writeTypeDefinitions();
         try self.writeLine("");
-        
-        // Define ProgramAST type alias for compiler events
-        try self.writeLine("// ProgramAST is the type used by compiler events to reference the AST");
-        try self.writeLine("const ProgramAST = *const Program;");
-        try self.writeLine("");
 
         // Write the program AST
         try self.writeLine("pub const PROGRAM_AST = Program{");

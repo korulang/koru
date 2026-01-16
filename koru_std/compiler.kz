@@ -1150,7 +1150,7 @@ const emitFlowWithMocks = struct {
 ~pub event compiler.emit.zig { ctx: CompilerContext }
 | continued { ctx: CompilerContext, code: []const u8 }
 
-// Comptime evaluation pass - executes events with ProgramAST/Source parameters
+// Comptime evaluation pass - executes events with Program/Source parameters
 ~pub event compiler.passes.evaluate_comptime { ctx: CompilerContext }
 | continued { ctx: CompilerContext }
 
@@ -1355,11 +1355,11 @@ const joinPathAlloc = struct {
     return .{ .parsed = .{ .items = parse_result.source_file.items } };
 }
 
-// Comptime evaluation pass - executes events with ProgramAST/Source parameters
+// Comptime evaluation pass - executes events with Program/Source parameters
 // This runs BEFORE emission so comptime events can transform the AST
 ~proc compiler.passes.evaluate_comptime {
     // Phase 1: Build map of comptime-only events
-    // (Events that have ProgramAST or Source parameters)
+    // (Events that have Program or Source parameters)
     var comptime_events: [64][]const u8 = undefined;
     var comptime_count: usize = 0;
 
@@ -1373,7 +1373,7 @@ const joinPathAlloc = struct {
                         is_comptime = true;
                         break;
                     }
-                    if (std.mem.eql(u8, field.type, "ProgramAST") or std.mem.eql(u8, field.type, "Program")) {
+                    if (std.mem.eql(u8, field.type, "Program")) {
                         is_comptime = true;
                         break;
                     }
@@ -1397,7 +1397,7 @@ const joinPathAlloc = struct {
                                 is_comptime = true;
                                 break;
                             }
-                            if (std.mem.eql(u8, field.type, "ProgramAST") or std.mem.eql(u8, field.type, "Program")) {
+                            if (std.mem.eql(u8, field.type, "Program")) {
                                 is_comptime = true;
                                 break;
                             }
@@ -1505,7 +1505,7 @@ const joinPathAlloc = struct {
                         is_comptime = true;
                         break;
                     }
-                    if (std.mem.eql(u8, field.type, "ProgramAST") or std.mem.eql(u8, field.type, "Program")) {
+                    if (std.mem.eql(u8, field.type, "Program")) {
                         is_comptime = true;
                         break;
                     }
@@ -1529,7 +1529,7 @@ const joinPathAlloc = struct {
                                 is_comptime = true;
                                 break;
                             }
-                            if (std.mem.eql(u8, field.type, "ProgramAST") or std.mem.eql(u8, field.type, "Program")) {
+                            if (std.mem.eql(u8, field.type, "Program")) {
                                 is_comptime = true;
                                 break;
                             }

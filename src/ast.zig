@@ -147,9 +147,6 @@ pub const Program = struct {
     }
 };
 
-/// Alias for backwards compatibility with comptime events
-pub const ProgramAST = Program;
-
 pub const HostLine = struct {
     content: []const u8,
 
@@ -268,7 +265,7 @@ pub const EventDecl = struct {
     module: []const u8,  // Canonical module path (e.g., "input", "lib/fs")
 
     /// Returns true if this event is comptime-only (should not be emitted to backend)
-    /// Comptime-only events have ProgramAST, Source, or Expression parameters
+    /// Comptime-only events have Program, Source, or Expression parameters
     pub fn isComptimeOnly(self: *const EventDecl) bool {
         for (self.input.fields) |field| {
             if (field.is_source) {
@@ -277,8 +274,8 @@ pub const EventDecl = struct {
             if (field.is_expression) {
                 return true;
             }
-            // Check for ProgramAST type (which is an alias for Program)
-            if (std.mem.eql(u8, field.type, "ProgramAST") or
+            // Check for Program type (which is an alias for Program)
+            if (std.mem.eql(u8, field.type, "Program") or
                 std.mem.eql(u8, field.type, "Program")) {
                 return true;
             }

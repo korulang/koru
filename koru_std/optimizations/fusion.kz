@@ -16,7 +16,7 @@ const std = @import("std");
 // Event: Run fusion optimization on AST
 // Self-governing: checks enable_fusion flag to decide whether to run
 ~event optimize.fusion {
-    ast: ProgramAST,
+    ast: Program,
     enable_fusion: bool
 }
 | optimized { opportunities_count: u32 }

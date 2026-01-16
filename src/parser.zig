@@ -2339,9 +2339,9 @@ pub const Parser = struct {
 
         try new_args.append(self.allocator, source_arg);
         
-        // Check if we need to add ProgramAST
+        // Check if we need to add Program
         for (input_shape.fields) |field| {
-            if (std.mem.eql(u8, field.type, "ProgramAST")) {
+            if (std.mem.eql(u8, field.type, "Program")) {
                 const ast_arg = ast.Arg{
                     .name = try self.allocator.dupe(u8, field.name),
                     .value = try self.allocator.dupe(u8, "<program_ast>"),

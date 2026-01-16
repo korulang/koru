@@ -31,7 +31,7 @@ pub const ErrorPolicy = enum {
 
 pub const CompilerContext = struct {
     // The AST being compiled (transformed through passes)
-    ast: ProgramAST,
+    ast: Program,
 
     // Allocator for dynamic allocations
     allocator: std.mem.Allocator,
@@ -52,7 +52,7 @@ pub const CompilerContext = struct {
 
 // Create a new compiler context
 ~pub event init {
-    ast: ProgramAST,
+    ast: Program,
     allocator: std.mem.Allocator,
     error_policy: ErrorPolicy
 }
@@ -253,7 +253,7 @@ pub const CompilerContext = struct {
 }
 
 // Update AST in context (used by transformation passes)
-~pub event update_ast { ctx: CompilerContext, ast: ProgramAST }
+~pub event update_ast { ctx: CompilerContext, ast: Program }
 | continued { ctx: CompilerContext }
 
 ~proc update_ast {

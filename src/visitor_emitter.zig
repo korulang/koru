@@ -148,7 +148,6 @@ pub const VisitorEmitter = struct {
                     for (event.input.fields) |field| {
                         if (field.is_source or
                             field.is_expression or
-                            std.mem.eql(u8, field.type, "ProgramAST") or
                             std.mem.eql(u8, field.type, "Program")) {
                             has_comptime_params = true;
                             break;
@@ -587,13 +586,12 @@ pub const VisitorEmitter = struct {
     fn visitItem(self: *VisitorEmitter, item: *const ast.Item, module_annotations: []const []const u8, items_to_search: []const ast.Item) !void {
         switch (item.*) {
             .event_decl => |*event| {
-                // Check if this event has comptime parameters (Source/Expression/ProgramAST)
+                // Check if this event has comptime parameters (Source/Expression/Program)
                 // Events with these parameters are implicitly comptime, regardless of annotations
                 var has_comptime_params = false;
                 for (event.input.fields) |field| {
                     if (field.is_source or
                         field.is_expression or
-                        std.mem.eql(u8, field.type, "ProgramAST") or
                         std.mem.eql(u8, field.type, "Program")) {
                         has_comptime_params = true;
                         break;
@@ -985,8 +983,8 @@ pub const VisitorEmitter = struct {
                 try self.code_emitter.write("__koru_ast.Source");  // Full Source struct with .text, .scope.bindings, .phantom_type
             } else if (field.is_expression) {
                 try self.code_emitter.write("[]const u8");  // Expression captured as string literal
-            } else if (eql(u8, field.type, "ProgramAST") or eql(u8, field.type, "Program")) {
-                try self.code_emitter.write("*const __koru_Program");
+            } else if (eql(u8, field.type, "Program")) {
+                try self.code_emitter.write("*const __koru_ast.Program");
             } else {
                 try emitter.writeFieldType(self.code_emitter, field, self.main_module_name);
             }
@@ -1027,8 +1025,8 @@ pub const VisitorEmitter = struct {
                         try self.code_emitter.write(": ");
                         if (field.is_source) {
                             try self.code_emitter.write("__koru_ast.Source");  // Full Source struct for consistency
-                        } else if (eql(u8, field.type, "ProgramAST") or eql(u8, field.type, "Program")) {
-                            try self.code_emitter.write("*const __koru_Program");
+                        } else if (eql(u8, field.type, "Program")) {
+                            try self.code_emitter.write("*const __koru_ast.Program");
                         } else {
                             try emitter.writeFieldType(self.code_emitter, field, self.main_module_name);
                         }
@@ -1955,7 +1953,7 @@ pub const VisitorEmitter = struct {
         return true;
     }
 
-    /// Check if a flow invokes an event with comptime parameters (Source/ProgramAST)
+    /// Check if a flow invokes an event with comptime parameters (Source/Program)
     /// OR an event with ~[comptime] or ~[norun] annotations
     /// Flows that invoke comptime events are implicitly comptime themselves
     fn flowInvokesComptimeEvent(self: *VisitorEmitter, flow: *const ast.Flow, items: []const ast.Item) bool {
@@ -2029,7 +2027,6 @@ pub const VisitorEmitter = struct {
             // Check if event has comptime parameters
             for (decl.input.fields) |field| {
                 if (field.is_source or field.is_expression or
-                    std.mem.eql(u8, field.type, "ProgramAST") or
                     std.mem.eql(u8, field.type, "Program") or
                     std.mem.eql(u8, field.type, "Expression")) {
                     if (DEBUG) std.debug.print("  Event has comptime parameter: {s}\n", .{field.name});
@@ -2080,7 +2077,6 @@ pub const VisitorEmitter = struct {
         if (event.input_shape) |shape| {
             for (shape.fields) |field| {
                 if (field.is_source or field.is_expression or
-                    std.mem.eql(u8, field.type, "ProgramAST") or
                     std.mem.eql(u8, field.type, "Program") or
                     std.mem.eql(u8, field.type, "Expression")) {
                     if (DEBUG) std.debug.print("  TypeRegistry event has comptime parameter\n", .{});

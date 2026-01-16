@@ -22,17 +22,16 @@ const std = @import("std");
 }
 
 // Custom coordinator that includes our marker pass
-~compiler.coordinate =
-    compiler.passes.evaluate_comptime(ast: ast)
-    | evaluated ev |> compiler.check.structure(ast: ev.ast)
-    | valid v |> compiler.passes.add_marker(ast: v.ast)  // <-- Custom pass!
-    | transformed t |> compiler.check.phantom.semantic(ast: t.ast)
-    | valid v2 |> compiler.emit.zig(ast: v2.ast)
-    | emitted em |> coordinated {
-        ast: v2.ast,
-        code: em.code,
-        metrics: "Custom coordinator ran!"
-    }
+~compiler.coordinate = compiler.passes.evaluate_comptime(ast: ast)
+| evaluated ev |> compiler.check.structure(ast: ev.ast)
+    | valid v |> compiler.passes.add_marker(ast: v.ast) 
+        | transformed t |> compiler.check.phantom.semantic(ast: t.ast)
+            | valid v2 |> compiler.emit.zig(ast: v2.ast)
+                | emitted em |> coordinated {
+                    ast: v2.ast,
+                    code: em.code,
+                    metrics: "Custom coordinator ran!"
+                }
 
 // Simple test event
 ~pub event run_test { }

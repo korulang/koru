@@ -155,14 +155,14 @@ const PassResult = struct {
     transformed: bool,
 };
 
-/// Check if an event is comptime-only (has ProgramAST or Source parameters)
+/// Check if an event is comptime-only (has Program or Source parameters)
 fn isComptimeOnlyEvent(event_decl: *const ast.EventDecl) bool {
     for (event_decl.input.fields) |field| {
         if (field.is_source or field.is_expression) {
             return true;
         }
-        // Check for ProgramAST type (which is an alias for Program), or Item
-        if (std.mem.eql(u8, field.type, "ProgramAST") or 
+        // Check for Program type (which is an alias for Program), or Item
+        if (std.mem.eql(u8, field.type, "Program") or 
             std.mem.eql(u8, field.type, "Program") or
             std.mem.eql(u8, field.type, "Item") or
             std.mem.eql(u8, field.type, "*const Item") or

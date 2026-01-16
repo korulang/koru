@@ -244,7 +244,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         // ============================================================================
         // COMPTIME FLOW THUNKS - Enable branch handlers for comptime events
         // ============================================================================
-        // Comptime flows (flows invoking events with Source/ProgramAST params)
+        // Comptime flows (flows invoking events with Source/Program params)
         // exist in TWO forms:
         //   1. AST (data) - serialized in PROGRAM_AST for compiler passes to analyze
         //   2. Thunks (executable) - emitted here so branch handlers can execute
@@ -256,13 +256,13 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         // ============================================================================
 
         // Step 1: Build map of comptime event names
-        // NOTE: Events with Source/ProgramAST parameters are [comptime|transform] events
+        // NOTE: Events with Source/Program parameters are [comptime|transform] events
         // Flows invoking them should be transformed at runtime, NOT executed as comptime thunks
         // For now, we SKIP these from comptime thunk generation (user guidance: postpone top-level comptime flows)
         var comptime_event_names = try std.ArrayList([]const u8).initCapacity(allocator, 16);
         defer comptime_event_names.deinit(allocator);
 
-        // Also track transform events (Source/ProgramAST params) to exclude from comptime thunks
+        // Also track transform events (Source/Program params) to exclude from comptime thunks
         var transform_event_names = try std.ArrayList([]const u8).initCapacity(allocator, 16);
         defer transform_event_names.deinit(allocator);
 
@@ -287,14 +287,14 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                     continue;
                 }
 
-                // Check if this is a comptime event (Source/ProgramAST parameters)
+                // Check if this is a comptime event (Source/Program parameters)
                 var is_comptime = false;
                 for (event.input.fields) |field| {
                     if (field.is_source) {
                         is_comptime = true;
                         break;
                     }
-                    if (std.mem.eql(u8, field.type, "ProgramAST") or
+                    if (std.mem.eql(u8, field.type, "Program") or
                         std.mem.eql(u8, field.type, "Program") or
                         std.mem.eql(u8, field.type, "*const Program"))
                     {
@@ -325,7 +325,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                     }
 
                     const event_name = try allocator.dupe(u8, event_name_buf[0..event_name_len]);
-                    // Events with Source/ProgramAST are [comptime|transform] - add to transform list, NOT comptime thunks
+                    // Events with Source/Program are [comptime|transform] - add to transform list, NOT comptime thunks
                     try transform_event_names.append(allocator, event_name);
                 }
             }
@@ -361,7 +361,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                                 is_comptime = true;
                                 break;
                             }
-                            if (std.mem.eql(u8, field.type, "ProgramAST") or
+                            if (std.mem.eql(u8, field.type, "Program") or
                                 std.mem.eql(u8, field.type, "Program") or
                                 std.mem.eql(u8, field.type, "*const Program"))
                             {
@@ -398,7 +398,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                             }
 
                             const event_name = try allocator.dupe(u8, event_name_buf[0..event_name_len]);
-                            // Events with Source/ProgramAST are [comptime|transform] - add to transform list, NOT comptime thunks
+                            // Events with Source/Program are [comptime|transform] - add to transform list, NOT comptime thunks
                             try transform_event_names.append(allocator, event_name);
                         }
                     }
@@ -406,7 +406,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             }
         }
 
-        // Debug: Print detected transform events (events with Source/ProgramAST params)
+        // Debug: Print detected transform events (events with Source/Program params)
         if (transform_event_names.items.len > 0) {
             std.debug.print("\n=== TRANSFORM EVENT DETECTION ===\n", .{});
             for (transform_event_names.items) |name| {
