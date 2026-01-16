@@ -14,7 +14,7 @@ const ast_functional = @import("ast_functional");
 const errors = @import("errors");
 const phantom_parser = @import("phantom_parser");
 
-pub const AutoDisposeInserter = struct {
+pub const AutoDischargeInserter = struct {
     allocator: std.mem.Allocator,
     reporter: *errors.ErrorReporter,
     event_map: std.StringHashMap(EventInfo),
@@ -235,7 +235,7 @@ pub const AutoDisposeInserter = struct {
         }
     };
 
-    pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter, warn_mode: bool) !AutoDisposeInserter {
+    pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter, warn_mode: bool) !AutoDischargeInserter {
         return .{
             .allocator = allocator,
             .reporter = reporter,
@@ -245,7 +245,7 @@ pub const AutoDisposeInserter = struct {
         };
     }
 
-    pub fn deinit(self: *AutoDisposeInserter) void {
+    pub fn deinit(self: *AutoDischargeInserter) void {
         var iter = self.event_map.keyIterator();
         while (iter.next()) |key| {
             self.allocator.free(key.*);
@@ -253,8 +253,8 @@ pub const AutoDisposeInserter = struct {
         self.event_map.deinit();
     }
 
-    /// Main entry point - run the auto-dispose pass on a program
-    pub fn run(self: *AutoDisposeInserter, program: *const ast.Program) !*const ast.Program {
+    /// Main entry point - run the auto-discharge pass on a program
+    pub fn run(self: *AutoDischargeInserter, program: *const ast.Program) !*const ast.Program {
         // Step 1: Build event map
         try self.buildEventMap(program);
 
@@ -277,7 +277,7 @@ pub const AutoDisposeInserter = struct {
     }
 
     /// Build map of all events and their phantom annotations
-    fn buildEventMap(self: *AutoDisposeInserter, program: *const ast.Program) !void {
+    fn buildEventMap(self: *AutoDischargeInserter, program: *const ast.Program) !void {
         // IMPORTANT: Use |*item| to get pointers into the actual slice, not copies!
         for (program.items) |*item| {
             switch (item.*) {
@@ -328,8 +328,8 @@ pub const AutoDisposeInserter = struct {
         program: *const ast.Program,
     };
 
-    /// Try to find and transform one flow that needs auto-dispose
-    fn transformOneFlow(self: *AutoDisposeInserter, program: *const ast.Program) !TransformResult {
+    /// Try to find and transform one flow that needs auto-discharge
+    fn transformOneFlow(self: *AutoDischargeInserter, program: *const ast.Program) !TransformResult {
         // Walk all items looking for flows with unsatisfied obligations at terminators
         // IMPORTANT: Use |*item| to get pointers into the actual slice!
         for (program.items, 0..) |*item, item_idx| {
@@ -374,14 +374,14 @@ pub const AutoDisposeInserter = struct {
 
     /// Check a flow for obligations at terminators and transform if needed
     fn checkAndTransformFlow(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         flow: *const ast.Flow,
         program: *const ast.Program,
         _: usize,
     ) !TransformResult {
         // Skip already-processed flows
         for (flow.invocation.annotations) |ann| {
-            if (std.mem.startsWith(u8, ann, "@auto_dispose_ran")) {
+            if (std.mem.startsWith(u8, ann, "@auto_discharge_ran")) {
                 return .{ .transformed = false, .program = program };
             }
         }
@@ -399,7 +399,7 @@ pub const AutoDisposeInserter = struct {
         };
 
         // Synthesize continuations for unhandled optional branches
-        // This ensures all optional branches get switch cases and auto-dispose can handle them
+        // This ensures all optional branches get switch cases and auto-discharge can handle them
         if (try self.synthesizeOptionalBranches(flow, event_info.decl)) |new_flow| {
             // Replace the flow in the program with the synthesized version
             const new_program = try ast_functional.replaceFlowRecursive(
@@ -446,7 +446,7 @@ pub const AutoDisposeInserter = struct {
 
     /// Check a continuation for terminators with obligations
     fn checkContinuation(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         cont: *const ast.Continuation,
         event_decl: *const ast.EventDecl,
         module_name: []const u8,
@@ -524,7 +524,7 @@ pub const AutoDisposeInserter = struct {
         }
 
         // Check if this continuation has a terminal node or branch constructor
-        // Both are flow terminators that should trigger auto-dispose
+        // Both are flow terminators that should trigger auto-discharge
         if (cont.node) |node| {
             const is_terminator = (node == .terminal or node == .branch_constructor);
             if (is_terminator) {
@@ -655,7 +655,7 @@ pub const AutoDisposeInserter = struct {
     /// Check a foreach node for terminators with obligations
     /// Handles scope tracking: `each` branch is repeating, `done` is not
     fn checkForeachNode(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         branches: []const ast.NamedBranch, // The foreach branches
         parent_context: *BindingContext,
         program: *const ast.Program,
@@ -667,7 +667,7 @@ pub const AutoDisposeInserter = struct {
         parent_context.scope_depth += 1;
 
         // Mark that we're inside a loop - obligations from before this point
-        // cannot be auto-disposed inside any branch of this loop
+        // cannot be auto-discharged inside any branch of this loop
         parent_context.enterLoop();
 
         // Process each branch of the foreach
@@ -707,7 +707,7 @@ pub const AutoDisposeInserter = struct {
 
     /// Check a continuation inside a foreach branch (no event_decl binding tracking)
     fn checkForeachBranchContinuation(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         cont: *const ast.Continuation,
         parent_context: *BindingContext,
         program: *const ast.Program,
@@ -935,7 +935,7 @@ pub const AutoDisposeInserter = struct {
 
     /// Insert disposals for obligations inside a foreach (placeholder - needs AST surgery)
     fn insertDisposalsInForeach(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         cont: *const ast.Continuation,
         context: *BindingContext,
         program: *const ast.Program,
@@ -988,7 +988,7 @@ pub const AutoDisposeInserter = struct {
                 // Insert the disposal - this requires finding and replacing the continuation in the AST
                 const disposal = disposals[0];
 
-                // Emit warning about auto-dispose insertion (only in warn mode)
+                // Emit warning about auto-discharge insertion (only in warn mode)
                 if (self.warn_mode) {
                     std.debug.print("warning[AUTO-DISPOSE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
                         disposal.qualified_name,
@@ -1027,7 +1027,7 @@ pub const AutoDisposeInserter = struct {
     /// Check if an invocation satisfies any obligations (explicit cleanup)
     /// Also validates that manual disposal doesn't happen in repeating context for pre-loop obligations
     fn checkInvocationSatisfiesObligations(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         context: *BindingContext,
         invocation: *const ast.Invocation,
         module_name: []const u8,
@@ -1092,7 +1092,7 @@ pub const AutoDisposeInserter = struct {
 
     /// Insert disposal calls for unsatisfied obligations
     fn insertDisposals(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         cont: *const ast.Continuation,
         context: *BindingContext,
         program: *const ast.Program,
@@ -1150,7 +1150,7 @@ pub const AutoDisposeInserter = struct {
             // Exactly one disposal - insert it!
             const disposal = disposals[0];
 
-            // Emit warning about auto-dispose insertion (only in warn mode)
+            // Emit warning about auto-discharge insertion (only in warn mode)
             if (self.warn_mode) {
                 std.debug.print("warning[AUTO-DISPOSE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
                     disposal.qualified_name,
@@ -1192,7 +1192,7 @@ pub const AutoDisposeInserter = struct {
     }
 
     /// Find all events that can dispose a given phantom state
-    fn findDisposalEvents(self: *AutoDisposeInserter, phantom_state: []const u8) ![]DisposalEvent {
+    fn findDisposalEvents(self: *AutoDischargeInserter, phantom_state: []const u8) ![]DisposalEvent {
         var results = try std.ArrayList(DisposalEvent).initCapacity(self.allocator, 4);
 
         // Strip the ! suffix to get base state
@@ -1264,7 +1264,7 @@ pub const AutoDisposeInserter = struct {
 
     /// Create a new continuation with disposal call inserted before terminal
     fn createDisposalContinuation(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         original: *const ast.Continuation,
         binding_path: []const u8,
         disposal: DisposalEvent,
@@ -1350,7 +1350,7 @@ pub const AutoDisposeInserter = struct {
 
     /// Replace a continuation in a flow
     fn replaceContInFlow(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         flow: *const ast.Flow,
         old_cont: *const ast.Continuation,
         new_cont: ast.Continuation,
@@ -1389,7 +1389,7 @@ pub const AutoDisposeInserter = struct {
 
     /// Replace a continuation anywhere in the flow (including inside foreach nodes)
     fn replaceContinuationAnywhere(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         flow: *const ast.Flow,
         old_cont: *const ast.Continuation,
         new_cont: ast.Continuation,
@@ -1424,7 +1424,7 @@ pub const AutoDisposeInserter = struct {
 
     /// Recursively replace a continuation in the tree
     fn replaceContinuationInTree(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         cont: *const ast.Continuation,
         old_cont: *const ast.Continuation,
         new_cont: ast.Continuation,
@@ -1506,14 +1506,14 @@ pub const AutoDisposeInserter = struct {
         return cloned;
     }
 
-    /// Mark a flow as processed with @auto_dispose_ran annotation
-    fn markFlowProcessed(self: *AutoDisposeInserter, flow: ast.Flow) !ast.Flow {
+    /// Mark a flow as processed with @auto_discharge_ran annotation
+    fn markFlowProcessed(self: *AutoDischargeInserter, flow: ast.Flow) !ast.Flow {
         var new_annotations = try self.allocator.alloc([]const u8, flow.invocation.annotations.len + 1);
 
         for (flow.invocation.annotations, 0..) |ann, i| {
             new_annotations[i] = try self.allocator.dupe(u8, ann);
         }
-        new_annotations[flow.invocation.annotations.len] = try self.allocator.dupe(u8, "@auto_dispose_ran");
+        new_annotations[flow.invocation.annotations.len] = try self.allocator.dupe(u8, "@auto_discharge_ran");
 
         var new_invocation = try ast_functional.cloneInvocation(self.allocator, &flow.invocation);
         new_invocation.annotations = new_annotations;
@@ -1541,7 +1541,7 @@ pub const AutoDisposeInserter = struct {
     }
 
     /// Canonicalize a phantom state with module prefix
-    fn canonicalizePhantom(self: *AutoDisposeInserter, phantom_str: []const u8, module: []const u8) ![]const u8 {
+    fn canonicalizePhantom(self: *AutoDischargeInserter, phantom_str: []const u8, module: []const u8) ![]const u8 {
         var parsed = phantom_parser.PhantomState.parse(self.allocator, phantom_str) catch {
             // If parsing fails, return unchanged
             return try self.allocator.dupe(u8, phantom_str);
@@ -1565,7 +1565,7 @@ pub const AutoDisposeInserter = struct {
     }
 
     /// Convert a dotted path to a string
-    fn pathToString(self: *AutoDisposeInserter, path: ast.DottedPath) ![]const u8 {
+    fn pathToString(self: *AutoDischargeInserter, path: ast.DottedPath) ![]const u8 {
         if (path.segments.len == 0) return try self.allocator.dupe(u8, "");
         if (path.segments.len == 1) return try self.allocator.dupe(u8, path.segments[0]);
 
@@ -1591,7 +1591,7 @@ pub const AutoDisposeInserter = struct {
     }
 
     /// Generate a unique synthetic binding name
-    fn generateSyntheticBinding(self: *AutoDisposeInserter) ![]const u8 {
+    fn generateSyntheticBinding(self: *AutoDischargeInserter) ![]const u8 {
         const name = try std.fmt.allocPrint(self.allocator, "_auto_{d}", .{self.synthetic_binding_counter});
         self.synthetic_binding_counter += 1;
         return name;
@@ -1600,7 +1600,7 @@ pub const AutoDisposeInserter = struct {
     /// Clone a continuation with a new binding name
     /// This preserves ALL metadata by copying fields, only changing the binding
     fn cloneContinuationWithBinding(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         cont: *const ast.Continuation,
         new_binding: []const u8,
     ) !*const ast.Continuation {
@@ -1615,9 +1615,9 @@ pub const AutoDisposeInserter = struct {
     /// Synthesize continuations for unhandled optional branches
     /// This ensures:
     /// 1. All optional branches get proper switch cases (runtime safety)
-    /// 2. Auto-dispose can insert disposals for obligations in optional branches
+    /// 2. Auto-discharge can insert disposals for obligations in optional branches
     fn synthesizeOptionalBranches(
-        self: *AutoDisposeInserter,
+        self: *AutoDischargeInserter,
         flow: *const ast.Flow,
         event_decl: *const ast.EventDecl,
     ) !?*const ast.Flow {
@@ -1662,14 +1662,14 @@ pub const AutoDisposeInserter = struct {
             const idx = flow.continuations.len + i;
             new_continuations[idx] = ast.Continuation{
                 .branch = try self.allocator.dupe(u8, branch_name),
-                .binding = try self.allocator.dupe(u8, "_"), // Discard binding - auto-dispose will synthesize _auto_N
+                .binding = try self.allocator.dupe(u8, "_"), // Discard binding - auto-discharge will synthesize _auto_N
                 .binding_annotations = &[_][]const u8{},
                 .binding_type = .branch_payload,
                 .is_catchall = false,
                 .catchall_metatype = null,
                 .condition = null,
                 .condition_expr = null,
-                .node = .{ .terminal = {} }, // Terminal - triggers auto-dispose check
+                .node = .{ .terminal = {} }, // Terminal - triggers auto-discharge check
                 .indent = 0,
                 .continuations = &[_]ast.Continuation{},
                 .location = flow.location,

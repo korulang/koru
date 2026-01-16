@@ -161,15 +161,15 @@ const ast_functional_module = b.createModule(.{
 ast_functional_module.addImport("ast", ast_module);
 
 // Auto-dispose inserter - inserts disposal calls before terminators
-const auto_dispose_inserter_module = b.createModule(.{
-    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/auto_dispose_inserter.zig" },
+const auto_discharge_inserter_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/auto_discharge_inserter.zig" },
     .target = target,
     .optimize = optimize,
 });
-auto_dispose_inserter_module.addImport("ast", ast_module);
-auto_dispose_inserter_module.addImport("ast_functional", ast_functional_module);
-auto_dispose_inserter_module.addImport("errors", errors_module);
-auto_dispose_inserter_module.addImport("phantom_parser", phantom_parser_module);
+auto_discharge_inserter_module.addImport("ast", ast_module);
+auto_discharge_inserter_module.addImport("ast_functional", ast_functional_module);
+auto_discharge_inserter_module.addImport("errors", errors_module);
+auto_discharge_inserter_module.addImport("phantom_parser", phantom_parser_module);
 
 // Codegen utilities - keyword escaping, identifier helpers
 const codegen_utils_module = b.createModule(.{
@@ -340,7 +340,7 @@ exe.root_module.addImport("emit_build_zig", emit_build_zig_module);
 exe.root_module.addImport("shape_checker", shape_checker_module);
 exe.root_module.addImport("flow_checker", flow_checker_module);
 exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
-exe.root_module.addImport("auto_dispose_inserter", auto_dispose_inserter_module);
+exe.root_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
 exe.root_module.addImport("purity_analyzer", purity_analyzer_module);
 exe.root_module.addImport("errors", errors_module);
 exe.root_module.addImport("type_registry", type_registry_module);

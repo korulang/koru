@@ -1132,7 +1132,7 @@ pub const PhantomSemanticChecker = struct {
 
                 // Only error if there are truly lost obligations (not documented in signature)
                 if (lost_count > 0) {
-                    std.debug.print("[CLEANUP] Lost obligations: {} - auto_dispose_inserter should have handled this\n", .{lost_count});
+                    std.debug.print("[CLEANUP] Lost obligations: {} - auto_discharge_inserter should have handled this\n", .{lost_count});
 
                     // Report error for each lost obligation
                     // (This is a safety net - inserter should have handled or errored)
@@ -1537,7 +1537,7 @@ pub const PhantomSemanticChecker = struct {
             // NOTE: We do NOT check outer-scope obligations at terminators inside @scope.
             // Outer obligations are "suspended" - they'll be checked when the OUTER scope
             // terminates (e.g., in the `done` branch after a for-loop).
-            // The auto_dispose_inserter handles the actual disposal logic, respecting @scope.
+            // The auto_discharge_inserter handles the actual disposal logic, respecting @scope.
 
             // Validate the step if present - handle recursively for nested structures
             if (cont.node) |step| {

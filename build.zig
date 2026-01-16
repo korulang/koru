@@ -461,16 +461,16 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("transforms/inline_small_events_functional", inline_functional_module);
 
     // Auto-dispose inserter module
-    const auto_dispose_inserter_module = b.createModule(.{
-        .root_source_file = b.path("src/auto_dispose_inserter.zig"),
+    const auto_discharge_inserter_module = b.createModule(.{
+        .root_source_file = b.path("src/auto_discharge_inserter.zig"),
         .target = target,
         .optimize = optimize,
     });
-    auto_dispose_inserter_module.addImport("ast", ast_module);
-    auto_dispose_inserter_module.addImport("ast_functional", ast_functional_module);
-    auto_dispose_inserter_module.addImport("errors", errors_module);
-    auto_dispose_inserter_module.addImport("phantom_parser", phantom_parser_module);
-    exe.root_module.addImport("auto_dispose_inserter", auto_dispose_inserter_module);
+    auto_discharge_inserter_module.addImport("ast", ast_module);
+    auto_discharge_inserter_module.addImport("ast_functional", ast_functional_module);
+    auto_discharge_inserter_module.addImport("errors", errors_module);
+    auto_discharge_inserter_module.addImport("phantom_parser", phantom_parser_module);
+    exe.root_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
 
     // Fusion Optimizer module (EXPERIMENTAL)
     const fusion_optimizer_module = b.createModule(.{
