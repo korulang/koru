@@ -360,6 +360,7 @@ while [[ $# -gt 0 ]]; do
         --verbose|-v)
             VERBOSE=true
             echo "📢 Verbose mode ENABLED - full stderr output on failures"
+            shift
             ;;
         --priority)
             SHOW_PRIORITY=true
