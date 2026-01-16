@@ -54,6 +54,14 @@ VERBOSE=false
 # Use --priority to list all priority items
 SHOW_PRIORITY=false
 
+# Shared Zig cache for faster builds (reuse compiled modules across tests)
+# This dramatically speeds up the test suite by not rebuilding koru modules for each test
+ZIG_GLOBAL_CACHE="${TMPDIR:-/tmp}/koru-regression-cache"
+
+# Clean cache flag (default: OFF)
+# Use --clean to remove all Zig caches before running tests
+CLEAN_CACHE=false
+
 # Helper: Mark test as passed and clean up PRIORITY file if present
 mark_test_passed() {
     local test_dir="$1"
@@ -101,6 +109,7 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  --run-units                            Run unit tests before regression tests"
     echo "  --verbose                              Show full stderr output on failures (not truncated)"
     echo "  --priority                             List all tests marked as PRIORITY"
+    echo "  --clean                                Clean all Zig caches before running (fresh build)"
     echo ""
     echo -e "${CYAN}SNAPSHOT SYSTEM:${NC}"
     echo "  After each full run, a snapshot is saved to test-results/ with:"
@@ -359,6 +368,10 @@ while [[ $# -gt 0 ]]; do
             echo ""
             shift
             ;;
+        --clean)
+            CLEAN_CACHE=true
+            shift
+            ;;
         smoke)
             SMOKE_MODE=true
             TEST_FILTERS+=(
@@ -435,13 +448,27 @@ if [ "$REBUILD_COMPILER" = true ]; then
     echo ""
 fi
 
-if [ "$CHECK_LEAKS" = true ]; then
-    echo "🔍 Memory leak checking ENABLED - leaks will fail tests"
-    echo ""
-else
-    echo "⚠️  Memory leak checking DISABLED - leaks will NOT fail tests"
+# ════════════════════════════════════════
+# ZIG CACHE MANAGEMENT - Speed up compilation
+# ════════════════════════════════════════
+if [ "$CLEAN_CACHE" = true ]; then
+    echo "🧹 Cleaning Zig caches..."
+    rm -rf "$ZIG_GLOBAL_CACHE"
+    find tests/regression -name ".zig-cache" -type d -exec rm -rf {} + 2>/dev/null || true
+    find tests/regression -name "zig-out" -type d -exec rm -rf {} + 2>/dev/null || true
+    echo "   Cleaned global cache and per-test caches"
     echo ""
 fi
+
+# Ensure global cache directory exists
+mkdir -p "$ZIG_GLOBAL_CACHE"
+
+if [ "$CHECK_LEAKS" = true ]; then
+    echo "🔍 Memory leak checking ENABLED - leaks will fail tests"
+else
+    echo "⚠️  Memory leak checking DISABLED - leaks will NOT fail tests"
+fi
+echo ""
 
 # ════════════════════════════════════════
 # UNIT TESTS - Run first for fast feedback
@@ -993,7 +1020,8 @@ EOF
         if [ -f "$test_dir/build_backend.zig" ]; then
             BUILD_FILE="build_backend.zig"
         fi
-        if (cd "$test_dir" && zig build --build-file "$BUILD_FILE" 2>"compile_backend.err"); then
+        # Use shared global cache to speed up builds (koru modules are cached across tests)
+        if (cd "$test_dir" && zig build --build-file "$BUILD_FILE" --global-cache-dir "$ZIG_GLOBAL_CACHE" 2>"compile_backend.err"); then
             # Check for memory leaks in backend compilation
             if [ -f "$test_dir/compile_backend.err" ] && grep -q "memory address.*leaked" "$test_dir/compile_backend.err"; then
                 if [ "$HAS_MEMORY_LEAK" = false ]; then
@@ -1044,7 +1072,7 @@ EOF
                 fi
 
                 # Clean up zig build artifacts now that we're done
-                rm -rf "$test_dir/zig-out" "$test_dir/.zig-cache" "$test_dir/temp_build.zig"
+                rm -rf "$test_dir/zig-out" "$test_dir/temp_build.zig"
             else
                 # Backend execution failed - check if this was expected
                 BACKEND_ERROR_EXPECTED=false
@@ -1142,7 +1170,7 @@ EOF
                     FAILED_TESTS="$FAILED_TESTS $TEST_NAME(backend-exec)"
                 fi
                 # Clean up zig build artifacts
-                rm -rf "$test_dir/zig-out" "$test_dir/.zig-cache" "$test_dir/temp_build.zig"
+                rm -rf "$test_dir/zig-out" "$test_dir/temp_build.zig"
                 continue
             fi
         else
@@ -1170,7 +1198,7 @@ EOF
             echo "backend" > "$test_dir/FAILURE"
             FAILED_TESTS="$FAILED_TESTS $TEST_NAME(backend)"
             # Clean up zig build artifacts
-            rm -rf "$test_dir/zig-out" "$test_dir/.zig-cache" "$test_dir/temp_build.zig"
+            rm -rf "$test_dir/zig-out" "$test_dir/temp_build.zig"
             continue
         fi
     fi
