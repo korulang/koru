@@ -62,6 +62,10 @@ ZIG_GLOBAL_CACHE="${TMPDIR:-/tmp}/koru-regression-cache"
 # Use --clean to remove all Zig caches before running tests
 CLEAN_CACHE=false
 
+# Parallel execution (default: 1 = sequential)
+# Use --parallel N to run N tests concurrently
+PARALLEL_JOBS=1
+
 # Helper: Mark test as passed and clean up PRIORITY file if present
 mark_test_passed() {
     local test_dir="$1"
@@ -110,6 +114,7 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  --verbose                              Show full stderr output on failures (not truncated)"
     echo "  --priority                             List all tests marked as PRIORITY"
     echo "  --clean                                Clean all Zig caches before running (fresh build)"
+    echo "  --parallel N                           Run N tests concurrently (default: 1 = sequential)"
     echo ""
     echo -e "${CYAN}SNAPSHOT SYSTEM:${NC}"
     echo "  After each full run, a snapshot is saved to test-results/ with:"
@@ -372,6 +377,16 @@ while [[ $# -gt 0 ]]; do
             CLEAN_CACHE=true
             shift
             ;;
+        --parallel)
+            shift
+            if [ -n "$1" ] && [ "$1" -eq "$1" ] 2>/dev/null; then
+                PARALLEL_JOBS="$1"
+                shift
+            else
+                echo "Error: --parallel requires a number"
+                exit 1
+            fi
+            ;;
         smoke)
             SMOKE_MODE=true
             TEST_FILTERS+=(
@@ -469,6 +484,77 @@ else
     echo "⚠️  Memory leak checking DISABLED - leaks will NOT fail tests"
 fi
 echo ""
+
+# ════════════════════════════════════════
+# PARALLEL MODE - Fast execution with helper script
+# ════════════════════════════════════════
+if [ "$PARALLEL_JOBS" -gt 1 ]; then
+    echo "⚡ Parallel mode: $PARALLEL_JOBS concurrent jobs"
+    echo ""
+
+    # Collect test directories
+    if [ ${#TEST_FILTERS[@]} -eq 0 ]; then
+        TEST_DIRS=$(find tests/regression -mindepth 1 -type d -print0 | sort -z | xargs -0 -n1)
+    else
+        find_args=(tests/regression -mindepth 1 -type d "(")
+        for i in "${!TEST_FILTERS[@]}"; do
+            if [ $i -gt 0 ]; then find_args+=("-or"); fi
+            find_args+=("-name" "${TEST_FILTERS[$i]}")
+        done
+        find_args+=(")" "-print0")
+        TEST_DIRS=$(find "${find_args[@]}" | sort -z | xargs -0 -n1)
+    fi
+
+    # Filter to actual test directories
+    FILTERED_DIRS=""
+    for dir in $TEST_DIRS; do
+        TEST_NAME=$(basename "$dir")
+        if [[ "$TEST_NAME" =~ ^[0-9]+[a-z]?_ ]]; then
+            if [ -f "$dir/input.kz" ] || [ -f "$dir/TODO" ] || [ -f "$dir/SKIP" ] || [ -f "$dir/BENCHMARK" ]; then
+                FILTERED_DIRS="$FILTERED_DIRS $dir"
+            fi
+        fi
+    done
+
+    TOTAL_TESTS=$(echo $FILTERED_DIRS | wc -w | tr -d ' ')
+    echo "Running $TOTAL_TESTS tests..."
+    echo ""
+
+    # Clean up previous SUCCESS/FAILURE markers for tests we're about to run
+    for dir in $FILTERED_DIRS; do
+        rm -f "$dir/SUCCESS" "$dir/FAILURE" 2>/dev/null
+    done
+
+    # Run in parallel, capture output
+    echo "$FILTERED_DIRS" | tr ' ' '\n' | grep -v '^$' | \
+        xargs -P "$PARALLEL_JOBS" -I{} ./run_single_test.sh {} 2>&1 | \
+        tee /tmp/koru-parallel-output.txt
+
+    # Count results from output (more reliable than file counting)
+    PASSED_TESTS=$(grep "^PASS:" /tmp/koru-parallel-output.txt 2>/dev/null | wc -l | tr -d ' ')
+    FAILED_COUNT=$(grep "^FAIL:" /tmp/koru-parallel-output.txt 2>/dev/null | wc -l | tr -d ' ')
+    TODO_TESTS=$(grep "^TODO:" /tmp/koru-parallel-output.txt 2>/dev/null | wc -l | tr -d ' ')
+    SKIPPED_TESTS=$(grep "^SKIP:" /tmp/koru-parallel-output.txt 2>/dev/null | wc -l | tr -d ' ')
+    BENCHMARK_TESTS=$(grep "^BENCHMARK:" /tmp/koru-parallel-output.txt 2>/dev/null | wc -l | tr -d ' ')
+
+    echo ""
+    echo "════════════════════════════════════════"
+    echo "RESULTS: $PASSED_TESTS passed, $FAILED_COUNT failed, $TODO_TESTS TODO, $SKIPPED_TESTS skipped"
+    echo "════════════════════════════════════════"
+
+    # Show failed tests
+    if [ "$FAILED_COUNT" -gt 0 ]; then
+        echo ""
+        echo -e "${RED}FAILED TESTS:${NC}"
+        grep "^FAIL:" /tmp/koru-parallel-output.txt | sed 's/^/  /'
+        echo ""
+        echo -e "${RED}❌ Some tests failed${NC}"
+        exit 1
+    else
+        echo -e "${GREEN}✅ ALL TESTS PASSED!${NC}"
+        exit 0
+    fi
+fi
 
 # ════════════════════════════════════════
 # UNIT TESTS - Run first for fast feedback
