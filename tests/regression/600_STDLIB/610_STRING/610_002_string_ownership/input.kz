@@ -5,9 +5,9 @@
 
 ~std.string:from_page(text: "hello")
 | ok s |> std.string:take(s: s.s)
-    | instance owned |> std.string:append(s: owned.s, text: " world")
-        | ok |> std.string:read(s: owned.s)
-            | data _ |> std.string:free(s: owned.s)
+    | instance owned |> std.string:append(s: owned, text: " world")
+        | ok |> std.string:read(s: owned)
+            | slice _ |> std.string:free(s: owned)
                 |> std.io:print.ln("Ownership test complete")
-        | err _ |> std.string:free(s: owned.s)
+        | err _ |> std.string:free(s: owned)
 | err _ |> _

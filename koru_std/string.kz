@@ -30,17 +30,17 @@ pub const String = struct {
 // Create with explicit allocator
 ~pub event new { allocator: std.mem.Allocator, text: []const u8 }
 | ok { s: *String[view!] }
-| err { msg: []const u8 }
+| err []const u8
 
 ~proc new {
     const data = allocator.alloc(u8, text.len) catch {
-        return .{ .err = .{ .msg = "allocation failed" } };
+        return .{ .err = "allocation failed" };
     };
     @memcpy(data, text);
 
     const s = allocator.create(String) catch {
         allocator.free(data);
-        return .{ .err = .{ .msg = "allocation failed" } };
+        return .{ .err = "allocation failed" };
     };
     s.* = .{ .data = data, .allocator = allocator };
     return .{ .ok = .{ .s = s } };
@@ -49,18 +49,18 @@ pub const String = struct {
 // Create with page allocator (simple, for demos)
 ~pub event from_page { text: []const u8 }
 | ok { s: *String[view!] }
-| err { msg: []const u8 }
+| err []const u8
 
 ~proc from_page {
     const allocator = std.heap.page_allocator;
     const data = allocator.alloc(u8, text.len) catch {
-        return .{ .err = .{ .msg = "allocation failed" } };
+        return .{ .err = "allocation failed" };
     };
     @memcpy(data, text);
 
     const s = allocator.create(String) catch {
         allocator.free(data);
-        return .{ .err = .{ .msg = "allocation failed" } };
+        return .{ .err = "allocation failed" };
     };
     s.* = .{ .data = data, .allocator = allocator };
     return .{ .ok = .{ .s = s } };
@@ -72,20 +72,18 @@ pub const String = struct {
 
 // Take ownership - view becomes instance
 ~pub event take { s: *String[!view] }
-| instance { s: *String[instance!] }
+| instance *String[instance!]
 
 ~proc take {
-    // Same pointer, different obligation
-    return .{ .instance = .{ .s = s } };
+    return .{ .instance = s };
 }
 
 // Release ownership - instance becomes view
 ~pub event release { s: *String[!instance] }
-| view { s: *String[view!] }
+| view *String[view!]
 
 ~proc release {
-    // Same pointer, different obligation
-    return .{ .view = .{ .s = s } };
+    return .{ .view = s };
 }
 
 // ============================================
@@ -105,17 +103,17 @@ pub const String = struct {
 // ============================================
 
 ~pub event read { s: *String[view|instance] }
-| data { slice: []const u8 }
+| slice []const u8
 
 ~proc read {
-    return .{ .data = .{ .slice = s.data } };
+    return .{ .slice = s.data };
 }
 
 ~pub event len { s: *String[view|instance] }
-| len { n: usize }
+| len usize
 
 ~proc len {
-    return .{ .len = .{ .n = s.data.len } };
+    return .{ .len = s.data.len };
 }
 
 // ============================================
@@ -123,17 +121,17 @@ pub const String = struct {
 // ============================================
 
 ~pub event append { s: *String[instance], text: []const u8 }
-| ok {}
-| err { msg: []const u8 }
+| ok
+| err []const u8
 
 ~proc append {
     const new_len = s.data.len + text.len;
     const new_data = s.allocator.realloc(s.data, new_len) catch {
-        return .{ .err = .{ .msg = "realloc failed" } };
+        return .{ .err = "realloc failed" };
     };
     @memcpy(new_data[s.data.len..], text);
     s.data = new_data;
-    return .{ .ok = .{} };
+    return .ok;
 }
 
 ~pub event clear { s: *String[instance] }
