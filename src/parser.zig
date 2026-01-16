@@ -3930,9 +3930,8 @@ pub const Parser = struct {
         }
 
         // Now parse any output continuations after the }
-        // Use strict mode: only collect continuations MORE indented than base_indent
-        // This ensures sibling branches (at same indent) are NOT collected here
-        const output_continuations = try self.parseContinuationsWithMode(base_indent, true);
+        // These are DIRECT continuations of the invocation (not siblings), so use normal mode
+        const output_continuations = try self.parseContinuations(base_indent);
 
         // Combine: flow items first, then output continuations
         for (flow_ast_continuations.items) |cont| {
@@ -4046,9 +4045,8 @@ pub const Parser = struct {
         const source = source_buf[0..pos];
 
         // Now parse any output continuations after the }
-        // Use strict mode: only collect continuations MORE indented than base_indent
-        // This ensures sibling branches (at same indent) are NOT collected here
-        const output_continuations = try self.parseContinuationsWithMode(base_indent, true);
+        // These are DIRECT continuations of the invocation (not siblings), so use normal mode
+        const output_continuations = try self.parseContinuations(base_indent);
 
         return .{
             .source = source,

@@ -3157,6 +3157,34 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
         }
     }
 
+    // OPTIONAL PARAMETER INJECTION: Emit null for optional parameters not provided
+    // This handles cases like `allocator: ?std.mem.Allocator` where user doesn't pass a value
+    if (event_decl) |event| {
+        var optional_injected: usize = 0;
+        for (event.input.fields) |field| {
+            // Check if this field has an optional type (starts with ?)
+            const is_optional = field.type.len > 0 and field.type[0] == '?';
+            if (!is_optional) continue;
+
+            // Check if this field was already explicitly provided
+            var already_provided = false;
+            for (args) |arg| {
+                if (std.mem.eql(u8, arg.name, field.name)) {
+                    already_provided = true;
+                    break;
+                }
+            }
+
+            if (!already_provided) {
+                if (args.len > 0 or optional_injected > 0) try emitter.write(", ");
+                try emitter.write(".");
+                try emitter.write(field.name);
+                try emitter.write(" = null");
+                optional_injected += 1;
+            }
+        }
+    }
+
     // COMPTIME INJECTION: If in comptime_only mode, inject program and allocator
     // if the event declares those parameters and they weren't explicitly provided
     const is_comptime_emission = if (ctx.emit_mode) |mode| mode == .comptime_only else false;
