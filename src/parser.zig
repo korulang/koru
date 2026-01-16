@@ -4671,6 +4671,54 @@ pub const Parser = struct {
                 full_rest = allocated_rest.?;
             }
 
+            // FIX: Handle multi-line function calls in pipelines
+            // If we have unbalanced parentheses (more '(' than ')'), collect lines until balanced
+            // Example:
+            //   | done a |> step_b(
+            //       a: a.result,
+            //       b: 20)
+            //       | done b |> ...  (nested continuation - MORE indented)
+            if (!is_multiline_source_block) {
+                var paren_depth: i32 = 0;
+                for (full_rest) |c| {
+                    if (c == '(') paren_depth += 1;
+                    if (c == ')') paren_depth -= 1;
+                }
+
+                if (paren_depth > 0) {
+                    // Unbalanced parens - collect lines until balanced
+                    var rest_buf = try std.ArrayList(u8).initCapacity(self.allocator, 256);
+                    defer rest_buf.deinit(self.allocator);
+                    try rest_buf.appendSlice(self.allocator, full_rest);
+
+                    while (self.current < self.lines.len and paren_depth > 0) {
+                        const next_line = self.lines[self.current];
+                        const next_trimmed = lexer.trim(next_line);
+
+                        // Skip empty lines
+                        if (next_trimmed.len == 0) {
+                            self.current += 1;
+                            continue;
+                        }
+
+                        // Count parens in this line
+                        for (next_trimmed) |c| {
+                            if (c == '(') paren_depth += 1;
+                            if (c == ')') paren_depth -= 1;
+                        }
+
+                        // Add this line to our content (with space separator)
+                        try rest_buf.appendSlice(self.allocator, " ");
+                        try rest_buf.appendSlice(self.allocator, next_trimmed);
+                        self.current += 1;
+                    }
+
+                    if (allocated_rest) |ar| self.allocator.free(ar);
+                    allocated_rest = try rest_buf.toOwnedSlice(self.allocator);
+                    full_rest = allocated_rest.?;
+                }
+            }
+
             // After collecting multi-line Source block, parse the event's output branches
             // The cursor is now past the }, pointing at lines like | row |> ...
             // These are output branches of the Source block event, not siblings!
