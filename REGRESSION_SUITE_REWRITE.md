@@ -575,6 +575,111 @@ This is valid: TODO marker means feature not implemented, no input.kz needed.
 
 ---
 
+## Hidden Couplings & Safe Extraction Boundary
+
+### Hidden Couplings to Preserve (or Make Explicit)
+
+1. **Test discovery must match marker scanners**
+   - `run_regression.sh` and `scripts/generate-status.js` only treat directories matching `^[0-9]+[a-z]?_` as tests.
+   - A directory counts as a test only if it contains `input.kz` **or** a marker (`TODO`, `SKIP`, `BROKEN`, `BENCHMARK`).
+   - `scripts/save-snapshot.js` currently scans all subdirs and only checks marker presence (not the name pattern). This is a potential mismatch to resolve; the rewrite must make all three agree.
+
+2. **Category-level SKIP scope is ambiguous today**
+   - `run_regression.sh` only checks the immediate parent directory for `SKIP`.
+   - `generate-status.js` / `save-snapshot.js` propagate `SKIP` down the entire subtree.
+   - The rewrite must pick one behavior and align all scripts.
+
+3. **Marker precedence is a shared contract**
+   - `TODO` > category `SKIP` > test `SKIP` > `BROKEN` > `SUCCESS`/`FAILURE`.
+   - `scripts/generate-status.js` encodes this order; any change must be mirrored.
+
+4. **Failure reason is the first line of `FAILURE`**
+   - `generate-status.js`, `save-snapshot.js`, `show-regressions.js`, and `diff-snapshots.js` all display the first line only.
+   - Keep reason strings stable (e.g., `frontend`, `backend`, `output`, `config-error`, `leak-frontend`).
+
+5. **Snapshots and status depend on `test.directory` being unique**
+   - `show-regressions.js` and `test-history.js` match tests by `directory` name only.
+   - Do not change directory naming or the `directory` field semantics.
+
+6. **`status.json` is a build artifact with a fixed location**
+   - `generate-status.js` always writes `status.json` at repo root; other scripts read it from there.
+   - Do not relocate or rename this output.
+
+7. **Error expectation mechanisms are non-obvious**
+   - `EXPECT` with `FRONTEND_COMPILE_ERROR` or `BACKEND_COMPILE_ERROR` short-circuits failure.
+   - `expected_error.txt` is a separate backend error matcher (not documented elsewhere).
+
+8. **Artifact cleanup and output paths are part of correctness**
+   - Each test run removes `backend.zig`, `backend`, `output`, `actual.txt`, `compile_*.err`, `zig-out/`, `.zig-cache/`, plus `SUCCESS/FAILURE`.
+   - Backend build is expected to emit `zig-out/bin/backend`, which is moved to `backend` in the test dir.
+   - `post.sh` executes in the test dir and writes `post.log`.
+
+9. **Memory leak detection is stage-specific**
+   - Leak checks run on `compile_kz.err`, `compile_backend.err`, `backend.err`, looking for `memory address.*leaked`.
+   - The current PARSER_TEST path does not check leaks; decide whether to keep or fix this and align expectations.
+
+10. **Snapshot generation is only for full runs**
+    - `save-snapshot.js` is invoked only when no filters are used and not in smoke mode.
+    - Parallel mode must preserve this rule.
+
+11. **`realpath --relative-to` is a hidden platform dependency**
+    - The backend build uses `realpath --relative-to="$test_dir" "$PWD"` to build module paths.
+    - If this is rewritten, ensure portability or preserve equivalent semantics.
+
+### Smallest Safe Extraction Boundary (for Phase 1)
+
+Extract a single "run one test" function that:
+
+- Accepts `test_dir` and shared flags (`CHECK_LEAKS`, `VERBOSE`, `ZIG_GLOBAL_CACHE`).
+- Implements **all** marker precedence, config validation, cleanup, compilation, execution, and leak checks.
+- Writes only `SUCCESS`/`FAILURE` (and cleans `PRIORITY` on pass).
+- Returns a structured result `{status, failureReason, leaked, priorityHit}` for aggregation.
+
+This isolates correctness in one place and enables parallel mode to call the exact same logic.
+
+---
+
+## Parallel Divergence (Current run_single_test.sh)
+
+The helper used by `--parallel` is materially incomplete. Divergences include:
+
+- **No PARSER_TEST path** (runs full compilation instead of AST-only validation).
+- **No BROKEN handling** (fails as backend/exec rather than `broken-test`).
+- **No memory leak checks** (missing all leak detection).
+- **No expected_error.txt support** (backend error matching).
+- **No EXPECT BACKEND_COMPILE_ERROR handling** (only frontend special-cases).
+- **No configuration validation** (`expected.txt` without MUST_RUN).
+- **No category-level SKIP** (only per-test SKIP).
+- **No PRIORITY cleanup** on pass.
+- **Build file mismatch** (uses `build.zig`/`build_backend.zig`, but serial creates a full `temp_build.zig` with module wiring).
+- **Artifact cleanup incomplete** (misses `actual.txt`, `output_emitted.zig`, `post.log`, `.zig-cache`).
+- **Post-validation missing** (`post.sh` is never run).
+- **Marker precedence differs** (BENCHMARK/TODO/SKIP handled, but BROKEN and MUST_FAIL rules diverge).
+- **Wrong compile flag** (`--output` vs `-o`), which may silently differ from serial.
+
+Until this is replaced by the shared “run one test” function, `--parallel` results cannot be trusted.
+
+---
+
+## Parity Guardrail Checklist
+
+Before enabling parallel mode as “real”:
+
+- Run a fixed subset (smoke suite) serial vs parallel.
+- Diff SUCCESS/FAILURE markers and failure reasons (first line).
+- Ensure leak detection decisions match.
+- Ensure PARSER_TEST, BROKEN, EXPECT/MUST_FAIL cases match exactly.
+- Verify `scripts/generate-status.js` and `--regressions` results are unchanged.
+
+Example command:
+
+```bash
+./scripts/regression_parity.sh
+PARITY_JOBS=8 ./scripts/regression_parity.sh smoke
+```
+
+---
+
 ## Next Steps for CODEX
 
 1. **Read the current run_regression.sh** thoroughly
