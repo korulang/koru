@@ -487,36 +487,57 @@ if [ "$PARALLEL_JOBS" -gt 1 ]; then
     echo ""
 
     # Collect test directories
-    if [ ${#TEST_FILTERS[@]} -eq 0 ]; then
-        TEST_DIRS=$(find tests/regression -mindepth 1 -type d -print0 | sort -z | xargs -0 -n1)
-    else
-        find_args=(tests/regression -mindepth 1 -type d "(")
-        for i in "${!TEST_FILTERS[@]}"; do
-            if [ $i -gt 0 ]; then find_args+=("-or"); fi
-            find_args+=("-name" "${TEST_FILTERS[$i]}")
-        done
-        find_args+=(")" "-print0")
-        TEST_DIRS=$(find "${find_args[@]}" | sort -z | xargs -0 -n1)
-    fi
+    LIST_FILE=$(mktemp /tmp/koru-parallel-list.XXXXXX)
+    FILTERED_LIST=$(mktemp /tmp/koru-parallel-filtered.XXXXXX)
+    cleanup_parallel_files() {
+        rm -f "$LIST_FILE" "$FILTERED_LIST"
+    }
+    trap cleanup_parallel_files EXIT
 
-    # Filter to actual test directories
-    FILTERED_DIRS=""
-    for dir in $TEST_DIRS; do
-        TEST_NAME=$(basename "$dir")
-        if [[ "$TEST_NAME" =~ ^[0-9]+[a-z]?_ ]]; then
-            if [ -f "$dir/input.kz" ] || [ -f "$dir/TODO" ] || [ -f "$dir/SKIP" ] || [ -f "$dir/BROKEN" ] || [ -f "$dir/BENCHMARK" ]; then
-                FILTERED_DIRS="$FILTERED_DIRS $dir"
-            fi
+    FILTER_PATTERNS=()
+    for pattern in "${TEST_FILTERS[@]}"; do
+        if [ -n "$pattern" ]; then
+            FILTER_PATTERNS+=("$pattern")
         fi
     done
 
-    TOTAL_TESTS=$(echo $FILTERED_DIRS | wc -w | tr -d ' ')
+    if [ ${#FILTER_PATTERNS[@]} -eq 0 ]; then
+        find tests/regression -mindepth 1 -type d -print0 | sort -z > "$LIST_FILE"
+    else
+        find_args=(tests/regression -mindepth 1 -type d "(")
+        for i in "${!FILTER_PATTERNS[@]}"; do
+            if [ $i -gt 0 ]; then find_args+=("-or"); fi
+            find_args+=("-name" "${FILTER_PATTERNS[$i]}")
+        done
+        find_args+=(")" "-print0")
+        find "${find_args[@]}" | sort -z > "$LIST_FILE"
+    fi
+
+    # Filter to actual test directories
+    : > "$FILTERED_LIST"
+    while IFS= read -r -d '' dir; do
+        TEST_NAME=$(basename "$dir")
+        if [[ "$TEST_NAME" =~ ^[0-9]+[a-z]?_ ]]; then
+            if [ -f "$dir/input.kz" ] || [ -f "$dir/TODO" ] || [ -f "$dir/SKIP" ] || [ -f "$dir/BROKEN" ] || [ -f "$dir/BENCHMARK" ]; then
+                printf '%s\0' "$dir" >> "$FILTERED_LIST"
+            fi
+        fi
+    done < "$LIST_FILE"
+
+    TOTAL_TESTS=$(
+        python3 - "$FILTERED_LIST" <<'PY'
+import sys
+with open(sys.argv[1], 'rb') as f:
+    data = f.read()
+print(data.count(b'\0'))
+PY
+    )
     echo "Running $TOTAL_TESTS tests..."
     echo ""
 
     # Clean up previous SUCCESS/FAILURE markers for tests we're about to run.
     # Match serial behavior: do not clear markers for TODO/SKIP/BENCHMARK/BROKEN or category-skipped tests.
-    for dir in $FILTERED_DIRS; do
+    while IFS= read -r -d '' dir; do
         if [ -f "$dir/BENCHMARK" ] || [ -f "$dir/TODO" ] || [ -f "$dir/SKIP" ] || [ -f "$dir/BROKEN" ]; then
             continue
         fi
@@ -524,14 +545,13 @@ if [ "$PARALLEL_JOBS" -gt 1 ]; then
             continue
         fi
         rm -f "$dir/SUCCESS" "$dir/FAILURE" 2>/dev/null
-    done
+    done < "$FILTERED_LIST"
 
     # Run in parallel, capture output for debugging only
     PARALLEL_OUTPUT="/tmp/koru-parallel-output.txt"
     : > "$PARALLEL_OUTPUT"
-    echo "$FILTERED_DIRS" | tr ' ' '\n' | grep -v '^$' | \
-        env REGRESSION_QUIET=true CHECK_LEAKS="$CHECK_LEAKS" VERBOSE="$VERBOSE" ZIG_GLOBAL_CACHE="$ZIG_GLOBAL_CACHE" \
-        xargs -P "$PARALLEL_JOBS" -I{} ./run_single_test.sh {} 2>&1 | \
+    env REGRESSION_QUIET=true CHECK_LEAKS="$CHECK_LEAKS" VERBOSE="$VERBOSE" ZIG_GLOBAL_CACHE="$ZIG_GLOBAL_CACHE" \
+        xargs -0 -P "$PARALLEL_JOBS" -I{} ./run_single_test.sh {} < "$FILTERED_LIST" 2>&1 | \
         tee "$PARALLEL_OUTPUT"
 
     # Count results from on-disk markers (source of truth)
@@ -541,9 +561,11 @@ if [ "$PARALLEL_JOBS" -gt 1 ]; then
     SKIPPED_TESTS=0
     BROKEN_TESTS=0
     BENCHMARK_TESTS=0
+    NO_MARKER_COUNT=0
     FAILED_LIST=()
+    BROKEN_LIST=()
 
-    for dir in $FILTERED_DIRS; do
+    while IFS= read -r -d '' dir; do
         TEST_NAME=$(basename "$dir")
         CATEGORY_DIR="$(dirname "$dir")"
 
@@ -565,9 +587,8 @@ if [ "$PARALLEL_JOBS" -gt 1 ]; then
         fi
         if [ -f "$dir/BROKEN" ]; then
             BROKEN_TESTS=$((BROKEN_TESTS + 1))
-            FAILED_COUNT=$((FAILED_COUNT + 1))
             FAIL_REASON=$(head -1 "$dir/FAILURE" 2>/dev/null || echo "broken-test")
-            FAILED_LIST+=("$TEST_NAME(${FAIL_REASON:-broken-test})")
+            BROKEN_LIST+=("$TEST_NAME(${FAIL_REASON:-broken-test})")
             continue
         fi
 
@@ -587,9 +608,8 @@ if [ "$PARALLEL_JOBS" -gt 1 ]; then
             continue
         fi
 
-        FAILED_COUNT=$((FAILED_COUNT + 1))
-        FAILED_LIST+=("$TEST_NAME(no-marker)")
-    done
+        NO_MARKER_COUNT=$((NO_MARKER_COUNT + 1))
+    done < "$FILTERED_LIST"
 
     echo ""
     echo "════════════════════════════════════════"
@@ -602,6 +622,9 @@ if [ "$PARALLEL_JOBS" -gt 1 ]; then
     fi
     if [ $BROKEN_TESTS -gt 0 ]; then
         SUMMARY_LINE="$SUMMARY_LINE, $BROKEN_TESTS broken"
+    fi
+    if [ $NO_MARKER_COUNT -gt 0 ]; then
+        SUMMARY_LINE="$SUMMARY_LINE, $NO_MARKER_COUNT untested"
     fi
     if [ $BENCHMARK_TESTS -gt 0 ]; then
         if [ $BENCHMARK_TESTS -eq 1 ]; then
@@ -637,12 +660,24 @@ if [ "$PARALLEL_JOBS" -gt 1 ]; then
             echo "  $item"
         done
         echo ""
+    fi
+
+    if [ "$BROKEN_TESTS" -gt 0 ]; then
+        echo ""
+        echo -e "${RED}BROKEN TESTS:${NC}"
+        for item in "${BROKEN_LIST[@]}"; do
+            echo "  $item"
+        done
+        echo ""
+    fi
+
+    if [ "$FAILED_COUNT" -gt 0 ] || [ "$BROKEN_TESTS" -gt 0 ] || [ "$NO_MARKER_COUNT" -gt 0 ]; then
         echo -e "${RED}❌ Some tests failed${NC}"
         exit 1
-    else
-        echo -e "${GREEN}✅ ALL TESTS PASSED!${NC}"
-        exit 0
     fi
+
+    echo -e "${GREEN}✅ ALL TESTS PASSED!${NC}"
+    exit 0
 fi
 
 # ════════════════════════════════════════
@@ -697,18 +732,25 @@ while IFS= read -r -d '' test_dir; do
     regression_run_one_test "$test_dir"
 done < <(
     # Sort to maintain consistent ordering
-    if [ ${#TEST_FILTERS[@]} -eq 0 ]; then
+    FILTER_PATTERNS=()
+    for pattern in "${TEST_FILTERS[@]}"; do
+        if [ -n "$pattern" ]; then
+            FILTER_PATTERNS+=("$pattern")
+        fi
+    done
+
+    if [ ${#FILTER_PATTERNS[@]} -eq 0 ]; then
         # No filter: find all test directories
         find tests/regression -mindepth 1 -type d -print0 | sort -z
     else
         # With filters: build find command with multiple -name patterns joined by -or
         # Using an array for arguments is safer than building a string for eval
         find_args=(tests/regression -mindepth 1 -type d "(")
-        for i in "${!TEST_FILTERS[@]}"; do
+        for i in "${!FILTER_PATTERNS[@]}"; do
             if [ $i -gt 0 ]; then
                 find_args+=("-or")
             fi
-            find_args+=("-name" "${TEST_FILTERS[$i]}")
+            find_args+=("-name" "${FILTER_PATTERNS[$i]}")
         done
         find_args+=(")" "-print0")
         

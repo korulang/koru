@@ -1,0 +1,13 @@
+// Test: String ownership transitions (view -> instance)
+// All branches must explicitly handle disposal with multiple options available.
+~import "$std/string"
+~import "$std/io"
+
+~std.string:from_page(text: "hello")
+| ok s |> std.string:take(s: s.s)
+    | instance owned |> std.string:append(s: owned.s, text: " world")
+        | ok |> std.string:read(s: owned.s)
+            | data _ |> std.string:free(s: owned.s)
+                |> std.io:print.ln("Ownership test complete")
+        | err _ |> std.string:free(s: owned.s)
+| err _ |> _

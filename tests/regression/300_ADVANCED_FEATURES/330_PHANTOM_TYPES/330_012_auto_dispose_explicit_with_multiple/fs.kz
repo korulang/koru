@@ -1,0 +1,54 @@
+// Library module: fs
+// State transitions with multiple disposal options (mimics string library)
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+// Open a file - returns opened! state
+~pub event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+// Lock - transition opened! -> locked!
+~pub event lock { file: *File[!opened] }
+| locked { file: *File[locked!] }
+
+~proc lock {
+    return .{ .locked = .{ .file = file } };
+}
+
+// Write - requires locked state (doesn't consume)
+~pub event write { file: *File[locked], data: []const u8 }
+| written {}
+| err { msg: []const u8 }
+
+~proc write {
+    std.debug.print("Writing: {s}\n", .{data});
+    return .{ .written = .{} };
+}
+
+// Unlock - consumes locked! (Option 1 for disposing locked!)
+~pub event unlock { file: *File[!locked] }
+| unlocked {}
+
+~proc unlock {
+    std.debug.print("Unlocking\n", .{});
+    std.heap.page_allocator.destroy(file);
+    return .{ .unlocked = .{} };
+}
+
+// Force close - also consumes locked! (Option 2 for disposing locked!)
+~pub event force_close { file: *File[!locked] }
+| closed {}
+
+~proc force_close {
+    std.debug.print("Force closing\n", .{});
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}

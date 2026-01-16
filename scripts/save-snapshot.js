@@ -65,6 +65,8 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 
 		if (!stats.isDirectory()) continue;
 
+		const isTestDir = /^\d+[a-z]?_/.test(entry);
+
 		// Check for input file and markers (matching bash logic)
 		const hasInput = await fileExists(join(fullPath, 'input.kz'));
 		const todo = await fileExists(join(fullPath, 'TODO'));
@@ -73,7 +75,7 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 
 		// Match bash script filtering - only count valid tests
 		// if [ ! -f "$test_dir/input.kz" ] && [ ! -f "$test_dir/TODO" ] && [ ! -f "$test_dir/SKIP" ] && [ ! -f "$test_dir/BROKEN" ]; then continue; fi
-		const isValidTest = hasInput || todo || skip || broken;
+		const isValidTest = isTestDir && (hasInput || todo || skip || broken);
 
 		if (isValidTest) {
 			// This is a test directory!

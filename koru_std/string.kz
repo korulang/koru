@@ -1,0 +1,143 @@
+// $std/string - String library with view/instance ownership model
+//
+// Ownership states:
+//   [view!]     - read-only access, can be promoted to instance
+//   [instance!] - full control, can read/write/free
+//
+// The String struct carries its allocator, so it can be freed anywhere.
+
+const std = @import("std");
+
+pub const String = struct {
+    data: []u8,
+    allocator: std.mem.Allocator,
+
+    // For Zig interop - get the slice
+    pub fn slice(self: String) []const u8 {
+        return self.data;
+    }
+
+    // Package-private - only auto-dispose calls this
+    fn deinit(self: String) void {
+        self.allocator.free(self.data);
+    }
+};
+
+// ============================================
+// Creation events - different allocator sources
+// ============================================
+
+// Create with explicit allocator
+~pub event new { allocator: std.mem.Allocator, text: []const u8 }
+| ok { s: *String[view!] }
+| err { msg: []const u8 }
+
+~proc new {
+    const data = allocator.alloc(u8, text.len) catch {
+        return .{ .err = .{ .msg = "allocation failed" } };
+    };
+    @memcpy(data, text);
+
+    const s = allocator.create(String) catch {
+        allocator.free(data);
+        return .{ .err = .{ .msg = "allocation failed" } };
+    };
+    s.* = .{ .data = data, .allocator = allocator };
+    return .{ .ok = .{ .s = s } };
+}
+
+// Create with page allocator (simple, for demos)
+~pub event from_page { text: []const u8 }
+| ok { s: *String[view!] }
+| err { msg: []const u8 }
+
+~proc from_page {
+    const allocator = std.heap.page_allocator;
+    const data = allocator.alloc(u8, text.len) catch {
+        return .{ .err = .{ .msg = "allocation failed" } };
+    };
+    @memcpy(data, text);
+
+    const s = allocator.create(String) catch {
+        allocator.free(data);
+        return .{ .err = .{ .msg = "allocation failed" } };
+    };
+    s.* = .{ .data = data, .allocator = allocator };
+    return .{ .ok = .{ .s = s } };
+}
+
+// ============================================
+// Ownership transitions
+// ============================================
+
+// Take ownership - view becomes instance
+~pub event take { s: *String[!view] }
+| instance { s: *String[instance!] }
+
+~proc take {
+    // Same pointer, different obligation
+    return .{ .instance = .{ .s = s } };
+}
+
+// Release ownership - instance becomes view
+~pub event release { s: *String[!instance] }
+| view { s: *String[view!] }
+
+~proc release {
+    // Same pointer, different obligation
+    return .{ .view = .{ .s = s } };
+}
+
+// ============================================
+// Cleanup
+// ============================================
+
+// Free - works on either view or instance
+~pub event free { s: *String[!view|instance] }
+
+~proc free {
+    s.allocator.free(s.data);
+    s.allocator.destroy(s);
+}
+
+// ============================================
+// Read operations - work on view or instance
+// ============================================
+
+~pub event read { s: *String[view|instance] }
+| data { slice: []const u8 }
+
+~proc read {
+    return .{ .data = .{ .slice = s.data } };
+}
+
+~pub event len { s: *String[view|instance] }
+| len { n: usize }
+
+~proc len {
+    return .{ .len = .{ .n = s.data.len } };
+}
+
+// ============================================
+// Write operations - require instance
+// ============================================
+
+~pub event append { s: *String[instance], text: []const u8 }
+| ok {}
+| err { msg: []const u8 }
+
+~proc append {
+    const new_len = s.data.len + text.len;
+    const new_data = s.allocator.realloc(s.data, new_len) catch {
+        return .{ .err = .{ .msg = "realloc failed" } };
+    };
+    @memcpy(new_data[s.data.len..], text);
+    s.data = new_data;
+    return .{ .ok = .{} };
+}
+
+~pub event clear { s: *String[instance] }
+
+~proc clear {
+    s.data.len = 0;
+}

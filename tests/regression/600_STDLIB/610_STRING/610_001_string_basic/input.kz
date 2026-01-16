@@ -1,0 +1,8 @@
+// Test: Basic string creation and cleanup with view/instance model
+~import "$std/string"
+~import "$std/io"
+
+~std.string:from_page(text: "hello")
+| ok s |> std.string:free(s: s.s)
+    |> std.io:print.ln("String test complete")
+| err _ |> _

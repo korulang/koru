@@ -11,6 +11,23 @@ const codegen_utils = @import("codegen_utils");
 // Sentinel value for tap function context (prevents infinite recursion)
 const TAP_FUNCTION_CONTEXT: usize = 9999;
 
+/// Strip phantom type annotations from a type string
+/// e.g., "*Resource[state!]" -> "*Resource", "[]const u8" -> "[]const u8"
+fn stripPhantom(type_str: []const u8) []const u8 {
+    // Find '[' that starts phantom annotation
+    for (type_str, 0..) |c, i| {
+        if (c == '[') {
+            // Check if this is a phantom annotation (not a slice type)
+            // Slice types: []const u8, [N]T - have ] immediately or digits
+            // Phantom types: *T[state], T[state!] - have identifiers
+            if (i > 0 and type_str[i - 1] != ']') {
+                return type_str[0..i];
+            }
+        }
+    }
+    return type_str;
+}
+
 /// Use EmitMode from emitter_helpers to avoid duplication
 pub const EmitMode = emitter.EmitMode;
 
@@ -1453,6 +1470,28 @@ pub const VisitorEmitter = struct {
                 const is_identity = first_branch.payload.fields.len == 1 and
                     eql(u8, first_branch.payload.fields[0].name, "__type_ref");
 
+                // AUTO-PROC SYNTHESIS: Check if we can generate a passthrough
+                // Conditions: single branch, all output fields have matching input fields
+                const can_passthrough = blk: {
+                    if (event.branches.len != 1) break :blk false;
+                    for (first_branch.payload.fields) |out_field| {
+                        var found_match = false;
+                        for (event.input.fields) |in_field| {
+                            if (eql(u8, out_field.name, in_field.name)) {
+                                // Compare base types (strip phantom annotations like [state!])
+                                const out_base = stripPhantom(out_field.type);
+                                const in_base = stripPhantom(in_field.type);
+                                if (eql(u8, out_base, in_base)) {
+                                    found_match = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!found_match) break :blk false;
+                    }
+                    break :blk first_branch.payload.fields.len > 0;
+                };
+
                 // Return with proper field values
                 try self.code_emitter.writeIndent();
                 try self.code_emitter.write("return .{ .");
@@ -1462,7 +1501,11 @@ pub const VisitorEmitter = struct {
                 if (is_identity) {
                     // Identity type: emit value directly (no struct wrapper)
                     const field_type = first_branch.payload.fields[0].type;
-                    if (eql(u8, field_type, "i32") or eql(u8, field_type, "i64") or
+                    if (can_passthrough) {
+                        // Passthrough: use input value
+                        try self.code_emitter.write("__koru_event_input.");
+                        try self.code_emitter.write(first_branch.payload.fields[0].name);
+                    } else if (eql(u8, field_type, "i32") or eql(u8, field_type, "i64") or
                         eql(u8, field_type, "u32") or eql(u8, field_type, "u64") or
                         eql(u8, field_type, "usize") or eql(u8, field_type, "isize")) {
                         try self.code_emitter.write("0");
@@ -1478,14 +1521,17 @@ pub const VisitorEmitter = struct {
                     // Struct type: emit with field names
                     try self.code_emitter.write(".{");
 
-                    // Generate default values for each field in the branch
+                    // Generate values for each field in the branch
                     for (first_branch.payload.fields) |field| {
                         try self.code_emitter.write(" .");
                         try self.code_emitter.write(field.name);
                         try self.code_emitter.write(" = ");
 
-                        // Generate appropriate default based on type
-                        if (eql(u8, field.type, "i32")) {
+                        if (can_passthrough) {
+                            // Passthrough: use input value
+                            try self.code_emitter.write("__koru_event_input.");
+                            try self.code_emitter.write(field.name);
+                        } else if (eql(u8, field.type, "i32")) {
                             try self.code_emitter.write("0");
                         } else if (eql(u8, field.type, "[]const u8")) {
                             try self.code_emitter.write("\"\"");

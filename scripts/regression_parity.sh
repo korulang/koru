@@ -7,6 +7,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
 PARITY_JOBS=${PARITY_JOBS:-4}
+LIST_FILE=$(mktemp /tmp/koru-parity-list.XXXXXX)
+FILTERED_LIST=$(mktemp /tmp/koru-parity-filtered.XXXXXX)
 
 RUN_ARGS=()
 TEST_FILTERS=()
@@ -77,35 +79,41 @@ else
 fi
 
 collect_test_dirs() {
-    local test_dirs
-    if [ ${#TEST_FILTERS[@]} -eq 0 ]; then
-        test_dirs=$(find tests/regression -mindepth 1 -type d -print0 | sort -z | xargs -0 -n1)
+    FILTER_PATTERNS=()
+    for pattern in "${TEST_FILTERS[@]}"; do
+        if [ -n "$pattern" ]; then
+            FILTER_PATTERNS+=("$pattern")
+        fi
+    done
+
+    if [ ${#FILTER_PATTERNS[@]} -eq 0 ]; then
+        find tests/regression -mindepth 1 -type d -print0 | sort -z > "$LIST_FILE"
     else
         find_args=(tests/regression -mindepth 1 -type d "(")
-        for i in "${!TEST_FILTERS[@]}"; do
+        for i in "${!FILTER_PATTERNS[@]}"; do
             if [ $i -gt 0 ]; then find_args+=("-or"); fi
-            find_args+=("-name" "${TEST_FILTERS[$i]}")
+            find_args+=("-name" "${FILTER_PATTERNS[$i]}")
         done
         find_args+=(")" "-print0")
-        test_dirs=$(find "${find_args[@]}" | sort -z | xargs -0 -n1)
+        find "${find_args[@]}" | sort -z > "$LIST_FILE"
     fi
 
-    FILTERED_DIRS=""
-    for dir in $test_dirs; do
+    : > "$FILTERED_LIST"
+    while IFS= read -r -d '' dir; do
         TEST_NAME=$(basename "$dir")
         if [[ "$TEST_NAME" =~ ^[0-9]+[a-z]?_ ]]; then
             if [ -f "$dir/input.kz" ] || [ -f "$dir/TODO" ] || [ -f "$dir/SKIP" ] || [ -f "$dir/BROKEN" ] || [ -f "$dir/BENCHMARK" ]; then
-                FILTERED_DIRS="$FILTERED_DIRS $dir"
+                printf '%s\0' "$dir" >> "$FILTERED_LIST"
             fi
         fi
-    done
+    done < "$LIST_FILE"
 }
 
 capture_state() {
     local output_file="$1"
     : > "$output_file"
 
-    for dir in $FILTERED_DIRS; do
+    while IFS= read -r -d '' dir; do
         local category_dir
         local status
         local reason
@@ -139,20 +147,20 @@ capture_state() {
         fi
 
         echo "$dir|$status|$reason" >> "$output_file"
-    done
+    done < "$FILTERED_LIST"
 
     sort -o "$output_file" "$output_file"
 }
 
 collect_test_dirs
 
-SERIAL_STATE=$(mktemp /tmp/koru-parity-serial.XXXXXX)
-PARALLEL_STATE=$(mktemp /tmp/koru-parity-parallel.XXXXXX)
-
 cleanup() {
-    rm -f "$SERIAL_STATE" "$PARALLEL_STATE"
+    rm -f "$SERIAL_STATE" "$PARALLEL_STATE" "$LIST_FILE" "$FILTERED_LIST"
 }
 trap cleanup EXIT
+
+SERIAL_STATE=$(mktemp /tmp/koru-parity-serial.XXXXXX)
+PARALLEL_STATE=$(mktemp /tmp/koru-parity-parallel.XXXXXX)
 
 cd "$REPO_ROOT" || exit 1
 

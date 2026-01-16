@@ -1,0 +1,37 @@
+// TEST: Auto-synthesized proc for phantom state transitions
+//
+// The core use case: state transitions where only the phantom type changes.
+// The proc just passes through the pointer - zero runtime cost.
+
+const std = @import("std");
+
+const Resource = struct { value: i32 };
+
+// Create resource - has a proc (does real work)
+~pub event create { value: i32 }
+| created { r: *Resource[state_a!] }
+
+~proc create {
+    const r = std.heap.page_allocator.create(Resource) catch unreachable;
+    r.* = Resource{ .value = value };
+    return .{ .created = .{ .r = r } };
+}
+
+// Transition from state_a to state_b - NO PROC NEEDED
+// Input and output have same shape (r: *Resource), just different phantom
+// Compiler should synthesize: return .{ .transitioned = .{ .r = r } };
+~pub event transition { r: *Resource[!state_a] }
+| transitioned { r: *Resource[state_b!] }
+
+// Cleanup state_b - has a proc (does real work)
+~pub event cleanup { r: *Resource[!state_b] }
+
+~proc cleanup {
+    std.debug.print("cleaned up resource with value {d}\n", .{r.value});
+    std.heap.page_allocator.destroy(r);
+}
+
+// Test it
+~create(value: 99)
+| created c |> transition(r: c.r)
+    | transitioned t |> cleanup(r: t.r)

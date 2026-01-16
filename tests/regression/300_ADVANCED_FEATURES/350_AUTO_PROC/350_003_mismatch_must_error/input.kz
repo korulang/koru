@@ -1,0 +1,16 @@
+// TEST: Auto-proc synthesis must fail when shapes don't match
+//
+// MUST_FAIL: Missing proc
+//
+// When input/output don't match, the compiler cannot synthesize a proc.
+// This event has different field names - no auto-synthesis possible.
+
+~import "$std/io"
+
+// Input has 'input_val', output has 'output_val' - MISMATCH
+~pub event mismatched { input_val: i32 }
+| done { output_val: i32 }
+
+// This should fail - no proc and can't synthesize
+~mismatched(input_val: 42)
+| done d |> std.io:print.ln("should not reach here")
