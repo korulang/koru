@@ -1,0 +1,37 @@
+// Test: [!] annotation marks default discharge for ambiguous cases
+//
+// When multiple events can discharge an obligation, auto-discharge
+// fails with "ambiguous". The [!] annotation marks which one to use.
+
+~import "$std/io"
+
+const std = @import("std");
+
+const File = struct { handle: i32, dirty: bool };
+
+~event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42, .dirty = false };
+    return .{ .opened = .{ .file = f } };
+}
+
+// Two discharge options - [!] marks the default
+~[!]event close { file: *File[!opened] }
+
+~proc close {
+    std.heap.page_allocator.destroy(file);
+}
+
+~event flush_close { file: *File[!opened] }
+
+~proc flush_close {
+    std.debug.print("flushing...\n", .{});
+    std.heap.page_allocator.destroy(file);
+}
+
+// This flow doesn't explicitly discharge - auto-discharge should use close (the [!] one)
+~open(path: "test.txt")
+| opened _ |> _

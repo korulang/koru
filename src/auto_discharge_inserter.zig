@@ -35,6 +35,7 @@ pub const AutoDischargeInserter = struct {
         qualified_name: []const u8,
         event_decl: *const ast.EventDecl,
         field_name: []const u8,
+        is_default: bool, // Has [!] annotation - preferred for auto-discharge
     };
 
     /// Check if a continuation has @scope annotation (marks scope boundary)
@@ -959,34 +960,34 @@ pub const AutoDischargeInserter = struct {
                 const disposals = try self.findDisposalEvents(info.phantom_state);
                 defer self.allocator.free(disposals);
 
-                if (disposals.len == 0) {
-                    try self.reporter.addError(
-                        .KORU030,
-                        flow.location.line,
-                        flow.location.column,
-                        "No disposal event found for resource '{s}' with state '{s}'.",
-                        .{ binding_path, info.phantom_state },
-                    );
-                    return error.ValidationFailed;
-                } else if (disposals.len > 1) {
-                    var options_buf: [1024]u8 = undefined;
-                    var fbs = std.io.fixedBufferStream(&options_buf);
-                    for (disposals, 0..) |d, i| {
-                        if (i > 0) try fbs.writer().writeAll(", ");
-                        try fbs.writer().writeAll(d.qualified_name);
+                // Use selectDisposal to handle [!] default annotation
+                const disposal = selectDisposal(disposals) orelse {
+                    // Ambiguous or no disposal found
+                    if (disposals.len == 0) {
+                        try self.reporter.addError(
+                            .KORU030,
+                            flow.location.line,
+                            flow.location.column,
+                            "No disposal event found for resource '{s}' with state '{s}'.",
+                            .{ binding_path, info.phantom_state },
+                        );
+                    } else {
+                        var options_buf: [1024]u8 = undefined;
+                        var fbs = std.io.fixedBufferStream(&options_buf);
+                        for (disposals, 0..) |d, i| {
+                            if (i > 0) try fbs.writer().writeAll(", ");
+                            try fbs.writer().writeAll(d.qualified_name);
+                        }
+                        try self.reporter.addError(
+                            .KORU030,
+                            flow.location.line,
+                            flow.location.column,
+                            "Multiple disposal options for resource '{s}': {s}. Mark one with [!] or be explicit.",
+                            .{ binding_path, fbs.getWritten() },
+                        );
                     }
-                    try self.reporter.addError(
-                        .KORU030,
-                        flow.location.line,
-                        flow.location.column,
-                        "Multiple disposal options for resource '{s}': {s}.",
-                        .{ binding_path, fbs.getWritten() },
-                    );
                     return error.ValidationFailed;
-                }
-
-                // Insert the disposal - this requires finding and replacing the continuation in the AST
-                const disposal = disposals[0];
+                };
 
                 // Emit warning about auto-discharge insertion (only in warn mode)
                 if (self.warn_mode) {
@@ -1119,36 +1120,34 @@ pub const AutoDischargeInserter = struct {
             const disposals = try self.findDisposalEvents(info.phantom_state);
             defer self.allocator.free(disposals);
 
-            if (disposals.len == 0) {
-                // Error: no disposal event found
-                try self.reporter.addError(
-                    .KORU030,
-                    flow.location.line,
-                    flow.location.column,
-                    "No disposal event found for resource '{s}' with state '{s}'. Library must define an event with [!{s}] parameter.",
-                    .{ binding_path, info.phantom_state, info.phantom_state },
-                );
-                return error.ValidationFailed;
-            } else if (disposals.len > 1) {
-                // Error: multiple disposal options
-                var options_buf: [1024]u8 = undefined;
-                var fbs = std.io.fixedBufferStream(&options_buf);
-                for (disposals, 0..) |d, i| {
-                    if (i > 0) try fbs.writer().writeAll(", ");
-                    try fbs.writer().writeAll(d.qualified_name);
+            // Use selectDisposal to handle [!] default annotation
+            const disposal = selectDisposal(disposals) orelse {
+                // Ambiguous or no disposal found
+                if (disposals.len == 0) {
+                    try self.reporter.addError(
+                        .KORU030,
+                        flow.location.line,
+                        flow.location.column,
+                        "No disposal event found for resource '{s}' with state '{s}'. Library must define an event with [!{s}] parameter.",
+                        .{ binding_path, info.phantom_state, info.phantom_state },
+                    );
+                } else {
+                    var options_buf: [1024]u8 = undefined;
+                    var fbs = std.io.fixedBufferStream(&options_buf);
+                    for (disposals, 0..) |d, i| {
+                        if (i > 0) try fbs.writer().writeAll(", ");
+                        try fbs.writer().writeAll(d.qualified_name);
+                    }
+                    try self.reporter.addError(
+                        .KORU030,
+                        flow.location.line,
+                        flow.location.column,
+                        "Multiple disposal options for resource '{s}': {s}. Mark one with [!] or be explicit.",
+                        .{ binding_path, fbs.getWritten() },
+                    );
                 }
-                try self.reporter.addError(
-                    .KORU030,
-                    flow.location.line,
-                    flow.location.column,
-                    "Multiple disposal options for resource '{s}': {s}. Be explicit about which to use.",
-                    .{ binding_path, fbs.getWritten() },
-                );
                 return error.ValidationFailed;
-            }
-
-            // Exactly one disposal - insert it!
-            const disposal = disposals[0];
+            };
 
             // Emit warning about auto-discharge insertion (only in warn mode)
             if (self.warn_mode) {
@@ -1191,6 +1190,42 @@ pub const AutoDischargeInserter = struct {
         return .{ .transformed = false, .program = program };
     }
 
+    /// Check if an event has the [!] annotation (marks it as default for auto-discharge)
+    fn eventHasDefaultAnnotation(event_decl: *const ast.EventDecl) bool {
+        for (event_decl.annotations) |ann| {
+            if (std.mem.eql(u8, ann, "!")) return true;
+        }
+        return false;
+    }
+
+    /// Select the disposal to use from a list of candidates
+    /// Returns the single disposal if unambiguous, or null if ambiguous/none
+    /// Selection logic:
+    /// - 1 disposal → use it
+    /// - Multiple disposals → filter to [!] annotated ones
+    ///   - 1 default → use it
+    ///   - 0 or >1 defaults → ambiguous (return null)
+    fn selectDisposal(disposals: []const DisposalEvent) ?DisposalEvent {
+        if (disposals.len == 0) return null;
+        if (disposals.len == 1) return disposals[0];
+
+        // Multiple disposals - look for [!] default
+        var default_count: usize = 0;
+        var default_disposal: ?DisposalEvent = null;
+        for (disposals) |d| {
+            if (d.is_default) {
+                default_count += 1;
+                default_disposal = d;
+            }
+        }
+
+        // Exactly one default among multiple options
+        if (default_count == 1) return default_disposal;
+
+        // 0 or >1 defaults = ambiguous
+        return null;
+    }
+
     /// Find all events that can dispose a given phantom state
     fn findDisposalEvents(self: *AutoDischargeInserter, phantom_state: []const u8) ![]DisposalEvent {
         var results = try std.ArrayList(DisposalEvent).initCapacity(self.allocator, 4);
@@ -1205,6 +1240,7 @@ pub const AutoDischargeInserter = struct {
         var iter = self.event_map.iterator();
         while (iter.next()) |entry| {
             const event_decl = entry.value_ptr.decl;
+            const is_default = eventHasDefaultAnnotation(event_decl);
 
             for (event_decl.input.fields) |field| {
                 if (field.phantom) |field_phantom| {
@@ -1228,6 +1264,7 @@ pub const AutoDischargeInserter = struct {
                                         .qualified_name = try self.allocator.dupe(u8, entry.key_ptr.*),
                                         .event_decl = event_decl,
                                         .field_name = try self.allocator.dupe(u8, field.name),
+                                        .is_default = is_default,
                                     });
                                 }
                             }
@@ -1248,6 +1285,7 @@ pub const AutoDischargeInserter = struct {
                                             .qualified_name = try self.allocator.dupe(u8, entry.key_ptr.*),
                                             .event_decl = event_decl,
                                             .field_name = try self.allocator.dupe(u8, field.name),
+                                            .is_default = is_default,
                                         });
                                         break; // Found a match, don't add duplicates
                                     }

@@ -1,0 +1,36 @@
+// TEST: Multiple disposal options without [!] should error
+//
+// When multiple events can discharge an obligation and NONE have [!],
+// the compiler must error - it can't guess which one to use.
+
+~import "$std/io"
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+~event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+// Two discharge options - NEITHER has [!] = ambiguous!
+~event close { file: *File[!opened] }
+
+~proc close {
+    std.heap.page_allocator.destroy(file);
+}
+
+~event flush_close { file: *File[!opened] }
+
+~proc flush_close {
+    std.heap.page_allocator.destroy(file);
+}
+
+// This should FAIL - auto-discharge can't choose
+~open(path: "test.txt")
+| opened _ |> _
