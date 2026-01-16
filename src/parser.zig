@@ -3928,10 +3928,12 @@ pub const Parser = struct {
 
             try flow_ast_continuations.append(self.allocator, flow_cont);
         }
-        
+
         // Now parse any output continuations after the }
-        const output_continuations = try self.parseContinuations(base_indent);
-        
+        // Use strict mode: only collect continuations MORE indented than base_indent
+        // This ensures sibling branches (at same indent) are NOT collected here
+        const output_continuations = try self.parseContinuationsWithMode(base_indent, true);
+
         // Combine: flow items first, then output continuations
         for (flow_ast_continuations.items) |cont| {
             try all_continuations.append(self.allocator, cont);
@@ -4044,7 +4046,9 @@ pub const Parser = struct {
         const source = source_buf[0..pos];
 
         // Now parse any output continuations after the }
-        const output_continuations = try self.parseContinuations(base_indent);
+        // Use strict mode: only collect continuations MORE indented than base_indent
+        // This ensures sibling branches (at same indent) are NOT collected here
+        const output_continuations = try self.parseContinuationsWithMode(base_indent, true);
 
         return .{
             .source = source,
@@ -4123,7 +4127,14 @@ pub const Parser = struct {
     }
 
     fn parseContinuations(self: *Parser, base_indent: usize) ![]ast.Continuation {
-        _ = base_indent;
+        return self.parseContinuationsWithMode(base_indent, false);
+    }
+
+    /// Parse continuations with optional strict indentation mode.
+    /// When require_more_indented is true, only collect continuations that are
+    /// MORE indented than base_indent (indent > base_indent). This is used after
+    /// Source blocks where sibling continuations should NOT be collected.
+    fn parseContinuationsWithMode(self: *Parser, base_indent: usize, require_more_indented: bool) ![]ast.Continuation {
         var continuations = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 8);
         errdefer {
             for (continuations.items) |*cont| {
@@ -4131,25 +4142,29 @@ pub const Parser = struct {
             }
             continuations.deinit(self.allocator);
         }
-        
+
         // Determine expected indent for direct children
         // If this is following a ~flow line at indent 0, children are at indent 0 or greater
         // If there's leading space, look for the first continuation to set the level
         var expected_indent: ?usize = null;
-        
+
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
-            
+
             // Check if this is a continuation
             if (!lexer.isContinuationLine(line)) break;
-            
+
             const indent = lexer.getIndent(line);
-            
+
+            // In strict mode (after Source block), only collect continuations MORE indented than base
+            // This ensures sibling continuations at the same level are NOT collected
+            if (require_more_indented and indent <= base_indent) break;
+
             // Set expected indent from first continuation if not set
             if (expected_indent == null) {
                 expected_indent = indent;
             }
-            
+
             // Only take continuations at the expected level
             if (indent != expected_indent.?) break;
             
@@ -4656,8 +4671,8 @@ pub const Parser = struct {
                         }
                     }
 
-                    // Add this line to our content
-                    try rest_buf.appendSlice(self.allocator, " ");
+                    // Add this line to our content (preserve newlines for Source blocks!)
+                    try rest_buf.appendSlice(self.allocator, "\n");
                     try rest_buf.appendSlice(self.allocator, next_trimmed);
                     self.current += 1;
 
@@ -4721,7 +4736,7 @@ pub const Parser = struct {
 
             // After collecting multi-line Source block, parse the event's output branches
             // The cursor is now past the }, pointing at lines like | row |> ...
-            // These are output branches of the Source block event, not siblings!
+            // Only collect continuations MORE indented than this branch - siblings stay at parent level
             if (is_multiline_source_block) {
                 // Push continuation context so Source blocks can capture the binding
                 try self.context_stack.append(self.allocator, .{
@@ -4732,7 +4747,8 @@ pub const Parser = struct {
                 });
                 defer _ = self.context_stack.pop();
 
-                const source_block_continuations = try self.parseContinuations(indent);
+                // Use strict mode: only collect continuations MORE indented than this branch
+                const source_block_continuations = try self.parseContinuationsWithMode(indent, true);
                 const steps_inner = try self.parsePipelineSteps(full_rest);
                 defer self.allocator.free(steps_inner);
                 if (steps_inner.len > 0) {
