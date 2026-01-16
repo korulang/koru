@@ -594,12 +594,15 @@ pub const AutoDischargeInserter = struct {
                 if (result.transformed) return result;
             }
 
-            // Handle conditional nodes - recurse into branches
+            // Handle conditional nodes - recurse into branches WITHOUT cloning
+            // Conditionals run exactly one branch, so obligation clearing in any branch
+            // should propagate to the parent context (use checkForeachBranchContinuation
+            // which doesn't clone, unlike checkContinuation which does)
             if (node == .conditional) {
                 const cond = &node.conditional;
                 for (cond.branches) |*branch| {
                     for (branch.body) |*body_cont| {
-                        const result = try self.checkContinuation(body_cont, event_decl, module_name, &context, program, flow);
+                        const result = try self.checkForeachBranchContinuation(body_cont, &context, program, flow, module_name);
                         if (result.transformed) return result;
                     }
                 }
@@ -707,30 +710,37 @@ pub const AutoDischargeInserter = struct {
             // Check for @scope annotation (replaces old "each" branch name check)
             const is_scope_boundary = branchHasScope(branch);
 
-            // Clone context and set up scope for this branch
-            var branch_context = try parent_context.clone(self.allocator);
-            defer branch_context.deinit();
-
             if (is_scope_boundary) {
-                // Enter a new repeating scope for branches with @scope (runs N times for loops)
+                // Scoped branch (like "each") - clone context and enter new scope
+                // Obligations cleared here don't propagate to parent (each iteration is independent)
+                var branch_context = try parent_context.clone(self.allocator);
+                defer branch_context.deinit();
                 branch_context.enterScope(true);
-            }
-            // Note: branches without @scope stay at parent scope and is_repeating = false
-            // (unless parent was already repeating, which is inherited via clone)
 
-            // Process continuations in this branch
-            for (branch.body) |*body_cont| {
-                // We need a dummy event_decl for the body - use the flow's event
-                // or create a synthetic one. For now, use a placeholder approach
-                // where we look up events for any invocations we encounter.
-                const result = try self.checkForeachBranchContinuation(
-                    body_cont,
-                    &branch_context,
-                    program,
-                    flow,
-                    module_name,
-                );
-                if (result.transformed) return result;
+                // Process continuations in this branch
+                for (branch.body) |*body_cont| {
+                    const result = try self.checkForeachBranchContinuation(
+                        body_cont,
+                        &branch_context,
+                        program,
+                        flow,
+                        module_name,
+                    );
+                    if (result.transformed) return result;
+                }
+            } else {
+                // Non-scoped branch (like "done") - use parent context directly
+                // Obligations cleared here DO propagate to parent (runs once after loop)
+                for (branch.body) |*body_cont| {
+                    const result = try self.checkForeachBranchContinuation(
+                        body_cont,
+                        parent_context,
+                        program,
+                        flow,
+                        module_name,
+                    );
+                    if (result.transformed) return result;
+                }
             }
         }
 
@@ -738,6 +748,7 @@ pub const AutoDischargeInserter = struct {
     }
 
     /// Check a continuation inside a foreach branch (no event_decl binding tracking)
+    /// If use_parent_directly is true, modifications affect parent_context (for non-scoped branches)
     fn checkForeachBranchContinuation(
         self: *AutoDischargeInserter,
         cont: *const ast.Continuation,
@@ -746,9 +757,8 @@ pub const AutoDischargeInserter = struct {
         flow: *const ast.Flow,
         module_name: []const u8,
     ) RecursiveError!TransformResult {
-        // Clone context for this continuation
-        var context = try parent_context.clone(self.allocator);
-        defer context.deinit();
+        // Use parent context directly - caller is responsible for cloning if needed
+        const context = parent_context;
 
         // Handle discard binding (_) - synthesize a real binding name
         // This must happen BEFORE we process the continuation so the binding can be used
@@ -830,14 +840,14 @@ pub const AutoDischargeInserter = struct {
 
                     if (current_scope_count > 0) {
                         // We have current-scope obligations to dispose
-                        return try self.insertDisposalsInForeach(cont, &context, program, flow);
+                        return try self.insertDisposalsInForeach(cont, context, program, flow);
                     }
                     // Outer-scope obligations exist but not current-scope ones
                     // In a repeating context, this is OK - they'll be handled at `done`
                     // In a non-repeating context, they should be disposed here
                     if (!context.is_repeating) {
                         // Non-repeating: dispose all remaining obligations
-                        return try self.insertDisposalsInForeach(cont, &context, program, flow);
+                        return try self.insertDisposalsInForeach(cont, context, program, flow);
                     }
                     // Repeating: outer obligations will flow through to `done`
                 }
@@ -846,7 +856,7 @@ pub const AutoDischargeInserter = struct {
             // Handle invocations - look up event and check for obligation satisfaction + binding creation
             if (node == .invocation) {
                 const invocation = &node.invocation;
-                try self.checkInvocationSatisfiesObligations(&context, invocation, module_name, flow);
+                try self.checkInvocationSatisfiesObligations(context, invocation, module_name, flow);
 
                 // Also add any bindings from this invocation's continuations
                 const inv_event_name = try self.pathToString(invocation.path);
@@ -891,14 +901,14 @@ pub const AutoDischargeInserter = struct {
                             }
                         }
 
-                        const result = try self.checkForeachBranchContinuation(nested, &context, program, flow, info.module_name);
+                        const result = try self.checkForeachBranchContinuation(nested, context, program, flow, info.module_name);
                         if (result.transformed) return result;
                     }
                 }
                 // If event not found, still recurse into continuations
                 else {
                     for (cont.continuations) |*nested| {
-                        const result = try self.checkForeachBranchContinuation(nested, &context, program, flow, module_name);
+                        const result = try self.checkForeachBranchContinuation(nested, context, program, flow, module_name);
                         if (result.transformed) return result;
                     }
                 }
@@ -908,7 +918,7 @@ pub const AutoDischargeInserter = struct {
 
             // Handle nested foreach
             if (node == .foreach) {
-                const result = try self.checkForeachNode(node.foreach.branches, &context, program, flow, module_name);
+                const result = try self.checkForeachNode(node.foreach.branches, context, program, flow, module_name);
                 if (result.transformed) return result;
             }
 
@@ -917,7 +927,7 @@ pub const AutoDischargeInserter = struct {
                 const cond = &node.conditional;
                 for (cond.branches) |*branch| {
                     for (branch.body) |*body_cont| {
-                        const result = try self.checkForeachBranchContinuation(body_cont, &context, program, flow, module_name);
+                        const result = try self.checkForeachBranchContinuation(body_cont, context, program, flow, module_name);
                         if (result.transformed) return result;
                     }
                 }
@@ -928,7 +938,7 @@ pub const AutoDischargeInserter = struct {
         const already_processed_continuations = if (cont.node) |n| n == .invocation else false;
         if (!already_processed_continuations) {
             for (cont.continuations) |*nested| {
-                const result = try self.checkForeachBranchContinuation(nested, &context, program, flow, module_name);
+                const result = try self.checkForeachBranchContinuation(nested, context, program, flow, module_name);
                 if (result.transformed) return result;
             }
         }
@@ -953,11 +963,11 @@ pub const AutoDischargeInserter = struct {
 
                 if (current_scope_count > 0) {
                     // We have current-scope obligations at end of pipeline - need to dispose
-                    return try self.insertDisposalsInForeach(cont, &context, program, flow);
+                    return try self.insertDisposalsInForeach(cont, context, program, flow);
                 }
                 // Outer-scope obligations in repeating context will flow to `done`
                 if (!context.is_repeating) {
-                    return try self.insertDisposalsInForeach(cont, &context, program, flow);
+                    return try self.insertDisposalsInForeach(cont, context, program, flow);
                 }
             }
         }

@@ -4770,13 +4770,30 @@ fn emitStep(
         },
         .foreach => |fe| {
             // Emit for loop with proper AST body
-            const raw_binding = ast.NamedBranch.getBinding(fe.branches, "each") orelse "_";
-            const each_body = ast.NamedBranch.getBody(fe.branches, "each");
-            const done_body = ast.NamedBranch.getBody(fe.branches, "done");
+            // Iterate over branches to find loop body (has @scope) vs post-loop branches
+            var loop_branch: ?*const ast.NamedBranch = null;
+            var post_loop_branches = std.ArrayListUnmanaged(*const ast.NamedBranch){};
+            defer post_loop_branches.deinit(ctx.allocator);
+
+            for (fe.branches) |*branch| {
+                // Branch with @scope annotation is the loop body (runs N times)
+                const has_scope = for (branch.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "@scope")) break true;
+                } else false;
+
+                if (has_scope) {
+                    loop_branch = branch;
+                } else {
+                    try post_loop_branches.append(ctx.allocator, branch);
+                }
+            }
+
+            // Get loop binding (default to "_" if no loop branch)
+            const raw_binding = if (loop_branch) |lb| lb.binding orelse "_" else "_";
 
             // Generate unique binding for default names to avoid shadowing in nested loops
             var binding_buf: [64]u8 = undefined;
-            const each_binding = if (std.mem.eql(u8, raw_binding, "_")) blk: {
+            const loop_binding = if (std.mem.eql(u8, raw_binding, "_")) blk: {
                 const for_id = ctx.for_counter;
                 ctx.for_counter += 1;
                 break :blk std.fmt.bufPrint(&binding_buf, "__for_item_{d}", .{for_id}) catch raw_binding;
@@ -4786,42 +4803,46 @@ fn emitStep(
             try emitter.write("for (");
             try emitter.write(fe.iterable);
             try emitter.write(") |");
-            try emitter.write(each_binding);
+            try emitter.write(loop_binding);
             try emitter.write("| {\n");
             emitter.indent();
 
             // Suppress unused capture warning (binding might not be used in body)
             try emitter.writeIndent();
             try emitter.write("_ = &");
-            try emitter.write(each_binding);
+            try emitter.write(loop_binding);
             try emitter.write(";\n");
 
-            // Emit body continuations
-            // Process each continuation: emit its node, then handle nested continuations
+            // Emit loop body continuations
             var step_idx: usize = 0;
 
-            // Set result prefix to "loop_result_" for nested continuations inside the loop
-            const saved_prefix = ctx.result_prefix;
-            ctx.result_prefix = "loop_result_";
-            defer ctx.result_prefix = saved_prefix;
+            if (loop_branch) |lb| {
+                // Set result prefix based on branch name for nested continuations
+                var prefix_buf: [64]u8 = undefined;
+                const branch_prefix = std.fmt.bufPrint(&prefix_buf, "{s}_result_", .{lb.name}) catch "loop_result_";
 
-            for (each_body) |*cont| {
-                if (cont.node) |node| {
-                    var result_buf: [64]u8 = undefined;
-                    const inner_result = std.fmt.bufPrint(&result_buf, "loop_result_{d}", .{step_idx}) catch "_";
-                    try emitStep(emitter, ctx, &node, inner_result);
-                    // Suppress unused result
-                    if (node == .invocation) {
-                        try emitter.writeIndent();
-                        try emitter.write("_ = &");
-                        try emitter.write(inner_result);
-                        try emitter.write(";\n");
-                    }
-                    step_idx += 1;
+                const saved_prefix = ctx.result_prefix;
+                ctx.result_prefix = branch_prefix;
+                defer ctx.result_prefix = saved_prefix;
 
-                    // Handle nested continuations (e.g., | result r |> ...)
-                    if (cont.continuations.len > 0) {
-                        try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
+                for (lb.body) |*cont| {
+                    if (cont.node) |node| {
+                        var result_buf: [64]u8 = undefined;
+                        const inner_result = std.fmt.bufPrint(&result_buf, "{s}{d}", .{ branch_prefix, step_idx }) catch "_";
+                        try emitStep(emitter, ctx, &node, inner_result);
+                        // Suppress unused result
+                        if (node == .invocation) {
+                            try emitter.writeIndent();
+                            try emitter.write("_ = &");
+                            try emitter.write(inner_result);
+                            try emitter.write(";\n");
+                        }
+                        step_idx += 1;
+
+                        // Handle nested continuations (e.g., | result r |> ...)
+                        if (cont.continuations.len > 0) {
+                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
+                        }
                     }
                 }
             }
@@ -4830,25 +4851,34 @@ fn emitStep(
             try emitter.writeIndent();
             try emitter.write("}\n");
 
-            // Emit done_body after the loop
-            for (done_body) |*cont| {
-                if (cont.node) |node| {
-                    // If in_handler and the node is a branch_constructor, use "_" to trigger return
-                    // This handles subflow handlers like: ~my_event = for(...) | done |> result { ... }
-                    const is_return_node = ctx.in_handler and node == .branch_constructor;
-                    var result_buf: [64]u8 = undefined;
-                    const inner_result = if (is_return_node) "_" else std.fmt.bufPrint(&result_buf, "done_result_{d}", .{step_idx}) catch "_";
-                    try emitStep(emitter, ctx, &node, inner_result);
-                    if (node == .invocation) {
-                        try emitter.writeIndent();
-                        try emitter.write("_ = &");
-                        try emitter.write(inner_result);
-                        try emitter.write(";\n");
-                    }
-                    step_idx += 1;
+            // Emit post-loop branches (e.g., done)
+            for (post_loop_branches.items) |branch| {
+                // Set result prefix based on branch name
+                var prefix_buf: [64]u8 = undefined;
+                const branch_prefix = std.fmt.bufPrint(&prefix_buf, "{s}_result_", .{branch.name}) catch "post_result_";
 
-                    if (cont.continuations.len > 0) {
-                        try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
+                const saved_prefix = ctx.result_prefix;
+                ctx.result_prefix = branch_prefix;
+                defer ctx.result_prefix = saved_prefix;
+
+                for (branch.body) |*cont| {
+                    if (cont.node) |node| {
+                        // If in_handler and the node is a branch_constructor, use "_" to trigger return
+                        const is_return_node = ctx.in_handler and node == .branch_constructor;
+                        var result_buf: [64]u8 = undefined;
+                        const inner_result = if (is_return_node) "_" else std.fmt.bufPrint(&result_buf, "{s}{d}", .{ branch_prefix, step_idx }) catch "_";
+                        try emitStep(emitter, ctx, &node, inner_result);
+                        if (node == .invocation) {
+                            try emitter.writeIndent();
+                            try emitter.write("_ = &");
+                            try emitter.write(inner_result);
+                            try emitter.write(";\n");
+                        }
+                        step_idx += 1;
+
+                        if (cont.continuations.len > 0) {
+                            try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
+                        }
                     }
                 }
             }

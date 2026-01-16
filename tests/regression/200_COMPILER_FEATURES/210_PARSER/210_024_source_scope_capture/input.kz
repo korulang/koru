@@ -90,9 +90,24 @@ const std = @import("std");
         }
 
         // Regular character - copy to format string
-        format_buf[format_len] = template[i];
-        format_len += 1;
+        // Normalize whitespace: convert newlines/tabs to spaces, collapse multiple spaces
+        const c = template[i];
+        if (c == '\n' or c == '\r' or c == '\t' or c == ' ') {
+            // Only add space if we have content and last char wasn't already a space
+            if (format_len > 0 and format_buf[format_len - 1] != ' ') {
+                format_buf[format_len] = ' ';
+                format_len += 1;
+            }
+        } else {
+            format_buf[format_len] = c;
+            format_len += 1;
+        }
         i += 1;
+    }
+
+    // Trim trailing whitespace
+    while (format_len > 0 and format_buf[format_len - 1] == ' ') {
+        format_len -= 1;
     }
 
     // MOVED: Format string finalization will happen AFTER we know the field types
