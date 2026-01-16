@@ -1,0 +1,2 @@
+Got resource 42
+released

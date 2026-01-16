@@ -650,6 +650,37 @@ pub const AutoDischargeInserter = struct {
             }
         }
 
+        // CRITICAL: If we reach end of a pipeline (no nested continuations) and this isn't
+        // already a terminator, treat as implicit terminator and check obligations.
+        // This handles void event chains like: ~acquire() | ok r |> print.ln("...")
+        // where the flow ends without explicit `|> _`
+        if (cont.continuations.len == 0) {
+            const has_explicit_terminator = if (cont.node) |node|
+                (node == .terminal or node == .branch_constructor)
+            else
+                false;
+
+            if (!has_explicit_terminator and context.hasObligations()) {
+                // Count how many obligations are from current scope
+                var current_scope_count: u32 = 0;
+                var obl_iter = context.obligations();
+                while (obl_iter.next()) |entry| {
+                    if (entry.value_ptr.scope_depth == context.scope_depth) {
+                        current_scope_count += 1;
+                    }
+                }
+
+                if (current_scope_count > 0) {
+                    // We have current-scope obligations at end of pipeline - need to dispose
+                    return try self.insertDisposals(cont, &context, program, flow, event_decl, module_name);
+                }
+                // Outer-scope obligations in repeating context will flow to `done`
+                if (!context.is_repeating) {
+                    return try self.insertDisposals(cont, &context, program, flow, event_decl, module_name);
+                }
+            }
+        }
+
         return .{ .transformed = false, .program = program };
     }
 
@@ -1300,7 +1331,10 @@ pub const AutoDischargeInserter = struct {
         return results.toOwnedSlice(self.allocator);
     }
 
-    /// Create a new continuation with disposal call inserted before terminal
+    /// Create a new continuation with disposal call inserted at the end
+    /// Handles two cases:
+    /// 1. Original node is a terminator → insert disposal before terminal
+    /// 2. Original node is an invocation (void event) → append disposal after invocation
     fn createDisposalContinuation(
         self: *AutoDischargeInserter,
         original: *const ast.Continuation,
@@ -1333,57 +1367,130 @@ pub const AutoDischargeInserter = struct {
             .annotations = &[_][]const u8{},
         };
 
-        // Handle void events (no branches) vs events with branches
-        const is_void_event = disposal.event_decl.branches.len == 0;
+        // Check if original node is a terminator or an invocation
+        const original_is_terminator = if (original.node) |node|
+            (node == .terminal or node == .branch_constructor)
+        else
+            true; // null node treated as implicit terminal
 
-        var after_disposal_cont: []ast.Continuation = undefined;
-        if (is_void_event) {
-            // Void event - use empty branch (void continuation)
-            after_disposal_cont = try self.allocator.alloc(ast.Continuation, 1);
-            after_disposal_cont[0] = .{
-                .branch = "",  // Empty branch = void continuation
-                .binding = null,
-                .binding_annotations = &[_][]const u8{},
-                .condition = null,
-                .node = original.node,  // Preserve original: .terminal OR .branch_constructor
-                .indent = original.indent + 1,
-                .continuations = &[_]ast.Continuation{},
+        // Handle disposal event being void (no branches) vs having branches
+        const disposal_is_void = disposal.event_decl.branches.len == 0;
+
+        if (original_is_terminator) {
+            // Case 1: Original is a terminator - insert disposal BEFORE terminal
+            // Result: disposal() |> _
+            var after_disposal_cont: []ast.Continuation = undefined;
+            if (disposal_is_void) {
+                // Void disposal event - use empty branch (void continuation)
+                after_disposal_cont = try self.allocator.alloc(ast.Continuation, 1);
+                after_disposal_cont[0] = .{
+                    .branch = "", // Empty branch = void continuation
+                    .binding = null,
+                    .binding_annotations = &[_][]const u8{},
+                    .condition = null,
+                    .node = original.node, // Preserve original terminal
+                    .indent = original.indent + 1,
+                    .continuations = &[_]ast.Continuation{},
+                    .location = original.location,
+                };
+            } else {
+                // Disposal event with branches - use first branch name
+                var disposal_branch: []const u8 = "done";
+                for (disposal.event_decl.branches) |branch| {
+                    disposal_branch = branch.name;
+                    break;
+                }
+                after_disposal_cont = try self.allocator.alloc(ast.Continuation, 1);
+                after_disposal_cont[0] = .{
+                    .branch = try self.allocator.dupe(u8, disposal_branch),
+                    .binding = try self.allocator.dupe(u8, "_"),
+                    .binding_annotations = &[_][]const u8{},
+                    .condition = null,
+                    .node = original.node, // Preserve original terminal
+                    .indent = original.indent + 1,
+                    .continuations = &[_]ast.Continuation{},
+                    .location = original.location,
+                };
+            }
+
+            // Return with disposal as the node
+            return .{
+                .branch = try self.allocator.dupe(u8, original.branch),
+                .binding = if (original.binding) |b| try self.allocator.dupe(u8, b) else null,
+                .binding_annotations = original.binding_annotations,
+                .condition = if (original.condition) |c| try self.allocator.dupe(u8, c) else null,
+                .node = .{ .invocation = disposal_invocation },
+                .indent = original.indent,
+                .continuations = after_disposal_cont,
                 .location = original.location,
             };
         } else {
-            // Event with branches - use first branch name
-            var disposal_branch: []const u8 = "done"; // default
-            for (disposal.event_decl.branches) |branch| {
-                disposal_branch = branch.name;
-                break;
-            }
+            // Case 2: Original is an invocation (void event chain)
+            // Need to: keep original invocation, append disposal after it
+            // Result: original_invocation() |> disposal() |> _
 
-            // Create continuation after disposal - preserve original node (terminal OR branch_constructor)
-            // Use "_" as binding to suppress unused capture warnings
-            after_disposal_cont = try self.allocator.alloc(ast.Continuation, 1);
-            after_disposal_cont[0] = .{
-                .branch = try self.allocator.dupe(u8, disposal_branch),
-                .binding = try self.allocator.dupe(u8, "_"),
+            // Create the terminal continuation (final step)
+            const terminal_cont = ast.Continuation{
+                .branch = "", // void continuation
+                .binding = null,
                 .binding_annotations = &[_][]const u8{},
                 .condition = null,
-                .node = original.node,  // Preserve original: .terminal OR .branch_constructor
-                .indent = original.indent + 1,
+                .node = .{ .terminal = {} },
+                .indent = original.indent + 2,
                 .continuations = &[_]ast.Continuation{},
                 .location = original.location,
             };
-        }
 
-        // Return modified continuation with invocation instead of original node
-        return .{
-            .branch = try self.allocator.dupe(u8, original.branch),
-            .binding = if (original.binding) |b| try self.allocator.dupe(u8, b) else null,
-            .binding_annotations = original.binding_annotations,
-            .condition = if (original.condition) |c| try self.allocator.dupe(u8, c) else null,
-            .node = .{ .invocation = disposal_invocation },
-            .indent = original.indent,
-            .continuations = after_disposal_cont,
-            .location = original.location,
-        };
+            // Create disposal continuation with terminal inside
+            var disposal_cont_children = try self.allocator.alloc(ast.Continuation, 1);
+            if (disposal_is_void) {
+                disposal_cont_children[0] = terminal_cont;
+            } else {
+                // Disposal with branches - wrap terminal in branch continuation
+                var disposal_branch: []const u8 = "done";
+                for (disposal.event_decl.branches) |branch| {
+                    disposal_branch = branch.name;
+                    break;
+                }
+                disposal_cont_children[0] = .{
+                    .branch = try self.allocator.dupe(u8, disposal_branch),
+                    .binding = try self.allocator.dupe(u8, "_"),
+                    .binding_annotations = &[_][]const u8{},
+                    .condition = null,
+                    .node = .{ .terminal = {} },
+                    .indent = original.indent + 2,
+                    .continuations = &[_]ast.Continuation{},
+                    .location = original.location,
+                };
+            }
+
+            const disposal_cont = ast.Continuation{
+                .branch = "", // void continuation after original invocation
+                .binding = null,
+                .binding_annotations = &[_][]const u8{},
+                .condition = null,
+                .node = .{ .invocation = disposal_invocation },
+                .indent = original.indent + 1,
+                .continuations = disposal_cont_children,
+                .location = original.location,
+            };
+
+            // Create new continuations array: [disposal_cont]
+            var new_continuations = try self.allocator.alloc(ast.Continuation, 1);
+            new_continuations[0] = disposal_cont;
+
+            // Return original invocation with disposal appended
+            return .{
+                .branch = try self.allocator.dupe(u8, original.branch),
+                .binding = if (original.binding) |b| try self.allocator.dupe(u8, b) else null,
+                .binding_annotations = original.binding_annotations,
+                .condition = if (original.condition) |c| try self.allocator.dupe(u8, c) else null,
+                .node = original.node, // Keep original invocation!
+                .indent = original.indent,
+                .continuations = new_continuations,
+                .location = original.location,
+            };
+        }
     }
 
     /// Replace a continuation in a flow

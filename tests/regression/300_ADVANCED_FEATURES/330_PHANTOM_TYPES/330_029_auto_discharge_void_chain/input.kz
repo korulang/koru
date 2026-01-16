@@ -1,0 +1,31 @@
+// TEST: Auto-discharge at end of void event chain (no explicit |> _)
+//
+// A flow that ends with a void event should trigger auto-discharge
+// without requiring an explicit `|> _` terminator.
+
+~import "$std/io"
+
+const std = @import("std");
+
+const Resource = struct { id: i32 };
+
+~event acquire {}
+| ok { res: *Resource[held!] }
+
+~proc acquire {
+    const r = std.heap.page_allocator.create(Resource) catch unreachable;
+    r.* = Resource{ .id = 42 };
+    return .{ .ok = .{ .res = r } };
+}
+
+~event release { res: *Resource[!held] }
+
+~proc release {
+    std.debug.print("released\n", .{});
+    std.heap.page_allocator.destroy(res);
+}
+
+// Flow ends with void event print.ln - NO explicit |> _
+// Auto-discharge should insert release() automatically
+~acquire()
+| ok r |> std.io:print.ln("Got resource {{ r.res.id }}")
