@@ -10,7 +10,7 @@
 // This tests that:
 // - Multiple obligations can coexist
 // - Each branch (then/else) must handle the transaction obligation
-// - Connection obligation auto-disposed at terminal in both branches
+// - Connection obligation auto-discharged at terminal in both branches
 
 ~import "$std/control"
 ~import "$app/db"

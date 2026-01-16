@@ -3,7 +3,7 @@
 // When a user writes `| opened _ |>`, this is an explicit discard.
 // Unlike named bindings, _ is NOT checked for usage (KORU100 exempt).
 //
-// The auto-dispose system will synthesize a binding (_auto_0) internally
+// The auto-discharge system will synthesize a binding (_auto_0) internally
 // so disposal calls can still reference the value.
 //
 // Expected: Compiles successfully

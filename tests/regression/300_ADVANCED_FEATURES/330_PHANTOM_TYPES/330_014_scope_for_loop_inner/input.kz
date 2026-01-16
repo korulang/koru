@@ -1,13 +1,13 @@
-// TEST: Scope - obligation INSIDE for-loop should auto-dispose per iteration
+// TEST: Scope - obligation INSIDE for-loop should auto-discharge per iteration
 // STATUS: IMPLEMENTED
 //
 // When an obligation is created INSIDE a for-loop's | each |> branch,
-// it should be auto-disposed at the end of EACH iteration.
+// it should be auto-discharged at the end of EACH iteration.
 //
 // Here: We open a file inside the loop, so each iteration should close it.
 // The [@scope] annotation on | each |> marks it as a scope boundary.
 //
-// Expected: Compiles and auto-disposes per iteration
+// Expected: Compiles and auto-discharges per iteration
 
 ~import "$std/control"
 ~import "$app/fs"

@@ -990,7 +990,7 @@ pub const AutoDischargeInserter = struct {
 
                 // Emit warning about auto-discharge insertion (only in warn mode)
                 if (self.warn_mode) {
-                    std.debug.print("warning[AUTO-DISPOSE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
+                    std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
                         disposal.qualified_name,
                         binding_path,
                         info.phantom_state,
@@ -1152,7 +1152,7 @@ pub const AutoDischargeInserter = struct {
 
             // Emit warning about auto-discharge insertion (only in warn mode)
             if (self.warn_mode) {
-                std.debug.print("warning[AUTO-DISPOSE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
+                std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
                     disposal.qualified_name,
                     binding_path,
                     info.phantom_state,

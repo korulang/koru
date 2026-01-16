@@ -1,3 +1,0 @@
-Opening file: test.txt
-Closing file (auto-disposed)
-Done!

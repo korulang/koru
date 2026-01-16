@@ -1,0 +1,17 @@
+// TEST: Auto-discharge disabled via --auto-discharge=disable flag
+//
+// When auto-discharge is disabled, the phantom semantic checker should
+// report KORU030 for unsatisfied cleanup obligations.
+//
+// This test verifies that:
+// 1. The --auto-discharge=disable flag works
+// 2. The phantom checker correctly catches obligations when not auto-discharged
+//
+// Expected: KORU030 error for unsatisfied obligation
+
+~import "$app/fs"
+
+// Open a file but don't close it
+// Without auto-discharge, this should error
+~app.fs:open(path: "test.txt")
+| opened _ |> _

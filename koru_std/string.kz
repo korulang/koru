@@ -17,7 +17,7 @@ pub const String = struct {
         return self.data;
     }
 
-    // Package-private - only auto-dispose calls this
+    // Package-private - only auto-discharge calls this
     fn deinit(self: String) void {
         self.allocator.free(self.data);
     }

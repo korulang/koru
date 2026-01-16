@@ -1,11 +1,11 @@
-// TEST: Scope - obligation OUTSIDE for-loop is auto-disposed in done branch
+// TEST: Scope - obligation OUTSIDE for-loop is auto-discharged in done branch
 // STATUS: IMPLEMENTED
 //
 // When an obligation is created OUTSIDE a for-loop:
-// - It CANNOT be auto-disposed inside the `each` branch (@scope)
-// - It CAN be auto-disposed in the `done` branch (no @scope)
+// - It CANNOT be auto-discharged inside the `each` branch (@scope)
+// - It CAN be auto-discharged in the `done` branch (no @scope)
 //
-// Here: We open a file BEFORE the loop, loop runs, then auto_dispose
+// Here: We open a file BEFORE the loop, loop runs, then auto_discharge
 // inserts close in the `done` branch. This is valid code.
 //
 // Expected: Compiles successfully - file is auto-closed after loop

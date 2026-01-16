@@ -6,7 +6,7 @@
 // DESIGN: "Hidden but overridable"
 // - fmt.blk: Uses page_allocator internally, user never thinks about it
 // - fmt.blk.with_allocator: Explicit control when needed
-// - Auto-dispose handles cleanup via phantom obligations
+// - Auto-discharge handles cleanup via phantom obligations
 
 ~[comptime|runtime]
 
@@ -46,7 +46,7 @@ pub const FormattedText = struct {
 //   | formatted f |> ... use f.text ...
 //
 // The FormattedText carries its allocator, so fmt.dealloc knows how to free.
-// Auto-dispose inserts fmt.dealloc automatically.
+// Auto-discharge inserts fmt.dealloc automatically.
 
 ~[comptime|transform]pub event fmt.blk {
     source: Source,

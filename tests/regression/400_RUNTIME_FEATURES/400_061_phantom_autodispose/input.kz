@@ -1,4 +1,4 @@
-// Test: Auto-dispose for phantom obligations
+// Test: Auto-discharge for phantom obligations
 //
 // Tests that the compiler automatically inserts cleanup
 // when [allocated!] obligation is not manually discharged
@@ -27,7 +27,7 @@ pub const Resource = struct {
 | destroyed
 
 ~proc destroy_resource {
-    std.debug.print("  Auto-dispose called!\n", .{});
+    std.debug.print("  Auto-discharge called!\n", .{});
     res.allocator.free(res.data);
     std.heap.page_allocator.destroy(res);
     return .{ .destroyed = .{} };
@@ -43,12 +43,12 @@ pub const Resource = struct {
 }
 
 // Test: Create resource, use it, but DON'T manually destroy
-// Auto-dispose should insert destroy_resource
+// Auto-discharge should insert destroy_resource
 ~std.io:print.ln("Test start")
 ~create_resource(name: "AutoDisposed")
 | created r |>
     use_resource(res: r)
     | used |> _
-    // Obligation [allocated!] should trigger auto-dispose here
+    // Obligation [allocated!] should trigger auto-discharge here
 
 ~std.io:print.ln("Test done")

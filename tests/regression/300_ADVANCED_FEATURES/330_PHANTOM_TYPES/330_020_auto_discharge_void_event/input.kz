@@ -1,0 +1,24 @@
+// TEST: Auto-discharge with void event chaining
+//
+// A void event has no branches - the flow just continues.
+// If we have an obligation and chain to a void event, auto-discharge
+// should still insert the disposal.
+//
+// Expected: Auto-discharge inserts close() before the void event
+
+~import "$app/fs"
+
+// Void event - no branches, just side effect
+~event log_done {}
+
+~proc log_done {
+    std.debug.print("Done!\n", .{});
+}
+
+const std = @import("std");
+
+// Open file, then chain to void event - obligation should be auto-discharged
+~app.fs:open(path: "test.txt")
+| opened _ |> log_done()
+
+pub fn main() void {}

@@ -151,7 +151,7 @@ pub const FlowChecker = struct {
 
     fn validateBindingUsage(self: *FlowChecker, cont: *const ast.Continuation) !void {
         // If this continuation has a binding (other than _ or _auto_*), check if it's used
-        // Bindings starting with _ are explicit discards or synthetic bindings from auto-dispose
+        // Bindings starting with _ are explicit discards or synthetic bindings from auto-discharge
         if (cont.binding) |binding| {
             if (!std.mem.startsWith(u8, binding, "_")) {
                 // In frontend mode, skip check if node is a [transform] invocation

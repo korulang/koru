@@ -229,7 +229,7 @@ pub const CompilerContext = struct {
     });
     ast_functional_module.addImport("ast", ast_module);
 
-    // Auto-dispose inserter - inserts disposal calls before terminators
+    // Auto-discharge inserter - inserts disposal calls before terminators
     const auto_discharge_inserter_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/auto_discharge_inserter.zig" },
         .target = target,
@@ -583,7 +583,7 @@ pub const CompilerContext = struct {
 
 ~compiler.coordinate.analysis =
     compiler.check.structure(ctx: ctx)
-    | continued c1 |> compiler.pass.auto_dispose(ctx: c1.ctx)
+    | continued c1 |> compiler.pass.auto_discharge(ctx: c1.ctx)
       | continued c2 |> compiler.check.flow(ctx: c2.ctx)
         | continued c3 |> compiler.check.phantom.semantic(ctx: c3.ctx)
           | continued c4 |> compiler.check.purity(ctx: c4.ctx)
@@ -1164,9 +1164,9 @@ const emitFlowWithMocks = struct {
 | continued { ctx: CompilerContext }
 | failed { ctx: CompilerContext, message: []const u8 }
 
-// Auto-dispose insertion - inserts disposal calls before terminators
+// Auto-discharge insertion - inserts disposal calls before terminators
 // Runs BEFORE phantom.semantic so checker validates the inserted calls
-~pub event compiler.pass.auto_dispose { ctx: CompilerContext }
+~pub event compiler.pass.auto_discharge { ctx: CompilerContext }
 | continued { ctx: CompilerContext }
 | failed { ctx: CompilerContext, message: []const u8 }
 
@@ -1842,31 +1842,31 @@ const joinPathAlloc = struct {
     return .{ .continued = .{ .ctx = mutable_ctx } };
 }
 
-// Auto-dispose inserter implementation
+// Auto-discharge inserter implementation
 // Inserts disposal calls before terminators when exactly one disposal option exists
 
-// Flags for auto-dispose control (co-located with implementation!)
+// Flags for auto-discharge control (co-located with implementation!)
 ~flags.declare {
-  "name": "auto-dispose=disable",
+  "name": "auto-discharge=disable",
   "description": "Disable automatic disposal insertion - phantom errors will fire for unsatisfied obligations",
   "type": "boolean"
 }
 
 ~flags.declare {
-  "name": "auto-dispose=warn",
-  "description": "Emit warnings when auto-dispose inserts disposal calls (for debugging obligation handling)",
+  "name": "auto-discharge=warn",
+  "description": "Emit warnings when auto-discharge inserts disposal calls (for debugging obligation handling)",
   "type": "boolean"
 }
 
-~proc compiler.pass.auto_dispose {
-    // Check if auto-dispose is disabled entirely
-    if (CompilerEnv.hasFlag("auto-dispose=disable")) {
-        // Skip auto-dispose pass - let phantom errors fire
+~proc compiler.pass.auto_discharge {
+    // Check if auto-discharge is disabled entirely
+    if (CompilerEnv.hasFlag("auto-discharge=disable")) {
+        // Skip auto-discharge pass - let phantom errors fire
         return .{ .continued = .{ .ctx = ctx } };
     }
 
-    // Check if warnings are enabled for auto-dispose
-    const warn_mode = CompilerEnv.hasFlag("auto-dispose=warn");
+    // Check if warnings are enabled for auto-discharge
+    const warn_mode = CompilerEnv.hasFlag("auto-discharge=warn");
 
     var mutable_ctx = ctx;
 
@@ -1876,7 +1876,7 @@ const joinPathAlloc = struct {
     // Create error reporter
     var reporter = errors_mod.ErrorReporter.init(
         std.heap.page_allocator,
-        "auto_dispose",
+        "auto_discharge",
         ""
     ) catch {
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
@@ -1888,13 +1888,13 @@ const joinPathAlloc = struct {
     defer reporter.deinit();
 
     // Create inserter with warn_mode flag
-    var inserter = auto_discharge_inserter.AutoDisposeInserter.init(
+    var inserter = auto_discharge_inserter.AutoDischargeInserter.init(
         std.heap.page_allocator,
         &reporter,
         warn_mode,
     ) catch {
         mutable_ctx.errors.append(mutable_ctx.allocator, .{
-            .message = "Failed to initialize auto-dispose inserter",
+            .message = "Failed to initialize auto-discharge inserter",
             .location = .{ .file = "compiler", .line = 0, .column = 0 },
         }) catch {};
         return .{ .continued = .{ .ctx = mutable_ctx } };
@@ -1924,8 +1924,8 @@ const joinPathAlloc = struct {
         }
 
         const err_msg = switch (err) {
-            error.ValidationFailed => "Auto-dispose failed (multiple disposal options or no disposal event)",
-            else => "Auto-dispose pass error",
+            error.ValidationFailed => "Auto-discharge failed (multiple disposal options or no disposal event)",
+            else => "Auto-discharge pass error",
         };
 
         return .{ .failed = .{ .ctx = mutable_ctx, .message = err_msg } };

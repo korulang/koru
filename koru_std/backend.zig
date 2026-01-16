@@ -1046,7 +1046,7 @@ pub const PROGRAM_AST = Program{
                             .condition = null,
                             .condition_expr = null,
                             .node =                             .{ .invocation = Invocation{
-                                .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"compiler", "pass", "auto_dispose"} },
+                                .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"compiler", "pass", "auto_discharge"} },
                                 .args = &[_]Arg{
                                     Arg{ .name = "ctx", .value = "c1.ctx", .source_value = null, .expression_value = null },
                                 },
@@ -1858,7 +1858,7 @@ pub const PROGRAM_AST = Program{
                                     .{ .host_line = .{ .content = "// Auto-dispose insertion - inserts disposal calls before terminators", .location = .{ .line = 678, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .host_line = .{ .content = "// Runs BEFORE phantom.semantic so checker validates the inserted calls", .location = .{ .line = 679, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
-                .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"compiler", "pass", "auto_dispose"} },
+                .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"compiler", "pass", "auto_discharge"} },
                 .input = Shape{ .fields = &[_]Field{
                     Field{ .name = "ctx", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                 } },
@@ -2705,14 +2705,14 @@ pub const PROGRAM_AST = Program{
             } },            
                                     .{ .host_line = .{ .content = "// Auto-dispose inserter implementation", .location = .{ .line = 1355, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .host_line = .{ .content = "// Inserts disposal calls before terminators when exactly one disposal option exists", .location = .{ .line = 1356, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Flags for auto-dispose control (co-located with implementation!)", .location = .{ .line = 1358, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Flags for auto-discharge control (co-located with implementation!)", .location = .{ .line = 1358, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .flow = Flow{
                 .invocation = Invocation{
                     .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"flags", "declare"} },
                     .args = &[_]Arg{
-                        Arg{ .name = "source", .value = "\"name\": \"auto-dispose=disable\",\n\"description\": \"Disable automatic disposal insertion - phantom errors will fire for unsatisfied obligations\",\n\"type\": \"boolean\"\n", .source_value = &Source{
+                        Arg{ .name = "source", .value = "\"name\": \"auto-discharge=disable\",\n\"description\": \"Disable automatic disposal insertion - phantom errors will fire for unsatisfied obligations\",\n\"type\": \"boolean\"\n", .source_value = &Source{
                             .text = 
-                                \\"name": "auto-dispose=disable",
+                                \\"name": "auto-discharge=disable",
                                 \\"description": "Disable automatic disposal insertion - phantom errors will fire for unsatisfied obligations",
                                 \\"type": "boolean"
                                 \\
@@ -2742,10 +2742,10 @@ pub const PROGRAM_AST = Program{
                 .invocation = Invocation{
                     .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"flags", "declare"} },
                     .args = &[_]Arg{
-                        Arg{ .name = "source", .value = "\"name\": \"auto-dispose=warn\",\n\"description\": \"Emit warnings when auto-dispose inserts disposal calls (for debugging obligation handling)\",\n\"type\": \"boolean\"\n", .source_value = &Source{
+                        Arg{ .name = "source", .value = "\"name\": \"auto-discharge=warn\",\n\"description\": \"Emit warnings when auto-discharge inserts disposal calls (for debugging obligation handling)\",\n\"type\": \"boolean\"\n", .source_value = &Source{
                             .text = 
-                                \\"name": "auto-dispose=warn",
-                                \\"description": "Emit warnings when auto-dispose inserts disposal calls (for debugging obligation handling)",
+                                \\"name": "auto-discharge=warn",
+                                \\"description": "Emit warnings when auto-discharge inserts disposal calls (for debugging obligation handling)",
                                 \\"type": "boolean"
                                 \\
                                 ,
@@ -2771,17 +2771,17 @@ pub const PROGRAM_AST = Program{
                 .module = "compiler",
             } },            
                                     .{ .proc_decl = ProcDecl{
-                .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"compiler", "pass", "auto_dispose"} },
+                .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"compiler", "pass", "auto_discharge"} },
                 .body = 
                     \\
-                    \\    // Check if auto-dispose is disabled entirely
-                    \\    if (CompilerEnv.hasFlag("auto-dispose=disable")) {
-                    \\        // Skip auto-dispose pass - let phantom errors fire
+                    \\    // Check if auto-discharge is disabled entirely
+                    \\    if (CompilerEnv.hasFlag("auto-discharge=disable")) {
+                    \\        // Skip auto-discharge pass - let phantom errors fire
                     \\        return .{ .continued = .{ .ctx = ctx } };
                     \\    }
                     \\
-                    \\    // Check if warnings are enabled for auto-dispose
-                    \\    const warn_mode = CompilerEnv.hasFlag("auto-dispose=warn");
+                    \\    // Check if warnings are enabled for auto-discharge
+                    \\    const warn_mode = CompilerEnv.hasFlag("auto-discharge=warn");
                     \\
                     \\    var mutable_ctx = ctx;
                     \\
@@ -2791,7 +2791,7 @@ pub const PROGRAM_AST = Program{
                     \\    // Create error reporter
                     \\    var reporter = errors_mod.ErrorReporter.init(
                     \\        std.heap.page_allocator,
-                    \\        "auto_dispose",
+                    \\        "auto_discharge",
                     \\        ""
                     \\    ) catch {
                     \\        mutable_ctx.errors.append(mutable_ctx.allocator, .{
@@ -2803,13 +2803,13 @@ pub const PROGRAM_AST = Program{
                     \\    defer reporter.deinit();
                     \\
                     \\    // Create inserter with warn_mode flag
-                    \\    var inserter = auto_discharge_inserter.AutoDisposeInserter.init(
+                    \\    var inserter = auto_discharge_inserter.AutoDischargeInserter.init(
                     \\        std.heap.page_allocator,
                     \\        &reporter,
                     \\        warn_mode,
                     \\    ) catch {
                     \\        mutable_ctx.errors.append(mutable_ctx.allocator, .{
-                    \\            .message = "Failed to initialize auto-dispose inserter",
+                    \\            .message = "Failed to initialize auto-discharge inserter",
                     \\            .location = .{ .file = "compiler", .line = 0, .column = 0 },
                     \\        }) catch {};
                     \\        return .{ .continued = .{ .ctx = mutable_ctx } };
@@ -6382,13 +6382,13 @@ const comptime_flow_thunks = struct {
     }
 
     fn flow_4() void {
-        const __thunk_result = backend_output.koru_std.compiler.flags_declare_event.handler(.{ .source = "\"name\": \"auto-dispose=disable\",\n\"description\": \"Disable automatic disposal insertion - phantom errors will fire for unsatisfied obligations\",\n\"type\": \"boolean\"\n" });
+        const __thunk_result = backend_output.koru_std.compiler.flags_declare_event.handler(.{ .source = "\"name\": \"auto-discharge=disable\",\n\"description\": \"Disable automatic disposal insertion - phantom errors will fire for unsatisfied obligations\",\n\"type\": \"boolean\"\n" });
         switch (__thunk_result) {
         }
     }
 
     fn flow_5() void {
-        const __thunk_result = backend_output.koru_std.compiler.flags_declare_event.handler(.{ .source = "\"name\": \"auto-dispose=warn\",\n\"description\": \"Emit warnings when auto-dispose inserts disposal calls (for debugging obligation handling)\",\n\"type\": \"boolean\"\n" });
+        const __thunk_result = backend_output.koru_std.compiler.flags_declare_event.handler(.{ .source = "\"name\": \"auto-discharge=warn\",\n\"description\": \"Emit warnings when auto-discharge inserts disposal calls (for debugging obligation handling)\",\n\"type\": \"boolean\"\n" });
         switch (__thunk_result) {
         }
     }

@@ -1,5 +1,5 @@
 // Library module: fs
-// Single disposal event - auto-dispose should work
+// Single disposal event - auto-discharge should work
 
 const std = @import("std");
 

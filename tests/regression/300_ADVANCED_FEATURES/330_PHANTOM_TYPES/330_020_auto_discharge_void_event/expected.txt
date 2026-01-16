@@ -1,0 +1,3 @@
+Opening file: test.txt
+Closing file (auto-discharged)
+Done!

@@ -1,0 +1,17 @@
+// TEST: Auto-discharge warn mode via --auto-discharge=warn flag
+//
+// When --auto-discharge=warn is set, the compiler should:
+// 1. Still auto-insert disposal calls (compilation succeeds)
+// 2. Emit warnings about what was auto-inserted
+//
+// This test verifies that warnings are emitted when requested.
+// The post.sh script checks for the warning in compile_kz.err.
+//
+// Expected: Successful compilation WITH warning output
+
+~import "$app/fs"
+
+// Open a file but don't close it - auto-discharge will insert close()
+// With --auto-discharge=warn, we should see the warning
+~app.fs:open(path: "test.txt")
+| opened _ |> _

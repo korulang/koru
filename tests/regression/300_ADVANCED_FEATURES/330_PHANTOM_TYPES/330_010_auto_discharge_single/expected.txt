@@ -1,3 +1,2 @@
 Opening file
-TAP: Observed file open!
 Closing file (auto-discharged)

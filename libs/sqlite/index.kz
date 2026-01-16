@@ -1,7 +1,7 @@
 // @koru/sqlite - SQLite bindings for Koru
 //
 // First official Koru library package.
-// Demonstrates: phantom obligations, auto-dispose, ~std.build:requires
+// Demonstrates: phantom obligations, auto-discharge, ~std.build:requires
 
 ~import "$std/build"
 

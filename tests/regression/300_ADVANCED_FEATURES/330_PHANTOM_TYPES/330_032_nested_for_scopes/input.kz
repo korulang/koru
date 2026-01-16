@@ -5,7 +5,7 @@
 // 1. outermost_f - opened BEFORE outer loop, manually closed AFTER both loops
 // 2. inner_f - opened IN inner loop, auto-closed in inner each branch
 //
-// This tests that @scope nesting works correctly with auto-dispose.
+// This tests that @scope nesting works correctly with auto-discharge.
 
 ~import "$std/control"
 ~import "$app/fs"

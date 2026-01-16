@@ -4,7 +4,7 @@
 // The tap transform correctly rewrites binding references when splicing.
 //
 // Example: The tap declares `| opened f |> log_open(handle: f.file.handle)`
-//          The main flow has `| opened _ |>` (auto-dispose synthesizes binding)
+//          The main flow has `| opened _ |>` (auto-discharge synthesizes binding)
 //
 // The tap transform:
 // 1. Synthesizes a unique binding (_tap_N) when original binding is "_"
@@ -22,7 +22,7 @@
 | opened f |> app.fs:log_open(handle: f.file.handle)
     | done |> _
 
-// Main flow with auto-dispose
+// Main flow with auto-discharge
 ~app.fs:open(path: "test.txt")
 | opened _ |> _
 

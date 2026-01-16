@@ -1,12 +1,12 @@
-// TEST: Auto-dispose fills in missing disposal in else branch
+// TEST: Auto-discharge fills in missing disposal in else branch
 // STATUS: IMPLEMENTED
 //
 // When an obligation is created BEFORE an ~if, and only the then
-// branch manually disposes, auto-dispose inserts cleanup at the
+// branch manually disposes, auto-discharge inserts cleanup at the
 // else branch's terminal.
 //
 // Even though we use explicit binding (f), the terminal _ in else
-// triggers auto-dispose which sees the unsatisfied obligation.
+// triggers auto-discharge which sees the unsatisfied obligation.
 
 ~import "$std/control"
 ~import "$app/fs"

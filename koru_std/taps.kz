@@ -342,7 +342,7 @@ const std = @import("std");
                 const tb = tap_binding.?;
                 if (original.binding) |ob| {
                     // If original binding is "_", synthesize a unique binding for the tap
-                    // This matches what auto-dispose does, allowing references to work
+                    // This matches what auto-discharge does, allowing references to work
                     if (std.mem.eql(u8, ob, "_")) {
                         // Synthesize unique binding using hash of branch + indent + tap step path
                         var hash: u32 = 0;

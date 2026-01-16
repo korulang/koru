@@ -4,7 +4,7 @@
 // Test: Cleanup obligation created but NO disposal event available
 //
 // BUG DISCOVERED: 2026-01-12
-// Without a disposal event, auto-dispose cannot fix the leak.
+// Without a disposal event, auto-discharge cannot fix the leak.
 // Should produce KORU031 error: no disposal event found.
 //
 // Expected: Should FAIL with "no disposal event found" error
@@ -29,7 +29,7 @@ const allocator = std.heap.c_allocator;
     return .{ .created = r };
 }
 
-// NOTE: NO destroy event exists - auto-dispose cannot fix this!
+// NOTE: NO destroy event exists - auto-discharge cannot fix this!
 
 ~event use { r: *Resource[active] }
 

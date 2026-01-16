@@ -1,5 +1,5 @@
 // Library module: fs
-// Phantom-tracked file operations for testing tap binding substitution
+// Phantom-tracked file operations for testing taps + auto-discharge
 
 const std = @import("std");
 
@@ -25,11 +25,13 @@ const File = struct { handle: i32 };
     return .{ .closed = .{} };
 }
 
-// A logging event for taps - receives the file handle from tap binding
+// A logging event for taps - can observe file handle from the tap binding
+// The tap passes in the handle it observed from the opened event
 ~pub event log_open { handle: i32 }
 | done {}
 
 ~proc log_open {
+    // Note: Procs receive input via generated code, we just print a static message
     std.debug.print("TAP: Observed file open!\n", .{});
     return .{ .done = .{} };
 }

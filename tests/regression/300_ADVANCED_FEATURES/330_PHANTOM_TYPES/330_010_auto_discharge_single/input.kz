@@ -1,0 +1,21 @@
+// TEST: Auto-discharge with single consumer (using discard _)
+//
+// When a flow terminates with an unsatisfied cleanup obligation [state!],
+// and there's exactly ONE event that consumes it [!state], auto-insert it.
+//
+// Here: open() returns *File[opened!], close() consumes *File[!opened]
+// Since close() is the ONLY consumer, it should be auto-inserted.
+//
+// Using _ as the binding means we discard the value but auto-discharge
+// synthesizes a binding (_auto_0) and inserts the disposal call.
+//
+// Expected: Compiles successfully with auto-inserted disposal
+
+~import "$app/fs"
+
+// Flow terminates without explicit close - should auto-insert close()
+// Using _ to discard - auto-discharge will synthesize a binding
+~app.fs:open(path: "test.txt")
+| opened _ |> _
+
+pub fn main() void {}

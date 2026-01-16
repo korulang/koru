@@ -1,9 +1,9 @@
-// TEST: Optional branch with obligation - auto-dispose handles it!
+// TEST: Optional branch with obligation - auto-discharge handles it!
 // STATUS: IMPLEMENTED
 //
 // This test verifies that:
 // 1. Unhandled optional branches get synthesized continuations
-// 2. Auto-dispose inserts disposal calls for obligations in optional branches
+// 2. Auto-discharge inserts disposal calls for obligations in optional branches
 // 3. The emitter generates proper switch cases (not direct field access)
 //
 // If user only handles | success |>, but event returns | ?leaked |>,
@@ -11,7 +11,7 @@
 
 ~import "$app/resource"
 
-// User only handles required branch - auto-dispose handles ?leaked
+// User only handles required branch - auto-discharge handles ?leaked
 ~app.resource:risky()
 | success _ |>
     _

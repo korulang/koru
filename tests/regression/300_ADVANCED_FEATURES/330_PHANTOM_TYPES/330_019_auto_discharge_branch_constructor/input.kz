@@ -1,0 +1,26 @@
+// TEST: Auto-discharge with branch constructor termination (NOT using _)
+//
+// EXPOSES GAP: Auto-discharge currently only triggers on `_` terminal nodes.
+// Flows that terminate with branch constructors should ALSO auto-discharge!
+//
+// Here: open() returns *File[opened!], we return a branch constructor
+// WITHOUT calling close(). The obligation should be auto-discharged.
+//
+// Expected: Auto-discharge inserts close() before the branch constructor
+
+~import "$app/fs"
+
+// Event that wraps file opening and returns a status
+~event check_file { path: []const u8 }
+| result { status: []const u8 }
+
+// Subflow: opens file, returns status - SHOULD auto-discharge the file!
+// Using _ for binding since auto-discharge should synthesize _auto_N
+~check_file = app.fs:open(path: path)
+| opened _ |> result { status: "file exists" }  // obligation should be auto-discharged before returning!
+
+// Main flow
+~check_file(path: "test.txt")
+| result _ |> _
+
+pub fn main() void {}

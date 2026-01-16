@@ -1,11 +1,11 @@
-// TEST: Auto-dispose at | done |> _ is allowed
+// TEST: Auto-discharge at | done |> _ is allowed
 // STATUS: IMPLEMENTED
 //
 // When an obligation is created OUTSIDE a for-loop, it can be
-// auto-disposed at | done |> _ (runs once after loop completes).
+// auto-discharged at | done |> _ (runs once after loop completes).
 // The compiler inserts the close call automatically.
 //
-// Here: Open file before loop, auto-dispose at done via _.
+// Here: Open file before loop, auto-discharge at done via _.
 //
 // Expected: Compiles successfully, auto-inserts close at done
 
@@ -16,6 +16,6 @@
 | opened _ |>
     std.control:for(0..3)
     | each _ |> _  // Loop body, obligation flows through
-    | done |> _    // Auto-dispose inserts close here (runs once)
+    | done |> _    // Auto-discharge inserts close here (runs once)
 
 pub fn main() void {}

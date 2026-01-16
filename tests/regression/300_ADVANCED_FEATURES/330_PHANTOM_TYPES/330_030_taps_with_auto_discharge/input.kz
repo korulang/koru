@@ -1,0 +1,31 @@
+// TEST: Taps with auto-discharge interaction
+//
+// This test verifies that:
+// 1. Taps can observe phantom-tracked events
+// 2. Auto-discharge still works after tap transformation
+// 3. Tap observation happens BEFORE auto-discharge cleanup
+//
+// The tap observes the `opened` branch and logs. After the tap returns,
+// auto-discharge inserts the close() call since the obligation wasn't consumed.
+//
+// Expected: Compiles successfully with:
+// - Tap observing open event
+// - Auto-discharge inserting close() after the tap
+//
+// NOTE: Using binding in taps that reference payload data requires
+// binding substitution in the tap transform (tracked separately).
+
+~import "$std/taps"
+~import "$app/fs"
+
+// Tap that observes file opens (no binding access, just observation)
+~tap(app.fs:open -> *)
+| opened |> app.fs:log_open(handle: 42)
+    | done |> _
+
+// Main flow: open a file and discard with auto-discharge
+// The tap fires first, then auto-discharge inserts close()
+~app.fs:open(path: "test.txt")
+| opened _ |> _
+
+pub fn main() void {}

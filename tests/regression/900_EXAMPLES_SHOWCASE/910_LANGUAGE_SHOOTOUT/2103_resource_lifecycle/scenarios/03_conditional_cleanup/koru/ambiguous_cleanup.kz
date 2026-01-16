@@ -1,4 +1,4 @@
-// TEST: Multiple disposal options - auto-dispose can't help, must be explicit
+// TEST: Multiple disposal options - auto-discharge can't help, must be explicit
 //
 // When there are MULTIPLE ways to dispose a resource, the compiler
 // REQUIRES you to be explicit. This catches logic bugs where you
@@ -48,7 +48,7 @@ const File = struct { handle: i32, dirty: bool };
 
 const should_write = true;
 
-// This should FAIL - auto-dispose can't choose between close and flush_close
+// This should FAIL - auto-discharge can't choose between close and flush_close
 ~open(path: "test.txt")
 | opened f |>
     std.control:if(should_write)

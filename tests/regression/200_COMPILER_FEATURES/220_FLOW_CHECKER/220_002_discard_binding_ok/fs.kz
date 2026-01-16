@@ -1,5 +1,5 @@
 // Library module: fs
-// Single disposal event - auto-dispose should work
+// Single disposal event - auto-discharge should work
 
 const std = @import("std");
 
@@ -21,6 +21,6 @@ const File = struct { handle: i32 };
 | closed {}
 
 ~proc close {
-    std.debug.print("Closing file (auto-disposed)\n", .{});
+    std.debug.print("Closing file (auto-discharged)\n", .{});
     return .{ .closed = .{} };
 }
