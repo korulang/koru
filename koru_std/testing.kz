@@ -592,7 +592,7 @@ const walkFlowForPurity = struct {
 // Helper: Emit flow with mock substitution using real emitter
 const emitFlowWithMocks = struct {
     fn call(
-        emitter: *@import("emitter_helpers").CodeEmitter,
+        code_emitter: *@import("emitter_helpers").CodeEmitter,
         ctx: *@import("emitter_helpers").EmissionContext,
         flow_to_emit: *const @import("ast").Flow,
         mocks: *const @import("std").StringHashMap(@import("ast").BranchConstructor),
@@ -614,10 +614,10 @@ const emitFlowWithMocks = struct {
             if (flow_to_emit.invocation.args.len > 0) {
                 const expr_text = flow_to_emit.invocation.args[0].value;
                 if (expr_text.len > 0) {
-                    try emitter.writeIndent();
-                    try emitter.write("try @import(\"std\").testing.expect(");
-                    try emitter.write(expr_text);
-                    try emitter.write(");\n");
+                    try code_emitter.writeIndent();
+                    try code_emitter.write("try @import(\"std\").testing.expect(");
+                    try code_emitter.write(expr_text);
+                    try code_emitter.write(");\n");
                     return;
                 }
             }
@@ -633,8 +633,8 @@ const emitFlowWithMocks = struct {
 
         // Handle assert.fail - unconditional failure
         if (std_local.mem.eql(u8, inv_path, "assert.fail")) {
-            try emitter.writeIndent();
-            try emitter.write("return error.TestUnexpectedResult;\n");
+            try code_emitter.writeIndent();
+            try code_emitter.write("return error.TestUnexpectedResult;\n");
             return;
         }
 
@@ -642,28 +642,28 @@ const emitFlowWithMocks = struct {
             const result_var = try @import("std").fmt.allocPrint(ctx.allocator, "result_{d}", .{counter.*});
             counter.* += 1;
 
-            try emitter.writeIndent();
-            try emitter.write("const ");
-            try emitter.write(result_var);
-            try emitter.write(" = ");
-            try emitter_helpers.emitBranchConstructor(emitter, ctx, &bc, true);
-            try emitter.write(";\n");
+            try code_emitter.writeIndent();
+            try code_emitter.write("const ");
+            try code_emitter.write(result_var);
+            try code_emitter.write(" = ");
+            try emitter_helpers.emitBranchConstructor(code_emitter, ctx, &bc, true);
+            try code_emitter.write(";\n");
 
             for (flow_to_emit.continuations) |cont| {
                 if (@import("std").mem.eql(u8, cont.branch, bc.branch_name)) {
                     if (cont.binding) |binding| {
-                        try emitter.writeIndent();
-                        try emitter.write("const ");
-                        try emitter.write(binding);
-                        try emitter.write(" = ");
-                        try emitter.write(result_var);
-                        try emitter.write(".");
-                        try emitter.write(bc.branch_name);
-                        try emitter.write(";\n");
-                        try emitter.writeIndent();
-                        try emitter.write("_ = &");
-                        try emitter.write(binding);
-                        try emitter.write(";\n");
+                        try code_emitter.writeIndent();
+                        try code_emitter.write("const ");
+                        try code_emitter.write(binding);
+                        try code_emitter.write(" = ");
+                        try code_emitter.write(result_var);
+                        try code_emitter.write(".");
+                        try code_emitter.write(bc.branch_name);
+                        try code_emitter.write(";\n");
+                        try code_emitter.writeIndent();
+                        try code_emitter.write("_ = &");
+                        try code_emitter.write(binding);
+                        try code_emitter.write(";\n");
                     }
                     if (cont.node) |node| {
                         if (node == .invocation) {
@@ -675,19 +675,19 @@ const emitFlowWithMocks = struct {
                                 .is_pure = true,
                                 .is_transitively_pure = false,
                             };
-                            try call(emitter, ctx, &nested_flow, mocks, counter);
+                            try call(code_emitter, ctx, &nested_flow, mocks, counter);
                         }
                     }
                     break;
                 }
             }
 
-            try emitter.writeIndent();
-            try emitter.write("_ = &");
-            try emitter.write(result_var);
-            try emitter.write(";\n");
+            try code_emitter.writeIndent();
+            try code_emitter.write("_ = &");
+            try code_emitter.write(result_var);
+            try code_emitter.write(";\n");
         } else {
-            try emitter_helpers.emitFlow(emitter, ctx, flow_to_emit);
+            try emitter_helpers.emitFlow(code_emitter, ctx, flow_to_emit);
         }
     }
 }.call;

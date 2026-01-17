@@ -39,12 +39,12 @@ const std = @import("std");
 
 ~proc test_expressions {
     // Call proc1: helper doubles 10 to 20, then branch constructor multiplies by 2 = 40
-    const r1 = proc1.handler(.{});
+    const r1 = proc1_event.handler(.{});
     std.debug.assert(r1.result.value == 40);
     std.debug.print("✅ proc1 * 2 = {}\n", .{r1.result.value});
 
     // Call proc2: helper doubles 20 to 40, then branch constructor adds 10 = 50
-    const r2 = proc2.handler(.{});
+    const r2 = proc2_event.handler(.{});
     std.debug.assert(r2.result.value == 50);
     std.debug.print("✅ proc2 + 10 = {}\n", .{r2.result.value});
 

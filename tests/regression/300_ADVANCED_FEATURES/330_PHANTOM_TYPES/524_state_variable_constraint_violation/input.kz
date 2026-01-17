@@ -1,6 +1,9 @@
 // MUST_FAIL
 // EXPECT: State variable constraint violation
-
+//
+// TODO: Cross-module type sharing not yet implemented
+// This test will fail, but for the wrong reason (type mismatch, not constraint violation)
+//
 // Test 524: Constrained state variable REJECTS invalid state
 // Tests that M'owned|borrowed REJECTS states not in the constraint
 //

@@ -1,4 +1,4 @@
 Test start
   Using: Resource: AutoDisposed
-  Auto-dispose called!
+  Auto-discharge called!
 Test done

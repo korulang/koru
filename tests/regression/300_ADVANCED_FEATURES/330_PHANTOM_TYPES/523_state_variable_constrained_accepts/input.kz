@@ -1,6 +1,9 @@
 // Test 523: Constrained state variable accepts valid states
 // Tests that M'owned|borrowed accepts both owned and borrowed
 //
+// TODO: Cross-module type sharing not yet implemented
+// Requires same fix as test 522
+//
 // Key points:
 // - processor:process has data: *Data[M'owned|borrowed]
 // - M is constrained to ONLY owned OR borrowed

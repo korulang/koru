@@ -1,8 +1,13 @@
 // Test 522: State variable with wildcard (_)
 // Tests that M'_ accepts any state and preserves it through event
 //
+// TODO: Cross-module type sharing not yet implemented
+// The processor.kz module defines Data locally, and data.kz also defines Data.
+// Zig treats these as different types even though structurally identical.
+// Requires: Cross-module type resolution in the emitter
+//
 // Key points:
-// - processor:process has data: *Data[M'_]
+// - processor:process has d: *Data[M'_]
 // - M'_ is a wildcard - accepts ANY state
 // - The same M is used in output, preserving the state
 // - Should work with [owned], [borrowed], or any other state
@@ -12,5 +17,5 @@
 
 // Test 1: Wildcard accepts [owned]
 ~app.data:alloc()
-| allocated a |> app.processor:process(data: a.data)  // M'_ accepts [owned], M = owned
-    | done |> _  // d1.data: *Data[owned] - preserved!
+| allocated a |> app.processor:process(d: a.data)  // M'_ accepts [owned], M = owned
+    | done |> _  // d.d: *Data[owned] - preserved!

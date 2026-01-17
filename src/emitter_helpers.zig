@@ -3118,20 +3118,74 @@ fn emitInvocation(
     if (ctx.ast_items) |items| {
         if (findSubflowImplByPath(items, &invocation.path)) |subflow_impl| {
             if (subflow_impl.body == .immediate) {
-                // Emit: const result: EventType.Output = .{ .branch = .{ fields... } };
-                // The type annotation is CRITICAL - otherwise it's an anonymous struct
-                // and Zig can't switch on it
+                // Emit: const result: EventType.Output = blk: {
+                //     const n = 5;  // bind input args
+                //     break :blk .{ .branch = value };
+                // };
+                // Use a labeled block to scope the input bindings and avoid redeclaration
                 try emitter.writeIndent();
                 if (!std.mem.eql(u8, result_var, "_")) {
                     try emitter.write("const ");
                 }
                 try emitter.write(result_var);
                 try emitter.write(": ");
-                // Emit the event type path for the Output type
                 try emitInvocationTarget(emitter, ctx, &invocation.path);
-                try emitter.write(".Output = ");
+                try emitter.write(".Output = blk: {\n");
+
+                emitter.indent_level += 1;
+
+                // Bind input arguments so they're available in the expression
+                // e.g., for ~double(n: 5) with ~double = result { n * 2 }
+                // we need: const n = 5;
+                // Skip if:
+                //   - arg.name == arg.value (already in scope, would shadow)
+                //   - arg.name is not referenced in the immediate expression (avoid shadowing outer scope)
+                const immediate_bc = &subflow_impl.body.immediate;
+                for (invocation.args) |arg| {
+                    // Skip binding if name equals value (e.g., path: path) - already in scope
+                    if (std.mem.eql(u8, arg.name, arg.value)) {
+                        continue;
+                    }
+                    // Check if this parameter is actually used in the immediate expression
+                    // If not, skip it to avoid shadowing outer scope variables
+                    const expr_to_check = if (immediate_bc.plain_value) |pv| pv else blk: {
+                        // Check all field expressions
+                        var is_used = false;
+                        for (immediate_bc.fields) |field| {
+                            const field_val = if (field.expression_str) |e| e else field.type;
+                            if (containsIdentifier(field_val, arg.name)) {
+                                is_used = true;
+                                break;
+                            }
+                        }
+                        if (!is_used) continue;
+                        break :blk "";
+                    };
+                    if (expr_to_check.len > 0 and !containsIdentifier(expr_to_check, arg.name)) {
+                        continue;
+                    }
+                    try emitter.writeIndent();
+                    try emitter.write("const ");
+                    try emitter.write(arg.name);
+                    try emitter.write(" = ");
+                    try emitValue(emitter, ctx, arg.value);
+                    try emitter.write(";\n");
+                    // Suppress unused variable warning (for mocks that return constants)
+                    try emitter.writeIndent();
+                    try emitter.write("_ = &");
+                    try emitter.write(arg.name);
+                    try emitter.write(";\n");
+                }
+
+                // Emit the break with the branch constructor
+                try emitter.writeIndent();
+                try emitter.write("break :blk ");
                 try emitBranchConstructor(emitter, ctx, &subflow_impl.body.immediate, true);
                 try emitter.write(";\n");
+
+                emitter.indent_level -= 1;
+                try emitter.writeIndent();
+                try emitter.write("};\n");
                 return;
             }
         }

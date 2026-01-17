@@ -1,5 +1,9 @@
 // Test 407: Imported module proc input unwrapping
 //
+// TODO: Module qualifier mismatch in flow resolution
+// The import creates test.mylib as canonical, but invocations use mylib:double.
+// Need to fix module path normalization in emit phase.
+//
 // BUG: The compiler generates input field unwrapping for main module procs,
 // but NOT for imported module procs. This causes "undeclared identifier" errors.
 //

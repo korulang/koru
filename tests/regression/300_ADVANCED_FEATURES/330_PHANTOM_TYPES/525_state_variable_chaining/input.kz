@@ -1,6 +1,9 @@
 // Test 525: State variable chaining through multiple events
 // Tests that M stays consistent across a chain of generic events
 //
+// TODO: Cross-module type sharing not yet implemented
+// Requires same fix as test 522
+//
 // Key points:
 // - All events use *Data[M'_] (wildcard)
 // - When we pass [owned], M = owned throughout the entire chain

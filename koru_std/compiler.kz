@@ -1022,7 +1022,7 @@ const walkFlowForPurity = struct {
 // Helper: Emit a flow with mock substitution using REAL emitter
 const emitFlowWithMocks = struct {
     fn call(
-        emitter: *@import("emitter_helpers").CodeEmitter,
+        code_emitter: *@import("emitter_helpers").CodeEmitter,
         ctx: *@import("emitter_helpers").EmissionContext,
         flow_to_emit: *const @import("ast").Flow,
         mocks: *const std.StringHashMap(@import("ast").BranchConstructor),
@@ -1043,31 +1043,31 @@ const emitFlowWithMocks = struct {
             // Emit mock value directly
             const result_var = try std.fmt.allocPrint(ctx.allocator, "result_{d}", .{ctx.indent_level});
 
-            try emitter.writeIndent();
-            try emitter.write("const ");
-            try emitter.write(result_var);
-            try emitter.write(" = ");
-            try emitter_helpers.emitBranchConstructor(emitter, ctx, &bc, true);
-            try emitter.write(";\n");
+            try code_emitter.writeIndent();
+            try code_emitter.write("const ");
+            try code_emitter.write(result_var);
+            try code_emitter.write(" = ");
+            try emitter_helpers.emitBranchConstructor(code_emitter, ctx, &bc, true);
+            try code_emitter.write(";\n");
 
             // Emit matching continuation
             for (flow_to_emit.continuations) |cont| {
                 if (std.mem.eql(u8, cont.branch, bc.branch_name)) {
                     if (cont.binding) |binding| {
                         // Emit binding extraction: const x = result.branch;
-                        try emitter.writeIndent();
-                        try emitter.write("const ");
-                        try emitter.write(binding);
-                        try emitter.write(" = ");
-                        try emitter.write(result_var);
-                        try emitter.write(".");
-                        try emitter.write(bc.branch_name);
-                        try emitter.write(";\n");
+                        try code_emitter.writeIndent();
+                        try code_emitter.write("const ");
+                        try code_emitter.write(binding);
+                        try code_emitter.write(" = ");
+                        try code_emitter.write(result_var);
+                        try code_emitter.write(".");
+                        try code_emitter.write(bc.branch_name);
+                        try code_emitter.write(";\n");
                         // Suppress unused binding warning
-                        try emitter.writeIndent();
-                        try emitter.write("_ = &");
-                        try emitter.write(binding);
-                        try emitter.write(";\n");
+                        try code_emitter.writeIndent();
+                        try code_emitter.write("_ = &");
+                        try code_emitter.write(binding);
+                        try code_emitter.write(";\n");
                     }
                     // Emit nested flows
                     if (cont.node) |node| {
@@ -1080,20 +1080,20 @@ const emitFlowWithMocks = struct {
                                 .is_pure = true,
                                 .is_transitively_pure = false,
                             };
-                            try call(emitter, ctx, &nested_flow, mocks);
+                            try call(code_emitter, ctx, &nested_flow, mocks);
                         }
                     }
                     break;
                 }
             }
 
-            try emitter.writeIndent();
-            try emitter.write("_ = &");
-            try emitter.write(result_var);
-            try emitter.write(";\n");
+            try code_emitter.writeIndent();
+            try code_emitter.write("_ = &");
+            try code_emitter.write(result_var);
+            try code_emitter.write(";\n");
         } else {
             // No mock - emit flow normally using real emitter
-            try emitter_helpers.emitFlow(emitter, ctx, flow_to_emit);
+            try emitter_helpers.emitFlow(code_emitter, ctx, flow_to_emit);
         }
     }
 }.call;
