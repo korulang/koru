@@ -4777,11 +4777,14 @@ fn emitStep(
 
             for (fe.branches) |*branch| {
                 // Branch with @scope annotation is the loop body (runs N times)
+                // Fallback: "each" branch name for backward compatibility
                 const has_scope = for (branch.annotations) |ann| {
                     if (std.mem.eql(u8, ann, "@scope")) break true;
                 } else false;
 
-                if (has_scope) {
+                const is_loop_branch = has_scope or std.mem.eql(u8, branch.name, "each");
+
+                if (is_loop_branch) {
                     loop_branch = branch;
                 } else {
                     try post_loop_branches.append(ctx.allocator, branch);
