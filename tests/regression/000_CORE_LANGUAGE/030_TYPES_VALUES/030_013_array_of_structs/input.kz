@@ -1,0 +1,40 @@
+// TEST: Array of inline struct literals
+//
+// Combines array literal and struct literal syntax for maximum ergonomics.
+// Common pattern: passing a list of config objects to an event.
+//
+// Expected: Compiles and runs, array of structs passed correctly
+
+const std = @import("std");
+
+pub const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+~event sumPoints { points: []const Point }
+| result { total_x: i32, total_y: i32 }
+
+~proc sumPoints {
+    var tx: i32 = 0;
+    var ty: i32 = 0;
+    for (points) |p| {
+        tx += p.x;
+        ty += p.y;
+    }
+    return .{ .result = .{ .total_x = tx, .total_y = ty } };
+}
+
+~event check { expected_x: i32, expected_y: i32, actual_x: i32, actual_y: i32 }
+
+~proc check {
+    if (expected_x != actual_x or expected_y != actual_y) {
+        std.debug.print("FAIL: expected ({}, {}), got ({}, {})\n", .{ expected_x, expected_y, actual_x, actual_y });
+        std.process.exit(1);
+    }
+    std.debug.print("PASS: ({}, {}) == ({}, {})\n", .{ expected_x, expected_y, actual_x, actual_y });
+}
+
+// Array of struct literals - the full Koru ergonomics
+~sumPoints(points: [{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 5, y: 6 }])
+| result r |> check(expected_x: 9, expected_y: 12, actual_x: r.total_x, actual_y: r.total_y)

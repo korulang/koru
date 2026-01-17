@@ -1,0 +1,35 @@
+// TEST: Inline struct literal in flow arguments
+//
+// Koru should support clean struct literal syntax: { field: value }
+// This matches existing Koru patterns in subflows and branch constructors.
+//
+// Expected: Compiles and runs, struct passed to event
+
+const std = @import("std");
+
+pub const Config = struct {
+    timeout: i32,
+    retries: i32,
+};
+
+~event configure { config: Config }
+| configured { total_wait: i32 }
+
+~proc configure {
+    const total = config.timeout * config.retries;
+    return .{ .configured = .{ .total_wait = total } };
+}
+
+~event check { expected: i32, actual: i32 }
+
+~proc check {
+    if (expected != actual) {
+        std.debug.print("FAIL: expected {}, got {}\n", .{ expected, actual });
+        std.process.exit(1);
+    }
+    std.debug.print("PASS: {} == {}\n", .{ expected, actual });
+}
+
+// Use struct literal syntax (Koru-style, not Zig-style)
+~configure(config: { timeout: 30, retries: 3 })
+| configured c |> check(expected: 90, actual: c.total_wait)

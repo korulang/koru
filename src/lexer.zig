@@ -241,6 +241,7 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
     var string_char: ?u8 = null;
     var in_braces = false;
     var paren_depth: usize = 0;  // Track nested parentheses for Expression params
+    var bracket_depth: usize = 0;  // Track nested brackets for array literals [1, 2, 3]
 
     while (i <= content.len) {
         const at_end = i == content.len;
@@ -264,6 +265,15 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
             }
         }
 
+        // Track bracket depth for array literals (e.g., [1, 2, 3] shouldn't split at inner comma)
+        if (!in_string and !in_braces) {
+            if (char == '[') {
+                bracket_depth += 1;
+            } else if (char == ']' and bracket_depth > 0) {
+                bracket_depth -= 1;
+            }
+        }
+
         // Track brace boundaries for Source blocks
         if (!in_string and !in_braces and char == '{') {
             // Find the matching closing brace
@@ -279,8 +289,8 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
             in_braces = false;
         }
 
-        // Split on commas that aren't inside strings, braces, or nested parens
-        if ((char == ',' or at_end) and !in_string and !in_braces and paren_depth == 0) {
+        // Split on commas that aren't inside strings, braces, brackets, or nested parens
+        if ((char == ',' or at_end) and !in_string and !in_braces and paren_depth == 0 and bracket_depth == 0) {
             const arg_slice = trim(content[arg_start..i]);
             if (arg_slice.len > 0) {
                 // Use depth-aware colon search to handle { field: value } expressions

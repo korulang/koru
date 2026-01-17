@@ -1,0 +1,33 @@
+// TEST: Simple array literal syntax in flow arguments
+//
+// Koru should support clean array literal syntax: [a, b, c]
+// The compiler infers the element type from the parameter type.
+//
+// Expected: Compiles and runs, passing array to the event
+
+const std = @import("std");
+
+~event sum { numbers: []const i32 }
+| result { total: i32 }
+
+~proc sum {
+    var total: i32 = 0;
+    for (numbers) |n| {
+        total += n;
+    }
+    return .{ .result = .{ .total = total } };
+}
+
+~event check { expected: i32, actual: i32 }
+
+~proc check {
+    if (expected != actual) {
+        std.debug.print("FAIL: expected {}, got {}\n", .{ expected, actual });
+        std.process.exit(1);
+    }
+    std.debug.print("PASS: {} == {}\n", .{ expected, actual });
+}
+
+// Use array literal syntax
+~sum(numbers: [1, 2, 3, 4])
+| result r |> check(expected: 10, actual: r.total)

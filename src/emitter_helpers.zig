@@ -804,6 +804,258 @@ fn isIdentChar(c: u8) bool {
     return isIdentStartChar(c) or (c >= '0' and c <= '9');
 }
 
+/// Extract element type from a slice type string
+/// Examples:
+///   "[]const i32" -> "i32"
+///   "[]i32" -> "i32"
+///   "[]*Handle" -> "*Handle"
+///   "[]const threading:WorkerHandle" -> "threading:WorkerHandle"
+fn extractSliceElementType(slice_type: []const u8) ?[]const u8 {
+    // Must start with []
+    if (slice_type.len < 2 or slice_type[0] != '[' or slice_type[1] != ']') {
+        return null;
+    }
+
+    var rest = slice_type[2..];
+
+    // Skip "const " if present
+    if (std.mem.startsWith(u8, rest, "const ")) {
+        rest = rest[6..];
+    }
+
+    // Return the element type
+    if (rest.len > 0) {
+        return rest;
+    }
+
+    return null;
+}
+
+/// Check if a value looks like a Koru struct literal: { field: value, ... }
+/// Must be single-line (not a Source block) and contain field: value patterns
+fn isKoruStructLiteral(value: []const u8) bool {
+    if (value.len < 2) return false;
+    if (value[0] != '{' or value[value.len - 1] != '}') return false;
+
+    // Check for field: value pattern (has colon with identifier before it)
+    const inner = value[1 .. value.len - 1];
+    var i: usize = 0;
+    var found_field_pattern = false;
+
+    while (i < inner.len) {
+        // Skip whitespace
+        while (i < inner.len and (inner[i] == ' ' or inner[i] == '\t')) {
+            i += 1;
+        }
+        if (i >= inner.len) break;
+
+        // Look for identifier followed by colon
+        if (isIdentStartChar(inner[i])) {
+            var j = i + 1;
+            while (j < inner.len and isIdentChar(inner[j])) {
+                j += 1;
+            }
+            // Skip whitespace after identifier
+            while (j < inner.len and (inner[j] == ' ' or inner[j] == '\t')) {
+                j += 1;
+            }
+            // Check for colon
+            if (j < inner.len and inner[j] == ':') {
+                found_field_pattern = true;
+                break;
+            }
+        }
+        i += 1;
+    }
+
+    return found_field_pattern;
+}
+
+/// Emit a Koru struct literal as Zig: { field: value } -> .{ .field = value }
+fn emitStructLiteral(emitter: *CodeEmitter, ctx: *EmissionContext, value: []const u8) !void {
+    const inner = value[1 .. value.len - 1]; // Strip { and }
+
+    try emitter.write(".{");
+
+    var i: usize = 0;
+    var first_field = true;
+
+    while (i < inner.len) {
+        // Skip whitespace
+        while (i < inner.len and (inner[i] == ' ' or inner[i] == '\t')) {
+            i += 1;
+        }
+        if (i >= inner.len) break;
+
+        // Look for field name
+        if (isIdentStartChar(inner[i])) {
+            const field_start = i;
+            while (i < inner.len and isIdentChar(inner[i])) {
+                i += 1;
+            }
+            const field_name = inner[field_start..i];
+
+            // Skip whitespace
+            while (i < inner.len and (inner[i] == ' ' or inner[i] == '\t')) {
+                i += 1;
+            }
+
+            // Expect colon
+            if (i < inner.len and inner[i] == ':') {
+                i += 1; // skip colon
+
+                // Skip whitespace after colon
+                while (i < inner.len and (inner[i] == ' ' or inner[i] == '\t')) {
+                    i += 1;
+                }
+
+                // Find end of value (comma or end of struct)
+                const value_start = i;
+                var paren_depth: usize = 0;
+                var brace_depth: usize = 0;
+                var bracket_depth: usize = 0;
+                var in_string = false;
+
+                while (i < inner.len) {
+                    const c = inner[i];
+                    if (!in_string) {
+                        if (c == '"') in_string = true
+                        else if (c == '(') paren_depth += 1
+                        else if (c == ')' and paren_depth > 0) paren_depth -= 1
+                        else if (c == '{') brace_depth += 1
+                        else if (c == '}' and brace_depth > 0) brace_depth -= 1
+                        else if (c == '[') bracket_depth += 1
+                        else if (c == ']' and bracket_depth > 0) bracket_depth -= 1
+                        else if (c == ',' and paren_depth == 0 and brace_depth == 0 and bracket_depth == 0) {
+                            break;
+                        }
+                    } else {
+                        if (c == '"' and (i == 0 or inner[i - 1] != '\\')) in_string = false;
+                    }
+                    i += 1;
+                }
+
+                // Trim trailing whitespace from value
+                var value_end = i;
+                while (value_end > value_start and (inner[value_end - 1] == ' ' or inner[value_end - 1] == '\t')) {
+                    value_end -= 1;
+                }
+
+                const field_value = inner[value_start..value_end];
+
+                // Emit .field = value
+                if (!first_field) {
+                    try emitter.write(",");
+                }
+                try emitter.write(" .");
+                try emitter.write(field_name);
+                try emitter.write(" = ");
+
+                // Recursively handle nested struct/array literals
+                if (field_value.len >= 2 and field_value[0] == '[' and field_value[field_value.len - 1] == ']') {
+                    // Nested array literal
+                    const array_contents = field_value[1 .. field_value.len - 1];
+                    try emitter.write("&.{ ");
+                    try emitValue(emitter, ctx, array_contents);
+                    try emitter.write(" }");
+                } else if (isKoruStructLiteral(field_value)) {
+                    // Nested struct literal
+                    try emitStructLiteral(emitter, ctx, field_value);
+                } else {
+                    try emitValue(emitter, ctx, field_value);
+                }
+
+                first_field = false;
+
+                // Skip comma if present
+                if (i < inner.len and inner[i] == ',') {
+                    i += 1;
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    try emitter.write(" }");
+}
+
+/// Emit array contents, transforming any nested struct literals
+/// Input: "{ x: 1, y: 2 }, { x: 3, y: 4 }" (comma-separated elements)
+/// Output: ".{ .x = 1, .y = 2 }, .{ .x = 3, .y = 4 }"
+fn emitArrayContents(emitter: *CodeEmitter, ctx: *EmissionContext, contents: []const u8) !void {
+    var i: usize = 0;
+    var first_element = true;
+
+    while (i < contents.len) {
+        // Skip whitespace
+        while (i < contents.len and (contents[i] == ' ' or contents[i] == '\t')) {
+            i += 1;
+        }
+        if (i >= contents.len) break;
+
+        // Find end of this element (next comma at depth 0)
+        const elem_start = i;
+        var paren_depth: usize = 0;
+        var brace_depth: usize = 0;
+        var bracket_depth: usize = 0;
+        var in_string = false;
+
+        while (i < contents.len) {
+            const c = contents[i];
+            if (!in_string) {
+                if (c == '"') in_string = true
+                else if (c == '(') paren_depth += 1
+                else if (c == ')' and paren_depth > 0) paren_depth -= 1
+                else if (c == '{') brace_depth += 1
+                else if (c == '}' and brace_depth > 0) brace_depth -= 1
+                else if (c == '[') bracket_depth += 1
+                else if (c == ']' and bracket_depth > 0) bracket_depth -= 1
+                else if (c == ',' and paren_depth == 0 and brace_depth == 0 and bracket_depth == 0) {
+                    break;
+                }
+            } else {
+                if (c == '"' and (i == 0 or contents[i - 1] != '\\')) in_string = false;
+            }
+            i += 1;
+        }
+
+        // Trim the element
+        var elem_end = i;
+        while (elem_end > elem_start and (contents[elem_end - 1] == ' ' or contents[elem_end - 1] == '\t')) {
+            elem_end -= 1;
+        }
+
+        const element = contents[elem_start..elem_end];
+
+        if (element.len > 0) {
+            if (!first_element) {
+                try emitter.write(", ");
+            }
+
+            // Check if this element is a struct literal
+            if (isKoruStructLiteral(element)) {
+                try emitStructLiteral(emitter, ctx, element);
+            } else if (element.len >= 2 and element[0] == '[' and element[element.len - 1] == ']') {
+                // Nested array literal
+                const nested_contents = element[1 .. element.len - 1];
+                try emitter.write("&.{ ");
+                try emitArrayContents(emitter, ctx, nested_contents);
+                try emitter.write(" }");
+            } else {
+                try emitValue(emitter, ctx, element);
+            }
+
+            first_element = false;
+        }
+
+        // Skip comma
+        if (i < contents.len and contents[i] == ',') {
+            i += 1;
+        }
+    }
+}
+
 fn identifierMatchesInputField(ident: []const u8, input_fields: []const ast.Field) bool {
     for (input_fields) |field| {
         if (std.mem.eql(u8, field.name, ident)) {
@@ -3153,7 +3405,42 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
             // This will be a Source struct with .text, .scope.bindings, etc.
             try emitValue(emitter, ctx, arg.value);
         } else {
-            try emitValue(emitter, ctx, arg.value);
+            // Check for Koru array literal syntax: [a, b, c]
+            // Transform to Zig: &[_]ElementType{ a, b, c }
+            if (arg.value.len >= 2 and arg.value[0] == '[' and arg.value[arg.value.len - 1] == ']') {
+                // Look up the parameter type from the event declaration
+                var element_type: ?[]const u8 = null;
+                if (event_decl) |event| {
+                    for (event.input.fields) |field| {
+                        if (std.mem.eql(u8, field.name, param_name)) {
+                            // Extract element type from slice type (e.g., "[]const i32" -> "i32")
+                            element_type = extractSliceElementType(field.type);
+                            break;
+                        }
+                    }
+                }
+
+                const contents = arg.value[1 .. arg.value.len - 1]; // Strip [ and ]
+                if (element_type) |et| {
+                    // Emit proper Zig array literal
+                    try emitter.write("&[_]");
+                    try emitter.write(et);
+                    try emitter.write("{ ");
+                    try emitArrayContents(emitter, ctx, contents);
+                    try emitter.write(" }");
+                } else {
+                    // No type info - emit as anonymous array (let Zig infer)
+                    try emitter.write("&.{ ");
+                    try emitArrayContents(emitter, ctx, contents);
+                    try emitter.write(" }");
+                }
+            } else if (isKoruStructLiteral(arg.value)) {
+                // Koru struct literal: { field: value, field2: value }
+                // Transform to Zig: .{ .field = value, .field2 = value }
+                try emitStructLiteral(emitter, ctx, arg.value);
+            } else {
+                try emitValue(emitter, ctx, arg.value);
+            }
         }
     }
 
