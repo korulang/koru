@@ -880,6 +880,7 @@ const std = @import("std");
                                 .name = branch.name,
                                 .body = new_body,
                                 .binding = branch.binding,
+                                .annotations = branch.annotations,  // Preserve @scope and other annotations
                             };
                         }
 
@@ -902,6 +903,7 @@ const std = @import("std");
                                 .name = branch.name,
                                 .body = new_body,
                                 .binding = branch.binding,
+                                .annotations = branch.annotations,  // Preserve annotations
                             };
                         }
 
