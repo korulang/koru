@@ -17,3 +17,12 @@ const Data = struct { value: i32 };
 ~proc borrow {
     return .{ .borrowed = .{ .data = other } };
 }
+
+// Generic processor constrained to owned OR borrowed
+// Will NOT accept other states like "gc" or "static"
+~event process { d: *Data[M'owned|borrowed] }
+| done { d: *Data[M'owned|borrowed] }  // Preserves whichever state was passed
+
+~proc process {
+    return .{ .done = .{ .d = d } };
+}

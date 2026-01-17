@@ -2,18 +2,40 @@ const std = @import("std");
 const Data = struct { value: i32 };
 
 ~event alloc {}
-| allocated { data: *Data[owned] }
+| allocated { d: *Data[owned] }
 
 ~proc alloc {
     const allocator = std.heap.page_allocator;
-    const d = allocator.create(Data) catch unreachable;
-    d.* = Data{ .value = 42 };
-    return .{ .allocated = .{ .data = d } };
+    const ptr = allocator.create(Data) catch unreachable;
+    ptr.* = Data{ .value = 42 };
+    return .{ .allocated = .{ .d = ptr } };
 }
 
 ~event borrow { other: *Data[owned] }
-| borrowed { data: *Data[borrowed] }
+| borrowed { d: *Data[borrowed] }
 
 ~proc borrow {
-    return .{ .borrowed = .{ .data = other } };
+    return .{ .borrowed = .{ .d = other } };
+}
+
+// Chain of events that all preserve the same state variable M
+~event validate { d: *Data[M'_] }
+| validated { d: *Data[M'_] }  // Preserves M
+
+~proc validate {
+    return .{ .validated = .{ .d = d } };
+}
+
+~event process { d: *Data[M'_] }
+| processed { d: *Data[M'_] }  // Preserves M
+
+~proc process {
+    return .{ .processed = .{ .d = d } };
+}
+
+~event finalize { d: *Data[M'_] }
+| done { d: *Data[M'_] }  // Preserves M
+
+~proc finalize {
+    return .{ .done = .{ .d = d } };
 }

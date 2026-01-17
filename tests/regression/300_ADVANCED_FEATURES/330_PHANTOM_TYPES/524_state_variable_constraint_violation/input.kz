@@ -1,22 +1,18 @@
 // MUST_FAIL
 // EXPECT: State variable constraint violation
 //
-// TODO: Cross-module type sharing not yet implemented
-// This test will fail, but for the wrong reason (type mismatch, not constraint violation)
-//
 // Test 524: Constrained state variable REJECTS invalid state
 // Tests that M'owned|borrowed REJECTS states not in the constraint
 //
 // Key points:
-// - processor:process has data: *Data[M'owned|borrowed]
+// - data:process has d: *Data[M'owned|borrowed]
 // - M is constrained to ONLY owned OR borrowed
 // - [gc] is NOT in the constraint
 // - Should fail at compile time with constraint violation error
 
-~import "$app/processor"
 ~import "$app/data"
 
 // ERROR: [gc] not in constraint M'owned|borrowed
 ~app.data:gc_alloc()
-| allocated a |> app.processor:process(data: a.data)  // ❌ ERROR: [gc] doesn't satisfy M'owned|borrowed
+| allocated a |> app.data:process(d: a.data)  // ❌ ERROR: [gc] doesn't satisfy M'owned|borrowed
     | done |> _

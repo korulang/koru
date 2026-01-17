@@ -10,3 +10,11 @@ const Data = struct { value: i32 };
     d.* = Data{ .value = 42 };
     return .{ .allocated = .{ .data = d } };
 }
+
+// Generic processor constrained to owned OR borrowed ONLY
+~event process { d: *Data[M'owned|borrowed] }
+| done { d: *Data[M'owned|borrowed] }
+
+~proc process {
+    return .{ .done = .{ .d = d } };
+}

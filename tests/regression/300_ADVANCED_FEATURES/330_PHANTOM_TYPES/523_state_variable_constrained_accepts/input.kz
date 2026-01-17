@@ -1,20 +1,16 @@
 // Test 523: Constrained state variable accepts valid states
 // Tests that M'owned|borrowed accepts both owned and borrowed
 //
-// TODO: Cross-module type sharing not yet implemented
-// Requires same fix as test 522
-//
 // Key points:
-// - processor:process has data: *Data[M'owned|borrowed]
+// - data:process has d: *Data[M'owned|borrowed]
 // - M is constrained to ONLY owned OR borrowed
 // - [owned] should be accepted, M = owned
 // - [borrowed] should be accepted, M = borrowed
 // - Output preserves the specific state that was passed
 
-~import "$app/processor"
 ~import "$app/data"
 
 // Test 1: Constraint accepts [owned]
 ~app.data:alloc()
-| allocated a |> app.processor:process(data: a.data)  // M'owned|borrowed accepts [owned], M = owned
-    | done |> _  // d1.data: *Data[owned] - preserved!
+| allocated a |> app.data:process(d: a.data)  // M'owned|borrowed accepts [owned], M = owned
+    | done |> _  // d.d: *Data[owned] - preserved!
