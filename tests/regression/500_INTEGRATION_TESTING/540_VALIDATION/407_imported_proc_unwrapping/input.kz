@@ -1,14 +1,13 @@
-// Test 407: Imported module proc input unwrapping
+// Test 407: Shorthand module path resolution
 //
-// TODO: Module qualifier mismatch in flow resolution
-// The import creates test.mylib as canonical, but invocations use mylib:double.
-// Need to fix module path normalization in emit phase.
+// BUG: Import alias shorthand doesn't resolve in codegen
 //
-// BUG: The compiler generates input field unwrapping for main module procs,
-// but NOT for imported module procs. This causes "undeclared identifier" errors.
+// When you import with: ~import "$test/mylib"
+// You SHOULD be able to call: ~mylib:double(...)
+// But codegen only recognizes: ~test.mylib:double(...)
 //
-// Main module proc body can use 'value' directly (unwrapping works)
-// Imported module proc body should also be able to use 'value' directly (currently broken)
+// This is a codegen bug - the emitter should normalize module paths
+// so shorthand aliases work like fully qualified paths.
 
 const std = @import("std");
 
@@ -26,7 +25,7 @@ const std = @import("std");
     std.debug.print("Sum: {d}\n", .{value});
 }
 
-// Call the imported library's event
+// BUG: These shorthand calls should work but don't
 ~mylib:double(value: 21)
 | result r |> print_result(value: r.doubled)
 

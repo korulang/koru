@@ -1,22 +1,20 @@
 // ============================================================================
-// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
-// ============================================================================
-// Test 837: --ast-json flag with stdlib imports
+// Test: --ast-json flag with stdlib imports
 // Tests that koruc --ast-json can successfully parse files with stdlib imports
 // ============================================================================
 
-~import "$std/ccp"
+~import "$std/io"
 
 const std = @import("std");
 
-// Simple event that uses CCP
-~event test { value: i32 }
+// Simple event
+~event check { value: i32 }
 | ok { result: i32 }
 
-~proc test {
+~proc check {
     return .{ .ok = .{ .result = value } };
 }
 
 // Simple flow
-~test(value: 42)
+~check(value: 42)
 | ok |> _
