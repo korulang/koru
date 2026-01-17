@@ -1,0 +1,4 @@
+COMPILE_ONLY
+# Verify the void event is used for auto-discharge, not the branched one
+CONTAINS close_quiet_event.handler
+NOT_CONTAINS close_checked_event.handler

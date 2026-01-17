@@ -259,6 +259,14 @@ pub const AutoDischargeInserter = struct {
         // Step 1: Build event map
         try self.buildEventMap(program);
 
+        // Check for validation errors (e.g., [!] on branched events)
+        if (self.reporter.hasErrors()) {
+            const stderr_writer = std.debug.lockStderrWriter(&.{});
+            defer std.debug.unlockStderrWriter();
+            self.reporter.printErrors(stderr_writer) catch {};
+            return error.ValidationFailed;
+        }
+
         // Step 2: Transform all flows
         var current_program = program;
         var iteration: u32 = 0;
@@ -287,6 +295,17 @@ pub const AutoDischargeInserter = struct {
                     const event_name = try self.pathToString(event_decl.path);
                     defer self.allocator.free(event_name);
 
+                    // Validate: [!] annotation requires auto-dischargeable event (0 or 1 branches)
+                    if (eventHasDefaultAnnotation(event_decl) and event_decl.branches.len > 1) {
+                        self.reporter.addError(
+                            .KORU083,
+                            event_decl.location.line,
+                            event_decl.location.column,
+                            "[!] annotation requires single-outcome event - events with multiple branches require manual handling",
+                            .{},
+                        ) catch {};
+                    }
+
                     const qualified_name = try std.fmt.allocPrint(
                         self.allocator,
                         "{s}:{s}",
@@ -305,6 +324,17 @@ pub const AutoDischargeInserter = struct {
                             const event_decl = &mod_item.event_decl;
                             const event_name = try self.pathToString(event_decl.path);
                             defer self.allocator.free(event_name);
+
+                            // Validate: [!] annotation requires void event (no branches)
+                            if (eventHasDefaultAnnotation(event_decl) and event_decl.branches.len > 0) {
+                                self.reporter.addError(
+                                    .KORU083,
+                                    event_decl.location.line,
+                                    event_decl.location.column,
+                                    "[!] annotation requires void event (no branches) - branched events cannot be auto-discharged",
+                                    .{},
+                                ) catch {};
+                            }
 
                             const qualified_name = try std.fmt.allocPrint(
                                 self.allocator,
@@ -1281,6 +1311,11 @@ pub const AutoDischargeInserter = struct {
         var iter = self.event_map.iterator();
         while (iter.next()) |entry| {
             const event_decl = entry.value_ptr.decl;
+
+            // Skip events with multiple branches - they require manual handling
+            // Events with 0 branches (void) or 1 branch (single outcome) can be auto-discharged
+            if (event_decl.branches.len > 1) continue;
+
             const is_default = eventHasDefaultAnnotation(event_decl);
 
             for (event_decl.input.fields) |field| {

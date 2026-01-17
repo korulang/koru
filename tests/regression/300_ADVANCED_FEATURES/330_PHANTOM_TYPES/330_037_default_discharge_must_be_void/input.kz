@@ -1,0 +1,39 @@
+// TEST: [!] annotation on multi-branch event is a compile error
+//
+// MUST_FAIL
+//
+// The [!] annotation marks an event as the default auto-discharge target.
+// But events with multiple branches CANNOT be auto-discharged
+// (because multiple branches require manual handling).
+//
+// Marking a multi-branch event with [!] is contradictory and should error.
+//
+// Expected: Compile error about [!] requiring single-outcome event
+
+// Resource with obligation
+pub const Handle = struct {
+    id: i32,
+};
+
+// Event that creates obligation
+~event open {}
+| ok *Handle[open!]
+
+~proc open {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .id = 42 };
+    return .{ .ok = h };
+}
+
+// ERROR: [!] on event with branches is invalid
+// Branched events require manual handling, cannot be auto-discharged
+~[!]event close { h: *Handle[!open] }
+| closed {}
+| error { msg: []const u8 }
+
+~proc close {
+    std.heap.page_allocator.destroy(h);
+    return .{ .closed = .{} };
+}
+
+const std = @import("std");

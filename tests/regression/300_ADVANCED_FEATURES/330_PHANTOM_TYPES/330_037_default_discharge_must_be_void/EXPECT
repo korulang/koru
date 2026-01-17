@@ -1,0 +1,4 @@
+MUST_FAIL
+# Should error because [!] is applied to an event with multiple branches
+CONTAINS KORU083
+CONTAINS single-outcome

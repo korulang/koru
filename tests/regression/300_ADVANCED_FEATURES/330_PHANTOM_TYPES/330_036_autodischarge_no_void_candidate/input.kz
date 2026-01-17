@@ -1,0 +1,42 @@
+// TEST: Auto-discharge skips multi-branch events - no valid candidate
+//
+// MUST_FAIL
+//
+// When the ONLY disposal event has multiple branches,
+// auto-discharge cannot use it (multiple branches require manual handling).
+// This should result in an error: obligation not satisfied.
+//
+// Expected: Compile error about unsatisfied obligation
+
+// Resource with obligation
+pub const Handle = struct {
+    id: i32,
+};
+
+// Event that creates obligation
+~event open {}
+| ok *Handle[open!]
+
+~proc open {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .id = 42 };
+    return .{ .ok = h };
+}
+
+// ONLY disposal event has branches - cannot be auto-discharged
+~event close { h: *Handle[!open] }
+| closed {}
+| error { msg: []const u8 }
+
+~proc close {
+    std.heap.page_allocator.destroy(h);
+    return .{ .closed = .{} };
+}
+
+const std = @import("std");
+
+// Flow: open, then terminator
+// No void disposal exists, so auto-discharge has no candidate
+// This should ERROR - obligation not satisfied
+~open()
+| ok _ |> _

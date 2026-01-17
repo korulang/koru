@@ -1,0 +1,49 @@
+// TEST: Auto-discharge selects single-outcome event over multi-branch event
+//
+// When multiple disposal events exist for an obligation:
+// - One has single outcome (0 or 1 branches)
+// - One has multiple branches requiring handling
+//
+// Auto-discharge should select the SINGLE-OUTCOME event because
+// multi-branch events require manual handling of their continuations.
+//
+// Expected: Compiles successfully, auto-discharge uses close_quiet
+
+// Resource with obligation
+pub const Handle = struct {
+    id: i32,
+};
+
+// Event that creates obligation
+~event open {}
+| ok *Handle[open!]
+
+~proc open {
+    const h = std.heap.page_allocator.create(Handle) catch unreachable;
+    h.* = .{ .id = 42 };
+    return .{ .ok = h };
+}
+
+// SINGLE-OUTCOME disposal (void) - should be selected for auto-discharge
+~event close_quiet { h: *Handle[!open] }
+
+~proc close_quiet {
+    std.heap.page_allocator.destroy(h);
+}
+
+// MULTI-BRANCH disposal - should NOT be selected for auto-discharge
+~event close_checked { h: *Handle[!open] }
+| closed {}
+| error { msg: []const u8 }
+
+~proc close_checked {
+    std.heap.page_allocator.destroy(h);
+    return .{ .closed = .{} };
+}
+
+const std = @import("std");
+
+// Flow: open, then terminator - auto-discharge should insert close_quiet
+// Using _ as binding - auto-discharge synthesizes a binding for disposal
+~open()
+| ok _ |> _
