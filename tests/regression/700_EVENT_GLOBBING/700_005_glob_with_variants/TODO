@@ -1,20 +1,22 @@
-Glob patterns + |variant syntax combined
+Glob patterns + |variant syntax - NOT just targets, also PROPERTY TESTING!
 
-Two orthogonal features:
-1. Globs: ~event transform.* matches family of events
-2. Variants: ~proc event|gpu provides target-specific impl
+Variant use cases:
+1. Target-specific: |gpu, |cpu, |wasm, |js
+2. Implementation variants: |zig(reference), |zig(optimized)
+3. Property testing: verify optimized == reference for random inputs
 
-Combined: ~proc transform.*|gpu = GPU impl for ALL transforms
+Syntax:
+- ~proc event|target              (gpu, wasm, js)
+- ~proc event|target(qualifier)   (zig(reference), zig(optimized))
+- ~proc event.*|variant           (glob + variant)
 
-Parser must accept:
-- ~event module:name.* { ... }         (glob declaration)
-- ~proc module:name.*|variant { ... }  (glob + variant)
+Property testing pattern:
+- Write simple reference impl (obviously correct)
+- Write optimized impl (fast but complex)
+- Test: for random inputs, both produce same output
+- Confidence that optimization didn't break correctness
 
-Variant selection happens at:
-- Compile time (build config: --target=gpu)
-- Or runtime dispatch (if multiple variants compiled in)
-
-Use cases:
-- GPU/CPU/WASM variants for image processing family
-- Debug/release variants for logging family
-- Platform-specific variants (linux/windows/macos)
+Combined with globs:
+- ~proc transform.*|zig(reference) - reference for ALL transforms
+- ~proc transform.*|zig(optimized) - optimized for ALL transforms
+- Property test the entire family at once!

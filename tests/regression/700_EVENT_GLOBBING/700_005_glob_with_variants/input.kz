@@ -1,23 +1,58 @@
 // Test: Glob patterns combined with |variant syntax
 //
-// Koru has TWO orthogonal features that can combine:
-// 1. Glob patterns: ~event transform.* matches transform.blur, transform.sharpen, etc.
-// 2. Variants: ~proc event|gpu provides GPU-specific implementation
+// Variants are NOT just for different targets (GPU/CPU/WASM).
+// They're for ANY alternative implementation:
 //
-// Combined: ~proc transform.*|gpu provides GPU impl for ALL transform.* events
+//   ~proc sort|zig(reference)   - obviously correct, slow
+//   ~proc sort|zig(optimized)   - fast, complex, needs verification
+//
+// This enables PROPERTY TESTING:
+//   For random inputs, reference == optimized
 //
 // Syntax forms:
-//   ~event module:name { ... }           - normal event
-//   ~event module:name.* { ... }         - glob event declaration
-//   ~proc module:name|variant { ... }    - variant implementation
-//   ~proc module:name.*|variant { ... }  - glob + variant combined!
-//
-// Use cases:
-// - GPU implementations for a family of image transforms
-// - JavaScript bindings for a family of events
-// - Debug/release variants for logging family
+//   ~proc event|target              - target variant (gpu, js, wasm)
+//   ~proc event|target(qualifier)   - qualified variant (zig(reference))
+//   ~proc event.*|variant           - glob + variant combined
 
-// Declare a transform family via glob
+// === USE CASE 1: Property Testing ===
+
+~pub event sort { items: []i32 }
+| sorted { items: []i32 }
+
+// Reference implementation - simple, obviously correct
+~proc sort|zig(reference) {
+    // Bubble sort - O(n²) but trivially correct
+    var result = items;
+    for (0..result.len) |i| {
+        for (i + 1..result.len) |j| {
+            if (result[j] < result[i]) {
+                const tmp = result[i];
+                result[i] = result[j];
+                result[j] = tmp;
+            }
+        }
+    }
+    return .{ .sorted = .{ .items = result } };
+}
+
+// Optimized implementation - complex, needs testing
+~proc sort|zig(optimized) {
+    // Introsort with median-of-three pivot - fast but subtle
+    return .{ .sorted = .{ .items = std.sort.sort(items) } };
+}
+
+// Property test: both variants produce same output
+// ~test(sort variants equivalent) {
+//     const input = random_array(1000);
+//     ~sort|zig(reference) = (items: input)
+//     | sorted ref |>
+//         sort|zig(optimized)(items: input)
+//         | sorted opt |> assert.eq(ref.items, opt.items)
+// }
+
+
+// === USE CASE 2: Target-Specific Implementations ===
+
 ~[transform]pub event image.transform.* {
     event_name: []const u8,
     pixels: []u8,
@@ -26,26 +61,28 @@
 }
 | transformed { pixels: []u8 }
 
-// CPU implementation for ALL image transforms
 ~proc image.transform.*|cpu {
-    // Generic CPU implementation
-    // event_name tells us which specific transform (blur, sharpen, etc.)
     return .{ .transformed = .{ .pixels = pixels } };
 }
 
-// GPU implementation for ALL image transforms
 ~proc image.transform.*|gpu {
-    // Generic GPU implementation using compute shaders
-    // Would dispatch to appropriate shader based on event_name
+    // GLSL compute shader dispatch
     return .{ .transformed = .{ .pixels = pixels } };
 }
 
-// WASM implementation for browser
 ~proc image.transform.*|wasm {
-    // WebAssembly-friendly implementation
+    // WebAssembly-friendly, no SIMD
     return .{ .transformed = .{ .pixels = pixels } };
 }
 
-// These invocations could resolve to any variant based on build config:
-// ~image.transform.blur(pixels: data, width: 800, height: 600)
-// ~image.transform.sharpen(pixels: data, width: 800, height: 600)
+
+// === USE CASE 3: Glob + Variant + Property Test ===
+
+// ALL image transforms can be property-tested:
+// ~test(image.transform.* cpu == gpu) {
+//     ~image.transform.blur|cpu = (pixels: test_image, ...)
+//     | transformed cpu_result |>
+//         image.transform.blur|gpu(pixels: test_image, ...)
+//         | transformed gpu_result |>
+//             assert.pixels_close(cpu_result.pixels, gpu_result.pixels, epsilon: 0.001)
+// }
