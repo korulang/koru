@@ -321,8 +321,8 @@ pub fn build(b: *std.Build) void {
     visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
 
     // Tap Pattern Matcher module - pattern matching for tap registration
-    const tap_pattern_matcher_module = b.createModule(.{
-        .root_source_file = b.path("src/tap_pattern_matcher.zig"),
+    const glob_pattern_matcher_module = b.createModule(.{
+        .root_source_file = b.path("src/glob_pattern_matcher.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -335,7 +335,7 @@ pub fn build(b: *std.Build) void {
     });
     tap_registry_module.addImport("ast", ast_module);
     tap_registry_module.addImport("errors", errors_module);
-    tap_registry_module.addImport("tap_pattern_matcher", tap_pattern_matcher_module);
+    tap_registry_module.addImport("glob_pattern_matcher", glob_pattern_matcher_module);
 
     // Runtime Registry module - backend pass for runtime scope collection
     const runtime_registry_module = b.createModule(.{

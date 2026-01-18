@@ -1,33 +1,25 @@
-// Tap Pattern Matcher - Module-Qualified Pattern Matching for Tap Registration
+// Glob Pattern Matcher - Wildcard Pattern Matching for Koru
 // =============================================================================
 //
-// This module provides compile-time pattern matching for tap registration.
-// Since all pattern matching happens during code generation, there is zero
-// runtime cost - only matching taps are emitted to the final binary.
-//
-// Pattern Syntax:
-//   module:event -> branch
+// This module provides compile-time glob pattern matching used throughout Koru:
+// - Event globbing: ~event log.* matches ~log.error, ~log.warn, etc.
+// - Transform matching: transform runner matches invocations to glob patterns
+// - Tap registration: module:event -> branch patterns
+// - Generics: ring.new[T:u32] matches ring.new* pattern
 //
 // Wildcard Support:
 //   - Full wildcard: * matches anything
 //   - Prefix wildcard: *.io matches std.io, test.io, etc
 //   - Suffix wildcard: file.* matches file.read, file.write, etc
-//
-// Scoping Rules (consistent with event calls):
-//   - Unqualified tap in module "logger" → auto-scoped to "logger:event"
-//   - Qualified tap → used as-is
-//   - * → universal wildcard
+//   - Bare suffix: print* matches println, printf, etc
 //
 // Examples:
-//   std.io:file.read -> success   // Specific typed tap
-//   std.io:* -> success            // Any std.io event going to success
-//   *.io:file.read -> error        // Any io module's file.read going to error
-//   * -> *                          // Universal (requires metatype)
+//   log.*        matches log.error, log.warn, log.info
+//   *.transform  matches image.transform, audio.transform
+//   ring.new*    matches ring.new, ring.new[T:u32,N:1024]
+//   *            matches anything (universal wildcard)
 //
-// Branch Globbing:
-//   Branches do NOT support glob patterns because different branches have
-//   different typed shapes. You can only match exact branch names or use *
-//   for universal matching (which requires metatypes).
+// All pattern matching happens at compile time - zero runtime cost.
 
 const std = @import("std");
 
@@ -87,9 +79,24 @@ pub fn matchSegment(pattern: []const u8, value: []const u8) bool {
     return false;
 }
 
+/// Check if a string contains a glob wildcard pattern
+/// Returns true if the string contains '*', meaning it's a pattern, not a literal
+pub fn isGlobPattern(s: []const u8) bool {
+    return std.mem.indexOfScalar(u8, s, '*') != null;
+}
+
 // =============================================================================
 // UNIT TESTS
 // =============================================================================
+
+test "isGlobPattern: detects wildcards" {
+    try std.testing.expect(isGlobPattern("*"));
+    try std.testing.expect(isGlobPattern("log.*"));
+    try std.testing.expect(isGlobPattern("*.io"));
+    try std.testing.expect(isGlobPattern("ring.new*"));
+    try std.testing.expect(!isGlobPattern("log.error"));
+    try std.testing.expect(!isGlobPattern("exact.match"));
+}
 
 test "matchSegment: full wildcard matches anything" {
     try std.testing.expect(matchSegment("*", "anything"));

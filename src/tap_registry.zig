@@ -2,7 +2,7 @@ const std = @import("std");
 const DEBUG = false;  // Set to true for verbose logging
 const ast = @import("ast");
 const errors = @import("errors");
-const tap_pattern_matcher = @import("tap_pattern_matcher");
+const glob_pattern_matcher = @import("glob_pattern_matcher");
 
 /// Represents a resolved tap entry in the registry
 pub const TapEntry = struct {
@@ -250,7 +250,7 @@ pub const TapRegistry = struct {
 };
 
 /// Check if canonical name matches pattern with scoping rules
-/// Now uses tap_pattern_matcher for module-qualified wildcard support
+/// Now uses glob_pattern_matcher for module-qualified wildcard support
 fn matchesPattern(
     pattern: []const u8,
     canonical: []const u8,
@@ -267,12 +267,12 @@ fn matchesPattern(
         const pattern_module = if (pattern_colon) |idx| pattern[0..idx] else "*";
         const pattern_event = if (pattern_colon) |idx| pattern[idx + 1 ..] else pattern;
 
-        // Use tap_pattern_matcher's matchSegment for both module and event
-        return tap_pattern_matcher.matchSegment(pattern_module, module) and
-               tap_pattern_matcher.matchSegment(pattern_event, event);
+        // Use glob_pattern_matcher's matchSegment for both module and event
+        return glob_pattern_matcher.matchSegment(pattern_module, module) and
+               glob_pattern_matcher.matchSegment(pattern_event, event);
     } else {
         // Pattern is unqualified: only match event name with wildcards
-        return tap_pattern_matcher.matchSegment(pattern, event);
+        return glob_pattern_matcher.matchSegment(pattern, event);
     }
 }
 

@@ -192,8 +192,8 @@ emitter_helpers_module.addImport("compiler_config", compiler_config_module);
 emitter_helpers_module.addImport("type_registry", type_registry_module);
 
 // Tap pattern matcher
-const tap_pattern_matcher_module = b.createModule(.{
-    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/tap_pattern_matcher.zig" },
+const glob_pattern_matcher_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/glob_pattern_matcher.zig" },
     .target = target,
     .optimize = optimize,
 });
@@ -206,7 +206,7 @@ const tap_registry_module = b.createModule(.{
 });
 tap_registry_module.addImport("ast", ast_module);
 tap_registry_module.addImport("errors", errors_module);
-tap_registry_module.addImport("tap_pattern_matcher", tap_pattern_matcher_module);
+tap_registry_module.addImport("glob_pattern_matcher", glob_pattern_matcher_module);
 
 // Tap transformer - inserts tap invocations into AST
 const tap_transformer_module = b.createModule(.{
