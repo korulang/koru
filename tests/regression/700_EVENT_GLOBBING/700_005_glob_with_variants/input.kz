@@ -1,0 +1,51 @@
+// Test: Glob patterns combined with |variant syntax
+//
+// Koru has TWO orthogonal features that can combine:
+// 1. Glob patterns: ~event transform.* matches transform.blur, transform.sharpen, etc.
+// 2. Variants: ~proc event|gpu provides GPU-specific implementation
+//
+// Combined: ~proc transform.*|gpu provides GPU impl for ALL transform.* events
+//
+// Syntax forms:
+//   ~event module:name { ... }           - normal event
+//   ~event module:name.* { ... }         - glob event declaration
+//   ~proc module:name|variant { ... }    - variant implementation
+//   ~proc module:name.*|variant { ... }  - glob + variant combined!
+//
+// Use cases:
+// - GPU implementations for a family of image transforms
+// - JavaScript bindings for a family of events
+// - Debug/release variants for logging family
+
+// Declare a transform family via glob
+~[transform]pub event image.transform.* {
+    event_name: []const u8,
+    pixels: []u8,
+    width: u32,
+    height: u32,
+}
+| transformed { pixels: []u8 }
+
+// CPU implementation for ALL image transforms
+~proc image.transform.*|cpu {
+    // Generic CPU implementation
+    // event_name tells us which specific transform (blur, sharpen, etc.)
+    return .{ .transformed = .{ .pixels = pixels } };
+}
+
+// GPU implementation for ALL image transforms
+~proc image.transform.*|gpu {
+    // Generic GPU implementation using compute shaders
+    // Would dispatch to appropriate shader based on event_name
+    return .{ .transformed = .{ .pixels = pixels } };
+}
+
+// WASM implementation for browser
+~proc image.transform.*|wasm {
+    // WebAssembly-friendly implementation
+    return .{ .transformed = .{ .pixels = pixels } };
+}
+
+// These invocations could resolve to any variant based on build config:
+// ~image.transform.blur(pixels: data, width: 800, height: 600)
+// ~image.transform.sharpen(pixels: data, width: 800, height: 600)

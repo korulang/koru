@@ -1,0 +1,20 @@
+Glob patterns + |variant syntax combined
+
+Two orthogonal features:
+1. Globs: ~event transform.* matches family of events
+2. Variants: ~proc event|gpu provides target-specific impl
+
+Combined: ~proc transform.*|gpu = GPU impl for ALL transforms
+
+Parser must accept:
+- ~event module:name.* { ... }         (glob declaration)
+- ~proc module:name.*|variant { ... }  (glob + variant)
+
+Variant selection happens at:
+- Compile time (build config: --target=gpu)
+- Or runtime dispatch (if multiple variants compiled in)
+
+Use cases:
+- GPU/CPU/WASM variants for image processing family
+- Debug/release variants for logging family
+- Platform-specific variants (linux/windows/macos)
