@@ -1,0 +1,71 @@
+// Test: Fractal abstract events for compiler pipeline
+//
+// The WHOLE pipeline is an abstract event.
+// Each STEP is also an abstract event.
+// Same pattern at every level. Self-similar. Fractal.
+//
+// Users can:
+// - Replace the whole pipeline
+// - Replace just one step
+// - Wrap a step (delegate to default, add before/after)
+// - Compose default steps with custom ones
+//
+// All compile-time resolved. Zero runtime overhead.
+
+// === THE WHOLE PIPELINE ===
+~abstract event compiler.coordinate { ctx: CompilerContext }
+| finished { ctx: CompilerContext }
+
+~proc compiler.coordinate {
+    ctx
+    |> compiler.parse
+    | parsed ctx |> compiler.analyze
+    | analyzed ctx |> compiler.transform
+    | transformed ctx |> compiler.optimize
+    | optimized ctx |> compiler.emit
+    | emitted ctx |> .{ .finished = ctx }
+}
+
+// === EACH STEP (same pattern) ===
+~abstract event compiler.parse { ctx: CompilerContext }
+| parsed { ctx: CompilerContext }
+
+~abstract event compiler.analyze { ctx: CompilerContext }
+| analyzed { ctx: CompilerContext }
+
+~abstract event compiler.transform { ctx: CompilerContext }
+| transformed { ctx: CompilerContext }
+
+~abstract event compiler.optimize { ctx: CompilerContext }
+| optimized { ctx: CompilerContext }
+
+~abstract event compiler.emit { ctx: CompilerContext }
+| emitted { ctx: CompilerContext }
+
+// === USER CUSTOMIZATION EXAMPLES ===
+
+// Example 1: Add AI error explanation after analyze
+// ~impl koru_std.compiler:compiler.analyze =
+//     compiler.analyze(ctx)  // delegate to default
+//     | analyzed ctx |>
+//         if(ctx.has_errors)
+//         | then |> ai_explain(ctx.errors) |> .{ .analyzed = ctx }
+//         | else |> .{ .analyzed = ctx }
+
+// Example 2: Skip optimization for debug builds
+// ~impl koru_std.compiler:compiler.coordinate =
+//     ctx
+//     |> compiler.parse
+//     | parsed ctx |> compiler.analyze
+//     | analyzed ctx |> compiler.transform
+//     | transformed ctx |>
+//         if(ctx.build_mode == .debug)
+//         | then |> compiler.emit(ctx)  // skip optimize
+//         | else |> compiler.optimize(ctx) |> optimized |> compiler.emit
+//     | emitted ctx |> .{ .finished = ctx }
+
+// Example 3: Inject custom transform step
+// ~impl koru_std.compiler:compiler.transform =
+//     compiler.transform(ctx)  // run default transforms
+//     | transformed ctx |> my_custom_transform(ctx)  // then mine
+//     | custom ctx |> .{ .transformed = ctx }

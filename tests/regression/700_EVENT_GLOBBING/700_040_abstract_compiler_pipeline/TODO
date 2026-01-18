@@ -1,0 +1,20 @@
+Fractal abstract events: compiler pipeline as self-similar pattern
+
+Design:
+- WHOLE pipeline is ~abstract event compiler.coordinate
+- EACH step is ~abstract event compiler.{parse,analyze,transform,optimize,emit}
+- Same pattern at every level (fractal/self-similar)
+- Users override at ANY level via ~impl
+
+Capabilities:
+- Replace whole pipeline OR individual steps
+- Wrap steps (delegate to default, add before/after logic)
+- Compose default + custom steps freely
+- All compile-time resolved, zero runtime overhead
+
+Integration with today's features:
+- Event globbing: ~abstract event transform.* for families
+- AI integration: inject ai_explain as a step
+- Pruning: steps can short-circuit via .pruned
+
+This is the endgame: user-controllable compiler as pure Koru code.
