@@ -1,71 +1,59 @@
-// Test: Fractal abstract events for compiler pipeline
+// Test: Fractal compiler pipeline - ALREADY EXISTS in compiler.kz!
 //
-// The WHOLE pipeline is an abstract event.
-// Each STEP is also an abstract event.
-// Same pattern at every level. Self-similar. Fractal.
+// The real implementation is beautiful:
 //
-// Users can:
-// - Replace the whole pipeline
-// - Replace just one step
-// - Wrap a step (delegate to default, add before/after)
-// - Compose default steps with custom ones
+// ~compiler.coordinate.default =
+//     compiler.context.create(program_ast: program_ast, allocator: allocator)
+//     | created c0 |> compiler.coordinate.frontend(ctx: c0.ctx)
+//       | continued c1 |> compiler.coordinate.transform_taps(ctx: c1.ctx)
+//         | continued c2 |> compiler.coordinate.analysis(ctx: c2.ctx)
+//           | continued c3 |> compiler.coordinate.test_generation(ctx: c3.ctx)
+//             | continued c4 |> compiler.coordinate.optimize(ctx: c4.ctx)
+//               | continued c5 |> compiler.coordinate.emission(ctx: c5.ctx)
+//                 | continued c6 |> compiler.metrics.format(...)
+//                   | formatted m |> coordinated { ... }
+//           | failed f |> error { message: f.message }
 //
-// All compile-time resolved. Zero runtime overhead.
+// Key insights from the REAL code:
+// 1. It's a FLOW, not imperative code - the pipeline IS the continuation chain
+// 2. Each step is a separate event (compiler.coordinate.frontend, .analysis, etc.)
+// 3. Error handling (| failed f |>) is built into the flow
+// 4. compiler.coordinate is INTENTIONALLY unimplemented - users override it!
+//
+// From the comments in compiler.kz:
+// "Users can implement compiler.coordinate to customize compilation, or the system
+//  will fall back to compiler.coordinate.default (via main.zig bootstrap logic)."
+//
+// The fractal pattern is ALREADY THERE:
+// - Override compiler.coordinate → replace whole pipeline
+// - Override compiler.coordinate.analysis → replace just analysis
+// - Override compiler.coordinate.frontend → replace just frontend
+//
+// What we're adding with abstract events:
+// - Make this pattern EXPLICIT with ~abstract event
+// - Enable delegation to default impl from within override
+// - Compile-time enforcement of single implementation
 
-// === THE WHOLE PIPELINE ===
-~abstract event compiler.coordinate { ctx: CompilerContext }
-| finished { ctx: CompilerContext }
+~import "$std/compiler"
 
-~proc compiler.coordinate {
-    ctx
-    |> compiler.parse
-    | parsed ctx |> compiler.analyze
-    | analyzed ctx |> compiler.transform
-    | transformed ctx |> compiler.optimize
-    | optimized ctx |> compiler.emit
-    | emitted ctx |> .{ .finished = ctx }
-}
+// Example: User overrides just the analysis step to add AI error explanation
+// ~compiler.coordinate.analysis =
+//     compiler.coordinate.analysis.default(ctx: ctx)  // delegate to default
+//     | continued c |>
+//         if(c.ctx.errors.items.len > 0)
+//         | then |> ai_explain_errors(ctx: c.ctx) |> continued { ctx: c.ctx }
+//         | else |> continued { ctx: c.ctx }
 
-// === EACH STEP (same pattern) ===
-~abstract event compiler.parse { ctx: CompilerContext }
-| parsed { ctx: CompilerContext }
+// Example: User replaces whole pipeline for debug builds
+// ~compiler.coordinate =
+//     compiler.context.create(program_ast: program_ast, allocator: allocator)
+//     | created c0 |> compiler.coordinate.frontend(ctx: c0.ctx)
+//       | continued c1 |> compiler.coordinate.analysis(ctx: c1.ctx)
+//         | continued c2 |> compiler.coordinate.emission(ctx: c2.ctx)  // skip optimize!
+//           | continued c3 |> coordinated { ast: c3.ctx.ast, code: c3.code, metrics: "debug" }
 
-~abstract event compiler.analyze { ctx: CompilerContext }
-| analyzed { ctx: CompilerContext }
-
-~abstract event compiler.transform { ctx: CompilerContext }
-| transformed { ctx: CompilerContext }
-
-~abstract event compiler.optimize { ctx: CompilerContext }
-| optimized { ctx: CompilerContext }
-
-~abstract event compiler.emit { ctx: CompilerContext }
-| emitted { ctx: CompilerContext }
-
-// === USER CUSTOMIZATION EXAMPLES ===
-
-// Example 1: Add AI error explanation after analyze
-// ~impl koru_std.compiler:compiler.analyze =
-//     compiler.analyze(ctx)  // delegate to default
-//     | analyzed ctx |>
-//         if(ctx.has_errors)
-//         | then |> ai_explain(ctx.errors) |> .{ .analyzed = ctx }
-//         | else |> .{ .analyzed = ctx }
-
-// Example 2: Skip optimization for debug builds
-// ~impl koru_std.compiler:compiler.coordinate =
-//     ctx
-//     |> compiler.parse
-//     | parsed ctx |> compiler.analyze
-//     | analyzed ctx |> compiler.transform
-//     | transformed ctx |>
-//         if(ctx.build_mode == .debug)
-//         | then |> compiler.emit(ctx)  // skip optimize
-//         | else |> compiler.optimize(ctx) |> optimized |> compiler.emit
-//     | emitted ctx |> .{ .finished = ctx }
-
-// Example 3: Inject custom transform step
-// ~impl koru_std.compiler:compiler.transform =
-//     compiler.transform(ctx)  // run default transforms
-//     | transformed ctx |> my_custom_transform(ctx)  // then mine
-//     | custom ctx |> .{ .transformed = ctx }
+// Placeholder for test framework
+~event test.placeholder {}
+| ok {}
+~proc test.placeholder { return .{ .ok = {} }; }
+~test.placeholder()

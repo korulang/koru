@@ -1,20 +1,26 @@
-Fractal abstract events: compiler pipeline as self-similar pattern
+Fractal abstract events - the pattern ALREADY EXISTS in compiler.kz!
 
-Design:
-- WHOLE pipeline is ~abstract event compiler.coordinate
-- EACH step is ~abstract event compiler.{parse,analyze,transform,optimize,emit}
-- Same pattern at every level (fractal/self-similar)
-- Users override at ANY level via ~impl
+The real compiler.coordinate.default is a FLOW:
+- Pipeline IS the continuation chain
+- Each step is a separate event
+- Error handling built into flow (| failed f |>)
+- compiler.coordinate intentionally unimplemented for user override
 
-Capabilities:
-- Replace whole pipeline OR individual steps
-- Wrap steps (delegate to default, add before/after logic)
-- Compose default + custom steps freely
-- All compile-time resolved, zero runtime overhead
+What abstract events add:
+- Make the override pattern EXPLICIT
+- Enable delegation to default from within override
+- Compile-time single-implementation enforcement
 
-Integration with today's features:
-- Event globbing: ~abstract event transform.* for families
-- AI integration: inject ai_explain as a step
-- Pruning: steps can short-circuit via .pruned
+Current: Users override by implementing compiler.coordinate
+Future: ~abstract event + ~impl for explicit contract
 
-This is the endgame: user-controllable compiler as pure Koru code.
+The fractal structure already exists:
+- compiler.coordinate (whole pipeline)
+  - compiler.coordinate.frontend
+  - compiler.coordinate.transform_taps
+  - compiler.coordinate.analysis
+  - compiler.coordinate.test_generation
+  - compiler.coordinate.optimize
+  - compiler.coordinate.emission
+
+Each level can be overridden. Same pattern throughout.
