@@ -1,0 +1,48 @@
+// Test: Parser accepts ANY characters in event names (except unbalanced braces)
+//
+// The parser should be PERMISSIVE about event name syntax.
+// Transform passes enforce conventions, not the parser.
+//
+// Valid event names (parser accepts all of these):
+//   ~ring:new[T:i32]       ← bracket style generics
+//   ~ring:new<T:i32>       ← angle bracket style generics
+//   ~ring:new{T:i32}       ← NOT valid (brace starts body)
+//   ~log.*                 ← glob pattern
+//   ~math:add<A,B>         ← multiple type params
+//   ~weird:name$with#chars ← arbitrary characters
+//
+// The parser counts:
+//   () parentheses - must balance
+//   [] brackets - must balance
+//   <> angle brackets - must balance
+//   {} braces - STOP at opening brace (starts event body)
+//
+// Everything before the `{` is the event name + params.
+// The transform decides if the syntax makes sense.
+
+// These should ALL parse successfully (transform may reject some)
+
+~[comptime|transform]pub event test.* {
+    event_name: []const u8,
+}
+| ok {}
+
+~proc test.* {
+    // Just accept everything for this test
+    return .{ .ok = {} };
+}
+
+// Bracket style (like Zig generics)
+~test:generic[T:u32,N:1024]()
+
+// Angle bracket style (like C++/Rust generics)
+~test:generic<T:u32,N:1024>()
+
+// Mixed brackets (parser allows, transform can reject)
+~test:weird<A>[B](C)()
+
+// Glob with brackets
+~test:ring.*[T:u32]()
+
+// Special characters (parser allows anything)
+~test:name$with#special@chars()

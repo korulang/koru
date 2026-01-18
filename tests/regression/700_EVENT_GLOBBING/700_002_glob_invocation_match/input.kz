@@ -1,0 +1,57 @@
+// Test: Does ~log.error match the glob pattern log.* ?
+//
+// When the transform runner sees ~log.error(...), it should:
+// 1. Look for exact match: event "log.error" - not found
+// 2. Look for glob match: event "log.*" - FOUND!
+// 3. Invoke the log.* transform with event_name = "log.error"
+//
+// The transform can then validate "error" is a known log level
+// and emit the appropriate code.
+
+~[comptime|transform]pub event log.* {
+    event_name: []const u8,
+    expr: Expression,
+    source: Source,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator,
+}
+| transformed { program: *const Program }
+
+~proc log.* {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // Extract the log level from event_name (e.g., "log.error" -> "error")
+    const level = event_name[4..]; // Skip "log."
+
+    // For this test, just emit a print with the level
+    const code = std.fmt.allocPrint(
+        allocator,
+        "std.debug.print(\"[{s}] {s}\\n\", .{{}});",
+        .{ level, expr }
+    ) catch unreachable;
+
+    // Get the flow from the item
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{ .program = program } };
+
+    // Create inline code to replace the flow
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    return .{ .transformed = .{ .program = program } };
+}
+
+// This invocation should match log.* glob pattern
+~log.error("Something went wrong")

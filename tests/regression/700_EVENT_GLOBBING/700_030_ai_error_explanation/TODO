@@ -1,0 +1,18 @@
+AI-powered compiler error explanation via generateObject
+
+Implementation:
+1. tools/explain-error.ts - TypeScript tool using Vercel AI SDK
+2. Schema: { summary: string, cause: string, fix?: string, relevant_lines?: number[] }
+3. Graceful degradation: no API key → exit 1 → compiler prints raw error
+
+Testing non-deterministic AI output:
+- Don't check exact text
+- Verify schema fields are populated
+- Verify response mentions key terms ("NonexistentType", "undefined", etc.)
+- Use AI to validate AI: generateObject({ schema: TestValidation })
+
+This is part of the larger pattern:
+- Compiler errors → AI explains
+- Test failures → AI analyzes
+- Commits → AI summarizes (already working in korulang_org!)
+- Every friction point → generateObject with structured schema

@@ -1,0 +1,4 @@
+Transform runner must match ~log.error against log.* glob pattern
+Depends on: 700_001 (glob declaration syntax)
+When matching invocations, try exact match first, then glob patterns.
+Pass the full event_name to the transform so it can extract the suffix.

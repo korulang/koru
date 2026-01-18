@@ -1,0 +1,20 @@
+AI-assisted test failure analysis - the test framework gets AI too
+
+Already working in korulang_org:
+- Discord bot analyzes commits, posts structured summaries
+- "Δ PassRate: 1.6% | ✅ 1 fixed"
+
+Extend to test failures:
+1. Collect context: stdout, stderr, diffs, recent commits
+2. generateObject({ schema: FailureAnalysis })
+3. Schema: { summary, root_cause, suggested_fix, affected_files, is_regression }
+4. Output to: Discord, GitHub issues, terminal, next AI call
+
+Use AI to validate AI:
+- Test expects AI explanation to mention certain terms
+- generateObject({ schema: ValidationResult, prompt: "Does this explanation address X?" })
+- Semantic validation, not string matching
+
+The contour: generateObject calls "all over the place"
+- Not chaos - structured schemas make it composable
+- Every friction point becomes an AI-assisted handoff

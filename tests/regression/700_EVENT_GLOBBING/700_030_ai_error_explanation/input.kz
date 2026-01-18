@@ -1,0 +1,24 @@
+// Test: AI-powered compiler error explanation
+//
+// When compilation fails, the compiler can invoke an AI to explain the error.
+// This is a PIPELINE PASS, not magic - just another step in compiler.coordinate.
+//
+// The test verifies:
+// 1. AI is invoked when OPENROUTER_API_KEY (or similar) is set
+// 2. Response matches ErrorExplanation schema (summary, cause, fix)
+// 3. Response references relevant Koru constructs, not just Zig internals
+//
+// Non-deterministic output is tested via SCHEMA VALIDATION, not exact match.
+// The AI's explanation varies, but it must fill the required slots.
+
+// This code has an intentional error for the AI to explain
+~event broken.example {
+    value: NonexistentType,  // ← This type doesn't exist
+}
+| ok {}
+
+~proc broken.example {
+    return .{ .ok = {} };
+}
+
+~broken.example(value: 42)

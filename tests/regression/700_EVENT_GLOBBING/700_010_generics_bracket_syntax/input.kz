@@ -1,0 +1,72 @@
+// Test: Parser accepts generic params in event names via bracket syntax
+//
+// ~ring.new[T:u32,N:1024](name: "my_ring")
+//
+// This is NOT phantom type syntax (which appears on TYPE references).
+// This is generic parameter syntax (which appears on EVENT names).
+//
+// Phantom:  *Entity[position+velocity]  ← on type
+// Generic:  ring.new[T:u32,N:1024]      ← on event name
+//
+// Parser sees the brackets as part of the event name string.
+// Transform receives full name: "ring.new[T:u32,N:1024]"
+// Transform parses brackets, extracts T=u32, N=1024, synthesizes typed code.
+
+~[comptime|transform]pub event ring.* {
+    event_name: []const u8,
+    expr: Expression,
+    source: Source,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator,
+}
+| transformed { program: *const Program }
+
+~proc ring.* {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // Parse generic params from event_name
+    // e.g., "ring.new[T:u32,N:1024]" → command="new", T="u32", N="1024"
+
+    // Find the bracket position
+    const bracket_start = std.mem.indexOf(u8, event_name, "[");
+    const bracket_end = std.mem.lastIndexOf(u8, event_name, "]");
+
+    if (bracket_start == null or bracket_end == null) {
+        // No generic params - this is fine for some ring operations
+        return .{ .transformed = .{ .program = program } };
+    }
+
+    const command = event_name[5..bracket_start.?]; // Skip "ring."
+    const params_str = event_name[bracket_start.? + 1 .. bracket_end.?];
+
+    // For this test, just verify we can parse the params
+    // Real implementation would use a proper parser
+    const code = std.fmt.allocPrint(
+        allocator,
+        "// ring.{s} with params: {s}\n",
+        .{ command, params_str }
+    ) catch unreachable;
+
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{ .program = program } };
+
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    return .{ .transformed = .{ .program = program } };
+}
+
+// This invocation has generic params in brackets
+~ring.new[T:u32,N:1024](name: "my_ring")

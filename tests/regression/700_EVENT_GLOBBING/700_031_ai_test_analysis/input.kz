@@ -1,0 +1,25 @@
+// Test: AI-assisted test failure analysis
+//
+// When tests fail, AI analyzes the failure and suggests fixes.
+// Already proven in korulang_org Discord integration:
+//
+//   ⚡ Koru Compiler Update: d116811
+//   Zero failures achieved. We just nuked 12 failing tests...
+//   Δ PassRate: 1.6% | ✅ 1 fixed
+//
+// The pattern:
+// 1. Test runner collects failure data (stdout, stderr, diffs)
+// 2. generateObject({ schema: FailureAnalysis, prompt: context })
+// 3. Structured output: { summary, root_cause, suggested_fix, affected_files }
+// 4. Feed into Discord, issue tracker, or next AI call
+//
+// This enables:
+// - "Why did this test start failing?" → AI traces recent commits
+// - "Is this a regression or new behavior?" → AI compares snapshots
+// - "What's the minimal fix?" → AI suggests patch
+
+// Placeholder - this test documents the pattern, not a specific implementation
+~event test.placeholder {}
+| ok {}
+~proc test.placeholder { return .{ .ok = {} }; }
+~test.placeholder()

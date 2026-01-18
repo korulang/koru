@@ -1,0 +1,69 @@
+// Test: Unknown suffix should error with Levenshtein-based suggestion
+//
+// ~log.warning("...") should fail because "warning" is not a valid level.
+// The transform should:
+// 1. Match log.* pattern
+// 2. Extract suffix "warning"
+// 3. Check against valid levels: ["error", "warn", "info", "debug"]
+// 4. Find closest match via Levenshtein: "warn"
+// 5. Emit compile error: "Unknown log level 'warning', did you mean 'warn'?"
+
+~[comptime|transform]pub event log.* {
+    event_name: []const u8,
+    expr: Expression,
+    source: Source,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator,
+}
+| transformed { program: *const Program }
+| compile_error { message: []const u8 }
+
+~proc log.* {
+    const valid_levels = [_][]const u8{ "error", "warn", "info", "debug" };
+
+    // Extract the log level from event_name
+    const level = event_name[4..]; // Skip "log."
+
+    // Check if level is valid
+    var found = false;
+    for (valid_levels) |valid| {
+        if (std.mem.eql(u8, level, valid)) {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        // Find closest match using simple edit distance
+        var closest: []const u8 = valid_levels[0];
+        var min_dist: usize = std.math.maxInt(usize);
+
+        for (valid_levels) |valid| {
+            // Simple length-based heuristic for now
+            const dist = if (level.len > valid.len)
+                level.len - valid.len
+            else
+                valid.len - level.len;
+            if (dist < min_dist) {
+                min_dist = dist;
+                closest = valid;
+            }
+        }
+
+        const msg = std.fmt.allocPrint(
+            allocator,
+            "Unknown log level '{s}', did you mean '{s}'?",
+            .{ level, closest }
+        ) catch unreachable;
+
+        return .{ .compile_error = .{ .message = msg } };
+    }
+
+    // Valid level - emit logging code
+    // ... (same as 700_002)
+    return .{ .transformed = .{ .program = program } };
+}
+
+// This should trigger the Levenshtein suggestion
+~log.warning("This should suggest 'warn'")

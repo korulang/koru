@@ -1,0 +1,4 @@
+Parser must accept ANY characters in event names with balanced bracket counting
+Brackets (), [], <> must balance. Braces {} terminate the event name.
+Parser is permissive - transform passes enforce syntax conventions.
+This enables: [T:u32] style, <T:u32> style, glob *, arbitrary suffixes.

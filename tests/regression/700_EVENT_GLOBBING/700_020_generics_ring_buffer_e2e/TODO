@@ -1,0 +1,4 @@
+Full end-to-end ring buffer demonstrating generics-as-library pattern
+Depends on: All previous 700_0xx tests
+This is the integration test proving the whole system works together.
+When this passes, event globbing + generics are fully implemented.

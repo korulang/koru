@@ -1,0 +1,32 @@
+// Test: Can the parser accept glob (*) in event declaration names?
+//
+// This is the foundation of event globbing - the ability to declare
+// a family of events using a wildcard pattern.
+//
+// Use cases enabled by this:
+// - Log levels: ~log.* matches ~log.error, ~log.warn, ~log.info
+// - Generics: ~ring.* matches ~ring.new[T:u32,N:1024]
+// - Any event family with shared handling logic
+//
+// MUST_FAIL: Parser does not yet accept * in event names
+
+~[comptime|transform]pub event log.* {
+    event_name: []const u8,
+    expr: Expression,
+}
+| emitted { code: []const u8 }
+| pruned { }
+
+~proc log.* {
+    // For now, just emit a print statement
+    // Real implementation would check log levels, prune, etc.
+    const code = std.fmt.allocPrint(
+        allocator,
+        "std.debug.print(\"{s}\\n\", .{{}});",
+        .{ expr }
+    ) catch unreachable;
+    return .{ .emitted = .{ .code = code } };
+}
+
+// Test invocation - should match log.*
+~log.info("Hello from glob event")

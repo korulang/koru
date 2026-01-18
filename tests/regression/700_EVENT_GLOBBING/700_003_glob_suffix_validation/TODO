@@ -1,0 +1,4 @@
+Glob transforms can validate suffixes and emit helpful compile errors
+Depends on: 700_002 (glob invocation match)
+Transform returns compile_error branch with suggestion based on Levenshtein distance.
+Example: "Unknown log level 'warning', did you mean 'warn'?"
