@@ -1,6 +1,6 @@
 // Test: Transform can extract and use generic parameters
 //
-// Given: ~ring.new[T:u32,N:1024](name: "counter_ring")
+// Given: ~ring.new[T:u32;N:1024](name: "counter_ring")
 //
 // Transform should:
 // 1. Parse event_name to extract T=u32, N=1024
@@ -27,18 +27,18 @@
     const ast_functional = @import("ast_functional");
     const allocator = std.heap.page_allocator;
 
-    // Parse: ring.new[T:u32,N:1024]
+    // Parse: ring.new[T:u32;N:1024]
     const bracket_start = std.mem.indexOf(u8, event_name, "[") orelse return .{ .transformed = .{ .program = program } };
     const bracket_end = std.mem.lastIndexOf(u8, event_name, "]") orelse return .{ .transformed = .{ .program = program } };
 
     const params_str = event_name[bracket_start + 1 .. bracket_end];
 
-    // Simple parsing: split by comma, then by colon
-    // "T:u32,N:1024" → T=u32, N=1024
+    // Simple parsing: split by semicolon, then by colon
+    // "T:u32;N:1024" → T=u32, N=1024
     var T: []const u8 = "u8";
     var N: []const u8 = "64";
 
-    var params_iter = std.mem.splitScalar(u8, params_str, ',');
+    var params_iter = std.mem.splitScalar(u8, params_str, ';');
     while (params_iter.next()) |param| {
         const trimmed = std.mem.trim(u8, param, " ");
         if (std.mem.indexOf(u8, trimmed, ":")) |colon| {
@@ -96,4 +96,4 @@
 }
 
 // Create a ring buffer of 1024 u32 values
-~ring.new[T:u32,N:1024](name: "my_ring")
+~ring.new[T:u32;N:1024](name: "my_ring")

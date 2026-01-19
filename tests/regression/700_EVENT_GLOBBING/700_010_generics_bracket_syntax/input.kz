@@ -1,15 +1,19 @@
 // Test: Parser accepts generic params in event names via bracket syntax
 //
-// ~ring.new[T:u32,N:1024](name: "my_ring")
+// ~ring.new[T:u32;N:1024](name: "my_ring")
 //
 // This is NOT phantom type syntax (which appears on TYPE references).
 // This is generic parameter syntax (which appears on EVENT names).
 //
 // Phantom:  *Entity[position+velocity]  ← on type
-// Generic:  ring.new[T:u32,N:1024]      ← on event name
+// Generic:  ring.new[T:u32;N:1024]      ← on event name
+//
+// Semicolon separates params to avoid ambiguity with nested types:
+//   ring.new[T:HashMap<K,V>;N:64]  ← clear!
+//   ring.new[T:HashMap<K,V>,N:64]  ← comma soup
 //
 // Parser sees the brackets as part of the event name string.
-// Transform receives full name: "ring.new[T:u32,N:1024]"
+// Transform receives full name: "ring.new[T:u32;N:1024]"
 // Transform parses brackets, extracts T=u32, N=1024, synthesizes typed code.
 
 ~[comptime|transform]pub event ring.* {
@@ -26,7 +30,7 @@
     const allocator = std.heap.page_allocator;
 
     // Parse generic params from event_name
-    // e.g., "ring.new[T:u32,N:1024]" → command="new", T="u32", N="1024"
+    // e.g., "ring.new[T:u32;N:1024]" → command="new", T="u32", N="1024"
 
     // Find the bracket position
     const bracket_start = std.mem.indexOf(u8, event_name, "[");
@@ -68,4 +72,4 @@
 }
 
 // This invocation has generic params in brackets
-~ring.new[T:u32,N:1024](name: "my_ring")
+~ring.new[T:u32;N:1024](name: "my_ring")

@@ -33,10 +33,10 @@
 }
 
 // Bracket style (like Zig generics)
-~test:generic[T:u32,N:1024]()
+~test:generic[T:u32;N:1024]()
 
 // Angle bracket style (like C++/Rust generics)
-~test:generic<T:u32,N:1024>()
+~test:generic<T:u32;N:1024>()
 
 // Mixed brackets (parser allows, transform can reject)
 ~test:weird<A>[B](C)()
