@@ -28,6 +28,26 @@ fn stripPhantom(type_str: []const u8) []const u8 {
     return type_str;
 }
 
+/// Write a path segment with glob wildcards mangled to valid Zig identifiers
+/// e.g., "log" -> "log", "*" -> "_star_", "foo*bar" -> "foo_star_bar"
+fn writeMangledSegment(code_emitter: *emitter.CodeEmitter, segment: []const u8) !void {
+    var start: usize = 0;
+    for (segment, 0..) |c, i| {
+        if (c == '*') {
+            // Write everything before the *
+            if (i > start) {
+                try code_emitter.write(segment[start..i]);
+            }
+            try code_emitter.write("_star_");
+            start = i + 1;
+        }
+    }
+    // Write any remaining characters after last *
+    if (start < segment.len) {
+        try code_emitter.write(segment[start..]);
+    }
+}
+
 /// Use EmitMode from emitter_helpers to avoid duplication
 pub const EmitMode = emitter.EmitMode;
 
@@ -972,13 +992,15 @@ pub const VisitorEmitter = struct {
 
         // Write the event struct header
         // Join all segments with underscores: ring.dequeue becomes ring_dequeue_event
+        // Glob patterns (e.g., log.*) get mangled: log.* becomes log__star__event
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("pub const ");
         for (event.path.segments, 0..) |segment, idx| {
             if (idx > 0) {
                 try self.code_emitter.write("_");
             }
-            try self.code_emitter.write(segment);
+            // Mangle glob wildcards: * -> _star_
+            try writeMangledSegment(self.code_emitter, segment);
         }
         try self.code_emitter.write("_event = struct {\n");
 

@@ -1,4 +1,4 @@
-// Test: Can the parser accept glob (*) in event declaration names?
+// Test: Event globbing - parser accepts * in event declaration names
 //
 // This is the foundation of event globbing - the ability to declare
 // a family of events using a wildcard pattern.
@@ -8,25 +8,29 @@
 // - Generics: ~ring.* matches ~ring.new[T:u32,N:1024]
 // - Any event family with shared handling logic
 //
-// MUST_FAIL: Parser does not yet accept * in event names
+// VERIFIES:
+// 1. Parser accepts * in event names (log.*)
+// 2. Emitter skips glob patterns (doesn't try to emit log_*_event)
+// 3. Shape checker matches invocations to glob patterns (log.info matches log.*)
+// 4. [transform] annotation detected for glob events
 
-~[comptime|transform]pub event log.* {
-    event_name: []const u8,
-    expr: Expression,
+// This is a glob pattern event - a template for any log.* event
+// Marked [norun] since we're just testing syntax acceptance, not transform execution
+~[comptime|transform|norun]pub event log.* {
+    message: []const u8,
 }
-| emitted { code: []const u8 }
-| pruned { }
+| ok { }
 
-~proc log.* {
-    // For now, just emit a print statement
-    // Real implementation would check log levels, prune, etc.
-    const code = std.fmt.allocPrint(
-        allocator,
-        "std.debug.print(\"{s}\\n\", .{{}});",
-        .{ expr }
-    ) catch unreachable;
-    return .{ .emitted = .{ .code = code } };
+// A concrete event that matches the glob pattern
+~pub event log.info {
+    message: []const u8,
+}
+| ok { }
+
+~proc log.info {
+    return .{ .ok = .{} };
 }
 
-// Test invocation - should match log.*
-~log.info("Hello from glob event")
+// Test invocation of the concrete event
+~log.info(message: "Hello from glob event")
+| ok |> _

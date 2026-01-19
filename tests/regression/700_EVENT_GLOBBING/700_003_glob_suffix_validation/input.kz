@@ -10,16 +10,15 @@
 
 ~[comptime|transform]pub event log.* {
     event_name: []const u8,
-    expr: Expression,
-    source: Source,
     item: *const Item,
     program: *const Program,
-    allocator: std.mem.Allocator,
 }
 | transformed { program: *const Program }
 | compile_error { message: []const u8 }
 
 ~proc log.* {
+    const std = @import("std");
+    const allocator = std.heap.page_allocator;
     const valid_levels = [_][]const u8{ "error", "warn", "info", "debug" };
 
     // Extract the log level from event_name
@@ -35,7 +34,7 @@
     }
 
     if (!found) {
-        // Find closest match using simple edit distance
+        // Find closest match using simple length difference
         var closest: []const u8 = valid_levels[0];
         var min_dist: usize = std.math.maxInt(usize);
 
@@ -55,13 +54,31 @@
             allocator,
             "Unknown log level '{s}', did you mean '{s}'?",
             .{ level, closest }
-        ) catch unreachable;
+        ) catch return .{ .compile_error = .{ .message = "allocation failed" } };
 
         return .{ .compile_error = .{ .message = msg } };
     }
 
-    // Valid level - emit logging code
-    // ... (same as 700_002)
+    // Valid level - emit logging code (just replace with comment for now)
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{ .program = program } };
+
+    const inline_code_item = ast.Item{
+        .inline_code = .{
+            .code = "// valid log level",
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch return .{ .transformed = .{ .program = program } },
+        },
+    };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch return .{ .transformed = .{ .program = program } };
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch return .{ .transformed = .{ .program = program } };
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
     return .{ .transformed = .{ .program = program } };
 }
 

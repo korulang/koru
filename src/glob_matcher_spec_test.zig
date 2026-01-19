@@ -5,10 +5,21 @@
 // Implement glob_matcher.zig to make all these tests pass.
 //
 // The glob matcher is used for:
-// - Event name globbing: ~event log.* matches ~log.error
+// - Event name globbing: ~event log.* matches ~log.error AND ~log.error.fatal
 // - Transform matching: transforms with glob patterns
 // - Generics: ring.new* matches ring.new[T:u32,N:1024]
 // - Pattern branches: [*.*.*.167] for IP matching, etc.
+//
+// SEMANTICS:
+// - `*` is GREEDY: matches zero or more of ANY character (including dots)
+// - Dots have NO special meaning - they're just characters
+// - Multiple `*`s: each captures MINIMALLY to allow pattern to match
+// - Last `*` captures everything remaining
+//
+// Examples:
+//   log.*     + log.error.fatal  -> match, captures ["error.fatal"]
+//   *.*.*     + a.b.c.d          -> match, captures ["a", "b", "c.d"]
+//   *middle*  + startmiddleend   -> match, captures ["start", "end"]
 //
 // REQUIREMENTS:
 // 1. Zero runtime allocations for simple matches
@@ -48,8 +59,12 @@ test "suffix glob: pattern.*" {
     try std.testing.expect(glob.match("log.*", "log.warn").matched);
     try std.testing.expect(glob.match("log.*", "log.x").matched);
 
+    // GREEDY: log.* also matches nested paths (star crosses dots)
+    try std.testing.expect(glob.match("log.*", "log.error.fatal").matched);
+    try std.testing.expect(glob.match("log.*", "log.http.request.headers").matched);
+
     // Should NOT match
-    try std.testing.expect(!glob.match("log.*", "log").matched);        // No suffix
+    try std.testing.expect(!glob.match("log.*", "log").matched);        // No suffix (need at least empty after dot)
     try std.testing.expect(!glob.match("log.*", "logger.error").matched); // Different prefix
     try std.testing.expect(!glob.match("log.*", "xlog.error").matched);   // Prefix mismatch
 }
@@ -60,9 +75,12 @@ test "prefix glob: *.suffix" {
     try std.testing.expect(glob.match("*.io", "test.io").matched);
     try std.testing.expect(glob.match("*.io", "x.io").matched);
 
+    // GREEDY: * can contain dots, but pattern must still END with .io
+    try std.testing.expect(glob.match("*.io", "deeply.nested.module.io").matched);
+
     // Should NOT match
-    try std.testing.expect(!glob.match("*.io", "io").matched);          // No prefix
-    try std.testing.expect(!glob.match("*.io", "std.io.extra").matched); // Extra suffix
+    try std.testing.expect(!glob.match("*.io", "io").matched);          // No prefix (need something before .io)
+    try std.testing.expect(!glob.match("*.io", "std.io.extra").matched); // Doesn't END with .io
     try std.testing.expect(!glob.match("*.io", "std.iox").matched);      // Suffix mismatch
 }
 
@@ -103,23 +121,30 @@ test "middle glob: prefix.*.suffix" {
 }
 
 test "multiple wildcards: *.*.*" {
-    // *.*.* should match a.b.c
+    // *.*.* requires exactly two literal dots, with * capturing between/around them
     try std.testing.expect(glob.match("*.*.*", "a.b.c").matched);
     try std.testing.expect(glob.match("*.*.*", "foo.bar.baz").matched);
     try std.testing.expect(glob.match("*.*.*", "192.168.1").matched);
 
-    // Should NOT match (wrong segment count)
-    try std.testing.expect(!glob.match("*.*.*", "a.b").matched);
-    try std.testing.expect(!glob.match("*.*.*", "a.b.c.d").matched);
-    try std.testing.expect(!glob.match("*.*.*", "a").matched);
+    // GREEDY: Last * can capture across dots
+    try std.testing.expect(glob.match("*.*.*", "a.b.c.d").matched);      // captures: ["a", "b", "c.d"]
+    try std.testing.expect(glob.match("*.*.*", "a.b.c.d.e.f").matched);  // captures: ["a", "b", "c.d.e.f"]
+
+    // Should NOT match (not enough dots for the two literal dots in pattern)
+    try std.testing.expect(!glob.match("*.*.*", "a.b").matched);   // Only one dot
+    try std.testing.expect(!glob.match("*.*.*", "a").matched);     // No dots
+    try std.testing.expect(!glob.match("*.*.*", "nodots").matched); // No dots
 }
 
 test "mixed pattern: prefix.*.middle.*" {
     try std.testing.expect(glob.match("std.*.io.*", "std.fs.io.read").matched);
     try std.testing.expect(glob.match("std.*.io.*", "std.net.io.write").matched);
 
-    try std.testing.expect(!glob.match("std.*.io.*", "std.fs.io").matched);      // Missing last
-    try std.testing.expect(!glob.match("std.*.io.*", "std.io.read").matched);    // Missing middle
+    // GREEDY: each * can span dots, but literals must still appear in order
+    try std.testing.expect(glob.match("std.*.io.*", "std.deeply.nested.io.read.write").matched);
+
+    try std.testing.expect(!glob.match("std.*.io.*", "std.fs.io").matched);      // Missing content after last dot
+    try std.testing.expect(!glob.match("std.*.io.*", "std.io.read").matched);    // Missing .io. in middle
 }
 
 // =============================================================================
@@ -131,6 +156,13 @@ test "capture: suffix glob log.* captures suffix" {
     try std.testing.expect(result.matched);
     try std.testing.expectEqual(@as(usize, 1), result.captures.len);
     try std.testing.expectEqualStrings("error", result.captures[0]);
+}
+
+test "capture: greedy suffix glob captures across dots" {
+    const result = glob.match("log.*", "log.error.fatal.details");
+    try std.testing.expect(result.matched);
+    try std.testing.expectEqual(@as(usize, 1), result.captures.len);
+    try std.testing.expectEqualStrings("error.fatal.details", result.captures[0]);
 }
 
 test "capture: prefix glob *.io captures prefix" {
@@ -168,6 +200,16 @@ test "capture: multiple wildcards capture all" {
     try std.testing.expectEqualStrings("192", result.captures[0]);
     try std.testing.expectEqualStrings("168", result.captures[1]);
     try std.testing.expectEqualStrings("1", result.captures[2]);
+}
+
+test "capture: greedy multiple wildcards - last captures rest" {
+    // With more dots than wildcards, last * gets the remainder
+    const result = glob.match("*.*.*", "a.b.c.d.e");
+    try std.testing.expect(result.matched);
+    try std.testing.expectEqual(@as(usize, 3), result.captures.len);
+    try std.testing.expectEqualStrings("a", result.captures[0]);      // minimal
+    try std.testing.expectEqualStrings("b", result.captures[1]);      // minimal
+    try std.testing.expectEqualStrings("c.d.e", result.captures[2]);  // greedy (rest)
 }
 
 test "capture: IP-style pattern *.*.*.167" {
@@ -259,6 +301,35 @@ test "edge: wildcard at start and end *middle*" {
     try std.testing.expect(!glob.match("*middle*", "nomatch").matched);
 }
 
+test "capture: *middle* captures before and after" {
+    const result = glob.match("*middle*", "startmiddleend");
+    try std.testing.expect(result.matched);
+    try std.testing.expectEqual(@as(usize, 2), result.captures.len);
+    try std.testing.expectEqualStrings("start", result.captures[0]);
+    try std.testing.expectEqualStrings("end", result.captures[1]);
+}
+
+test "capture: *middle* with empty captures" {
+    // "middle" alone - both captures are empty
+    const result1 = glob.match("*middle*", "middle");
+    try std.testing.expect(result1.matched);
+    try std.testing.expectEqual(@as(usize, 2), result1.captures.len);
+    try std.testing.expectEqualStrings("", result1.captures[0]);
+    try std.testing.expectEqualStrings("", result1.captures[1]);
+
+    // "middleend" - first capture empty
+    const result2 = glob.match("*middle*", "middleend");
+    try std.testing.expect(result2.matched);
+    try std.testing.expectEqualStrings("", result2.captures[0]);
+    try std.testing.expectEqualStrings("end", result2.captures[1]);
+
+    // "startmiddle" - second capture empty
+    const result3 = glob.match("*middle*", "startmiddle");
+    try std.testing.expect(result3.matched);
+    try std.testing.expectEqualStrings("start", result3.captures[0]);
+    try std.testing.expectEqualStrings("", result3.captures[1]);
+}
+
 test "edge: special characters in literals" {
     // Brackets, colons, slashes should be matched literally
     try std.testing.expect(glob.match("[GET /users/:id]", "[GET /users/:id]").matched);
@@ -269,11 +340,24 @@ test "edge: special characters in literals" {
     try std.testing.expectEqualStrings("T:u32", result.captures[0]);
 }
 
-test "edge: dot only separates when in pattern structure" {
-    // The dot in "log.*" is structural, but in ring[T:u32] it's not
+test "edge: dots are just characters - no special meaning" {
+    // Dots in the VALUE are just characters, * matches them freely
     const result = glob.match("ring*", "ring.buffer");
     try std.testing.expect(result.matched);
     try std.testing.expectEqualStrings(".buffer", result.captures[0]);
+
+    // Dots in the PATTERN are literals that must match exactly
+    const result2 = glob.match("a.b.*", "a.b.c.d.e");
+    try std.testing.expect(result2.matched);
+    try std.testing.expectEqualStrings("c.d.e", result2.captures[0]);
+}
+
+test "edge: dots inside brackets captured correctly" {
+    // Brackets are just characters too - * inside captures everything
+    const result = glob.match("ring.new[*]", "ring.new[T:std.io.File]");
+    try std.testing.expect(result.matched);
+    try std.testing.expectEqual(@as(usize, 1), result.captures.len);
+    try std.testing.expectEqualStrings("T:std.io.File", result.captures[0]);
 }
 
 // =============================================================================

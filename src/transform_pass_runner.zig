@@ -106,7 +106,15 @@ fn flowStillMatchesTransform(inv: *const Invocation, transform_name: []const u8)
         @memcpy(seg_path_buf[seg_path_len..][0..seg.len], seg);
         seg_path_len += seg.len;
     }
-    if (!std.mem.eql(u8, seg_path_buf[0..seg_path_len], transform_name)) {
+    const inv_path = seg_path_buf[0..seg_path_len];
+
+    // Use glob matching if transform name contains wildcard
+    const matches = if (std.mem.indexOfScalar(u8, transform_name, '*') != null)
+        matchGlob(transform_name, inv_path)
+    else
+        std.mem.eql(u8, inv_path, transform_name);
+
+    if (!matches) {
         return false; // Different event path - transform properly replaced itself
     }
 
@@ -119,6 +127,47 @@ fn flowStillMatchesTransform(inv: *const Invocation, transform_name: []const u8)
 
     // Still matches transform path without @pass_ran -> would infinite loop!
     return true;
+}
+
+/// Simple glob matching for transform patterns
+fn matchGlob(pattern: []const u8, value: []const u8) bool {
+    // Full wildcard matches anything
+    if (std.mem.eql(u8, pattern, "*")) return true;
+
+    // Prefix wildcard: *.suffix
+    if (pattern.len > 2 and pattern[0] == '*' and pattern[1] == '.') {
+        const suffix = pattern[1..];
+        return std.mem.endsWith(u8, value, suffix);
+    }
+
+    // Suffix wildcard with dot: prefix.*
+    if (pattern.len > 2 and pattern[pattern.len - 2] == '.' and pattern[pattern.len - 1] == '*') {
+        const prefix = pattern[0 .. pattern.len - 2];
+        return std.mem.startsWith(u8, value, prefix) and
+            value.len > prefix.len and value[prefix.len] == '.';
+    }
+
+    // Bare suffix wildcard: prefix*
+    if (pattern.len > 1 and pattern[pattern.len - 1] == '*') {
+        const prefix = pattern[0 .. pattern.len - 1];
+        return std.mem.startsWith(u8, value, prefix);
+    }
+
+    // Bare prefix wildcard: *suffix
+    if (pattern.len > 1 and pattern[0] == '*') {
+        const suffix = pattern[1..];
+        return std.mem.endsWith(u8, value, suffix);
+    }
+
+    // Middle wildcard: prefix.*.suffix
+    if (std.mem.indexOfScalar(u8, pattern, '*')) |star_idx| {
+        const prefix = pattern[0..star_idx];
+        const suffix = pattern[star_idx + 1 ..];
+        return std.mem.startsWith(u8, value, prefix) and std.mem.endsWith(u8, value, suffix) and
+            value.len >= prefix.len + suffix.len;
+    }
+
+    return false;
 }
 
 /// Transform handler entry in the dispatch table

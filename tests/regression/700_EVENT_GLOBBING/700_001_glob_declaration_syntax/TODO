@@ -1,4 +1,0 @@
-Event globbing: Parser accepts * but emitter must recognize glob patterns
-Parser already accepts ~event log.* - this is step 1 complete!
-Step 2: Emitter must NOT emit glob events as concrete events (log_*_event is invalid Zig)
-Step 3: Transform runner must match invocations against glob patterns

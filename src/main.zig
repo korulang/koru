@@ -287,19 +287,31 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                     continue;
                 }
 
-                // Check if this is a comptime event (Source/Program parameters)
+                // Check if this is a comptime event (Source/Program parameters OR [transform] annotation)
                 var is_comptime = false;
-                for (event.input.fields) |field| {
-                    if (field.is_source) {
+
+                // Check for [transform] annotation
+                for (event.annotations) |ann| {
+                    if (std.mem.eql(u8, ann, "transform")) {
                         is_comptime = true;
                         break;
                     }
-                    if (std.mem.eql(u8, field.type, "Program") or
-                        std.mem.eql(u8, field.type, "Program") or
-                        std.mem.eql(u8, field.type, "*const Program"))
-                    {
-                        is_comptime = true;
-                        break;
+                }
+
+                // Also check for Source/Program parameters
+                if (!is_comptime) {
+                    for (event.input.fields) |field| {
+                        if (field.is_source) {
+                            is_comptime = true;
+                            break;
+                        }
+                        if (std.mem.eql(u8, field.type, "Program") or
+                            std.mem.eql(u8, field.type, "Program") or
+                            std.mem.eql(u8, field.type, "*const Program"))
+                        {
+                            is_comptime = true;
+                            break;
+                        }
                     }
                 }
 
@@ -354,19 +366,31 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                             continue;
                         }
 
-                        // Check if this is a comptime event
+                        // Check if this is a comptime event (Source/Program parameters OR [transform] annotation)
                         var is_comptime = false;
-                        for (event.input.fields) |field| {
-                            if (field.is_source) {
+
+                        // Check for [transform] annotation
+                        for (event.annotations) |ann| {
+                            if (std.mem.eql(u8, ann, "transform")) {
                                 is_comptime = true;
                                 break;
                             }
-                            if (std.mem.eql(u8, field.type, "Program") or
-                                std.mem.eql(u8, field.type, "Program") or
-                                std.mem.eql(u8, field.type, "*const Program"))
-                            {
-                                is_comptime = true;
-                                break;
+                        }
+
+                        // Also check for Source/Program parameters
+                        if (!is_comptime) {
+                            for (event.input.fields) |field| {
+                                if (field.is_source) {
+                                    is_comptime = true;
+                                    break;
+                                }
+                                if (std.mem.eql(u8, field.type, "Program") or
+                                    std.mem.eql(u8, field.type, "Program") or
+                                    std.mem.eql(u8, field.type, "*const Program"))
+                                {
+                                    is_comptime = true;
+                                    break;
+                                }
                             }
                         }
 
@@ -463,16 +487,27 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                         break;
                     }
                 }
-                // Also check transform events (like std.taps:tap)
+                // Also check transform events (like std.taps:tap, log.*)
+                // Use glob matching for patterns like log.*
+                // NOTE: Glob pattern transforms (log.*) are handled by the transform pass,
+                // NOT by comptime thunks. Only add concrete transform events to comptime_flows.
                 if (!matched) {
                     for (transform_event_names.items) |transform_name| {
-                        if (std.mem.eql(u8, inv_name, transform_name)) {
-                            std.debug.print("  [MATCH-TRANSFORM] Flow '{s}' (idx={}) matches transform event '{s}'\n", .{ inv_name, idx, transform_name });
-                            try comptime_flows.append(allocator, .{
-                                .ast_index = idx,
-                                .flow = flow,
-                            });
-                            std.debug.print("    → Appended to comptime_flows, now {} items\n", .{comptime_flows.items.len});
+                        if (matchGlobPattern(transform_name, inv_name)) {
+                            // Check if this is a glob pattern (contains *)
+                            // Glob patterns don't have concrete event structs and should NOT generate thunks
+                            const is_glob = std.mem.indexOfScalar(u8, transform_name, '*') != null;
+                            if (is_glob) {
+                                std.debug.print("  [MATCH-GLOB-TRANSFORM] Flow '{s}' matches glob transform '{s}' - handled by transform pass, not thunks\n", .{ inv_name, transform_name });
+                                // Don't add to comptime_flows - the transform pass will handle this
+                            } else {
+                                std.debug.print("  [MATCH-TRANSFORM] Flow '{s}' (idx={}) matches transform event '{s}'\n", .{ inv_name, idx, transform_name });
+                                try comptime_flows.append(allocator, .{
+                                    .ast_index = idx,
+                                    .flow = flow,
+                                });
+                                std.debug.print("    → Appended to comptime_flows, now {} items\n", .{comptime_flows.items.len});
+                            }
                             break;
                         }
                     }
@@ -523,15 +558,24 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                                 break;
                             }
                         }
-                        // Also check transform events (like std.taps:tap)
+                        // Also check transform events (like std.taps:tap, log.*)
+                        // Use glob matching for patterns like log.*
+                        // NOTE: Glob pattern transforms are handled by the transform pass, not thunks
                         if (!matched) {
                             for (transform_event_names.items) |transform_name| {
-                                if (std.mem.eql(u8, inv_name, transform_name)) {
-                                    std.debug.print("  [MATCH-MODULE-TRANSFORM] Flow '{s}' in module matches transform event '{s}'\n", .{ inv_name, transform_name });
-                                    try comptime_flows.append(allocator, .{
-                                        .ast_index = idx,
-                                        .flow = flow,
-                                    });
+                                if (matchGlobPattern(transform_name, inv_name)) {
+                                    // Check if this is a glob pattern (contains *)
+                                    const is_glob = std.mem.indexOfScalar(u8, transform_name, '*') != null;
+                                    if (is_glob) {
+                                        std.debug.print("  [MATCH-MODULE-GLOB-TRANSFORM] Flow '{s}' matches glob transform '{s}' - handled by transform pass\n", .{ inv_name, transform_name });
+                                        // Don't add to comptime_flows
+                                    } else {
+                                        std.debug.print("  [MATCH-MODULE-TRANSFORM] Flow '{s}' in module matches transform event '{s}'\n", .{ inv_name, transform_name });
+                                        try comptime_flows.append(allocator, .{
+                                            .ast_index = idx,
+                                            .flow = flow,
+                                        });
+                                    }
                                     break;
                                 }
                             }
@@ -1353,8 +1397,10 @@ const TransformEvent = struct {
     has_item: bool,           // Event accepts item: *const Item parameter
     has_program_ast: bool,    // Event accepts program: *const Program parameter
     has_allocator: bool,      // Event accepts allocator: std.mem.Allocator parameter
+    has_event_name_field: bool, // Event accepts event_name: []const u8 parameter (for glob patterns)
     returns_program: bool,    // Event returns transformed{ program: *const Program }
     has_failed: bool,         // Event has failed{ error: []const u8 } branch
+    has_compile_error: bool,  // Event has compile_error{ message: []const u8 } branch
 };
 
 /// CommandInfo stores CLI command metadata for [comptime|command] events
@@ -1464,6 +1510,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                 // Detect what this event returns (check branches)
                 var returns_program = false;
                 var has_failed = false;
+                var has_compile_error = false;
                 for (event_decl.branches) |branch| {
                     if (std.mem.eql(u8, branch.name, "transformed")) {
                         for (branch.payload.fields) |field| {
@@ -1474,18 +1521,25 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                         }
                     } else if (std.mem.eql(u8, branch.name, "failed")) {
                         has_failed = true;
+                    } else if (std.mem.eql(u8, branch.name, "compile_error")) {
+                        has_compile_error = true;
                     }
                 }
 
                 transform_events[transform_count] = .{
                     .stub_name = stub_name,
                     .match_name = match_name,
+                    .event_name = stub_name,  // For top-level, stub_name = event_name
                     .module_path = null,  // Top-level events are in main_module
                     .has_source = has_source,
                     .has_expression = has_expression,
                     .has_invocation = has_invocation,
+                    .has_event_decl = false,
+                    .has_item = false,
                     .has_program_ast = has_program_ast,
                     .has_allocator = has_allocator,
+                    .has_event_name_field = false,
+                    .has_compile_error = has_compile_error,
                     .returns_program = returns_program,
                     .has_failed = has_failed,
                 };
@@ -1579,6 +1633,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                         // Detect what this event returns (check branches)
                         var returns_program = false;
                         var has_failed = false;
+                        var has_compile_error = false;
                         for (event_decl.branches) |branch| {
                             if (std.mem.eql(u8, branch.name, "transformed")) {
                                 for (branch.payload.fields) |field| {
@@ -1589,18 +1644,28 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                                 }
                             } else if (std.mem.eql(u8, branch.name, "failed")) {
                                 has_failed = true;
+                            } else if (std.mem.eql(u8, branch.name, "compile_error")) {
+                                has_compile_error = true;
                             }
                         }
+
+                        // Dupe event_name since it's freed after this scope
+                        const event_name_duped = try allocator.dupe(u8, event_name);
 
                         transform_events[transform_count] = .{
                             .stub_name = stub_name,
                             .match_name = match_name,
+                            .event_name = event_name_duped,
                             .module_path = module_path,  // Transform is in imported module
                             .has_source = has_source,
                             .has_expression = has_expression,
                             .has_invocation = has_invocation,
+                            .has_event_decl = false,
+                            .has_item = false,
                             .has_program_ast = has_program_ast,
                             .has_allocator = has_allocator,
+                            .has_event_name_field = false,
+                            .has_compile_error = has_compile_error,
                             .returns_program = returns_program,
                             .has_failed = has_failed,
                         };
@@ -1822,22 +1887,26 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 const stub_name = try joinPathSegments(allocator, event_decl.path.segments);
                 const match_name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
 
-                // Detect additional parameters by NAME (program, allocator)
+                // Detect additional parameters by NAME (program, allocator, event_name)
                 // Note: invocation/event_decl/item already detected by TYPE above
                 var has_program_ast = false;
                 var has_allocator = false;
+                var has_event_name_field = false;
 
                 for (event_decl.input.fields) |field| {
                     if (std.mem.eql(u8, field.name, "program_ast") or std.mem.eql(u8, field.name, "program")) {
                         has_program_ast = true;
                     } else if (std.mem.eql(u8, field.name, "allocator")) {
                         has_allocator = true;
+                    } else if (std.mem.eql(u8, field.name, "event_name")) {
+                        has_event_name_field = true;
                     }
                 }
 
                 // Detect what this event returns (check branches)
                 var returns_program = false;
                 var has_failed = false;
+                var has_compile_error = false;
                 for (event_decl.branches) |branch| {
                     if (std.mem.eql(u8, branch.name, "transformed")) {
                         for (branch.payload.fields) |field| {
@@ -1848,6 +1917,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         }
                     } else if (std.mem.eql(u8, branch.name, "failed")) {
                         has_failed = true;
+                    } else if (std.mem.eql(u8, branch.name, "compile_error")) {
+                        has_compile_error = true;
                     }
                 }
 
@@ -1863,6 +1934,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     .has_item = has_item_param,
                     .has_program_ast = has_program_ast,
                     .has_allocator = has_allocator,
+                    .has_event_name_field = has_event_name_field,
+                    .has_compile_error = has_compile_error,
                     .returns_program = returns_program,
                     .has_failed = has_failed,
                 };
@@ -1952,22 +2025,26 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
                         const stub_name = try allocator.dupe(u8, stub_name_buf[0..stub_name_len]);
 
-                        // Detect additional parameters by NAME (program, allocator)
+                        // Detect additional parameters by NAME (program, allocator, event_name)
                         // Note: invocation/event_decl/item already detected by TYPE above
                         var has_program_ast = false;
                         var has_allocator = false;
+                        var has_event_name_field = false;
 
                         for (event_decl.input.fields) |field| {
                             if (std.mem.eql(u8, field.name, "program_ast") or std.mem.eql(u8, field.name, "program")) {
                                 has_program_ast = true;
                             } else if (std.mem.eql(u8, field.name, "allocator")) {
                                 has_allocator = true;
+                            } else if (std.mem.eql(u8, field.name, "event_name")) {
+                                has_event_name_field = true;
                             }
                         }
 
                         // Detect return type
                         var returns_program = false;
                         var has_failed = false;
+                        var has_compile_error = false;
                         for (event_decl.branches) |branch| {
                             if (std.mem.eql(u8, branch.name, "transformed")) {
                                 for (branch.payload.fields) |field| {
@@ -1978,6 +2055,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                                 }
                             } else if (std.mem.eql(u8, branch.name, "failed")) {
                                 has_failed = true;
+                            } else if (std.mem.eql(u8, branch.name, "compile_error")) {
+                                has_compile_error = true;
                             }
                         }
 
@@ -1993,6 +2072,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .has_item = has_item_param,
                             .has_program_ast = has_program_ast,
                             .has_allocator = has_allocator,
+                            .has_event_name_field = has_event_name_field,
+                            .has_compile_error = has_compile_error,
                             .returns_program = returns_program,
                             .has_failed = has_failed,
                         };
@@ -2195,6 +2276,22 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             if (event.has_allocator) {
                 try code_emitter.write("            .allocator = allocator,\n");
             }
+            if (event.has_event_name_field) {
+                // Build event_name from invocation path segments (e.g., "log.warning" from log.* match)
+                try code_emitter.write("            .event_name = blk: {\n");
+                try code_emitter.write("                var name_buf: [256]u8 = undefined;\n");
+                try code_emitter.write("                var name_len: usize = 0;\n");
+                try code_emitter.write("                for (invocation.path.segments, 0..) |seg, i| {\n");
+                try code_emitter.write("                    if (i > 0) {\n");
+                try code_emitter.write("                        name_buf[name_len] = '.';\n");
+                try code_emitter.write("                        name_len += 1;\n");
+                try code_emitter.write("                    }\n");
+                try code_emitter.write("                    @memcpy(name_buf[name_len..name_len + seg.len], seg);\n");
+                try code_emitter.write("                    name_len += seg.len;\n");
+                try code_emitter.write("                }\n");
+                try code_emitter.write("                break :blk name_buf[0..name_len];\n");
+                try code_emitter.write("            },\n");
+            }
 
             // Call handler and handle result
             try code_emitter.write("        };\n");
@@ -2206,6 +2303,12 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     try code_emitter.write("            .failed => |f| {\n");
                     try code_emitter.write("                transform_std.debug.print(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");
                     try code_emitter.write("                return error.TransformFailed;\n");
+                    try code_emitter.write("            },\n");
+                }
+                if (event.has_compile_error) {
+                    try code_emitter.write("            .compile_error => |ce| {\n");
+                    try code_emitter.write("                transform_std.debug.print(\"Compile error: {s}\\n\", .{ce.message});\n");
+                    try code_emitter.write("                return error.CompileError;\n");
                     try code_emitter.write("            },\n");
                 }
                 try code_emitter.write("        };\n");
@@ -2284,31 +2387,43 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 }
 
 /// Helper: Join path segments with underscores for function names
+/// Escapes glob characters: * -> _star_
 fn joinPathSegments(allocator: std.mem.Allocator, segments: []const []const u8) ![]const u8 {
     if (segments.len == 0) return try allocator.dupe(u8, "unknown");
-    if (segments.len == 1) return try allocator.dupe(u8, segments[0]);
 
-    // Calculate total length
-    var total_len: usize = segments[0].len;
-    for (segments[1..]) |seg| {
-        total_len += 1 + seg.len; // underscore + segment
+    // Calculate total length, accounting for * -> _star_ expansion
+    var total_len: usize = 0;
+    for (segments, 0..) |seg, i| {
+        if (i > 0) total_len += 1; // underscore separator
+        for (seg) |c| {
+            if (c == '*') {
+                total_len += 5; // "_star_" minus the "*" = 5 extra chars
+            }
+        }
+        total_len += seg.len;
     }
 
-    // Build result
+    // Build result with escaping
     var result = try allocator.alloc(u8, total_len);
     var pos: usize = 0;
 
-    @memcpy(result[pos..pos + segments[0].len], segments[0]);
-    pos += segments[0].len;
-
-    for (segments[1..]) |seg| {
-        result[pos] = '_';
-        pos += 1;
-        @memcpy(result[pos..pos + seg.len], seg);
-        pos += seg.len;
+    for (segments, 0..) |seg, i| {
+        if (i > 0) {
+            result[pos] = '_';
+            pos += 1;
+        }
+        for (seg) |c| {
+            if (c == '*') {
+                @memcpy(result[pos..][0..6], "_star_");
+                pos += 6;
+            } else {
+                result[pos] = c;
+                pos += 1;
+            }
+        }
     }
 
-    return result;
+    return result[0..pos];
 }
 
 /// Helper: Join path segments with dots for event path matching
@@ -2337,6 +2452,54 @@ fn joinPathSegmentsWithDots(allocator: std.mem.Allocator, segments: []const []co
     }
 
     return result;
+}
+
+/// Match a pattern against a value using glob semantics
+/// Patterns can use * for wildcards (e.g., log.* matches log.info)
+fn matchGlobPattern(pattern: []const u8, value: []const u8) bool {
+    // Exact match
+    if (std.mem.eql(u8, pattern, value)) return true;
+
+    // No wildcard - exact match only
+    if (std.mem.indexOfScalar(u8, pattern, '*') == null) return false;
+
+    // Full wildcard matches anything
+    if (std.mem.eql(u8, pattern, "*")) return true;
+
+    // Prefix wildcard: *.suffix
+    if (pattern.len > 2 and pattern[0] == '*' and pattern[1] == '.') {
+        const suffix = pattern[1..];
+        return std.mem.endsWith(u8, value, suffix);
+    }
+
+    // Suffix wildcard with dot: prefix.*
+    if (pattern.len > 2 and pattern[pattern.len - 2] == '.' and pattern[pattern.len - 1] == '*') {
+        const prefix = pattern[0 .. pattern.len - 2];
+        return std.mem.startsWith(u8, value, prefix) and
+            value.len > prefix.len and value[prefix.len] == '.';
+    }
+
+    // Bare suffix wildcard: prefix*
+    if (pattern.len > 1 and pattern[pattern.len - 1] == '*') {
+        const prefix = pattern[0 .. pattern.len - 1];
+        return std.mem.startsWith(u8, value, prefix);
+    }
+
+    // Bare prefix wildcard: *suffix
+    if (pattern.len > 1 and pattern[0] == '*') {
+        const suffix = pattern[1..];
+        return std.mem.endsWith(u8, value, suffix);
+    }
+
+    // Middle wildcard: prefix.*.suffix
+    if (std.mem.indexOfScalar(u8, pattern, '*')) |star_idx| {
+        const prefix = pattern[0..star_idx];
+        const suffix = pattern[star_idx + 1 ..];
+        return std.mem.startsWith(u8, value, prefix) and std.mem.endsWith(u8, value, suffix) and
+            value.len >= prefix.len + suffix.len;
+    }
+
+    return false;
 }
 
 /// Generate the visitor pattern backend

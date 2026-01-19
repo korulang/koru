@@ -350,6 +350,74 @@ pub const ShapeChecker = struct {
         return try buf.toOwnedSlice(self.allocator);
     }
 
+    /// Find a glob pattern event that matches the given event name
+    /// Used when exact event lookup fails to find matching templates like log.*
+    fn findGlobMatch(self: *ShapeChecker, event_name: []const u8) ?EventInfo {
+        var events_iter = self.events.iterator();
+        while (events_iter.next()) |entry| {
+            const pattern = entry.key_ptr.*;
+            // Only check patterns that contain wildcards
+            if (std.mem.indexOfScalar(u8, pattern, '*') == null) continue;
+
+            // Extract the event path part (after : if present)
+            const pattern_event = if (std.mem.indexOfScalar(u8, pattern, ':')) |colon_idx|
+                pattern[colon_idx + 1 ..]
+            else
+                pattern;
+
+            const event_path = if (std.mem.indexOfScalar(u8, event_name, ':')) |colon_idx|
+                event_name[colon_idx + 1 ..]
+            else
+                event_name;
+
+            if (matchGlob(pattern_event, event_path)) {
+                return entry.value_ptr.*;
+            }
+        }
+        return null;
+    }
+
+    /// Simple glob matching for event patterns
+    fn matchGlob(pattern: []const u8, value: []const u8) bool {
+        // Full wildcard matches anything
+        if (std.mem.eql(u8, pattern, "*")) return true;
+
+        // Prefix wildcard: *.suffix
+        if (pattern.len > 2 and pattern[0] == '*' and pattern[1] == '.') {
+            const suffix = pattern[1..];
+            return std.mem.endsWith(u8, value, suffix);
+        }
+
+        // Suffix wildcard with dot: prefix.*
+        if (pattern.len > 2 and pattern[pattern.len - 2] == '.' and pattern[pattern.len - 1] == '*') {
+            const prefix = pattern[0 .. pattern.len - 2];
+            return std.mem.startsWith(u8, value, prefix) and
+                value.len > prefix.len and value[prefix.len] == '.';
+        }
+
+        // Bare suffix wildcard: prefix*
+        if (pattern.len > 1 and pattern[pattern.len - 1] == '*') {
+            const prefix = pattern[0 .. pattern.len - 1];
+            return std.mem.startsWith(u8, value, prefix);
+        }
+
+        // Bare prefix wildcard: *suffix
+        if (pattern.len > 1 and pattern[0] == '*') {
+            const suffix = pattern[1..];
+            return std.mem.endsWith(u8, value, suffix);
+        }
+
+        // Middle wildcard: prefix.*.suffix
+        if (std.mem.indexOfScalar(u8, pattern, '*')) |star_idx| {
+            const prefix = pattern[0..star_idx];
+            const suffix = pattern[star_idx + 1 ..];
+            return std.mem.startsWith(u8, value, prefix) and std.mem.endsWith(u8, value, suffix) and
+                value.len >= prefix.len + suffix.len;
+        }
+
+        return false;
+    }
+
     /// Check if a path is a namespace wildcard (e.g., "http.*")
     fn isNamespaceWildcard(path: ast.DottedPath) bool {
         if (path.segments.len == 0) return false;
@@ -448,6 +516,11 @@ pub const ShapeChecker = struct {
             defer self.allocator.free(qualified_name);
 
             event_info = self.events.get(qualified_name);
+        }
+
+        // If exact match failed, try glob pattern matching
+        if (event_info == null) {
+            event_info = self.findGlobMatch(event_name);
         }
 
         const final_event_info = event_info orelse {

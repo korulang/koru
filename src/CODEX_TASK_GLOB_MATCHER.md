@@ -18,18 +18,42 @@ The `match()` function that:
 2. Returns whether they match
 3. Captures the parts that matched wildcards
 
+## CRITICAL: Greedy Semantics
+
+**`*` matches ANY characters including dots.** Dots have NO special meaning.
+
+- `log.*` matches `log.error` AND `log.error.fatal` (captures: `["error.fatal"]`)
+- `*.*.*` matches `a.b.c.d.e` (captures: `["a", "b", "c.d.e"]`)
+- Each `*` captures **minimally** to allow the pattern to match
+- The **last** `*` captures everything remaining (greedy)
+
 ### Pattern Types
 
-| Pattern | Example | Input | Captures |
-|---------|---------|-------|----------|
-| Full wildcard | `*` | `anything` | `["anything"]` |
-| Suffix glob | `log.*` | `log.error` | `["error"]` |
-| Prefix glob | `*.io` | `std.io` | `["std"]` |
-| Bare suffix | `ring*` | `ring[T:u32]` | `["[T:u32]"]` |
-| Bare prefix | `*Handler` | `EventHandler` | `["Event"]` |
-| Middle glob | `a.*.b` | `a.x.b` | `["x"]` |
-| Multi-glob | `*.*.*` | `1.2.3` | `["1", "2", "3"]` |
-| Mixed | `std.*.io.*` | `std.fs.io.read` | `["fs", "read"]` |
+| Pattern | Input | Captures | Notes |
+|---------|-------|----------|-------|
+| `*` | `anything.here` | `["anything.here"]` | Full greedy |
+| `log.*` | `log.error.fatal` | `["error.fatal"]` | Greedy suffix |
+| `*.io` | `std.io` | `["std"]` | Must END with `.io` |
+| `ring*` | `ring[T:u32]` | `["[T:u32]"]` | Bare suffix |
+| `*Handler` | `EventHandler` | `["Event"]` | Bare prefix |
+| `a.*.b` | `a.x.b` | `["x"]` | Middle (minimal) |
+| `*.*.*` | `a.b.c.d` | `["a", "b", "c.d"]` | Last gets rest |
+| `*middle*` | `startmiddleend` | `["start", "end"]` | Two captures |
+
+### Algorithm
+
+The algorithm is simple - split pattern by `*` to get literal parts, then:
+
+1. Check literals appear in order in the input
+2. Capture what's between them
+3. Each `*` (except last) matches **minimally** up to next literal
+4. Last `*` matches **everything remaining**
+
+Example: Pattern `*.*.*` → Literals: `["", ".", ".", ""]`
+- Input `a.b.c.d`:
+  - First `*`: match minimally until `.` → captures `"a"`
+  - Second `*`: match minimally until `.` → captures `"b"`
+  - Third `*`: match rest → captures `"c.d"`
 
 ### Requirements
 
@@ -37,22 +61,6 @@ The `match()` function that:
 2. **Captures are slices** - Point into the original input, don't copy
 3. **Comptime compatible** - Should work in `comptime` blocks
 4. **Handle edge cases** - Empty strings, no wildcards, special chars
-
-### Algorithm Hints
-
-For dot-separated patterns like `log.*` or `*.*.*`:
-1. Split both pattern and value by `.`
-2. Match segments pairwise
-3. `*` segment matches any single segment
-4. Capture each wildcard's matched value
-
-For bare patterns like `ring*` or `*Handler`:
-1. Check prefix/suffix accordingly
-2. Capture the non-matching part
-
-For mixed patterns like `*mid*`:
-1. Find the literal part in the input
-2. Capture before and after
 
 ### Files
 
@@ -64,7 +72,7 @@ For mixed patterns like `*mid*`:
 
 ```
 $ zig test src/glob_matcher_spec_test.zig
-All 30 tests passed.
+All tests passed.
 ```
 
-Good luck, square! 🤖
+Good luck, square!
