@@ -1,5 +1,0 @@
-Transform parses generic params from event name and generates typed code
-Given: ring.new[T:u32,N:1024]
-Parse: T=u32, N=1024
-Emit: struct with buffer: [1024]u32
-This is generics-as-library: transform IS the generic instantiation.
