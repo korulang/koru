@@ -21,6 +21,42 @@
     const allocator = std.heap.page_allocator;
     const valid_levels = [_][]const u8{ "error", "warn", "info", "debug" };
 
+    // Levenshtein edit distance - computes minimum edits to transform a into b
+    const levenshtein = struct {
+        fn calc(alloc: std.mem.Allocator, a: []const u8, b: []const u8) usize {
+            if (a.len == 0) return b.len;
+            if (b.len == 0) return a.len;
+
+            // Use two rows instead of full matrix for O(min(m,n)) space
+            var prev_row = alloc.alloc(usize, b.len + 1) catch return std.math.maxInt(usize);
+            var curr_row = alloc.alloc(usize, b.len + 1) catch return std.math.maxInt(usize);
+            defer alloc.free(prev_row);
+            defer alloc.free(curr_row);
+
+            // Initialize first row
+            for (prev_row, 0..) |*cell, j| {
+                cell.* = j;
+            }
+
+            // Fill matrix row by row
+            for (a, 0..) |ca, i| {
+                curr_row[0] = i + 1;
+                for (b, 0..) |cb, j| {
+                    const cost: usize = if (ca == cb) 0 else 1;
+                    curr_row[j + 1] = @min(
+                        @min(prev_row[j + 1] + 1, curr_row[j] + 1),  // delete, insert
+                        prev_row[j] + cost  // substitute
+                    );
+                }
+                // Swap rows
+                const tmp = prev_row;
+                prev_row = curr_row;
+                curr_row = tmp;
+            }
+            return prev_row[b.len];
+        }
+    }.calc;
+
     // Extract the log level from event_name
     const level = event_name[4..]; // Skip "log."
 
@@ -34,16 +70,12 @@
     }
 
     if (!found) {
-        // Find closest match using simple length difference
+        // Find closest match using Levenshtein edit distance
         var closest: []const u8 = valid_levels[0];
         var min_dist: usize = std.math.maxInt(usize);
 
         for (valid_levels) |valid| {
-            // Simple length-based heuristic for now
-            const dist = if (level.len > valid.len)
-                level.len - valid.len
-            else
-                valid.len - level.len;
+            const dist = levenshtein(allocator, level, valid);
             if (dist < min_dist) {
                 min_dist = dist;
                 closest = valid;
