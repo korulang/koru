@@ -1,5 +1,0 @@
-Parser must accept brackets in event names for generic parameters
-Syntax: ~ring.new[T:u32,N:1024](args...)
-Brackets are part of the event name string, not special syntax.
-Transform receives full name and can parse brackets itself.
-Different from phantom syntax which appears on type references.

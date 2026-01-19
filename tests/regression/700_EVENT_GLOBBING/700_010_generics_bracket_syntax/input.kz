@@ -14,17 +14,16 @@
 
 ~[comptime|transform]pub event ring.* {
     event_name: []const u8,
-    expr: Expression,
-    source: Source,
     item: *const Item,
     program: *const Program,
-    allocator: std.mem.Allocator,
 }
 | transformed { program: *const Program }
 
 ~proc ring.* {
+    const std = @import("std");
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
+    const allocator = std.heap.page_allocator;
 
     // Parse generic params from event_name
     // e.g., "ring.new[T:u32,N:1024]" → command="new", T="u32", N="1024"

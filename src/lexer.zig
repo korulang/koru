@@ -90,12 +90,16 @@ pub fn parseDottedPath(allocator: std.mem.Allocator, path: []const u8) ![][]cons
 }
 
 /// Parse a qualified path with optional module qualifier (e.g., "http:request.complete" or "local.event")
+/// Brackets [], (), <> are respected - colons inside brackets are NOT module qualifiers.
 pub fn parseQualifiedPath(allocator: std.mem.Allocator, path: []const u8, ast: anytype) !ast.DottedPath {
-    // Check for module qualifier (":")
-    if (std.mem.indexOf(u8, path, ":")) |colon_idx| {
+    // Find module qualifier colon at bracket depth 0
+    // Colons inside brackets (like [T:u32]) are NOT module qualifiers
+    const colon_idx = findModuleQualifierColon(path);
+
+    if (colon_idx) |idx| {
         // Has module qualifier
-        const qualifier = path[0..colon_idx];
-        const namespace_part = path[colon_idx + 1..];
+        const qualifier = path[0..idx];
+        const namespace_part = path[idx + 1..];
 
         const segments = try parseDottedPath(allocator, namespace_part);
 
@@ -112,6 +116,33 @@ pub fn parseQualifiedPath(allocator: std.mem.Allocator, path: []const u8, ast: a
             .segments = segments,
         };
     }
+}
+
+/// Find the position of a module qualifier colon (at bracket depth 0)
+/// Returns null if no qualifying colon found
+fn findModuleQualifierColon(path: []const u8) ?usize {
+    var bracket_depth: i32 = 0;  // []
+    var paren_depth: i32 = 0;    // ()
+    var angle_depth: i32 = 0;    // <>
+
+    for (path, 0..) |c, i| {
+        switch (c) {
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth -= 1,
+            '(' => paren_depth += 1,
+            ')' => paren_depth -= 1,
+            '<' => angle_depth += 1,
+            '>' => angle_depth -= 1,
+            ':' => {
+                // Only a module qualifier if at depth 0 for all bracket types
+                if (bracket_depth == 0 and paren_depth == 0 and angle_depth == 0) {
+                    return i;
+                }
+            },
+            else => {},
+        }
+    }
+    return null;
 }
 
 /// Extract balanced braces content
