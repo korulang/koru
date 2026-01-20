@@ -1,0 +1,24 @@
+Cascading auto-discharge: discharge creates new obligations that also need discharging
+
+SCENARIO: Database transaction pattern
+  connect() → Connection[connected!]
+  begin()   → Transaction[in_transaction!]  (consumes connected)
+  commit()  → Connection[connected!]        (consumes in_transaction, CREATES connected!)
+  close()   → void                          (consumes connected)
+
+CURRENT LIMITATION:
+  [!] annotation only allowed on void events (no branches)
+  commit has | committed branch, so can't be marked [!]
+
+REQUIRED CHANGES:
+  1. Allow [!] on single-branch events (not just void)
+  2. When discharging single-branch event, track new obligations from output
+  3. Run auto-discharge iteratively until no obligations remain
+
+USER BENEFIT:
+  Write only the happy path, compiler handles cleanup cascade:
+    ~connect() | connected _ |>
+        begin(conn: _.conn) | begun _ |>
+            do_work(tx: _.tx) | done _ |> _
+
+  Compiler auto-inserts: commit(tx) then close(conn)

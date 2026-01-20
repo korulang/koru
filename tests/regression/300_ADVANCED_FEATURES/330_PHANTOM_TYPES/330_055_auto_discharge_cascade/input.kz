@@ -1,0 +1,40 @@
+// TEST: Auto-discharge cascade - discharge creates new obligations
+//
+// SCENARIO: Database transaction pattern
+//   connect() → Connection[connected!]
+//   begin(conn) → Transaction[in_transaction!]  (consumes connected)
+//   commit(tx) → Connection[connected!]         (consumes in_transaction, CREATES connected!)
+//   close(conn) → void                          (consumes connected)
+//
+// The key insight: commit() CREATES a new obligation when it returns.
+// Auto-discharge must handle this cascade:
+//   1. See Transaction[in_transaction!] → insert commit(tx)
+//   2. commit returns Connection[connected!] → NEW obligation!
+//   3. See Connection[connected!] → insert close(conn)
+//   4. close returns void → done
+//
+// EXPECTED: Flow compiles with auto-inserted commit AND close
+// CURRENT: Only handles single-level discharge, not cascades
+
+~import "$app/db"
+
+const std = @import("std");
+
+// THE TEST: This flow should compile with cascading auto-discharge
+// User writes only the happy path:
+~app.db:connect(host: "localhost")
+| connected _ |>
+    app.db:begin(conn: _.conn)
+    | begun _ |>
+        app.db:do_work(tx: _.tx)
+        | done _ |> _
+        // At this point:
+        // - _.tx has Transaction[in_transaction!] obligation
+        // Auto-discharge should:
+        // 1. Insert commit(tx: _.tx) → returns Connection[connected!]
+        // 2. Insert close(conn: <result>.conn) → returns void
+        // 3. Done - all obligations satisfied
+
+pub fn main() void {
+    std.debug.print("Cascading auto-discharge test\n", .{});
+}

@@ -1,0 +1,61 @@
+// Database module with cascading phantom obligations
+//
+// connect() → Connection[connected!]
+// begin()   → Transaction[in_transaction!] (consumes connected)
+// commit()  → Connection[connected!]       (consumes in_transaction, CREATES connected!)
+// close()   → void                         (consumes connected)
+
+const std = @import("std");
+
+const Connection = struct { handle: i32 };
+const Transaction = struct { conn: *Connection };
+
+// connect: creates connection obligation
+~pub event connect { host: []const u8 }
+| connected { conn: *Connection[connected!] }
+
+~proc connect {
+    const c = std.heap.page_allocator.create(Connection) catch unreachable;
+    c.* = Connection{ .handle = 42 };
+    return .{ .connected = .{ .conn = c } };
+}
+
+// begin: consumes connection, creates transaction obligation
+~pub event begin { conn: *Connection[!connected] }
+| begun { tx: *Transaction[in_transaction!] }
+
+~proc begin {
+    const tx = std.heap.page_allocator.create(Transaction) catch unreachable;
+    tx.* = Transaction{ .conn = conn };
+    return .{ .begun = .{ .tx = tx } };
+}
+
+// commit: consumes transaction, CREATES connection obligation
+// Marked [!] as default discharge for transactions
+~[!]pub event commit { tx: *Transaction[!in_transaction] }
+| committed { conn: *Connection[connected!] }
+
+~proc commit {
+    const c = tx.conn;
+    std.heap.page_allocator.destroy(tx);
+    return .{ .committed = .{ .conn = c } };
+}
+
+// close: consumes connection obligation, returns void
+// Marked [!] as default discharge for connections
+~[!]pub event close { conn: *Connection[!connected] }
+| closed
+
+~proc close {
+    std.heap.page_allocator.destroy(conn);
+    return .closed;
+}
+
+// do_work: uses transaction without consuming it
+~pub event do_work { tx: *Transaction[in_transaction] }
+| done { tx: *Transaction[in_transaction] }
+
+~proc do_work {
+    std.debug.print("Working with transaction...\n", .{});
+    return .{ .done = .{ .tx = tx } };
+}
