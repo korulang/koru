@@ -1,1 +1,7 @@
-This test seems to fail on missing imports, not really testing any phantom type related features
+BUG: Phantom checker not detecting cross-module state mismatch
+
+The test passes mipmap:open where fs:open is expected.
+These SHOULD be incompatible phantom states.
+The phantom checker should reject this but currently accepts it.
+
+Fixed the import syntax - now testing the actual phantom mismatch detection.

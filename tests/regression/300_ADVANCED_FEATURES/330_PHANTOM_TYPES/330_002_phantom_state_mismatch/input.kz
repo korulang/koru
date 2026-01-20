@@ -6,8 +6,8 @@
 // Demonstrates: Type-safe phantom state validation across modules
 // Expected: Should FAIL with phantom state mismatch error
 
-~import "lib/fs"
-~import "lib/mipmap"
+~import "$app/lib/fs"
+~import "$app/lib/mipmap"
 
 const std = @import("std");
 
