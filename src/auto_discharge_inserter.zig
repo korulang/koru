@@ -466,6 +466,49 @@ pub const AutoDischargeInserter = struct {
 
                 const result = try self.checkContinuation(cont, event_info.decl, module_name, &scoped_context, program, flow);
                 if (result.transformed) return result;
+
+                // SCOPE EXIT: Check for remaining obligations in this scoped continuation
+                if (scoped_context.hasObligations()) {
+                    var obl_iter = scoped_context.obligations();
+                    while (obl_iter.next()) |entry| {
+                        const binding_name = entry.key_ptr.*;
+                        const info = entry.value_ptr.*;
+
+                        const disposals = try self.findDisposalEvents(info.phantom_state);
+                        defer self.allocator.free(disposals);
+
+                        const disposal = selectDisposal(disposals) orelse {
+                            if (disposals.len == 0) {
+                                try self.reporter.addError(
+                                    .KORU030,
+                                    flow.location.line,
+                                    flow.location.column,
+                                    "No disposal event found for resource '{s}' with state '{s}' at scope exit.",
+                                    .{ binding_name, info.phantom_state },
+                                );
+                            } else {
+                                try self.reporter.addError(
+                                    .KORU030,
+                                    flow.location.line,
+                                    flow.location.column,
+                                    "Multiple disposal options for resource '{s}' at scope exit. Mark one with [!].",
+                                    .{binding_name},
+                                );
+                            }
+                            return error.ValidationFailed;
+                        };
+
+                        // Find the continuation with this binding and insert disposal
+                        const scope_exit_result = try self.insertScopeExitDisposalInCont(
+                            cont,
+                            binding_name,
+                            disposal,
+                            program,
+                            flow,
+                        );
+                        if (scope_exit_result.transformed) return scope_exit_result;
+                    }
+                }
             } else {
                 const result = try self.checkContinuation(cont, event_info.decl, module_name, &context, program, flow);
                 if (result.transformed) return result;
@@ -757,6 +800,51 @@ pub const AutoDischargeInserter = struct {
                         module_name,
                     );
                     if (result.transformed) return result;
+                }
+
+                // SCOPE EXIT: Check for remaining obligations that need disposal
+                // These are obligations created in this scope that weren't discharged by an explicit terminal
+                if (branch_context.hasObligations()) {
+                    var obl_iter = branch_context.obligations();
+                    while (obl_iter.next()) |entry| {
+                        const binding_name = entry.key_ptr.*;
+                        const info = entry.value_ptr.*;
+
+                        // Find disposal event for this obligation
+                        const disposals = try self.findDisposalEvents(info.phantom_state);
+                        defer self.allocator.free(disposals);
+
+                        const disposal = selectDisposal(disposals) orelse {
+                            if (disposals.len == 0) {
+                                try self.reporter.addError(
+                                    .KORU030,
+                                    flow.location.line,
+                                    flow.location.column,
+                                    "No disposal event found for resource '{s}' with state '{s}' at scope exit.",
+                                    .{ binding_name, info.phantom_state },
+                                );
+                            } else {
+                                try self.reporter.addError(
+                                    .KORU030,
+                                    flow.location.line,
+                                    flow.location.column,
+                                    "Multiple disposal options for resource '{s}' at scope exit. Mark one with [!].",
+                                    .{binding_name},
+                                );
+                            }
+                            return error.ValidationFailed;
+                        };
+
+                        // Find the continuation that created this binding and insert disposal
+                        const result = try self.insertScopeExitDisposal(
+                            branch,
+                            binding_name,
+                            disposal,
+                            program,
+                            flow,
+                        );
+                        if (result.transformed) return result;
+                    }
                 }
             } else {
                 // Non-scoped branch (like "done") - use parent context directly
@@ -1538,6 +1626,320 @@ pub const AutoDischargeInserter = struct {
         }
     }
 
+    /// Insert disposal at scope exit for a binding
+    /// Finds the continuation with the given binding and adds disposal to its continuations
+    fn insertScopeExitDisposal(
+        self: *AutoDischargeInserter,
+        branch: *const ast.NamedBranch,
+        binding_name: []const u8,
+        disposal: DisposalEvent,
+        program: *const ast.Program,
+        flow: *const ast.Flow,
+    ) RecursiveError!TransformResult {
+        // Find the continuation that has this binding
+        const target_cont = self.findContinuationByBinding(branch.body, binding_name) orelse {
+            // Binding not found directly - might be a synthetic binding from discard
+            // In this case, search for any continuation at the deepest level with empty continuations
+            return .{ .transformed = false, .program = program };
+        };
+
+        // Create disposal invocation
+        const colon_idx = std.mem.indexOf(u8, disposal.qualified_name, ":") orelse 0;
+        const disposal_module = disposal.qualified_name[0..colon_idx];
+        const disposal_event = disposal.qualified_name[colon_idx + 1 ..];
+
+        var segments = try self.allocator.alloc([]const u8, 1);
+        segments[0] = try self.allocator.dupe(u8, disposal_event);
+
+        var args = try self.allocator.alloc(ast.Arg, 1);
+        args[0] = .{
+            .name = try self.allocator.dupe(u8, disposal.field_name),
+            .value = try self.allocator.dupe(u8, binding_name),
+            .expression_value = null,
+            .source_value = null,
+        };
+
+        const disposal_invocation = ast.Invocation{
+            .path = .{
+                .segments = segments,
+                .module_qualifier = try self.allocator.dupe(u8, disposal_module),
+            },
+            .args = args,
+            .annotations = &[_][]const u8{},
+        };
+
+        // Create disposal continuation with terminal
+        const disposal_is_void = disposal.event_decl.branches.len == 0;
+        var disposal_branch_name: []const u8 = "";
+        if (!disposal_is_void) {
+            for (disposal.event_decl.branches) |b| {
+                disposal_branch_name = b.name;
+                break;
+            }
+        }
+
+        var terminal_conts = try self.allocator.alloc(ast.Continuation, 1);
+        terminal_conts[0] = .{
+            .branch = if (disposal_is_void) "" else try self.allocator.dupe(u8, disposal_branch_name),
+            .binding = if (disposal_is_void) null else try self.allocator.dupe(u8, "_"),
+            .binding_annotations = &[_][]const u8{},
+            .condition = null,
+            .node = .{ .terminal = {} },
+            .indent = target_cont.indent + 2,
+            .continuations = &[_]ast.Continuation{},
+            .location = target_cont.location,
+        };
+
+        const disposal_cont = ast.Continuation{
+            .branch = "", // void continuation
+            .binding = null,
+            .binding_annotations = &[_][]const u8{},
+            .condition = null,
+            .node = .{ .invocation = disposal_invocation },
+            .indent = target_cont.indent + 1,
+            .continuations = terminal_conts,
+            .location = target_cont.location,
+        };
+
+        // Create new continuation with disposal appended to its continuations
+        var new_conts = try self.allocator.alloc(ast.Continuation, target_cont.continuations.len + 1);
+        for (target_cont.continuations, 0..) |c, i| {
+            new_conts[i] = try ast_functional.cloneContinuation(self.allocator, &c);
+        }
+        new_conts[target_cont.continuations.len] = disposal_cont;
+
+        const new_target_cont = ast.Continuation{
+            .branch = try self.allocator.dupe(u8, target_cont.branch),
+            .binding = if (target_cont.binding) |b| try self.allocator.dupe(u8, b) else null,
+            .binding_annotations = target_cont.binding_annotations,
+            .condition = if (target_cont.condition) |c| try self.allocator.dupe(u8, c) else null,
+            .node = target_cont.node,
+            .indent = target_cont.indent,
+            .continuations = new_conts,
+            .location = target_cont.location,
+        };
+
+        // Replace the continuation in the flow
+        const new_flow = try self.replaceContinuationAnywhere(flow, target_cont, new_target_cont);
+        const marked_flow = try self.markFlowProcessed(new_flow);
+
+        const new_program = try ast_functional.replaceFlowRecursive(
+            self.allocator,
+            program,
+            flow,
+            .{ .flow = marked_flow },
+        ) orelse {
+            return .{ .transformed = false, .program = program };
+        };
+
+        const result_ptr = try self.allocator.create(ast.Program);
+        result_ptr.* = new_program;
+
+        if (self.warn_mode) {
+            std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' at scope exit for '{s}'\n", .{
+                disposal.qualified_name,
+                binding_name,
+            });
+        }
+
+        return .{ .transformed = true, .program = result_ptr };
+    }
+
+    /// Insert disposal at scope exit for a binding within a continuation (for flow-level scopes)
+    fn insertScopeExitDisposalInCont(
+        self: *AutoDischargeInserter,
+        cont: *const ast.Continuation,
+        binding_name: []const u8,
+        disposal: DisposalEvent,
+        program: *const ast.Program,
+        flow: *const ast.Flow,
+    ) RecursiveError!TransformResult {
+        // Search for the continuation with this binding starting from the given cont
+        const target_cont = if (cont.binding) |b|
+            if (std.mem.eql(u8, b, binding_name)) cont else self.findContinuationInCont(cont, binding_name)
+        else
+            self.findContinuationInCont(cont, binding_name);
+
+        const actual_target = target_cont orelse {
+            return .{ .transformed = false, .program = program };
+        };
+
+        // Create disposal invocation
+        const colon_idx = std.mem.indexOf(u8, disposal.qualified_name, ":") orelse 0;
+        const disposal_module = disposal.qualified_name[0..colon_idx];
+        const disposal_event = disposal.qualified_name[colon_idx + 1 ..];
+
+        var segments = try self.allocator.alloc([]const u8, 1);
+        segments[0] = try self.allocator.dupe(u8, disposal_event);
+
+        var args = try self.allocator.alloc(ast.Arg, 1);
+        args[0] = .{
+            .name = try self.allocator.dupe(u8, disposal.field_name),
+            .value = try self.allocator.dupe(u8, binding_name),
+            .expression_value = null,
+            .source_value = null,
+        };
+
+        const disposal_invocation = ast.Invocation{
+            .path = .{
+                .segments = segments,
+                .module_qualifier = try self.allocator.dupe(u8, disposal_module),
+            },
+            .args = args,
+            .annotations = &[_][]const u8{},
+        };
+
+        // Create disposal continuation with terminal
+        const disposal_is_void = disposal.event_decl.branches.len == 0;
+        var disposal_branch_name: []const u8 = "";
+        if (!disposal_is_void) {
+            for (disposal.event_decl.branches) |b| {
+                disposal_branch_name = b.name;
+                break;
+            }
+        }
+
+        var terminal_conts = try self.allocator.alloc(ast.Continuation, 1);
+        terminal_conts[0] = .{
+            .branch = if (disposal_is_void) "" else try self.allocator.dupe(u8, disposal_branch_name),
+            .binding = if (disposal_is_void) null else try self.allocator.dupe(u8, "_"),
+            .binding_annotations = &[_][]const u8{},
+            .condition = null,
+            .node = .{ .terminal = {} },
+            .indent = actual_target.indent + 2,
+            .continuations = &[_]ast.Continuation{},
+            .location = actual_target.location,
+        };
+
+        const disposal_cont = ast.Continuation{
+            .branch = "",
+            .binding = null,
+            .binding_annotations = &[_][]const u8{},
+            .condition = null,
+            .node = .{ .invocation = disposal_invocation },
+            .indent = actual_target.indent + 1,
+            .continuations = terminal_conts,
+            .location = actual_target.location,
+        };
+
+        // Append disposal to target's continuations
+        var new_conts = try self.allocator.alloc(ast.Continuation, actual_target.continuations.len + 1);
+        for (actual_target.continuations, 0..) |c, i| {
+            new_conts[i] = try ast_functional.cloneContinuation(self.allocator, &c);
+        }
+        new_conts[actual_target.continuations.len] = disposal_cont;
+
+        const new_target_cont = ast.Continuation{
+            .branch = try self.allocator.dupe(u8, actual_target.branch),
+            .binding = if (actual_target.binding) |b| try self.allocator.dupe(u8, b) else null,
+            .binding_annotations = actual_target.binding_annotations,
+            .condition = if (actual_target.condition) |c| try self.allocator.dupe(u8, c) else null,
+            .node = actual_target.node,
+            .indent = actual_target.indent,
+            .continuations = new_conts,
+            .location = actual_target.location,
+        };
+
+        const new_flow = try self.replaceContinuationAnywhere(flow, actual_target, new_target_cont);
+        const marked_flow = try self.markFlowProcessed(new_flow);
+
+        const new_program = try ast_functional.replaceFlowRecursive(
+            self.allocator,
+            program,
+            flow,
+            .{ .flow = marked_flow },
+        ) orelse {
+            return .{ .transformed = false, .program = program };
+        };
+
+        const result_ptr = try self.allocator.create(ast.Program);
+        result_ptr.* = new_program;
+
+        if (self.warn_mode) {
+            std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' at scope exit for '{s}'\n", .{
+                disposal.qualified_name,
+                binding_name,
+            });
+        }
+
+        return .{ .transformed = true, .program = result_ptr };
+    }
+
+    /// Find a continuation with a specific binding within a continuation tree
+    fn findContinuationInCont(self: *AutoDischargeInserter, cont: *const ast.Continuation, binding_name: []const u8) ?*const ast.Continuation {
+        _ = self;
+        // Check nested continuations
+        if (cont.continuations.len > 0) {
+            if (findContinuationByBindingRecursive(cont.continuations, binding_name)) |found| {
+                return found;
+            }
+        }
+        // Check node's nested structures
+        if (cont.node) |node| {
+            switch (node) {
+                .foreach => |fe| {
+                    for (fe.branches) |*branch| {
+                        if (findContinuationByBindingRecursive(branch.body, binding_name)) |found| {
+                            return found;
+                        }
+                    }
+                },
+                .conditional => |cond| {
+                    for (cond.branches) |*branch| {
+                        if (findContinuationByBindingRecursive(branch.body, binding_name)) |found| {
+                            return found;
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+        return null;
+    }
+
+    /// Find a continuation that has a specific binding name
+    fn findContinuationByBinding(self: *AutoDischargeInserter, conts: []const ast.Continuation, binding_name: []const u8) ?*const ast.Continuation {
+        _ = self;
+        for (conts) |*cont| {
+            if (cont.binding) |b| {
+                if (std.mem.eql(u8, b, binding_name)) {
+                    return cont;
+                }
+            }
+            // Recursively search in nested continuations
+            if (cont.continuations.len > 0) {
+                if (findContinuationByBindingRecursive(cont.continuations, binding_name)) |found| {
+                    return found;
+                }
+            }
+            // Search in node's nested structures
+            if (cont.node) |node| {
+                switch (node) {
+                    .invocation => |inv| {
+                        _ = inv;
+                        // Invocations have their continuations in cont.continuations, already searched
+                    },
+                    .foreach => |fe| {
+                        for (fe.branches) |*branch| {
+                            if (findContinuationByBindingRecursive(branch.body, binding_name)) |found| {
+                                return found;
+                            }
+                        }
+                    },
+                    .conditional => |cond| {
+                        for (cond.branches) |*branch| {
+                            if (findContinuationByBindingRecursive(branch.body, binding_name)) |found| {
+                                return found;
+                            }
+                        }
+                    },
+                    else => {},
+                }
+            }
+        }
+        return null;
+    }
+
     /// Replace a continuation in a flow
     fn replaceContInFlow(
         self: *AutoDischargeInserter,
@@ -1874,3 +2276,41 @@ pub const AutoDischargeInserter = struct {
         return new_flow;
     }
 };
+
+/// Standalone recursive helper for finding continuation by binding (outside struct for recursive calls)
+fn findContinuationByBindingRecursive(conts: []const ast.Continuation, binding_name: []const u8) ?*const ast.Continuation {
+    for (conts) |*cont| {
+        if (cont.binding) |b| {
+            if (std.mem.eql(u8, b, binding_name)) {
+                return cont;
+            }
+        }
+        // Recursively search in nested continuations
+        if (cont.continuations.len > 0) {
+            if (findContinuationByBindingRecursive(cont.continuations, binding_name)) |found| {
+                return found;
+            }
+        }
+        // Search in node's nested structures
+        if (cont.node) |node| {
+            switch (node) {
+                .foreach => |fe| {
+                    for (fe.branches) |*branch| {
+                        if (findContinuationByBindingRecursive(branch.body, binding_name)) |found| {
+                            return found;
+                        }
+                    }
+                },
+                .conditional => |cond| {
+                    for (cond.branches) |*branch| {
+                        if (findContinuationByBindingRecursive(branch.body, binding_name)) |found| {
+                            return found;
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+    return null;
+}

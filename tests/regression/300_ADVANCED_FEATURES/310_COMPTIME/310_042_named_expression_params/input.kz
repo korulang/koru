@@ -1,0 +1,38 @@
+// Test 310_042: Named Expression Parameters
+//
+// This test documents that multiple named Expression parameters in transforms
+// are not yet fully supported. See README.md for details.
+
+const std = @import("std");
+
+~[comptime]
+
+// Event with implicit Expression + named Expression parameter
+~[keyword|comptime|transform]pub event operation {
+    expr: Expression,
+    guard: Expression,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc operation {
+    // Both expr and guard should be available as []const u8
+    std.debug.print("[operation] expr='{s}' guard='{s}'\n", .{ expr, guard });
+    return .{ .transformed = .{ .program = program } };
+}
+
+// Usage: implicit expr + named guard Expression
+~operation(1..N, guard: i > 100)
+
+// Scaffold to make it compile
+~event dummy {}
+| done {}
+
+~proc dummy {
+    std.debug.print("dummy\n", .{});
+    return .{ .done = .{} };
+}
+
+~dummy()
+| done |> _

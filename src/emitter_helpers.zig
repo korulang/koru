@@ -5132,11 +5132,13 @@ fn emitStep(
             // Get loop binding (default to "_" if no loop branch)
             const raw_binding = if (loop_branch) |lb| lb.binding orelse "_" else "_";
 
+            // Capture unique for_id for BOTH loop binding and result prefix (avoids shadowing in nested loops)
+            const for_id = ctx.for_counter;
+            ctx.for_counter += 1;
+
             // Generate unique binding for default names to avoid shadowing in nested loops
             var binding_buf: [64]u8 = undefined;
             const loop_binding = if (std.mem.eql(u8, raw_binding, "_")) blk: {
-                const for_id = ctx.for_counter;
-                ctx.for_counter += 1;
                 break :blk std.fmt.bufPrint(&binding_buf, "__for_item_{d}", .{for_id}) catch raw_binding;
             } else raw_binding;
 
@@ -5158,9 +5160,10 @@ fn emitStep(
             var step_idx: usize = 0;
 
             if (loop_branch) |lb| {
-                // Set result prefix based on branch name for nested continuations
+                // Set result prefix based on branch name AND for_id for nested continuations
+                // The for_id ensures nested loops don't shadow outer loop's result variables
                 var prefix_buf: [64]u8 = undefined;
-                const branch_prefix = std.fmt.bufPrint(&prefix_buf, "{s}_result_", .{lb.name}) catch "loop_result_";
+                const branch_prefix = std.fmt.bufPrint(&prefix_buf, "{s}{d}_result_", .{ lb.name, for_id }) catch "loop_result_";
 
                 const saved_prefix = ctx.result_prefix;
                 ctx.result_prefix = branch_prefix;
