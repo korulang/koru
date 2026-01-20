@@ -1,1 +1,17 @@
-// Marker
+// Mipmap module with its own phantom state
+const std = @import("std");
+
+const File = struct {
+    handle: i32,
+};
+
+// Loads a mipmap, returns with mipmap:open phantom state
+~event load { path: []const u8 }
+| loaded { file: *File[open] }
+
+~proc load {
+    const allocator = std.heap.page_allocator;
+    const f = allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .loaded = .{ .file = f } };
+}

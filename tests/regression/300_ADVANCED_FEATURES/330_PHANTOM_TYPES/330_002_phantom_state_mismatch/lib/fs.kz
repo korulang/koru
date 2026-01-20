@@ -1,1 +1,17 @@
-// Marker
+// File system module with phantom state
+const std = @import("std");
+
+const File = struct {
+    handle: i32,
+};
+
+// Opens a file, returns with fs:open phantom state
+~event open { path: []const u8 }
+| opened { file: *File[open] }
+
+~proc open {
+    const allocator = std.heap.page_allocator;
+    const f = allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}

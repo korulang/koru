@@ -1,1 +1,0 @@
-This test is BROKEN, it seems to want to test outdated syntax. We should consider changing or removing it. It does seems to want to test compiler annotations and PERHAPS compiler flags?

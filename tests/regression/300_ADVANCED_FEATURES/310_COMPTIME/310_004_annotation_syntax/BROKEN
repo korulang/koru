@@ -1,2 +1,0 @@
-I am not sure what this is supposed to be testing. The [raw] annotation is EXTREMELY overused in the codebase and we should do a total cleanup pass and REMOVE IT where it isn't needed (most places, if not everywhere).
-
