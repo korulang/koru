@@ -3008,6 +3008,32 @@ pub const Parser = struct {
         };
     }
     
+    /// Check if content has an unescaped escape sequence like \n or \t
+    /// Returns false for \\n (escaped backslash + n) which is valid in paths
+    fn hasUnescapedEscape(content: []const u8, escape_char: u8) bool {
+        var i: usize = 0;
+        while (i < content.len) : (i += 1) {
+            if (content[i] == '\\' and i + 1 < content.len and content[i + 1] == escape_char) {
+                // Found \n or \t - check if the backslash is escaped
+                // Count consecutive backslashes before this position
+                var backslash_count: usize = 0;
+                var j: usize = i;
+                while (j > 0 and content[j - 1] == '\\') {
+                    backslash_count += 1;
+                    j -= 1;
+                }
+                // If even number of preceding backslashes, this \n/\t is unescaped
+                // \\n = 1 preceding backslash = escaped (the \\ is one escape, n is literal)
+                // \n = 0 preceding backslashes = unescaped escape sequence
+                if (backslash_count % 2 == 0) {
+                    return true;
+                }
+                i += 1; // Skip past the escape char
+            }
+        }
+        return false;
+    }
+
     fn looksLikeZigCode(self: *Parser, content: []const u8) bool {
         _ = self;
         // Detect patterns that indicate Zig code rather than Koru event invocations
@@ -3034,11 +3060,14 @@ pub const Parser = struct {
         
         // Check for raw string literals with escape sequences as first argument
         // This catches things like "text\n" which is Zig, not Koru
+        // BUT we must not flag \\n or \\t (escaped backslash + letter)
         if (std.mem.indexOf(u8, content, "(\"") != null) {
             const after_paren = content[std.mem.indexOf(u8, content, "(\"").? + 1..];
-            // Look for string with \n, \t, etc. followed by comma (Zig printf style)
-            if (std.mem.indexOf(u8, after_paren, "\\n") != null or
-                std.mem.indexOf(u8, after_paren, "\\t") != null) {
+            // Look for UNESCAPED \n or \t (Zig printf style)
+            // \\n = escaped backslash + n (OK in Koru paths)
+            // \n = actual newline escape (Zig code)
+            if (hasUnescapedEscape(after_paren, 'n') or
+                hasUnescapedEscape(after_paren, 't')) {
                 return true;
             }
         }
