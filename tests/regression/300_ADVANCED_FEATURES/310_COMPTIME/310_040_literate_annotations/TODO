@@ -1,0 +1,1 @@
+Feature: Literate annotations - markdown prose + directives in annotation blocks rm /Users/larsde/src/koru/tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_040_literate_annotations/FAILURE ./run_regression.sh --parallel 8 --no-rebuild
