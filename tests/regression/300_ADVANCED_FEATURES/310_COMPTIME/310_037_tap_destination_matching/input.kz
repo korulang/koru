@@ -1,0 +1,52 @@
+// Test 310_037: Tap Destination Pattern Matching
+// =================================================
+// BUG: Tap with destination pattern `* -> target` matches ALL flows,
+// not just flows that actually transition to `target`.
+//
+// This test has:
+// - target: the event we want to tap transitions TO
+// - other: an event that does NOT transition to target
+//
+// Expected: tap ONLY fires for flow that calls target
+// Actual (bug): tap fires for flow that calls other too
+
+const std = @import("std");
+~import "$std/taps"
+
+// Two simple events
+~event target {}
+| done {}
+
+~event other {}
+| done {}
+
+// Procs
+~proc target {
+    std.debug.print("target called\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc other {
+    std.debug.print("other called\n", .{});
+    return .{ .done = .{} };
+}
+
+// Logger for tap - void return
+~event log {}
+
+~[pure] proc log {
+    std.debug.print("TAP: going to target\n", .{});
+}
+
+// Tap: observe transitions TO target (not FROM target)
+// Pattern `* -> target` means "any source going TO target"
+~tap(* -> target)
+| Transition _ |> log()
+
+// Flow 1: DOES call target - tap SHOULD fire
+~target()
+| done _ |> _
+
+// Flow 2: does NOT call target - tap should NOT fire
+~other()
+| done _ |> _

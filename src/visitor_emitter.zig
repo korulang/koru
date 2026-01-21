@@ -233,36 +233,76 @@ pub const VisitorEmitter = struct {
     }
 
     /// Result of scanning for metatypes in AST
+    /// Also collects events/branches for Transition enum generation
     const MetatypeScanResult = struct {
         profile: bool = false,
         transition: bool = false,
         audit: bool = false,
+        // Events and branches found in metatype_binding steps (for Transition enums)
+        // Use Managed variant for simpler API (stores allocator internally)
+        events: std.array_list.Managed([]const u8),
+        branches: std.array_list.Managed([]const u8),
+
+        fn init(allocator: std.mem.Allocator) MetatypeScanResult {
+            return .{
+                .events = std.array_list.Managed([]const u8).init(allocator),
+                .branches = std.array_list.Managed([]const u8).init(allocator),
+            };
+        }
+
+        fn deinit(self: *MetatypeScanResult) void {
+            self.events.deinit();
+            self.branches.deinit();
+        }
+
+        fn addEvent(self: *MetatypeScanResult, event: []const u8) void {
+            if (event.len == 0) return;
+            // Check for duplicates
+            for (self.events.items) |e| {
+                if (std.mem.eql(u8, e, event)) return;
+            }
+            self.events.append(event) catch {};
+        }
+
+        fn addBranch(self: *MetatypeScanResult, branch: []const u8) void {
+            // Check for duplicates (empty branches are valid - void events)
+            for (self.branches.items) |b| {
+                if (std.mem.eql(u8, b, branch)) return;
+            }
+            self.branches.append(branch) catch {};
+        }
+
+        fn merge(self: *MetatypeScanResult, other: *const MetatypeScanResult) void {
+            if (other.profile) self.profile = true;
+            if (other.transition) self.transition = true;
+            if (other.audit) self.audit = true;
+            for (other.events.items) |e| self.addEvent(e);
+            for (other.branches.items) |b| self.addBranch(b);
+        }
     };
 
     /// Scan AST items for metatype_binding steps to detect Profile/Transition/Audit metatypes
+    /// Also collects events and branches for building EventEnum/BranchEnum
     /// This is needed because ~tap() transforms the AST directly without using the tap registry
-    fn scanForMetatypes(items: []const ast.Item) MetatypeScanResult {
-        var result = MetatypeScanResult{};
+    fn scanForMetatypes(items: []const ast.Item, allocator: std.mem.Allocator) MetatypeScanResult {
+        var result = MetatypeScanResult.init(allocator);
         for (items) |item| {
             switch (item) {
                 .flow => |flow| {
-                    const found = scanContinuationsForMetatypes(flow.continuations);
-                    if (found.profile) result.profile = true;
-                    if (found.transition) result.transition = true;
-                    if (found.audit) result.audit = true;
+                    var found = scanContinuationsForMetatypes(flow.continuations, allocator);
+                    defer found.deinit();
+                    result.merge(&found);
                 },
                 .module_decl => |mod| {
-                    const nested = scanForMetatypes(mod.items);
-                    if (nested.profile) result.profile = true;
-                    if (nested.transition) result.transition = true;
-                    if (nested.audit) result.audit = true;
+                    var nested = scanForMetatypes(mod.items, allocator);
+                    defer nested.deinit();
+                    result.merge(&nested);
                 },
                 .subflow_impl => |sub| {
                     if (sub.body == .flow) {
-                        const found = scanContinuationsForMetatypes(sub.body.flow.continuations);
-                        if (found.profile) result.profile = true;
-                        if (found.transition) result.transition = true;
-                        if (found.audit) result.audit = true;
+                        var found = scanContinuationsForMetatypes(sub.body.flow.continuations, allocator);
+                        defer found.deinit();
+                        result.merge(&found);
                     }
                 },
                 else => {},
@@ -271,8 +311,8 @@ pub const VisitorEmitter = struct {
         return result;
     }
 
-    fn scanContinuationsForMetatypes(conts: []const ast.Continuation) MetatypeScanResult {
-        var result = MetatypeScanResult{};
+    fn scanContinuationsForMetatypes(conts: []const ast.Continuation, allocator: std.mem.Allocator) MetatypeScanResult {
+        var result = MetatypeScanResult.init(allocator);
         for (conts) |cont| {
             if (cont.node) |step| {
                 if (step == .metatype_binding) {
@@ -281,6 +321,10 @@ pub const VisitorEmitter = struct {
                         result.profile = true;
                     } else if (std.mem.eql(u8, mb.metatype, "Transition")) {
                         result.transition = true;
+                        // Collect events and branches for Transition enum
+                        result.addEvent(mb.source_event);  // source_event is non-optional
+                        if (mb.dest_event) |dst| result.addEvent(dst);  // dest_event is optional
+                        result.addBranch(mb.branch);
                     } else if (std.mem.eql(u8, mb.metatype, "Audit")) {
                         result.audit = true;
                     }
@@ -288,10 +332,9 @@ pub const VisitorEmitter = struct {
             }
             // Recurse into nested continuations
             if (cont.continuations.len > 0) {
-                const found = scanContinuationsForMetatypes(cont.continuations);
-                if (found.profile) result.profile = true;
-                if (found.transition) result.transition = true;
-                if (found.audit) result.audit = true;
+                var found = scanContinuationsForMetatypes(cont.continuations, allocator);
+                defer found.deinit();
+                result.merge(&found);
             }
         }
         return result;
@@ -351,11 +394,14 @@ pub const VisitorEmitter = struct {
         // Check tap registry for metatype usage (old tap transformer)
         // AND scan AST for metatype_binding steps (new ~tap() library syntax)
         // These are "magical ambient types" emitted at top level when needed
-        const ast_metatypes = scanForMetatypes(self.all_items);
+        var ast_metatypes = scanForMetatypes(self.all_items, self.allocator);
+        defer ast_metatypes.deinit();
         const has_base_transition = self.tap_registry.hasTransitionTaps() or ast_metatypes.transition;
         const has_profiling_transition = self.tap_registry.hasProfileTaps() or ast_metatypes.profile;
         const has_audit_transition = self.tap_registry.hasAuditTaps() or ast_metatypes.audit;
         const has_taps = self.tap_registry.entries.items.len > 0;
+        // AST-collected events/branches from metatype_binding steps (for ~tap() library syntax)
+        const has_ast_events_or_branches = ast_metatypes.events.items.len > 0 or ast_metatypes.branches.items.len > 0;
 
         // Emit TapRegistry if there are any taps (inside main_module)
         if (has_taps) {
@@ -399,7 +445,7 @@ pub const VisitorEmitter = struct {
 
         // Emit taps namespace at MODULE LEVEL (compiler infrastructure)
         // Includes: EventEnum, BranchEnum, Transition, Profile, Audit metatypes
-        const has_referenced_events_or_branches = if (has_taps) blk: {
+        const has_registry_events_or_branches = if (has_taps) blk: {
             const events = try self.tap_registry.getReferencedEvents();
             defer self.tap_registry.allocator.free(events);
             const branches = try self.tap_registry.getReferencedBranches();
@@ -407,10 +453,13 @@ pub const VisitorEmitter = struct {
             break :blk events.len > 0 or branches.len > 0;
         } else false;
 
+        // Events/branches can come from tap_registry (old style) OR AST metatype_binding (new ~tap() style)
+        const has_referenced_events_or_branches = has_registry_events_or_branches or has_ast_events_or_branches;
+
         // Only emit Transition metatype if we have EventEnum/BranchEnum to reference
         const can_emit_transition = has_base_transition and has_referenced_events_or_branches;
         if (has_referenced_events_or_branches or has_base_transition or has_profiling_transition or has_audit_transition) {
-            try emitter.emitTapsNamespace(self.code_emitter, self.tap_registry, can_emit_transition, has_profiling_transition, has_audit_transition);
+            try emitter.emitTapsNamespace(self.code_emitter, self.tap_registry, can_emit_transition, has_profiling_transition, has_audit_transition, ast_metatypes.events.items, ast_metatypes.branches.items);
         }
 
         // Phase 2: Generate main function that calls flows OR comptime_main for comptime flows

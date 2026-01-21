@@ -455,18 +455,15 @@ pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name:
 }
 
 /// Convert canonical event name to enum tag
-/// Example: "std.compiler:compiler.context.create" -> "compiler_context_create"
-/// Example: "main:http.request" -> "http_request"
+/// Convert canonical event name to enum tag format
+/// Must match the format used in EventEnum generation (emitTapsNamespace)
+/// Example: "std.compiler:compiler.context.create" -> "std_compiler_compiler_context_create"
+/// Example: "input:target" -> "input_target"
 pub fn canonicalNameToEnumTag(emitter: *CodeEmitter, canonical_name: []const u8) !void {
-    // Find the colon that separates module qualifier from event name
-    const colon_pos = std.mem.indexOf(u8, canonical_name, ":");
-
-    // Get the event name part (after the colon, or whole string if no colon)
-    const event_name = if (colon_pos) |pos| canonical_name[pos + 1 ..] else canonical_name;
-
-    // Replace dots with underscores
-    for (event_name) |c| {
-        if (c == '.') {
+    // Mangle the full canonical name (replace dots and colons with underscores)
+    // This must match the mangling in emitTapsNamespace EventEnum generation
+    for (canonical_name) |c| {
+        if (c == '.' or c == ':') {
             try emitter.write("_");
         } else {
             try emitter.write(&[_]u8{c});
@@ -533,18 +530,73 @@ pub fn emitTapRegistryPlaceholder(emitter: *CodeEmitter) !void {
 
 /// Emit taps namespace with selective enums for events/branches
 /// Now includes metatypes (Transition/Profile/Audit) INSIDE the namespace
+/// Events/branches can come from tap_registry (old style) OR AST metatype_binding (new ~tap() style)
 pub fn emitTapsNamespace(
     emitter: *CodeEmitter,
     tap_registry: *const tap_registry_module.TapRegistry,
     has_base_transition: bool,
     has_profiling_transition: bool,
     has_audit_transition: bool,
+    ast_events: []const []const u8,
+    ast_branches: []const []const u8,
 ) !void {
     // Get the referenced events and branches from tap registry
-    const events = try tap_registry.getReferencedEvents();
-    defer tap_registry.allocator.free(events);
-    const branches = try tap_registry.getReferencedBranches();
-    defer tap_registry.allocator.free(branches);
+    const registry_events = try tap_registry.getReferencedEvents();
+    defer tap_registry.allocator.free(registry_events);
+    const registry_branches = try tap_registry.getReferencedBranches();
+    defer tap_registry.allocator.free(registry_branches);
+
+    // Merge registry events with AST events (deduplicated)
+    // Use Managed variant for simpler API (stores allocator internally)
+    const allocator = tap_registry.allocator;
+    var all_events = std.array_list.Managed([]const u8).init(allocator);
+    defer all_events.deinit();
+    for (registry_events) |e| {
+        var found = false;
+        for (all_events.items) |existing| {
+            if (std.mem.eql(u8, existing, e)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) all_events.append(e) catch {};
+    }
+    for (ast_events) |e| {
+        var found = false;
+        for (all_events.items) |existing| {
+            if (std.mem.eql(u8, existing, e)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) all_events.append(e) catch {};
+    }
+    const events = all_events.items;
+
+    // Merge registry branches with AST branches (deduplicated)
+    var all_branches = std.array_list.Managed([]const u8).init(allocator);
+    defer all_branches.deinit();
+    for (registry_branches) |b| {
+        var found = false;
+        for (all_branches.items) |existing| {
+            if (std.mem.eql(u8, existing, b)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) all_branches.append(b) catch {};
+    }
+    for (ast_branches) |b| {
+        var found = false;
+        for (all_branches.items) |existing| {
+            if (std.mem.eql(u8, existing, b)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) all_branches.append(b) catch {};
+    }
+    const branches = all_branches.items;
 
     // Only emit if there are taps OR metatypes needed
     const has_metatypes = has_base_transition or has_profiling_transition or has_audit_transition;
@@ -4968,6 +5020,12 @@ fn emitStep(
             emitter.dedent();
             try emitter.writeIndent();
             try emitter.write("};\n");
+
+            // Suppress unused constant warning (binding may be discarded with _)
+            try emitter.writeIndent();
+            try emitter.write("_ = &");
+            try emitter.write(mb.binding);
+            try emitter.write(";\n");
         },
         .deref => |*deref| {
             try emitter.writeIndent();
