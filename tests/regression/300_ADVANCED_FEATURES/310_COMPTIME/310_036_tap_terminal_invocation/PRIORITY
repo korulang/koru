@@ -1,0 +1,14 @@
+BUG: Taps don't fire for terminal invocations
+
+When an event is called at the END of a pipeline (terminal position),
+taps don't fire because there's no "destination" to transition to.
+
+Expected: Tap should fire when event completes, even as terminal
+Actual: Tap doesn't fire
+
+This breaks the promise that ~tap(event -> *) observes ALL transitions
+from that event, including when it's the last thing in a flow.
+
+Acceptance criteria:
+- ~tap(print.ln -> *) fires even when print.ln is terminal
+- No performance regression for non-tapped terminal events
