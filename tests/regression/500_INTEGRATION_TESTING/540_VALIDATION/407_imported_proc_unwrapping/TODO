@@ -1,1 +1,0 @@
-CODEGEN BUG: Shorthand module paths (mylib:event) don't resolve when imported as $alias/mylib. Emitter should normalize to fully qualified path.
