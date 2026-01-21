@@ -1,7 +1,7 @@
 const std = @import("std");
 const Data = struct { value: i32 };
 
-~event alloc {}
+~pub event alloc {}
 | allocated { d: *Data[owned] }
 
 ~proc alloc {
@@ -11,7 +11,7 @@ const Data = struct { value: i32 };
     return .{ .allocated = .{ .d = ptr } };
 }
 
-~event borrow { other: *Data[owned] }
+~pub event borrow { other: *Data[owned] }
 | borrowed { d: *Data[borrowed] }
 
 ~proc borrow {
@@ -19,21 +19,21 @@ const Data = struct { value: i32 };
 }
 
 // Chain of events that all preserve the same state variable M
-~event validate { d: *Data[M'_] }
+~pub event validate { d: *Data[M'_] }
 | validated { d: *Data[M'_] }  // Preserves M
 
 ~proc validate {
     return .{ .validated = .{ .d = d } };
 }
 
-~event process { d: *Data[M'_] }
+~pub event process { d: *Data[M'_] }
 | processed { d: *Data[M'_] }  // Preserves M
 
 ~proc process {
     return .{ .processed = .{ .d = d } };
 }
 
-~event finalize { d: *Data[M'_] }
+~pub event finalize { d: *Data[M'_] }
 | done { d: *Data[M'_] }  // Preserves M
 
 ~proc finalize {

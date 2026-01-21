@@ -1,20 +1,20 @@
 // Chain of events that all preserve the same state variable M
 
-~event validate { data: *Data[M'_] }
+~pub event validate { data: *Data[M'_] }
 | validated { data: *Data[M'_] }  // Preserves M
 
 ~proc validate {
     return .{ .validated = .{ .data = data } };
 }
 
-~event process { data: *Data[M'_] }
+~pub event process { data: *Data[M'_] }
 | processed { data: *Data[M'_] }  // Preserves M
 
 ~proc process {
     return .{ .processed = .{ .data = data } };
 }
 
-~event finalize { data: *Data[M'_] }
+~pub event finalize { data: *Data[M'_] }
 | done { data: *Data[M'_] }  // Preserves M
 
 ~proc finalize {

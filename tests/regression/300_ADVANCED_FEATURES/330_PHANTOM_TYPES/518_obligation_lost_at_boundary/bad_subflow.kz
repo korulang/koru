@@ -1,7 +1,7 @@
 ~import "$app/fs"
 
 // BAD: Opens file but doesn't document obligation in signature
-~event bad_subflow {}
+~pub event bad_subflow {}
 | done {}  // NO [!] in signature - obligation disappears!
 
 ~proc bad_subflow {

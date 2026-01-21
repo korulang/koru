@@ -2,16 +2,16 @@
 
 const std = @import("std");
 
-~event z_buffer.render { width: i32, height: i32 }
+~pub event z_buffer.render { width: i32, height: i32 }
 | drawn { pixels: i32 }
 
-~event z_buffer.clear {}
+~pub event z_buffer.clear {}
 | cleared {}
 
-~event sprite.draw { x: i32, y: i32 }
+~pub event sprite.draw { x: i32, y: i32 }
 | drawn {}
 
-~event texture.load { path: []const u8 }
+~pub event texture.load { path: []const u8 }
 | loaded { texture_id: i32 }
 | failed { msg: []const u8 }
 

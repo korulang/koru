@@ -2,11 +2,11 @@
 
 const std = @import("std");
 
-~event request.parse { bytes: []const u8 }
+~pub event request.parse { bytes: []const u8 }
 | request { method: []const u8, path: []const u8 }
 | invalid { msg: []const u8 }
 
-~event response.build { status: i32, body: []const u8 }
+~pub event response.build { status: i32, body: []const u8 }
 | response { bytes: []const u8 }
 
 ~proc request.parse {

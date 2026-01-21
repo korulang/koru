@@ -2,9 +2,9 @@
 
 const std = @import("std");
 
-~event init {}
+~pub event init {}
 
-~event shutdown {}
+~pub event shutdown {}
 
 ~proc init {
     std.debug.print("Audio initialized\n", .{});

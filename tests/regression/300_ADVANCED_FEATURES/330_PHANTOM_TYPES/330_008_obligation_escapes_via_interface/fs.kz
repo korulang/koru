@@ -1,7 +1,7 @@
 const std = @import("std");
 const File = struct { handle: i32 };
 
-~event open { path: []const u8 }
+~pub event open { path: []const u8 }
 | opened { file: *File[opened!] }
 
 ~proc open {
@@ -12,7 +12,7 @@ const File = struct { handle: i32 };
     return .{ .opened = .{ .file = f } };
 }
 
-~event close { file: *File[!opened] }
+~pub event close { file: *File[!opened] }
 | closed {}
 
 ~proc close {

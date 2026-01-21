@@ -6,7 +6,7 @@ const File = struct {
 };
 
 // Opens a file, returns with fs:open phantom state
-~event open { path: []const u8 }
+~pub event open { path: []const u8 }
 | opened { file: *File[open] }
 
 ~proc open {

@@ -17,7 +17,7 @@ const Transaction = struct {
 };
 
 // Connect to database - creates connected! obligation
-~event connect { url: []const u8 }
+~pub event connect { url: []const u8 }
 | connected { conn: *Connection[connected!] }
 
 ~proc connect {
@@ -29,7 +29,7 @@ const Transaction = struct {
 }
 
 // Start a query/transaction - creates transaction! obligation
-~event query { conn: *Connection[connected!], sql: []const u8 }
+~pub event query { conn: *Connection[connected!], sql: []const u8 }
 | started { tx: *Transaction[transaction!] }
 
 ~proc query {
@@ -41,7 +41,7 @@ const Transaction = struct {
 }
 
 // Commit - CONSUMES transaction! obligation
-~event commit { tx: *Transaction[!transaction] }
+~pub event commit { tx: *Transaction[!transaction] }
 | committed {}
 
 ~proc commit {
@@ -50,7 +50,7 @@ const Transaction = struct {
 }
 
 // Rollback - CONSUMES transaction! obligation (alternative to commit)
-~event rollback { tx: *Transaction[!transaction] }
+~pub event rollback { tx: *Transaction[!transaction] }
 | rolledback {}
 
 ~proc rollback {
@@ -59,7 +59,7 @@ const Transaction = struct {
 }
 
 // Disconnect - CONSUMES connected! obligation
-~event disconnect { conn: *Connection[!connected] }
+~pub event disconnect { conn: *Connection[!connected] }
 | disconnected {}
 
 ~proc disconnect {

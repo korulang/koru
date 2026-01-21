@@ -1,7 +1,7 @@
 const std = @import("std");
 const Data = struct { value: i32 };
 
-~event alloc {}
+~pub event alloc {}
 | allocated { data: *Data[owned] }
 
 ~proc alloc {
@@ -11,7 +11,7 @@ const Data = struct { value: i32 };
     return .{ .allocated = .{ .data = d } };
 }
 
-~event borrow { other: *Data[owned] }
+~pub event borrow { other: *Data[owned] }
 | borrowed { data: *Data[borrowed] }
 
 ~proc borrow {
@@ -20,7 +20,7 @@ const Data = struct { value: i32 };
 
 // Generic processor constrained to owned OR borrowed
 // Will NOT accept other states like "gc" or "static"
-~event process { d: *Data[M'owned|borrowed] }
+~pub event process { d: *Data[M'owned|borrowed] }
 | done { d: *Data[M'owned|borrowed] }  // Preserves whichever state was passed
 
 ~proc process {

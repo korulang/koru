@@ -9,7 +9,7 @@ const Handle = struct {
 };
 
 // Open a handle - produces obligation (must be finalized)
-~event open {}
+~pub event open {}
 | opened { h: *Handle[opened!] }
 
 ~proc open {
@@ -21,7 +21,7 @@ const Handle = struct {
 }
 
 // Start closing - transitions to 'closing' state (keeps obligation)
-~event start_close { h: *Handle[opened] }
+~pub event start_close { h: *Handle[opened] }
 | closing { h: *Handle[closing] }
 
 ~proc start_close {
@@ -31,7 +31,7 @@ const Handle = struct {
 
 // Finalize - accepts EITHER opened OR closing with consume marker
 // The !prefix means this DISCHARGES the obligation
-~event finalize { h: *Handle[!opened|closing] }
+~pub event finalize { h: *Handle[!opened|closing] }
 | done {}
 
 ~proc finalize {

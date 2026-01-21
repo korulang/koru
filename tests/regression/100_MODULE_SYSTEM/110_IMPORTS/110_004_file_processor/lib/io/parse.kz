@@ -2,7 +2,7 @@
 
 const std = @import("std");
 
-~event lines { text: []const u8 }
+~pub event lines { text: []const u8 }
 | parsed { lines: [][]const u8 }
 
 ~proc lines {

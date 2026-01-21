@@ -8,7 +8,7 @@ const Handle = struct {
 };
 
 // Risky operation - might succeed OR might leak a handle
-~event risky {}
+~pub event risky {}
 | success { result: u32 }
 | ?leaked { handle: *Handle[owned!] }  // Optional with obligation!
 
@@ -20,7 +20,7 @@ const Handle = struct {
 }
 
 // Disposer for the obligation (would need to be called for ?leaked)
-~event close { handle: *Handle[!owned] }
+~pub event close { handle: *Handle[!owned] }
 | closed {}
 
 ~proc close {

@@ -2,7 +2,7 @@
 
 const Data = struct { value: i32 };
 
-~event process { d: *Data[M'_] }
+~pub event process { d: *Data[M'_] }
 | done { d: *Data[M'_] }  // Wildcard: accepts any state, preserves it
 
 ~proc process {

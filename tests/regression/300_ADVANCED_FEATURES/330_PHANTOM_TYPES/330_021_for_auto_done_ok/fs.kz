@@ -9,7 +9,7 @@ const File = struct {
 };
 
 // Open a file - returns opened! state (requires cleanup)
-~event open { path: []const u8 }
+~pub event open { path: []const u8 }
 | opened { file: *File[opened!] }
 
 ~proc open {
@@ -21,7 +21,7 @@ const File = struct {
 }
 
 // Close a file - CONSUMES opened! state (disposes the resource)
-~event close { file: *File[!opened] }
+~pub event close { file: *File[!opened] }
 | closed {}
 
 ~proc close {

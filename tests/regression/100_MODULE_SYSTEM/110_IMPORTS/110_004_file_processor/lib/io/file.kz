@@ -2,12 +2,12 @@
 
 const std = @import("std");
 
-~event read { path: []const u8 }
+~pub event read { path: []const u8 }
 | success { contents: []const u8 }
 | notfound {}
 | ioerror { msg: []const u8 }
 
-~event write { path: []const u8, data: []const u8 }
+~pub event write { path: []const u8, data: []const u8 }
 | written {}
 | ioerror { msg: []const u8 }
 

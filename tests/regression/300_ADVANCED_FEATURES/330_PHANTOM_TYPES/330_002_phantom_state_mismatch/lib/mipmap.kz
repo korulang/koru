@@ -6,7 +6,7 @@ const File = struct {
 };
 
 // Loads a mipmap, returns with mipmap:open phantom state
-~event load { path: []const u8 }
+~pub event load { path: []const u8 }
 | loaded { file: *File[open] }
 
 ~proc load {

@@ -2,7 +2,7 @@
 
 const std = @import("std");
 
-~event uppercase { text: []const u8 }
+~pub event uppercase { text: []const u8 }
 | transformed { result: []const u8 }
 
 ~proc uppercase {

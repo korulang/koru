@@ -9,7 +9,7 @@ const File = struct {
 };
 
 // Open a file - returns opened state
-~event open { path: []const u8 }
+~pub event open { path: []const u8 }
 | opened { file: *File[open] }
 
 ~proc open {
@@ -21,7 +21,7 @@ const File = struct {
 }
 
 // Close a file - accepts open state, returns closed state
-~event close { file: *File[open] }
+~pub event close { file: *File[open] }
 | closed {}
 
 ~proc close {

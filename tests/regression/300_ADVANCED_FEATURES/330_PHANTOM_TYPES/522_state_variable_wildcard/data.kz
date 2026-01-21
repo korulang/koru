@@ -1,7 +1,7 @@
 const std = @import("std");
 const Data = struct { value: i32 };
 
-~event alloc {}
+~pub event alloc {}
 | allocated { data: *Data[owned] }
 
 ~proc alloc {
@@ -11,7 +11,7 @@ const Data = struct { value: i32 };
     return .{ .allocated = .{ .data = d } };
 }
 
-~event borrow { other: *Data[owned] }
+~pub event borrow { other: *Data[owned] }
 | borrowed { data: *Data[borrowed] }
 
 ~proc borrow {
@@ -19,7 +19,7 @@ const Data = struct { value: i32 };
 }
 
 // Generic processor that accepts data in ANY state and preserves it
-~event process { d: *Data[M'_] }
+~pub event process { d: *Data[M'_] }
 | done { d: *Data[M'_] }  // Wildcard: accepts any state, preserves it
 
 ~proc process {
