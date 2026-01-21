@@ -4,12 +4,13 @@
 // When an event is called at the END of a pipeline (terminal position),
 // tap lookups don't happen because there's no "destination" to transition to.
 //
-// Expected: Tap should fire when println completes, even as terminal
+// Expected: Tap should fire when print.ln completes, even as terminal
 // Actual: Tap doesn't fire
 
 const std = @import("std");
 
 ~import "$std/io"
+~import "$std/taps"
 
 // Logger to observe taps
 ~event log { msg: []const u8 }
@@ -18,9 +19,9 @@ const std = @import("std");
     std.debug.print("TAP: {s}\n", .{msg});
 }
 
-// Tap: observe std.io:println completions
-~std.io:println -> *
+// Tap: observe std.io:print.ln completions
+~tap(std.io:print.ln -> *)
 | Profile p |> log(msg: p.source)
 
-// Simple flow: just println (terminal - no destination)
-~std.io:println(text: "Hello")
+// Simple flow: just print.ln (terminal - no destination)
+~std.io:print.ln(text: "Hello")

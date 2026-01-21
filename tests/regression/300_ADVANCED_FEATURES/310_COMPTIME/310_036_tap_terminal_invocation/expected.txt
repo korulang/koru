@@ -1,2 +1,2 @@
 Hello
-TAP: std.io:println
+TAP: std.io:print.ln

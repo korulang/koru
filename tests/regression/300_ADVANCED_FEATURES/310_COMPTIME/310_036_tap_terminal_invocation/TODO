@@ -1,0 +1,1 @@
+BUG: Taps don't fire for terminal invocations (event at end of pipeline with no destination).
