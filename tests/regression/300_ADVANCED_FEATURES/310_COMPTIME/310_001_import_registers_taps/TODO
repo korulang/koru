@@ -1,0 +1,14 @@
+Requires INTERCEPTOR feature (not yet implemented)
+
+This test attempts "pass-through" tap behavior:
+  ~tap(source -> dest)
+  | result r |> log(...)
+      | done |> result { result: r }  ← Pass through original result
+
+Taps are OBSERVE-ONLY. To transform/pass-through payloads, we need
+the INTERCEPTOR feature designed in 365_INTERCEPTORS/SPEC.md:
+  ~intercept(* -> dest)
+  | payload p |> payload { ...transformed... }
+
+Once interceptors are implemented, this test should be updated to use
+~intercept() instead of ~tap() for the pass-through behavior.

@@ -83,7 +83,6 @@ const std = @import("std");
     // Pattern matching config
     const source_is_wildcard = std.mem.eql(u8, source, "*");
     const dest_is_wildcard = std.mem.eql(u8, destination, "*");
-    _ = dest_is_wildcard; // TODO: use for destination matching
 
     // Check if any tap branch is a metatype (matches all source branches)
     var is_metatype = false;
@@ -98,6 +97,10 @@ const std = @import("std");
 
     std.debug.print("[tap] source='{s}' dest='{s}' branches={d} metatype={}\n",
         .{ source, destination, all_tap_branches.len, is_metatype });
+
+    // Capture destination in a const for use inside Helper struct
+    // (Zig doesn't allow mutable vars to cross struct boundaries)
+    const dest_final = destination;
 
     // ========================================================================
     // STEP 2: Walk program, transform matching flows
@@ -515,17 +518,87 @@ const std = @import("std");
             is_meta: bool,
             mark_inserted: bool,  // True if inserted invocations should be marked (wildcard taps only)
             source_event: ?[]const u8,  // Canonical source event name for metatypes (e.g., "input:hello")
+            dest_pattern: []const u8,
+            is_dest_wildcard: bool,
+            containing_module: ?[]const u8,
         ) !struct { conts: []ast.Continuation, modified: bool } {
+            // Coyote time: no continuations means terminal position (void destination).
+            // Treat this as a wildcard destination match and insert the tap.
+            if (continuations.len == 0) {
+                if (!is_dest_wildcard) {
+                    return .{ .conts = @constCast(continuations), .modified = false };
+                }
+
+                var terminal_cont = ast.Continuation{
+                    .branch = "",
+                    .binding = null,
+                    .binding_type = .branch_payload,
+                    .node = null,
+                    .continuations = &[_]ast.Continuation{},
+                    .indent = 0,
+                    .condition = null,
+                    .condition_expr = null,
+                };
+
+                var tap_inserted = false;
+                for (tap_branches) |*tap_cont| {
+                    const tap_step = tap_cont.node orelse continue;
+                    const tap_nested = tap_cont.continuations;
+                    const tap_binding = tap_cont.binding;
+                    const tap_condition = tap_cont.condition;
+                    const tap_condition_expr = tap_cont.condition_expr;
+
+                    // At terminal position (void event at end of flow), only these taps should fire:
+                    // 1. Metatype taps (Profile/Transition/Audit) - observe any transition
+                    // 2. Void-branch taps (| |> with empty branch) - match void event completion
+                    // Branch-specific taps (like | next v |>) should NOT fire because
+                    // "next" doesn't match a void event's empty branch.
+                    const is_metatype_tap = std.mem.eql(u8, tap_cont.branch, "Profile") or
+                                           std.mem.eql(u8, tap_cont.branch, "Transition") or
+                                           std.mem.eql(u8, tap_cont.branch, "Audit");
+                    const is_void_branch_tap = tap_cont.branch.len == 0;
+                    if (!is_metatype_tap and !is_void_branch_tap) {
+                        // Skip non-matching taps at terminal position
+                        continue;
+                    }
+
+                    terminal_cont = try wrapContinuation(
+                        alloc,
+                        &terminal_cont,
+                        tap_step,
+                        tap_nested,
+                        tap_binding,
+                        tap_condition,
+                        tap_condition_expr,
+                        mark_inserted,
+                        tap_cont.branch,
+                        source_event,
+                    );
+                    tap_inserted = true;
+                    break;
+                }
+
+                if (!tap_inserted) {
+                    return .{ .conts = @constCast(continuations), .modified = false };
+                }
+
+                var result = try alloc.alloc(ast.Continuation, 1);
+                result[0] = terminal_cont;
+                return .{ .conts = result, .modified = true };
+            }
+
             var new_conts = try alloc.alloc(ast.Continuation, continuations.len);
             var any_modified = false;
 
             for (continuations, 0..) |*cont, i| {
-
                 // Skip void branches ("") - these are internal plumbing from tap wrappers
                 // Metatype taps should only wrap actual event transitions, not intermediate connectors
                 if (cont.branch.len == 0) {
                     // Don't wrap void branches, just recurse into nested continuations
-                    const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta, mark_inserted, source_event);
+                    const nested = try transformContinuations(
+                        alloc, cont.continuations, tap_branches, is_meta, mark_inserted,
+                        source_event, dest_pattern, is_dest_wildcard, containing_module
+                    );
                     new_conts[i] = cont.*;
                     new_conts[i].continuations = nested.conts;
                     if (nested.modified) any_modified = true;
@@ -540,6 +613,9 @@ const std = @import("std");
                     for (tap_branches) |*tap_cont| {
                         const branch_matches = is_meta or std.mem.eql(u8, cont.branch, tap_cont.branch);
                         if (!branch_matches) continue;
+
+                        // Note: Destination matching happens at the FLOW level, not here.
+                        // If we reached here, the flow already matched the destination pattern.
 
                         const tap_step = tap_cont.node orelse continue;
 
@@ -562,7 +638,10 @@ const std = @import("std");
 
                     if (!tap_inserted) {
                         // No matching tap, recurse into nested continuations
-                        const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta, mark_inserted, source_event);
+                        const nested = try transformContinuations(
+                            alloc, cont.continuations, tap_branches, is_meta, mark_inserted,
+                            source_event, dest_pattern, is_dest_wildcard, containing_module
+                        );
                         new_conts[i] = cont.*;
                         new_conts[i].continuations = nested.conts;
                         if (nested.modified) any_modified = true;
@@ -578,6 +657,11 @@ const std = @import("std");
                 for (tap_branches) |*tap_cont| {
                     const branch_matches = is_meta or std.mem.eql(u8, cont.branch, tap_cont.branch);
                     if (!branch_matches) continue;
+
+                    // Note: Destination matching happens at the FLOW level now, not here.
+                    // If we reached here, the flow already matched the destination pattern.
+                    // The continuation's node doesn't need to match - we're observing the
+                    // OUTPUT of the matched event, regardless of what happens next.
 
                     const tap_step = tap_cont.node orelse continue;
                     const tap_nested = tap_cont.continuations;
@@ -596,7 +680,10 @@ const std = @import("std");
                     any_modified = true;
                 } else {
                     // No matching taps, but recurse into nested continuations
-                    const nested = try transformContinuations(alloc, cont.continuations, tap_branches, is_meta, mark_inserted, source_event);
+                    const nested = try transformContinuations(
+                        alloc, cont.continuations, tap_branches, is_meta, mark_inserted,
+                        source_event, dest_pattern, is_dest_wildcard, containing_module
+                    );
                     new_conts[i] = cont.*;
                     new_conts[i].continuations = nested.conts;
                     if (nested.modified) any_modified = true;
@@ -611,6 +698,8 @@ const std = @import("std");
             continuations: []const ast.Continuation,
             source_pattern: []const u8,
             source_wildcard: bool,
+            dest_pattern: []const u8,
+            is_dest_wildcard: bool,
             containing_module: ?[]const u8,
             tap_branches: []const ast.Continuation,  // ALL tap continuations
             is_meta: bool,
@@ -646,7 +735,8 @@ const std = @import("std");
 
                             // Transform its continuations (what happens after it returns)
                             const nested_result = try transformContinuations(
-                                alloc, cont.continuations, tap_branches, is_meta, source_wildcard, src_event  // mark_inserted = source_wildcard
+                                alloc, cont.continuations, tap_branches, is_meta, source_wildcard, src_event,
+                                dest_pattern, is_dest_wildcard, containing_module  // mark_inserted = source_wildcard
                             );
                             this_cont.continuations = nested_result.conts;
                             if (nested_result.modified) {
@@ -663,7 +753,7 @@ const std = @import("std");
                 const conts_to_recurse = if (matched_here) cont.continuations else this_cont.continuations;
                 const deeper = try transformNestedInvocations(
                     alloc, conts_to_recurse, source_pattern, source_wildcard,
-                    containing_module, tap_branches, is_meta
+                    dest_pattern, is_dest_wildcard, containing_module, tap_branches, is_meta
                 );
 
                 // If we matched here, the deeper recursion found nested invocations
@@ -708,13 +798,22 @@ const std = @import("std");
             var flow_modified = false;
             var new_continuations = flow.continuations;
 
-            // CASE 1: Top-level flow matches source - transform its continuations
-            if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
+            // CASE 1: Top-level flow matches source AND destination - transform its continuations
+            // Source pattern: what event we're observing (e.g., "foo" in "foo -> *")
+            // Destination pattern: what event is being called (e.g., "bar" in "* -> bar")
+            // For "* -> target", we only tap flows that CALL target
+            const source_matches = Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator);
+            const dest_matches = dest_is_wildcard or Helper.pathMatches(dest_final, false, &flow.invocation.path, flow.module, allocator);
+            if (source_matches and dest_matches) {
                 // Build canonical source event name for metatypes
                 const src_event = Helper.buildCanonicalName(allocator, &flow.invocation.path, flow.module) catch null;
 
+                // For destination matching, we still use transformContinuations which
+                // wraps the continuations (observes after the event returns).
+                // The key feature is FILTERING: only flows calling the destination get tapped.
                 const result = Helper.transformContinuations(
-                    allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event
+                    allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event,
+                    dest_final, dest_is_wildcard, flow.module
                 ) catch unreachable;
 
                 if (result.modified) {
@@ -726,7 +825,7 @@ const std = @import("std");
             // CASE 2: Check for NESTED invocations matching source
             const nested_result = Helper.transformNestedInvocations(
                 allocator, new_continuations, source, source_is_wildcard,
-                flow.module, all_tap_branches, is_metatype
+                dest_final, dest_is_wildcard, flow.module, all_tap_branches, is_metatype
             ) catch unreachable;
 
             if (nested_result.modified) {
@@ -770,7 +869,8 @@ const std = @import("std");
                     const src_event = Helper.buildCanonicalName(allocator, &flow.invocation.path, flow.module) catch null;
 
                     const result = Helper.transformContinuations(
-                        allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event
+                        allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event,
+                        dest_final, dest_is_wildcard, flow.module
                     ) catch unreachable;
 
                     if (result.modified) {
@@ -782,7 +882,7 @@ const std = @import("std");
                 // CASE 2: Check for NESTED invocations matching source
                 const nested_result = Helper.transformNestedInvocations(
                     allocator, new_continuations, source, source_is_wildcard,
-                    flow.module, all_tap_branches, is_metatype
+                    dest_final, dest_is_wildcard, flow.module, all_tap_branches, is_metatype
                 ) catch unreachable;
 
                 if (nested_result.modified) {
@@ -878,7 +978,8 @@ const std = @import("std");
                         const src_event = Helper.buildCanonicalName(allocator, &flow.invocation.path, flow.module) catch null;
 
                         const result = Helper.transformContinuations(
-                            allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event
+                            allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event,
+                            dest_final, dest_is_wildcard, flow.module
                         ) catch unreachable;
 
                         if (result.modified) {
@@ -890,7 +991,7 @@ const std = @import("std");
                     // Check nested invocations
                     const nested_result = Helper.transformNestedInvocations(
                         allocator, new_continuations, source, source_is_wildcard,
-                        flow.module, all_tap_branches, is_metatype
+                        dest_final, dest_is_wildcard, flow.module, all_tap_branches, is_metatype
                     ) catch unreachable;
 
                     if (nested_result.modified) {
@@ -932,7 +1033,8 @@ const std = @import("std");
                             const src_event = Helper.buildCanonicalName(allocator, &flow.invocation.path, flow.module) catch null;
 
                             const result = Helper.transformContinuations(
-                                allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event
+                                allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event,
+                                dest_final, dest_is_wildcard, flow.module
                             ) catch unreachable;
 
                             if (result.modified) {
@@ -944,7 +1046,7 @@ const std = @import("std");
                         // Check nested invocations
                         const nested_result = Helper.transformNestedInvocations(
                             allocator, new_continuations, source, source_is_wildcard,
-                            flow.module, all_tap_branches, is_metatype
+                            dest_final, dest_is_wildcard, flow.module, all_tap_branches, is_metatype
                         ) catch unreachable;
 
                         if (nested_result.modified) {

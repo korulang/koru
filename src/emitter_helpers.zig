@@ -2662,6 +2662,38 @@ pub fn emitFlow(
     // Zero-overhead control flow: if inline_body is set, emit it directly
     // This enables ~if, ~for to emit literal Zig control flow instead of handler calls
     if (flow.inline_body) |inline_code| {
+        const trimmed_inline = std.mem.trimRight(u8, inline_code, " \t\r\n");
+        // Check if inline code is already a statement (ends with ;) or is comment-only (no ; needed)
+        const is_comment_only = blk: {
+            const trimmed_left = std.mem.trimLeft(u8, trimmed_inline, " \t");
+            break :blk trimmed_left.len == 0 or
+                       (trimmed_left.len >= 2 and std.mem.eql(u8, trimmed_left[0..2], "//"));
+        };
+        const inline_is_statement = is_comment_only or
+            (trimmed_inline.len > 0 and trimmed_inline[trimmed_inline.len - 1] == ';');
+        const only_void_continuations = blk: {
+            if (flow.continuations.len == 0) break :blk true;
+            for (flow.continuations) |cont| {
+                if (cont.branch.len != 0) break :blk false;
+            }
+            break :blk true;
+        };
+
+        if (inline_is_statement or only_void_continuations) {
+            try emitter.writeIndent();
+            try emitter.write(inline_code);
+            if (!inline_is_statement) {
+                try emitter.write(";");
+            }
+            try emitter.write("\n");
+
+            var result_counter: usize = 0;
+            for (flow.continuations) |*cont| {
+                try emitContinuationBody(emitter, ctx, cont, &result_counter);
+            }
+            return;
+        }
+
         // Check if flow also has continuations - if so, generate switch statement
         // This is used by [expand] events with branches: template provides the expression,
         // continuations provide the switch arms
@@ -2713,10 +2745,6 @@ pub fn emitFlow(
             try emitter.write("}\n");
             return;
         }
-
-        // No continuations - just emit the inline code directly
-        try emitter.write(inline_code);
-        return;
     }
 
     var result_counter: usize = 0;
@@ -4775,8 +4803,9 @@ pub fn emitContinuationBody(
     } else {
         // Normal case - no label_with_invocation
     // Check if this is a void step that doesn't produce a result
+    // metatype_binding creates a Profile/Transition struct but doesn't produce a switchable result
     const is_void_step = if (cont.node) |step|
-        (step == .assignment or step == .inline_code or step == .foreach)
+        (step == .assignment or step == .inline_code or step == .foreach or step == .metatype_binding)
     else
         false;
 

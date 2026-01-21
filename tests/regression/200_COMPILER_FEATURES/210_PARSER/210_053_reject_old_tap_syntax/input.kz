@@ -1,0 +1,11 @@
+// Test: Parser should reject old tap syntax
+// The old syntax `~source -> dest` was replaced with `~tap(source -> dest)`
+
+const std = @import("std");
+
+~event foo {}
+| done {}
+
+// OLD SYNTAX - should be rejected with helpful error
+~foo -> *
+| done _ |> _

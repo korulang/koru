@@ -1,0 +1,13 @@
+Two issues:
+
+1. OLD TAP SYNTAX - Uses deprecated `~source -> dest` instead of `~tap(source -> dest)`
+   The logger.kz uses:
+     ~input:compute -> *
+   Should be:
+     ~tap(input:compute -> *)
+
+2. REQUIRES INTERCEPTOR FEATURE - Same as 310_001, attempts pass-through:
+   | done |> result { result: r }
+
+Once interceptors are implemented and syntax is updated, this test
+should work. See 365_INTERCEPTORS/SPEC.md for interceptor design.
