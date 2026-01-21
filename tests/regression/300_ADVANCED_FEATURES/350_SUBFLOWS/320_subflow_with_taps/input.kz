@@ -4,6 +4,8 @@
 // Verifies: inline tap emission works for subflow continuations
 // ============================================================================
 
+~import "$std/taps"
+
 const std = @import("std");
 
 // Base event: adds 5 to a number
@@ -42,7 +44,7 @@ const std = @import("std");
 
 // TAP: Observe add_five -> result transitions
 // This tap should fire when the subflow transitions through add_five's result branch
-~add_five -> *
+~tap(add_five -> *)
 | result |> observer()
     | done |> _
 
