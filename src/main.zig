@@ -1,6 +1,7 @@
 const std = @import("std");
 const Parser = @import("parser").Parser;
-const ErrorReporter = @import("errors").ErrorReporter;
+const errors = @import("errors");
+const ErrorReporter = errors.ErrorReporter;
 const shape_checker = @import("shape_checker");
 const ShapeChecker = shape_checker.ShapeChecker;
 const purity_checker = @import("purity_checker.zig");
@@ -28,6 +29,7 @@ const keyword_registry = @import("keyword_registry");
 const flow_checker = @import("flow_checker");
 const FlowChecker = flow_checker.FlowChecker;
 const codegen_utils = @import("codegen_utils");
+const emitter_helpers = @import("emitter_helpers");
 
 const version = "0.1.0";
 
@@ -1304,7 +1306,7 @@ const ComptimeBackendResult = struct {
 /// This generates handlers for events marked with [comptime] annotation
 /// These handlers are available during backend.zig compilation
 fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *ast.Program, type_registry: *TypeRegistry) !ComptimeBackendResult {
-    const emitter_helpers = @import("emitter_helpers");
+    // Note: emitter_helpers already imported at top-level
     const visitor_emitter_mod = @import("visitor_emitter");
     const tap_registry_module = @import("tap_registry");
 
@@ -4608,6 +4610,301 @@ fn resolveKeywordInPath(
     }
 }
 
+fn populateInvocationSourceModules(
+    items: []ast.Item,
+    allocator: std.mem.Allocator,
+    main_module: []const u8,
+) !void {
+    try populateInvocationSourceInItems(items, allocator, main_module);
+}
+
+fn populateInvocationSourceInItems(
+    items: []ast.Item,
+    allocator: std.mem.Allocator,
+    module_name: []const u8,
+) !void {
+    for (items) |*item| {
+        switch (item.*) {
+            .flow => |*flow| {
+                try populateInvocationSourceInFlow(flow, allocator, flow.module);
+            },
+            .proc_decl => |*proc| {
+                for (@constCast(proc.inline_flows)) |*flow| {
+                    try populateInvocationSourceInFlow(flow, allocator, proc.module);
+                }
+            },
+            .event_tap => |*tap| {
+                for (tap.continuations) |*cont| {
+                    try populateInvocationSourceInContinuation(@constCast(cont), allocator, tap.module);
+                }
+            },
+            .label_decl => |*label| {
+                for (label.continuations) |*cont| {
+                    try populateInvocationSourceInContinuation(@constCast(cont), allocator, module_name);
+                }
+            },
+            .subflow_impl => |*subflow| {
+                if (subflow.body == .flow) {
+                    try populateInvocationSourceInFlow(&subflow.body.flow, allocator, subflow.module);
+                }
+            },
+            .module_decl => |*module| {
+                try populateInvocationSourceInItems(@constCast(module.items), allocator, module.logical_name);
+            },
+            else => {},
+        }
+    }
+}
+
+fn populateInvocationSourceInFlow(
+    flow: *ast.Flow,
+    allocator: std.mem.Allocator,
+    module_name: []const u8,
+) !void {
+    try setInvocationSourceModule(&flow.invocation, allocator, module_name);
+    for (flow.continuations) |*cont| {
+        try populateInvocationSourceInContinuation(@constCast(cont), allocator, module_name);
+    }
+}
+
+fn populateInvocationSourceInContinuation(
+    cont: *ast.Continuation,
+    allocator: std.mem.Allocator,
+    module_name: []const u8,
+) std.mem.Allocator.Error!void {
+    if (cont.node) |*node| {
+        try populateInvocationSourceInNode(@constCast(node), allocator, module_name);
+    }
+    for (cont.continuations) |*nested| {
+        try populateInvocationSourceInContinuation(@constCast(nested), allocator, module_name);
+    }
+}
+
+fn populateInvocationSourceInNode(
+    node: *ast.Node,
+    allocator: std.mem.Allocator,
+    module_name: []const u8,
+) std.mem.Allocator.Error!void {
+    switch (node.*) {
+        .invocation => |*inv| {
+            try setInvocationSourceModule(inv, allocator, module_name);
+        },
+        .label_with_invocation => |*lwi| {
+            try setInvocationSourceModule(&lwi.invocation, allocator, module_name);
+        },
+        .conditional_block => |*cb| {
+            for (cb.nodes) |*child| {
+                try populateInvocationSourceInNode(@constCast(child), allocator, module_name);
+            }
+        },
+        .foreach => |*fe| {
+            for (fe.branches) |*branch| {
+                for (branch.body) |*body_cont| {
+                    try populateInvocationSourceInContinuation(@constCast(body_cont), allocator, module_name);
+                }
+            }
+        },
+        .conditional => |*cond| {
+            for (cond.branches) |*branch| {
+                for (branch.body) |*body_cont| {
+                    try populateInvocationSourceInContinuation(@constCast(body_cont), allocator, module_name);
+                }
+            }
+        },
+        .capture => |*cap| {
+            for (cap.branches) |*branch| {
+                for (branch.body) |*body_cont| {
+                    try populateInvocationSourceInContinuation(@constCast(body_cont), allocator, module_name);
+                }
+            }
+        },
+        .switch_result => |*sr| {
+            for (sr.branches) |*branch| {
+                for (branch.body) |*body_cont| {
+                    try populateInvocationSourceInContinuation(@constCast(body_cont), allocator, module_name);
+                }
+            }
+        },
+        else => {},
+    }
+}
+
+fn setInvocationSourceModule(
+    invocation: *ast.Invocation,
+    allocator: std.mem.Allocator,
+    module_name: []const u8,
+) !void {
+    if (invocation.source_module.len == 0) {
+        invocation.source_module = try allocator.dupe(u8, module_name);
+    }
+}
+
+fn enforceInvocationVisibility(
+    items: []const ast.Item,
+    reporter: *ErrorReporter,
+    allocator: std.mem.Allocator,
+    main_module: []const u8,
+) !void {
+    try enforceInvocationVisibilityInItems(items, items, reporter, allocator, main_module);
+}
+
+fn enforceInvocationVisibilityInItems(
+    items: []const ast.Item,
+    all_items: []const ast.Item,
+    reporter: *ErrorReporter,
+    allocator: std.mem.Allocator,
+    module_name: []const u8,
+) !void {
+    for (items) |item| {
+        switch (item) {
+            .flow => |flow| {
+                try enforceInvocationVisibilityInFlow(&flow, all_items, reporter, allocator, flow.module);
+            },
+            .proc_decl => |proc| {
+                for (proc.inline_flows) |flow| {
+                    try enforceInvocationVisibilityInFlow(&flow, all_items, reporter, allocator, proc.module);
+                }
+            },
+            .event_tap => |tap| {
+                for (tap.continuations) |cont| {
+                    try enforceInvocationVisibilityInContinuation(&cont, all_items, reporter, allocator, tap.module);
+                }
+            },
+            .label_decl => |label| {
+                for (label.continuations) |cont| {
+                    try enforceInvocationVisibilityInContinuation(&cont, all_items, reporter, allocator, module_name);
+                }
+            },
+            .subflow_impl => |subflow| {
+                if (subflow.body == .flow) {
+                    try enforceInvocationVisibilityInFlow(&subflow.body.flow, all_items, reporter, allocator, subflow.module);
+                }
+            },
+            .module_decl => |module| {
+                try enforceInvocationVisibilityInItems(module.items, all_items, reporter, allocator, module.logical_name);
+            },
+            else => {},
+        }
+    }
+}
+
+fn enforceInvocationVisibilityInFlow(
+    flow: *const ast.Flow,
+    all_items: []const ast.Item,
+    reporter: *ErrorReporter,
+    allocator: std.mem.Allocator,
+    module_name: []const u8,
+) !void {
+    try checkInvocationVisibility(&flow.invocation, all_items, reporter, allocator, module_name, flow.location);
+    for (flow.continuations) |cont| {
+        try enforceInvocationVisibilityInContinuation(&cont, all_items, reporter, allocator, module_name);
+    }
+}
+
+fn enforceInvocationVisibilityInContinuation(
+    cont: *const ast.Continuation,
+    all_items: []const ast.Item,
+    reporter: *ErrorReporter,
+    allocator: std.mem.Allocator,
+    module_name: []const u8,
+) std.mem.Allocator.Error!void {
+    if (cont.node) |node| {
+        try enforceInvocationVisibilityInNode(&node, all_items, reporter, allocator, module_name, cont.location);
+    }
+    for (cont.continuations) |nested| {
+        try enforceInvocationVisibilityInContinuation(&nested, all_items, reporter, allocator, module_name);
+    }
+}
+
+fn enforceInvocationVisibilityInNode(
+    node: *const ast.Node,
+    all_items: []const ast.Item,
+    reporter: *ErrorReporter,
+    allocator: std.mem.Allocator,
+    module_name: []const u8,
+    location: errors.SourceLocation,
+) std.mem.Allocator.Error!void {
+    switch (node.*) {
+        .invocation => |*inv| {
+            try checkInvocationVisibility(inv, all_items, reporter, allocator, module_name, location);
+        },
+        .label_with_invocation => |*lwi| {
+            try checkInvocationVisibility(&lwi.invocation, all_items, reporter, allocator, module_name, location);
+        },
+        .conditional_block => |cb| {
+            for (cb.nodes) |node_child| {
+                try enforceInvocationVisibilityInNode(&node_child, all_items, reporter, allocator, module_name, location);
+            }
+        },
+        .foreach => |fe| {
+            for (fe.branches) |branch| {
+                for (branch.body) |body_cont| {
+                    try enforceInvocationVisibilityInContinuation(&body_cont, all_items, reporter, allocator, module_name);
+                }
+            }
+        },
+        .conditional => |cond| {
+            for (cond.branches) |branch| {
+                for (branch.body) |body_cont| {
+                    try enforceInvocationVisibilityInContinuation(&body_cont, all_items, reporter, allocator, module_name);
+                }
+            }
+        },
+        .capture => |cap| {
+            for (cap.branches) |branch| {
+                for (branch.body) |body_cont| {
+                    try enforceInvocationVisibilityInContinuation(&body_cont, all_items, reporter, allocator, module_name);
+                }
+            }
+        },
+        .switch_result => |sr| {
+            for (sr.branches) |branch| {
+                for (branch.body) |body_cont| {
+                    try enforceInvocationVisibilityInContinuation(&body_cont, all_items, reporter, allocator, module_name);
+                }
+            }
+        },
+        else => {},
+    }
+}
+
+fn checkInvocationVisibility(
+    invocation: *const ast.Invocation,
+    all_items: []const ast.Item,
+    reporter: *ErrorReporter,
+    allocator: std.mem.Allocator,
+    module_name: []const u8,
+    location: errors.SourceLocation,
+) !void {
+    const event_decl = emitter_helpers.findEventDeclByPath(all_items, &invocation.path) orelse return;
+    const source_module = if (invocation.source_module.len > 0)
+        invocation.source_module
+    else
+        module_name;
+
+    if (std.mem.eql(u8, source_module, event_decl.module) or event_decl.is_public) {
+        return;
+    }
+
+    // Build path display string: "module:segment" (just first segment for simplicity)
+    const segment = if (invocation.path.segments.len > 0) invocation.path.segments[0] else "unknown";
+    const event_display = if (invocation.path.module_qualifier) |mq|
+        try std.fmt.allocPrint(allocator, "{s}:{s}", .{ mq, segment })
+    else
+        try std.fmt.allocPrint(allocator, "{s}", .{segment});
+    defer allocator.free(event_display);
+
+    try reporter.addErrorWithHint(
+        .KORU044,
+        location.line,
+        location.column,
+        "cannot access private event '{s}' from module '{s}'",
+        .{ event_display, source_module },
+        "mark the event as public with ~pub event",
+        .{},
+    );
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
@@ -5643,6 +5940,15 @@ pub fn main() !void {
     const meta_events = @import("meta_events");
     try meta_events.injectMetaEvents(parse_allocator, &source_file);
     std.debug.print("Injected meta-events: koru:start, koru:end\n", .{});
+
+    // Populate invocation.source_module for visibility enforcement
+    try populateInvocationSourceModules(@constCast(source_file.items), parse_allocator, source_file.main_module_name);
+    try enforceInvocationVisibility(source_file.items, &parser.reporter, parse_allocator, source_file.main_module_name);
+    if (parser.reporter.hasErrors()) {
+        const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+        try parser.reporter.printErrors(stderr_writer);
+        std.process.exit(1);
+    }
 
     // NOTE: Declaration-level transforms run in the BACKEND alongside invocation transforms.
     // They update the type registry when they run, not here in the frontend.

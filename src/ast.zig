@@ -747,6 +747,7 @@ pub const Invocation = struct {
     annotations: []const []const u8 = &[_][]const u8{},  // Compiler pass tracking (e.g., @pass_ran("transform"))
     inserted_by_tap: bool = false,  // Marks invocations inserted by tap transformation
     from_opaque_tap: bool = false,  // Marks steps from opaque taps (to skip nested tap observations)
+    source_module: []const u8 = "", // Module where this invocation appears
 
     pub fn deinit(self: *Invocation, allocator: std.mem.Allocator) void {
         var mutable_path = self.path;
@@ -760,6 +761,9 @@ pub const Invocation = struct {
             allocator.free(@constCast(annotation));
         }
         allocator.free(@constCast(self.annotations));
+        if (self.source_module.len > 0) {
+            allocator.free(@constCast(self.source_module));
+        }
     }
 };
 

@@ -22,6 +22,7 @@ pub const ErrorCode = enum(u16) {
     KORU041, // Unknown label
     KORU042, // Duplicate label
     KORU043, // Label shape mismatch
+    KORU044, // Private event access from another module
     
     // Proc errors
     KORU050, // Proc without matching event

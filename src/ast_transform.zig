@@ -279,6 +279,10 @@ fn cloneInvocation(allocator: std.mem.Allocator, invocation: ast.Invocation) !as
     return .{
         .path = try clonePath(allocator, invocation.path),
         .args = args,
+        .source_module = if (invocation.source_module.len > 0)
+            try allocator.dupe(u8, invocation.source_module)
+        else
+            "",
     };
 }
 

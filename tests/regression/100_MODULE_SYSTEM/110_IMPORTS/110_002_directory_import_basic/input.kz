@@ -1,18 +1,24 @@
-// Test 831: Directory Import WITHOUT Public Markers
+// Test 110_002: Directory Import WITHOUT Public Markers
 //
-// Tests that non-public events CANNOT be imported.
-// This test SHOULD FAIL at parse time because the events in test_lib/
-// are not marked ~pub.
+// Tests that non-public events CANNOT be called from outside their module.
+// The events in test_lib/ are NOT marked ~pub, so they should be private.
 //
 // Structure:
 //   test_lib/
 //     graphics.kz  -> test_lib.graphics: (NO ~pub markers)
 //     audio.kz     -> test_lib.audio: (NO ~pub markers)
 //
-// Expected behavior: PARSE FAILURE
-//   The parser should fail because test_lib.graphics:init is not public
+// CURRENT STATUS: BUG - This test passes when it should fail.
 //
-// See test 831b for the SUCCESS case (with ~pub events)
+// Expected behavior: SEMANTIC ERROR (not parse error!)
+//   Koru's parser is intentionally dumb - it doesn't validate visibility.
+//   The visibility check should happen during event resolution, when we
+//   verify that a cross-module event reference points to a ~pub event.
+//
+// TODO: Implement visibility checking in event resolution, then mark
+//       this test as MUST_FAIL.
+//
+// See test 110_003 for the SUCCESS case (with ~pub events)
 
 const std = @import("std");
 

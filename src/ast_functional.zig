@@ -894,6 +894,10 @@ pub fn cloneInvocation(allocator: std.mem.Allocator, invocation: *const ast.Invo
         .annotations = annotations,
         .inserted_by_tap = invocation.inserted_by_tap,
         .from_opaque_tap = invocation.from_opaque_tap,
+        .source_module = if (invocation.source_module.len > 0)
+            try allocator.dupe(u8, invocation.source_module)
+        else
+            "",
     };
 }
 
