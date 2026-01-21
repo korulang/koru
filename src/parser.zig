@@ -49,6 +49,30 @@ fn hasSourceBlock(s: []const u8) bool {
     return false;
 }
 
+/// Check for old tap syntax: ~source -> dest
+/// Old syntax is ~foo -> * or ~* -> bar, which should now be ~tap(foo -> *) or ~tap(* -> bar)
+/// Returns true if '->' appears at top level (outside parentheses) without being inside tap()
+fn isOldTapSyntax(s: []const u8) bool {
+    var paren_depth: i32 = 0;
+    var i: usize = 0;
+
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+
+        // Track paren depth
+        if (c == '(') paren_depth += 1;
+        if (c == ')') paren_depth -= 1;
+
+        // Check for '->' at top level (paren_depth == 0)
+        if (c == '-' and paren_depth == 0 and i + 1 < s.len and s[i + 1] == '>') {
+            // Found -> at top level - this is old tap syntax
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /// Find '=' at the top level (not inside (), {}, or strings)
 /// Used inside parseSubflowImpl to find the split point
 fn findTopLevelEquals(s: []const u8) ?usize {
@@ -823,6 +847,17 @@ pub const Parser = struct {
             var subflow = try self.parseSubflowImpl();
             subflow.is_impl = is_impl;
             return .{ .subflow_impl = subflow };
+        } else if (isOldTapSyntax(remaining)) {
+            // Old tap syntax detected: ~source -> dest
+            // This was replaced with ~tap(source -> dest)
+            try self.reporter.addError(
+                .PARSE001,
+                self.current,
+                0,
+                "Old tap syntax. Use ~tap({s}) instead",
+                .{remaining},
+            );
+            return error.ParseError;
         } else if (std.mem.indexOfScalar(u8, remaining, '(') != null) {
             // It's an invocation with args
             return .{ .flow = try self.parseFlow(annotations.items) };
@@ -6989,168 +7024,50 @@ test "parser handles shorthand notation in branch constructors" {
     try std.testing.expectEqualStrings(bc.fields[0].type, "r.user.id"); // temporarily stored as type
 }
 
-test "parser handles event taps" {
+test "parser rejects old tap syntax" {
     const allocator = std.testing.allocator;
-    
-    // Test basic output tap
+
+    // Old tap syntax should be rejected with helpful error message
+    // Users should use ~tap(source -> dest) instead
+
+    // Test: ~source -> dest (old output tap syntax)
     {
         const source =
             \\~file.read -> * | error e |> log.error(e)
         ;
-        
+
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
-        
-        var result = try parser.parse();
-        defer result.deinit();
-        
-        try std.testing.expectEqual(@as(usize, 1), result.source_file.items.len);
-        const tap = result.source_file.items[0].event_tap;
-        
-        // Check source
-        try std.testing.expect(tap.source != null);
-        try std.testing.expectEqual(@as(usize, 2), tap.source.?.segments.len);
-        try std.testing.expectEqualStrings("file", tap.source.?.segments[0]);
-        try std.testing.expectEqualStrings("read", tap.source.?.segments[1]);
-        
-        // Check destination is wildcard
-        try std.testing.expect(tap.destination == null);
-        
-        // Check it's an output tap
-        try std.testing.expect(!tap.is_input_tap);
-        
-        // Check continuation
-        try std.testing.expectEqual(@as(usize, 1), tap.continuations.len);
-        try std.testing.expectEqualStrings("error", tap.continuations[0].branch);
+
+        // Should fail with ParseError
+        const result = parser.parse();
+        try std.testing.expectError(error.ParseError, result);
     }
-    
-    // Test wildcard source
+
+    // Test: ~* -> dest (old wildcard source syntax)
     {
         const source =
             \\~* -> db.query | sql s |> log.sql(s)
         ;
-        
+
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
-        
-        var result = try parser.parse();
-        defer result.deinit();
-        
-        const tap = result.source_file.items[0].event_tap;
-        
-        // Check source is wildcard
-        try std.testing.expect(tap.source == null);
-        
-        // Check destination
-        try std.testing.expect(tap.destination != null);
-        try std.testing.expectEqual(@as(usize, 2), tap.destination.?.segments.len);
-        try std.testing.expectEqualStrings("db", tap.destination.?.segments[0]);
-        try std.testing.expectEqualStrings("query", tap.destination.?.segments[1]);
+
+        const result = parser.parse();
+        try std.testing.expectError(error.ParseError, result);
     }
-    
-    // Test concrete to concrete tap
-    {
-        const source =
-            \\~auth.check -> grant.access | user u |> audit.log(u)
-        ;
-        
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
-        defer parser.deinit();
-        
-        var result = try parser.parse();
-        defer result.deinit();
-        
-        const tap = result.source_file.items[0].event_tap;
-        
-        // Check both source and destination are concrete
-        try std.testing.expect(tap.source != null);
-        try std.testing.expect(tap.destination != null);
-        try std.testing.expectEqualStrings("auth", tap.source.?.segments[0]);
-        try std.testing.expectEqualStrings("check", tap.source.?.segments[1]);
-        try std.testing.expectEqualStrings("grant", tap.destination.?.segments[0]);
-        try std.testing.expectEqualStrings("access", tap.destination.?.segments[1]);
-    }
-    
-    // Test universal tap
+
+    // Test: ~* -> * (old universal tap syntax)
     {
         const source =
             \\~* -> * |> transition t |> profiler.record(t)
         ;
-        
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
-        defer parser.deinit();
-        
-        var result = try parser.parse();
-        defer result.deinit();
-        
-        const tap = result.source_file.items[0].event_tap;
-        
-        // Both should be wildcards
-        try std.testing.expect(tap.source == null);
-        try std.testing.expect(tap.destination == null);
-    }
-}
 
-test "parser handles input taps" {
-    const allocator = std.testing.allocator;
-    
-    // Test basic input tap
-    {
-        const source =
-            \\~* -> auth.validate |> input i |> log.auth(i)
-        ;
-        
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
-        
-        var result = try parser.parse();
-        defer result.deinit();
-        
-        try std.testing.expectEqual(@as(usize, 1), result.source_file.items.len);
-        const tap = result.source_file.items[0].event_tap;
-        
-        // Check it's an input tap
-        try std.testing.expect(tap.is_input_tap);
-        
-        // Check source is wildcard
-        try std.testing.expect(tap.source == null);
-        
-        // Check destination
-        try std.testing.expect(tap.destination != null);
-        try std.testing.expectEqualStrings("auth", tap.destination.?.segments[0]);
-        try std.testing.expectEqualStrings("validate", tap.destination.?.segments[1]);
-        
-        // Check continuation
-        try std.testing.expectEqual(@as(usize, 1), tap.continuations.len);
-        try std.testing.expectEqualStrings("input", tap.continuations[0].branch);
-        try std.testing.expectEqualStrings("i", tap.continuations[0].binding.?);
-    }
-    
-    // Test input tap with specific source
-    {
-        const source =
-            \\~user.action -> db.save |> input data |> validate(data)
-        ;
-        
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
-        defer parser.deinit();
-        
-        var result = try parser.parse();
-        defer result.deinit();
-        
-        const tap = result.source_file.items[0].event_tap;
-        
-        // Check it's an input tap
-        try std.testing.expect(tap.is_input_tap);
-        
-        // Check source
-        try std.testing.expect(tap.source != null);
-        try std.testing.expectEqualStrings("user", tap.source.?.segments[0]);
-        try std.testing.expectEqualStrings("action", tap.source.?.segments[1]);
-        
-        // Check binding
-        try std.testing.expectEqualStrings("input", tap.continuations[0].branch);
-        try std.testing.expectEqualStrings("data", tap.continuations[0].binding.?);
+
+        const result = parser.parse();
+        try std.testing.expectError(error.ParseError, result);
     }
 }
 
