@@ -4420,7 +4420,8 @@ fn emitPipelineStep(
     // Void steps don't produce a result variable:
     // - assignment: just assigns to a mutable binding
     // - inline_code: just emits verbatim code (e.g., print.ln transform)
-    const is_void_step = step.* == .assignment or step.* == .inline_code;
+    // - foreach: control flow with no value
+    const is_void_step = step.* == .assignment or step.* == .inline_code or step.* == .foreach;
 
     if (needs_result and !std.mem.eql(u8, current_result, "_") and
         step.* != .conditional_block and step.* != .metatype_binding and !is_void_step)
@@ -4721,8 +4722,11 @@ pub fn emitContinuationBody(
         // Label case is done - no remaining steps to process
     } else {
         // Normal case - no label_with_invocation
-        // Check if this is a void step (like assignment or inline_code) that doesn't produce a result
-        const is_void_step = if (cont.node) |step| (step == .assignment or step == .inline_code) else false;
+    // Check if this is a void step that doesn't produce a result
+    const is_void_step = if (cont.node) |step|
+        (step == .assignment or step == .inline_code or step == .foreach)
+    else
+        false;
 
         if (cont.node) |*step| {
             try emitPipelineStep(emitter, ctx, cont, step, 0, result_counter);

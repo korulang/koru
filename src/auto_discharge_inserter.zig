@@ -267,17 +267,28 @@ pub const AutoDischargeInserter = struct {
             return error.ValidationFailed;
         }
 
-        // Step 2: Transform all flows
+        // Step 2: Transform all flows (structural + terminator disposals)
         var current_program = program;
         var iteration: u32 = 0;
         const max_iterations: u32 = 100000;
 
         while (iteration < max_iterations) : (iteration += 1) {
-            const result = try self.transformOneFlow(current_program);
+            const result = try self.transformOneFlow(current_program, .full);
             if (result.transformed) {
                 current_program = result.program;
             } else {
                 // No more transformations needed
+                break;
+            }
+        }
+
+        // Step 3: Scope-exit insertion pass on a stable tree
+        iteration = 0;
+        while (iteration < max_iterations) : (iteration += 1) {
+            const result = try self.transformOneFlow(current_program, .scope_exit_only);
+            if (result.transformed) {
+                current_program = result.program;
+            } else {
                 break;
             }
         }
@@ -359,22 +370,31 @@ pub const AutoDischargeInserter = struct {
         program: *const ast.Program,
     };
 
+    const TransformMode = enum {
+        full,
+        scope_exit_only,
+    };
+
     /// Try to find and transform one flow that needs auto-discharge
-    fn transformOneFlow(self: *AutoDischargeInserter, program: *const ast.Program) !TransformResult {
+    fn transformOneFlow(
+        self: *AutoDischargeInserter,
+        program: *const ast.Program,
+        mode: TransformMode,
+    ) !TransformResult {
         // Walk all items looking for flows with unsatisfied obligations at terminators
         // IMPORTANT: Use |*item| to get pointers into the actual slice!
         for (program.items, 0..) |*item, item_idx| {
             switch (item.*) {
                 .flow => {
                     const flow = &item.flow;
-                    const result = try self.checkAndTransformFlow(flow, program, item_idx);
+                    const result = try self.checkAndTransformFlow(flow, program, item_idx, mode);
                     if (result.transformed) return result;
                 },
                 .subflow_impl => {
                     const subflow = &item.subflow_impl;
                     if (subflow.body == .flow) {
                         const flow = &subflow.body.flow;
-                        const result = try self.checkAndTransformFlow(flow, program, item_idx);
+                        const result = try self.checkAndTransformFlow(flow, program, item_idx, mode);
                         if (result.transformed) return result;
                     }
                 },
@@ -384,13 +404,13 @@ pub const AutoDischargeInserter = struct {
                         _ = mod_item_idx;
                         if (mod_item.* == .flow) {
                             const flow = &mod_item.flow;
-                            const result = try self.checkAndTransformFlow(flow, program, item_idx);
+                            const result = try self.checkAndTransformFlow(flow, program, item_idx, mode);
                             if (result.transformed) return result;
                         } else if (mod_item.* == .subflow_impl) {
                             const subflow = &mod_item.subflow_impl;
                             if (subflow.body == .flow) {
                                 const flow = &subflow.body.flow;
-                                const result = try self.checkAndTransformFlow(flow, program, item_idx);
+                                const result = try self.checkAndTransformFlow(flow, program, item_idx, mode);
                                 if (result.transformed) return result;
                             }
                         }
@@ -409,11 +429,14 @@ pub const AutoDischargeInserter = struct {
         flow: *const ast.Flow,
         program: *const ast.Program,
         _: usize,
+        mode: TransformMode,
     ) !TransformResult {
-        // Skip already-processed flows
-        for (flow.invocation.annotations) |ann| {
-            if (std.mem.startsWith(u8, ann, "@auto_discharge_ran")) {
-                return .{ .transformed = false, .program = program };
+        if (mode == .full) {
+            // Skip already-processed flows
+            for (flow.invocation.annotations) |ann| {
+                if (std.mem.startsWith(u8, ann, "@auto_discharge_ran")) {
+                    return .{ .transformed = false, .program = program };
+                }
             }
         }
 
@@ -431,20 +454,22 @@ pub const AutoDischargeInserter = struct {
 
         // Synthesize continuations for unhandled optional branches
         // This ensures all optional branches get switch cases and auto-discharge can handle them
-        if (try self.synthesizeOptionalBranches(flow, event_info.decl)) |new_flow| {
-            // Replace the flow in the program with the synthesized version
-            const new_program = try ast_functional.replaceFlowRecursive(
-                self.allocator,
-                program,
-                flow,
-                .{ .flow = new_flow.* },
-            ) orelse {
-                return .{ .transformed = false, .program = program };
-            };
+        if (mode == .full) {
+            if (try self.synthesizeOptionalBranches(flow, event_info.decl)) |new_flow| {
+                // Replace the flow in the program with the synthesized version
+                const new_program = try ast_functional.replaceFlowRecursive(
+                    self.allocator,
+                    program,
+                    flow,
+                    .{ .flow = new_flow.* },
+                ) orelse {
+                    return .{ .transformed = false, .program = program };
+                };
 
-            const result_ptr = try self.allocator.create(ast.Program);
-            result_ptr.* = new_program;
-            return .{ .transformed = true, .program = result_ptr };
+                const result_ptr = try self.allocator.create(ast.Program);
+                result_ptr.* = new_program;
+                return .{ .transformed = true, .program = result_ptr };
+            }
         }
 
         // Check if this is a loop-like flow (for, while, loop)
@@ -464,53 +489,55 @@ pub const AutoDischargeInserter = struct {
                 defer scoped_context.deinit();
                 scoped_context.enterScope(is_loop_flow); // Repeating if it's a loop
 
-                const result = try self.checkContinuation(cont, event_info.decl, module_name, &scoped_context, program, flow);
+                const result = try self.checkContinuation(cont, event_info.decl, module_name, &scoped_context, program, flow, mode);
                 if (result.transformed) return result;
 
-                // SCOPE EXIT: Check for remaining obligations in this scoped continuation
-                if (scoped_context.hasObligations()) {
-                    var obl_iter = scoped_context.obligations();
-                    while (obl_iter.next()) |entry| {
-                        const binding_name = entry.key_ptr.*;
-                        const info = entry.value_ptr.*;
+                if (mode == .scope_exit_only) {
+                    // SCOPE EXIT: Check for remaining obligations in this scoped continuation
+                    if (scoped_context.hasObligations()) {
+                        var obl_iter = scoped_context.obligations();
+                        while (obl_iter.next()) |entry| {
+                            const binding_name = entry.key_ptr.*;
+                            const info = entry.value_ptr.*;
 
-                        const disposals = try self.findDisposalEvents(info.phantom_state);
-                        defer self.allocator.free(disposals);
+                            const disposals = try self.findDisposalEvents(info.phantom_state);
+                            defer self.allocator.free(disposals);
 
-                        const disposal = selectDisposal(disposals) orelse {
-                            if (disposals.len == 0) {
-                                try self.reporter.addError(
-                                    .KORU030,
-                                    flow.location.line,
-                                    flow.location.column,
-                                    "No disposal event found for resource '{s}' with state '{s}' at scope exit.",
-                                    .{ binding_name, info.phantom_state },
-                                );
-                            } else {
-                                try self.reporter.addError(
-                                    .KORU030,
-                                    flow.location.line,
-                                    flow.location.column,
-                                    "Multiple disposal options for resource '{s}' at scope exit. Mark one with [!].",
-                                    .{binding_name},
-                                );
-                            }
-                            return error.ValidationFailed;
-                        };
+                            const disposal = selectDisposal(disposals) orelse {
+                                if (disposals.len == 0) {
+                                    try self.reporter.addError(
+                                        .KORU030,
+                                        flow.location.line,
+                                        flow.location.column,
+                                        "No disposal event found for resource '{s}' with state '{s}' at scope exit.",
+                                        .{ binding_name, info.phantom_state },
+                                    );
+                                } else {
+                                    try self.reporter.addError(
+                                        .KORU030,
+                                        flow.location.line,
+                                        flow.location.column,
+                                        "Multiple disposal options for resource '{s}' at scope exit. Mark one with [!].",
+                                        .{binding_name},
+                                    );
+                                }
+                                return error.ValidationFailed;
+                            };
 
-                        // Find the continuation with this binding and insert disposal
-                        const scope_exit_result = try self.insertScopeExitDisposalInCont(
-                            cont,
-                            binding_name,
-                            disposal,
-                            program,
-                            flow,
-                        );
-                        if (scope_exit_result.transformed) return scope_exit_result;
+                            // Find the continuation with this binding and insert disposal
+                            const scope_exit_result = try self.insertScopeExitDisposalInCont(
+                                cont,
+                                binding_name,
+                                disposal,
+                                program,
+                                flow,
+                            );
+                            if (scope_exit_result.transformed) return scope_exit_result;
+                        }
                     }
                 }
             } else {
-                const result = try self.checkContinuation(cont, event_info.decl, module_name, &context, program, flow);
+                const result = try self.checkContinuation(cont, event_info.decl, module_name, &context, program, flow, mode);
                 if (result.transformed) return result;
             }
         }
@@ -527,6 +554,7 @@ pub const AutoDischargeInserter = struct {
         parent_context: *BindingContext,
         program: *const ast.Program,
         flow: *const ast.Flow,
+        mode: TransformMode,
     ) !TransformResult {
         // Clone context for this branch
         var context = try parent_context.clone(self.allocator);
@@ -534,32 +562,34 @@ pub const AutoDischargeInserter = struct {
 
         // Handle discard binding (_) - synthesize a real binding name
         // This must happen BEFORE we process the continuation so the binding can be used
-        if (cont.binding) |binding_name| {
-            if (std.mem.eql(u8, binding_name, "_")) {
-                // Generate synthetic binding to replace _
-                const synthetic_name = try self.generateSyntheticBinding();
+        if (mode == .full) {
+            if (cont.binding) |binding_name| {
+                if (std.mem.eql(u8, binding_name, "_")) {
+                    // Generate synthetic binding to replace _
+                    const synthetic_name = try self.generateSyntheticBinding();
 
-                // Clone the continuation with the new binding (preserves all metadata)
-                const new_cont = try self.cloneContinuationWithBinding(cont, synthetic_name);
+                    // Clone the continuation with the new binding (preserves all metadata)
+                    const new_cont = try self.cloneContinuationWithBinding(cont, synthetic_name);
 
-                // Replace this continuation in the flow
-                const new_flow = try self.replaceContinuationAnywhere(flow, cont, new_cont.*);
+                    // Replace this continuation in the flow
+                    const new_flow = try self.replaceContinuationAnywhere(flow, cont, new_cont.*);
 
-                // Replace the flow in the program
-                const new_program = try ast_functional.replaceFlowRecursive(
-                    self.allocator,
-                    program,
-                    flow,
-                    .{ .flow = new_flow },
-                ) orelse {
-                    return .{ .transformed = false, .program = program };
-                };
+                    // Replace the flow in the program
+                    const new_program = try ast_functional.replaceFlowRecursive(
+                        self.allocator,
+                        program,
+                        flow,
+                        .{ .flow = new_flow },
+                    ) orelse {
+                        return .{ .transformed = false, .program = program };
+                    };
 
-                const result_ptr = try self.allocator.create(ast.Program);
-                result_ptr.* = new_program;
+                    const result_ptr = try self.allocator.create(ast.Program);
+                    result_ptr.* = new_program;
 
-                // Return transformed - the next iteration will process with the real binding
-                return .{ .transformed = true, .program = result_ptr };
+                    // Return transformed - the next iteration will process with the real binding
+                    return .{ .transformed = true, .program = result_ptr };
+                }
             }
         }
 
@@ -640,18 +670,20 @@ pub const AutoDischargeInserter = struct {
                         }
                     }
 
-                    if (current_scope_count > 0) {
-                        // We have current-scope obligations to dispose
-                        return try self.insertDisposals(cont, &context, program, flow, event_decl, module_name);
+                    if (mode == .full) {
+                        if (current_scope_count > 0) {
+                            // We have current-scope obligations to dispose
+                            return try self.insertDisposals(cont, &context, program, flow, event_decl, module_name);
+                        }
+                        // Outer-scope obligations exist but not current-scope ones
+                        // In a repeating context, this is OK - they'll be handled at `done`
+                        // In a non-repeating context, they should be disposed here
+                        if (!context.is_repeating) {
+                            // Non-repeating: dispose all remaining obligations
+                            return try self.insertDisposals(cont, &context, program, flow, event_decl, module_name);
+                        }
+                        // Repeating: outer obligations will flow through to `done`
                     }
-                    // Outer-scope obligations exist but not current-scope ones
-                    // In a repeating context, this is OK - they'll be handled at `done`
-                    // In a non-repeating context, they should be disposed here
-                    if (!context.is_repeating) {
-                        // Non-repeating: dispose all remaining obligations
-                        return try self.insertDisposals(cont, &context, program, flow, event_decl, module_name);
-                    }
-                    // Repeating: outer obligations will flow through to `done`
                 }
             }
 
@@ -663,7 +695,7 @@ pub const AutoDischargeInserter = struct {
 
             // Handle foreach nodes - recurse into branches with scope tracking
             if (node == .foreach) {
-                const result = try self.checkForeachNode(node.foreach.branches, &context, program, flow, module_name);
+                const result = try self.checkForeachNode(node.foreach.branches, &context, program, flow, module_name, mode);
                 if (result.transformed) return result;
             }
 
@@ -675,7 +707,7 @@ pub const AutoDischargeInserter = struct {
                 const cond = &node.conditional;
                 for (cond.branches) |*branch| {
                     for (branch.body) |*body_cont| {
-                        const result = try self.checkForeachBranchContinuation(body_cont, &context, program, flow, module_name);
+                        const result = try self.checkForeachBranchContinuation(body_cont, &context, program, flow, module_name, mode);
                         if (result.transformed) return result;
                     }
                 }
@@ -718,10 +750,10 @@ pub const AutoDischargeInserter = struct {
                 defer scoped_context.deinit();
                 scoped_context.enterScope(is_loop_invocation); // Repeating if it's a loop
 
-                const result = try self.checkContinuation(nested, nested_event, nested_module, &scoped_context, program, flow);
+                const result = try self.checkContinuation(nested, nested_event, nested_module, &scoped_context, program, flow, mode);
                 if (result.transformed) return result;
             } else {
-                const result = try self.checkContinuation(nested, nested_event, nested_module, &context, program, flow);
+                const result = try self.checkContinuation(nested, nested_event, nested_module, &context, program, flow, mode);
                 if (result.transformed) return result;
             }
         }
@@ -746,13 +778,15 @@ pub const AutoDischargeInserter = struct {
                     }
                 }
 
-                if (current_scope_count > 0) {
-                    // We have current-scope obligations at end of pipeline - need to dispose
-                    return try self.insertDisposals(cont, &context, program, flow, event_decl, module_name);
-                }
-                // Outer-scope obligations in repeating context will flow to `done`
-                if (!context.is_repeating) {
-                    return try self.insertDisposals(cont, &context, program, flow, event_decl, module_name);
+                if (mode == .full) {
+                    if (current_scope_count > 0) {
+                        // We have current-scope obligations at end of pipeline - need to dispose
+                        return try self.insertDisposals(cont, &context, program, flow, event_decl, module_name);
+                    }
+                    // Outer-scope obligations in repeating context will flow to `done`
+                    if (!context.is_repeating) {
+                        return try self.insertDisposals(cont, &context, program, flow, event_decl, module_name);
+                    }
                 }
             }
         }
@@ -769,6 +803,7 @@ pub const AutoDischargeInserter = struct {
         program: *const ast.Program,
         flow: *const ast.Flow,
         module_name: []const u8,
+        mode: TransformMode,
     ) RecursiveError!TransformResult {
         // Increment scope BEFORE recording loop entry
         // This ensures obligations created before the loop are at a lower scope
@@ -798,52 +833,55 @@ pub const AutoDischargeInserter = struct {
                         program,
                         flow,
                         module_name,
+                        mode,
                     );
                     if (result.transformed) return result;
                 }
 
-                // SCOPE EXIT: Check for remaining obligations that need disposal
-                // These are obligations created in this scope that weren't discharged by an explicit terminal
-                if (branch_context.hasObligations()) {
-                    var obl_iter = branch_context.obligations();
-                    while (obl_iter.next()) |entry| {
-                        const binding_name = entry.key_ptr.*;
-                        const info = entry.value_ptr.*;
+                if (mode == .scope_exit_only) {
+                    // SCOPE EXIT: Check for remaining obligations that need disposal
+                    // These are obligations created in this scope that weren't discharged by an explicit terminal
+                    if (branch_context.hasObligations()) {
+                        var obl_iter = branch_context.obligations();
+                        while (obl_iter.next()) |entry| {
+                            const binding_name = entry.key_ptr.*;
+                            const info = entry.value_ptr.*;
 
-                        // Find disposal event for this obligation
-                        const disposals = try self.findDisposalEvents(info.phantom_state);
-                        defer self.allocator.free(disposals);
+                            // Find disposal event for this obligation
+                            const disposals = try self.findDisposalEvents(info.phantom_state);
+                            defer self.allocator.free(disposals);
 
-                        const disposal = selectDisposal(disposals) orelse {
-                            if (disposals.len == 0) {
-                                try self.reporter.addError(
-                                    .KORU030,
-                                    flow.location.line,
-                                    flow.location.column,
-                                    "No disposal event found for resource '{s}' with state '{s}' at scope exit.",
-                                    .{ binding_name, info.phantom_state },
-                                );
-                            } else {
-                                try self.reporter.addError(
-                                    .KORU030,
-                                    flow.location.line,
-                                    flow.location.column,
-                                    "Multiple disposal options for resource '{s}' at scope exit. Mark one with [!].",
-                                    .{binding_name},
-                                );
-                            }
-                            return error.ValidationFailed;
-                        };
+                            const disposal = selectDisposal(disposals) orelse {
+                                if (disposals.len == 0) {
+                                    try self.reporter.addError(
+                                        .KORU030,
+                                        flow.location.line,
+                                        flow.location.column,
+                                        "No disposal event found for resource '{s}' with state '{s}' at scope exit.",
+                                        .{ binding_name, info.phantom_state },
+                                    );
+                                } else {
+                                    try self.reporter.addError(
+                                        .KORU030,
+                                        flow.location.line,
+                                        flow.location.column,
+                                        "Multiple disposal options for resource '{s}' at scope exit. Mark one with [!].",
+                                        .{binding_name},
+                                    );
+                                }
+                                return error.ValidationFailed;
+                            };
 
-                        // Find the continuation that created this binding and insert disposal
-                        const result = try self.insertScopeExitDisposal(
-                            branch,
-                            binding_name,
-                            disposal,
-                            program,
-                            flow,
-                        );
-                        if (result.transformed) return result;
+                            // Find the continuation that created this binding and insert disposal
+                            const result = try self.insertScopeExitDisposal(
+                                branch,
+                                binding_name,
+                                disposal,
+                                program,
+                                flow,
+                            );
+                            if (result.transformed) return result;
+                        }
                     }
                 }
             } else {
@@ -856,6 +894,7 @@ pub const AutoDischargeInserter = struct {
                         program,
                         flow,
                         module_name,
+                        mode,
                     );
                     if (result.transformed) return result;
                 }
@@ -874,38 +913,41 @@ pub const AutoDischargeInserter = struct {
         program: *const ast.Program,
         flow: *const ast.Flow,
         module_name: []const u8,
+        mode: TransformMode,
     ) RecursiveError!TransformResult {
         // Use parent context directly - caller is responsible for cloning if needed
         const context = parent_context;
 
         // Handle discard binding (_) - synthesize a real binding name
         // This must happen BEFORE we process the continuation so the binding can be used
-        if (cont.binding) |binding_name| {
-            if (std.mem.eql(u8, binding_name, "_")) {
-                // Generate synthetic binding to replace _
-                const synthetic_name = try self.generateSyntheticBinding();
+        if (mode == .full) {
+            if (cont.binding) |binding_name| {
+                if (std.mem.eql(u8, binding_name, "_")) {
+                    // Generate synthetic binding to replace _
+                    const synthetic_name = try self.generateSyntheticBinding();
 
-                // Clone the continuation with the new binding (preserves all metadata)
-                const new_cont = try self.cloneContinuationWithBinding(cont, synthetic_name);
+                    // Clone the continuation with the new binding (preserves all metadata)
+                    const new_cont = try self.cloneContinuationWithBinding(cont, synthetic_name);
 
-                // Replace this continuation in the flow
-                const new_flow = try self.replaceContinuationAnywhere(flow, cont, new_cont.*);
+                    // Replace this continuation in the flow
+                    const new_flow = try self.replaceContinuationAnywhere(flow, cont, new_cont.*);
 
-                // Replace the flow in the program
-                const new_program = try ast_functional.replaceFlowRecursive(
-                    self.allocator,
-                    program,
-                    flow,
-                    .{ .flow = new_flow },
-                ) orelse {
-                    return .{ .transformed = false, .program = program };
-                };
+                    // Replace the flow in the program
+                    const new_program = try ast_functional.replaceFlowRecursive(
+                        self.allocator,
+                        program,
+                        flow,
+                        .{ .flow = new_flow },
+                    ) orelse {
+                        return .{ .transformed = false, .program = program };
+                    };
 
-                const result_ptr = try self.allocator.create(ast.Program);
-                result_ptr.* = new_program;
+                    const result_ptr = try self.allocator.create(ast.Program);
+                    result_ptr.* = new_program;
 
-                // Return transformed - the next iteration will process with the real binding
-                return .{ .transformed = true, .program = result_ptr };
+                    // Return transformed - the next iteration will process with the real binding
+                    return .{ .transformed = true, .program = result_ptr };
+                }
             }
         }
 
@@ -956,18 +998,20 @@ pub const AutoDischargeInserter = struct {
                         }
                     }
 
-                    if (current_scope_count > 0) {
-                        // We have current-scope obligations to dispose
-                        return try self.insertDisposalsInForeach(cont, context, program, flow);
+                    if (mode == .full) {
+                        if (current_scope_count > 0) {
+                            // We have current-scope obligations to dispose
+                            return try self.insertDisposalsInForeach(cont, context, program, flow);
+                        }
+                        // Outer-scope obligations exist but not current-scope ones
+                        // In a repeating context, this is OK - they'll be handled at `done`
+                        // In a non-repeating context, they should be disposed here
+                        if (!context.is_repeating) {
+                            // Non-repeating: dispose all remaining obligations
+                            return try self.insertDisposalsInForeach(cont, context, program, flow);
+                        }
+                        // Repeating: outer obligations will flow through to `done`
                     }
-                    // Outer-scope obligations exist but not current-scope ones
-                    // In a repeating context, this is OK - they'll be handled at `done`
-                    // In a non-repeating context, they should be disposed here
-                    if (!context.is_repeating) {
-                        // Non-repeating: dispose all remaining obligations
-                        return try self.insertDisposalsInForeach(cont, context, program, flow);
-                    }
-                    // Repeating: outer obligations will flow through to `done`
                 }
             }
 
@@ -1019,14 +1063,14 @@ pub const AutoDischargeInserter = struct {
                             }
                         }
 
-                        const result = try self.checkForeachBranchContinuation(nested, context, program, flow, info.module_name);
+                        const result = try self.checkForeachBranchContinuation(nested, context, program, flow, info.module_name, mode);
                         if (result.transformed) return result;
                     }
                 }
                 // If event not found, still recurse into continuations
                 else {
                     for (cont.continuations) |*nested| {
-                        const result = try self.checkForeachBranchContinuation(nested, context, program, flow, module_name);
+                        const result = try self.checkForeachBranchContinuation(nested, context, program, flow, module_name, mode);
                         if (result.transformed) return result;
                     }
                 }
@@ -1036,7 +1080,7 @@ pub const AutoDischargeInserter = struct {
 
             // Handle nested foreach
             if (node == .foreach) {
-                const result = try self.checkForeachNode(node.foreach.branches, context, program, flow, module_name);
+                const result = try self.checkForeachNode(node.foreach.branches, context, program, flow, module_name, mode);
                 if (result.transformed) return result;
             }
 
@@ -1045,7 +1089,7 @@ pub const AutoDischargeInserter = struct {
                 const cond = &node.conditional;
                 for (cond.branches) |*branch| {
                     for (branch.body) |*body_cont| {
-                        const result = try self.checkForeachBranchContinuation(body_cont, context, program, flow, module_name);
+                        const result = try self.checkForeachBranchContinuation(body_cont, context, program, flow, module_name, mode);
                         if (result.transformed) return result;
                     }
                 }
@@ -1056,7 +1100,7 @@ pub const AutoDischargeInserter = struct {
         const already_processed_continuations = if (cont.node) |n| n == .invocation else false;
         if (!already_processed_continuations) {
             for (cont.continuations) |*nested| {
-                const result = try self.checkForeachBranchContinuation(nested, context, program, flow, module_name);
+                const result = try self.checkForeachBranchContinuation(nested, context, program, flow, module_name, mode);
                 if (result.transformed) return result;
             }
         }
@@ -1079,13 +1123,15 @@ pub const AutoDischargeInserter = struct {
                     }
                 }
 
-                if (current_scope_count > 0) {
-                    // We have current-scope obligations at end of pipeline - need to dispose
-                    return try self.insertDisposalsInForeach(cont, context, program, flow);
-                }
-                // Outer-scope obligations in repeating context will flow to `done`
-                if (!context.is_repeating) {
-                    return try self.insertDisposalsInForeach(cont, context, program, flow);
+                if (mode == .full) {
+                    if (current_scope_count > 0) {
+                        // We have current-scope obligations at end of pipeline - need to dispose
+                        return try self.insertDisposalsInForeach(cont, context, program, flow);
+                    }
+                    // Outer-scope obligations in repeating context will flow to `done`
+                    if (!context.is_repeating) {
+                        return try self.insertDisposalsInForeach(cont, context, program, flow);
+                    }
                 }
             }
         }
@@ -1636,10 +1682,16 @@ pub const AutoDischargeInserter = struct {
         program: *const ast.Program,
         flow: *const ast.Flow,
     ) RecursiveError!TransformResult {
+        // Extract base binding name (before any field access like `.file`)
+        // e.g., "_auto_1.file" -> "_auto_1"
+        const base_binding = if (std.mem.indexOf(u8, binding_name, ".")) |dot_idx|
+            binding_name[0..dot_idx]
+        else
+            binding_name;
+
         // Find the continuation that has this binding
-        const target_cont = self.findContinuationByBinding(branch.body, binding_name) orelse {
-            // Binding not found directly - might be a synthetic binding from discard
-            // In this case, search for any continuation at the deepest level with empty continuations
+        const target_cont = self.findContinuationByBinding(branch.body, base_binding) orelse {
+            // Binding not found - might be a synthetic binding from discard or nested structure
             return .{ .transformed = false, .program = program };
         };
 
