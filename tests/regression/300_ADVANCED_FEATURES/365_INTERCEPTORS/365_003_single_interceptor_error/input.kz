@@ -1,0 +1,26 @@
+// Test 365_003: Single Interceptor Rule - Compiler Error
+//
+// Tests that declaring multiple interceptors for the same destination
+// causes a compile-time error. Only ONE interceptor per destination allowed.
+
+const std = @import("std");
+~import "$std/interceptors"
+
+~event log.write { logline: []const u8 }
+| written {}
+
+~proc log.write {
+    std.debug.print("{s}\n", .{logline});
+    return .{ .written = .{} };
+}
+
+// First interceptor - OK
+~intercept(* -> log.write)
+| payload p |> payload { logline: "[A] " ++ p.logline }
+
+// Second interceptor - COMPILE ERROR: duplicate interceptor
+~intercept(* -> log.write)
+| payload p |> payload { logline: "[B] " ++ p.logline }
+
+~log.write(logline: "Test")
+| written _ |> _

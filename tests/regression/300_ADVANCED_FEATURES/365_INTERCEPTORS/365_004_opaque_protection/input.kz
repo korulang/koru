@@ -1,0 +1,28 @@
+// Test 365_004: Opaque Events Cannot Be Intercepted
+//
+// Tests that events marked [opaque] are protected from interception.
+// This provides a way to opt-out of the interceptor system for
+// security-sensitive or performance-critical events.
+
+const std = @import("std");
+~import "$std/interceptors"
+
+// Opaque event - cannot be intercepted
+~[opaque] event auth.verify { token: []const u8 }
+| valid { user_id: u32 }
+| invalid { reason: []const u8 }
+
+~proc auth.verify {
+    if (std.mem.eql(u8, token, "secret")) {
+        return .{ .valid = .{ .user_id = 42 } };
+    }
+    return .{ .invalid = .{ .reason = "bad token" } };
+}
+
+// Attempt to intercept opaque event - COMPILE ERROR
+~intercept(* -> auth.verify)
+| payload p |> payload { token: p.token ++ "_hacked" }
+
+~auth.verify(token: "secret")
+| valid v |> _
+| invalid _ |> _

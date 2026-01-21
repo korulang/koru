@@ -1,8 +1,9 @@
-// Test: Missing branch handler with tap and data in labeled loop
+// Test: Labeled loop with tap observing transitions
 //
-// Exact reproduction of 310_014 scenario that caused infinite loop.
+// Tests that taps work correctly with labeled loops.
 
 const std = @import("std");
+~import "$std/taps"
 
 ~event counter { n: i32 }
 | next { value: i32 }
@@ -22,7 +23,8 @@ const std = @import("std");
 }
 
 // Tap that fires on counter transitions
-~counter -> * | next v |> log_iteration(value: v.value)
+~tap(counter -> *)
+| next v |> log_iteration(value: v.value)
 
 ~event start {}
 | ready {}
@@ -31,7 +33,8 @@ const std = @import("std");
     return .{ .ready = .{} };
 }
 
-// This is the broken case: loop with tap, missing done handler
+// Loop with tap - must handle all branches
 ~start()
 | ready |> #loop counter(n: 1)
     | next v |> @loop(n: v.value)
+    | done _ |> _

@@ -1,0 +1,24 @@
+// Test 365_001: Basic Interceptor Syntax
+//
+// Demonstrates basic interceptor that transforms payload before delivery.
+// Interceptors use ~intercept(* -> destination) to modify in-flight payloads.
+
+const std = @import("std");
+~import "$std/interceptors"
+
+// Target event that will be intercepted
+~event log.write { logline: []const u8 }
+| written {}
+
+~proc log.write {
+    std.debug.print("{s}\n", .{logline});
+    return .{ .written = .{} };
+}
+
+// Interceptor: Add prefix to all log writes
+~intercept(* -> log.write)
+| payload p |> payload { logline: "[INTERCEPTED] " ++ p.logline }
+
+// Test flow - the interceptor should modify the logline
+~log.write(logline: "Hello World")
+| written _ |> _
