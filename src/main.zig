@@ -3016,6 +3016,13 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
                     continue;
                 }
 
+                // Skip index.kz - it represents the directory itself, not a submodule
+                // The directory's source_file is populated from index.kz separately
+                if (std.mem.eql(u8, std.fs.path.basename(file_path), "index.kz")) {
+                    std.debug.print("SUBMODULE: Skipping index.kz '{s}' (loaded as directory source)\n", .{file_path});
+                    continue;
+                }
+
                 const file = try std.fs.cwd().openFile(file_path, .{});
                 defer file.close();
 
@@ -3112,11 +3119,38 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
 
         const submodules = try loadSubmodules(allocator, parse_allocator, resolver, resolved.dir_path.?, entry_file);
 
+        // FIX: Load index.kz content for the directory's source_file
+        // Previously this was empty, causing flow arguments (like Source blocks) to be lost
+        const index_path = try std.fs.path.join(allocator, &.{ resolved.dir_path.?, "index.kz" });
+        defer allocator.free(index_path);
+
+        // Check if index.kz exists and load it
+        const index_file = std.fs.cwd().openFile(index_path, .{}) catch |err| {
+            if (err == error.FileNotFound) {
+                // No index.kz - use empty source_file (original behavior)
+                std.debug.print("  No index.kz found in directory\n", .{});
+                return ImportedModule{
+                    .logical_name = module_name,
+                    .canonical_path = try allocator.dupe(u8, resolved.dir_path.?),
+                    .public_events = &.{},
+                    .source_file = .{ .items = &.{}, .module_annotations = &.{}, .main_module_name = try parse_allocator.dupe(u8, module_name), .allocator = parse_allocator },
+                    .is_directory = true,
+                    .submodules = submodules,
+                };
+            }
+            return err;
+        };
+        index_file.close();
+
+        // index.kz exists - parse it and use its content
+        std.debug.print("  Loading index.kz from directory: {s}\n", .{index_path});
+        const index_data = try loadFile(allocator, parse_allocator, index_path);
+
         return ImportedModule{
             .logical_name = module_name,
             .canonical_path = try allocator.dupe(u8, resolved.dir_path.?),
-            .public_events = &.{},
-            .source_file = .{ .items = &.{}, .module_annotations = &.{}, .main_module_name = try parse_allocator.dupe(u8, module_name), .allocator = parse_allocator },
+            .public_events = index_data.public_events,
+            .source_file = index_data.source_file,
             .is_directory = true,
             .submodules = submodules,
         };
