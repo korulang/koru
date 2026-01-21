@@ -42,20 +42,28 @@ Interceptors transform payloads in-flight to a known destination event. Unlike t
 
 ```koru
 ~intercept(* -> destination_event)
-| payload p |> payload { field: transform(p.field) }
+| payload p |> payload { field: p.field ++ " [modified]" }
 ```
 
-**Example**:
+**Example with pure transformation**:
 ```koru
 ~import "$std/interceptors"
 
-// Add timestamp to all log writes
+// Add prefix to all log writes (pure - no function calls)
 ~intercept(* -> log.write)
-| payload p |> payload {
-    logline: p.logline ++ " [" ++ timestamp() ++ "]",
-    level: p.level
-}
+| payload p |> payload { logline: "[APP] " ++ p.logline, level: p.level }
 ```
+
+**Example with impure operations** (must use event chains):
+```koru
+// Add timestamp - requires event call since get_time() is impure
+~intercept(* -> log.write)
+| payload p |> get_time()
+    | timestamp ts |> std.io:fmt("{{p.logline}} [{{ts}}]")
+        | formatted f |> payload { logline: f, level: p.level }
+```
+
+**Key rule**: No function calls in `payload { }` constructors! Use event chains for impure operations.
 
 ---
 
@@ -68,8 +76,14 @@ Unlike taps which receive branch outputs, interceptors receive the **destination
 | written {}
 
 // Interceptor receives { logline, level } - the INPUT to log.write
+// Pure transformation - string concat is allowed
 ~intercept(* -> log.write)
-| payload p |> payload { logline: uppercase(p.logline), level: p.level }
+| payload p |> payload { logline: "[PREFIX] " ++ p.logline, level: p.level }
+
+// Impure transformation - must use event chain
+~intercept(* -> log.write)
+| payload p |> str.uppercase(text: p.logline)
+    | result upper |> payload { logline: upper, level: p.level }
 ```
 
 The interceptor MUST return a `payload` that matches the destination's input shape.
@@ -103,41 +117,45 @@ Only ONE interceptor can be installed per destination. Multiple interceptors cau
 
 ### Logging Enrichment
 ```koru
+// Enrich log with timestamp and request context
 ~intercept(* -> log.write)
-| payload p |> payload {
-    logline: p.logline,
-    level: p.level,
-    timestamp: now(),
-    request_id: context.request_id()
-}
+| payload p |> get_time()
+    | timestamp ts |> get_request_id()
+        | request_id rid |> payload {
+            logline: p.logline,
+            level: p.level,
+            timestamp: ts,
+            request_id: rid
+        }
 ```
 
 ### Input Validation
 ```koru
+// Validate SQL before allowing query
 ~intercept(* -> database.query)
-| payload p |> {
-    validate_sql(p.sql)  // Throws on SQL injection
-    payload { sql: p.sql, timeout: p.timeout }
-}
+| payload p |> sql.validate(query: p.sql)
+    | valid _ |> payload { sql: p.sql, timeout: p.timeout }
+    | invalid e |> error { reason: e.msg }  // Block the query!
 ```
 
 ### Request Transformation
 ```koru
+// Add auth headers to all API requests
 ~intercept(* -> api.request)
-| payload p |> payload {
-    url: p.url,
-    headers: p.headers ++ auth_headers(),
-    body: p.body
-}
+| payload p |> auth.get_headers()
+    | headers h |> payload {
+        url: p.url,
+        headers: p.headers ++ h,
+        body: p.body
+    }
 ```
 
 ### Metrics Injection
 ```koru
+// Start timer before HTTP request
 ~intercept(* -> http.send)
-| payload p |> {
-    metrics.start_timer("http_request")
-    payload { request: p.request }
-}
+| payload p |> metrics.start_timer(name: "http_request")
+    | timer_id tid |> payload { request: p.request, timer_id: tid }
 ```
 
 ---

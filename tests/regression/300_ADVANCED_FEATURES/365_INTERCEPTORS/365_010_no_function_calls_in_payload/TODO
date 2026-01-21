@@ -1,0 +1,1 @@
+DESIGN: Interceptor feature not yet implemented. Should produce compile error for function calls in payload constructors.

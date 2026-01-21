@@ -1,0 +1,28 @@
+// Test 365_010: No Function Calls in Payload Constructors
+//
+// NEGATIVE TEST: Function calls are NOT allowed in branch/payload constructors.
+// This ensures purity tracking is possible - all side effects must be explicit
+// event calls, not hidden function invocations.
+//
+// The correct way to use impure operations is via event chains:
+//   | payload p |> get_time()
+//       | timestamp ts |> payload { logline: p.logline, ts: ts }
+
+const std = @import("std");
+~import "$std/interceptors"
+
+~event log.write { logline: []const u8 }
+| written {}
+
+~proc log.write {
+    std.debug.print("{s}\n", .{logline});
+    return .{ .written = .{} };
+}
+
+// INVALID: Function call timestamp() inside payload constructor
+// This should be a compile error!
+~intercept(* -> log.write)
+| payload p |> payload { logline: p.logline ++ timestamp() }
+
+~log.write(logline: "Test")
+| written _ |> _
