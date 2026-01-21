@@ -7,7 +7,7 @@
 //
 // Structure:
 //   test_lib/
-//     logger.kz  → Defines a universal tap ~* -> * that logs all events
+//     logger.kz  → Defines a universal tap ~tap(* -> *) that logs all events
 //
 // Expected: The logger's tap fires for ALL events, even though we didn't
 //          explicitly write the tap pattern in this file.

@@ -8,7 +8,7 @@
 // - Debug optimizer transformations (see IR nodes like NativeLoop)
 //
 // Pattern:
-// - Use taps (~* event -> branch) to observe without modifying pipeline
+// - Use taps ~tap(event -> other_event) | branch to observe without modifying pipeline
 // - dump_ast is a void event (no branches, just side effects)
 // - Can be called inline: | continued c |> dump_ast(...) |> next_step(...)
 //
@@ -21,24 +21,25 @@
 
 ~import "$std/compiler"
 ~import "$std/ast_dump"
+~import "$std/taps"
 
 const std = @import("std");
 
 // Tap 1: Observe AST after frontend passes (parsing + comptime eval)
 // At this stage: All source-level constructs (EventDecl, ProcDecl, Flow, etc.)
-~std.compiler:compiler.coordinate.frontend -> *
+~tap(std.compiler:compiler.coordinate.frontend -> *)
 | continued c |> dump_ast(ctx: c.ctx, stage: "post-frontend")
     | done |> _
 
 // Tap 2: Observe AST after analysis passes (validation)
 // At this stage: Same as frontend, but validated
-~std.compiler:compiler.coordinate.analysis -> *
+~tap(std.compiler:compiler.coordinate.analysis -> *)
 | continued c |> dump_ast(ctx: c.ctx, stage: "post-analysis")
     | done |> _
 
 // Tap 3: Observe AST after optimization passes
 // At this stage: IR nodes appear! (NativeLoop replaces SubflowImpl, etc.)
-~std.compiler:compiler.coordinate.optimize -> *
+~tap(std.compiler:compiler.coordinate.optimize -> *)
 | continued c |> dump_ast(ctx: c.ctx, stage: "post-optimization")
     | done |> _
 

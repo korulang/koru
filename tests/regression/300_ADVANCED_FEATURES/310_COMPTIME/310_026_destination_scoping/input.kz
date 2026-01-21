@@ -1,8 +1,9 @@
 // Test 624: Destination Scoping with Wildcards
 // Validates that destination patterns match visible events in scope
-// Pattern ~* -> file.write observes ALL sources calling file.write
+// Pattern ~tap(* -> file.write) observes ALL sources calling file.write
 
 const std = @import("std");
+~import "$std/taps"
 
 ~event file.read {}
 | done {}
@@ -33,7 +34,7 @@ const std = @import("std");
 }
 
 // Observe ALL sources calling file.write
-~* -> file.write
+~tap(* -> file.write)
 | Transition t |> logger(caller: t.source)
     | done |> _
 
