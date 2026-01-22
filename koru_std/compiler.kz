@@ -568,9 +568,8 @@ pub const CompilerContext = struct {
 
     const json_output = serializer.serializeToJson(ctx.ast) catch unreachable;
 
-    // Print to stdout with separator showing which dump this is
-    const stdout = std.io.getStdOut().writer();
-    stdout.print("=== AST DUMP: {s} ===\n{s}\n", .{flag, json_output}) catch {};
+    // Print to stderr with separator showing which dump this is
+    std.debug.print("=== AST DUMP: {s} ===\n{s}\n", .{flag, json_output});
 
     // Always continue with same context
     return .{ .ctx = ctx };

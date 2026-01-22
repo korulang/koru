@@ -1,0 +1,36 @@
+// Test 430_010: AST Dump at Multiple Pipeline Stages
+//
+// Override frontend and analysis to dump AST at each stage.
+// Demonstrates introspection into the compiler pipeline.
+//
+// Expected output (to stdout during compilation):
+//   === AST DUMP: post-frontend ===
+//   { ... JSON AST ... }
+//   === AST DUMP: post-analysis ===
+//   { ... JSON AST ... }
+
+~import "$std/compiler"
+~import "$std/io"
+
+// ============================================================================
+// DUMP AST AFTER FRONTEND
+// ============================================================================
+
+~std.compiler:frontend = std.compiler:frontend.default(ctx)
+| ctx c |> std.compiler:ast_dump(ctx: c, flag: "post-frontend")
+    | ctx c2 |> ctx c2
+
+// ============================================================================
+// DUMP AST AFTER ANALYSIS
+// ============================================================================
+
+~std.compiler:analysis = std.compiler:analysis.default(ctx)
+| ctx c |> std.compiler:ast_dump(ctx: c, flag: "post-analysis")
+    | ctx c2 |> ctx c2
+| failed f |> failed { ctx: f.ctx, message: f.message }
+
+// ============================================================================
+// THE PROGRAM
+// ============================================================================
+
+~std.io:print.ln("AST was dumped at 2 stages!")
