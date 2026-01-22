@@ -498,12 +498,27 @@ pub const CompilerContext = struct {
 // COMPILER COORDINATION - User-overridable compilation pipeline
 // ============================================================
 
-// The compiler coordinator (user-overridable at 2 segments)
-~pub event compiler.coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
+// The compiler coordinator (user-overridable)
+// Abstract: Users can override with ~impl compiler.coordinate = ...
+~abstract pub event compiler.coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
 | coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
 | error { message: []const u8 }
 
-// The default compiler coordinator
+// Default implementation of the compiler coordinator
+// Users who don't override get this standard pipeline
+~compiler.coordinate =
+    compiler.context.create(program_ast: program_ast, allocator: allocator)
+    | created c0 |> compiler.coordinate.frontend(ctx: c0.ctx)
+      | continued c1 |> compiler.coordinate.transform_taps(ctx: c1.ctx)
+        | continued c2 |> compiler.coordinate.analysis(ctx: c2.ctx)
+          | continued c3 |> compiler.coordinate.test_generation(ctx: c3.ctx)
+            | continued c4 |> compiler.coordinate.optimize(ctx: c4.ctx)
+              | continued c5 |> compiler.coordinate.emission(ctx: c5.ctx)
+                | continued c6 |> compiler.metrics.format(passes_completed: c6.ctx.passes_completed, allocator: allocator)
+                  | formatted m |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }
+          | failed f |> error { message: f.message }
+
+// Legacy alias - keeping for compatibility with tests that use .default directly
 ~pub event compiler.coordinate.default { program_ast: *const Program, allocator: std.mem.Allocator }
 | coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
 | error { message: []const u8 }
