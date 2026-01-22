@@ -412,3 +412,20 @@ Koru's kernel system would be:
 - **Composable transforms** via continuation chains
 
 If this works, it's genuinely novel.
+
+---
+
+## Collaborative Work Doc (Living)
+
+**Implemented (tests):**
+- `tests/regression/300_ADVANCED_FEATURES/390_KERNEL/390_001_shape_basic` - init emits a view-backed handle
+- `tests/regression/300_ADVANCED_FEATURES/390_KERNEL/390_003_pairwise_basic` - pairwise uses `k.ptr[i]`/`k.len`
+- `tests/regression/300_ADVANCED_FEATURES/390_KERNEL/390_005_user_event_binding` - user events can consume derived values from `k`
+
+**Aspirational (TODO tests):**
+- `tests/regression/300_ADVANCED_FEATURES/390_KERNEL/390_010_layout_metadata` - layout metadata after analysis
+
+**Next milestones:**
+- Layout analysis pass to select AoS/SoA/hybrid
+- Escape-aware allocation (stack vs arena)
+- Device-target selection (CPU/GPU) from kernel metadata

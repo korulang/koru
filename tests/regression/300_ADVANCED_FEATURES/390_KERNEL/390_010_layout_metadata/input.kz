@@ -1,0 +1,23 @@
+// TEST: kernel layout metadata (aspirational)
+//
+// Goal:
+// 1. The kernel view should expose a layout hint (AoS/SoA/Hybrid)
+// 2. The compiler should fill this from analysis of the continuation subtree
+//
+// This is expected to FAIL until layout analysis is implemented.
+
+~import "$std/kernel"
+~import "$std/io"
+
+~std.kernel:shape(Body) {
+    x: f64,
+    y: f64,
+    mass: f64,
+}
+
+~std.kernel:init(Body) {
+    { x: 0.0, y: 0.0, mass: 1.0 },
+    { x: 1.0, y: 0.0, mass: 2.0 },
+}
+| kernel k |>
+    std.io:print.ln("layout={{ k.layout }}")
