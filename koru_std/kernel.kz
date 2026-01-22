@@ -449,10 +449,15 @@ const std = @import("std");
 //   }
 //
 // Generated code:
+//   const __kernel_pair = struct {
+//       inline fn call(b1: *@TypeOf(bodies.ptr[0]), b2: *@TypeOf(bodies.ptr[0])) void {
+//           b1.vel -= d * mag * b2.mass;
+//           b2.vel += d * mag * b1.mass;
+//       }
+//   };
 //   for (0..bodies.len) |i| {
 //       for (i+1..bodies.len) |j| {
-//           bodies.ptr[i].vel -= d * mag * bodies.ptr[j].mass;
-//           bodies.ptr[j].vel += d * mag * bodies.ptr[i].mass;
+//           __kernel_pair.call(&bodies.ptr[i], &bodies.ptr[j]);
 //       }
 //   }
 
@@ -534,11 +539,21 @@ const std = @import("std");
 
     const binding_name = search_result.binding_name;
 
+    // Unique helper identifiers to avoid collisions in generated Zig
+    var hash: u32 = 0;
+    for (flow.module) |c| hash = hash *% 31 +% c;
+    hash = hash *% 31 +% @as(u32, @intCast(flow.location.line));
+    hash = hash *% 31 +% @as(u32, @intCast(flow.location.column));
+    for (source.text) |c| hash = hash *% 31 +% c;
+    const helper_name = std.fmt.allocPrint(allocator, "__koru_kernel_pair_{d}", .{hash}) catch unreachable;
+    const self_name = std.fmt.allocPrint(allocator, "__koru_pair_self_{d}", .{hash}) catch unreachable;
+    const other_name = std.fmt.allocPrint(allocator, "__koru_pair_other_{d}", .{hash}) catch unreachable;
+
     // ========================================================================
     // STEP 2: Transform DSL body
     // ========================================================================
-    // k.other.X -> k.ptr[j].X
-    // k.X -> k.ptr[i].X
+    // k.other.X -> other
+    // k.X -> self
 
     const binding_other = std.fmt.allocPrint(allocator, "{s}.other", .{binding_name}) catch unreachable;
     const binding_other_len = binding_other.len;
@@ -549,16 +564,14 @@ const std = @import("std");
     var i: usize = 0;
     while (i < source.text.len) {
         if (i + binding_other_len <= source.text.len and std.mem.eql(u8, source.text[i..i+binding_other_len], binding_other)) {
-            body_code.appendSlice(allocator, binding_name) catch unreachable;
-            body_code.appendSlice(allocator, ".ptr[j]") catch unreachable;
+            body_code.appendSlice(allocator, other_name) catch unreachable;
             i += binding_other_len;
         } else if (i + binding_len <= source.text.len and std.mem.eql(u8, source.text[i..i+binding_len], binding_name)) {
             const at_end = (i + binding_len >= source.text.len);
             const next_ok = at_end or (!std.ascii.isAlphanumeric(source.text[i + binding_len]) and source.text[i + binding_len] != '_');
             const prev_ok = (i == 0) or (!std.ascii.isAlphanumeric(source.text[i - 1]) and source.text[i - 1] != '_');
             if (next_ok and prev_ok) {
-                body_code.appendSlice(allocator, binding_name) catch unreachable;
-                body_code.appendSlice(allocator, ".ptr[i]") catch unreachable;
+                body_code.appendSlice(allocator, self_name) catch unreachable;
                 i += binding_len;
             } else {
                 body_code.append(allocator, source.text[i]) catch unreachable;
@@ -572,13 +585,18 @@ const std = @import("std");
 
     const code = std.fmt.allocPrint(
         allocator,
-        \\for (0..{0s}.len) |i| {{
-        \\    for (i + 1..{0s}.len) |j| {{
-        \\        {1s};
+        \\const {0s} = struct {{
+        \\    inline fn call({1s}: *@TypeOf({3s}.ptr[0]), {2s}: *@TypeOf({3s}.ptr[0])) void {{
+        \\        {4s};
+        \\    }}
+        \\}};
+        \\for (0..{3s}.len) |i| {{
+        \\    for (i + 1..{3s}.len) |j| {{
+        \\        {0s}.call(&{3s}.ptr[i], &{3s}.ptr[j]);
         \\    }}
         \\}}
         ,
-        .{ binding_name, body_code.items }
+        .{ helper_name, self_name, other_name, binding_name, body_code.items }
     ) catch unreachable;
 
     // ========================================================================

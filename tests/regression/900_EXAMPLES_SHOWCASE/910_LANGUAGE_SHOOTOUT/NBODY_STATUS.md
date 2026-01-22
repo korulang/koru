@@ -44,7 +44,7 @@ The borrow checker PROVES to LLVM that `body1` and `body2` are disjoint memory.
 
 ## Implications for Koru Kernel System
 
-**This is HUGE.** The kernel pairwise transform knows by definition that `k` and `k.other` are different bodies. We can generate the optimized pattern automatically:
+**This is HUGE.** The kernel pairwise transform knows by definition that `k` and `k.other` are different bodies. We now generate the optimized pattern automatically (implemented 2026-01-23):
 
 ```koru
 // User writes (natural, clean):
@@ -96,14 +96,29 @@ for (0..N) |i| {
 - `nbody_simd2.zig` - SIMD + comptime unroll
 - `nbody_simd3.zig` - Precomputed mass vectors (slower)
 
-## Best Koru Implementation (Current)
+## Koru Implementations
 
-**`2101f_nbody_arrayed_capture`** - 5% behind Rust, uses array indexing:
+### kernel:pairwise (OPTIMIZED - matches Rust!)
+
+**`390_020_nbody_benchmark`** - Uses kernel DSL with noalias optimization:
+```koru
+~std.kernel:pairwise { k.vx += f * dx; k.other.vx -= f * dx }
+```
+
+Generates the pointer-based pattern automatically. **No manual optimization needed.**
+
+### Manual capture (5% behind)
+
+**`2101f_nbody_arrayed_capture`** - Uses array indexing without kernel DSL:
 ```koru
 captured { dv[i][0]: acc.dv[i][0] - f.fx*f.mj }
 ```
 
-**TODO:** Update kernel pairwise codegen to use pointer pattern for Rust-matching performance.
+This approach doesn't benefit from kernel semantics - LLVM can't prove non-aliasing.
+
+### Recommendation
+
+**Use `kernel:pairwise` for pairwise computations.** The DSL knows the semantics and emits optimal code.
 
 ## Running Benchmarks
 
