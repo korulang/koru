@@ -1,0 +1,41 @@
+// TEST: N-body gravitational simulation using kernel:pairwise
+//
+// This is the classic benchmark for data-parallel computation.
+// Each body exerts gravitational force on every other body.
+//
+// Algorithm (pairwise):
+//   For each pair (i, j) where i < j:
+//     dx = x[j] - x[i]
+//     dy = y[j] - y[i]
+//     dist_sq = dx*dx + dy*dy + softening
+//     force = mass[i] * mass[j] / dist_sq
+//     // Update velocities (simplified - just accumulate force for now)
+//     vx[i] += force * dx
+//     vx[j] -= force * dx
+//     vy[i] += force * dy
+//     vy[j] -= force * dy
+
+~import "$std/kernel"
+~import "$std/io"
+
+// Body shape: position, velocity, mass
+~std.kernel:shape(Body) {
+    x: f64,
+    y: f64,
+    vx: f64,
+    vy: f64,
+    mass: f64,
+}
+
+// Initialize 4 bodies in a square pattern
+~std.kernel:init(Body) {
+    { x: 0.0, y: 0.0, vx: 0.0, vy: 0.0, mass: 1.0 },
+    { x: 1.0, y: 0.0, vx: 0.0, vy: 0.0, mass: 1.0 },
+    { x: 0.0, y: 1.0, vx: 0.0, vy: 0.0, mass: 1.0 },
+    { x: 1.0, y: 1.0, vx: 0.0, vy: 0.0, mass: 1.0 },
+}
+| kernel k |>
+    std.kernel:pairwise { const dx = k.other.x - k.x; const dy = k.other.y - k.y; const dist_sq = dx*dx + dy*dy + 0.01; const f = k.mass * k.other.mass / dist_sq; k.vx += f * dx; k.vy += f * dy; k.other.vx -= f * dx; k.other.vy -= f * dy }
+
+// Print results
+~std.io:print.ln("nbody simulation complete")
