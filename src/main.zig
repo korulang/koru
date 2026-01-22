@@ -14,7 +14,7 @@ const ast = @import("ast");
 const TypeRegistry = @import("type_registry").TypeRegistry;
 const validate_abstract_impl = @import("validate_abstract_impl");
 // CompilerBootstrap removed - using abstract/impl mechanism instead
-const compiler_coordination = @import("compiler_coordination.zig");
+// compiler_coordination.zig removed - all passes run in backend via compiler.kz
 // emitter.zig removed - using visitor_emitter now
 const TapCollector = @import("tap_collector").TapCollector;
 const CompilerRequiresCollector = @import("compiler_requires").CompilerRequiresCollector;
@@ -5928,22 +5928,9 @@ pub fn main() !void {
         return;
     }
 
-    // NOTE: Frontend AST transformations are now handled in the backend pipeline
-    // (see koru_std/compiler.kz optimize event). Frontend inlining was disabled.
-    var final_ast: *ast.Program = &source_file;
-
-    // Run the compiler coordinator to orchestrate additional passes
-    const coordination_result = try compiler_coordination.coordinate(
-        compile_allocator,
-        final_ast,
-        input,
-    );
-    // No defer needed - compile_arena will free metrics
-
-    // Use the coordinated AST
-    final_ast = @constCast(coordination_result.ast);
-
-    try printStdout(allocator, "🎯 Compiler coordination: {s}\n", .{coordination_result.metrics});
+    // NOTE: All compilation passes now run in the backend via koru_std/compiler.kz
+    // The frontend just parses and validates, then hands off to the backend pipeline.
+    const final_ast: *ast.Program = &source_file;
 
     // Write output file
     const output = output_file.?;
