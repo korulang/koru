@@ -1,0 +1,2 @@
+Abstract event with no implementation should cause runtime error when invoked.
+Currently marked as compile-only test.

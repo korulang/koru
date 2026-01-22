@@ -1,0 +1,19 @@
+// Test 430_003: Abstract with Override Only (No Default)
+// When an abstract event has an override but NO default:
+// - The override IS the handler
+// - Calling `event.default()` would be a compiler error (no default exists!)
+//
+// This is "provide the implementation" pattern.
+
+~import "$std/io"
+
+// Define abstract event with NO default implementation
+~[abstract] event greet { name: []const u8 }
+| greeted { message: []const u8 }
+
+// Provide the ONLY implementation (this becomes the handler)
+~greet = greeted { message: name }
+
+// Use it
+~greet(name: "world")
+| greeted g |> io.println(message: g.message)

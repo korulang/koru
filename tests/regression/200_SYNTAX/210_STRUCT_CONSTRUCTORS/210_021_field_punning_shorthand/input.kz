@@ -1,22 +1,26 @@
-// Test 210_021: Struct Field Punning Shorthand (TODO - not yet implemented)
-// When field value is an expression like `c.ast`, infer field name from last segment
+// Test 210_021: Struct Field Punning Shorthand
+// When field value is an expression like `p.x`, infer field name from last segment
 //
-// Syntax: { c.ast, c.code } should expand to { ast: c.ast, code: c.code }
-//
-// This test captures the bug found in 430_006_coordinator_timing
+// Syntax: { p.x, p.y } should expand to { x: p.x, y: p.y }
 
 ~import "$std/io"
 
-~event wrapper { value: i32 }
-| wrapped { value: i32 }
+pub const Point = struct { x: i32, y: i32 };
 
-~event process { w: wrapper.wrapped }
-| result { value: i32 }
+~event make_point { x: i32, y: i32 }
+| point { p: Point }
 
-// This shorthand syntax doesn't work yet - emitter generates invalid Zig
-~process = result { w.value }
+~proc make_point {
+    return .{ .point = .{ .p = Point{ .x = x, .y = y } } };
+}
+
+~event use_point { p: Point }
+| result { x: i32, y: i32 }
+
+// Shorthand: { p.x, p.y } should become { x: p.x, y: p.y }
+~use_point = result { p.x, p.y }
 
 // Test it
-~wrapper(value: 42)
-| wrapped w |> process(w)
-    | result |> std.io:print.ln("punning shorthand works")
+~make_point(x: 10, y: 20)
+| point pt |> use_point(p: pt.p)
+    | result r |> std.io:print.ln("punning works: x={{ r.x }}, y={{ r.y }}")

@@ -262,3 +262,4 @@ fn canonicalizePath(ctx: *Context, path: *ast.DottedPath) !void {
         path.segments[0],
     });
 }
+

@@ -1,0 +1,3 @@
+In-file abstract/override pattern - needs restructuring to use cross-module imports.
+The abstract/impl mechanism requires cross-module overrides (like std.compiler:coordinate).
+To fix: create a lib.kz with the abstract + default, then override from input.kz.

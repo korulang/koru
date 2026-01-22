@@ -458,10 +458,28 @@ fi
 # ════════════════════════════════════════
 if [ "$REBUILD_COMPILER" = true ]; then
     echo "🔨 Building compiler..."
-    if ! zig build 2>&1 | tail -5; then
-        echo ""
-        echo -e "${RED}❌ Compiler build failed${NC}"
-        exit 1
+    BUILD_LOG="${TMPDIR:-/tmp}/koru-zig-build.log"
+    if [ "$VERBOSE" = true ]; then
+        if ! zig build 2>&1; then
+            echo ""
+            echo -e "${RED}❌ Compiler build failed${NC}"
+            exit 1
+        fi
+    else
+        if zig build >"$BUILD_LOG" 2>&1; then
+            tail -5 "$BUILD_LOG"
+        else
+            echo ""
+            echo -e "${RED}❌ Compiler build failed${NC}"
+            echo ""
+            echo "Last 80 lines (full log at $BUILD_LOG):"
+            echo "────────────────────────────────────────"
+            tail -80 "$BUILD_LOG"
+            echo "────────────────────────────────────────"
+            echo ""
+            echo "Tip: re-run with --verbose to stream the full build output"
+            exit 1
+        fi
     fi
     echo ""
 fi

@@ -14,7 +14,7 @@
 ~std.compiler:coordinate = std.time:now()
 | t pipeline_start |> std.compiler:coordinate.default(program_ast, allocator)
     | coordinated c |> std.time:elapsed(start: pipeline_start.ns, label: "TOTAL PIPELINE")
-        |> coordinated { ast: c.ast, code: c.code, metrics: c.metrics }
+        |> coordinated { c.ast, c.code, c.metrics }
     | error e |> error { message: e.message }
 
 // ============================================================================

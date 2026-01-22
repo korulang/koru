@@ -1,0 +1,36 @@
+// Test 430_007: Tap Visibility with Delegation
+//
+// CRITICAL TEST: Proves taps fire correctly with abstract/override pattern.
+//
+// When override delegates to .default:
+// - Tap on `process` fires (override runs)
+// - Tap on `process.default` fires (default runs via delegation)
+//
+// This ensures the `.default` rename doesn't hide calls from the tap system!
+
+~import "$std/io"
+
+const std = @import("std");
+
+// Define abstract event
+~[abstract] event process { value: i32 }
+| result { output: i32 }
+
+// Default implementation: double the value
+~process = result { output: value * 2 }
+
+// Override: delegate to default, then add 10
+~process = process.default(value: value) | result r |> result { output: r.output + 10 }
+
+// Tap on the PUBLIC handler (override)
+~tap(* -> process)
+| result |> io.println(message: "tap:process fired")
+
+// Tap on the DEFAULT handler
+~tap(* -> process.default)
+| result |> io.println(message: "tap:process.default fired")
+
+// Call it: process(5) should give (5 * 2) + 10 = 20
+// AND both taps should fire!
+~process(value: 5)
+| result |> io.println(message: "done")

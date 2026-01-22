@@ -1,0 +1,24 @@
+// Test 430_004: Abstract with Both Default AND Impl (Explicit Delegation)
+// When an abstract event has BOTH a default and an override:
+// - The override becomes the public handler
+// - The default is renamed to `event.default`
+// - Override EXPLICITLY calls `.default` to delegate
+//
+// This is the "wrap and extend" pattern with NO MAGIC!
+
+~import "$std/io"
+
+// Define abstract event
+~[abstract] event process { name: []const u8 }
+| result { message: []const u8 }
+
+// Default implementation: just returns the name
+~process = result { message: name }
+
+// Override: EXPLICITLY calls process.default, then passes through
+// Note: process.default - not process! No magic, no confusion.
+~process = process.default(name: name) | result r |> result { message: r.message }
+
+// Test it
+~process(name: "delegation works!")
+| result r |> io.println(message: r.message)

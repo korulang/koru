@@ -7,6 +7,8 @@
 //
 // No special syntax needed - just composition of primitives!
 
+~import "$std/taps"
+
 const std = @import("std");
 
 // Generic ring buffer (Zig function returning type)
@@ -90,8 +92,10 @@ const MyRing = Ring(u32, 1024);
 
 // EVENT TAP: Watch ring.dequeue and process each value
 // This is the "consumer" - it observes dequeue events and acts on them
-~ring.dequeue -> * | value v |> process(data: v.data) 
-~ring.dequeue -> * | value v when v.data * 2 > 2 |> process_timestwo(data: v.data) | done |> _
+~tap(ring.dequeue -> *)
+| value v |> process(data: v.data)
+~tap(ring.dequeue -> *)
+| value v when v.data * 2 > 2 |> process_timestwo(data: v.data) | done |> _
 
 // Producer: Fill the ring with values
 ~event produce { ring: *Ring(u32, 1024), count: u32 }

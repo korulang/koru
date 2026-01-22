@@ -2470,13 +2470,26 @@ fn findProcDeclByPathInModule(items: []const ast.Item, segments: []const []const
 
 /// Find a subflow implementation by its event path
 /// Returns the SubflowImpl if found (could have flow or immediate body)
+/// NOTE: User-defined overrides at top level take precedence over module-internal implementations
 pub fn findSubflowImplByPath(items: []const ast.Item, path: *const ast.DottedPath) ?*const ast.SubflowImpl {
+    if (DEBUG) {
+        std.debug.print("[findSubflowImplByPath] Looking for path: module_qual={s}, segments.len={d}\n", .{
+            if (path.module_qualifier) |m| m else "(null)",
+            path.segments.len,
+        });
+        for (path.segments) |seg| {
+            std.debug.print("[findSubflowImplByPath]   segment: {s}\n", .{seg});
+        }
+    }
+
     // Handle module qualifier
     if (path.module_qualifier) |module_qual| {
+        // Look inside module_decls for the implementation
         for (items) |*item| {
             switch (item.*) {
                 .module_decl => |*module| {
                     if (std.mem.eql(u8, module.logical_name, module_qual)) {
+                        if (DEBUG) std.debug.print("[findSubflowImplByPath] Looking in module '{s}'\n", .{module.logical_name});
                         return findSubflowImplByPathInModule(module.items, path.segments);
                     }
                 },

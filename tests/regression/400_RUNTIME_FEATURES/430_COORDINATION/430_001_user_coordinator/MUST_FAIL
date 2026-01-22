@@ -1,0 +1,3 @@
+Expected: Backend fails with "Compiler coordination error: Testing!"
+This test proves cross-module overrides work - the override returns an error,
+which propagates through the coordinator and causes backend execution to fail.

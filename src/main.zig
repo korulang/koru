@@ -5857,6 +5857,12 @@ pub fn main() !void {
     try validate_abstract_impl.AbstractImplValidator.validate(parse_allocator, source_file.items);
     std.debug.print("Abstract/impl validation passed\n", .{});
 
+    // Resolve abstract/impl: rename defaults to .default when overrides exist
+    const resolve_abstract_impl = @import("resolve_abstract_impl");
+    try resolve_abstract_impl.resolve(&source_file, parse_allocator);
+    try resolve_abstract_impl.createDefaultEventDecls(&source_file, parse_allocator);
+    std.debug.print("Abstract/impl resolution complete\n", .{});
+
     // Collect Event Taps
     var tap_collector = try TapCollector.init(compile_allocator);
     defer tap_collector.deinit();
