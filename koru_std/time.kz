@@ -1,18 +1,28 @@
 // Koru Standard Library: Time
 // ===========================
-// Simple timing primitives for measuring code execution.
+// Timing primitives for measuring code execution.
 //
 // Usage:
 //   ~import "$std/time"
 //
+//   // Simple timing with automatic output
 //   ~std.time:now()
 //   | t start |> do_work()
 //       |> std.time:elapsed(start: start.ns, label: "work")
-//           |> ...
+//
+//   // Get duration for programmatic use
+//   ~std.time:now()
+//   | t start |> do_work()
+//       |> std.time:since(start: start.ns)
+//           | duration d |> handle_timing(ms: d.ms)
 
 ~[comptime|runtime]
 
 const std = @import("std");
+
+// ============================================================================
+// TIMESTAMP
+// ============================================================================
 
 // Get current timestamp in nanoseconds
 ~pub event now {}
@@ -22,7 +32,31 @@ const std = @import("std");
     return .{ .t = .{ .ns = std.time.nanoTimestamp() } };
 }
 
-// Report elapsed time since start
+// ============================================================================
+// DURATION CALCULATION
+// ============================================================================
+
+// Calculate elapsed time since start (returns duration for programmatic use)
+~pub event since { start: i128 }
+| duration { ns: i128, us: f64, ms: f64, s: f64 }
+
+~proc since {
+    const end = std.time.nanoTimestamp();
+    const ns = end - start;
+    const ns_f: f64 = @floatFromInt(ns);
+    return .{ .duration = .{
+        .ns = ns,
+        .us = ns_f / 1_000.0,
+        .ms = ns_f / 1_000_000.0,
+        .s = ns_f / 1_000_000_000.0,
+    }};
+}
+
+// ============================================================================
+// REPORTING (VOID EVENTS)
+// ============================================================================
+
+// Report elapsed time since start (prints to stderr, continues flow)
 ~pub event elapsed { start: i128, label: []const u8 }
 
 ~proc elapsed {
@@ -30,4 +64,41 @@ const std = @import("std");
     const ns = end - start;
     const ms: f64 = @as(f64, @floatFromInt(ns)) / 1_000_000.0;
     std.debug.print("⏱️  {s}: {d:.2}ms\n", .{label, ms});
+}
+
+// Report with custom format: us, ms, or s
+~pub event elapsed_us { start: i128, label: []const u8 }
+
+~proc elapsed_us {
+    const end = std.time.nanoTimestamp();
+    const ns = end - start;
+    const us: f64 = @as(f64, @floatFromInt(ns)) / 1_000.0;
+    std.debug.print("⏱️  {s}: {d:.2}μs\n", .{label, us});
+}
+
+~pub event elapsed_s { start: i128, label: []const u8 }
+
+~proc elapsed_s {
+    const end = std.time.nanoTimestamp();
+    const ns = end - start;
+    const s: f64 = @as(f64, @floatFromInt(ns)) / 1_000_000_000.0;
+    std.debug.print("⏱️  {s}: {d:.3}s\n", .{label, s});
+}
+
+// ============================================================================
+// SLEEP (RUNTIME ONLY)
+// ============================================================================
+
+// Sleep for specified milliseconds
+~[runtime] pub event sleep_ms { ms: u64 }
+
+~[runtime] proc sleep_ms {
+    std.time.sleep(ms * 1_000_000);
+}
+
+// Sleep for specified seconds
+~[runtime] pub event sleep_s { s: u64 }
+
+~[runtime] proc sleep_s {
+    std.time.sleep(s * 1_000_000_000);
 }
