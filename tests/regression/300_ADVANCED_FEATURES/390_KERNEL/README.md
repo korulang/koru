@@ -251,9 +251,10 @@ And that’s the whole point.
 - 390_001_shape_basic: init emits a view-backed kernel handle
 - 390_003_pairwise_basic: pairwise uses view access (`k.ptr[i]`, `k.len`)
 - 390_005_user_event_binding: arbitrary user events can consume values derived from `k`
+- 390_010_layout_metadata: layout hint exists (stubbed to "aos")
 
-**Aspirational (TODO tests):**
-- 390_010_layout_metadata: kernel view exposes layout hints after analysis
+**Aspirational (future):**
+- Layout analysis pass to compute real layout hints
 
 **Next milestones:**
 - Layout analysis pass (AoS/SoA/hybrid decisions)

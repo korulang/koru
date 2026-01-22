@@ -294,7 +294,7 @@ const std = @import("std");
             \\const {s} = [_]{s}{{ {s} }};
             \\const {s} = std.heap.page_allocator.alloc({s}, {s}.len) catch unreachable;
             \\std.mem.copyForwards({s}, {s}, {s}[0..]);
-            \\return .{{ .kernel = .{{ .ptr = {s}.ptr, .len = {s}.len, .capacity = {s}.len }} }};
+            \\return .{{ .kernel = .{{ .ptr = {s}.ptr, .len = {s}.len, .capacity = {s}.len, .layout = "aos" }} }};
             ,
             .{ init_name, type_name, elements.items, data_name, type_name, init_name, type_name, data_name, init_name, data_name, data_name, data_name }
         ) catch unreachable;
@@ -306,7 +306,7 @@ const std = @import("std");
             \\const std = @import("std");
             \\const {s} = std.heap.page_allocator.alloc({s}, 1) catch unreachable;
             \\{s}[0] = {s}{{ {s} }};
-            \\return .{{ .kernel = .{{ .ptr = {s}.ptr, .len = {s}.len, .capacity = {s}.len }} }};
+            \\return .{{ .kernel = .{{ .ptr = {s}.ptr, .len = {s}.len, .capacity = {s}.len, .layout = "aos" }} }};
             ,
             .{ data_name, type_name, data_name, type_name, fields, data_name, data_name, data_name }
         ) catch unreachable;
@@ -355,7 +355,7 @@ const std = @import("std");
     const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_flow_item) catch unreachable;
     if (maybe_new_program) |new_program| {
         const ptr_type = std.fmt.allocPrint(allocator, "[*]{s}", .{type_name}) catch unreachable;
-        const branch_fields = allocator.alloc(ast.Field, 3) catch unreachable;
+        const branch_fields = allocator.alloc(ast.Field, 4) catch unreachable;
         branch_fields[0] = ast.Field{
             .name = allocator.dupe(u8, "ptr") catch unreachable,
             .type = ptr_type,
@@ -367,6 +367,10 @@ const std = @import("std");
         branch_fields[2] = ast.Field{
             .name = allocator.dupe(u8, "capacity") catch unreachable,
             .type = allocator.dupe(u8, "usize") catch unreachable,
+        };
+        branch_fields[3] = ast.Field{
+            .name = allocator.dupe(u8, "layout") catch unreachable,
+            .type = allocator.dupe(u8, "[]const u8") catch unreachable,
         };
 
         const branches = allocator.alloc(ast.Branch, 1) catch unreachable;

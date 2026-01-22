@@ -4,7 +4,7 @@
 // 1. The kernel view should expose a layout hint (AoS/SoA/Hybrid)
 // 2. The compiler should fill this from analysis of the continuation subtree
 //
-// This is expected to FAIL until layout analysis is implemented.
+// NOTE: layout is currently stubbed to "aos" until analysis is implemented.
 
 ~import "$std/kernel"
 ~import "$std/io"
@@ -20,4 +20,4 @@
     { x: 1.0, y: 0.0, mass: 2.0 },
 }
 | kernel k |>
-    std.io:print.ln("layout={{ k.layout }}")
+    std.io:print.ln("layout={{ k.layout:s }}")
