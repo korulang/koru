@@ -527,14 +527,7 @@ pub fn build(b: *std.Build) void {
     transform_pass_runner_module.addImport("liquid", liquid_module);
     exe.root_module.addImport("transform_pass_runner", transform_pass_runner_module);
 
-    // Compiler module for metacircular compilation
-    const compiler_module = b.createModule(.{
-        .root_source_file = b.path("src/compiler.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    compiler_module.addImport("ast", ast_module);
-    exe.root_module.addImport("compiler", compiler_module);
+    // NOTE: compiler.zig (CompilerBootstrap) removed - abstract/impl handles coordinate overrides
 
     b.installArtifact(exe);
 

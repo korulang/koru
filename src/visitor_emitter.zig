@@ -1459,74 +1459,7 @@ pub const VisitorEmitter = struct {
             }
         }
 
-        // SPECIAL CASE: compiler.coordinate can be overridden by users at top level
-        // This is the ONLY event that allows cross-module implementation
-        if (!found_impl and event.path.segments.len == 2 and
-            eql(u8, event.path.segments[0], "compiler") and
-            eql(u8, event.path.segments[1], "coordinate")) {
-            if (DEBUG) std.debug.print("  [emitEventDecl] compiler.coordinate not found in scoped search, checking top-level for user override\n", .{});
-
-            // Search top-level items for user implementation
-            for (self.all_items) |user_item| {
-                if (user_item == .subflow_impl) {
-                    const subflow = user_item.subflow_impl;
-                    if (subflow.event_path.segments.len == 2 and
-                        eql(u8, subflow.event_path.segments[0], "compiler") and
-                        eql(u8, subflow.event_path.segments[1], "coordinate")) {
-                        if (DEBUG) std.debug.print("    ✓ FOUND USER COORDINATOR OVERRIDE!\n", .{});
-                        switch (subflow.body) {
-                            .immediate => |bc| {
-                                for (event.input.fields) |field| {
-                                    try self.code_emitter.writeIndent();
-                                    try self.code_emitter.write("const ");
-                                    try self.code_emitter.write(field.name);
-                                    try self.code_emitter.write(" = __koru_event_input.");
-                                    try self.code_emitter.write(field.name);
-                                    try self.code_emitter.write(";\n");
-                                }
-                                for (event.input.fields) |field| {
-                                    try self.code_emitter.writeIndent();
-                                    try self.code_emitter.write("_ = &");
-                                    try self.code_emitter.write(field.name);
-                                    try self.code_emitter.write(";\n");
-                                }
-                                if (event.input.fields.len == 0) {
-                                    try self.code_emitter.writeIndent();
-                                    try self.code_emitter.write("_ = &__koru_event_input;\n");
-                                }
-                                try self.code_emitter.writeIndent();
-                                try self.code_emitter.write("return .{ .");
-                                try emitter.writeBranchName(self.code_emitter, bc.branch_name);
-                                try self.code_emitter.write(" = ");
-                                // Check for plain value (non-struct branch)
-                                if (bc.plain_value) |pv| {
-                                    try self.code_emitter.write(pv);
-                                } else {
-                                    try self.code_emitter.write(".{");
-                                    for (bc.fields, 0..) |field, k| {
-                                        if (k > 0) try self.code_emitter.write(", ");
-                                        try self.code_emitter.write(" .");
-                                        try self.code_emitter.write(field.name);
-                                        try self.code_emitter.write(" = ");
-                                        // Use expression_str if present (for expressions), otherwise use type
-                                        const value = if (field.expression_str) |expr| expr else field.type;
-                                        try self.code_emitter.write(value);
-                                    }
-                                    try self.code_emitter.write(" }");
-                                }
-                                try self.code_emitter.write(" };\n");
-                            },
-                            .flow => {
-                                // Flow-based user coordinators not supported yet
-                                // For now, just fall through to default implementation
-                            },
-                        }
-                        found_impl = true;
-                        break;
-                    }
-                }
-            }
-        }
+        // NOTE: Special case for compiler.coordinate removed - abstract/impl handles it
 
         if (!found_impl) {
             // Add unused parameter suppression

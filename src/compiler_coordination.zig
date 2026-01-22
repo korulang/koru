@@ -11,17 +11,13 @@ pub const CoordinationResult = struct {
 };
 
 /// The main coordination function that orchestrates compilation
+/// NOTE: User overrides are now handled by the abstract/impl mechanism in compiler.kz
 pub fn coordinate(
     allocator: std.mem.Allocator,
     source_ast: *const ast.Program,
-    has_user_override: bool,
     filename: []const u8,
 ) !CoordinationResult {
-    if (has_user_override) {
-        std.debug.print("Coordinator: Using user-defined compilation strategy\n", .{});
-    } else {
-        std.debug.print("Coordinator: Using default compilation strategy\n", .{});
-    }
+    std.debug.print("Coordinator: Running frontend passes\n", .{});
     
     // Default coordination strategy
     var current_ast = source_ast;

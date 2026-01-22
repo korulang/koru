@@ -13,7 +13,7 @@ const compiler_feature_flags = @import("compiler_config");
 const ast = @import("ast");
 const TypeRegistry = @import("type_registry").TypeRegistry;
 const validate_abstract_impl = @import("validate_abstract_impl");
-const CompilerBootstrap = @import("compiler").CompilerBootstrap;
+// CompilerBootstrap removed - using abstract/impl mechanism instead
 const compiler_coordination = @import("compiler_coordination.zig");
 // emitter.zig removed - using visitor_emitter now
 const TapCollector = @import("tap_collector").TapCollector;
@@ -102,7 +102,7 @@ fn printStderr(allocator: std.mem.Allocator, comptime fmt: []const u8, args: any
 
 /// Generate the backend code that will perform code generation at compile-time
 /// This is Pass 2 of the Koru compiler - the Zig backend
-fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8, input_file: []const u8, source_file: *ast.Program, use_visitor: bool, config: *const CompilerConfig, bootstrap: *const CompilerBootstrap, has_transforms: bool) ![]const u8 {
+fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8, input_file: []const u8, source_file: *ast.Program, use_visitor: bool, config: *const CompilerConfig, has_transforms: bool) ![]const u8 {
     var buffer = try std.ArrayList(u8).initCapacity(allocator, serialized_ast.len + 2048);
     const writer = buffer.writer(allocator);
 
@@ -889,137 +889,25 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         //   5. inject_ccp            - Adds observability taps (when --ccp + import)
         //   6. emit.zig              - Generates final Zig code
         // ============================================================================
-        // TODO: Eventually replace with pure Koru subflow from compiler.kz
-        try writer.writeAll("// Import CompilerContext types and handlers from backend_output_emitted\n");
-        try writer.writeAll("const bootstrap = backend_output.koru_");
-        try writer.writeAll(compiler_module);
-        try writer.writeAll(
-            \\;
-            \\const CompilerContext = bootstrap.CompilerContext;
-            \\const CompilerError = bootstrap.CompilerError;
-            \\const CompilerWarning = bootstrap.CompilerWarning;
-            \\const ErrorPolicy = bootstrap.ErrorPolicy;
-            \\const process_ccp_commands = bootstrap.process_ccp_commands_event;
-            \\const evaluate_comptime = bootstrap.evaluate_comptime_event;
-            \\const check_structure = bootstrap.check_structure_event;
-            \\const check_phantom_semantic = bootstrap.check_phantom_semantic_event;
-            \\const inject_ccp = bootstrap.inject_ccp_event;
-            \\const emit_zig = bootstrap.emit_zig_event;
-            \\
-            \\// FRONTEND BOOTSTRAP COORDINATOR (hardcoded Zig fallback)
-            \\// This is only used during frontend compilation (zig build-exe backend.zig).
-            \\// The actual BACKEND coordinator IS a Koru flow (see backend_output_emitted.zig)!
-            \\const coordinate_handler = struct {
-            \\    pub const Input = struct { ast: *const Program, allocator: std.mem.Allocator };
-            \\    pub const Output = union(enum) {
-            \\        coordinated: struct {
-            \\            ast: *const Program,
-            \\            code: []const u8,
-            \\            metrics: []const u8,
-            \\        },
-            \\    };
-            \\
-            \\    pub fn handler(__koru_event_input: Input) !Output {
-            \\        const __koru_std = @import("std");
-            \\
-            \\        // Create CompilerContext
-            \\        var ctx = CompilerContext{
-            \\            .ast = __koru_event_input.ast,
-            \\            .allocator = __koru_event_input.allocator,
-            \\            .errors = __koru_std.ArrayList(CompilerError){},
-            \\            .warnings = __koru_std.ArrayList(CompilerWarning){},
-            \\            .error_policy = .collect_all,
-            \\            .current_pass = null,
-            \\            .passes_completed = 0,
-            \\        };
-            \\        defer ctx.errors.deinit(__koru_event_input.allocator);
-            \\        defer ctx.warnings.deinit(__koru_event_input.allocator);
-            \\
-            \\        // Execute the compilation pipeline using CompilerContext threading:
-            \\        // 1. process_ccp_commands
-            \\        const ccp_result = process_ccp_commands.handler(.{ .ctx = ctx });
-            \\        ctx = ccp_result.continued.ctx;
-            \\
-            \\        // 2. evaluate_comptime
-            \\        const eval_result = evaluate_comptime.handler(.{ .ctx = ctx });
-            \\        ctx = eval_result.continued.ctx;
-            \\
-            \\        // 3. check.structure
-            \\        const structure_result = check_structure.handler(.{ .ctx = ctx });
-            \\        ctx = structure_result.continued.ctx;
-            \\        if (ctx.errors.items.len > 0) {
-            \\            std.debug.print("❌ Structural validation failed: {d} errors\n", .{ctx.errors.items.len});
-            \\            return error.StructuralValidationFailed;
-            \\        }
-            \\
-            \\        // 4. check.phantom.semantic
-            \\        const phantom_result = check_phantom_semantic.handler(.{ .ctx = ctx });
-            \\        ctx = phantom_result.continued.ctx;
-            \\        if (ctx.errors.items.len > 0) {
-            \\            std.debug.print("❌ Phantom validation failed: {d} errors\n", .{ctx.errors.items.len});
-            \\            return error.PhantomTypeValidationFailed;
-            \\        }
-            \\
-            \\        // 5. inject_ccp
-            \\        const ccp_inject_result = inject_ccp.handler(.{ .ctx = ctx });
-            \\        ctx = ccp_inject_result.continued.ctx;
-            \\
-            \\        // 6. emit.zig
-            \\        const emit_result = emit_zig.handler(.{ .ctx = ctx });
-            \\        ctx = emit_result.continued.ctx;
-            \\        const code = emit_result.continued.code;
-            \\
-            \\        // Build metrics string from actual pass count
-            \\        const metrics = try __koru_std.fmt.allocPrint(
-            \\            __koru_event_input.allocator,
-            \\            "Passes: {d} (process_ccp_commands, evaluate_comptime, check.structure, check.phantom.semantic, inject_ccp, emit.zig)",
-            \\            .{ctx.passes_completed}
-            \\        );
-            \\
-            \\        return .{ .coordinated = .{
-            \\            .ast = ctx.ast,
-            \\            .code = code,
-            \\            .metrics = metrics,
-            \\        }};
-            \\    }
-            \\};
-            \\
-        );
+        // The compiler pipeline is now fully flow-based in koru_std/compiler.kz
+        // The coordinate event (abstract) handles both default and user-overridden pipelines
+        // via the ~impl mechanism - no special detection needed!
+        // ============================================================================
 
-        // If user has overridden compiler.coordinate, emit the transpiled handler
-        if (bootstrap.has_user_override) {
-            try writer.writeAll(
-                \\// User-defined compiler.coordinate (from compiler)
-                \\const coordinate_event = bootstrap.coordinate_event;
-                \\
-            );
-        }
-
-        // Add compile-time code generation
+        // Add runtime emitter that calls the coordinate event from backend_output_emitted.zig
         try writer.writeAll(
-            \\// Runtime emitter (moved from comptime to support fusion optimization)
+            \\// Runtime emitter - calls the coordinate event from compiler.kz
+            \\// The visitor emitter handles abstract/impl resolution automatically
             \\const RuntimeEmitter = struct {
             \\    pub fn emit(allocator: std.mem.Allocator, source_ast: *const Program) ![]const u8 {
             \\
         );
 
-        // Choose which coordinator to call based on user override
-        // Both handlers are in backend_output_emitted.zig (emitted by visitor emitter!)
-        // The user's override is emitted in the same namespace as the event declaration (compiler)
-        if (bootstrap.has_user_override) {
-            try writer.writeAll("        // Using user-defined compiler.coordinate from backend_output!\n");
-            try writer.writeAll("        // User's implementation is emitted in koru_");
-            try writer.writeAll(compiler_module);
-            try writer.writeAll(" namespace\n");
-            try writer.writeAll("        const result = backend_output.koru_");
-            try writer.writeAll(compiler_module);
-            try writer.writeAll(".coordinate_event.handler(.{ .program_ast = source_ast, .allocator = allocator });\n\n");
-        } else {
-            try writer.writeAll("        // Using default compiler.coordinate from compiler (in backend_output)\n");
-            try writer.writeAll("        const result = backend_output.koru_");
-            try writer.writeAll(compiler_module);
-            try writer.writeAll(".coordinate_event.handler(.{ .program_ast = source_ast, .allocator = allocator });\n\n");
-        }
+        // Call the coordinate event - abstract/impl mechanism handles user overrides
+        try writer.writeAll("        // Call coordinate event (uses user's ~impl if provided, otherwise default)\n");
+        try writer.writeAll("        const result = backend_output.koru_");
+        try writer.writeAll(compiler_module);
+        try writer.writeAll(".coordinate_event.handler(.{ .program_ast = source_ast, .allocator = allocator });\n\n");
 
         try writer.writeAll(
             \\        // Handle both success and error branches
@@ -5989,16 +5877,8 @@ pub fn main() !void {
     // The old import system violated module isolation by copying all code
     // try processImports(allocator, &source_file, input);
 
-    // Check for compiler override BEFORE shape checking so we can inject defaults
-    var bootstrap = try CompilerBootstrap.checkForOverride(allocator, &source_file);
-
-    // Inject default implementations if needed
-    try bootstrap.injectDefaults(&source_file);
-
-    // Log if user has overridden the compiler
-    if (bootstrap.has_user_override) {
-        try printStdout(allocator, "🚀 User-defined compiler.coordinate detected!\n", .{});
-    }
+    // NOTE: Compiler override detection removed - the abstract/impl mechanism in
+    // koru_std/compiler.kz handles this automatically via ~abstract and ~impl
 
     // Purity checking pass
     var purity_check = PurityChecker.init(compile_allocator);
@@ -6048,58 +5928,14 @@ pub fn main() !void {
         return;
     }
 
-    // Apply AST transformations - but ONLY if user hasn't overridden compiler.coordinate
-    const transform_functional = @import("transform_functional");
-    const inline_functional = @import("transforms/inline_small_events_functional");
-    const AstModule = @import("ast");
-
-    var transformed_ast: ?AstModule.Program = null;
-    var final_ast: *AstModule.Program = undefined;
-
-    // Create functional context outside the if block so it lives long enough
-    var functional_ctx: ?transform_functional.FunctionalContext = null;
-    // Note: We'll manually deinit functional_ctx after AST cleanup to avoid double-free
-
-    if (bootstrap.has_user_override) {
-        // User has overridden compiler.coordinate - give them the ORIGINAL AST
-        // They have complete control over transformations
-        final_ast = &source_file;
-    } else {
-        // No user override - apply default transformations
-        // Create a functional transformation context
-        functional_ctx = try transform_functional.FunctionalContext.init(compile_allocator, &source_file);
-
-        // TEMPORARILY DISABLED: Inlining generates invalid code for flows
-        const enable_inlining = false;
-
-        if (enable_inlining) {
-            // Check how many events would be inlined
-            const inline_count = try inline_functional.countInlineCandidates(
-                allocator,
-                &source_file,
-                .{ .size_threshold = 5 },
-            );
-
-            // Apply the inline transformation if there are candidates
-            if (inline_count > 0) {
-                const inline_transform = inline_functional.createInlineTransformation(.{ .size_threshold = 5 });
-                transformed_ast = try functional_ctx.?.apply("inline_small_events", inline_transform);
-                try printStdout(allocator, "✨ Inlined {d} small event(s) using functional transformations!\n", .{inline_count});
-            }
-        }
-
-        // NOTE: Loop optimization now runs in the BACKEND during compiler.coordinate.optimize
-        // See koru_std/compiler.kz for the optimization pass
-
-        // Use either the transformed AST or the original
-        final_ast = if (transformed_ast) |*t| t else &source_file;
-    }
+    // NOTE: Frontend AST transformations are now handled in the backend pipeline
+    // (see koru_std/compiler.kz optimize event). Frontend inlining was disabled.
+    var final_ast: *ast.Program = &source_file;
 
     // Run the compiler coordinator to orchestrate additional passes
     const coordination_result = try compiler_coordination.coordinate(
         compile_allocator,
         final_ast,
-        bootstrap.has_user_override,
         input,
     );
     // No defer needed - compile_arena will free metrics
@@ -6141,18 +5977,8 @@ pub fn main() !void {
     // No defer needed - compile_arena handles cleanup automatically
 
     // Generate the backend code (includes metacircular compiler)
-    const backend_code = try generateBackendCode(compile_allocator, serialized_ast, input, final_ast, use_visitor, &compiler_config, &bootstrap, has_transforms);
+    const backend_code = try generateBackendCode(compile_allocator, serialized_ast, input, final_ast, use_visitor, &compiler_config, has_transforms);
     // No defer needed - compile_arena handles cleanup automatically
-
-    // NOTE: AST cleanup is handled by defer at line 1375-1380
-    // This ensures cleanup happens even on early exits (errors, check-only mode, etc.)
-
-    // If we used functional transformations, clean up transformation metadata
-    if (functional_ctx) |*ctx| {
-        // functional_ctx.deinit() will clean up transformed_ast items
-        // (stored in transformation_history) and all metadata
-        ctx.deinit();
-    }
 
     // Write the backend to the output file
     const out_file = try std.fs.cwd().createFile(output, .{});
