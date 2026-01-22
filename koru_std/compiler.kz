@@ -553,12 +553,12 @@ pub const CompilerContext = struct {
 
 // Helper: Dump AST as JSON for introspection
 // Usage: Insert at key points in pipeline to inspect AST state
-// Example: ~ast_dump(ctx, "frontend") | ctx c |> ...
+// Void event - just prints and continues
+// Example: ~ast_dump(ctx: c, flag: "frontend") |> ...
 ~[comptime]pub event ast_dump {
     ctx: CompilerContext,
     flag: []const u8
 }
-| ctx CompilerContext
 
 ~proc ast_dump {
     // Serialize AST to JSON
@@ -570,9 +570,6 @@ pub const CompilerContext = struct {
 
     // Print to stderr with separator showing which dump this is
     std.debug.print("=== AST DUMP: {s} ===\n{s}\n", .{flag, json_output});
-
-    // Always continue with same context
-    return .{ .ctx = ctx };
 }
 
 // Frontend segment: Early AST processing (abstract, can be overridden)
