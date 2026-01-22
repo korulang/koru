@@ -1132,6 +1132,93 @@ pub const VisitorEmitter = struct {
             try self.code_emitter.write("};\n");
         }
 
+        // For abstract events, check if there's an ~impl (subflow_impl with is_impl = true)
+        // If found, we should skip the default proc_decl
+        var has_impl_override = false;
+        if (event.is_abstract) {
+            for (items_to_search) |item| {
+                if (item == .subflow_impl) {
+                    const sf = item.subflow_impl;
+                    if (sf.is_impl and sf.event_path.segments.len == event.path.segments.len) {
+                        var path_matches = true;
+                        for (sf.event_path.segments, 0..) |seg, j| {
+                            if (!eql(u8, seg, event.path.segments[j])) {
+                                path_matches = false;
+                                break;
+                            }
+                        }
+                        if (path_matches) {
+                            has_impl_override = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // For abstract events with impl override, first emit the proc as _default_handler
+        // This allows the impl to delegate to it (emitted BEFORE the main handler)
+        if (has_impl_override) {
+            for (items_to_search) |item| {
+                if (item == .proc_decl) {
+                    const proc = item.proc_decl;
+                    if (proc.path.segments.len == event.path.segments.len) {
+                        var path_matches = true;
+                        for (proc.path.segments, 0..) |seg, j| {
+                            if (!eql(u8, seg, event.path.segments[j])) {
+                                path_matches = false;
+                                break;
+                            }
+                        }
+                        if (path_matches) {
+                            if (proc.target) |target| {
+                                if (!eql(u8, target, "zig")) continue;
+                            }
+                            // Emit the proc as _default_handler (before handler function)
+                            try self.code_emitter.writeIndent();
+                            try self.code_emitter.write("fn _default_handler(__koru_event_input: Input) Output {\n");
+                            self.code_emitter.indent_level += 1;
+
+                            // Generate implicit input bindings
+                            for (event.input.fields) |field| {
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write("const ");
+                                try self.code_emitter.write(field.name);
+                                try self.code_emitter.write(" = __koru_event_input.");
+                                try self.code_emitter.write(field.name);
+                                try self.code_emitter.write(";\n");
+                            }
+                            for (event.input.fields) |field| {
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write("_ = &");
+                                try self.code_emitter.write(field.name);
+                                try self.code_emitter.write(";\n");
+                            }
+                            try self.code_emitter.writeIndent();
+                            try self.code_emitter.write("_ = &__koru_event_input;\n");
+
+                            var indent_buf: [64]u8 = undefined;
+                            var indent_pos: usize = 0;
+                            var idx: usize = 0;
+                            while (idx < self.code_emitter.indent_level) : (idx += 1) {
+                                @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
+                                indent_pos += 4;
+                            }
+                            const indent_str = indent_buf[0..indent_pos];
+
+                            try self.code_emitter.emitReindentedText(proc.body, indent_str);
+                            try self.code_emitter.write("\n");
+
+                            self.code_emitter.indent_level -= 1;
+                            try self.code_emitter.writeIndent();
+                            try self.code_emitter.write("}\n");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         // Handler function
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
@@ -1148,6 +1235,9 @@ pub const VisitorEmitter = struct {
         for (items_to_search) |impl_item| {
             switch (impl_item) {
                 .proc_decl => |proc| {
+                    // Skip proc_decl if this is an abstract event with an ~impl override
+                    if (has_impl_override) continue;
+
                     if (proc.path.segments.len == event.path.segments.len) {
                         var matches = true;
                         for (proc.path.segments, 0..) |seg, j| {
@@ -1385,19 +1475,36 @@ pub const VisitorEmitter = struct {
                                             try self.code_emitter.write("const result = ");
                                         }
 
-                                        // Check if event is module-qualified
-                                        if (flow.invocation.path.module_qualifier) |mq| {
-                                            // Use writeModulePath to properly sanitize module references
-                                            // (e.g., entry module → "main_module", "logger" → "koru_logger")
-                                            try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
-                                            try self.code_emitter.write(".");
+                                        // Check if this is a self-call (impl calling the same event to delegate to default)
+                                        // This happens in ~impl patterns like: ~impl foo = foo(x: 42) | ok |> ...
+                                        const is_self_call = blk: {
+                                            if (!has_impl_override) break :blk false;
+                                            if (flow.invocation.path.segments.len != event.path.segments.len) break :blk false;
+                                            for (flow.invocation.path.segments, 0..) |seg, j| {
+                                                if (!std.mem.eql(u8, seg, event.path.segments[j])) break :blk false;
+                                            }
+                                            break :blk true;
+                                        };
+
+                                        if (is_self_call) {
+                                            // Self-call: delegate to _default_handler
+                                            try self.code_emitter.write("_default_handler(.{");
+                                        } else {
+                                            // Regular call: use the event handler
+                                            // Check if event is module-qualified
+                                            if (flow.invocation.path.module_qualifier) |mq| {
+                                                // Use writeModulePath to properly sanitize module references
+                                                // (e.g., entry module → "main_module", "logger" → "koru_logger")
+                                                try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
+                                                try self.code_emitter.write(".");
+                                            }
+                                            // Join all segments with underscores
+                                            for (flow.invocation.path.segments, 0..) |seg, idx| {
+                                                if (idx > 0) try self.code_emitter.write("_");
+                                                try self.code_emitter.write(seg);
+                                            }
+                                            try self.code_emitter.write("_event.handler(.{");
                                         }
-                                        // Join all segments with underscores
-                                        for (flow.invocation.path.segments, 0..) |seg, idx| {
-                                            if (idx > 0) try self.code_emitter.write("_");
-                                            try self.code_emitter.write(seg);
-                                        }
-                                        try self.code_emitter.write("_event.handler(.{");
 
                                         // Write arguments, mapping from input parameters
                                         // Look up event signature to get parameter names for positional args
