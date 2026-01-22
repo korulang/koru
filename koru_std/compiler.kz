@@ -506,8 +506,7 @@ pub const CompilerContext = struct {
 
 // Default implementation of the compiler coordinator
 // Users who don't override get this standard pipeline
-~coordinate =
-    context_create(program_ast: program_ast, allocator: allocator)
+~coordinate = context_create(program_ast, allocator)
 | created c0 |> frontend(ctx: c0.ctx)
   | ctx c1 |> transform_taps(ctx: c1)
     | ctx c2 |> analysis(ctx: c2)
@@ -581,8 +580,7 @@ pub const CompilerContext = struct {
 ~abstract pub event frontend { ctx: CompilerContext }
 | ctx CompilerContext
 
-~frontend =
-    process_ccp_commands(ctx: ctx)
+~frontend = process_ccp_commands(ctx)
 | ctx c1 |> evaluate_comptime(ctx: c1)
   | ctx c2 |> ctx c2
 
@@ -591,8 +589,7 @@ pub const CompilerContext = struct {
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: []const u8 }
 
-~analysis =
-    check_structure(ctx: ctx)
+~analysis = check_structure(ctx)
 | ctx c1 |> pass_auto_discharge(ctx: c1)
   | ctx c2 |> check_flow(ctx: c2)
     | ctx c3 |> check_phantom_semantic(ctx: c3)
@@ -1126,8 +1123,7 @@ const emitFlowWithMocks = struct {
 ~abstract pub event emission { ctx: CompilerContext }
 | ctx { ctx: CompilerContext, code: []const u8 }
 
-~emission =
-    inject_ccp(ctx: ctx)
+~emission = inject_ccp(ctx)
 | ctx c1 |> emit_zig(ctx: c1)
   | ctx c2 |> ctx { ctx: c2.ctx, code: c2.code }
 
