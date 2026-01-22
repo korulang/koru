@@ -1,5 +1,6 @@
 // Logger with universal wildcard + metatype tap
 
+~import "$std/taps"
 const std = @import("std");
 
 ~pub event log { source: []const u8, branch: []const u8 }
@@ -12,6 +13,6 @@ const std = @import("std");
 
 // VALID: Universal wildcard (*:*) + metatype (Profile)
 // Profile metatype works on ANY event and ANY branch
-~*:* -> *
+~tap(*:* -> *)
 | Profile p |> log(source: p.source, branch: p.branch)
     | done |> _

@@ -81,8 +81,9 @@ const std = @import("std");
     const all_tap_branches = tap_flow.continuations;
 
     // Pattern matching config
-    const source_is_wildcard = std.mem.eql(u8, source, "*");
-    const dest_is_wildcard = std.mem.eql(u8, destination, "*");
+    // Both "*" and "*:*" (module:event both wildcards) are universal wildcards
+    const source_is_wildcard = std.mem.eql(u8, source, "*") or std.mem.eql(u8, source, "*:*");
+    const dest_is_wildcard = std.mem.eql(u8, destination, "*") or std.mem.eql(u8, destination, "*:*");
 
     // Check if any tap branch is a metatype (matches all source branches)
     var is_metatype = false;
@@ -230,17 +231,34 @@ const std = @import("std");
             original_step: ?ast.Step,
             original_conts: []const ast.Continuation,
         ) ![]ast.Continuation {
+            std.debug.print("[tap] spliceContinuations: {} tap conts, orig_step={s}, {} orig conts\n", .{
+                tap_conts.len,
+                if (original_step) |s| @tagName(s) else "null",
+                original_conts.len,
+            });
             var result = try alloc.alloc(ast.Continuation, tap_conts.len);
             for (tap_conts, 0..) |*tc, i| {
                 var new_tc = tc.*;
                 // Terminal point if node is terminal (|> _) or null
                 const is_pass_through = if (tc.node) |s| s == .terminal else true;
 
+                std.debug.print("[tap]   cont[{}]: branch='{s}', node={s}, is_pass_through={}, {} nested conts\n", .{
+                    i,
+                    tc.branch,
+                    if (tc.node) |s| @tagName(s) else "null",
+                    is_pass_through,
+                    tc.continuations.len,
+                });
+
                 if (is_pass_through) {
+                    std.debug.print("[tap]     -> splicing original step\n", .{});
                     new_tc.node = original_step;
                     new_tc.continuations = original_conts;
                 } else if (tc.continuations.len > 0) {
+                    std.debug.print("[tap]     -> recursing into {} nested conts\n", .{tc.continuations.len});
                     new_tc.continuations = try spliceContinuations(alloc, tc.continuations, original_step, original_conts);
+                } else {
+                    std.debug.print("[tap]     -> NOT pass-through and no nested conts - original NOT spliced!\n", .{});
                 }
                 result[i] = new_tc;
             }
@@ -408,6 +426,7 @@ const std = @import("std");
                 var marked_inv = rewritten_step.invocation;
                 marked_inv.inserted_by_tap = true;
                 rewritten_step = ast.Step{ .invocation = marked_inv };
+                std.debug.print("[tap] Marked invocation as inserted_by_tap=true\n", .{});
             } else if (rewritten_step == .label_with_invocation) {
                 var marked_lwi = rewritten_step.label_with_invocation;
                 marked_lwi.invocation.inserted_by_tap = true;
@@ -725,9 +744,20 @@ const std = @import("std");
                         // Skip tap-inserted invocations ONLY for wildcard taps (to prevent infinite recursion)
                         // Non-wildcard taps (like "logger -> *") can safely wrap tap-inserted invocations
                         // because they only match specific events, enabling tap chains
+                        var inv_name: [256]u8 = undefined;
+                        var inv_len: usize = 0;
+                        for (inv.path.segments, 0..) |seg, seg_i| {
+                            if (seg_i > 0) { inv_name[inv_len] = '.'; inv_len += 1; }
+                            @memcpy(inv_name[inv_len..inv_len+seg.len], seg);
+                            inv_len += seg.len;
+                        }
+                        std.debug.print("[tap] Checking nested inv '{s}': inserted_by_tap={}, source_wildcard={}\n", .{inv_name[0..inv_len], inv.inserted_by_tap, source_wildcard});
                         if (inv.inserted_by_tap and source_wildcard) {
                             // Wildcard tap would match any invocation including its own insertions
                             // Skip to prevent infinite recursion during AST transformation
+                            // ALSO skip recursion into this continuation's continuations
+                            std.debug.print("[tap] -> Skipping (inserted_by_tap and wildcard)\n", .{});
+                            matched_here = true; // Prevents recursion below
                         } else if (pathMatches(source_pattern, source_wildcard, &inv.path, containing_module, alloc)) {
                             // Found a nested invocation matching source!
                             // Build canonical source event name for metatypes
@@ -749,34 +779,42 @@ const std = @import("std");
                 }
 
                 // Recurse into nested continuations to find deeper invocations
-                // But use ORIGINAL continuations if we matched here (don't recurse into our own modifications)
-                const conts_to_recurse = if (matched_here) cont.continuations else this_cont.continuations;
-                const deeper = try transformNestedInvocations(
-                    alloc, conts_to_recurse, source_pattern, source_wildcard,
-                    dest_pattern, is_dest_wildcard, containing_module, tap_branches, is_meta
-                );
+                // For wildcard taps: DON'T recurse if we matched here - prevents infinite recursion
+                // from the transform wrapping its own inserted invocations
+                if (matched_here and source_wildcard) {
+                    // Skip recursion for wildcard taps - the inserted tap invocations would
+                    // be found and wrapped again, causing infinite nesting.
+                    // The transform_pass_runner will call us again if needed.
+                } else {
+                    // Non-wildcard taps: safe to recurse (they only match specific events)
+                    const conts_to_recurse = if (matched_here) cont.continuations else this_cont.continuations;
+                    const deeper = try transformNestedInvocations(
+                        alloc, conts_to_recurse, source_pattern, source_wildcard,
+                        dest_pattern, is_dest_wildcard, containing_module, tap_branches, is_meta
+                    );
 
-                // If we matched here, the deeper recursion found nested invocations
-                // For metatype taps, the wrapper already preserves original branches - don't splice
-                // Only splice for simple void taps where wrapper has single void continuation
-                if (matched_here and deeper.modified) {
-                    // Check if wrapper has single void branch (simple tap structure)
-                    const is_simple_void_wrapper = this_cont.continuations.len == 1 and
-                                                   this_cont.continuations[0].branch.len == 0;
-                    if (is_simple_void_wrapper) {
-                        // Simple void tap: can safely splice deeper results
-                        var new_inner = try alloc.alloc(ast.Continuation, 1);
-                        new_inner[0] = this_cont.continuations[0];
-                        new_inner[0].continuations = deeper.conts;
-                        this_cont.continuations = new_inner;
+                    // If we matched here, the deeper recursion found nested invocations
+                    // For metatype taps, the wrapper already preserves original branches - don't splice
+                    // Only splice for simple void taps where wrapper has single void continuation
+                    if (matched_here and deeper.modified) {
+                        // Check if wrapper has single void branch (simple tap structure)
+                        const is_simple_void_wrapper = this_cont.continuations.len == 1 and
+                                                       this_cont.continuations[0].branch.len == 0;
+                        if (is_simple_void_wrapper) {
+                            // Simple void tap: can safely splice deeper results
+                            var new_inner = try alloc.alloc(ast.Continuation, 1);
+                            new_inner[0] = this_cont.continuations[0];
+                            new_inner[0].continuations = deeper.conts;
+                            this_cont.continuations = new_inner;
+                        }
+                        // For metatype taps (multiple branches or non-void), don't splice
+                        // transformContinuations already wrapped the nested continuations correctly
+                    } else if (!matched_here) {
+                        this_cont.continuations = deeper.conts;
                     }
-                    // For metatype taps (multiple branches or non-void), don't splice
-                    // transformContinuations already wrapped the nested continuations correctly
-                } else if (!matched_here) {
-                    this_cont.continuations = deeper.conts;
-                }
 
-                if (deeper.modified) any_modified = true;
+                    if (deeper.modified) any_modified = true;
+                }
 
                 new_conts[i] = this_cont;
             }
@@ -965,7 +1003,16 @@ const std = @import("std");
 
             for (module.items) |*mod_item| {
                 // Skip the tap if it's in this module
-                if (mod_item == item) continue;
+                if (mod_item == item) {
+                    std.debug.print("[tap] Skipping tap declaration in module '{s}'\n", .{module.logical_name});
+                    continue;
+                }
+                std.debug.print("[tap] Processing module item: {s} (ptr comparison: {} == {} = {})\n", .{
+                    @tagName(mod_item.*),
+                    @intFromPtr(mod_item),
+                    @intFromPtr(item),
+                    mod_item == item,
+                });
 
                 if (mod_item.* == .flow) {
                     const flow = &mod_item.flow;

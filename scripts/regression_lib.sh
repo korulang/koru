@@ -12,6 +12,7 @@
 : "${CHECK_LEAKS:=true}"
 : "${VERBOSE:=false}"
 : "${ZIG_GLOBAL_CACHE:=${TMPDIR:-/tmp}/koru-regression-cache}"
+: "${KEEP_ARTIFACTS:=false}"
 
 mark_test_passed() {
     local test_dir="$1"
@@ -28,6 +29,22 @@ regression_run_one_test() {
     local test_dir="$1"
     local TEST_NAME
     TEST_NAME=$(basename "$test_dir")
+
+    regression_cleanup_test_artifacts() {
+        # Only clean up artifacts for successful tests.
+        # Failed tests keep artifacts to help with debugging.
+        if [ "$KEEP_ARTIFACTS" = true ]; then
+            return 0
+        fi
+        if [ -f "$test_dir/SUCCESS" ] && [ ! -f "$test_dir/FAILURE" ]; then
+            rm -f "$test_dir/backend" \
+                  "$test_dir/output"
+
+            rm -rf "$test_dir/zig-out" \
+                   "$test_dir/.zig-cache"
+        fi
+    }
+    trap regression_cleanup_test_artifacts RETURN
 
 # CRITICAL: Reset compilation status variables for each test
     # Without this, variables leak from previous test causing false passes!

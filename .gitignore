@@ -38,6 +38,7 @@
 # Scripts
 !run_regression.sh
 !analyze_leaks.sh
+!run_single_test.sh
 
 # Node.js (tooling only - not runtime dependency)
 !package.json

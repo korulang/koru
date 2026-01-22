@@ -55,6 +55,10 @@ REBUILD_COMPILER=true
 # Use --verbose to show full stderr output on failures (not truncated)
 VERBOSE=false
 
+# Artifact retention flag (default: OFF)
+# Use --keep-artifacts to preserve per-test build artifacts for successful tests
+KEEP_ARTIFACTS=false
+
 # Priority list flag (default: OFF)
 # Use --priority to list all priority items
 SHOW_PRIORITY=false
@@ -107,6 +111,7 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  --verbose                              Show full stderr output on failures (not truncated)"
     echo "  --priority                             List all tests marked as PRIORITY"
     echo "  --clean                                Clean all Zig caches before running (fresh build)"
+    echo "  --keep-artifacts                        Keep per-test artifacts even on success (uses lots of disk)"
     echo "  --parallel N                           Run N tests concurrently (default: 1 = sequential)"
     echo ""
     echo -e "${CYAN}SNAPSHOT SYSTEM:${NC}"
@@ -371,6 +376,10 @@ while [[ $# -gt 0 ]]; do
             CLEAN_CACHE=true
             shift
             ;;
+        --keep-artifacts)
+            KEEP_ARTIFACTS=true
+            shift
+            ;;
         --parallel)
             shift
             if [ -n "$1" ] && [ "$1" -eq "$1" ] 2>/dev/null; then
@@ -471,6 +480,9 @@ fi
 
 # Ensure global cache directory exists
 mkdir -p "$ZIG_GLOBAL_CACHE"
+
+# Export artifact retention flag for regression_lib.sh
+export KEEP_ARTIFACTS
 
 if [ "$CHECK_LEAKS" = true ]; then
     echo "🔍 Memory leak checking ENABLED - leaks will fail tests"
