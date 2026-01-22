@@ -11,13 +11,10 @@ const std = @import("std");
 // TIMED FRONTEND
 // ============================================================================
 
-~std.compiler:frontend =
-    get_time()
-    | ns start |>
-        std.compiler:frontend.default(ctx)
-        | ctx c |>
-            report_time(name: "frontend", start_ns: start.ns)
-            | done |> ctx c
+~std.compiler:frontend = get_time()
+| ns start |> std.compiler:frontend.default(ctx)
+    | ctx c |> report_time(name: "frontend", start_ns: start.ns) 
+        |> ctx c
 
 // ============================================================================
 // TIMING HELPERS
@@ -31,14 +28,12 @@ const std = @import("std");
 }
 
 ~[comptime] event report_time { name: []const u8, start_ns: i128 }
-| done {}
 
 ~[comptime] proc report_time {
     const end_ns = std.time.nanoTimestamp();
     const elapsed_ns = end_ns - start_ns;
     const ms: f64 = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
     std.debug.print("⏱️  {s}: {d:.2}ms\n", .{name, ms});
-    return .{ .done = .{} };
 }
 
 // The actual program
