@@ -1,0 +1,54 @@
+// Test 430_009: Composed Timing - Multiple Independent Overrides
+//
+// Override BOTH the whole pipeline AND individual passes.
+// Demonstrates that abstract event overrides compose cleanly.
+
+~import "$std/compiler"
+~import "$std/io"
+
+const std = @import("std");
+
+// ============================================================================
+// WHOLE PIPELINE TIMING (outer layer)
+// ============================================================================
+
+~std.compiler:coordinate = get_time()
+| ns pipeline_start |> std.compiler:coordinate.default(program_ast, allocator)
+    | coordinated c |> report_time(name: "TOTAL PIPELINE", start_ns: pipeline_start.ns)
+        |> coordinated { ast: c.ast, code: c.code, metrics: c.metrics }
+    | error e |> error { message: e.message }
+
+// ============================================================================
+// FRONTEND PASS TIMING (inner layer - composes with above!)
+// ============================================================================
+
+~std.compiler:frontend = get_time()
+| ns frontend_start |> std.compiler:frontend.default(ctx)
+    | ctx c |> report_time(name: "  frontend", start_ns: frontend_start.ns)
+        |> ctx c
+
+// ============================================================================
+// TIMING HELPERS
+// ============================================================================
+
+~[comptime] event get_time {}
+| ns { ns: i128 }
+
+~[comptime] proc get_time {
+    return .{ .ns = .{ .ns = std.time.nanoTimestamp() } };
+}
+
+~[comptime] event report_time { name: []const u8, start_ns: i128 }
+
+~[comptime] proc report_time {
+    const end_ns = std.time.nanoTimestamp();
+    const elapsed_ns = end_ns - start_ns;
+    const ms: f64 = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
+    std.debug.print("⏱️  {s}: {d:.2}ms\n", .{name, ms});
+}
+
+// ============================================================================
+// THE PROGRAM
+// ============================================================================
+
+~std.io:print.ln("Compiled with composed timing!")

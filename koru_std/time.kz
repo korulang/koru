@@ -1,0 +1,33 @@
+// Koru Standard Library: Time
+// ===========================
+// Simple timing primitives for measuring code execution.
+//
+// Usage:
+//   ~import "$std/time"
+//
+//   ~std.time:now()
+//   | t start |> do_work()
+//       |> std.time:elapsed(start: start.ns, label: "work")
+//           |> ...
+
+~[comptime|runtime]
+
+const std = @import("std");
+
+// Get current timestamp in nanoseconds
+~pub event now {}
+| t { ns: i128 }
+
+~proc now {
+    return .{ .t = .{ .ns = std.time.nanoTimestamp() } };
+}
+
+// Report elapsed time since start
+~pub event elapsed { start: i128, label: []const u8 }
+
+~proc elapsed {
+    const end = std.time.nanoTimestamp();
+    const ns = end - start;
+    const ms: f64 = @as(f64, @floatFromInt(ns)) / 1_000_000.0;
+    std.debug.print("⏱️  {s}: {d:.2}ms\n", .{label, ms});
+}
