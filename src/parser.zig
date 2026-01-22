@@ -804,22 +804,16 @@ pub const Parser = struct {
         }
 
         // Now check for constructs
-        if (lexer.startsWith(remaining, "abstract pub event")) {
-            // Abstract public event declaration with annotations
-            return .{ .event_decl = try self.parseEventDeclWithAnnotations(true, annotations.items, true) };
-        } else if (lexer.startsWith(remaining, "abstract event")) {
-            // Abstract private event declaration with annotations
-            return .{ .event_decl = try self.parseEventDeclWithAnnotations(false, annotations.items, true) };
-        } else if (lexer.startsWith(remaining, "pub event")) {
+        if (lexer.startsWith(remaining, "pub event")) {
             // Public event declaration with annotations
-            return .{ .event_decl = try self.parseEventDeclWithAnnotations(true, annotations.items, false) };
+            return .{ .event_decl = try self.parseEventDeclWithAnnotations(true, annotations.items) };
         } else if (lexer.startsWith(remaining, "import ")) {
             // Note: Conditional imports (~[flag]import) are already filtered out
             // at a higher level in parse(), so if we reach here the import is allowed
             return .{ .import_decl = try self.parseImportDecl() };
         } else if (lexer.startsWith(remaining, "event ")) {
             // Private event declaration with annotations
-            return .{ .event_decl = try self.parseEventDeclWithAnnotations(false, annotations.items, false) };
+            return .{ .event_decl = try self.parseEventDeclWithAnnotations(false, annotations.items) };
         } else if (lexer.startsWith(remaining, "pub proc ")) {
             // Public proc declaration with annotations
             var proc = try self.parseProcDeclWithAnnotations(annotations.items);
@@ -1000,7 +994,7 @@ pub const Parser = struct {
         return error.ParseError;
     }
     
-    fn parseEventDeclWithAnnotations(self: *Parser, is_public: bool, annotations: [][]const u8, is_abstract: bool) !ast.EventDecl {
+    fn parseEventDeclWithAnnotations(self: *Parser, is_public: bool, annotations: [][]const u8) !ast.EventDecl {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
                 .PARSE001,
@@ -1011,15 +1005,15 @@ pub const Parser = struct {
             );
             return error.UnexpectedEOF;
         }
-        
+
         const line = self.lines[self.current];
         self.current += 1;
         const event_line_index = self.current - 1;
-        
+
         // Parse: ~[annotations]pub event <path> { <fields> } or ~[annotations]event <path> { <fields> }
         const trimmed = lexer.trim(line);
         const after_tilde = lexer.trim(trimmed[1..]); // Skip ~
-        
+
         // Skip past annotations if present (both inline and vertical syntax)
         var remaining = after_tilde;
         if (std.mem.startsWith(u8, after_tilde, "[")) {
@@ -1034,24 +1028,8 @@ pub const Parser = struct {
             remaining = lexer.trim(result.remaining);
         }
 
-        // Strip the event keyword (with optional abstract and pub prefixes)
-        const after_event = if (is_abstract) blk: {
-            // For abstract events, strip "abstract pub event" or "abstract event"
-            if (lexer.afterPrefix(remaining, "abstract pub event")) |ae| {
-                break :blk ae;
-            } else if (lexer.afterPrefix(remaining, "abstract event")) |ae| {
-                break :blk ae;
-            } else {
-                try self.reporter.addError(
-                    .PARSE003,
-                    self.current - 1,
-                    1,
-                    "malformed abstract event declaration",
-                    .{},
-                );
-                return error.ParseError;
-            }
-        } else if (lexer.afterPrefix(remaining, "pub event")) |ae|
+        // Strip the event keyword (with optional pub prefix)
+        const after_event = if (lexer.afterPrefix(remaining, "pub event")) |ae|
             ae
         else if (lexer.afterPrefix(remaining, "event")) |ae|
             ae
@@ -1360,7 +1338,6 @@ pub const Parser = struct {
             .branches = try branches.toOwnedSlice(self.allocator),
             .is_public = is_public,
             .is_implicit_flow = is_implicit_flow,
-            .is_abstract = is_abstract,
             .annotations = annotations_copy,
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
@@ -5589,24 +5566,38 @@ pub const Parser = struct {
 
         const fields_str = lexer.trim(fields_content);
 
-        // Check if this is a plain value (no field separators at the top level)
-        // A plain value has no ':' or '=' outside of nested braces/parens/brackets
+        // Check if this is a plain value (identity branch) vs field punning
+        // Plain value: no field separators AND no field access patterns
+        // Field punning: contains '.' paths like w.value that should become { value: w.value }
         const is_plain_value = blk: {
             if (fields_str.len == 0) break :blk false;
             var depth: i32 = 0;
+            var has_dot_at_depth_0 = false;
+            var has_comma_at_depth_0 = false;
+            var has_operator_at_depth_0 = false;
             for (fields_str) |c| {
                 switch (c) {
                     '{', '(', '[' => depth += 1,
                     '}', ')', ']' => depth -= 1,
-                    ':', '=' => if (depth == 0) break :blk false,
+                    ':', '=' => if (depth == 0) break :blk false, // Explicit field syntax
+                    '.' => if (depth == 0) { has_dot_at_depth_0 = true; },
+                    ',' => if (depth == 0) { has_comma_at_depth_0 = true; },
+                    '+', '-', '*', '/' => if (depth == 0) { has_operator_at_depth_0 = true; },
                     else => {},
                 }
             }
+            // If there's a dot but no operators, it's field punning, not plain value
+            // e.g., { w.value } should be { value: w.value }, not identity
+            // But { a + b } should be plain value (identity branch)
+            if (has_dot_at_depth_0 and !has_operator_at_depth_0) break :blk false;
+            // If there are commas, it's multiple fields with punning
+            if (has_comma_at_depth_0) break :blk false;
             break :blk true;
         };
 
         if (is_plain_value) {
             // Plain value syntax: branch { expr } → return .{ .branch = expr }
+            // Used for identity branches like: sum a + b
             return ast.BranchConstructor{
                 .branch_name = try self.allocator.dupe(u8, branch_name),
                 .fields = &.{},

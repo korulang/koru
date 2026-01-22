@@ -702,6 +702,36 @@ Chain transformations clearly:
 
 ## Anti-Patterns
 
+### Don't: Performative `done` Branches
+
+Avoid adding `| done {}` branches when the event doesn't need to return anything:
+
+```koru
+// BAD - performative done branch
+~event log { msg: []const u8 }
+| done {}
+~log = done {}
+
+// GOOD - void event (no branches needed)
+~event log { msg: []const u8 }
+~log { std.debug.print("{s}\n", .{msg}); }
+
+// GOOD - void branch when you need to signal completion without payload
+~event shutdown {}
+| done
+~shutdown = done
+```
+
+Use void branches (`| done` without `{}`) only when you need to distinguish outcomes:
+
+```koru
+// Meaningful void branches - distinguishing outcomes
+~event try_connect { host: []const u8 }
+| connected
+| refused
+| timeout
+```
+
 ### Don't: Inconsistent Indentation
 
 ```koru

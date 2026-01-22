@@ -1,0 +1,22 @@
+// Test 210_021: Struct Field Punning Shorthand (TODO - not yet implemented)
+// When field value is an expression like `c.ast`, infer field name from last segment
+//
+// Syntax: { c.ast, c.code } should expand to { ast: c.ast, code: c.code }
+//
+// This test captures the bug found in 430_006_coordinator_timing
+
+~import "$std/io"
+
+~event wrapper { value: i32 }
+| wrapped { value: i32 }
+
+~event process { w: wrapper.wrapped }
+| result { value: i32 }
+
+// This shorthand syntax doesn't work yet - emitter generates invalid Zig
+~process = result { w.value }
+
+// Test it
+~wrapper(value: 42)
+| wrapped w |> process(w)
+    | result |> std.io:print.ln("punning shorthand works")
