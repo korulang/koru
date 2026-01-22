@@ -4,70 +4,106 @@
 **Test:** 50M iterations, 5 bodies (solar system)
 **Machine:** Apple Silicon (ARM64)
 
-## Current Rankings
+## BREAKTHROUGH: We Match Rust!
 
 | Rank | Implementation | Time | vs Rust |
 |------|---------------|------|---------|
 | 1 | **Rust** | **1.36s** | **1.00x** |
-| 2 | Zig SIMD | 1.41s | 1.04x |
-| 3 | Zig forloop | 1.42s | 1.04x |
-| 4 | **Koru arrayed capture** | **1.43s** | **1.05x** |
-| 5 | Zig SoA | 1.53s | 1.13x |
+| 2 | **Zig noalias** | **1.37s** | **1.00x** ← TIED! |
+| 3 | Zig SIMD | 1.41s | 1.04x |
+| 4 | Zig forloop | 1.42s | 1.04x |
+| 5 | Koru arrayed capture | 1.43s | 1.05x |
 
-## The 4% Gap - Unsolved
+## The Solution: Pointer Aliasing
 
-We cannot beat Rust. Consistently 4% behind despite trying:
+**The entire 4% gap was aliasing analysis.**
 
-| Optimization | Result |
-|-------------|--------|
-| SoA layout | **Slower** (cache locality worse for N=5) |
-| Loop splitting (Rust-style) | No change |
-| Manual unrolling | **Slower** (code bloat) |
-| Comptime inline for | No change |
-| Explicit @Vector(4, f64) SIMD | 3% gain, still 4% behind |
-| Precomputed mass vectors | Slower |
-| -mcpu=native | Marginal |
+### The Problem
+```zig
+// BAD: LLVM can't prove bodies[i] and bodies[j] don't overlap
+bodies[i].vx -= dx * bodies[j].mass * mag;
+bodies[j].vx += dx * bodies[i].mass * mag;
+```
 
-## Best Koru Implementation
+### The Solution
+```zig
+// GOOD: Separate pointers = proven non-aliasing
+inline fn updatePair(b1: *Body, b2: *Body) void {
+    b1.vx -= dx * b2.mass * mag;
+    b2.vx += dx * b1.mass * mag;
+}
+```
+
+### Why Rust Won Before
+Rust's `split_first_mut()` pattern:
+```rust
+let (body1, rest) = bodies[i..].split_first_mut().unwrap();
+for body2 in rest { ... }
+```
+The borrow checker PROVES to LLVM that `body1` and `body2` are disjoint memory.
+
+## Implications for Koru Kernel System
+
+**This is HUGE.** The kernel pairwise transform knows by definition that `k` and `k.other` are different bodies. We can generate the optimized pattern automatically:
+
+```koru
+// User writes (natural, clean):
+~std.kernel:pairwise { k.vx += f; k.other.vx -= f }
+```
+
+```zig
+// Kernel generates (optimized, non-idiomatic):
+inline fn __kernel_pair(k: *Body, other: *Body) void {
+    k.vx += f;
+    other.vx -= f;
+}
+
+for (0..N) |i| {
+    for (i+1..N) |j| {
+        __kernel_pair(&bodies[i], &bodies[j]);
+    }
+}
+```
+
+**The DSL advantage:**
+- User writes declarative `k` / `k.other` syntax
+- Compiler KNOWS pairwise semantics = non-aliasing
+- Codegen emits OPTIMAL pointer-based pattern
+- **Natural Koru code matches hand-optimized Zig/Rust**
+
+## Optimization Experiments Summary
+
+| Optimization | Result | Why |
+|-------------|--------|-----|
+| SoA layout | **Slower** | Cache locality worse for N=5 |
+| Loop splitting | No change | Already optimized |
+| Manual unrolling | **Slower** | Code bloat hurts icache |
+| Comptime unrolling | No change | Compiler already unrolls |
+| Explicit SIMD | 3% gain | Helps but not the bottleneck |
+| Precomputed mass | Slower | Extra memory hurts |
+| **Pointer noalias** | **4% gain** | **THIS WAS THE KEY** |
+
+## Files
+
+### Winner
+- `nbody_noalias.zig` - **Matches Rust!** Uses separate `*Body` pointers
+
+### Other experiments
+- `nbody_handopt.zig` - SoA + manual unroll (slower)
+- `nbody_handopt2.zig` - SoA only (slower)
+- `nbody_split.zig` - Rust-style loop splitting (no change)
+- `nbody_simd.zig` - Explicit SIMD vectors
+- `nbody_simd2.zig` - SIMD + comptime unroll
+- `nbody_simd3.zig` - Precomputed mass vectors (slower)
+
+## Best Koru Implementation (Current)
 
 **`2101f_nbody_arrayed_capture`** - 5% behind Rust, uses array indexing:
 ```koru
 captured { dv[i][0]: acc.dv[i][0] - f.fx*f.mj }
 ```
 
-## Experimental Files
-
-Created during optimization attempts (in this directory):
-- `nbody_handopt.zig` - SoA + manual unroll (slower)
-- `nbody_handopt2.zig` - SoA only (slower)
-- `nbody_split.zig` - Rust-style loop splitting (no change)
-- `nbody_simd.zig` - @Vector(4,f64) for 3D ops (best Zig: 1.41s)
-- `nbody_simd2.zig` - SIMD + comptime unroll (no change)
-- `nbody_simd3.zig` - Precomputed mass vectors (slower)
-
-## Hypothesis: Why Rust Wins
-
-The 4% gap persists across all Zig approaches. Possible causes:
-1. **LLVM version differences** - Rust/Zig use different LLVM versions
-2. **Aliasing analysis** - Rust's borrow checker proves non-aliasing
-3. **Inlining heuristics** - Different default inline thresholds
-4. **Memory model** - Rust may have tighter guarantees
-
-## For Codex
-
-**Challenge:** Beat Rust (1.36s) with Zig or prove it's impossible.
-
-What we know:
-- N=5 is too small for SoA/SIMD to help significantly
-- The inner loop is already very tight
-- Rust's `split_first_mut()` pattern may be key
-- This is ARM64 (NEON, not AVX)
-
-Ideas not yet tried:
-- Inline assembly for the hot loop
-- Different loop structures (blocked, tiled)
-- Reciprocal sqrt approximation
-- Profile-guided optimization
+**TODO:** Update kernel pairwise codegen to use pointer pattern for Rust-matching performance.
 
 ## Running Benchmarks
 
@@ -75,6 +111,19 @@ Ideas not yet tried:
 cd tests/regression/900_EXAMPLES_SHOWCASE/910_LANGUAGE_SHOOTOUT
 hyperfine --warmup 3 --runs 10 \
     "./2101_nbody/reference/nbody-rust 50000000" \
-    "./nbody-simd 50000000" \
+    "./nbody-noalias 50000000" \
     "./2101f_nbody_arrayed_capture/a.out 50000000"
 ```
+
+## Key Takeaway
+
+**Aliasing analysis was the entire performance gap.**
+
+Rust's borrow checker gives it "free" noalias hints. Zig (and C) developers must manually structure code to help LLVM.
+
+**Koru's kernel system can do this automatically** because it KNOWS the semantics:
+- `pairwise` = two different elements = noalias guaranteed
+- Generate pointer-based inline functions
+- Match Rust performance with cleaner syntax
+
+This is the value of domain-specific languages.
