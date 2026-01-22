@@ -203,3 +203,212 @@ Expected: Pairwise adds masses, prints results
 # Check generated code
 cat tests/regression/300_ADVANCED_FEATURES/390_KERNEL/390_001_shape_basic/output_emitted.zig | head -50
 ```
+
+---
+
+## Codex Analysis (2025-01-22)
+
+Codex reviewed this spec and raised important architectural concerns:
+
+### Codex's Observations
+
+1. **The immediate bug is real**: `kernel:init` swaps the head invocation to a local `nop` with zero branches, while keeping continuations that expect `| kernel k |>`. This trips branch validation.
+
+2. **Second semantic hole**: Even if we fix the branch table, `preamble_code` causes the emitter to skip the invocation entirely and emit continuation bodies directly. There's no switch/capture to bind `k`, so `| kernel k |> print_mass(k)` would still be undefined at runtime.
+
+3. **Option B critique**: Flattening to `inline_body` would break `std.kernel:pairwise` and other downstream transforms, because it removes the AST invocations they need to find. Not viable if kernel transforms are meant to compose.
+
+4. **Option A is recommended**: Generate a real branch + proc, remove `preamble_code` usage, let the normal invocation/switch path emit the binding. This keeps AST intact for later transforms.
+
+### Codex's Gotchas
+
+- **Name collisions**: The local event path `"nop"` is global. Multiple `kernel:init` calls will duplicate the same event/proc name. Need unique symbols like `kernel_init_<hash>`.
+
+- **Payload shape**: Need to decide whether branch payload is struct value, slice, or pointer. Affects mutability and how `pairwise` rewrites.
+
+- **Scope/lifetime**: If the proc returns a slice/pointer to a local var, that storage must outlive continuation usage. May need arena allocation or module-scope variables.
+
+### Codex's Questions
+
+> 1. Should `kernel k` be a slice, pointer, or value?
+> 2. Should `kernel:init` be usable with arbitrary user events like `print_mass(k)`, or only with kernel transforms?
+
+---
+
+## Design Answers
+
+### Answer 1: Kernel Handle = View into Arena
+
+**`kernel k` should be a VIEW handle, not the data itself.**
+
+```
+┌─────────────────────────────────────────────────┐
+│  KERNEL ARENA (preallocated, max size)          │
+│  ┌─────────┬─────────┬─────────┬───────────┐   │
+│  │ Body[0] │ Body[1] │ Body[2] │ ... free  │   │
+│  └─────────┴─────────┴─────────┴───────────┘   │
+└─────────────────────────────────────────────────┘
+        ↑                   ↑
+    View k              View k2
+   (ptr, len=3)       (ptr+1, len=2)
+```
+
+The `kernel` branch payload is a view struct:
+
+```zig
+const KernelView = struct {
+    ptr: [*]T,
+    len: usize,
+    capacity: usize,
+    layout: LayoutHint,  // AoS, SoA, etc. (future)
+};
+```
+
+**Why views, not raw data?**
+
+| Operation | Input View | Output View | Notes |
+|-----------|------------|-------------|-------|
+| `init` | (allocates) | full view | Creates arena, returns view of all elements |
+| `pairwise` | view | same view (mutated) | In-place mutation, same ptr/len |
+| `map` | view | same or new view | Depends on transform |
+| `filter` | view | smaller view | Same ptr, smaller len |
+| `reduce` | view | scalar or new type | Different output entirely |
+| `cross` | view, view | larger view | Product, may need arena expansion |
+
+Views enable:
+- Operations that shrink/grow without reallocation
+- Multiple views into same underlying data
+- Future: GPU memory mapping (view points to device memory)
+
+### Answer 2: Arbitrary User Events = YES
+
+**`kernel:init` MUST work with arbitrary user events.** The whole point is `k` is a first-class binding:
+
+```koru
+~std.kernel:init(Body) { ... }
+| kernel k |> print_mass(k)                    // User event - MUST work
+| kernel k |> std.kernel:pairwise { ... }      // Kernel transform - works
+| kernel k |> my_custom_processor(data: k)     // User event - MUST work
+```
+
+If kernel only works with kernel transforms, the abstraction is leaky and useless for real programs.
+
+---
+
+## Bigger Vision: Analysis-Driven Layout
+
+The shape of kernel data should be determined by **analyzing the entire continuation subtree** at compile time.
+
+### The Flow Captures Everything
+
+```koru
+~std.kernel:init(Body) { ... }
+| kernel k |>
+    std.kernel:pairwise { k.mass += k.other.mass }  // Access pattern: random pairs
+    | kernel k2 |>
+        std.kernel:map { k2.x *= 2.0 }              // Access pattern: uniform
+        | kernel k3 |> ...
+```
+
+The compiler can see:
+- `pairwise` accesses `.mass` on random pairs → **AoS better** (cache locality)
+- `map` accesses `.x` uniformly across all → **SoA better** (SIMD)
+- **Conflict!** Compiler decides based on weights, or inserts layout transformation
+
+### Compile-Time Analysis Pipeline
+
+```
+Parser → AST with kernel flows
+           ↓
+Analysis → Walk subtree, collect:
+           - All field accesses per operation
+           - Access patterns (uniform, pairwise, random, reduction)
+           - Operation sequence and dependencies
+           - Max element count at each stage
+           ↓
+Layout Decision → AoS, SoA, hybrid, tiled, blocked
+           ↓
+Codegen → Emit optimal representation for target
+```
+
+This is essentially **Halide for arbitrary data types**.
+
+### GPU Offloading Potential
+
+If views abstract the memory location:
+
+```zig
+const KernelView = struct {
+    ptr: [*]T,           // Could be CPU or GPU memory
+    len: usize,
+    device: Device,      // .cpu, .cuda, .metal, .vulkan
+    layout: Layout,
+};
+```
+
+Then the SAME Koru code:
+
+```koru
+~std.kernel:init(Body) { ... }
+| kernel k |> std.kernel:pairwise { k.mass += k.other.mass }
+```
+
+Could emit:
+- **CPU**: Nested loops with SIMD intrinsics
+- **CUDA**: Kernel launch with thread blocks
+- **Metal**: Compute shader dispatch
+- **Vulkan**: Compute pipeline
+
+The user code doesn't change. The compiler decides based on:
+- Target platform
+- Data size (GPU overhead not worth it for small N)
+- Operation characteristics
+
+---
+
+## Implications for the Fix
+
+Given this vision, the immediate fix should:
+
+1. **Use Option A** (real event + proc) - keeps AST intact for analysis
+2. **Generate unique event names** - `kernel_init_{hash}` not `nop`
+3. **Branch payload = view struct** - not raw slice, even if view is simple initially
+4. **Arena allocation at flow scope** - not inside proc, to ensure lifetime
+5. **Keep AST structure clean** - future analysis pass needs to walk it
+
+### Minimal Fix vs Full Vision
+
+**Minimal fix (do this now):**
+- Fix branch/continuation mismatch
+- Generate proper event + proc
+- Use slice for now (upgrade to view later)
+- Unique names to avoid collision
+
+**Full vision (future):**
+- Analysis pass for layout decisions
+- View struct with metadata
+- Backend selection (CPU/GPU)
+- Layout transformations between operations
+
+The minimal fix should NOT preclude the full vision. Don't hardcode assumptions that break later.
+
+---
+
+## What Exists Elsewhere?
+
+To our knowledge, nothing quite like this exists:
+
+- **Halide**: Image processing DSL with scheduling, but domain-specific
+- **Futhark**: Functional GPU language, but separate from host language
+- **Julia**: Great for numeric, but layout decisions are manual
+- **Chapel**: Parallel language, but not embedded DSL with compile-time transforms
+- **Kokkos/RAJA**: C++ abstractions, but no compile-time analysis
+
+Koru's kernel system would be:
+- **Embedded DSL** in a general-purpose language
+- **Compile-time analysis** of data access patterns
+- **Automatic layout decisions** (AoS/SoA/hybrid)
+- **Backend agnostic** (CPU/GPU from same source)
+- **Composable transforms** via continuation chains
+
+If this works, it's genuinely novel.
