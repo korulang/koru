@@ -691,7 +691,6 @@ fn cloneEventDecl(allocator: std.mem.Allocator, event: *const ast.EventDecl) !as
         .branches = branches,
         .is_public = event.is_public,
         .is_implicit_flow = event.is_implicit_flow,
-        .is_abstract = event.is_abstract,
         .annotations = annotations,
         .is_pure = event.is_pure,
         .is_transitively_pure = event.is_transitively_pure,

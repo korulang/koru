@@ -313,7 +313,6 @@ if (maybe_new_program) |new_program| {
             .branches = &[_]ast.Branch{},
             .is_public = false,
             .is_implicit_flow = false,
-            .is_abstract = false,
             .annotations = &[_][]const u8{ "norun" },
             .location = flow.location,
             .module = allocator.dupe(u8, flow.module) catch unreachable,

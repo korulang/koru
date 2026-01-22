@@ -8,7 +8,7 @@
 // - Dependency inversion without runtime overhead
 //
 // Key properties:
-// - ~abstract event declares the signature
+// - ~[abstract] event declares the signature
 // - ~proc in same file provides optional default implementation
 // - ~impl elsewhere provides THE implementation (exactly one)
 // - Within ~impl, event name delegates to default
@@ -26,7 +26,7 @@ const std = @import("std");
 
 // Example 1: Abstract event WITH default implementation
 // The default can be called from within ~impl via delegation
-~abstract event coordinate { ctx: i32 }
+~[abstract] event coordinate { ctx: i32 }
 | finished { result: i32 }
 
 ~proc coordinate {
@@ -36,7 +36,7 @@ const std = @import("std");
 
 // Example 2: Abstract event WITHOUT default implementation
 // User MUST provide ~impl or compile error
-~abstract event process { data: i32 }
+~[abstract] event process { data: i32 }
 | done { output: i32 }
 
 // Helper proc for Example 4

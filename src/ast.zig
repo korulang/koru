@@ -253,8 +253,7 @@ pub const EventDecl = struct {
     branches: []const Branch,
     is_public: bool = false,  // Whether this event is public (can be imported)
     is_implicit_flow: bool = false,  // Whether this event uses implicit flow parameter
-    is_abstract: bool = false,  // Whether this event is abstract (API contract without required impl)
-    annotations: []const []const u8 = &[_][]const u8{},  // Event annotations like [pure|fusible]
+    annotations: []const []const u8 = &[_][]const u8{},  // Event annotations like [pure|fusible|abstract]
 
     // Purity tracking (computed from proc implementations)
     is_pure: bool = false,  // True if ALL proc implementations are pure

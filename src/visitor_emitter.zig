@@ -28,8 +28,8 @@ fn stripPhantom(type_str: []const u8) []const u8 {
     return type_str;
 }
 
-/// Write a path segment with glob wildcards mangled to valid Zig identifiers
-/// e.g., "log" -> "log", "*" -> "_star_", "foo*bar" -> "foo_star_bar"
+/// Write a path segment with special chars mangled to valid Zig identifiers
+/// e.g., "log" -> "log", "*" -> "_star_", "foo.bar" -> "foo_bar"
 fn writeMangledSegment(code_emitter: *emitter.CodeEmitter, segment: []const u8) !void {
     var start: usize = 0;
     for (segment, 0..) |c, i| {
@@ -40,9 +40,16 @@ fn writeMangledSegment(code_emitter: *emitter.CodeEmitter, segment: []const u8) 
             }
             try code_emitter.write("_star_");
             start = i + 1;
+        } else if (c == '.') {
+            // Replace dots with underscores for valid Zig identifiers
+            if (i > start) {
+                try code_emitter.write(segment[start..i]);
+            }
+            try code_emitter.write("_");
+            start = i + 1;
         }
     }
-    // Write any remaining characters after last *
+    // Write any remaining characters after last special char
     if (start < segment.len) {
         try code_emitter.write(segment[start..]);
     }
@@ -185,7 +192,7 @@ pub const VisitorEmitter = struct {
                     for (event.input.fields) |field| {
                         if (field.is_source or
                             field.is_expression or
-                            std.mem.eql(u8, field.type, "Program")) {
+                            std.mem.indexOf(u8, field.type, "Program") != null) {
                             has_comptime_params = true;
                             break;
                         }
@@ -678,7 +685,7 @@ pub const VisitorEmitter = struct {
                 for (event.input.fields) |field| {
                     if (field.is_source or
                         field.is_expression or
-                        std.mem.eql(u8, field.type, "Program")) {
+                        std.mem.indexOf(u8, field.type, "Program") != null) {
                         has_comptime_params = true;
                         break;
                     }
@@ -1135,7 +1142,8 @@ pub const VisitorEmitter = struct {
         // For abstract events, check if there's an ~impl (subflow_impl with is_impl = true)
         // If found, we should skip the default proc_decl
         var has_impl_override = false;
-        if (event.is_abstract) {
+        if (event.hasAnnotation("abstract")) {
+            // First check module-local items
             for (items_to_search) |item| {
                 if (item == .subflow_impl) {
                     const sf = item.subflow_impl;
@@ -1154,20 +1162,70 @@ pub const VisitorEmitter = struct {
                     }
                 }
             }
+            // ALSO check top-level items for cross-module impls
+            // Cross-module: sf.module != sf.event_path.module_qualifier
+            if (!has_impl_override) {
+                if (event.path.module_qualifier) |event_module| {
+                    for (self.all_items) |top_item| {
+                        if (top_item == .subflow_impl) {
+                            const sf = top_item.subflow_impl;
+                            // Cross-module check: where it's defined != what it targets
+                            const is_cross_module = if (sf.event_path.module_qualifier) |sf_mq|
+                                !eql(u8, sf.module, sf_mq)
+                            else
+                                false;
+                            if (sf.is_impl or is_cross_module) {
+                                if (sf.event_path.module_qualifier) |sf_module| {
+                                    if (eql(u8, sf_module, event_module) and
+                                        sf.event_path.segments.len == event.path.segments.len)
+                                    {
+                                        var path_matches = true;
+                                        for (sf.event_path.segments, 0..) |seg, j| {
+                                            if (!eql(u8, seg, event.path.segments[j])) {
+                                                path_matches = false;
+                                                break;
+                                            }
+                                        }
+                                        if (path_matches) {
+                                            has_impl_override = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        // For abstract events with impl override, first emit the proc as _default_handler
+        // For abstract events with impl override, first emit the default as _default_handler
         // This allows the impl to delegate to it (emitted BEFORE the main handler)
+        // The default can be either a proc_decl (Zig body) or a subflow_impl without is_impl (flow body)
         if (has_impl_override) {
+            var emitted_default_handler = false;
+
+            // First try to find a proc_decl (Zig body default)
+            // After resolve_abstract_impl, the default proc's path is renamed to <event>.default
             for (items_to_search) |item| {
                 if (item == .proc_decl) {
                     const proc = item.proc_decl;
                     if (proc.path.segments.len == event.path.segments.len) {
                         var path_matches = true;
                         for (proc.path.segments, 0..) |seg, j| {
-                            if (!eql(u8, seg, event.path.segments[j])) {
-                                path_matches = false;
-                                break;
+                            const event_seg = event.path.segments[j];
+                            // Check if proc segment matches event segment OR event segment + ".default"
+                            if (!eql(u8, seg, event_seg)) {
+                                // Try matching with .default suffix
+                                if (seg.len == event_seg.len + 8 and
+                                    std.mem.startsWith(u8, seg, event_seg) and
+                                    std.mem.endsWith(u8, seg, ".default"))
+                                {
+                                    // Matches with .default suffix
+                                } else {
+                                    path_matches = false;
+                                    break;
+                                }
                             }
                         }
                         if (path_matches) {
@@ -1212,7 +1270,109 @@ pub const VisitorEmitter = struct {
                             self.code_emitter.indent_level -= 1;
                             try self.code_emitter.writeIndent();
                             try self.code_emitter.write("}\n");
+                            emitted_default_handler = true;
                             break;
+                        }
+                    }
+                }
+            }
+
+            // If no proc found, look for a non-impl subflow_impl (flow body default)
+            // This handles cases like ~coordinate = context_create(...) | ... (flow-based default)
+            // After resolve_abstract_impl, the default subflow's path is renamed to <event>.default
+            if (!emitted_default_handler) {
+                for (items_to_search) |item| {
+                    if (item == .subflow_impl) {
+                        const sf = item.subflow_impl;
+                        // Only consider non-impl subflows (default implementations, not overrides)
+                        if (!sf.is_impl and sf.event_path.segments.len == event.path.segments.len) {
+                            var path_matches = true;
+                            for (sf.event_path.segments, 0..) |seg, j| {
+                                const event_seg = event.path.segments[j];
+                                // Check if subflow segment matches event segment OR event segment + ".default"
+                                if (!eql(u8, seg, event_seg)) {
+                                    // Try matching with .default suffix
+                                    if (seg.len == event_seg.len + 8 and
+                                        std.mem.startsWith(u8, seg, event_seg) and
+                                        std.mem.endsWith(u8, seg, ".default"))
+                                    {
+                                        // Matches with .default suffix
+                                    } else {
+                                        path_matches = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (path_matches) {
+                                if (sf.body == .flow) {
+                                    const flow = sf.body.flow;
+                                    // Emit the flow as _default_handler
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write("fn _default_handler(__koru_event_input: Input) Output {\n");
+                                    self.code_emitter.indent_level += 1;
+
+                                    // Generate implicit input bindings
+                                    for (event.input.fields) |field| {
+                                        try self.code_emitter.writeIndent();
+                                        try self.code_emitter.write("const ");
+                                        try self.code_emitter.write(field.name);
+                                        try self.code_emitter.write(" = __koru_event_input.");
+                                        try self.code_emitter.write(field.name);
+                                        try self.code_emitter.write(";\n");
+                                    }
+                                    for (event.input.fields) |field| {
+                                        try self.code_emitter.writeIndent();
+                                        try self.code_emitter.write("_ = &");
+                                        try self.code_emitter.write(field.name);
+                                        try self.code_emitter.write(";\n");
+                                    }
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write("_ = &__koru_event_input;\n");
+
+                                    // Generate the flow invocation and continuations
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write("const result = ");
+
+                                    // Emit the event call
+                                    if (flow.invocation.path.module_qualifier) |mq| {
+                                        try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
+                                        try self.code_emitter.write(".");
+                                    }
+                                    for (flow.invocation.path.segments, 0..) |seg, idx| {
+                                        if (idx > 0) try self.code_emitter.write("_");
+                                        try self.code_emitter.write(seg);
+                                    }
+                                    try self.code_emitter.write("_event.handler(.{");
+
+                                    for (flow.invocation.args, 0..) |arg, k| {
+                                        if (k > 0) try self.code_emitter.write(", ");
+                                        try self.code_emitter.write(" .");
+                                        try self.code_emitter.write(arg.name);
+                                        try self.code_emitter.write(" = ");
+                                        try self.code_emitter.write(arg.value);
+                                    }
+                                    try self.code_emitter.write(" });\n");
+
+                                    // Emit continuations
+                                    var indent_buf: [64]u8 = undefined;
+                                    var indent_pos: usize = 0;
+                                    var idx: usize = 0;
+                                    while (idx < self.code_emitter.indent_level) : (idx += 1) {
+                                        @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
+                                        indent_pos += 4;
+                                    }
+                                    const indent_str = indent_buf[0..indent_pos];
+
+                                    const source_event_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
+                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "koru_std.compiler");
+
+                                    self.code_emitter.indent_level -= 1;
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write("}\n");
+                                    emitted_default_handler = true;
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
@@ -1232,6 +1392,173 @@ pub const VisitorEmitter = struct {
         }
         if (DEBUG) std.debug.print(" in {} items\n", .{items_to_search.len});
 
+        // FIRST: Check top-level SubflowImpls for cross-module overrides (e.g., ~impl std.compiler:coordinate)
+        // This ensures user-defined overrides take precedence over module-internal implementations
+        if (has_impl_override) {
+            if (event.path.module_qualifier) |event_module| {
+                for (self.all_items) |top_item| {
+                    if (top_item == .subflow_impl) {
+                        const subflow = top_item.subflow_impl;
+                        // Check if this is a cross-module override
+                        // Cross-module: subflow.module != subflow.event_path.module_qualifier
+                        const is_cross_module = if (subflow.event_path.module_qualifier) |sf_mq|
+                            !eql(u8, subflow.module, sf_mq)
+                        else
+                            false;
+                        if (is_cross_module or subflow.is_impl) {
+                            if (subflow.event_path.module_qualifier) |sf_module| {
+                                if (eql(u8, sf_module, event_module) and
+                                    subflow.event_path.segments.len == event.path.segments.len)
+                                {
+                                    var matches = true;
+                                    for (subflow.event_path.segments, 0..) |seg, j| {
+                                        if (!eql(u8, seg, event.path.segments[j])) {
+                                            matches = false;
+                                            break;
+                                        }
+                                    }
+                                    if (matches) {
+                                        if (DEBUG) std.debug.print("  [emitEventDecl] Found cross-module ~impl override for {s}:{s}\n", .{event_module, event.path.segments[0]});
+                                        switch (subflow.body) {
+                                            .immediate => |bc| {
+                                                // Generate implicit input bindings for immediate subflows
+                                                for (event.input.fields) |field| {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("const ");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(" = __koru_event_input.");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(";\n");
+                                                }
+                                                // Suppress unused variable warnings
+                                                for (event.input.fields) |field| {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("_ = &");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(";\n");
+                                                }
+                                                if (event.input.fields.len == 0) {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("_ = &__koru_event_input;\n");
+                                                }
+                                                try self.code_emitter.writeIndent();
+                                                try self.code_emitter.write("return .{ .");
+                                                try emitter.writeBranchName(self.code_emitter, bc.branch_name);
+                                                try self.code_emitter.write(" = ");
+                                                if (bc.plain_value) |pv| {
+                                                    try self.code_emitter.write(pv);
+                                                } else {
+                                                    try self.code_emitter.write(".{");
+                                                    for (bc.fields, 0..) |field, k| {
+                                                        if (k > 0) try self.code_emitter.write(", ");
+                                                        try self.code_emitter.write(" .");
+                                                        try self.code_emitter.write(field.name);
+                                                        try self.code_emitter.write(" = ");
+                                                        const value = if (field.expression_str) |expr| expr else field.type;
+                                                        try self.code_emitter.write(value);
+                                                    }
+                                                    try self.code_emitter.write(" }");
+                                                }
+                                                try self.code_emitter.write(" };\n");
+                                                found_impl = true;
+                                            },
+                                            .flow => |flow| {
+                                                // Cross-module ~impl with flow body (delegation pattern)
+                                                // Generate implicit input bindings
+                                                for (event.input.fields) |field| {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("const ");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(" = __koru_event_input.");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(";\n");
+                                                }
+                                                // Suppress unused variable warnings
+                                                for (event.input.fields) |field| {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("_ = &");
+                                                    try self.code_emitter.write(field.name);
+                                                    try self.code_emitter.write(";\n");
+                                                }
+                                                try self.code_emitter.writeIndent();
+                                                try self.code_emitter.write("_ = &__koru_event_input;\n");
+
+                                                // Generate the invocation
+                                                try self.code_emitter.writeIndent();
+                                                try self.code_emitter.write("const result = ");
+
+                                                // Check if this is a self-call (delegating to default)
+                                                const is_self_call = blk: {
+                                                    // For cross-module impl, self-call means calling the same event
+                                                    if (flow.invocation.path.module_qualifier) |inv_mq| {
+                                                        if (eql(u8, inv_mq, event_module) and
+                                                            flow.invocation.path.segments.len == event.path.segments.len)
+                                                        {
+                                                            var segs_match = true;
+                                                            for (flow.invocation.path.segments, 0..) |seg, j| {
+                                                                if (!eql(u8, seg, event.path.segments[j])) {
+                                                                    segs_match = false;
+                                                                    break;
+                                                                }
+                                                            }
+                                                            if (segs_match) break :blk true;
+                                                        }
+                                                    }
+                                                    break :blk false;
+                                                };
+
+                                                if (is_self_call) {
+                                                    try self.code_emitter.write("_default_handler(.{");
+                                                } else {
+                                                    if (flow.invocation.path.module_qualifier) |mq| {
+                                                        try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
+                                                        try self.code_emitter.write(".");
+                                                    }
+                                                    for (flow.invocation.path.segments, 0..) |seg, idx| {
+                                                        if (idx > 0) try self.code_emitter.write("_");
+                                                        try self.code_emitter.write(seg);
+                                                    }
+                                                    try self.code_emitter.write("_event.handler(.{");
+                                                }
+
+                                                // Write arguments
+                                                for (flow.invocation.args, 0..) |arg, k| {
+                                                    if (k > 0) try self.code_emitter.write(", ");
+                                                    try self.code_emitter.write(" .");
+                                                    try self.code_emitter.write(arg.name);
+                                                    try self.code_emitter.write(" = ");
+                                                    try self.code_emitter.write(arg.value);
+                                                }
+                                                try self.code_emitter.write(" });\n");
+
+                                                // Generate switch on result with continuations
+                                                var indent_buf: [64]u8 = undefined;
+                                                var indent_pos: usize = 0;
+                                                var idx: usize = 0;
+                                                while (idx < self.code_emitter.indent_level) : (idx += 1) {
+                                                    @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
+                                                    indent_pos += 4;
+                                                }
+                                                const indent_str = indent_buf[0..indent_pos];
+
+                                                const source_event_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
+                                                try emitter.emitSubflowContinuations(self.code_emitter, flow.continuations, 0, indent_str, self.all_items, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
+
+                                                found_impl = true;
+                                            },
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (found_impl) break;
+                }
+            }
+        }
+
+        // THEN: Search in module-local items
+        if (!found_impl) {
         for (items_to_search) |impl_item| {
             switch (impl_item) {
                 .proc_decl => |proc| {
@@ -1564,6 +1891,7 @@ pub const VisitorEmitter = struct {
                 },
                 else => {},
             }
+        }
         }
 
         // NOTE: Special case for compiler.coordinate removed - abstract/impl handles it
@@ -2184,7 +2512,7 @@ pub const VisitorEmitter = struct {
             // Check if event has comptime parameters
             for (decl.input.fields) |field| {
                 if (field.is_source or field.is_expression or
-                    std.mem.eql(u8, field.type, "Program") or
+                    std.mem.indexOf(u8, field.type, "Program") != null or
                     std.mem.eql(u8, field.type, "Expression")) {
                     if (DEBUG) std.debug.print("  Event has comptime parameter: {s}\n", .{field.name});
                     return true;
@@ -2234,7 +2562,7 @@ pub const VisitorEmitter = struct {
         if (event.input_shape) |shape| {
             for (shape.fields) |field| {
                 if (field.is_source or field.is_expression or
-                    std.mem.eql(u8, field.type, "Program") or
+                    std.mem.indexOf(u8, field.type, "Program") != null or
                     std.mem.eql(u8, field.type, "Expression")) {
                     if (DEBUG) std.debug.print("  TypeRegistry event has comptime parameter\n", .{});
                     return true;

@@ -427,12 +427,6 @@ pub const AstSerializer = struct {
         try self.write(if (event.is_implicit_flow) "true" else "false");
         try self.write(",\n");
 
-        // Is abstract
-        try self.writeIndent();
-        try self.write(".is_abstract = ");
-        try self.write(if (event.is_abstract) "true" else "false");
-        try self.write(",\n");
-
         // Annotations
         try self.writeIndent();
         try self.write(".annotations = &.{\n");

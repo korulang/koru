@@ -500,7 +500,7 @@ pub const CompilerContext = struct {
 
 // The compiler coordinator (user-overridable)
 // Abstract: Users can override with ~impl std.compiler:coordinate = ...
-~abstract pub event coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
+~[comptime|abstract] pub event coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
 | coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
 | error { message: []const u8 }
 
@@ -577,7 +577,7 @@ pub const CompilerContext = struct {
 }
 
 // Frontend segment: Early AST processing (abstract, can be overridden)
-~abstract pub event frontend { ctx: CompilerContext }
+~[comptime|abstract] pub event frontend { ctx: CompilerContext }
 | ctx CompilerContext
 
 ~frontend = process_ccp_commands(ctx)
@@ -585,7 +585,7 @@ pub const CompilerContext = struct {
   | ctx c2 |> ctx c2
 
 // Analysis segment: Validation passes (abstract, can be overridden)
-~abstract pub event analysis { ctx: CompilerContext }
+~[comptime|abstract] pub event analysis { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: []const u8 }
 
@@ -605,7 +605,7 @@ pub const CompilerContext = struct {
 // This converts taps from emission-time code injection to AST nodes,
 // enabling the optimizer to see and optimize them (zero-cost abstraction!)
 // (abstract, can be overridden)
-~abstract pub event transform_taps { ctx: CompilerContext }
+~[comptime|abstract] pub event transform_taps { ctx: CompilerContext }
 | ctx CompilerContext
 
 ~proc transform_taps {
@@ -640,7 +640,7 @@ pub const CompilerContext = struct {
 // Test generation segment: Generates Zig test blocks from ~test declarations
 // Runs AFTER analysis (purity is propagated) but BEFORE optimization
 // This uses the SAME emitter as emission - no hand-rolled code generation!
-~abstract pub event test_generation { ctx: CompilerContext }
+~[comptime|abstract] pub event test_generation { ctx: CompilerContext }
 | ctx CompilerContext
 
 // Test generation implementation
@@ -1108,7 +1108,7 @@ const emitFlowWithMocks = struct {
 
 // Optimization segment: AST transformations for performance (abstract, can be overridden)
 // This is where we create IR nodes (NativeLoop, FusedEvent, etc.)
-~abstract pub event optimize { ctx: CompilerContext }
+~[comptime|abstract] pub event optimize { ctx: CompilerContext }
 | ctx CompilerContext
 
 // TODO: Loop optimization removed (broken hardcoded implementation)
@@ -1120,7 +1120,7 @@ const emitFlowWithMocks = struct {
 }
 
 // Emission segment: Final code generation (abstract, can be overridden)
-~abstract pub event emission { ctx: CompilerContext }
+~[comptime|abstract] pub event emission { ctx: CompilerContext }
 | ctx { ctx: CompilerContext, code: []const u8 }
 
 ~emission = inject_ccp(ctx)

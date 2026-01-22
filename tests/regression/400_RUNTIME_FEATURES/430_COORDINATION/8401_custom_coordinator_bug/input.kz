@@ -29,8 +29,8 @@ const Program = ast.Program;
               }
         | failed f |> error { message: f.message }
 
-// Helper event to print marker
-~event custom_marker {}
+// Helper event to print marker (must be comptime since it's called from coordinate handler)
+~[comptime] event custom_marker {}
 | done {}
 
 ~proc custom_marker {

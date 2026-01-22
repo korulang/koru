@@ -75,7 +75,7 @@ pub const AbstractImplValidator = struct {
     fn collectFromItem(self: *AbstractImplValidator, item: ast.Item) !void {
         switch (item) {
             .event_decl => |*event| {
-                if (event.is_abstract) {
+                if (event.hasAnnotation("abstract")) {
                     const canonical_name = try self.buildCanonicalName(&event.path);
                     errdefer self.allocator.free(canonical_name);
                     try self.abstract_events.put(canonical_name, event);
