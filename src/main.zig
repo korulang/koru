@@ -769,15 +769,19 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                                         try writer.writeAll(arg.name);
                                     }
                                     try writer.writeAll(" = ");
-                                    // Heuristic: values that are Koru syntax need to be stringified
+                                    // Source arguments have source_value set - always quote those
+                                    // Also apply heuristic for Koru syntax that needs stringification:
                                     // - Struct literals: { ... }
                                     // - Range literals: 0..3
                                     // Other values (identifiers, field access) should remain as expressions
-                                    const needs_quoting = arg.value.len > 0 and
-                                        (arg.value[0] == '{' or std.mem.indexOf(u8, arg.value, "..") != null);
+                                    const has_source_value = arg.source_value != null;
+                                    const needs_quoting = has_source_value or (arg.value.len > 0 and
+                                        (arg.value[0] == '{' or std.mem.indexOf(u8, arg.value, "..") != null));
                                     if (needs_quoting) {
+                                        // For Source args, use the actual source text
+                                        const text_to_quote = if (arg.source_value) |sv| sv.text else arg.value;
                                         try writer.writeAll("\"");
-                                        for (arg.value) |c| {
+                                        for (text_to_quote) |c| {
                                             switch (c) {
                                                 '\n' => try writer.writeAll("\\n"),
                                                 '\r' => try writer.writeAll("\\r"),

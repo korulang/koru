@@ -73,9 +73,9 @@ const std = @import("std");
 //
 // This transform:
 //   1. Looks up kernel.shape(Body) in AST
-//   2. Emits: const Body = struct { x: f64, ... };
-//   3. Emits: var kernel_data = Body{ .x = 0, ... };
-//   4. Replaces the flow with inline code
+//   2. Emits a module-scope type declaration for Body
+//   3. Generates a local init event+proc that allocates kernel data and returns a view
+//   4. Rewrites the flow to call that init event
 
 ~[comptime|transform]pub event init {
     expr: Expression,
@@ -159,15 +159,25 @@ const std = @import("std");
     // STEP 2: Get binding name from | kernel k |> continuation
     // ========================================================================
     var binding_name: []const u8 = "k"; // default fallback
+    var has_kernel_continuation = false;
     for (flow.continuations) |cont| {
         if (std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) {
             if (cont.binding) |b| binding_name = b;
+            has_kernel_continuation = true;
             break;
         }
     }
 
     // Build unique variable name: kernel_{binding}
-    const var_name = std.fmt.allocPrint(allocator, "kernel_{s}", .{binding_name}) catch unreachable;
+    const data_name = std.fmt.allocPrint(allocator, "kernel_{s}", .{binding_name}) catch unreachable;
+
+    // Generate a unique local event/proc name for this init
+    var hash: u32 = 0;
+    for (flow.module) |c| hash = hash *% 31 +% c;
+    hash = hash *% 31 +% @as(u32, @intCast(flow.location.line));
+    hash = hash *% 31 +% @as(u32, @intCast(flow.location.column));
+    for (source.text) |c| hash = hash *% 31 +% c;
+    const unique_name = std.fmt.allocPrint(allocator, "kernel_init_{d}", .{hash}) catch unreachable;
 
     // ========================================================================
     // STEP 3: Parse type name from expr
@@ -217,7 +227,41 @@ const std = @import("std");
     const trimmed = std.mem.trim(u8, source.text, " \t\n\r");
     const is_array_mode = std.mem.indexOf(u8, trimmed, "{") != null;
 
-    var code: []const u8 = undefined;
+    const parseShapeAstFields = struct {
+        fn call(alloc: std.mem.Allocator, shape_source: []const u8) []ast.Field {
+            var resArr = std.ArrayList(ast.Field).initCapacity(alloc, 8) catch unreachable;
+            var iter_f = std.mem.splitSequence(u8, shape_source, ",");
+            while (iter_f.next()) |field_raw| {
+                const field = std.mem.trim(u8, field_raw, " \t\n\r{}");
+                if (field.len == 0) continue;
+                if (std.mem.indexOf(u8, field, ":")) |colon_idx| {
+                    const name = std.mem.trim(u8, field[0..colon_idx], " \t\n\r");
+                    const field_type = std.mem.trim(u8, field[colon_idx + 1 ..], " \t\n\r");
+                    resArr.append(alloc, ast.Field{
+                        .name = alloc.dupe(u8, name) catch unreachable,
+                        .type = alloc.dupe(u8, field_type) catch unreachable,
+                    }) catch unreachable;
+                }
+            }
+            return resArr.items;
+        }
+    }.call;
+
+    const has_host_type = blk: {
+        for (program.items) |item_scan| {
+            if (item_scan == .host_type_decl and std.mem.eql(u8, item_scan.host_type_decl.name, type_name)) {
+                break :blk true;
+            }
+        }
+        break :blk false;
+    };
+
+    const type_fields = if (!has_host_type)
+        parseShapeAstFields(allocator, shape_src orelse struct_fields)
+    else
+        &[_]ast.Field{};
+
+    var proc_body: []const u8 = undefined;
 
     if (is_array_mode) {
         // Array mode: parse multiple { ... } blocks
@@ -241,92 +285,150 @@ const std = @import("std");
             }
         }
 
+        const init_name = std.fmt.allocPrint(allocator, "{s}_init", .{data_name}) catch unreachable;
+
         // Generate array initialization
-        code = std.fmt.allocPrint(
+        proc_body = std.fmt.allocPrint(
             allocator,
-            "const {s} = struct {{ {s} }};\nvar {s} = [_]{s}{{ {s} }};\n_ = &{s};",
-            .{ type_name, struct_fields, var_name, type_name, elements.items, var_name }
+            \\const std = @import("std");
+            \\const {s} = [_]{s}{{ {s} }};
+            \\const {s} = std.heap.page_allocator.alloc({s}, {s}.len) catch unreachable;
+            \\std.mem.copyForwards({s}, {s}, {s}[0..]);
+            \\return .{{ .kernel = .{{ .ptr = {s}.ptr, .len = {s}.len, .capacity = {s}.len }} }};
+            ,
+            .{ init_name, type_name, elements.items, data_name, type_name, init_name, type_name, data_name, init_name, data_name, data_name, data_name }
         ) catch unreachable;
     } else {
         // Single mode: just one struct instance
-    const fields = transformFields(allocator, source.text);
-    code = std.fmt.allocPrint(
-        allocator,
-        "const {s} = struct {{ {s} }};\nvar {s} = {s}{{ {s} }};\n_ = &{s};",
-        .{ type_name, struct_fields, var_name, type_name, fields, var_name }
-    ) catch unreachable;
-}
+        const fields = transformFields(allocator, source.text);
+        proc_body = std.fmt.allocPrint(
+            allocator,
+            \\const std = @import("std");
+            \\const {s} = std.heap.page_allocator.alloc({s}, 1) catch unreachable;
+            \\{s}[0] = {s}{{ {s} }};
+            \\return .{{ .kernel = .{{ .ptr = {s}.ptr, .len = {s}.len, .capacity = {s}.len }} }};
+            ,
+            .{ data_name, type_name, data_name, type_name, fields, data_name, data_name, data_name }
+        ) catch unreachable;
+    }
 
-// ========================================================================
-// STEP 5: Re-emit flow with preamble instead of replacing everything
-// ========================================================================
+    // ========================================================================
+    // STEP 5: Replace the head invocation with a local kernel init event
+    // ========================================================================
 
-// Create no-op invocation for the head of the flow (LOCAL nop)
-const segments = allocator.alloc([]const u8, 1) catch unreachable;
-segments[0] = allocator.dupe(u8, "nop") catch unreachable;
+    const invocation_segments = allocator.alloc([]const u8, 1) catch unreachable;
+    invocation_segments[0] = allocator.dupe(u8, unique_name) catch unreachable;
+    const invocation_module = allocator.dupe(u8, flow.module) catch unreachable;
 
-const nop_inv = ast.Invocation{
-    .path = ast.DottedPath{
-        .module_qualifier = null,
-        .segments = segments,
-    },
-    .args = &[_]ast.Arg{},
-};
+    const init_inv = ast.Invocation{
+        .path = ast.DottedPath{
+            .module_qualifier = invocation_module,
+            .segments = invocation_segments,
+        },
+        .args = &[_]ast.Arg{},
+    };
 
-// Build new preamble (combine our code with existing one)
-const full_preamble = if (flow.preamble_code) |p|
-    std.fmt.allocPrint(allocator, "{s}\n{s}", .{ p, code }) catch unreachable
-else
-    code;
+    // Clone continuations (shallow clone of the array is fine if we don't mutate elements)
+    var new_continuations = allocator.alloc(ast.Continuation, flow.continuations.len) catch unreachable;
+    for (flow.continuations, 0..) |cont, i| {
+        new_continuations[i] = cont;
+    }
 
-// Clone continuations (shallow clone of the array is fine if we don't mutate elements)
-var new_continuations = allocator.alloc(ast.Continuation, flow.continuations.len) catch unreachable;
-for (flow.continuations, 0..) |cont, i| {
-    new_continuations[i] = cont;
-}
-
-// Create new flow
-const new_flow_item = ast.Item{
-    .flow = ast.Flow{
-        .invocation = nop_inv,
-        .continuations = new_continuations,
-        .preamble_code = full_preamble,
-        .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
-        .post_label = if (flow.post_label) |l| allocator.dupe(u8, l) catch unreachable else null,
-        .super_shape = null,
-        .inline_body = if (flow.inline_body) |b| allocator.dupe(u8, b) catch unreachable else null,
-        .is_pure = flow.is_pure,
-        .is_transitively_pure = flow.is_transitively_pure,
-        .location = flow.location,
-        .module = allocator.dupe(u8, flow.module) catch unreachable,
-    },
-};
-
-// Replace flow in program
-const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_flow_item) catch unreachable;
-if (maybe_new_program) |new_program| {
-    // Inject local nop event declaration at the top of the program
-    const local_nop_item = ast.Item{
-        .event_decl = ast.EventDecl{
-            .path = ast.DottedPath{ .module_qualifier = null, .segments = segments },
-            .input = ast.Shape{ .fields = &[_]ast.Field{} },
-            .branches = &[_]ast.Branch{},
-            .is_public = false,
-            .is_implicit_flow = false,
-            .annotations = &[_][]const u8{ "norun" },
+    // Create new flow
+    const new_flow_item = ast.Item{
+        .flow = ast.Flow{
+            .invocation = init_inv,
+            .continuations = new_continuations,
+            .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
+            .post_label = if (flow.post_label) |l| allocator.dupe(u8, l) catch unreachable else null,
+            .super_shape = null,
+            .inline_body = null,
+            .preamble_code = null,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
             .location = flow.location,
             .module = allocator.dupe(u8, flow.module) catch unreachable,
-        }
+        },
     };
-    
-    // Create final program
-    const res_prog_raw = ast_functional.insertAt(allocator, &new_program, 0, local_nop_item) catch unreachable;
-    const res_prog = allocator.create(ast.Program) catch unreachable;
-    res_prog.* = res_prog_raw;
-    return .{ .transformed = .{ .program = res_prog } };
-}
 
-@panic("kernel.init: replaceFlowRecursive failed");
+    // Replace flow in program
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_flow_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const ptr_type = std.fmt.allocPrint(allocator, "[*]{s}", .{type_name}) catch unreachable;
+        const branch_fields = allocator.alloc(ast.Field, 3) catch unreachable;
+        branch_fields[0] = ast.Field{
+            .name = allocator.dupe(u8, "ptr") catch unreachable,
+            .type = ptr_type,
+        };
+        branch_fields[1] = ast.Field{
+            .name = allocator.dupe(u8, "len") catch unreachable,
+            .type = allocator.dupe(u8, "usize") catch unreachable,
+        };
+        branch_fields[2] = ast.Field{
+            .name = allocator.dupe(u8, "capacity") catch unreachable,
+            .type = allocator.dupe(u8, "usize") catch unreachable,
+        };
+
+        const branches = allocator.alloc(ast.Branch, 1) catch unreachable;
+        const kernel_branch_optional = !has_kernel_continuation;
+        branches[0] = ast.Branch{
+            .name = allocator.dupe(u8, "kernel") catch unreachable,
+            .payload = ast.Shape{ .fields = branch_fields },
+            .is_optional = kernel_branch_optional,
+            .annotations = &[_][]const u8{},
+        };
+
+        const event_segments = allocator.alloc([]const u8, 1) catch unreachable;
+        event_segments[0] = allocator.dupe(u8, unique_name) catch unreachable;
+        const event_module = allocator.dupe(u8, flow.module) catch unreachable;
+        const proc_segments = allocator.alloc([]const u8, 1) catch unreachable;
+        proc_segments[0] = allocator.dupe(u8, unique_name) catch unreachable;
+        const proc_module = allocator.dupe(u8, flow.module) catch unreachable;
+
+        const local_init_item = ast.Item{
+            .event_decl = ast.EventDecl{
+                .path = ast.DottedPath{ .module_qualifier = event_module, .segments = event_segments },
+                .input = ast.Shape{ .fields = &[_]ast.Field{} },
+                .branches = branches,
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = &[_][]const u8{},
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            }
+        };
+
+        const local_init_proc = ast.Item{
+            .proc_decl = ast.ProcDecl{
+                .path = ast.DottedPath{ .module_qualifier = proc_module, .segments = proc_segments },
+                .body = proc_body,
+                .annotations = &[_][]const u8{},
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            },
+        };
+        
+        var res_program = new_program;
+        var insert_index: usize = 0;
+        if (!has_host_type) {
+            const local_type_item = ast.Item{
+                .host_type_decl = ast.HostTypeDecl{
+                    .name = allocator.dupe(u8, type_name) catch unreachable,
+                    .shape = ast.Shape{ .fields = type_fields },
+                },
+            };
+            res_program = ast_functional.insertAt(allocator, &res_program, insert_index, local_type_item) catch unreachable;
+            insert_index = 1;
+        }
+
+        const res_prog_raw = ast_functional.insertAt(allocator, &res_program, insert_index, local_init_item) catch unreachable;
+        const res_prog_raw2 = ast_functional.insertAt(allocator, &res_prog_raw, insert_index + 1, local_init_proc) catch unreachable;
+        const res_program_ptr = allocator.create(ast.Program) catch unreachable;
+        res_program_ptr.* = res_prog_raw2;
+        return .{ .transformed = .{ .program = res_program_ptr } };
+    }
+
+    @panic("kernel.init: replaceFlowRecursive failed");
 }
 
 // ============================================================================
@@ -343,10 +445,10 @@ if (maybe_new_program) |new_program| {
 //   }
 //
 // Generated code:
-//   for (0..n) |i| {
-//       for (i+1..n) |j| {
-//           bodies[i].vel -= d * mag * bodies[j].mass;
-//           bodies[j].vel += d * mag * bodies[i].mass;
+//   for (0..bodies.len) |i| {
+//       for (i+1..bodies.len) |j| {
+//           bodies.ptr[i].vel -= d * mag * bodies.ptr[j].mass;
+//           bodies.ptr[j].vel += d * mag * bodies.ptr[i].mass;
 //       }
 //   }
 
@@ -429,16 +531,10 @@ if (maybe_new_program) |new_program| {
     const binding_name = search_result.binding_name;
 
     // ========================================================================
-    // STEP 2: Build unique variable name from binding
+    // STEP 2: Transform DSL body
     // ========================================================================
-    // | kernel k |> means we use "kernel_k" as the variable name
-    const var_name = std.fmt.allocPrint(allocator, "kernel_{s}", .{binding_name}) catch unreachable;
-
-    // ========================================================================
-    // STEP 3: Transform DSL body
-    // ========================================================================
-    // k.other.X -> kernel_k[j].X
-    // k.X -> kernel_k[i].X
+    // k.other.X -> k.ptr[j].X
+    // k.X -> k.ptr[i].X
 
     const binding_other = std.fmt.allocPrint(allocator, "{s}.other", .{binding_name}) catch unreachable;
     const binding_other_len = binding_other.len;
@@ -449,16 +545,16 @@ if (maybe_new_program) |new_program| {
     var i: usize = 0;
     while (i < source.text.len) {
         if (i + binding_other_len <= source.text.len and std.mem.eql(u8, source.text[i..i+binding_other_len], binding_other)) {
-            body_code.appendSlice(allocator, var_name) catch unreachable;
-            body_code.appendSlice(allocator, "[j]") catch unreachable;
+            body_code.appendSlice(allocator, binding_name) catch unreachable;
+            body_code.appendSlice(allocator, ".ptr[j]") catch unreachable;
             i += binding_other_len;
         } else if (i + binding_len <= source.text.len and std.mem.eql(u8, source.text[i..i+binding_len], binding_name)) {
             const at_end = (i + binding_len >= source.text.len);
             const next_ok = at_end or (!std.ascii.isAlphanumeric(source.text[i + binding_len]) and source.text[i + binding_len] != '_');
             const prev_ok = (i == 0) or (!std.ascii.isAlphanumeric(source.text[i - 1]) and source.text[i - 1] != '_');
             if (next_ok and prev_ok) {
-                body_code.appendSlice(allocator, var_name) catch unreachable;
-                body_code.appendSlice(allocator, "[i]") catch unreachable;
+                body_code.appendSlice(allocator, binding_name) catch unreachable;
+                body_code.appendSlice(allocator, ".ptr[i]") catch unreachable;
                 i += binding_len;
             } else {
                 body_code.append(allocator, source.text[i]) catch unreachable;
@@ -474,11 +570,11 @@ if (maybe_new_program) |new_program| {
         allocator,
         \\for (0..{0s}.len) |i| {{
         \\    for (i + 1..{0s}.len) |j| {{
-        \\        {1s}
+        \\        {1s};
         \\    }}
         \\}}
         ,
-        .{ var_name, body_code.items }
+        .{ binding_name, body_code.items }
     ) catch unreachable;
 
     // ========================================================================
