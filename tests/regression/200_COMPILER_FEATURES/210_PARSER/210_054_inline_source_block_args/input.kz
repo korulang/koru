@@ -1,0 +1,32 @@
+// Test 210_054: Inline Source block with args
+// Ensures inline { ... } Source blocks parse correctly even with arguments.
+
+const std = @import("std");
+
+~[comptime|transform]event inline.source {
+    expr: Expression,
+    source: Source,
+    invocation: *const Invocation,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc inline.source {
+    return .{ .transformed = .{ .program = program } };
+}
+
+~event setup {}
+| ready {}
+
+~proc setup { return .{ .ready = .{} }; }
+
+// Inline Source block on one line with args + nested braces
+const show = true;
+~inline.source(expr: show) { const data = { x: 1, y: 2 }; }
+| transformed |> _
+
+// Inline Source block inside a pipeline continuation with args
+~setup()
+| ready |> inline.source(expr: show) { const z = 3; }
+    | transformed |> _

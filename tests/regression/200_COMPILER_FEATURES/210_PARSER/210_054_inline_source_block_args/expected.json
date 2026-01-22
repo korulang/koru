@@ -1,0 +1,310 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 5,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "source",
+            "path": ["inline", "source"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "expr",
+                        "type": "Expression",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    },
+                    {
+                        "name": "source",
+                        "type": "Source",
+                        "is_source": true,
+                        "is_file": false,
+                        "is_embed_file": false
+                    },
+                    {
+                        "name": "invocation",
+                        "type": "*const Invocation",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    },
+                    {
+                        "name": "program",
+                        "type": "*const Program",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    },
+                    {
+                        "name": "allocator",
+                        "type": "std.mem.Allocator",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "transformed",
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "program",
+                                "type": "*const Program",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false
+                            }
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 15,
+                "col": 0
+            }
+        },
+        {
+            "type": "proc_decl",
+            "event_name": "source",
+            "path": ["inline", "source"],
+            "module": "input",
+            "target": "zig",
+            "inline_flows": [
+
+            ],
+            "is_pure": false,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 19,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "setup",
+            "path": ["setup"],
+            "module": "input",
+            "input": {
+                "fields": [
+
+                ]
+            },
+            "branches": [
+                {
+                    "name": "ready",
+                    "payload": {
+                        "fields": [
+
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 22,
+                "col": 0
+            }
+        },
+        {
+            "type": "proc_decl",
+            "event_name": "setup",
+            "path": ["setup"],
+            "module": "input",
+            "target": "zig",
+            "inline_flows": [
+
+            ],
+            "is_pure": false,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 24,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 25,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 26,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["inline", "source"],
+                "args": [
+                    {
+                        "name": "expr",
+                        "value": "show"
+                    },
+                    {
+                        "name": "source",
+                        "value": "const data = { x: 1, y: 2 };",
+                        "source_value": {
+                            "text": "const data = { x: 1, y: 2 };",
+                            "location": {
+                                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                                "line": 28,
+                                "col": 0
+                            },
+                            "scope": {
+                                "bindings": [
+
+                                ]
+                            },
+                            "phantom_type": null
+                        }
+                    }
+                ]
+            },
+            "continuations": [
+                {
+                    "branch": "transformed",
+                    "binding": null,
+                    "binding_type": "branch_payload",
+                    "step":                     {
+                        "type": "terminal"
+                    },
+                    "continuations": [
+
+                    ]
+                }
+            ],
+            "pre_label": null,
+            "post_label": null,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 27,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 30,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["setup"],
+                "args": [
+
+                ]
+            },
+            "continuations": [
+                {
+                    "branch": "ready",
+                    "binding": null,
+                    "binding_type": "branch_payload",
+                    "step":                     {
+                        "type": "invocation",
+                        "invocation": {
+                            "event": ["inline", "source"],
+                            "args": [
+                                {
+                                    "name": "expr",
+                                    "value": "show"
+                                },
+                                {
+                                    "name": "source",
+                                    "value": "const z = 3;",
+                                    "source_value": {
+                                        "text": "const z = 3;",
+                                        "location": {
+                                            "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                                            "line": 33,
+                                            "col": 0
+                                        },
+                                        "scope": {
+                                            "bindings": [
+
+                                            ]
+                                        },
+                                        "phantom_type": null
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "continuations": [
+                        {
+                            "branch": "transformed",
+                            "binding": null,
+                            "binding_type": "branch_payload",
+                            "step":                             {
+                                "type": "terminal"
+                            },
+                            "continuations": [
+
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "pre_label": null,
+            "post_label": null,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                "line": 31,
+                "col": 0
+            }
+        }
+    ]
+}
