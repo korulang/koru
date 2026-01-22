@@ -1,6 +1,6 @@
 // Test: Custom Compiler Coordinator Override
 //
-// Validates that users can override the abstract compiler.coordinate event
+// Validates that users can override the abstract coordinate event
 // with their own pipeline implementation using ~impl.
 //
 // The custom coordinator prints a marker, then delegates to standard pipeline.
@@ -13,21 +13,21 @@ const Program = ast.Program;
 
 // Custom coordinator that wraps the default pipeline
 // All compiler events must be module-qualified
-~impl std.compiler:compiler.coordinate =
+~impl std.compiler:coordinate =
     custom_marker()
-    | done |> std.compiler:compiler.context.create(program_ast: program_ast, allocator: allocator)
-      | created c0 |> std.compiler:compiler.coordinate.frontend(ctx: c0.ctx)
-        | continued c1 |> std.compiler:compiler.coordinate.transform_taps(ctx: c1.ctx)
-          | continued c2 |> std.compiler:compiler.coordinate.analysis(ctx: c2.ctx)
-            | continued c3 |> std.compiler:compiler.coordinate.test_generation(ctx: c3.ctx)
-              | continued c4 |> std.compiler:compiler.coordinate.optimize(ctx: c4.ctx)
-                | continued c5 |> std.compiler:compiler.coordinate.emission(ctx: c5.ctx)
-                  | continued c6 |> coordinated {
-                      ast: c6.ctx.ast,
-                      code: c6.code,
-                      metrics: "Custom coordinator ran!"
-                  }
-            | failed f |> error { message: f.message }
+| done |> std.compiler:context_create(program_ast: program_ast, allocator: allocator)
+  | created c0 |> std.compiler:frontend(ctx: c0.ctx)
+    | ctx c1 |> std.compiler:transform_taps(ctx: c1)
+      | ctx c2 |> std.compiler:analysis(ctx: c2)
+        | ctx c3 |> std.compiler:test_generation(ctx: c3)
+          | ctx c4 |> std.compiler:optimize(ctx: c4)
+            | ctx c5 |> std.compiler:emission(ctx: c5)
+              | ctx c6 |> coordinated {
+                  ast: c6.ctx.ast,
+                  code: c6.code,
+                  metrics: "Custom coordinator ran!"
+              }
+        | failed f |> error { message: f.message }
 
 // Helper event to print marker
 ~event custom_marker {}

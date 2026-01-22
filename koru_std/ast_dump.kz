@@ -2,11 +2,11 @@
 // Provides void event for dumping AST state at any pipeline stage
 //
 // Usage with taps:
-// ~* compiler.coordinate.frontend -> continued
-// |> dump_ast(ctx: ctx, stage: "post-frontend")
+// ~* std.compiler:frontend -> ctx
+// |> dump_ast(ctx, "post-frontend")
 //
-// ~* compiler.coordinate.optimize -> continued
-// |> dump_ast(ctx: ctx, stage: "post-optimization")  // See IR nodes!
+// ~* std.compiler:optimize -> ctx
+// |> dump_ast(ctx, "post-optimization")  // See IR nodes!
 
 const std = @import("std");
 

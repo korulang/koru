@@ -499,37 +499,32 @@ pub const CompilerContext = struct {
 // ============================================================
 
 // The compiler coordinator (user-overridable)
-// Abstract: Users can override with ~impl compiler.coordinate = ...
-~abstract pub event compiler.coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
+// Abstract: Users can override with ~impl std.compiler:coordinate = ...
+~abstract pub event coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
 | coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
 | error { message: []const u8 }
 
 // Default implementation of the compiler coordinator
 // Users who don't override get this standard pipeline
-~compiler.coordinate =
-    compiler.context.create(program_ast: program_ast, allocator: allocator)
-    | created c0 |> compiler.coordinate.frontend(ctx: c0.ctx)
-      | continued c1 |> compiler.coordinate.transform_taps(ctx: c1.ctx)
-        | continued c2 |> compiler.coordinate.analysis(ctx: c2.ctx)
-          | continued c3 |> compiler.coordinate.test_generation(ctx: c3.ctx)
-            | continued c4 |> compiler.coordinate.optimize(ctx: c4.ctx)
-              | continued c5 |> compiler.coordinate.emission(ctx: c5.ctx)
-                | continued c6 |> compiler.metrics.format(passes_completed: c6.ctx.passes_completed, allocator: allocator)
-                  | formatted m |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }
-          | failed f |> error { message: f.message }
-
-// Legacy alias - keeping for compatibility with tests that use .default directly
-~pub event compiler.coordinate.default { program_ast: *const Program, allocator: std.mem.Allocator }
-| coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
-| error { message: []const u8 }
+~coordinate =
+    context_create(program_ast: program_ast, allocator: allocator)
+| created c0 |> frontend(ctx: c0.ctx)
+  | ctx c1 |> transform_taps(ctx: c1)
+    | ctx c2 |> analysis(ctx: c2)
+      | ctx c3 |> test_generation(ctx: c3)
+        | ctx c4 |> optimize(ctx: c4)
+          | ctx c5 |> emission(ctx: c5)
+            | ctx c6 |> metrics_format(passes_completed: c6.ctx.passes_completed, allocator: allocator)
+              | formatted m |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }
+      | failed f |> error { message: f.message }
 
 // Composable pipeline segments - users can mix and match!
 
 // Helper: Create CompilerContext from ast and allocator
-~pub event compiler.context.create { program_ast: *const Program, allocator: std.mem.Allocator }
+~pub event context_create { program_ast: *const Program, allocator: std.mem.Allocator }
 | created { ctx: CompilerContext }
 
-~proc compiler.context.create {
+~proc context_create {
     const ctx = CompilerContext{
         .ast = program_ast,
         .original_ast = program_ast,  // Initially same as ast, preserved across filtering
@@ -545,10 +540,10 @@ pub const CompilerContext = struct {
 }
 
 // Helper: Format metrics string
-~pub event compiler.metrics.format { passes_completed: u32, allocator: std.mem.Allocator }
+~pub event metrics_format { passes_completed: u32, allocator: std.mem.Allocator }
 | formatted { metrics: []const u8 }
 
-~proc compiler.metrics.format {
+~proc metrics_format {
     const metrics = std.fmt.allocPrint(
         allocator,
         "Passes: {d} (flow-based: frontend, analysis, emission)",
@@ -559,12 +554,12 @@ pub const CompilerContext = struct {
 
 // Helper: Dump AST as JSON for introspection
 // Usage: Insert at key points in pipeline to inspect AST state
-// Example: ~compiler.ast_dump(ctx: ctx, flag: "frontend") | continued |> ...
+// Example: ~ast_dump(ctx, "frontend") | ctx c |> ...
 ~[comptime]pub event ast_dump {
     ctx: CompilerContext,
     flag: []const u8
 }
-| continued { ctx: CompilerContext }
+| ctx CompilerContext
 
 ~proc ast_dump {
     // Serialize AST to JSON
@@ -579,43 +574,44 @@ pub const CompilerContext = struct {
     stdout.print("=== AST DUMP: {s} ===\n{s}\n", .{flag, json_output}) catch {};
 
     // Always continue with same context
-    return .{ .continued = .{ .ctx = ctx } };
+    return .{ .ctx = ctx };
 }
 
-// Frontend segment: Early AST processing
-~pub event compiler.coordinate.frontend { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+// Frontend segment: Early AST processing (abstract, can be overridden)
+~abstract pub event frontend { ctx: CompilerContext }
+| ctx CompilerContext
 
-~compiler.coordinate.frontend =
-    compiler.passes.process_ccp_commands(ctx: ctx)
-    | continued c1 |> compiler.passes.evaluate_comptime(ctx: c1.ctx)
-      | continued c2 |> continued { ctx: c2.ctx }
+~frontend =
+    process_ccp_commands(ctx: ctx)
+| ctx c1 |> evaluate_comptime(ctx: c1)
+  | ctx c2 |> ctx c2
 
-// Analysis segment: Validation passes
-~pub event compiler.coordinate.analysis { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+// Analysis segment: Validation passes (abstract, can be overridden)
+~abstract pub event analysis { ctx: CompilerContext }
+| ctx CompilerContext
 | failed { ctx: CompilerContext, message: []const u8 }
 
-~compiler.coordinate.analysis =
-    compiler.check.structure(ctx: ctx)
-    | continued c1 |> compiler.pass.auto_discharge(ctx: c1.ctx)
-      | continued c2 |> compiler.check.flow(ctx: c2.ctx)
-        | continued c3 |> compiler.check.phantom.semantic(ctx: c3.ctx)
-          | continued c4 |> compiler.check.purity(ctx: c4.ctx)
-            | continued c5 |> continued { ctx: c5.ctx }
-            | failed f |> failed { ctx: f.ctx, message: f.message }
-          | failed f |> failed { ctx: f.ctx, message: f.message }
+~analysis =
+    check_structure(ctx: ctx)
+| ctx c1 |> pass_auto_discharge(ctx: c1)
+  | ctx c2 |> check_flow(ctx: c2)
+    | ctx c3 |> check_phantom_semantic(ctx: c3)
+      | ctx c4 |> check_purity(ctx: c4)
+        | ctx c5 |> ctx c5
         | failed f |> failed { ctx: f.ctx, message: f.message }
       | failed f |> failed { ctx: f.ctx, message: f.message }
     | failed f |> failed { ctx: f.ctx, message: f.message }
+  | failed f |> failed { ctx: f.ctx, message: f.message }
+| failed f |> failed { ctx: f.ctx, message: f.message }
 
 // Tap transformation segment: Insert tap invocations into AST
 // This converts taps from emission-time code injection to AST nodes,
 // enabling the optimizer to see and optimize them (zero-cost abstraction!)
-~pub event compiler.coordinate.transform_taps { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+// (abstract, can be overridden)
+~abstract pub event transform_taps { ctx: CompilerContext }
+| ctx CompilerContext
 
-~proc compiler.coordinate.transform_taps {
+~proc transform_taps {
     // Build tap registry from AST (before transformation removes taps)
     const tap_registry_module = @import("tap_registry");
     const registry_ptr = ctx.allocator.create(tap_registry_module.TapRegistry) catch unreachable;
@@ -641,18 +637,18 @@ pub const CompilerContext = struct {
     updated_ctx.tap_registry = registry_ptr;
     updated_ctx.passes_completed += 1;
 
-    return .{ .continued = .{ .ctx = updated_ctx } };
+    return .{ .ctx = updated_ctx };
 }
 
 // Test generation segment: Generates Zig test blocks from ~test declarations
 // Runs AFTER analysis (purity is propagated) but BEFORE optimization
 // This uses the SAME emitter as emission - no hand-rolled code generation!
-~pub event compiler.coordinate.test_generation { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+~abstract pub event test_generation { ctx: CompilerContext }
+| ctx CompilerContext
 
 // Test generation implementation
 // Finds ~test invocations in AST and generates Zig test blocks
-~proc compiler.coordinate.test_generation {
+~proc test_generation {
     var mutable_ctx = ctx;
 
     // Import needed modules
@@ -740,7 +736,7 @@ pub const CompilerContext = struct {
     }
 
     mutable_ctx.passes_completed += 1;
-    return .{ .continued = .{ .ctx = mutable_ctx } };
+    return .{ .ctx = mutable_ctx };
 }
 
 // Helper: Check if an invocation is calling the test event
@@ -1113,98 +1109,78 @@ const emitFlowWithMocks = struct {
     }
 }.call;
 
-// Optimization segment: AST transformations for performance
+// Optimization segment: AST transformations for performance (abstract, can be overridden)
 // This is where we create IR nodes (NativeLoop, FusedEvent, etc.)
-~pub event compiler.coordinate.optimize { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+~abstract pub event optimize { ctx: CompilerContext }
+| ctx CompilerContext
 
 // TODO: Loop optimization removed (broken hardcoded implementation)
 // Will be reimplemented properly with actual proc body parsing
-~proc compiler.coordinate.optimize {
+~proc optimize {
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
-    return .{ .continued = .{ .ctx = updated_ctx } };
+    return .{ .ctx = updated_ctx };
 }
 
-// Emission segment: Final code generation
-~pub event compiler.coordinate.emission { ctx: CompilerContext }
-| continued { ctx: CompilerContext, code: []const u8 }
+// Emission segment: Final code generation (abstract, can be overridden)
+~abstract pub event emission { ctx: CompilerContext }
+| ctx { ctx: CompilerContext, code: []const u8 }
 
-~compiler.coordinate.emission =
-    compiler.passes.inject_ccp(ctx: ctx)
-    | continued c1 |> compiler.emit.zig(ctx: c1.ctx)
-      | continued c2 |> continued { ctx: c2.ctx, code: c2.code }
-
-// Default coordination pipeline - chains all segments!
-// Users who don't override compiler.coordinate can rely on this standard pipeline.
-// You can also call individual segments or compose your own pipeline by implementing compiler.coordinate!
-~compiler.coordinate.default =
-    compiler.context.create(program_ast: program_ast, allocator: allocator)
-    | created c0 |> compiler.coordinate.frontend(ctx: c0.ctx)
-      | continued c1 |> compiler.coordinate.transform_taps(ctx: c1.ctx)
-        | continued c2 |> compiler.coordinate.analysis(ctx: c2.ctx)
-          | continued c3 |> compiler.coordinate.test_generation(ctx: c3.ctx)
-            | continued c4 |> compiler.coordinate.optimize(ctx: c4.ctx)
-              | continued c5 |> compiler.coordinate.emission(ctx: c5.ctx)
-                | continued c6 |> compiler.metrics.format(passes_completed: c6.ctx.passes_completed, allocator: allocator)
-                  | formatted m |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }
-          | failed f |> error { message: f.message }
-
-// NOTE: compiler.coordinate is intentionally left UNIMPLEMENTED here!
-// This demonstrates Koru's powerful feature: events without implementations.
-// Users can implement compiler.coordinate to customize compilation, or the system
-// will fall back to compiler.coordinate.default (via main.zig bootstrap logic).
+~emission =
+    inject_ccp(ctx: ctx)
+| ctx c1 |> emit_zig(ctx: c1)
+  | ctx c2 |> ctx { ctx: c2.ctx, code: c2.code }
 
 // Parser service - makes the Koru parser available at backend comptime
 // This enables dynamic module loading during compilation passes
-~pub event compiler.parse { source: []const u8, module_name: []const u8 }
+~pub event parse { source: []const u8, module_name: []const u8 }
 | parsed { items: []Item }
 | failed { message: []const u8 }
 
 // Zig code emission event - the final step of compilation!
-~pub event compiler.emit.zig { ctx: CompilerContext }
-| continued { ctx: CompilerContext, code: []const u8 }
+~pub event emit_zig { ctx: CompilerContext }
+| ctx { ctx: CompilerContext, code: []const u8 }
 
 // Comptime evaluation pass - executes events with Program/Source parameters
-~pub event compiler.passes.evaluate_comptime { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+~pub event evaluate_comptime { ctx: CompilerContext }
+| ctx CompilerContext
 
 // Structural shape checking - validates events/branches exist, base types match
-~pub event compiler.check.structure { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+~pub event check_structure { ctx: CompilerContext }
+| ctx CompilerContext
 | failed { ctx: CompilerContext, message: []const u8 }
 
 // Flow checking - validates control flow properties (when-clause exhaustiveness, etc.)
-~pub event compiler.check.flow { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+~pub event check_flow { ctx: CompilerContext }
+| ctx CompilerContext
 | failed { ctx: CompilerContext, message: []const u8 }
 
 // Auto-discharge insertion - inserts disposal calls before terminators
-// Runs BEFORE phantom.semantic so checker validates the inserted calls
-~pub event compiler.pass.auto_discharge { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+// Runs BEFORE check_phantom_semantic so checker validates the inserted calls
+~pub event pass_auto_discharge { ctx: CompilerContext }
+| ctx CompilerContext
 | failed { ctx: CompilerContext, message: []const u8 }
 
 // Semantic phantom type checking - validates type-state compatibility using
 // the default Koru semantic checker (module-qualified phantom states)
-~pub event compiler.check.phantom.semantic { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+~pub event check_phantom_semantic { ctx: CompilerContext }
+| ctx CompilerContext
 | failed { ctx: CompilerContext, message: []const u8 }
 
 // Purity checking - trusts [pure] annotations as developer assertions
-~pub event compiler.check.purity { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+~pub event check_purity { ctx: CompilerContext }
+| ctx CompilerContext
 | failed { ctx: CompilerContext, message: []const u8 }
 
 // CCP observability pass - injects universal observability taps into user AST
 // When enabled, this makes every compiled program self-observing by adding:
 // - emit_json event/proc for JSON output
 // - Universal tap (~* -> *) that emits transition events
-~pub event compiler.passes.inject_ccp { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+~pub event inject_ccp { ctx: CompilerContext }
+| ctx CompilerContext
 
 // Implementation of Zig code emission - this IS ComptimeEmitter as a Koru proc!
-~proc compiler.emit.zig {
+~proc emit_zig {
     // NEW VISITOR-BASED IMPLEMENTATION!
     // Replaces the 2184-line procedural emitter with visitor orchestrator
 
@@ -1302,7 +1278,7 @@ const emitFlowWithMocks = struct {
 
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
-    return .{ .continued = .{ .ctx = updated_ctx, .code = final_code } };
+    return .{ .ctx = .{ .ctx = updated_ctx, .code = final_code } };
 }
 
 // Helper: Join path segments with dots
@@ -1338,7 +1314,7 @@ const joinPathAlloc = struct {
 }.call;
 
 // Parser service implementation - wraps the Koru parser for comptime use
-~proc compiler.parse {
+~proc parse {
     const Parser = @import("parser").Parser;
     // Note: 'std' is already imported at top level by the emitter
 
@@ -1372,7 +1348,7 @@ const joinPathAlloc = struct {
 
 // Comptime evaluation pass - executes events with Program/Source parameters
 // This runs BEFORE emission so comptime events can transform the AST
-~proc compiler.passes.evaluate_comptime {
+~proc evaluate_comptime {
     // Phase 1: Build map of comptime-only events
     // (Events that have Program or Source parameters)
     var comptime_events: [64][]const u8 = undefined;
@@ -1495,7 +1471,7 @@ const joinPathAlloc = struct {
         const post_transform_ast = backend_output.run_pass("transform", ctx.ast, ctx.allocator) catch {
             // Transformation failed - return original AST unchanged
             std.debug.print("WARNING: Transform execution failed\n", .{});
-            return .{ .continued = .{ .ctx = ctx } };
+            return .{ .ctx = ctx };
         };
 
         // DUMP POINT 4: AST after transform handlers
@@ -1622,7 +1598,7 @@ const joinPathAlloc = struct {
     // Build new array with exact size (now allocated at runtime)
     const new_items = ctx.allocator.alloc(Item, count_non_comptime) catch {
         // Allocation failed - return original AST unchanged
-        return .{ .continued = .{ .ctx = ctx } };
+        return .{ .ctx = ctx };
     };
     var idx: usize = 0;
     for (transform_updated_ctx.ast.items) |item| {
@@ -1674,7 +1650,7 @@ const joinPathAlloc = struct {
 
     const transformed_ast = ctx.allocator.create(Program) catch {
         // Allocation failed - return original AST unchanged
-        return .{ .continued = .{ .ctx = ctx } };
+        return .{ .ctx = ctx };
     };
     transformed_ast.* = Program{
         .items = new_items,
@@ -1690,11 +1666,11 @@ const joinPathAlloc = struct {
     // updated_ctx.original_ast stays the same - unfiltered AST for TypeRegistry
     updated_ctx.passes_completed += 1;
 
-    return .{ .continued = .{ .ctx = updated_ctx } };
+    return .{ .ctx = updated_ctx };
 }
 
 // Structural shape checker implementation
-~proc compiler.check.structure {
+~proc check_structure {
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;
 
@@ -1713,7 +1689,7 @@ const joinPathAlloc = struct {
             .message = "Failed to initialize error reporter",
             .location = .{ .file = "compiler", .line = 0, .column = 0 },
         }) catch {};
-        return .{ .continued = .{ .ctx = mutable_ctx } };
+        return .{ .ctx = mutable_ctx };
     };
     defer reporter.deinit();
 
@@ -1727,7 +1703,7 @@ const joinPathAlloc = struct {
             .message = "Failed to initialize shape checker",
             .location = .{ .file = "compiler", .line = 0, .column = 0 },
         }) catch {};
-        return .{ .continued = .{ .ctx = mutable_ctx } };
+        return .{ .ctx = mutable_ctx };
     };
     defer checker.deinit();
 
@@ -1777,12 +1753,12 @@ const joinPathAlloc = struct {
 
     // Validation succeeded
     mutable_ctx.passes_completed += 1;
-    return .{ .continued = .{ .ctx = mutable_ctx } };
+    return .{ .ctx = mutable_ctx };
 }
 
 // Flow checker implementation
 // Validates control flow properties like when-clause exhaustiveness
-~proc compiler.check.flow {
+~proc check_flow {
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;
 
@@ -1801,7 +1777,7 @@ const joinPathAlloc = struct {
             .message = "Failed to initialize error reporter",
             .location = .{ .file = "compiler", .line = 0, .column = 0 },
         }) catch {};
-        return .{ .continued = .{ .ctx = mutable_ctx } };
+        return .{ .ctx = mutable_ctx };
     };
     defer reporter.deinit();
 
@@ -1815,7 +1791,7 @@ const joinPathAlloc = struct {
             .message = "Failed to initialize flow checker",
             .location = .{ .file = "compiler", .line = 0, .column = 0 },
         }) catch {};
-        return .{ .continued = .{ .ctx = mutable_ctx } };
+        return .{ .ctx = mutable_ctx };
     };
     defer checker.deinit();
 
@@ -1854,7 +1830,7 @@ const joinPathAlloc = struct {
 
     // Validation succeeded
     mutable_ctx.passes_completed += 1;
-    return .{ .continued = .{ .ctx = mutable_ctx } };
+    return .{ .ctx = mutable_ctx };
 }
 
 // Auto-discharge inserter implementation
@@ -1873,11 +1849,11 @@ const joinPathAlloc = struct {
   "type": "boolean"
 }
 
-~proc compiler.pass.auto_discharge {
+~proc pass_auto_discharge {
     // Check if auto-discharge is disabled entirely
     if (CompilerEnv.hasFlag("auto-discharge=disable")) {
         // Skip auto-discharge pass - let phantom errors fire
-        return .{ .continued = .{ .ctx = ctx } };
+        return .{ .ctx = ctx };
     }
 
     // Check if warnings are enabled for auto-discharge
@@ -1898,7 +1874,7 @@ const joinPathAlloc = struct {
             .message = "Failed to initialize error reporter",
             .location = .{ .file = "compiler", .line = 0, .column = 0 },
         }) catch {};
-        return .{ .continued = .{ .ctx = mutable_ctx } };
+        return .{ .ctx = mutable_ctx };
     };
     defer reporter.deinit();
 
@@ -1912,7 +1888,7 @@ const joinPathAlloc = struct {
             .message = "Failed to initialize auto-discharge inserter",
             .location = .{ .file = "compiler", .line = 0, .column = 0 },
         }) catch {};
-        return .{ .continued = .{ .ctx = mutable_ctx } };
+        return .{ .ctx = mutable_ctx };
     };
     defer inserter.deinit();
 
@@ -1949,12 +1925,12 @@ const joinPathAlloc = struct {
     // Update AST with potentially modified version
     mutable_ctx.ast = new_ast;
     mutable_ctx.passes_completed += 1;
-    return .{ .continued = .{ .ctx = mutable_ctx } };
+    return .{ .ctx = mutable_ctx };
 }
 
 // Semantic phantom type checker implementation
 // Validates module-qualified phantom states and their compatibility
-~proc compiler.check.phantom.semantic {
+~proc check_phantom_semantic {
     std.debug.print("\n[PHANTOM-KORU] Starting phantom check proc...\n", .{});
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;
@@ -1974,7 +1950,7 @@ const joinPathAlloc = struct {
             .message = "Failed to initialize error reporter",
             .location = .{ .file = "compiler", .line = 0, .column = 0 },
         }) catch {};
-        return .{ .continued = .{ .ctx = mutable_ctx } };
+        return .{ .ctx = mutable_ctx };
     };
     defer reporter.deinit();
 
@@ -1988,7 +1964,7 @@ const joinPathAlloc = struct {
             .message = "Failed to initialize phantom semantic checker",
             .location = .{ .file = "compiler", .line = 0, .column = 0 },
         }) catch {};
-        return .{ .continued = .{ .ctx = mutable_ctx } };
+        return .{ .ctx = mutable_ctx };
     };
     defer checker.deinit();
 
@@ -2027,25 +2003,25 @@ const joinPathAlloc = struct {
 
     // Validation succeeded
     mutable_ctx.passes_completed += 1;
-    return .{ .continued = .{ .ctx = mutable_ctx } };
+    return .{ .ctx = mutable_ctx };
 }
 
 // Purity checker implementation
 // Tracks [pure] annotations - developer assertion, trusted without verification
-~proc compiler.check.purity {
+~proc check_purity {
     var mutable_ctx = ctx;
 
     // Purity is determined by [pure] annotation only
     // We don't analyze host (Zig) code - if you say it's pure, we trust you
 
     mutable_ctx.passes_completed += 1;
-    return .{ .continued = .{ .ctx = mutable_ctx } };
+    return .{ .ctx = mutable_ctx };
 }
 
 // CCP Observability Injection Pass
 // Injects universal observability taps into the user's AST
 // This makes every compiled program self-observing by adding emit_json and ~* -> * tap
-~proc compiler.passes.inject_ccp {
+~proc inject_ccp {
     // Inject CCP observability helpers as self-contained Zig code
     // Uses __ccp_std local import to avoid namespace pollution
 
@@ -2058,22 +2034,22 @@ const joinPathAlloc = struct {
     // This would inject observability helpers when --ccp flag is set
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
-    return .{ .continued = .{ .ctx = updated_ctx } };
+    return .{ .ctx = updated_ctx };
 }
 
 // CCP Command Processing Pass
 // Reads and processes incoming AI commands from stdin when --ccp is enabled
-~pub event compiler.passes.process_ccp_commands { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+~pub event process_ccp_commands { ctx: CompilerContext }
+| ctx CompilerContext
 
-~proc compiler.passes.process_ccp_commands {
+~proc process_ccp_commands {
     // TODO: Check if --ccp flag is enabled via CompilerEnv
     // TODO: Attempt non-blocking stdin read for JSONL commands
     // TODO: Parse and dispatch commands to appropriate handlers
     // For now, just pass through the context unchanged
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
-    return .{ .continued = .{ .ctx = updated_ctx } };
+    return .{ .ctx = updated_ctx };
 }
 
 // ============================================================================

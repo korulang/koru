@@ -899,17 +899,17 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\const CompilerError = bootstrap.CompilerError;
             \\const CompilerWarning = bootstrap.CompilerWarning;
             \\const ErrorPolicy = bootstrap.ErrorPolicy;
-            \\const compiler_passes_process_ccp_commands = bootstrap.compiler_passes_process_ccp_commands_event;
-            \\const compiler_passes_evaluate_comptime = bootstrap.compiler_passes_evaluate_comptime_event;
-            \\const compiler_check_structure = bootstrap.compiler_check_structure_event;
-            \\const compiler_check_phantom_semantic = bootstrap.compiler_check_phantom_semantic_event;
-            \\const compiler_passes_inject_ccp = bootstrap.compiler_passes_inject_ccp_event;
-            \\const compiler_emit_zig = bootstrap.compiler_emit_zig_event;
+            \\const process_ccp_commands = bootstrap.process_ccp_commands_event;
+            \\const evaluate_comptime = bootstrap.evaluate_comptime_event;
+            \\const check_structure = bootstrap.check_structure_event;
+            \\const check_phantom_semantic = bootstrap.check_phantom_semantic_event;
+            \\const inject_ccp = bootstrap.inject_ccp_event;
+            \\const emit_zig = bootstrap.emit_zig_event;
             \\
             \\// FRONTEND BOOTSTRAP COORDINATOR (hardcoded Zig fallback)
             \\// This is only used during frontend compilation (zig build-exe backend.zig).
             \\// The actual BACKEND coordinator IS a Koru flow (see backend_output_emitted.zig)!
-            \\const compiler_coordinate_default = struct {
+            \\const coordinate_handler = struct {
             \\    pub const Input = struct { ast: *const Program, allocator: std.mem.Allocator };
             \\    pub const Output = union(enum) {
             \\        coordinated: struct {
@@ -937,15 +937,15 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\
             \\        // Execute the compilation pipeline using CompilerContext threading:
             \\        // 1. process_ccp_commands
-            \\        const ccp_result = compiler_passes_process_ccp_commands.handler(.{ .ctx = ctx });
+            \\        const ccp_result = process_ccp_commands.handler(.{ .ctx = ctx });
             \\        ctx = ccp_result.continued.ctx;
             \\
             \\        // 2. evaluate_comptime
-            \\        const eval_result = compiler_passes_evaluate_comptime.handler(.{ .ctx = ctx });
+            \\        const eval_result = evaluate_comptime.handler(.{ .ctx = ctx });
             \\        ctx = eval_result.continued.ctx;
             \\
             \\        // 3. check.structure
-            \\        const structure_result = compiler_check_structure.handler(.{ .ctx = ctx });
+            \\        const structure_result = check_structure.handler(.{ .ctx = ctx });
             \\        ctx = structure_result.continued.ctx;
             \\        if (ctx.errors.items.len > 0) {
             \\            std.debug.print("❌ Structural validation failed: {d} errors\n", .{ctx.errors.items.len});
@@ -953,7 +953,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\        }
             \\
             \\        // 4. check.phantom.semantic
-            \\        const phantom_result = compiler_check_phantom_semantic.handler(.{ .ctx = ctx });
+            \\        const phantom_result = check_phantom_semantic.handler(.{ .ctx = ctx });
             \\        ctx = phantom_result.continued.ctx;
             \\        if (ctx.errors.items.len > 0) {
             \\            std.debug.print("❌ Phantom validation failed: {d} errors\n", .{ctx.errors.items.len});
@@ -961,11 +961,11 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\        }
             \\
             \\        // 5. inject_ccp
-            \\        const ccp_inject_result = compiler_passes_inject_ccp.handler(.{ .ctx = ctx });
+            \\        const ccp_inject_result = inject_ccp.handler(.{ .ctx = ctx });
             \\        ctx = ccp_inject_result.continued.ctx;
             \\
             \\        // 6. emit.zig
-            \\        const emit_result = compiler_emit_zig.handler(.{ .ctx = ctx });
+            \\        const emit_result = emit_zig.handler(.{ .ctx = ctx });
             \\        ctx = emit_result.continued.ctx;
             \\        const code = emit_result.continued.code;
             \\
@@ -990,7 +990,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         if (bootstrap.has_user_override) {
             try writer.writeAll(
                 \\// User-defined compiler.coordinate (from compiler)
-                \\const compiler_coordinate_event = bootstrap.compiler_coordinate_event;
+                \\const coordinate_event = bootstrap.coordinate_event;
                 \\
             );
         }
@@ -1013,12 +1013,12 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             try writer.writeAll(" namespace\n");
             try writer.writeAll("        const result = backend_output.koru_");
             try writer.writeAll(compiler_module);
-            try writer.writeAll(".compiler_coordinate_event.handler(.{ .program_ast = source_ast, .allocator = allocator });\n\n");
+            try writer.writeAll(".coordinate_event.handler(.{ .program_ast = source_ast, .allocator = allocator });\n\n");
         } else {
             try writer.writeAll("        // Using default compiler.coordinate from compiler (in backend_output)\n");
             try writer.writeAll("        const result = backend_output.koru_");
             try writer.writeAll(compiler_module);
-            try writer.writeAll(".compiler_coordinate_default_event.handler(.{ .program_ast = source_ast, .allocator = allocator });\n\n");
+            try writer.writeAll(".coordinate_event.handler(.{ .program_ast = source_ast, .allocator = allocator });\n\n");
         }
 
         try writer.writeAll(
@@ -2578,7 +2578,7 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
         try writer.writeAll("const compiler_config = @import(\"compiler_config\");\n");
         try writer.writeAll("const type_registry_module = @import(\"type_registry\");\n\n");
 
-        try writer.writeAll("const compiler_emit_zig = struct {\n");
+        try writer.writeAll("const emit_zig_handler = struct {\n");
         try writer.writeAll("    pub const Input = struct { ast: *const Program, allocator: std.mem.Allocator };\n");
         try writer.writeAll("    pub const Output = union(enum) { emitted: struct { code: []const u8 } };\n");
         try writer.writeAll("    pub fn handler(__koru_event_input: Input) Output {\n");
@@ -2657,7 +2657,7 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
     // Emit the rest of the backend infrastructure (same as old implementation)
     try writer.writeAll(
         \\// Bootstrap coordinator - calls the visitor implementation
-        \\const compiler_coordinate_default = struct {
+        \\const coordinate_handler = struct {
         \\    pub const Input = struct { ast: *const Program, allocator: std.mem.Allocator };
         \\    pub const Output = union(enum) {
         \\        coordinated: struct {
@@ -2669,9 +2669,9 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
         \\    pub fn handler(__koru_event_input: Input) !Output {
         \\        const allocator = __koru_event_input.allocator;
         \\        // Run CCP injection pass
-        \\        const ccp_result = try compiler_passes_inject_ccp.handler(.{ .ast = __koru_event_input.ast, .allocator = allocator });
+        \\        const ccp_result = try inject_ccp.handler(.{ .ast = __koru_event_input.ast, .allocator = allocator });
         \\
-        \\        const result = try compiler_emit_zig.handler(.{ .ast = ccp_result.instrumented.ast, .allocator = allocator });
+        \\        const result = try emit_zig.handler(.{ .ast = ccp_result.instrumented.ast, .allocator = allocator });
         \\        const code = switch (result) {
         \\            .emitted => |em| em.code,
         \\        };
