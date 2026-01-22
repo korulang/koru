@@ -732,6 +732,10 @@ Use void branches (`| done` without `{}`) only when you need to distinguish outc
 | timeout
 ```
 
+> **Future compiler error**: Single empty branches carry no information and will
+> become a compiler error in a future version. A single branch means there's only
+> one possible outcome - so why name it? Use void events instead.
+
 ### Don't: Inconsistent Indentation
 
 ```koru
