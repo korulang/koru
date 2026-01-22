@@ -1,41 +1,51 @@
-// Test 826: Custom Coordinator Bug
+// Test: Custom Compiler Coordinator Override
 //
-// BUG: When user defines ~compiler.coordinate subflow with custom passes,
-// the backend.zig hardcodes a call to compiler_coordinate_default,
-// ignoring the user's custom coordinator.
+// Validates that users can override the abstract compiler.coordinate event
+// with their own pipeline implementation using ~impl.
 //
-// EXPECTED: User-defined coordinator should run with custom passes
-// ACTUAL: Only compiler_coordinate_default runs, ignoring custom passes
-//
-// This test adds a custom pass that transforms the AST to prove the bug.
+// The custom coordinator prints a marker, then delegates to standard pipeline.
+
+~import "$std/compiler"
 
 const std = @import("std");
+const ast = @import("ast");
+const Program = ast.Program;
 
-// Custom compiler pass that adds a marker to prove it ran
-~pub event compiler.passes.add_marker { ast: ProgramAST }
-| transformed { ast: ProgramAST }
+// Custom coordinator that wraps the default pipeline
+// All compiler events must be module-qualified
+~impl std.compiler:compiler.coordinate =
+    custom_marker()
+    | done |> std.compiler:compiler.context.create(program_ast: program_ast, allocator: allocator)
+      | created c0 |> std.compiler:compiler.coordinate.frontend(ctx: c0.ctx)
+        | continued c1 |> std.compiler:compiler.coordinate.transform_taps(ctx: c1.ctx)
+          | continued c2 |> std.compiler:compiler.coordinate.analysis(ctx: c2.ctx)
+            | continued c3 |> std.compiler:compiler.coordinate.test_generation(ctx: c3.ctx)
+              | continued c4 |> std.compiler:compiler.coordinate.optimize(ctx: c4.ctx)
+                | continued c5 |> std.compiler:compiler.coordinate.emission(ctx: c5.ctx)
+                  | continued c6 |> coordinated {
+                      ast: c6.ctx.ast,
+                      code: c6.code,
+                      metrics: "Custom coordinator ran!"
+                  }
+            | failed f |> error { message: f.message }
 
-~proc compiler.passes.add_marker {
-    // This pass would add a marker to the AST
-    // For now, just return unchanged AST
-    return .{ .transformed = .{ .ast = ast } };
+// Helper event to print marker
+~event custom_marker {}
+| done {}
+
+~proc custom_marker {
+    std.debug.print("CUSTOM COORDINATOR: Pipeline override active!\n", .{});
+    return .{ .done = .{} };
 }
-
-// Custom coordinator that includes our marker pass
-~compiler.coordinate = compiler.passes.evaluate_comptime(ast: ast)
-| evaluated ev |> compiler.check.structure(ast: ev.ast)
-    | valid v |> compiler.passes.add_marker(ast: v.ast) 
-        | transformed t |> compiler.check.phantom.semantic(ast: t.ast)
-            | valid v2 |> compiler.emit.zig(ast: v2.ast)
-                | emitted em |> coordinated {
-                    ast: v2.ast,
-                    code: em.code,
-                    metrics: "Custom coordinator ran!"
-                }
 
 // Simple test event
-~pub event run_test { }
+~pub event hello {}
+| done {}
 
-~proc run_test {
-    std.debug.print("Test executed\n", .{});
+~proc hello {
+    std.debug.print("Hello from custom-compiled code!\n", .{});
+    return .{ .done = .{} };
 }
+
+~hello()
+| done |> _
