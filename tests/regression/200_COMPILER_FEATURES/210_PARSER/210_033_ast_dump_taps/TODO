@@ -1,0 +1,1 @@
+Feature: dump_ast requires CompilerContext type resolution from std.compiler to main_module scope
