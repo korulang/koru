@@ -454,12 +454,20 @@ Labels prefix the invocation with `#`. Jumps use `@`:
 For 1-3 short annotations:
 
 ```koru
-~[pub] event visible {}
-~[comptime|pure] proc calculate = ...
-~[norun|expand] event template { ... }
+~pub event visible {}
+~[comptime|pure]calculate = ...
+~[norun|expand]pub event template { ... }
 ```
 
+No space between `]` and the next keyword - annotations bind tightly to what they modify.
+
 Use `|` to separate multiple annotations. No spaces around `|`.
+
+Note: `pub` is a keyword, not an annotation. It comes after the `]`:
+
+```koru
+~[comptime|abstract]pub event coordinate { ctx: Context }
+```
 
 ### Vertical Style (Complex Cases)
 
@@ -477,13 +485,18 @@ Each annotation on its own line, prefixed with `-`.
 
 ### Annotation Order
 
-Standard order for common annotations:
+Standard order for annotations (inside brackets):
 
-1. Visibility: `pub`
-2. Execution phase: `comptime`, `runtime`
-3. Purity: `pure`
-4. Behavior modifiers: `norun`, `expand`, `keyword`
-5. Documentation: `doc`
+1. Execution phase: `comptime`, `runtime`
+2. Purity: `pure`
+3. Event modifiers: `abstract`, `norun`, `expand`, `keyword`
+4. Documentation: `doc`
+
+The `pub` keyword comes after the closing bracket:
+
+```koru
+~[comptime|abstract]pub event coordinate { ... }
+```
 
 ---
 
