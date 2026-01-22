@@ -289,13 +289,18 @@ No `~proc` keyword for subflows - just `~event_name = ...`:
 // Direct branch mapping
 ~double = result { val: input * 2 }
 
-// Short chain (fits on one line)
-~validate = check(input) | ok |> valid
-
 // Chain with binding
+~validate = check(input)
+| ok |> valid
+| error |> invalid
+
+// Multi-level chain
 ~process = transform(input)
 | done d |> result { d.output }
+| error e |> failure { e.msg }
 ```
+
+Note: Branch continuations must start on a new line - no single-line chaining.
 
 ### Zig Proc Style (Escape Hatch)
 
