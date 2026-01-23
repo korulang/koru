@@ -188,12 +188,46 @@ $ koru-bridge end 8fedba
 - ✅ Budget check before dispatch
 - ✅ Handle tracking after dispatch
 - ✅ Auto-discharge logging at request end
+- ✅ External handle_pool parameter for bridges
 
-## What's Integration Layer (External)
+## Bridge Library (koru_std/bridge.kz)
 
-- 🔲 Bridge state persistence
-- 🔲 Token bucket refill
-- 🔲 User tier management
-- 🔲 Symbolic handle naming (h1, h2)
-- 🔲 CLI bridge management tool
+The bridge library provides:
+- ✅ `UserTier` enum (free/basic/premium/unlimited)
+- ✅ `Bridge` struct with handle_pool, budget tracking, timestamps
+- ✅ `BridgeManager` - dictionary of sessions by ID
+- ✅ Token bucket refill based on elapsed time
+- ✅ Capacity/refill rates per user tier
+
+### Usage in Orisha/Shell
+
+```zig
+// Import bridge library
+const bridge_lib = @import("bridge");
+var manager = bridge_lib.BridgeManager.init(allocator);
+
+// Handle request
+var bridge = try manager.getOrCreate(session_id, .premium);
+bridge.refillBudget();  // Token bucket refill
+
+// Run interpreter with bridge's persistent pool
+const result = interpreter.run(
+    source, dispatcher, cost_fn, ...,
+    bridge.availableBudget(),
+    &bridge.handle_pool,  // Persistent!
+);
+
+// Update bridge state
+bridge.consumeBudget(result.used);
+
+// End session (caller calls discharge events)
+if (manager.end(session_id)) |handles| {
+    for (handles) |h| { /* call discharge event */ }
+}
+```
+
+## What's External (Not in koru_std)
+
+- 🔲 CLI bridge management tool (koru-bridge)
 - 🔲 Orisha session integration
+- 🔲 Shell/REPL integration

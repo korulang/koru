@@ -701,7 +701,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     creates_obligation_fn: ?ObligationFn,   // event -> obligation it creates
     discharges_obligation_fn: ?ObligationFn, // event -> obligation it discharges
     discharge_event_fn: ?ObligationFn,       // obligation -> event that discharges it
-    budget: ?u64  // Optional budget limit (null = unlimited)
+    budget: ?u64,  // Optional budget limit (null = unlimited)
+    handle_pool: ?*HandlePool  // Optional external pool (for bridges)
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
@@ -718,7 +719,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     creates_obligation_fn: ?ObligationFn,
     discharges_obligation_fn: ?ObligationFn,
     discharge_event_fn: ?ObligationFn,
-    budget: ?u64  // Optional budget limit (null = unlimited)
+    budget: ?u64,  // Optional budget limit (null = unlimited)
+    handle_pool: ?*HandlePool  // Optional external pool (for bridges)
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
@@ -829,9 +831,12 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     // Initialize budget tracking
     var budget_state = BudgetState.init(budget);
 
-    // Initialize handle pool for resource tracking
-    var handle_pool = HandlePool.init(allocator);
-    defer handle_pool.deinit();
+    // Use external handle pool if provided, otherwise create local one
+    // External pools are managed by bridges and persist across calls
+    const using_external_pool = handle_pool != null;
+    var local_pool = if (handle_pool == null) HandlePool.init(allocator) else undefined;
+    defer if (!using_external_pool) local_pool.deinit();
+    const active_pool: *HandlePool = if (handle_pool) |ext| ext else &local_pool;
 
     var ctx = InterpreterContext{
         .env = &env,
@@ -843,7 +848,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         .discharges_obligation_fn = discharges_obligation_fn,
         .discharge_event_fn = discharge_event_fn,
         .budget = &budget_state,
-        .handle_pool = &handle_pool,
+        .handle_pool = active_pool,
     };
 
     // Execute the flow!
@@ -853,7 +858,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
             return .{ .exhausted = .{
                 .used = budget_state.used,
                 .last_event = budget_state.last_event,
-                .handles = @intCast(handle_pool.countUndischarged()),
+                .handles = @intCast(active_pool.countUndischarged()),
             }};
         }
         // Build event name for error reporting
@@ -881,16 +886,19 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     const stable_value = result_value.clonePersistent();
     // std.debug.print("[INTERPRETER] Execution complete, branch: {s}\n", .{stable_value.branch});
 
-    // Auto-discharge any undischarged handles
-    const undischarged_count = handle_pool.countUndischarged();
-    if (undischarged_count > 0) {
-        const undischarged = handle_pool.getUndischarged();
-        for (undischarged) |handle| {
-            if (!handle.discharged) {
-                std.debug.print("[AUTO-DISCHARGE] Handle '{s}' with obligation '{s}'\n",
-                    .{handle.name, handle.obligation});
-                // Mark as discharged (actual cleanup would call discharge event)
-                handle_pool.discharge(handle.binding);
+    // Auto-discharge only for LOCAL pools (not bridge-managed ones)
+    // Bridges manage their own lifecycle and discharge at session end
+    if (!using_external_pool) {
+        const undischarged_count = active_pool.countUndischarged();
+        if (undischarged_count > 0) {
+            const undischarged = active_pool.getUndischarged();
+            for (undischarged) |handle| {
+                if (!handle.discharged) {
+                    std.debug.print("[AUTO-DISCHARGE] Handle '{s}' with obligation '{s}'\n",
+                        .{handle.name, handle.obligation});
+                    // Mark as discharged (actual cleanup would call discharge event)
+                    active_pool.discharge(handle.binding);
+                }
             }
         }
     }
@@ -898,7 +906,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     return .{ .result = .{
         .value = stable_value,
         .used = budget_state.used,
-        .handles = @intCast(handle_pool.countUndischarged()),
+        .handles = @intCast(active_pool.countUndischarged()),
     }};
 }
 
@@ -1656,9 +1664,11 @@ fn executeFlow(
     // Initialize budget tracking
     var budget_state = BudgetState.init(budget);
 
-    // Initialize handle pool for resource tracking
-    var handle_pool = HandlePool.init(allocator);
-    defer handle_pool.deinit();
+    // Use external handle pool if provided, otherwise create local one
+    const using_external_pool = handle_pool != null;
+    var local_pool = if (handle_pool == null) HandlePool.init(allocator) else undefined;
+    defer if (!using_external_pool) local_pool.deinit();
+    const active_pool: *HandlePool = if (handle_pool) |ext| ext else &local_pool;
 
     var ctx = InterpreterContext{
         .env = &env,
@@ -1670,7 +1680,7 @@ fn executeFlow(
         .discharges_obligation_fn = discharges_obligation_fn,
         .discharge_event_fn = discharge_event_fn,
         .budget = &budget_state,
-        .handle_pool = &handle_pool,
+        .handle_pool = active_pool,
     };
 
     // Execute the flow!
@@ -1680,7 +1690,7 @@ fn executeFlow(
             return .{ .exhausted = .{
                 .used = budget_state.used,
                 .last_event = budget_state.last_event,
-                .handles = @intCast(handle_pool.countUndischarged()),
+                .handles = @intCast(active_pool.countUndischarged()),
             }};
         }
         // Build event name for error reporting
@@ -1710,6 +1720,6 @@ fn executeFlow(
     return .{ .result = .{
         .value = stable_value,
         .used = budget_state.used,
-        .handles = @intCast(handle_pool.countUndischarged()),
+        .handles = @intCast(active_pool.countUndischarged()),
     }};
 }

@@ -1,0 +1,265 @@
+// Bridge Library - Persistent Sessions for Metered Execution
+//
+// A bridge holds state across interpreter invocations:
+// - Handle pool (undischarged resources)
+// - Budget tracking (with token bucket refill)
+// - User tier (determines refill rate)
+//
+// This is INFRASTRUCTURE code - pure Zig that wraps the interpreter.
+// It lives in Orisha, Shell, REPL, or any long-running process.
+//
+// Usage (in your Zig code):
+//   const bridge_lib = @import("bridge");
+//   var manager = bridge_lib.BridgeManager.init(allocator);
+//
+//   // Execute code with a session
+//   const result = try manager.execute("session-123", .premium, source, dispatcher, ...);
+//
+//   // End session (auto-discharges handles)
+//   const discharged = manager.end("session-123");
+
+~[runtime]
+
+~import "$std/interpreter"
+
+const std = @import("std");
+
+// Re-export interpreter types for convenience
+pub const HandlePool = @import("root").koru_std.interpreter.HandlePool;
+pub const Handle = @import("root").koru_std.interpreter.Handle;
+pub const BudgetState = @import("root").koru_std.interpreter.BudgetState;
+pub const Value = @import("root").koru_std.interpreter.Value;
+pub const DispatchFn = @import("root").koru_std.interpreter.DispatchFn;
+pub const CostFn = @import("root").koru_std.interpreter.CostFn;
+pub const ObligationFn = @import("root").koru_std.interpreter.ObligationFn;
+
+// ============================================================================
+// USER TIERS - Determines budget capacity and refill rate
+// ============================================================================
+
+pub const UserTier = enum {
+    free,       // 1000 capacity, 10/sec refill
+    basic,      // 5000 capacity, 50/sec refill
+    premium,    // 50000 capacity, 1000/sec refill
+    unlimited,  // No limits
+
+    pub fn getCapacity(self: UserTier) ?u64 {
+        return switch (self) {
+            .free => 1000,
+            .basic => 5000,
+            .premium => 50000,
+            .unlimited => null,  // Unlimited
+        };
+    }
+
+    pub fn getRefillRate(self: UserTier) u64 {
+        return switch (self) {
+            .free => 10,      // 10 tokens per second
+            .basic => 50,     // 50 tokens per second
+            .premium => 1000, // 1000 tokens per second
+            .unlimited => 0,  // N/A
+        };
+    }
+};
+
+// ============================================================================
+// BRIDGE - A single persistent session
+// ============================================================================
+
+pub const Bridge = struct {
+    /// Unique session identifier
+    id: []const u8,
+    /// Resource handles with obligations (persists across calls)
+    handle_pool: HandlePool,
+    /// Budget consumed so far (token bucket tracks this)
+    budget_used: u64,
+    /// User tier determines capacity and refill rate
+    tier: UserTier,
+    /// Timestamps for refill calculation
+    created_at: i64,
+    last_activity: i64,
+    /// Allocator for internal allocations
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator, id: []const u8, tier: UserTier) Bridge {
+        const now = std.time.timestamp();
+        return .{
+            .id = allocator.dupe(u8, id) catch id,
+            .handle_pool = HandlePool.init(allocator),
+            .budget_used = 0,
+            .tier = tier,
+            .created_at = now,
+            .last_activity = now,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *Bridge) void {
+        self.handle_pool.deinit();
+    }
+
+    /// Apply token bucket refill based on elapsed time
+    pub fn refillBudget(self: *Bridge) void {
+        if (self.tier == .unlimited) return;
+
+        const now = std.time.timestamp();
+        const elapsed_secs: u64 = @intCast(@max(0, now - self.last_activity));
+        const refill_amount = elapsed_secs * self.tier.getRefillRate();
+
+        // Reduce used budget by refill (can't go below 0)
+        if (refill_amount >= self.budget_used) {
+            self.budget_used = 0;
+        } else {
+            self.budget_used -= refill_amount;
+        }
+
+        self.last_activity = now;
+    }
+
+    /// Get available budget (capacity - used)
+    pub fn availableBudget(self: *const Bridge) ?u64 {
+        const capacity = self.tier.getCapacity() orelse return null;
+        return capacity - @min(self.budget_used, capacity);
+    }
+
+    /// Record budget consumption after execution
+    pub fn consumeBudget(self: *Bridge, amount: u64) void {
+        self.budget_used += amount;
+        self.last_activity = std.time.timestamp();
+    }
+
+    /// Get handle count
+    pub fn handleCount(self: *const Bridge) usize {
+        return self.handle_pool.countUndischarged();
+    }
+
+    /// Get all undischarged handles
+    pub fn getHandles(self: *const Bridge) []const Handle {
+        return self.handle_pool.getUndischarged();
+    }
+};
+
+// ============================================================================
+// BRIDGE MANAGER - Dictionary of sessions
+// ============================================================================
+
+pub const BridgeManager = struct {
+    bridges: std.StringHashMap(Bridge),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) BridgeManager {
+        return .{
+            .bridges = std.StringHashMap(Bridge).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *BridgeManager) void {
+        var iter = self.bridges.valueIterator();
+        while (iter.next()) |bridge| {
+            bridge.deinit();
+        }
+        self.bridges.deinit();
+    }
+
+    /// Get or create a bridge for a session
+    pub fn getOrCreate(self: *BridgeManager, session_id: []const u8, tier: UserTier) !*Bridge {
+        if (self.bridges.getPtr(session_id)) |bridge| {
+            return bridge;
+        }
+
+        // Create new bridge
+        const id_copy = try self.allocator.dupe(u8, session_id);
+        var bridge = Bridge.init(self.allocator, id_copy, tier);
+        try self.bridges.put(id_copy, bridge);
+        return self.bridges.getPtr(id_copy).?;
+    }
+
+    /// Check if a session exists
+    pub fn exists(self: *const BridgeManager, session_id: []const u8) bool {
+        return self.bridges.contains(session_id);
+    }
+
+    /// Get a bridge (returns null if not found)
+    pub fn get(self: *BridgeManager, session_id: []const u8) ?*Bridge {
+        return self.bridges.getPtr(session_id);
+    }
+
+    /// End a session - returns undischarged handles for cleanup
+    /// Caller is responsible for calling discharge events on returned handles
+    pub fn end(self: *BridgeManager, session_id: []const u8) ?[]const Handle {
+        if (self.bridges.fetchRemove(session_id)) |entry| {
+            var bridge = entry.value;
+            const handles = bridge.getHandles();
+            // Note: We return handles but don't deinit the pool yet
+            // The caller should process these handles then call deinit
+            return handles;
+        }
+        return null;
+    }
+
+    /// Get total active session count
+    pub fn sessionCount(self: *const BridgeManager) usize {
+        return self.bridges.count();
+    }
+};
+
+// ============================================================================
+// USAGE EXAMPLE (in comments - this is how you'd use it in Orisha/Shell)
+// ============================================================================
+//
+// In your request handler:
+//
+//   const bridge_lib = @import("bridge");
+//   const interpreter_mod = @import("interpreter");
+//
+//   // Global manager (or per-user manager)
+//   var manager = bridge_lib.BridgeManager.init(allocator);
+//   defer manager.deinit();
+//
+//   // Handle request
+//   fn handleRequest(session_id: []const u8, source: []const u8) !void {
+//       // Get/create bridge for this session
+//       var bridge = try manager.getOrCreate(session_id, .premium);
+//
+//       // Apply token bucket refill
+//       bridge.refillBudget();
+//
+//       // Get available budget
+//       const budget = bridge.availableBudget();
+//
+//       // Run interpreter with bridge's handle pool
+//       const result = interpreter_mod.run(
+//           source,
+//           dispatcher,
+//           cost_fn,
+//           creates_fn,
+//           discharges_fn,
+//           discharge_event_fn,
+//           budget,
+//           &bridge.handle_pool,  // <-- Bridge's persistent pool!
+//       );
+//
+//       // Update bridge state based on result
+//       switch (result) {
+//           .result => |r| {
+//               bridge.consumeBudget(r.used);
+//               // Return success to client
+//           },
+//           .exhausted => |e| {
+//               bridge.consumeBudget(e.used);
+//               // Return 429 to client
+//           },
+//           // Handle errors...
+//       }
+//   }
+//
+//   // End session (e.g., on logout or timeout)
+//   fn endSession(session_id: []const u8) !void {
+//       if (manager.end(session_id)) |handles| {
+//           for (handles) |h| {
+//               // Call discharge event for each handle
+//               std.debug.print("Auto-closing: {s}\n", .{h.binding});
+//           }
+//       }
+//   }
