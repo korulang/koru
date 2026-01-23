@@ -1,0 +1,27 @@
+// TEST: kernel:init used as a step in a pipeline, not top-level
+
+~import "$std/kernel"
+~import "$std/io"
+
+~std.kernel:shape(Body) {
+    mass: f64,
+}
+
+~event get_count {}
+| n u32
+
+~proc get_count {
+    return .{ .n = 3 };
+}
+
+~get_count()
+| n count |>
+    std.kernel:init(Body) {
+        { mass: 1.0 },
+        { mass: 2.0 },
+        { mass: 3.0 },
+    }
+    | kernel k |>
+        std.kernel:pairwise { k.mass += k.other.mass }
+
+~std.io:print.ln("done")
