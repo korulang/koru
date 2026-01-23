@@ -14,9 +14,10 @@
 - Use judgment: ask for confirmation before major semantic changes or scope pivots; otherwise proceed and summarize clearly.
 
 ## Project Memory (prose)
-- Run `prose context` before work to pull current goals, constraints, gotchas.
-- Use `prose search "<query>"` for designs/decisions; `prose status` checks freshness.
-- Treat prose output as ground truth for priorities and constraints.
+- Optional: `prose context` for current goals, constraints, gotchas.
+- Optional: `prose search "<query>"` for designs/decisions; `prose status` for freshness.
+- Treat prose output as supplemental, historical context; prioritize running code/tests for truth.
+- Use prose to avoid regressions and gather background, not as a blocker.
 
 ## Build, Test, and Development Commands
 - `zig build` — compile the compiler; output `zig-out/bin/koruc`.
