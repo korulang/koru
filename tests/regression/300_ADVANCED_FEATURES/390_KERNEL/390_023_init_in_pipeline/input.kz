@@ -15,7 +15,7 @@
 }
 
 ~get_count()
-| n count |>
+| n _ |>
     std.kernel:init(Body) {
         { mass: 1.0 },
         { mass: 2.0 },

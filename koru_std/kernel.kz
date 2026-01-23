@@ -148,24 +148,82 @@ const std = @import("std");
         @panic("kernel.init: expected flow item");
 
     // ========================================================================
-    // STEP 1: Verify we're the top-level invocation
+    // STEP 1: Locate invocation + kernel binding
     // ========================================================================
-    if (invocation != &flow.invocation) {
-        // This shouldn't happen for init, but handle gracefully
-        @panic("kernel.init: expected to be top-level invocation");
-    }
+    const is_top_level = (invocation == &flow.invocation);
 
-    // ========================================================================
-    // STEP 2: Get binding name from | kernel k |> continuation
-    // ========================================================================
     var binding_name: []const u8 = "k"; // default fallback
     var has_kernel_continuation = false;
-    for (flow.continuations) |cont| {
-        if (std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) {
-            if (cont.binding) |b| binding_name = b;
-            has_kernel_continuation = true;
-            break;
+    var step_path: ?[]const usize = null;
+    var step_idx: usize = 0;
+
+    if (is_top_level) {
+        for (flow.continuations) |cont| {
+            if (std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) {
+                if (cont.binding) |b| binding_name = b;
+                has_kernel_continuation = true;
+                break;
+            }
         }
+    } else {
+        const SearchResult = struct {
+            path: []const usize,
+            step_idx: usize,
+            binding_name: []const u8,
+            has_kernel_continuation: bool,
+        };
+
+        const findInvocationRecursive = struct {
+            fn search(
+                alloc: std.mem.Allocator,
+                continuations: []const ast.Continuation,
+                current_path: []const usize,
+                target_inv: *const ast.Invocation,
+            ) ?SearchResult {
+                for (continuations, 0..) |*cont, cont_idx| {
+                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
+                    @memcpy(path[0..current_path.len], current_path);
+                    path[current_path.len] = cont_idx;
+
+                    if (cont.node) |*step| {
+                        if (step.* == .invocation and &step.invocation == target_inv) {
+                            var binding: []const u8 = "k";
+                            var has_kernel = false;
+                            for (cont.continuations) |nested| {
+                                if (std.mem.eql(u8, std.mem.trim(u8, nested.branch, " "), "kernel")) {
+                                    if (nested.binding) |b| binding = b;
+                                    has_kernel = true;
+                                    break;
+                                }
+                            }
+                            return SearchResult{
+                                .path = path,
+                                .step_idx = 0,
+                                .binding_name = binding,
+                                .has_kernel_continuation = has_kernel,
+                            };
+                        }
+                    }
+
+                    if (search(alloc, cont.continuations, path, target_inv)) |result| {
+                        return result;
+                    }
+
+                    alloc.free(path);
+                }
+                return null;
+            }
+        }.search;
+
+        const empty_path = &[_]usize{};
+        const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation) orelse {
+            @panic("kernel.init: could not find invocation in AST");
+        };
+
+        step_path = search_result.path;
+        step_idx = search_result.step_idx;
+        binding_name = search_result.binding_name;
+        has_kernel_continuation = search_result.has_kernel_continuation;
     }
 
     // Build unique variable name: kernel_{binding}
@@ -313,7 +371,7 @@ const std = @import("std");
     }
 
     // ========================================================================
-    // STEP 5: Replace the head invocation with a local kernel init event
+    // STEP 5: Replace invocation with a local kernel init event
     // ========================================================================
 
     const invocation_segments = allocator.alloc([]const u8, 1) catch unreachable;
@@ -328,31 +386,48 @@ const std = @import("std");
         .args = &[_]ast.Arg{},
     };
 
-    // Clone continuations (shallow clone of the array is fine if we don't mutate elements)
-    var new_continuations = allocator.alloc(ast.Continuation, flow.continuations.len) catch unreachable;
-    for (flow.continuations, 0..) |cont, i| {
-        new_continuations[i] = cont;
+    var new_item: ast.Item = undefined;
+    if (is_top_level) {
+        // Clone continuations (shallow clone of the array is fine if we don't mutate elements)
+        var new_continuations = allocator.alloc(ast.Continuation, flow.continuations.len) catch unreachable;
+        for (flow.continuations, 0..) |cont, i| {
+            new_continuations[i] = cont;
+        }
+
+        new_item = ast.Item{
+            .flow = ast.Flow{
+                .invocation = init_inv,
+                .continuations = new_continuations,
+                .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
+                .post_label = if (flow.post_label) |l| allocator.dupe(u8, l) catch unreachable else null,
+                .super_shape = null,
+                .inline_body = null,
+                .preamble_code = null,
+                .is_pure = flow.is_pure,
+                .is_transitively_pure = flow.is_transitively_pure,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            },
+        };
+    } else {
+        const new_step = ast.Step{ .invocation = init_inv };
+        const modified_flow = ast_functional.replacePipelineStepAtPath(
+            allocator,
+            flow,
+            step_path.?,
+            step_idx,
+            new_step,
+        ) catch unreachable;
+
+        new_item = if (item.* == .subflow_impl) blk: {
+            var new_subflow = item.subflow_impl;
+            new_subflow.body = .{ .flow = modified_flow };
+            break :blk ast.Item{ .subflow_impl = new_subflow };
+        } else ast.Item{ .flow = modified_flow };
     }
 
-    // Create new flow
-    const new_flow_item = ast.Item{
-        .flow = ast.Flow{
-            .invocation = init_inv,
-            .continuations = new_continuations,
-            .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
-            .post_label = if (flow.post_label) |l| allocator.dupe(u8, l) catch unreachable else null,
-            .super_shape = null,
-            .inline_body = null,
-            .preamble_code = null,
-            .is_pure = flow.is_pure,
-            .is_transitively_pure = flow.is_transitively_pure,
-            .location = flow.location,
-            .module = allocator.dupe(u8, flow.module) catch unreachable,
-        },
-    };
-
     // Replace flow in program
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_flow_item) catch unreachable;
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
     if (maybe_new_program) |new_program| {
         const ptr_type = std.fmt.allocPrint(allocator, "[*]{s}", .{type_name}) catch unreachable;
         const branch_fields = allocator.alloc(ast.Field, 4) catch unreachable;
