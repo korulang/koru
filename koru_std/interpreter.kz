@@ -370,6 +370,8 @@ pub const InterpreterContext = struct {
     allocator: std.mem.Allocator,
     // Dispatcher function pointer - set by the scope
     dispatcher: ?*const fn(*const ast.Invocation, *DispatchResult) anyerror!void,
+    // Cost lookup function - returns cost for an event name
+    cost_fn: ?*const fn([]const u8) u64,
     // Budget tracking (optional - null means unlimited)
     budget: ?*BudgetState,
     // Handle pool for resource tracking (optional)
@@ -381,6 +383,7 @@ pub const InterpreterContext = struct {
 // ============================================================================
 
 pub const DispatchFn = *const fn(*const ast.Invocation, *DispatchResult) anyerror!void;
+pub const CostFn = *const fn([]const u8) u64;
 
 // ============================================================================
 // AST VALIDATION - Pre-execution validation (shadowing, etc.)
@@ -689,6 +692,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 ~pub event run {
     source: []const u8,
     dispatcher: DispatchFn,
+    cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
     budget: ?u64  // Optional budget limit (null = unlimited)
 }
 | result { value: Value, used: u64, handles: u32 }
@@ -702,6 +706,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 ~pub event eval {
     flow: *const ast.Flow,
     dispatcher: DispatchFn,
+    cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
     budget: ?u64  // Optional budget limit (null = unlimited)
 }
 | result { value: Value, used: u64, handles: u32 }
@@ -822,6 +827,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         .expr_bindings = &expr_bindings,
         .allocator = allocator,
         .dispatcher = dispatcher,
+        .cost_fn = cost_fn,
         .budget = &budget_state,
         .handle_pool = &handle_pool,
     };
@@ -1419,9 +1425,8 @@ fn executeFlow(
             // Get event name for budget tracking
             const event_name = if (inv.path.segments.len > 0) inv.path.segments[0] else "unknown";
 
-            // Check budget before dispatch (default cost = 1 for now)
-            // TODO: Get actual cost from scope's event metadata
-            const event_cost: u64 = 1;
+            // Check budget before dispatch - use cost_fn if available
+            const event_cost: u64 = if (ctx.cost_fn) |cost_fn| cost_fn(event_name) else 1;
             if (ctx.budget) |budget| {
                 if (!budget.consume(event_cost, event_name)) {
                     return error.BudgetExhausted;
@@ -1603,6 +1608,7 @@ fn executeFlow(
         .expr_bindings = &expr_bindings,
         .allocator = allocator,
         .dispatcher = dispatcher,
+        .cost_fn = cost_fn,
         .budget = &budget_state,
         .handle_pool = &handle_pool,
     };

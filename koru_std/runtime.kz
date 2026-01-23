@@ -49,8 +49,13 @@ const ast = @import("ast");
 
     std.debug.print("[REGISTRY] Creating dispatcher for scope '{s}'\n", .{scope_name});
 
-    // Parse events from source block
-    var events_list = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
+    // Parse events from source block with optional costs
+    // Syntax: event_name or event_name(cost)
+    const EventEntry = struct {
+        name: []const u8,
+        cost: u64,
+    };
+    var events_list = std.ArrayList(EventEntry){ .items = &.{}, .capacity = 0 };
     var lines = std.mem.splitScalar(u8, source.text, '\n');
     while (lines.next()) |line| {
         var trimmed = std.mem.trim(u8, line, " \t\r");
@@ -60,7 +65,24 @@ const ast = @import("ast");
             trimmed = std.mem.trim(u8, trimmed[0..idx], " \t");
         }
         if (trimmed.len > 0) {
-            events_list.append(allocator, allocator.dupe(u8, trimmed) catch continue) catch continue;
+            // Parse event_name(cost) or just event_name
+            var event_name = trimmed;
+            var cost: u64 = 1; // Default cost
+
+            if (std.mem.indexOf(u8, trimmed, "(")) |paren_start| {
+                if (std.mem.indexOf(u8, trimmed, ")")) |paren_end| {
+                    if (paren_end > paren_start) {
+                        event_name = std.mem.trim(u8, trimmed[0..paren_start], " \t");
+                        const cost_str = trimmed[paren_start + 1 .. paren_end];
+                        cost = std.fmt.parseInt(u64, cost_str, 10) catch 1;
+                    }
+                }
+            }
+
+            events_list.append(allocator, .{
+                .name = allocator.dupe(u8, event_name) catch continue,
+                .cost = cost,
+            }) catch continue;
         }
     }
 
@@ -107,15 +129,15 @@ const ast = @import("ast");
 
     // Per-event dispatchers and descriptor table
     for (events_list.items) |event| {
-        const is_control_flow = std.mem.eql(u8, event, "if") or
-                                std.mem.eql(u8, event, "for") or
-                                std.mem.eql(u8, event, "std.control:if") or
-                                std.mem.eql(u8, event, "std.control:for");
+        const is_control_flow = std.mem.eql(u8, event.name, "if") or
+                                std.mem.eql(u8, event.name, "for") or
+                                std.mem.eql(u8, event.name, "std.control:if") or
+                                std.mem.eql(u8, event.name, "std.control:for");
 
         code.appendSlice(allocator, I ++ "fn dispatch_") catch unreachable;
         code.appendSlice(allocator, scope_name) catch unreachable;
         code.appendSlice(allocator, "_") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
+        code.appendSlice(allocator, event.name) catch unreachable;
         code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.runtime.DispatchResult) !void {\n") catch unreachable;
 
         if (is_control_flow) {
@@ -125,10 +147,10 @@ const ast = @import("ast");
         } else {
             // Generate dispatcher that handles both void and branched events
             code.appendSlice(allocator, I ++ "    const Input = main_module.") catch unreachable;
-            code.appendSlice(allocator, event) catch unreachable;
+            code.appendSlice(allocator, event.name) catch unreachable;
             code.appendSlice(allocator, "_event.Input;\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    const Handler = main_module.") catch unreachable;
-            code.appendSlice(allocator, event) catch unreachable;
+            code.appendSlice(allocator, event.name) catch unreachable;
             code.appendSlice(allocator, "_event;\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    const ReturnType = @typeInfo(@TypeOf(Handler.handler)).@\"fn\".return_type.?;\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    if (ReturnType == void) {\n") catch unreachable;
@@ -180,14 +202,29 @@ const ast = @import("ast");
     code.appendSlice(allocator, I ++ "const scope_events = [_]ScopeEvent{\n") catch unreachable;
     for (events_list.items) |event| {
         code.appendSlice(allocator, I ++ "    .{ .name = \"") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
-        code.appendSlice(allocator, "\", .dispatcher = dispatch_") catch unreachable;
+        code.appendSlice(allocator, event.name) catch unreachable;
+        code.appendSlice(allocator, "\", .cost = ") catch unreachable;
+        // Format cost as number
+        var cost_buf: [32]u8 = undefined;
+        const cost_str = std.fmt.bufPrint(&cost_buf, "{d}", .{event.cost}) catch "1";
+        code.appendSlice(allocator, cost_str) catch unreachable;
+        code.appendSlice(allocator, ", .dispatcher = dispatch_") catch unreachable;
         code.appendSlice(allocator, scope_name) catch unreachable;
         code.appendSlice(allocator, "_") catch unreachable;
-        code.appendSlice(allocator, event) catch unreachable;
+        code.appendSlice(allocator, event.name) catch unreachable;
         code.appendSlice(allocator, " },\n") catch unreachable;
     }
-    code.appendSlice(allocator, I ++ "};\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "};\n\n") catch unreachable;
+
+    // Generate cost lookup function
+    code.appendSlice(allocator, I ++ "pub fn get_event_cost_") catch unreachable;
+    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, "(event_name: []const u8) u64 {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events) |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.cost;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return 1; // Default cost\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
     code.appendSlice(allocator, I ++ "pub const ") catch unreachable;
     code.appendSlice(allocator, scope_name) catch unreachable;
@@ -241,6 +278,7 @@ pub const FieldValue = @import("root").koru_std.interpreter.FieldValue;
 pub const NamedField = @import("root").koru_std.interpreter.NamedField;
 pub const ScopeEvent = struct {
     name: []const u8,
+    cost: u64,  // Budget cost for this event
     dispatcher: DispatchFn,
 };
 pub const ScopeDescriptor = struct {
