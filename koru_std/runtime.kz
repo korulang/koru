@@ -31,29 +31,138 @@ const koru_parser = @import("koru_parser");
 ~proc register {
     const ast_reg = @import("ast");
     const ast_functional = @import("ast_functional");
+    const CompilerEnvRt = @import("root").CompilerEnv;
+
+    const Helpers = struct {
+        fn stripQuotes(value: []const u8) []const u8 {
+            if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') {
+                return value[1 .. value.len - 1];
+            }
+            return value;
+        }
+
+        fn findScopeAnnotation(annotations: []const []const u8) ?[]const u8 {
+            for (annotations) |ann| {
+                if (std.mem.startsWith(u8, ann, "registry:scope(") and std.mem.endsWith(u8, ann, ")")) {
+                    return ann["registry:scope(".len .. ann.len - 1];
+                }
+            }
+            return null;
+        }
+
+        fn extractScopeName(inv: *const ast_reg.Invocation, flow_annotations: []const []const u8) []const u8 {
+            for (inv.args) |arg| {
+                if (std.mem.eql(u8, arg.name, "scope")) {
+                    return stripQuotes(arg.value);
+                }
+            }
+            if (findScopeAnnotation(inv.annotations)) |name| return name;
+            if (findScopeAnnotation(flow_annotations)) |name| return name;
+            return "default";
+        }
+
+        fn matchGlob(prefix: []const u8, event_name: []const u8) bool {
+            if (std.mem.startsWith(u8, event_name, prefix)) {
+                const rest = event_name[prefix.len..];
+                if (rest.len > 0 and (rest[0] == ':' or rest[0] == '.')) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        fn mangleIdentifier(alloc: std.mem.Allocator, name: []const u8) []const u8 {
+            var out = std.ArrayList(u8){ .items = &.{}, .capacity = 0 };
+            for (name) |c| {
+                const is_alnum = (c >= 'a' and c <= 'z') or
+                    (c >= 'A' and c <= 'Z') or
+                    (c >= '0' and c <= '9') or
+                    (c == '_');
+                out.append(alloc, if (is_alnum) c else '_') catch continue;
+            }
+            return out.toOwnedSlice(alloc) catch name;
+        }
+
+        fn buildEventName(alloc: std.mem.Allocator, segments: []const []const u8) []const u8 {
+            if (segments.len == 0) return "";
+            var total_len: usize = 0;
+            for (segments) |seg| total_len += seg.len;
+            total_len += if (segments.len > 1) segments.len - 1 else 0;
+            var buf = alloc.alloc(u8, total_len) catch return "";
+            var pos: usize = 0;
+            for (segments, 0..) |seg, i| {
+                if (i > 0) {
+                    buf[pos] = '.';
+                    pos += 1;
+                }
+                @memcpy(buf[pos..][0..seg.len], seg);
+                pos += seg.len;
+            }
+            return buf;
+        }
+
+        fn buildEventStructName(alloc: std.mem.Allocator, segments: []const []const u8) []const u8 {
+            var out = std.ArrayList(u8){ .items = &.{}, .capacity = 0 };
+            for (segments, 0..) |seg, idx| {
+                if (idx > 0) out.append(alloc, '_') catch continue;
+                for (seg) |c| {
+                    if (c == '*') {
+                        out.appendSlice(alloc, "_star_") catch continue;
+                    } else if (c == '.') {
+                        out.append(alloc, '_') catch continue;
+                    } else {
+                        out.append(alloc, c) catch continue;
+                    }
+                }
+            }
+            return out.toOwnedSlice(alloc) catch "";
+        }
+
+        fn buildModulePath(alloc: std.mem.Allocator, module_path: []const u8, main_module_name: []const u8) []const u8 {
+            if (std.mem.eql(u8, module_path, main_module_name) or std.mem.eql(u8, module_path, "main")) {
+                return alloc.dupe(u8, "main_module") catch "main_module";
+            }
+
+            var out = std.ArrayList(u8){ .items = &.{}, .capacity = 0 };
+            var splitter = if (std.mem.indexOfScalar(u8, module_path, '/')) |_| std.mem.splitScalar(u8, module_path, '/')
+                else std.mem.splitScalar(u8, module_path, '.');
+            var first = true;
+            while (splitter.next()) |segment| {
+                if (!first) {
+                    out.append(alloc, '.') catch continue;
+                } else {
+                    out.appendSlice(alloc, "koru_") catch continue;
+                }
+                out.appendSlice(alloc, segment) catch continue;
+                first = false;
+            }
+            return out.toOwnedSlice(alloc) catch module_path;
+        }
+
+        fn buildEventSymbol(alloc: std.mem.Allocator, module_path: ?[]const u8, segments: []const []const u8, main_module_name: []const u8) []const u8 {
+            const event_struct = buildEventStructName(alloc, segments);
+            if (module_path) |mp| {
+                const module_prefix = buildModulePath(alloc, mp, main_module_name);
+                return std.fmt.allocPrint(alloc, "{s}.{s}_event", .{ module_prefix, event_struct }) catch event_struct;
+            }
+            return std.fmt.allocPrint(alloc, "main_module.{s}_event", .{ event_struct }) catch event_struct;
+        }
+    };
 
     // Get the flow from the item
     const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{ .program = program } };
 
-    // Extract scope name from invocation args
-    var scope_name: []const u8 = "default";
-    for (invocation.args) |arg| {
-        if (std.mem.eql(u8, arg.name, "scope")) {
-            var val = arg.value;
-            if (val.len >= 2 and val[0] == '"' and val[val.len - 1] == '"') {
-                val = val[1..val.len - 1];
-            }
-            scope_name = val;
-            break;
-        }
-    }
+    // Extract scope name from args or registry annotations
+    const scope_name = Helpers.extractScopeName(invocation, flow.annotations);
 
     std.debug.print("[REGISTRY] Creating dispatcher for scope '{s}'\n", .{scope_name});
 
-    // Parse events from source block with optional costs
+    // Parse events from source block with optional costs and composition
     // Syntax:
     //   event_name              - default cost 1
     //   event_name(cost)        - custom cost
+    //   scope(other)            - include another scope
+    //   module:*                - include all events under module prefix
     //
     // Obligations are extracted from event signatures using phantom types:
     //   [state!] in output = creates obligation (! suffix)
@@ -64,24 +173,83 @@ const koru_parser = @import("koru_parser");
         cost: u64,
         creates_obligations: []const []const u8,    // From [state!] in outputs
         discharges_obligations: []const []const u8, // From [!state] in inputs
+        symbol: []const u8,
+        dispatch_name: []const u8,
     };
 
-    // Helper: Find EventDecl by name in program AST
-    const findEventDecl = struct {
-        fn find(prog: *const ast_reg.Program, event_name: []const u8) ?*const ast_reg.EventDecl {
+    const ScopeDef = struct {
+        name: []const u8,
+        source_text: []const u8,
+        annotations: []const []const u8,
+    };
+
+    const EventInfo = struct {
+        name: []const u8,
+        module_name: ?[]const u8,
+        event_decl: *const ast_reg.EventDecl,
+    };
+
+    const EntryKind = enum { event, glob, scope_ref };
+
+    const Entry = struct {
+        kind: EntryKind,
+        name: []const u8,
+        cost: u64,
+    };
+
+    const ResolvedEvent = struct {
+        name: []const u8,
+        cost: u64,
+    };
+
+    const RegistryHelper = struct {
+        fn collectEventInfos(alloc: std.mem.Allocator, prog: *const ast_reg.Program) []EventInfo {
+            var infos = std.ArrayList(EventInfo){ .items = &.{}, .capacity = 0 };
+            for (prog.items) |*prog_item| {
+                switch (prog_item.*) {
+                    .event_decl => |*ed| {
+                        const event_name = Helpers.buildEventName(alloc, ed.path.segments);
+                        infos.append(alloc, .{
+                            .name = event_name,
+                            .module_name = null,
+                            .event_decl = ed,
+                        }) catch continue;
+                    },
+                    .module_decl => |mod| {
+                        for (mod.items) |*mod_item| {
+                            if (mod_item.* == .event_decl) {
+                                const ed = &mod_item.event_decl;
+                                const event_name = Helpers.buildEventName(alloc, ed.path.segments);
+                                const qualified = std.fmt.allocPrint(alloc, "{s}:{s}", .{ mod.logical_name, event_name }) catch event_name;
+                                infos.append(alloc, .{
+                                    .name = qualified,
+                                    .module_name = alloc.dupe(u8, mod.logical_name) catch mod.logical_name,
+                                    .event_decl = ed,
+                                }) catch continue;
+                            }
+                        }
+                    },
+                    else => {},
+                }
+            }
+            return infos.toOwnedSlice(alloc) catch &.{};
+        }
+
+        fn collectScopeDefs(alloc: std.mem.Allocator, prog: *const ast_reg.Program) []ScopeDef {
+            var defs = std.ArrayList(ScopeDef){ .items = &.{}, .capacity = 0 };
             for (prog.items) |prog_item| {
                 switch (prog_item) {
-                    .event_decl => |*ed| {
-                        if (ed.path.segments.len > 0 and std.mem.eql(u8, ed.path.segments[0], event_name)) {
-                            return ed;
+                    .flow => |flow_item| {
+                        if (isRegisterFlow(&flow_item.invocation)) {
+                            addScopeDef(alloc, &defs, &flow_item.invocation, flow_item.annotations);
                         }
                     },
                     .module_decl => |mod| {
                         for (mod.items) |mod_item| {
-                            if (mod_item == .event_decl) {
-                                const ed = &mod_item.event_decl;
-                                if (ed.path.segments.len > 0 and std.mem.eql(u8, ed.path.segments[0], event_name)) {
-                                    return ed;
+                            if (mod_item == .flow) {
+                                const flow_item = mod_item.flow;
+                                if (isRegisterFlow(&flow_item.invocation)) {
+                                    addScopeDef(alloc, &defs, &flow_item.invocation, flow_item.annotations);
                                 }
                             }
                         }
@@ -89,9 +257,144 @@ const koru_parser = @import("koru_parser");
                     else => {},
                 }
             }
+            return defs.toOwnedSlice(alloc) catch &.{};
+        }
+
+        fn isRegisterFlow(inv: *const ast_reg.Invocation) bool {
+            if (inv.path.module_qualifier) |mq| {
+                if (std.mem.eql(u8, mq, "std.runtime") and inv.path.segments.len == 1 and
+                    std.mem.eql(u8, inv.path.segments[0], "register")) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        fn addScopeDef(
+            alloc: std.mem.Allocator,
+            defs: *std.ArrayList(ScopeDef),
+            inv: *const ast_reg.Invocation,
+            annotations: []const []const u8,
+        ) void {
+            var source_text: []const u8 = "";
+            for (inv.args) |arg| {
+                if (arg.source_value) |src| {
+                    source_text = src.text;
+                    break;
+                }
+            }
+
+            const name = Helpers.extractScopeName(inv, annotations);
+            defs.append(alloc, .{
+                .name = alloc.dupe(u8, name) catch name,
+                .source_text = alloc.dupe(u8, source_text) catch source_text,
+                .annotations = annotations,
+            }) catch {};
+        }
+
+        fn parseEntries(alloc: std.mem.Allocator, source_text: []const u8, debug_enabled: bool) []Entry {
+            var entries = std.ArrayList(Entry){ .items = &.{}, .capacity = 0 };
+            var lines = std.mem.splitScalar(u8, source_text, '\n');
+            while (lines.next()) |line| {
+                var trimmed = std.mem.trim(u8, line, " \t\r");
+                if (trimmed.len == 0) continue;
+                if (std.mem.startsWith(u8, trimmed, "//")) continue;
+                if (std.mem.indexOf(u8, trimmed, "//")) |idx| {
+                    trimmed = std.mem.trim(u8, trimmed[0..idx], " \t");
+                }
+
+                var entry_text = trimmed;
+                if (entry_text.len > 0 and entry_text[0] == '[') {
+                    if (std.mem.indexOf(u8, entry_text, "]")) |close| {
+                        const flag = entry_text[1..close];
+                        if (std.mem.eql(u8, flag, "debug") and !debug_enabled) {
+                            continue;
+                        }
+                        entry_text = std.mem.trim(u8, entry_text[close + 1 ..], " \t");
+                    }
+                }
+
+                if (entry_text.len == 0) continue;
+
+                if (std.mem.startsWith(u8, entry_text, "scope(")) {
+                    const close = std.mem.indexOf(u8, entry_text, ")") orelse continue;
+                    const scope_ref_name = std.mem.trim(u8, entry_text[6..close], " \t");
+                    entries.append(alloc, .{ .kind = .scope_ref, .name = alloc.dupe(u8, scope_ref_name) catch scope_ref_name, .cost = 1 }) catch continue;
+                    continue;
+                }
+
+                if (entry_text.len >= 2 and (std.mem.endsWith(u8, entry_text, ":*") or std.mem.endsWith(u8, entry_text, ".*"))) {
+                    const prefix = std.mem.trim(u8, entry_text[0 .. entry_text.len - 2], " \t");
+                    entries.append(alloc, .{ .kind = .glob, .name = alloc.dupe(u8, prefix) catch prefix, .cost = 1 }) catch continue;
+                    continue;
+                }
+
+                var event_name = entry_text;
+                var cost: u64 = 1;
+                if (std.mem.lastIndexOf(u8, entry_text, "(")) |paren_start| {
+                    if (entry_text[entry_text.len - 1] == ')') {
+                        const cost_str = entry_text[paren_start + 1 .. entry_text.len - 1];
+                        event_name = std.mem.trim(u8, entry_text[0..paren_start], " \t");
+                        cost = std.fmt.parseInt(u64, cost_str, 10) catch 1;
+                    }
+                }
+
+                entries.append(alloc, .{ .kind = .event, .name = alloc.dupe(u8, event_name) catch event_name, .cost = cost }) catch continue;
+            }
+            return entries.toOwnedSlice(alloc) catch &.{};
+        }
+
+        fn findScopeDef(scope_defs: []const ScopeDef, name: []const u8) ?*const ScopeDef {
+            for (scope_defs) |*scope| {
+                if (std.mem.eql(u8, scope.name, name)) return scope;
+            }
             return null;
         }
-    }.find;
+
+        fn findEventInfo(event_infos: []const EventInfo, name: []const u8) ?*const EventInfo {
+            for (event_infos) |*info| {
+                if (std.mem.eql(u8, info.name, name)) return info;
+            }
+            return null;
+        }
+
+        fn appendUnique(events: *std.ArrayList(ResolvedEvent), alloc: std.mem.Allocator, name: []const u8, cost: u64) void {
+            for (events.items) |existing| {
+                if (std.mem.eql(u8, existing.name, name)) return;
+            }
+            events.append(alloc, .{ .name = name, .cost = cost }) catch {};
+        }
+
+        fn resolveScope(
+            alloc: std.mem.Allocator,
+            scope_defs: []const ScopeDef,
+            event_infos: []const EventInfo,
+            scope_id: []const u8,
+            debug_enabled: bool,
+            visited: *std.StringHashMap(void),
+            out_events: *std.ArrayList(ResolvedEvent),
+        ) void {
+            if (visited.contains(scope_id)) return;
+            visited.put(scope_id, {}) catch {};
+
+            const scope_def = findScopeDef(scope_defs, scope_id) orelse return;
+            const entries = parseEntries(alloc, scope_def.source_text, debug_enabled);
+
+            for (entries) |entry| {
+                switch (entry.kind) {
+                    .event => appendUnique(out_events, alloc, entry.name, entry.cost),
+                    .glob => {
+                        for (event_infos) |info| {
+                            if (Helpers.matchGlob(entry.name, info.name)) {
+                                appendUnique(out_events, alloc, info.name, entry.cost);
+                            }
+                        }
+                    },
+                    .scope_ref => resolveScope(alloc, scope_defs, event_infos, entry.name, debug_enabled, visited, out_events),
+                }
+            }
+        }
+    };
 
     // Helper: Parse phantom string to extract obligation name
     // Returns (state_name, is_creates, is_discharges)
@@ -166,50 +469,37 @@ const koru_parser = @import("koru_parser");
         }
     }.extract;
 
+    const event_infos = RegistryHelper.collectEventInfos(allocator, program);
+    const scope_defs = RegistryHelper.collectScopeDefs(allocator, program);
+    const debug_enabled = CompilerEnvRt.hasFlag("debug");
+
+    var resolved_events = std.ArrayList(ResolvedEvent){ .items = &.{}, .capacity = 0 };
+    var visited = std.StringHashMap(void).init(allocator);
+    defer visited.deinit();
+    RegistryHelper.resolveScope(allocator, scope_defs, event_infos, scope_name, debug_enabled, &visited, &resolved_events);
+
+    const scope_ident = Helpers.mangleIdentifier(allocator, scope_name);
     var events_list = std.ArrayList(EventEntry){ .items = &.{}, .capacity = 0 };
-    var lines = std.mem.splitScalar(u8, source.text, '\n');
-    while (lines.next()) |line| {
-        var trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0) continue;
-        if (std.mem.startsWith(u8, trimmed, "//")) continue;
-        if (std.mem.indexOf(u8, trimmed, "//")) |idx| {
-            trimmed = std.mem.trim(u8, trimmed[0..idx], " \t");
+    for (resolved_events.items) |resolved| {
+        const info = RegistryHelper.findEventInfo(event_infos, resolved.name) orelse continue;
+        const obligations = extractObligations(allocator, info.event_decl);
+        const symbol = Helpers.buildEventSymbol(allocator, info.module_name, info.event_decl.path.segments, program.main_module_name);
+        const dispatch_ident = Helpers.mangleIdentifier(allocator, resolved.name);
+        const dispatch_name = std.fmt.allocPrint(allocator, "dispatch_{s}_{s}", .{ scope_ident, dispatch_ident }) catch dispatch_ident;
+
+        if (obligations.creates.len > 0 or obligations.discharges.len > 0) {
+            std.debug.print("[REGISTRY] Event '{s}': creates={d}, discharges={d}\n",
+                .{resolved.name, obligations.creates.len, obligations.discharges.len});
         }
-        if (trimmed.len > 0) {
-            var event_name = trimmed;
-            var cost: u64 = 1;
 
-            // Parse event_name(cost)
-            if (std.mem.indexOf(u8, trimmed, "(")) |paren_start| {
-                if (std.mem.indexOf(u8, trimmed, ")")) |paren_end| {
-                    if (paren_end > paren_start) {
-                        event_name = std.mem.trim(u8, trimmed[0..paren_start], " \t");
-                        const cost_str = trimmed[paren_start + 1 .. paren_end];
-                        cost = std.fmt.parseInt(u64, cost_str, 10) catch 1;
-                    }
-                }
-            }
-
-            // Look up event in program AST to extract obligations
-            var creates: []const []const u8 = &.{};
-            var discharges: []const []const u8 = &.{};
-            if (findEventDecl(program, event_name)) |ed| {
-                const obligations = extractObligations(allocator, ed);
-                creates = obligations.creates;
-                discharges = obligations.discharges;
-                if (creates.len > 0 or discharges.len > 0) {
-                    std.debug.print("[REGISTRY] Event '{s}': creates={d}, discharges={d}\n",
-                        .{event_name, creates.len, discharges.len});
-                }
-            }
-
-            events_list.append(allocator, .{
-                .name = allocator.dupe(u8, event_name) catch continue,
-                .cost = cost,
-                .creates_obligations = creates,
-                .discharges_obligations = discharges,
-            }) catch continue;
-        }
+        events_list.append(allocator, .{
+            .name = resolved.name,
+            .cost = resolved.cost,
+            .creates_obligations = obligations.creates,
+            .discharges_obligations = obligations.discharges,
+            .symbol = symbol,
+            .dispatch_name = dispatch_name,
+        }) catch continue;
     }
 
     std.debug.print("[REGISTRY] Found {d} events\n", .{events_list.items.len});
@@ -260,10 +550,8 @@ const koru_parser = @import("koru_parser");
                                 std.mem.eql(u8, event.name, "std.control:if") or
                                 std.mem.eql(u8, event.name, "std.control:for");
 
-        code.appendSlice(allocator, I ++ "fn dispatch_") catch unreachable;
-        code.appendSlice(allocator, scope_name) catch unreachable;
-        code.appendSlice(allocator, "_") catch unreachable;
-        code.appendSlice(allocator, event.name) catch unreachable;
+        code.appendSlice(allocator, I ++ "fn ") catch unreachable;
+        code.appendSlice(allocator, event.dispatch_name) catch unreachable;
         code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.runtime.DispatchResult) !void {\n") catch unreachable;
 
         if (is_control_flow) {
@@ -272,12 +560,12 @@ const koru_parser = @import("koru_parser");
             code.appendSlice(allocator, I ++ "    return;\n") catch unreachable;
         } else {
             // Generate dispatcher that handles both void and branched events
-            code.appendSlice(allocator, I ++ "    const Input = main_module.") catch unreachable;
-            code.appendSlice(allocator, event.name) catch unreachable;
-            code.appendSlice(allocator, "_event.Input;\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "    const Handler = main_module.") catch unreachable;
-            code.appendSlice(allocator, event.name) catch unreachable;
-            code.appendSlice(allocator, "_event;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    const Input = ") catch unreachable;
+            code.appendSlice(allocator, event.symbol) catch unreachable;
+            code.appendSlice(allocator, ".Input;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    const Handler = ") catch unreachable;
+            code.appendSlice(allocator, event.symbol) catch unreachable;
+            code.appendSlice(allocator, ";\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    const ReturnType = @typeInfo(@TypeOf(Handler.handler)).@\"fn\".return_type.?;\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    if (ReturnType == void) {\n") catch unreachable;
             code.appendSlice(allocator, I ++ "        // Void event - just call and return empty branch\n") catch unreachable;
@@ -355,10 +643,8 @@ const koru_parser = @import("koru_parser");
         }
         code.appendSlice(allocator, "}") catch unreachable;
 
-        code.appendSlice(allocator, ", .dispatcher = dispatch_") catch unreachable;
-        code.appendSlice(allocator, scope_name) catch unreachable;
-        code.appendSlice(allocator, "_") catch unreachable;
-        code.appendSlice(allocator, event.name) catch unreachable;
+        code.appendSlice(allocator, ", .dispatcher = ") catch unreachable;
+        code.appendSlice(allocator, event.dispatch_name) catch unreachable;
         code.appendSlice(allocator, " },\n") catch unreachable;
     }
     code.appendSlice(allocator, I ++ "};\n\n") catch unreachable;
@@ -413,7 +699,20 @@ const koru_parser = @import("koru_parser");
     code.appendSlice(allocator, I ++ "pub fn dispatch_") catch unreachable;
     code.appendSlice(allocator, scope_name) catch unreachable;
     code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.runtime.DispatchResult) !void {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    const event_name = if (inv.path.segments.len > 0) inv.path.segments[0] else \"\";\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    var name_buf: [256]u8 = undefined;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    var name_len: usize = 0;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    if (inv.path.module_qualifier) |mq| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        @memcpy(name_buf[name_len..][0..mq.len], mq);\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        name_len += mq.len;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        name_buf[name_len] = ':';\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        name_len += 1;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    for (inv.path.segments, 0..) |seg, i| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (i > 0) { name_buf[name_len] = '.'; name_len += 1; }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        @memcpy(name_buf[name_len..][0..seg.len], seg);\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        name_len += seg.len;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    const event_name = name_buf[0..name_len];\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    inline for (scope_events) |ev| {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "            return ev.dispatcher(inv, out);\n") catch unreachable;
@@ -588,6 +887,7 @@ fn buildScopeTable() []const ScopeRuntime {
 | result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
 | validation_error { message: []const u8 }
+| event_denied { name: []const u8 }
 | dispatch_error { event_name: []const u8, message: []const u8 }
 | scope_not_found { scope_name: []const u8 }
 
@@ -631,10 +931,15 @@ fn buildScopeTable() []const ScopeRuntime {
                     .handles = e.handles,
                 } },
                 .validation_error => |e| return .{ .validation_error = .{ .message = e.message } },
-                .dispatch_error => |e| return .{ .dispatch_error = .{
-                    .event_name = e.event_name,
-                    .message = e.message,
-                } },
+                .dispatch_error => |e| {
+                    if (std.mem.eql(u8, e.message, "EventDenied")) {
+                        return .{ .event_denied = .{ .name = e.event_name } };
+                    }
+                    return .{ .dispatch_error = .{
+                        .event_name = e.event_name,
+                        .message = e.message,
+                    } };
+                },
                 .scope_not_found => |e| return .{ .scope_not_found = .{ .scope_name = e.scope_name } },
             }
         },
