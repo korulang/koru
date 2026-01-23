@@ -290,10 +290,10 @@ const std = @import("std");
         // Generate array initialization
         proc_body = std.fmt.allocPrint(
             allocator,
-            \\const std = @import("std");
+            \\const __koru_std = @import("std");
             \\const {s} = [_]{s}{{ {s} }};
-            \\const {s} = std.heap.page_allocator.alloc({s}, {s}.len) catch unreachable;
-            \\std.mem.copyForwards({s}, {s}, {s}[0..]);
+            \\const {s} = __koru_std.heap.page_allocator.alloc({s}, {s}.len) catch unreachable;
+            \\__koru_std.mem.copyForwards({s}, {s}, {s}[0..]);
             \\return .{{ .kernel = .{{ .ptr = {s}.ptr, .len = {s}.len, .capacity = {s}.len, .layout = "aos" }} }};
             ,
             .{ init_name, type_name, elements.items, data_name, type_name, init_name, type_name, data_name, init_name, data_name, data_name, data_name }
@@ -303,8 +303,8 @@ const std = @import("std");
         const fields = transformFields(allocator, source.text);
         proc_body = std.fmt.allocPrint(
             allocator,
-            \\const std = @import("std");
-            \\const {s} = std.heap.page_allocator.alloc({s}, 1) catch unreachable;
+            \\const __koru_std = @import("std");
+            \\const {s} = __koru_std.heap.page_allocator.alloc({s}, 1) catch unreachable;
             \\{s}[0] = {s}{{ {s} }};
             \\return .{{ .kernel = .{{ .ptr = {s}.ptr, .len = {s}.len, .capacity = {s}.len, .layout = "aos" }} }};
             ,
