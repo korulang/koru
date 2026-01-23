@@ -267,7 +267,7 @@ pub const HandlePool = struct {
         const name_copy = try self.allocator.dupe(u8, name);
         self.next_id += 1;
 
-        try self.handles.append(.{
+        try self.handles.append(self.allocator, .{
             .name = name_copy,
             .binding = try self.allocator.dupe(u8, binding),
             .obligation = try self.allocator.dupe(u8, obligation),
@@ -372,6 +372,10 @@ pub const InterpreterContext = struct {
     dispatcher: ?*const fn(*const ast.Invocation, *DispatchResult) anyerror!void,
     // Cost lookup function - returns cost for an event name
     cost_fn: ?*const fn([]const u8) u64,
+    // Obligation lookup functions
+    creates_obligation_fn: ?ObligationFn,   // event -> obligation it creates
+    discharges_obligation_fn: ?ObligationFn, // event -> obligation it discharges
+    discharge_event_fn: ?ObligationFn,       // obligation -> event that discharges it
     // Budget tracking (optional - null means unlimited)
     budget: ?*BudgetState,
     // Handle pool for resource tracking (optional)
@@ -384,6 +388,7 @@ pub const InterpreterContext = struct {
 
 pub const DispatchFn = *const fn(*const ast.Invocation, *DispatchResult) anyerror!void;
 pub const CostFn = *const fn([]const u8) u64;
+pub const ObligationFn = *const fn([]const u8) ?[]const u8;  // event -> obligation state
 
 // ============================================================================
 // AST VALIDATION - Pre-execution validation (shadowing, etc.)
@@ -693,6 +698,9 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     source: []const u8,
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
+    creates_obligation_fn: ?ObligationFn,   // event -> obligation it creates
+    discharges_obligation_fn: ?ObligationFn, // event -> obligation it discharges
+    discharge_event_fn: ?ObligationFn,       // obligation -> event that discharges it
     budget: ?u64  // Optional budget limit (null = unlimited)
 }
 | result { value: Value, used: u64, handles: u32 }
@@ -707,6 +715,9 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     flow: *const ast.Flow,
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
+    creates_obligation_fn: ?ObligationFn,
+    discharges_obligation_fn: ?ObligationFn,
+    discharge_event_fn: ?ObligationFn,
     budget: ?u64  // Optional budget limit (null = unlimited)
 }
 | result { value: Value, used: u64, handles: u32 }
@@ -828,6 +839,9 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         .allocator = allocator,
         .dispatcher = dispatcher,
         .cost_fn = cost_fn,
+        .creates_obligation_fn = creates_obligation_fn,
+        .discharges_obligation_fn = discharges_obligation_fn,
+        .discharge_event_fn = discharge_event_fn,
         .budget = &budget_state,
         .handle_pool = &handle_pool,
     };
@@ -866,6 +880,21 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 
     const stable_value = result_value.clonePersistent();
     // std.debug.print("[INTERPRETER] Execution complete, branch: {s}\n", .{stable_value.branch});
+
+    // Auto-discharge any undischarged handles
+    const undischarged_count = handle_pool.countUndischarged();
+    if (undischarged_count > 0) {
+        const undischarged = handle_pool.getUndischarged();
+        for (undischarged) |handle| {
+            if (!handle.discharged) {
+                std.debug.print("[AUTO-DISCHARGE] Handle '{s}' with obligation '{s}'\n",
+                    .{handle.name, handle.obligation});
+                // Mark as discharged (actual cleanup would call discharge event)
+                handle_pool.discharge(handle.binding);
+            }
+        }
+    }
+
     return .{ .result = .{
         .value = stable_value,
         .used = budget_state.used,
@@ -1450,6 +1479,34 @@ fn executeFlow(
             evaluated_inv.args = evaluated_args;
 
             try dispatcher(&evaluated_inv, &dispatch_result);
+
+            // Track obligations for handle pool
+            if (ctx.handle_pool) |pool| {
+                // Check if this event creates an obligation
+                if (ctx.creates_obligation_fn) |creates_fn| {
+                    if (creates_fn(event_name)) |obligation| {
+                        // Find the discharge event for this obligation
+                        const discharge_event = if (ctx.discharge_event_fn) |discharge_fn|
+                            discharge_fn(obligation) orelse "unknown"
+                        else
+                            "unknown";
+                        // Create a binding name based on result
+                        var binding_buf: [64]u8 = undefined;
+                        const binding_name = std.fmt.bufPrint(&binding_buf, "result.{s}", .{dispatch_result.branch}) catch "result";
+                        _ = pool.acquire(binding_name, obligation, discharge_event) catch {};
+                    }
+                }
+                // Check if this event discharges an obligation
+                if (ctx.discharges_obligation_fn) |discharges_fn| {
+                    if (discharges_fn(event_name)) |_| {
+                        // Mark any matching handles as discharged
+                        // For now, discharge by the first arg (typically the handle)
+                        if (evaluated_inv.args.len > 0) {
+                            pool.discharge(evaluated_inv.args[0].value);
+                        }
+                    }
+                }
+            }
         } else {
             return error.NoDispatcher;
         }
@@ -1609,6 +1666,9 @@ fn executeFlow(
         .allocator = allocator,
         .dispatcher = dispatcher,
         .cost_fn = cost_fn,
+        .creates_obligation_fn = creates_obligation_fn,
+        .discharges_obligation_fn = discharges_obligation_fn,
+        .discharge_event_fn = discharge_event_fn,
         .budget = &budget_state,
         .handle_pool = &handle_pool,
     };

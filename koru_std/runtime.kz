@@ -49,11 +49,17 @@ const ast = @import("ast");
 
     std.debug.print("[REGISTRY] Creating dispatcher for scope '{s}'\n", .{scope_name});
 
-    // Parse events from source block with optional costs
-    // Syntax: event_name or event_name(cost)
+    // Parse events from source block with optional costs and obligations
+    // Syntax:
+    //   event_name              - default cost 1, no obligations
+    //   event_name(cost)        - custom cost, no obligations
+    //   event_name(cost) -> state   - creates obligation for "state"
+    //   event_name(cost) <- state   - discharges obligation for "state"
     const EventEntry = struct {
         name: []const u8,
         cost: u64,
+        creates_obligation: ?[]const u8,    // -> state
+        discharges_obligation: ?[]const u8, // <- state
     };
     var events_list = std.ArrayList(EventEntry){ .items = &.{}, .capacity = 0 };
     var lines = std.mem.splitScalar(u8, source.text, '\n');
@@ -65,10 +71,23 @@ const ast = @import("ast");
             trimmed = std.mem.trim(u8, trimmed[0..idx], " \t");
         }
         if (trimmed.len > 0) {
-            // Parse event_name(cost) or just event_name
             var event_name = trimmed;
-            var cost: u64 = 1; // Default cost
+            var cost: u64 = 1;
+            var creates: ?[]const u8 = null;
+            var discharges: ?[]const u8 = null;
 
+            // Check for obligation arrows first (before parsing cost)
+            // -> creates, <- discharges
+            if (std.mem.indexOf(u8, trimmed, " -> ")) |arrow_pos| {
+                creates = std.mem.trim(u8, trimmed[arrow_pos + 4 ..], " \t");
+                trimmed = trimmed[0..arrow_pos];
+            } else if (std.mem.indexOf(u8, trimmed, " <- ")) |arrow_pos| {
+                discharges = std.mem.trim(u8, trimmed[arrow_pos + 4 ..], " \t");
+                trimmed = trimmed[0..arrow_pos];
+            }
+
+            // Now parse event_name(cost)
+            event_name = trimmed;
             if (std.mem.indexOf(u8, trimmed, "(")) |paren_start| {
                 if (std.mem.indexOf(u8, trimmed, ")")) |paren_end| {
                     if (paren_end > paren_start) {
@@ -82,6 +101,8 @@ const ast = @import("ast");
             events_list.append(allocator, .{
                 .name = allocator.dupe(u8, event_name) catch continue,
                 .cost = cost,
+                .creates_obligation = if (creates) |c| allocator.dupe(u8, c) catch null else null,
+                .discharges_obligation = if (discharges) |d| allocator.dupe(u8, d) catch null else null,
             }) catch continue;
         }
     }
@@ -204,10 +225,26 @@ const ast = @import("ast");
         code.appendSlice(allocator, I ++ "    .{ .name = \"") catch unreachable;
         code.appendSlice(allocator, event.name) catch unreachable;
         code.appendSlice(allocator, "\", .cost = ") catch unreachable;
-        // Format cost as number
         var cost_buf: [32]u8 = undefined;
         const cost_str = std.fmt.bufPrint(&cost_buf, "{d}", .{event.cost}) catch "1";
         code.appendSlice(allocator, cost_str) catch unreachable;
+        // Add obligation fields
+        code.appendSlice(allocator, ", .creates_obligation = ") catch unreachable;
+        if (event.creates_obligation) |obl| {
+            code.appendSlice(allocator, "\"") catch unreachable;
+            code.appendSlice(allocator, obl) catch unreachable;
+            code.appendSlice(allocator, "\"") catch unreachable;
+        } else {
+            code.appendSlice(allocator, "null") catch unreachable;
+        }
+        code.appendSlice(allocator, ", .discharges_obligation = ") catch unreachable;
+        if (event.discharges_obligation) |obl| {
+            code.appendSlice(allocator, "\"") catch unreachable;
+            code.appendSlice(allocator, obl) catch unreachable;
+            code.appendSlice(allocator, "\"") catch unreachable;
+        } else {
+            code.appendSlice(allocator, "null") catch unreachable;
+        }
         code.appendSlice(allocator, ", .dispatcher = dispatch_") catch unreachable;
         code.appendSlice(allocator, scope_name) catch unreachable;
         code.appendSlice(allocator, "_") catch unreachable;
@@ -224,6 +261,37 @@ const ast = @import("ast");
     code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.cost;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    return 1; // Default cost\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
+
+    // Generate obligation lookup functions
+    code.appendSlice(allocator, I ++ "pub fn get_creates_obligation_") catch unreachable;
+    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, "(event_name: []const u8) ?[]const u8 {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events) |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.creates_obligation;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return null;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
+
+    code.appendSlice(allocator, I ++ "pub fn get_discharges_obligation_") catch unreachable;
+    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, "(event_name: []const u8) ?[]const u8 {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events) |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.discharges_obligation;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return null;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
+
+    // Generate discharge event lookup (for auto-discharge)
+    code.appendSlice(allocator, I ++ "pub fn get_discharge_event_") catch unreachable;
+    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, "(obligation: []const u8) ?[]const u8 {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events) |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (ev.discharges_obligation) |dis| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "            if (dispatcher_std.mem.eql(u8, obligation, dis)) return ev.name;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return null;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
     code.appendSlice(allocator, I ++ "pub const ") catch unreachable;
@@ -279,6 +347,8 @@ pub const NamedField = @import("root").koru_std.interpreter.NamedField;
 pub const ScopeEvent = struct {
     name: []const u8,
     cost: u64,  // Budget cost for this event
+    creates_obligation: ?[]const u8,    // State name this event creates obligation for
+    discharges_obligation: ?[]const u8, // State name this event discharges
     dispatcher: DispatchFn,
 };
 pub const ScopeDescriptor = struct {
