@@ -1,0 +1,33 @@
+// Test: Basic budget tracking
+// Events have costs, budget is deducted on each call
+// Response includes used budget
+
+~import "$std/runtime"
+~import "$std/interpreter"
+~import "$std/io"
+
+const std = @import("std");
+
+// Simple event with no resources
+~pub event greet { name: []const u8 }
+| greeted { message: []const u8 }
+
+~proc greet {
+    var buf: [256]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, "Hello, {s}!", .{name}) catch "Hello!";
+    return .{ .greeted = .{ .message = msg } };
+}
+
+// Register scope with costs
+~std.runtime:register(scope: "test", auto_discharge: true) {
+    greet(10)  // costs 10 tokens per call
+}
+
+// Run with budget of 100
+~std.interpreter:run(
+    source: "~greet(name: \"World\") | greeted g |> result { g.message }",
+    scope: "test",
+    budget: 100
+)
+| result r |> std.io:println(text: "PASS: budget tracking works, used: " ++ r.used)
+| exhausted e |> std.io:println(text: "FAIL: should not exhaust with budget 100")

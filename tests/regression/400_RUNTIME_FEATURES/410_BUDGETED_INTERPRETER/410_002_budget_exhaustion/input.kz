@@ -1,0 +1,29 @@
+// Test: Budget exhaustion mid-flow
+// When budget runs out, return exhausted branch with what was used
+
+~import "$std/runtime"
+~import "$std/interpreter"
+~import "$std/io"
+
+const std = @import("std");
+
+~pub event expensive { data: []const u8 }
+| processed { result: []const u8 }
+
+~proc expensive {
+    return .{ .processed = .{ .result = data } };
+}
+
+// Register with high cost
+~std.runtime:register(scope: "test", auto_discharge: true) {
+    expensive(50)  // costs 50 tokens per call
+}
+
+// Run with budget of 75 - second call should exhaust
+~std.interpreter:run(
+    source: "~expensive(data: \"a\") | processed p1 |> expensive(data: \"b\") | processed p2 |> result { p2.result }",
+    scope: "test",
+    budget: 75
+)
+| result r |> std.io:println(text: "FAIL: should have exhausted")
+| exhausted e |> std.io:println(text: "PASS: exhausted after " ++ e.used ++ " tokens, last event: " ++ e.last_event)

@@ -1,0 +1,45 @@
+// Test: Handle pool tracks opened resources
+// Resources with [state!] are added to handle pool
+// Response includes active handles
+
+~import "$std/runtime"
+~import "$std/interpreter"
+~import "$std/io"
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+// Open creates an obligation
+~pub event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+// Close discharges the obligation
+~pub event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}
+
+// Register scope - compiler infers close is discharge for open
+~std.runtime:register(scope: "test", auto_discharge: true) {
+    open(10)
+    close(1)
+}
+
+// Open a file, don't close - should be in handle pool
+~std.interpreter:run(
+    source: "~open(path: \"test.txt\") | opened f |> result { path: \"test.txt\" }",
+    scope: "test",
+    budget: 100
+)
+| result r |> std.io:println(text: "PASS: handles tracked: " ++ r.handles.len)
+| exhausted e |> std.io:println(text: "FAIL: should not exhaust")

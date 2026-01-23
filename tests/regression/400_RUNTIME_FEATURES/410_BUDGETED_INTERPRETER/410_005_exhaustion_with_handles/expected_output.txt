@@ -1,0 +1,3 @@
+opened x.txt
+auto-closing file
+PASS: exhausted with 10 used, auto-discharged: 1

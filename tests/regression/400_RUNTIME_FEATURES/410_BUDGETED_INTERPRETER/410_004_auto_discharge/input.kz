@@ -1,0 +1,49 @@
+// Test: Auto-discharge cleans up undischarged handles at request end
+// With auto_discharge: true, interpreter calls discharge events automatically
+
+~import "$std/runtime"
+~import "$std/interpreter"
+~import "$std/io"
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+var close_called: bool = false;
+
+~pub event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+~pub event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    close_called = true;
+    std.debug.print("close() was called by auto-discharge\n", .{});
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}
+
+~std.runtime:register(scope: "test", auto_discharge: true) {
+    open(10)
+    close(1)
+}
+
+// Open file but DON'T close - auto-discharge should clean up
+~std.interpreter:run(
+    source: "~open(path: \"test.txt\") | opened f |> result { status: \"done\" }",
+    scope: "test",
+    budget: 100
+)
+| result r |>
+    // Check that close was called and reported in auto_discharged
+    if(r.auto_discharged.len > 0)
+    | then |> std.io:println(text: "PASS: auto-discharged " ++ r.auto_discharged.len ++ " handle(s)")
+    | else |> std.io:println(text: "FAIL: no auto-discharge occurred")
+| exhausted e |> std.io:println(text: "FAIL: should not exhaust")

@@ -187,6 +187,138 @@ pub const Value = struct {
 };
 
 // ============================================================================
+// BUDGET TRACKING - Metered execution
+// ============================================================================
+
+pub const BudgetState = struct {
+    /// Total budget allocated for this request (null = unlimited)
+    limit: ?u64,
+    /// Budget consumed so far
+    used: u64,
+    /// Last event that was executed (for exhaustion reporting)
+    last_event: []const u8,
+
+    pub fn init(limit: ?u64) BudgetState {
+        return .{
+            .limit = limit,
+            .used = 0,
+            .last_event = "",
+        };
+    }
+
+    /// Try to consume budget. Returns true if allowed, false if exhausted.
+    pub fn consume(self: *BudgetState, cost: u64, event_name: []const u8) bool {
+        if (self.limit) |max| {
+            if (self.used + cost > max) {
+                return false; // Would exceed budget
+            }
+        }
+        self.used += cost;
+        self.last_event = event_name;
+        return true;
+    }
+
+    pub fn remaining(self: *const BudgetState) ?u64 {
+        if (self.limit) |max| {
+            return max - self.used;
+        }
+        return null; // Unlimited
+    }
+};
+
+// ============================================================================
+// HANDLE POOL - Resource tracking with obligations
+// ============================================================================
+
+pub const Handle = struct {
+    /// Symbolic name (h1, h2, ...)
+    name: []const u8,
+    /// Binding path that holds this handle (e.g., "f.file")
+    binding: []const u8,
+    /// Obligation state (e.g., "opened")
+    obligation: []const u8,
+    /// Event that discharges this obligation (e.g., "close")
+    discharge_event: []const u8,
+    /// Whether this handle has been discharged
+    discharged: bool,
+};
+
+pub const HandlePool = struct {
+    handles: std.ArrayList(Handle),
+    next_id: u32,
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) HandlePool {
+        return .{
+            .handles = std.ArrayList(Handle).init(allocator),
+            .next_id = 1,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *HandlePool) void {
+        self.handles.deinit();
+    }
+
+    /// Register a new handle with an obligation
+    pub fn acquire(self: *HandlePool, binding: []const u8, obligation: []const u8, discharge_event: []const u8) ![]const u8 {
+        var name_buf: [16]u8 = undefined;
+        const name = std.fmt.bufPrint(&name_buf, "h{d}", .{self.next_id}) catch "h?";
+        const name_copy = try self.allocator.dupe(u8, name);
+        self.next_id += 1;
+
+        try self.handles.append(.{
+            .name = name_copy,
+            .binding = try self.allocator.dupe(u8, binding),
+            .obligation = try self.allocator.dupe(u8, obligation),
+            .discharge_event = try self.allocator.dupe(u8, discharge_event),
+            .discharged = false,
+        });
+
+        return name_copy;
+    }
+
+    /// Mark a handle as discharged by binding name
+    pub fn discharge(self: *HandlePool, binding: []const u8) void {
+        for (self.handles.items) |*h| {
+            if (std.mem.eql(u8, h.binding, binding) and !h.discharged) {
+                h.discharged = true;
+                return;
+            }
+        }
+    }
+
+    /// Get all undischarged handles
+    pub fn getUndischarged(self: *const HandlePool) []const Handle {
+        // Count undischarged
+        var count: usize = 0;
+        for (self.handles.items) |h| {
+            if (!h.discharged) count += 1;
+        }
+        if (count == 0) return &[_]Handle{};
+
+        // Collect them
+        var result = self.allocator.alloc(Handle, count) catch return &[_]Handle{};
+        var i: usize = 0;
+        for (self.handles.items) |h| {
+            if (!h.discharged) {
+                result[i] = h;
+                i += 1;
+            }
+        }
+        return result;
+    }
+
+    pub fn countUndischarged(self: *const HandlePool) usize {
+        var count: usize = 0;
+        for (self.handles.items) |h| {
+            if (!h.discharged) count += 1;
+        }
+        return count;
+    }
+};
+
+// ============================================================================
 // ENVIRONMENT - Tracks bindings during interpretation
 // ============================================================================
 
@@ -238,6 +370,10 @@ pub const InterpreterContext = struct {
     allocator: std.mem.Allocator,
     // Dispatcher function pointer - set by the scope
     dispatcher: ?*const fn(*const ast.Invocation, *DispatchResult) anyerror!void,
+    // Budget tracking (optional - null means unlimited)
+    budget: ?*BudgetState,
+    // Handle pool for resource tracking (optional)
+    handle_pool: ?*HandlePool,
 };
 
 // ============================================================================
@@ -552,9 +688,11 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // Use ~get_scope to get the dispatcher first, then pass it here
 ~pub event run {
     source: []const u8,
-    dispatcher: DispatchFn
+    dispatcher: DispatchFn,
+    budget: ?u64  // Optional budget limit (null = unlimited)
 }
-| result { value: Value }
+| result { value: Value, used: u64, handles: u32 }
+| exhausted { used: u64, last_event: []const u8, handles: u32 }
 | parse_error { message: []const u8, line: u32, column: u32 }
 | validation_error { message: []const u8 }
 | dispatch_error { event_name: []const u8, message: []const u8 }
@@ -563,9 +701,11 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // This is the fast path: no parsing overhead, just execution!
 ~pub event eval {
     flow: *const ast.Flow,
-    dispatcher: DispatchFn
+    dispatcher: DispatchFn,
+    budget: ?u64  // Optional budget limit (null = unlimited)
 }
-| result { value: Value }
+| result { value: Value, used: u64, handles: u32 }
+| exhausted { used: u64, last_event: []const u8, handles: u32 }
 | validation_error { message: []const u8 }
 | dispatch_error { event_name: []const u8, message: []const u8 }
 | scope_not_found { scope_name: []const u8 }
@@ -670,15 +810,32 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     var expr_bindings = ExprBindings.init(allocator);
     defer expr_bindings.deinit();
 
+    // Initialize budget tracking
+    var budget_state = BudgetState.init(budget);
+
+    // Initialize handle pool for resource tracking
+    var handle_pool = HandlePool.init(allocator);
+    defer handle_pool.deinit();
+
     var ctx = InterpreterContext{
         .env = &env,
         .expr_bindings = &expr_bindings,
         .allocator = allocator,
         .dispatcher = dispatcher,
+        .budget = &budget_state,
+        .handle_pool = &handle_pool,
     };
 
     // Execute the flow!
     const result_value = executeFlow(flow, &ctx) catch |err| {
+        // Check if this was a budget exhaustion
+        if (err == error.BudgetExhausted) {
+            return .{ .exhausted = .{
+                .used = budget_state.used,
+                .last_event = budget_state.last_event,
+                .handles = @intCast(handle_pool.countUndischarged()),
+            }};
+        }
         // Build event name for error reporting
         const inv = &flow.invocation;
         var name_buf: [256]u8 = undefined;
@@ -703,7 +860,11 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 
     const stable_value = result_value.clonePersistent();
     // std.debug.print("[INTERPRETER] Execution complete, branch: {s}\n", .{stable_value.branch});
-    return .{ .result = .{ .value = stable_value }};
+    return .{ .result = .{
+        .value = stable_value,
+        .used = budget_state.used,
+        .handles = @intCast(handle_pool.countUndischarged()),
+    }};
 }
 
 // ============================================================================
@@ -1255,6 +1416,18 @@ fn executeFlow(
     } else {
         // Normal dispatch for other events
         if (ctx.dispatcher) |dispatcher| {
+            // Get event name for budget tracking
+            const event_name = if (inv.path.segments.len > 0) inv.path.segments[0] else "unknown";
+
+            // Check budget before dispatch (default cost = 1 for now)
+            // TODO: Get actual cost from scope's event metadata
+            const event_cost: u64 = 1;
+            if (ctx.budget) |budget| {
+                if (!budget.consume(event_cost, event_name)) {
+                    return error.BudgetExhausted;
+                }
+            }
+
             // Evaluate args against environment before dispatching
             // This resolves binding references like "v.num" to actual values
             var evaluated_args = try ctx.allocator.alloc(ast.Arg, inv.args.len);
@@ -1418,15 +1591,32 @@ fn executeFlow(
     var expr_bindings = ExprBindings.init(allocator);
     defer expr_bindings.deinit();
 
+    // Initialize budget tracking
+    var budget_state = BudgetState.init(budget);
+
+    // Initialize handle pool for resource tracking
+    var handle_pool = HandlePool.init(allocator);
+    defer handle_pool.deinit();
+
     var ctx = InterpreterContext{
         .env = &env,
         .expr_bindings = &expr_bindings,
         .allocator = allocator,
         .dispatcher = dispatcher,
+        .budget = &budget_state,
+        .handle_pool = &handle_pool,
     };
 
     // Execute the flow!
     const result_value = executeFlow(flow, &ctx) catch |err| {
+        // Check if this was a budget exhaustion
+        if (err == error.BudgetExhausted) {
+            return .{ .exhausted = .{
+                .used = budget_state.used,
+                .last_event = budget_state.last_event,
+                .handles = @intCast(handle_pool.countUndischarged()),
+            }};
+        }
         // Build event name for error reporting
         const inv = &flow.invocation;
         var name_buf: [256]u8 = undefined;
@@ -1451,5 +1641,9 @@ fn executeFlow(
 
     const stable_value = result_value.clonePersistent();
     std.debug.print("[EVAL] Execution complete, branch: {s}\n", .{stable_value.branch});
-    return .{ .result = .{ .value = stable_value }};
+    return .{ .result = .{
+        .value = stable_value,
+        .used = budget_state.used,
+        .handles = @intCast(handle_pool.countUndischarged()),
+    }};
 }

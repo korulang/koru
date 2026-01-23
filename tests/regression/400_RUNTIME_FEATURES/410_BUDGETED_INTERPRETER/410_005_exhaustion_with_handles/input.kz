@@ -1,0 +1,53 @@
+// Test: Budget exhaustion with open handles triggers auto-discharge
+// Even when exhausted, we clean up resources before returning
+
+~import "$std/runtime"
+~import "$std/interpreter"
+~import "$std/io"
+
+const std = @import("std");
+
+const File = struct { handle: i32 };
+
+~pub event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    const f = std.heap.page_allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    std.debug.print("opened {s}\n", .{path});
+    return .{ .opened = .{ .file = f } };
+}
+
+~pub event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.debug.print("auto-closing file\n", .{});
+    std.heap.page_allocator.destroy(file);
+    return .{ .closed = .{} };
+}
+
+~pub event expensive_read { file: *File[opened] }
+| read { data: []const u8 }
+
+~proc expensive_read {
+    return .{ .read = .{ .data = "file contents" } };
+}
+
+~std.runtime:register(scope: "test", auto_discharge: true) {
+    open(10)
+    close(1)
+    expensive_read(100)  // Very expensive!
+}
+
+// Open file (10), then try expensive read (100) with only 50 budget
+// Should exhaust, but still auto-discharge the open file
+~std.interpreter:run(
+    source: "~open(path: \"x.txt\") | opened f |> expensive_read(file: f.file) | read r |> result { r.data }",
+    scope: "test",
+    budget: 50
+)
+| result r |> std.io:println(text: "FAIL: should have exhausted")
+| exhausted e |>
+    std.io:println(text: "PASS: exhausted with " ++ e.used ++ " used, auto-discharged: " ++ e.auto_discharged.len)

@@ -1,0 +1,2 @@
+close() was called by auto-discharge
+PASS: auto-discharged 1 handle(s)
