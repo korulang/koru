@@ -2617,9 +2617,9 @@ pub const Parser = struct {
             var temp_depth = depth;
             var in_string = false;
             var in_char = false;
-            var prev_char: u8 = 0;
+            var escape_count: usize = 0; // Track consecutive backslashes
             var i: usize = 0;
-            
+
             while (i < line.len) {
                 const c = line[i];
 
@@ -2628,12 +2628,21 @@ pub const Parser = struct {
                     break; // Rest of line is comment, stop processing
                 }
 
+                // Track escape sequences: odd number of backslashes means next char is escaped
+                if (c == '\\') {
+                    escape_count += 1;
+                    i += 1;
+                    continue;
+                }
+                const is_escaped = (escape_count % 2) == 1;
+                escape_count = 0;
+
                 // Handle character literals
-                if (c == '\'' and prev_char != '\\' and !in_string) {
+                if (c == '\'' and !is_escaped and !in_string) {
                     in_char = !in_char;
                 }
                 // Handle string literals
-                else if (c == '"' and prev_char != '\\' and !in_char) {
+                else if (c == '"' and !is_escaped and !in_char) {
                     in_string = !in_string;
                 }
                 // Count braces only when not in strings or char literals
@@ -2642,7 +2651,6 @@ pub const Parser = struct {
                     if (c == '}') temp_depth -= 1;
                 }
 
-                prev_char = c;
                 i += 1;
             }
             

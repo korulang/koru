@@ -525,7 +525,7 @@ const std = @import("std");
 //
 // Generated code:
 //   const __kernel_pair = struct {
-//       inline fn call(b1: *@TypeOf(bodies.ptr[0]), b2: *@TypeOf(bodies.ptr[0])) void {
+//       inline fn call(noalias b1: *@TypeOf(bodies.ptr[0]), noalias b2: *@TypeOf(bodies.ptr[0])) void {
 //           b1.vel -= d * mag * b2.mass;
 //           b2.vel += d * mag * b1.mass;
 //       }
@@ -561,6 +561,7 @@ const std = @import("std");
         path: []const usize,
         step_idx: usize,
         binding_name: []const u8,
+        kernel_init_invocation: ?*const ast.Invocation,
     };
 
     const findInvocationRecursive = struct {
@@ -569,18 +570,23 @@ const std = @import("std");
             continuations: []const ast.Continuation,
             current_path: []const usize,
             target_inv: *const ast.Invocation,
+            owner_invocation: ?*const ast.Invocation,
             parent_binding: ?[]const u8,
+            kernel_init_invocation: ?*const ast.Invocation,
         ) ?SearchResult {
             for (continuations, 0..) |*cont, cont_idx| {
                 var path = alloc.alloc(usize, current_path.len + 1) catch return null;
                 @memcpy(path[0..current_path.len], current_path);
                 path[current_path.len] = cont_idx;
 
-                // Track binding from "kernel" branch
-                const effective_binding = if (std.mem.eql(u8, cont.branch, "kernel"))
-                    cont.binding orelse "k"
-                else
-                    parent_binding;
+                var effective_binding = parent_binding;
+                var effective_kernel_init = kernel_init_invocation;
+                if (std.mem.eql(u8, cont.branch, "kernel")) {
+                    effective_binding = cont.binding orelse "k";
+                    if (owner_invocation) |inv| {
+                        effective_kernel_init = inv;
+                    }
+                }
 
                 // Check this continuation's node
                 if (cont.node) |*step| {
@@ -591,13 +597,21 @@ const std = @import("std");
                                 .path = path,
                                 .step_idx = 0,
                                 .binding_name = effective_binding orelse "k",
+                                .kernel_init_invocation = effective_kernel_init,
                             };
                         }
                     }
                 }
 
+                const next_owner_invocation = if (cont.node) |*step| blk: {
+                    if (step.* == .invocation) {
+                        break :blk &step.invocation;
+                    }
+                    break :blk null;
+                } else null;
+
                 // Recurse into nested continuations
-                if (search(alloc, cont.continuations, path, target_inv, effective_binding)) |result| {
+                if (search(alloc, cont.continuations, path, target_inv, next_owner_invocation, effective_binding, effective_kernel_init)) |result| {
                     return result;
                 }
 
@@ -608,11 +622,12 @@ const std = @import("std");
     }.search;
 
     const empty_path = &[_]usize{};
-    const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation, null) orelse {
+    const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation, &flow.invocation, null, null) orelse {
         @panic("kernel.pairwise: could not find invocation in AST");
     };
 
     const binding_name = search_result.binding_name;
+    const kernel_init_invocation = search_result.kernel_init_invocation;
 
     // Unique helper identifiers to avoid collisions in generated Zig
     var hash: u32 = 0;
@@ -658,21 +673,135 @@ const std = @import("std");
         }
     }
 
-    const code = std.fmt.allocPrint(
+    const extractKernelInitSource = struct {
+        fn call(inv_opt: ?*const ast.Invocation) ?[]const u8 {
+            const inv = inv_opt orelse return null;
+            for (inv.args) |arg| {
+                if (arg.source_value) |src_val| {
+                    return src_val.text;
+                }
+            }
+            return null;
+        }
+    }.call;
+
+    const countInitElements = struct {
+        fn call(text: []const u8) ?usize {
+            var depth: i32 = 0;
+            var prev_depth: i32 = 0;
+            var count: usize = 0;
+            var saw_outer: bool = false;
+            var in_string: bool = false;
+            var escaped: bool = false;
+
+            for (text) |c| {
+                if (in_string) {
+                    if (escaped) {
+                        escaped = false;
+                        continue;
+                    }
+                    if (c == '\\') {
+                        escaped = true;
+                        continue;
+                    }
+                    if (c == '"') {
+                        in_string = false;
+                    }
+                    continue;
+                } else if (c == '"') {
+                    in_string = true;
+                    continue;
+                }
+
+                if (c == '{') {
+                    depth += 1;
+                    if (depth == 1) {
+                        saw_outer = true;
+                    }
+                } else if (c == '}') {
+                    depth -= 1;
+                    if (prev_depth == 2 and depth == 1) {
+                        count += 1;
+                    }
+                }
+                prev_depth = depth;
+            }
+
+            if (count > 0) return count;
+            if (saw_outer) return 1;
+            return null;
+        }
+    }.call;
+
+    // Read init source from the kernel:init invocation in the original AST.
+    // If parser didn't capture source_value, this stays null and we fall back to loops.
+    const init_source = extractKernelInitSource(kernel_init_invocation);
+    const known_len = if (init_source) |text| countInitElements(text) else null;
+
+
+    var code_buf = std.ArrayList(u8).initCapacity(allocator, body_code.items.len + 256) catch unreachable;
+    defer code_buf.deinit(allocator);
+
+    const helper_def = std.fmt.allocPrint(
         allocator,
         \\const {0s} = struct {{
-        \\    inline fn call({1s}: *@TypeOf({3s}.ptr[0]), {2s}: *@TypeOf({3s}.ptr[0])) void {{
+        \\    inline fn call(noalias {1s}: *@TypeOf({3s}.ptr[0]), noalias {2s}: *@TypeOf({3s}.ptr[0])) void {{
         \\        {4s};
         \\    }}
         \\}};
-        \\for (0..{3s}.len) |i| {{
-        \\    for (i + 1..{3s}.len) |j| {{
-        \\        {0s}.call(&{3s}.ptr[i], &{3s}.ptr[j]);
-        \\    }}
-        \\}}
+        \\
         ,
         .{ helper_name, self_name, other_name, binding_name, body_code.items }
     ) catch unreachable;
+    defer allocator.free(helper_def);
+    code_buf.appendSlice(allocator, helper_def) catch unreachable;
+
+    if (known_len) |len| {
+        // Only unroll if we have 2+ elements (pairwise needs at least 2)
+        // and the count seems reasonable (not just saw_outer returning 1)
+        if (len >= 2 and len <= 16) {
+            // Unroll the pairwise calls for small arrays
+            var line_buf: [128]u8 = undefined;
+            for (0..len) |i_idx| {
+                for (i_idx + 1..len) |j_idx| {
+                    const line = std.fmt.bufPrint(
+                        &line_buf,
+                        "{s}.call(&{s}.ptr[{d}], &{s}.ptr[{d}]);\n",
+                        .{ helper_name, binding_name, i_idx, binding_name, j_idx },
+                    ) catch unreachable;
+                    code_buf.appendSlice(allocator, line) catch unreachable;
+                }
+            }
+        } else {
+            const loop_code = std.fmt.allocPrint(
+                allocator,
+                \\for (0..{0s}.len) |i| {{
+                \\    for (i + 1..{0s}.len) |j| {{
+                \\        {1s}.call(&{0s}.ptr[i], &{0s}.ptr[j]);
+                \\    }}
+                \\}}
+                ,
+                .{ binding_name, helper_name }
+            ) catch unreachable;
+            defer allocator.free(loop_code);
+            code_buf.appendSlice(allocator, loop_code) catch unreachable;
+        }
+    } else {
+        const loop_code = std.fmt.allocPrint(
+            allocator,
+            \\for (0..{0s}.len) |i| {{
+            \\    for (i + 1..{0s}.len) |j| {{
+            \\        {1s}.call(&{0s}.ptr[i], &{0s}.ptr[j]);
+            \\    }}
+            \\}}
+            ,
+            .{ binding_name, helper_name }
+        ) catch unreachable;
+        defer allocator.free(loop_code);
+        code_buf.appendSlice(allocator, loop_code) catch unreachable;
+    }
+
+    const code = code_buf.toOwnedSlice(allocator) catch unreachable;
 
     // ========================================================================
     // STEP 5: Replace ONLY this step using replacePipelineStepAtPath
