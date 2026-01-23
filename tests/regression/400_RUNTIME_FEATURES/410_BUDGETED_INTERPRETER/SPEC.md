@@ -8,105 +8,155 @@ The budgeted interpreter extends Koru's runtime interpreter with:
 1. **Budget tracking** - Events have costs, execution has limits
 2. **Handle pool** - Resource handles tracked with obligations
 3. **Auto-discharge** - Undischarged resources cleaned up at request end
-4. **Bridges** - Persistent sessions across CLI invocations
+4. **Bridges** - Persistent sessions (integration layer, not core)
 
 ## Budget System
 
 ### Event Costs
 
-Events are registered with costs in the scope:
+Events are registered with costs and obligations in the scope:
 
 ```koru
-~std.runtime:register(scope: "api", auto_discharge: true) {
-    fs:open(10)      // costs 10 tokens
-    fs:read(5)       // costs 5 tokens
-    fs:close(1)      // costs 1 token
-    db:query(50)     // costs 50 tokens
+~std.runtime:register(scope: "api") {
+    fs:open(10) -> opened    // costs 10, creates "opened" obligation
+    fs:read(5)               // costs 5, no obligations
+    fs:close(1) <- opened    // costs 1, discharges "opened"
+    db:query(50)             // costs 50
 }
 ```
 
 ### Execution with Budget
 
 ```koru
-~std.interpreter:run(source: code, scope: "api", budget: 100)
-| result r   |> // completed: r.value, r.used
-| exhausted e |> // ran out: e.used, e.last_event
-```
-
-### Budget Response
-
-Every response includes budget info:
-```json
-{
-  "result": {"branch": "ok", "fields": {...}},
-  "budget": {"used": 45, "remaining": 55}
-}
+~std.interpreter:run(
+    source: code,
+    dispatcher: d,
+    cost_fn: c,
+    creates_obligation_fn: creates,
+    discharges_obligation_fn: discharges,
+    discharge_event_fn: discharge,
+    budget: 100
+)
+| result r   |> // completed: r.value, r.used, r.handles
+| exhausted e |> // ran out: e.used, e.last_event, e.handles
 ```
 
 ## Handle Pool & Obligations
 
-### Automatic Tracking
+### Scope Registration Syntax
 
-When an event returns a value with `[state!]` phantom type:
-- Handle added to pool with obligation marker
-- Symbolic name assigned (h1, h2, ...)
+```koru
+event_name(cost)              // no obligations
+event_name(cost) -> state     // creates obligation for "state"
+event_name(cost) <- state     // discharges obligation for "state"
+```
 
-When an event with `[!state]` parameter is called:
-- Matching handle marked as discharged
-- Removed from active obligations
+### Generated Functions
+
+For each scope, the compiler generates:
+- `get_event_cost_<scope>(event) -> u64`
+- `get_creates_obligation_<scope>(event) -> ?[]const u8`
+- `get_discharges_obligation_<scope>(event) -> ?[]const u8`
+- `get_discharge_event_<scope>(obligation) -> ?[]const u8`
 
 ### Auto-Discharge
 
-With `auto_discharge: true`:
-- At request end, walk undischarged handles
-- Call default discharge event for each
-- Report what was cleaned up
+At request end, undischarged handles are logged. The interpreter reports:
+- Handles still active
+- Budget consumed
 
-```json
-{
-  "result": {...},
-  "auto_discharged": ["h1", "h3"],
-  "budget": {"used": 47}
-}
+Full auto-discharge (calling discharge events) is the responsibility of the integration layer.
+
+## Bridges: Integration Layer
+
+**Bridges are NOT part of the interpreter core.** They are an integration pattern built on top of the primitives.
+
+### Why Bridges Are External
+
+The interpreter is stateless per invocation. Bridges provide:
+- State persistence across invocations
+- Symbolic handle naming (h1, h2, ...)
+- Token bucket refill over time
+- User tier management
+
+These are deployment-specific concerns that belong in:
+- **Orisha** - User sessions hold bridge state
+- **Shell/REPL** - Process memory holds bridge state
+- **CLI daemon** - Temp files or shared memory
+
+### Bridge Library Pattern
+
+A bridge library would wrap the interpreter:
+
+```zig
+const Bridge = struct {
+    id: []const u8,
+    handle_pool: HandlePool,
+    budget_state: BudgetState,
+    user_tier: UserTier,
+    created_at: i64,
+    last_activity: i64,
+
+    pub fn execute(self: *Bridge, source: []const u8) !ExecuteResult {
+        // Refill budget based on time elapsed
+        self.refillBudget();
+
+        // Run interpreter with our state
+        var ctx = InterpreterContext{
+            .budget = &self.budget_state,
+            .handle_pool = &self.handle_pool,
+            // ... other fields
+        };
+
+        return executeFlow(flow, &ctx);
+    }
+
+    pub fn end(self: *Bridge) !EndResult {
+        // Auto-discharge all handles
+        for (self.handle_pool.getUndischarged()) |h| {
+            // Call discharge event
+        }
+        return .{ .discharged = ... };
+    }
+};
 ```
 
-### Discharge Mapping
+### Bridge CLI Pattern
 
-Built at compile time from phantom types:
-- `[state!]` on return → creates obligation
-- `[!state]` on param → can discharge
-- Single discharger → automatic default
-- Multiple dischargers → use `[!]` annotated one
-
-## Bridges
-
-### Lifecycle
+A bridge CLI would manage bridge lifecycle:
 
 ```bash
-# Create bridge (new session)
-$ koru
-{"bridge": "8fedba", "handles": {}, "budget": {"remaining": 10000}}
+# Create bridge (spawns daemon or writes state file)
+$ koru-bridge new --user premium
+{"bridge": "8fedba", "budget": {"capacity": 50000, "refill_rate": 1000}}
 
 # Execute with bridge
-$ koru --bridge 8fedba '~fs:open(path: "x.txt") | ok f |> result { f.file }'
-{"bridge": "8fedba", "result": {...}, "handles": {"h1": "File[opened]"}, "budget": {...}}
+$ koru-bridge exec 8fedba '~fs:open(path: "x.txt") | ok f |> result { f.file }'
+{"result": {...}, "handles": {"h1": "opened"}, "budget": {"used": 10}}
 
-# Query state
-$ koru --bridge 8fedba --handles
-{"handles": {"h1": {"type": "File", "state": "opened", "meta": {...}}}}
+# Query handles
+$ koru-bridge handles 8fedba
+{"h1": {"binding": "f.file", "obligation": "opened"}}
 
-# End session (auto-discharge all)
-$ koru --bridge 8fedba --end
-{"discharged": ["h1"], "final_budget": {"used": 12}}
+# End bridge
+$ koru-bridge end 8fedba
+{"discharged": ["h1"], "final_budget": {"used": 11}}
 ```
 
-### User Tiers & Refill
+### Orisha Integration Pattern
 
-Bridges tied to user accounts with token bucket refill:
-
-```bash
-$ koru --user premium
-{"bridge": "abc123", "budget": {"capacity": 50000, "refill_rate": 1000, "refill_interval": "1s"}}
+```koru
+// In request handler
+~get_user_bridge(user_id: request.user)
+| bridge b |>
+    // Execute user code with their bridge
+    ~interpret_with_bridge(bridge: b, source: request.code)
+    | result r |> respond_200(body: r.value)
+    | exhausted e |> respond_429(message: "Rate limit exceeded")
+| no_bridge |>
+    // Create new bridge for user
+    ~create_bridge(user_id: request.user, tier: user.tier)
+    | created b |> // ... recurse
 ```
 
 ## Test Matrix
@@ -117,15 +167,33 @@ $ koru --user premium
 | 410_002 | Budget exhaustion mid-flow |
 | 410_003 | Handle pool - track opened resources |
 | 410_004 | Auto-discharge on request end |
-| 410_005 | Multiple handles, partial discharge |
-| 410_006 | Scope with auto_discharge: false |
-| 410_007 | Budget + handles combined |
-| 410_008 | JSON output format |
+| 410_005 | Budget exhaustion with open handles |
 
 ## Design Decisions
 
-1. **Costs are relative** - No fixed meaning, just ratios
-2. **Budget is per-request** - Bridges manage across requests
-3. **Auto-discharge is opt-in** - Scope declares cleanup semantics
-4. **Handles are symbolic** - h1, h2 for token efficiency with LLMs
-5. **Bridges are stateful** - Persist between CLI calls
+1. **Costs are relative** - No fixed meaning, just ratios between operations
+2. **Budget is per-request** - Interpreter is stateless, bridges manage across requests
+3. **Obligations are explicit** - `->` creates, `<-` discharges in scope registration
+4. **Bridges are integration** - Not interpreter core, built on top of primitives
+5. **Symbolic handles** - Named h1, h2 for LLM token efficiency
+
+## What's Implemented (Core)
+
+- ✅ BudgetState with consume/remaining
+- ✅ HandlePool with acquire/discharge/getUndischarged
+- ✅ Event costs parsed from scope registration
+- ✅ Obligation arrows parsed (`->`, `<-`)
+- ✅ Cost/obligation lookup functions generated
+- ✅ InterpreterContext extended with all fields
+- ✅ Budget check before dispatch
+- ✅ Handle tracking after dispatch
+- ✅ Auto-discharge logging at request end
+
+## What's Integration Layer (External)
+
+- 🔲 Bridge state persistence
+- 🔲 Token bucket refill
+- 🔲 User tier management
+- 🔲 Symbolic handle naming (h1, h2)
+- 🔲 CLI bridge management tool
+- 🔲 Orisha session integration
