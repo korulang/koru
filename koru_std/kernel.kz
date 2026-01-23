@@ -226,9 +226,6 @@ const std = @import("std");
         has_kernel_continuation = search_result.has_kernel_continuation;
     }
 
-    // Build unique variable name: kernel_{binding}
-    const data_name = std.fmt.allocPrint(allocator, "kernel_{s}", .{binding_name}) catch unreachable;
-
     // Generate a unique local event/proc name for this init
     var hash: u32 = 0;
     for (flow.module) |c| hash = hash *% 31 +% c;
@@ -236,6 +233,7 @@ const std = @import("std");
     hash = hash *% 31 +% @as(u32, @intCast(flow.location.column));
     for (source.text) |c| hash = hash *% 31 +% c;
     const unique_name = std.fmt.allocPrint(allocator, "kernel_init_{d}", .{hash}) catch unreachable;
+    const static_name = std.fmt.allocPrint(allocator, "kernel_init_{d}_data", .{hash}) catch unreachable;
 
     // ========================================================================
     // STEP 3: Parse type name from expr
@@ -320,6 +318,7 @@ const std = @import("std");
         &[_]ast.Field{};
 
     var proc_body: []const u8 = undefined;
+    var static_decl: []const u8 = "";
 
     if (is_array_mode) {
         // Array mode: parse multiple { ... } blocks
@@ -343,30 +342,35 @@ const std = @import("std");
             }
         }
 
-        const init_name = std.fmt.allocPrint(allocator, "{s}_init", .{data_name}) catch unreachable;
+        static_decl = std.fmt.allocPrint(
+            allocator,
+            \\var {s} = [_]{s}{{ {s} }};
+            ,
+            .{ static_name, type_name, elements.items }
+        ) catch unreachable;
 
-        // Generate array initialization
+        // Generate static-backed initialization (proof-of-concept)
         proc_body = std.fmt.allocPrint(
             allocator,
-            \\const __koru_std = @import("std");
-            \\const {s} = [_]{s}{{ {s} }};
-            \\const {s} = __koru_std.heap.page_allocator.alloc({s}, {s}.len) catch unreachable;
-            \\__koru_std.mem.copyForwards({s}, {s}, {s}[0..]);
-            \\return .{{ .kernel = .{{ .ptr = {s}.ptr, .len = {s}.len, .capacity = {s}.len, .layout = "aos" }} }};
+            \\return .{{ .kernel = .{{ .ptr = {s}[0..].ptr, .len = {s}.len, .capacity = {s}.len, .layout = "aos" }} }};
             ,
-            .{ init_name, type_name, elements.items, data_name, type_name, init_name, type_name, data_name, init_name, data_name, data_name, data_name }
+            .{ static_name, static_name, static_name }
         ) catch unreachable;
     } else {
         // Single mode: just one struct instance
         const fields = transformFields(allocator, source.text);
+        const single_init = std.fmt.allocPrint(allocator, "{s}{{ {s} }}", .{ type_name, fields }) catch unreachable;
+        static_decl = std.fmt.allocPrint(
+            allocator,
+            \\var {s} = [_]{s}{{ {s} }};
+            ,
+            .{ static_name, type_name, single_init }
+        ) catch unreachable;
         proc_body = std.fmt.allocPrint(
             allocator,
-            \\const __koru_std = @import("std");
-            \\const {s} = __koru_std.heap.page_allocator.alloc({s}, 1) catch unreachable;
-            \\{s}[0] = {s}{{ {s} }};
-            \\return .{{ .kernel = .{{ .ptr = {s}.ptr, .len = {s}.len, .capacity = {s}.len, .layout = "aos" }} }};
+            \\return .{{ .kernel = .{{ .ptr = {s}[0..].ptr, .len = {s}.len, .capacity = {s}.len, .layout = "aos" }} }};
             ,
-            .{ data_name, type_name, data_name, type_name, fields, data_name, data_name, data_name }
+            .{ static_name, static_name, static_name }
         ) catch unreachable;
     }
 
@@ -500,10 +504,19 @@ const std = @import("std");
             insert_index = 1;
         }
 
-        const res_prog_raw = ast_functional.insertAt(allocator, &res_program, insert_index, local_init_item) catch unreachable;
-        const res_prog_raw2 = ast_functional.insertAt(allocator, &res_prog_raw, insert_index + 1, local_init_proc) catch unreachable;
+        const static_item = ast.Item{
+            .host_line = ast.HostLine{
+                .content = allocator.dupe(u8, static_decl) catch unreachable,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            },
+        };
+
+        const res_prog_raw = ast_functional.insertAt(allocator, &res_program, insert_index, static_item) catch unreachable;
+        const res_prog_raw2 = ast_functional.insertAt(allocator, &res_prog_raw, insert_index + 1, local_init_item) catch unreachable;
+        const res_prog_raw3 = ast_functional.insertAt(allocator, &res_prog_raw2, insert_index + 2, local_init_proc) catch unreachable;
         const res_program_ptr = allocator.create(ast.Program) catch unreachable;
-        res_program_ptr.* = res_prog_raw2;
+        res_program_ptr.* = res_prog_raw3;
         return .{ .transformed = .{ .program = res_program_ptr } };
     }
 
@@ -638,6 +651,8 @@ const std = @import("std");
     const helper_name = std.fmt.allocPrint(allocator, "__koru_kernel_pair_{d}", .{hash}) catch unreachable;
     const self_name = std.fmt.allocPrint(allocator, "__koru_pair_self_{d}", .{hash}) catch unreachable;
     const other_name = std.fmt.allocPrint(allocator, "__koru_pair_other_{d}", .{hash}) catch unreachable;
+    const ptr_name = std.fmt.allocPrint(allocator, "__koru_kernel_ptr_{d}", .{hash}) catch unreachable;
+    const len_name = std.fmt.allocPrint(allocator, "__koru_kernel_len_{d}", .{hash}) catch unreachable;
 
     // ========================================================================
     // STEP 2: Transform DSL body
@@ -688,9 +703,7 @@ const std = @import("std");
     const countInitElements = struct {
         fn call(text: []const u8) ?usize {
             var depth: i32 = 0;
-            var prev_depth: i32 = 0;
             var count: usize = 0;
-            var saw_outer: bool = false;
             var in_string: bool = false;
             var escaped: bool = false;
 
@@ -715,20 +728,15 @@ const std = @import("std");
 
                 if (c == '{') {
                     depth += 1;
-                    if (depth == 1) {
-                        saw_outer = true;
-                    }
                 } else if (c == '}') {
-                    depth -= 1;
-                    if (prev_depth == 2 and depth == 1) {
+                    if (depth == 1) {
                         count += 1;
                     }
+                    depth -= 1;
                 }
-                prev_depth = depth;
             }
 
             if (count > 0) return count;
-            if (saw_outer) return 1;
             return null;
         }
     }.call;
@@ -757,35 +765,29 @@ const std = @import("std");
     code_buf.appendSlice(allocator, helper_def) catch unreachable;
 
     if (known_len) |len| {
-        // Only unroll if we have 2+ elements (pairwise needs at least 2)
-        // and the count seems reasonable (not just saw_outer returning 1)
-        if (len >= 2 and len <= 16) {
-            // Unroll the pairwise calls for small arrays
-            var line_buf: [128]u8 = undefined;
-            for (0..len) |i_idx| {
-                for (i_idx + 1..len) |j_idx| {
-                    const line = std.fmt.bufPrint(
-                        &line_buf,
-                        "{s}.call(&{s}.ptr[{d}], &{s}.ptr[{d}]);\n",
-                        .{ helper_name, binding_name, i_idx, binding_name, j_idx },
-                    ) catch unreachable;
-                    code_buf.appendSlice(allocator, line) catch unreachable;
-                }
-            }
-        } else {
-            const loop_code = std.fmt.allocPrint(
-                allocator,
-                \\for (0..{0s}.len) |i| {{
-                \\    for (i + 1..{0s}.len) |j| {{
-                \\        {1s}.call(&{0s}.ptr[i], &{0s}.ptr[j]);
-                \\    }}
-                \\}}
-                ,
-                .{ binding_name, helper_name }
-            ) catch unreachable;
-            defer allocator.free(loop_code);
-            code_buf.appendSlice(allocator, loop_code) catch unreachable;
-        }
+        const prelude = std.fmt.allocPrint(
+            allocator,
+            \\const {0s} = {1s}.ptr;
+            \\const {2s}: usize = {3d};
+            \\
+            ,
+            .{ ptr_name, binding_name, len_name, len }
+        ) catch unreachable;
+        defer allocator.free(prelude);
+        code_buf.appendSlice(allocator, prelude) catch unreachable;
+
+        const loop_code = std.fmt.allocPrint(
+            allocator,
+            \\for (0..{0s}) |i| {{
+            \\    for (i + 1..{0s}) |j| {{
+            \\        {1s}.call(&{2s}[i], &{2s}[j]);
+            \\    }}
+            \\}}
+            ,
+            .{ len_name, helper_name, ptr_name }
+        ) catch unreachable;
+        defer allocator.free(loop_code);
+        code_buf.appendSlice(allocator, loop_code) catch unreachable;
     } else {
         const loop_code = std.fmt.allocPrint(
             allocator,

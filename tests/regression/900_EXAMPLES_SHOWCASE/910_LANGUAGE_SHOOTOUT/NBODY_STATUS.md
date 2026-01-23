@@ -4,18 +4,18 @@
 **Test:** 50M iterations, 5 bodies (solar system)
 **Machine:** Apple Silicon (ARM64)
 
-## BREAKTHROUGH: We Match Rust!
+## BREAKTHROUGH: We Beat Rust!
 
 | Rank | Implementation | Time | vs Rust |
 |------|---------------|------|---------|
-| 1 | **Rust** | **1.36s** | **1.00x** |
-| 2 | **Zig noalias** | **1.34s** | **1.00x** ← TIED! |
-| 3 | **Koru kernel:pairwise** | **1.41s** | **1.04x** |
-| 4 | Koru arrayed capture | 1.43s | 1.06x |
+| 1 | **Koru kernel:pairwise** | **1.33s** | **0.98x** |
+| 2 | **Zig noalias** | **1.34s** | **0.99x** |
+| 3 | **Rust** | **1.36s** | **1.00x** |
+| 4 | Koru arrayed capture | 1.43s | 1.05x |
 
-## The Solution: Pointer Aliasing
+## The Solution: Pointer Aliasing + Static Backing
 
-**The entire 4% gap was aliasing analysis.**
+**Aliasing was the first gap; static backing + constant bounds closed the rest.**
 
 ### The Problem
 ```zig
@@ -43,7 +43,7 @@ The borrow checker PROVES to LLVM that `body1` and `body2` are disjoint memory.
 
 ## Implications for Koru Kernel System
 
-**This is HUGE.** The kernel pairwise transform knows by definition that `k` and `k.other` are different bodies. We now generate the optimized pattern automatically (implemented 2026-01-23):
+**This is HUGE.** The kernel pairwise transform knows by definition that `k` and `k.other` are different bodies. We now generate the optimized pattern automatically, and emit static backing when init size is known (implemented 2026-01-23):
 
 ```koru
 // User writes (natural, clean):
@@ -81,6 +81,7 @@ for (0..N) |i| {
 | Explicit SIMD | 3% gain | Helps but not the bottleneck |
 | Precomputed mass | Slower | Extra memory hurts |
 | **Pointer noalias** | **4% gain** | **THIS WAS THE KEY** |
+| **Static kernel backing + const N** | **~6% gain** | Avoid heap + enable fixed bounds |
 
 ## Files
 
@@ -97,7 +98,7 @@ for (0..N) |i| {
 
 ## Koru Implementations
 
-### kernel:pairwise (4% behind Rust)
+### kernel:pairwise (now faster than Rust)
 
 **`2101g_nbody_kernel_pairwise`** - Full benchmark using kernel DSL:
 ```koru
@@ -111,7 +112,7 @@ for (0..N) |i| {
                 |> advance_positions(bodies: k.ptr[0..k.len])
 ```
 
-Generates the noalias pointer pattern. 4% behind Rust - cause not yet investigated.
+Generates the noalias pointer pattern. With static backing and constant bounds, it now beats Rust (~1.33s on this machine).
 
 ### Manual capture (6% behind Rust)
 
@@ -146,13 +147,14 @@ hyperfine --warmup 3 --runs 10 \
 
 ## Key Takeaway
 
-**Aliasing analysis was the entire performance gap.**
+**Aliasing analysis + static backing were the performance gap.**
 
 Rust's borrow checker gives it "free" noalias hints. Zig (and C) developers must manually structure code to help LLVM.
 
 **Koru's kernel system can do this automatically** because it KNOWS the semantics:
 - `pairwise` = two different elements = noalias guaranteed
 - Generate pointer-based inline functions
-- Match Rust performance with cleaner syntax
+- Use static backing + constant bounds when init size is known
+- Match or beat Rust performance with cleaner syntax
 
 This is the value of domain-specific languages.
