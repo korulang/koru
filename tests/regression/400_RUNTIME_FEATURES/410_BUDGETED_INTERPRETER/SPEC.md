@@ -14,16 +14,18 @@ The budgeted interpreter extends Koru's runtime interpreter with:
 
 ### Event Costs
 
-Events are registered with costs and obligations in the scope:
+Events are registered with costs in the scope:
 
 ```koru
 ~std.runtime:register(scope: "api") {
-    fs:open(10) -> opened    // costs 10, creates "opened" obligation
-    fs:read(5)               // costs 5, no obligations
-    fs:close(1) <- opened    // costs 1, discharges "opened"
-    db:query(50)             // costs 50
+    fs:open(10)      // costs 10
+    fs:read(5)       // costs 5
+    fs:close(1)      // costs 1
+    db:query(50)     // costs 50
 }
 ```
+
+Obligations are NOT in the scope registration - they come from event signatures via phantom types.
 
 ### Execution with Budget
 
@@ -43,18 +45,36 @@ Events are registered with costs and obligations in the scope:
 
 ## Handle Pool & Obligations
 
-### Scope Registration Syntax
+### Phantom Type Syntax (in Event Signatures)
+
+Obligations are specified in event signatures using phantom types:
 
 ```koru
-event_name(cost)              // no obligations
-event_name(cost) -> state     // creates obligation for "state"
-event_name(cost) <- state     // discharges obligation for "state"
+// Creates obligation - [state!] suffix
+~pub event open { path: []const u8 }
+| ok { file: File[opened!] }    // Creates "opened" obligation
+
+// Discharges obligation - [!state] prefix
+~pub event close { file: File[!opened] }   // Discharges "opened"
+| ok |>
+```
+
+### Scope Registration (Costs Only)
+
+```koru
+~std.runtime:register(scope: "api") {
+    open(10)     // cost only - obligations from signature
+    read(5)
+    close(1)
+}
 ```
 
 ### Generated Functions
 
 For each scope, the compiler generates:
 - `get_event_cost_<scope>(event) -> u64`
+
+TODO: Extract obligations from event signatures:
 - `get_creates_obligation_<scope>(event) -> ?[]const u8`
 - `get_discharges_obligation_<scope>(event) -> ?[]const u8`
 - `get_discharge_event_<scope>(obligation) -> ?[]const u8`
@@ -182,13 +202,17 @@ $ koru-bridge end 8fedba
 - ✅ BudgetState with consume/remaining
 - ✅ HandlePool with acquire/discharge/getUndischarged
 - ✅ Event costs parsed from scope registration
-- ✅ Obligation arrows parsed (`->`, `<-`)
-- ✅ Cost/obligation lookup functions generated
-- ✅ InterpreterContext extended with all fields
+- ✅ Cost lookup function generated (`get_event_cost_<scope>`)
+- ✅ InterpreterContext extended with budget/pool fields
 - ✅ Budget check before dispatch
-- ✅ Handle tracking after dispatch
-- ✅ Auto-discharge logging at request end
 - ✅ External handle_pool parameter for bridges
+
+## What's TODO (Core)
+
+- 🔲 Extract obligations from event signatures (phantom types)
+- 🔲 Generate obligation lookup functions from signatures
+- 🔲 Handle tracking after dispatch (needs obligation extraction)
+- 🔲 Auto-discharge logging at request end (needs obligation extraction)
 
 ## Bridge Library (koru_std/bridge.kz)
 

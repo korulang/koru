@@ -49,17 +49,16 @@ const ast = @import("ast");
 
     std.debug.print("[REGISTRY] Creating dispatcher for scope '{s}'\n", .{scope_name});
 
-    // Parse events from source block with optional costs and obligations
+    // Parse events from source block with optional costs
     // Syntax:
-    //   event_name              - default cost 1, no obligations
-    //   event_name(cost)        - custom cost, no obligations
-    //   event_name(cost) -> state   - creates obligation for "state"
-    //   event_name(cost) <- state   - discharges obligation for "state"
+    //   event_name              - default cost 1
+    //   event_name(cost)        - custom cost
+    //
+    // NOTE: Obligations are NOT specified here - they come from the event
+    // signatures using phantom types: [state!] creates, [!state] discharges
     const EventEntry = struct {
         name: []const u8,
         cost: u64,
-        creates_obligation: ?[]const u8,    // -> state
-        discharges_obligation: ?[]const u8, // <- state
     };
     var events_list = std.ArrayList(EventEntry){ .items = &.{}, .capacity = 0 };
     var lines = std.mem.splitScalar(u8, source.text, '\n');
@@ -73,21 +72,8 @@ const ast = @import("ast");
         if (trimmed.len > 0) {
             var event_name = trimmed;
             var cost: u64 = 1;
-            var creates: ?[]const u8 = null;
-            var discharges: ?[]const u8 = null;
 
-            // Check for obligation arrows first (before parsing cost)
-            // -> creates, <- discharges
-            if (std.mem.indexOf(u8, trimmed, " -> ")) |arrow_pos| {
-                creates = std.mem.trim(u8, trimmed[arrow_pos + 4 ..], " \t");
-                trimmed = trimmed[0..arrow_pos];
-            } else if (std.mem.indexOf(u8, trimmed, " <- ")) |arrow_pos| {
-                discharges = std.mem.trim(u8, trimmed[arrow_pos + 4 ..], " \t");
-                trimmed = trimmed[0..arrow_pos];
-            }
-
-            // Now parse event_name(cost)
-            event_name = trimmed;
+            // Parse event_name(cost)
             if (std.mem.indexOf(u8, trimmed, "(")) |paren_start| {
                 if (std.mem.indexOf(u8, trimmed, ")")) |paren_end| {
                     if (paren_end > paren_start) {
@@ -101,8 +87,6 @@ const ast = @import("ast");
             events_list.append(allocator, .{
                 .name = allocator.dupe(u8, event_name) catch continue,
                 .cost = cost,
-                .creates_obligation = if (creates) |c| allocator.dupe(u8, c) catch null else null,
-                .discharges_obligation = if (discharges) |d| allocator.dupe(u8, d) catch null else null,
             }) catch continue;
         }
     }
@@ -220,6 +204,8 @@ const ast = @import("ast");
     }
 
     // Scope descriptor and public dispatcher
+    // NOTE: Obligation fields are placeholders - proper extraction from event
+    // signatures using phantom types ([state!], [!state]) is TODO
     code.appendSlice(allocator, I ++ "const scope_events = [_]ScopeEvent{\n") catch unreachable;
     for (events_list.items) |event| {
         code.appendSlice(allocator, I ++ "    .{ .name = \"") catch unreachable;
@@ -228,23 +214,9 @@ const ast = @import("ast");
         var cost_buf: [32]u8 = undefined;
         const cost_str = std.fmt.bufPrint(&cost_buf, "{d}", .{event.cost}) catch "1";
         code.appendSlice(allocator, cost_str) catch unreachable;
-        // Add obligation fields
-        code.appendSlice(allocator, ", .creates_obligation = ") catch unreachable;
-        if (event.creates_obligation) |obl| {
-            code.appendSlice(allocator, "\"") catch unreachable;
-            code.appendSlice(allocator, obl) catch unreachable;
-            code.appendSlice(allocator, "\"") catch unreachable;
-        } else {
-            code.appendSlice(allocator, "null") catch unreachable;
-        }
-        code.appendSlice(allocator, ", .discharges_obligation = ") catch unreachable;
-        if (event.discharges_obligation) |obl| {
-            code.appendSlice(allocator, "\"") catch unreachable;
-            code.appendSlice(allocator, obl) catch unreachable;
-            code.appendSlice(allocator, "\"") catch unreachable;
-        } else {
-            code.appendSlice(allocator, "null") catch unreachable;
-        }
+        // Obligation fields - TODO: Extract from event signatures
+        code.appendSlice(allocator, ", .creates_obligation = null") catch unreachable;
+        code.appendSlice(allocator, ", .discharges_obligation = null") catch unreachable;
         code.appendSlice(allocator, ", .dispatcher = dispatch_") catch unreachable;
         code.appendSlice(allocator, scope_name) catch unreachable;
         code.appendSlice(allocator, "_") catch unreachable;
