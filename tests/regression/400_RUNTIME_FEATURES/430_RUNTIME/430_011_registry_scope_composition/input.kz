@@ -5,7 +5,6 @@
 // - Scope composition: scope(other) includes another scope
 // - Compiler flags: [debug]event only included with --debug
 
-~import "$std/parser"
 ~import "$std/runtime"
 ~import "$std/io"
 
@@ -82,21 +81,21 @@ const DEBUG_CODE =
 ;
 
 // Test user scope
-~std.parser:parse.source(source: USER_CODE, file_name: "user.kz", allocator: std.heap.page_allocator)
+~std.runtime:parse.source(source: USER_CODE, file_name: "user.kz", allocator: std.heap.page_allocator)
 | parsed p |> std.runtime:eval(ast: p.ast, scope: "user")
     | result |> std.io:print.ln("User code OK")
     | event_denied e |> std.io:print.ln("User denied: {{e.name}}")
 | parse_error e |> std.io:print.ln("Parse error: {{e.message}}")
 
 // Test admin scope with user code (should work - admin includes user)
-~std.parser:parse.source(source: USER_CODE, file_name: "user2.kz", allocator: std.heap.page_allocator)
+~std.runtime:parse.source(source: USER_CODE, file_name: "user2.kz", allocator: std.heap.page_allocator)
 | parsed p |> std.runtime:eval(ast: p.ast, scope: "admin")
     | result |> std.io:print.ln("User code with admin scope OK")
     | event_denied e |> std.io:print.ln("Unexpected denial: {{e.name}}")
 | parse_error e |> std.io:print.ln("Parse error: {{e.message}}")
 
 // Test admin code with user scope (should fail)
-~std.parser:parse.source(source: ADMIN_CODE, file_name: "admin.kz", allocator: std.heap.page_allocator)
+~std.runtime:parse.source(source: ADMIN_CODE, file_name: "admin.kz", allocator: std.heap.page_allocator)
 | parsed p |> std.runtime:eval(ast: p.ast, scope: "user")
     | result |> std.io:print.ln("UNEXPECTED: Admin code ran with user scope!")
     | event_denied e |> std.io:print.ln("Correctly denied admin event: {{e.name}}")

@@ -12,7 +12,8 @@
 ~import "$std/interpreter"
 
 const std = @import("std");
-const ast = @import("ast");
+const ast_mod = @import("ast");
+const koru_parser = @import("koru_parser");
 
 // ============================================================================
 // SCOPE DECLARATION - [norun] declaration collected by collect_scopes
@@ -28,7 +29,7 @@ const ast = @import("ast");
 | transformed { program: *const Program }
 
 ~proc register {
-    const ast_mod = @import("ast");
+    const ast_reg = @import("ast");
     const ast_functional = @import("ast_functional");
 
     // Get the flow from the item
@@ -67,7 +68,7 @@ const ast = @import("ast");
 
     // Helper: Find EventDecl by name in program AST
     const findEventDecl = struct {
-        fn find(prog: *const ast_mod.Program, event_name: []const u8) ?*const ast_mod.EventDecl {
+        fn find(prog: *const ast_reg.Program, event_name: []const u8) ?*const ast_reg.EventDecl {
             for (prog.items) |prog_item| {
                 switch (prog_item) {
                     .event_decl => |*ed| {
@@ -128,7 +129,7 @@ const ast = @import("ast");
 
     // Helper: Extract obligations from EventDecl
     const extractObligations = struct {
-        fn extract(alloc: std.mem.Allocator, ed: *const ast_mod.EventDecl) struct { creates: []const []const u8, discharges: []const []const u8 } {
+        fn extract(alloc: std.mem.Allocator, ed: *const ast_reg.EventDecl) struct { creates: []const []const u8, discharges: []const []const u8 } {
             var creates = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
             var discharges = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
 
@@ -425,7 +426,7 @@ const ast = @import("ast");
     std.debug.print("[REGISTRY] Generated {d} bytes\n", .{generated_code.len});
 
     // Replace this flow with generated code
-    const new_item = ast_mod.Item{
+    const new_item = ast_reg.Item{
         .host_line = .{
             .content = generated_code,
             .location = .{ .file = "runtime:register", .line = 0, .column = 0 },
@@ -435,7 +436,7 @@ const ast = @import("ast");
 
     const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
     if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast_mod.Program) catch unreachable;
+        const result = allocator.create(ast_reg.Program) catch unreachable;
         result.* = new_program;
         return .{ .transformed = .{ .program = result } };
     }
@@ -451,6 +452,9 @@ const ast = @import("ast");
 // At runtime, koru_std.interpreter is available via root import
 pub const DispatchResult = @import("root").koru_std.interpreter.DispatchResult;
 pub const DispatchFn = @import("root").koru_std.interpreter.DispatchFn;
+pub const CostFn = @import("root").koru_std.interpreter.CostFn;
+pub const ObligationsArrayFn = @import("root").koru_std.interpreter.ObligationsArrayFn;
+pub const DischargeEventFn = @import("root").koru_std.interpreter.DischargeEventFn;
 pub const FieldValue = @import("root").koru_std.interpreter.FieldValue;
 pub const NamedField = @import("root").koru_std.interpreter.NamedField;
 pub const ScopeEvent = struct {
@@ -465,24 +469,177 @@ pub const ScopeDescriptor = struct {
     events: []const ScopeEvent,
 };
 
+pub const ScopeRuntime = struct {
+    name: []const u8,
+    dispatcher: DispatchFn,
+    cost_fn: ?CostFn,
+    creates_obligations_fn: ?ObligationsArrayFn,
+    discharges_obligations_fn: ?ObligationsArrayFn,
+    discharge_event_fn: ?DischargeEventFn,
+};
+
+fn buildScopeTable() []const ScopeRuntime {
+    const root = @import("root");
+    const decls = std.meta.declarations(root.main_module);
+
+    comptime var count: usize = 0;
+    inline for (decls) |decl| {
+        if (!std.mem.endsWith(u8, decl.name, "_descriptor")) continue;
+        const decl_value = @field(root.main_module, decl.name);
+        if (@TypeOf(decl_value) != ScopeDescriptor) continue;
+        const desc = decl_value;
+        const dispatch_name = std.fmt.comptimePrint("dispatch_{s}", .{desc.name});
+        if (!@hasDecl(root.main_module, dispatch_name)) continue;
+        count += 1;
+    }
+
+    var table: [count]ScopeRuntime = undefined;
+    comptime var i: usize = 0;
+    inline for (decls) |decl| {
+        if (!std.mem.endsWith(u8, decl.name, "_descriptor")) continue;
+        const decl_value = @field(root.main_module, decl.name);
+        if (@TypeOf(decl_value) != ScopeDescriptor) continue;
+        const desc = decl_value;
+
+        const dispatch_name = std.fmt.comptimePrint("dispatch_{s}", .{desc.name});
+        if (!@hasDecl(root.main_module, dispatch_name)) continue;
+
+        const cost_name = std.fmt.comptimePrint("get_event_cost_{s}", .{desc.name});
+        const creates_name = std.fmt.comptimePrint("get_creates_obligations_{s}", .{desc.name});
+        const discharges_name = std.fmt.comptimePrint("get_discharges_obligations_{s}", .{desc.name});
+        const discharge_event_name = std.fmt.comptimePrint("get_discharge_event_{s}", .{desc.name});
+
+        table[i] = .{
+            .name = desc.name,
+            .dispatcher = &@field(root.main_module, dispatch_name),
+            .cost_fn = if (@hasDecl(root.main_module, cost_name)) &@field(root.main_module, cost_name) else null,
+            .creates_obligations_fn = if (@hasDecl(root.main_module, creates_name)) &@field(root.main_module, creates_name) else null,
+            .discharges_obligations_fn = if (@hasDecl(root.main_module, discharges_name)) &@field(root.main_module, discharges_name) else null,
+            .discharge_event_fn = if (@hasDecl(root.main_module, discharge_event_name)) &@field(root.main_module, discharge_event_name) else null,
+        };
+        i += 1;
+    }
+
+    return table[0..];
+}
+
 ~pub event get_scope { name: []const u8 }
-| scope { dispatcher: DispatchFn }
+| scope {
+    dispatcher: DispatchFn,
+    cost_fn: ?CostFn,
+    creates_obligations_fn: ?ObligationsArrayFn,
+    discharges_obligations_fn: ?ObligationsArrayFn,
+    discharge_event_fn: ?DischargeEventFn
+}
 | not_found {}
 
 // Look up scope dispatcher by name
 // Dispatchers are generated into main_module with naming convention: dispatch_<scope>
 ~proc get_scope {
-    const root = @import("root");
+    inline for (comptime buildScopeTable()) |scope_info| {
+        if (std.mem.eql(u8, name, scope_info.name)) {
+            return .{ .scope = .{
+                .dispatcher = scope_info.dispatcher,
+                .cost_fn = scope_info.cost_fn,
+                .creates_obligations_fn = scope_info.creates_obligations_fn,
+                .discharges_obligations_fn = scope_info.discharges_obligations_fn,
+                .discharge_event_fn = scope_info.discharge_event_fn,
+            } };
+        }
+    }
+    return .{ .not_found = .{} };
+}
 
-    // Check for known scopes via comptime string matching
-    // For scope "test", look for main_module.dispatch_test
-    if (std.mem.eql(u8, name, "test")) {
-        if (@hasDecl(root.main_module, "dispatch_test")) {
-            return .{ .scope = .{ .dispatcher = &root.main_module.dispatch_test } };
+// ============================================================================
+// PARSE - Parse Koru source using the interpreter parser
+// ============================================================================
+
+~pub event parse.source {
+    source: []const u8,
+    file_name: []const u8,
+    allocator: std.mem.Allocator
+}
+| parsed { ast: koru_parser.ParseResult }
+| parse_error { message: []const u8 }
+
+~proc parse.source {
+    var parser = koru_parser.Parser.init(allocator, source, file_name, &[_][]const u8{}, null) catch |err| {
+        return .{ .parse_error = .{ .message = @errorName(err) } };
+    };
+    defer parser.deinit();
+
+    const result = parser.parse() catch |err| {
+        return .{ .parse_error = .{ .message = @errorName(err) } };
+    };
+
+    return .{ .parsed = .{ .ast = result } };
+}
+
+// ============================================================================
+// EVAL - Run a parsed AST against a named scope
+// ============================================================================
+
+~pub event eval {
+    ast: koru_parser.ParseResult,
+    scope: []const u8,
+    budget: ?u64,
+    handle_pool: ?*@import("root").koru_std.interpreter.HandlePool
+}
+| result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
+| exhausted { used: u64, last_event: []const u8, handles: u32 }
+| validation_error { message: []const u8 }
+| dispatch_error { event_name: []const u8, message: []const u8 }
+| scope_not_found { scope_name: []const u8 }
+
+~proc eval {
+    const interpreter_mod = @import("root").koru_std.interpreter;
+
+    var flow_to_run: ?*const ast_mod.Flow = null;
+    for (ast.source_file.items) |*item| {
+        if (item.* == .flow) {
+            flow_to_run = &item.flow;
+            break;
         }
     }
 
-    return .{ .not_found = .{} };
+    if (flow_to_run == null) {
+        return .{ .validation_error = .{ .message = "No flow found in AST" } };
+    }
+
+    const scope_result = get_scope_event.handler(.{ .name = scope });
+    switch (scope_result) {
+        .scope => |s| {
+            const result = interpreter_mod.eval_event.handler(.{
+                .flow = flow_to_run.?,
+                .dispatcher = s.dispatcher,
+                .cost_fn = s.cost_fn,
+                .creates_obligations_fn = s.creates_obligations_fn,
+                .discharges_obligations_fn = s.discharges_obligations_fn,
+                .discharge_event_fn = s.discharge_event_fn,
+                .budget = budget,
+                .handle_pool = handle_pool,
+            });
+            switch (result) {
+                .result => |r| return .{ .result = .{
+                    .value = r.value,
+                    .used = r.used,
+                    .handles = r.handles,
+                } },
+                .exhausted => |e| return .{ .exhausted = .{
+                    .used = e.used,
+                    .last_event = e.last_event,
+                    .handles = e.handles,
+                } },
+                .validation_error => |e| return .{ .validation_error = .{ .message = e.message } },
+                .dispatch_error => |e| return .{ .dispatch_error = .{
+                    .event_name = e.event_name,
+                    .message = e.message,
+                } },
+                .scope_not_found => |e| return .{ .scope_not_found = .{ .scope_name = e.scope_name } },
+            }
+        },
+        .not_found => return .{ .scope_not_found = .{ .scope_name = scope } },
+    }
 }
 
 // ============================================================================
