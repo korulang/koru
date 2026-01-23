@@ -4,14 +4,39 @@
 **Test:** 50M iterations, 5 bodies (solar system)
 **Machine:** Apple Silicon (ARM64)
 
-## BREAKTHROUGH: We Beat Rust!
+## BREAKTHROUGH: Koru Leads the Pack
+
+```
+┌──────────────────────┬────────┬────────────┐
+│    Implementation    │  Time  │  vs Koru   │
+├──────────────────────┼────────┼────────────┤
+│ Koru kernel:pairwise │ 1.330s │ baseline   │
+├──────────────────────┼────────┼────────────┤
+│ Rust                 │ 1.353s │ 2% slower  │
+├──────────────────────┼────────┼────────────┤
+│ Zig (hand-optimized) │ 1.359s │ 2% slower  │
+├──────────────────────┼────────┼────────────┤
+│ Zig (idiomatic)      │ 2.061s │ 55% slower │
+└──────────────────────┴────────┴────────────┘
+```
+
+You write:
+```koru
+~std.kernel:pairwise(k) {
+    k.vx -= dx * k.other.mass * mag
+    k.other.vx += dx * k.mass * mag
+}
+```
+
+And get hand-optimized performance automatically. The kernel abstraction hides the noalias tricks, the static allocation, and the compile-time
+loop bounds - all the stuff that makes idiomatic Zig 55% slower.
 
 | Rank | Implementation | Time | vs Rust |
 |------|---------------|------|---------|
-| 1 | **Koru kernel:pairwise** | **1.33s** | **0.98x** |
-| 2 | **Zig noalias** | **1.34s** | **0.99x** |
-| 3 | **Rust** | **1.36s** | **1.00x** |
-| 4 | Koru arrayed capture | 1.43s | 1.05x |
+| 1 | **Koru kernel:pairwise** | **1.33s** | **baseline** |
+| 2 | **Rust** | **1.35s** | **1.02x** |
+| 3 | **Zig noalias** | **1.36s** | **1.02x** |
+| 4 | Koru arrayed capture | 1.43s | 1.08x |
 
 ## The Solution: Pointer Aliasing + Static Backing
 
