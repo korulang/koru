@@ -378,6 +378,14 @@ pub fn build(b: *std.Build) void {
     });
     resolve_abstract_impl_module.addImport("ast", ast_module);
 
+    // Interpreter module - core interpreter for [frontend] execution mode
+    const interpreter_module = b.createModule(.{
+        .root_source_file = b.path("src/interpreter.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    interpreter_module.addImport("ast", ast_module);
+
     // Tap Transformer module - AST transformation pass for zero-cost taps
     const tap_transformer_module = b.createModule(.{
         .root_source_file = b.path("src/tap_transformer.zig"),
@@ -436,6 +444,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("meta_events", meta_events_module);
     exe.root_module.addImport("validate_abstract_impl", validate_abstract_impl_module);
     exe.root_module.addImport("resolve_abstract_impl", resolve_abstract_impl_module);
+    exe.root_module.addImport("interpreter", interpreter_module);
     exe.root_module.addImport("flow_checker", flow_checker_module);
     exe.root_module.addImport("branch_checker", branch_checker_module);
     exe.root_module.addImport("codegen_utils", codegen_utils_module);
@@ -548,7 +557,7 @@ pub fn build(b: *std.Build) void {
     }
     const run_step = b.step("run", "Run the compiler");
     run_step.dependOn(&run_cmd.step);
-    
+
     // Tests - simpler approach
     
     // Compiler Coordinator module for multi-pass optimization

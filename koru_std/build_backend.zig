@@ -75,6 +75,21 @@ const union_collector_module = b.createModule(.{
 });
 union_collector_module.addImport("ast", ast_module);
 
+// Config module - project configuration
+const config_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/config.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+
+// Module resolver - resolves import paths
+const module_resolver_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/module_resolver.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+module_resolver_module.addImport("config", config_module);
+
 // Parser module - source parsing
 const parser_module = b.createModule(.{
     .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/parser.zig" },
@@ -87,6 +102,7 @@ parser_module.addImport("errors", errors_module);
 parser_module.addImport("type_registry", type_registry_module);
 parser_module.addImport("expression_parser", expression_parser_module);
 parser_module.addImport("union_collector", union_collector_module);
+parser_module.addImport("module_resolver", module_resolver_module);
 
 // Phantom parser
 const phantom_parser_module = b.createModule(.{
@@ -160,7 +176,7 @@ const ast_functional_module = b.createModule(.{
 });
 ast_functional_module.addImport("ast", ast_module);
 
-// Auto-dispose inserter - inserts disposal calls before terminators
+// Auto-discharge inserter - inserts disposal calls before terminators
 const auto_discharge_inserter_module = b.createModule(.{
     .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/auto_discharge_inserter.zig" },
     .target = target,
@@ -322,6 +338,7 @@ transform_pass_runner_module.addImport("ast", ast_module);
 transform_pass_runner_module.addImport("annotation_parser", annotation_parser_module);
 transform_pass_runner_module.addImport("template_utils", template_utils_module);
 transform_pass_runner_module.addImport("ast_functional", ast_functional_module);
+transform_pass_runner_module.addImport("liquid", liquid_module);
 
 // Add all imports to the backend executable
 exe.root_module.addImport("ast", ast_module);

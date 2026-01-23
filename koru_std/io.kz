@@ -60,7 +60,7 @@ const std = @import("std");
 | printed {}
 
 ~proc eprintln {
-    const stderr = std.io.getStdErr().writer();
+    const stderr = std.fs.File.stderr().writer();
     stderr.print("ERROR: {s}\n", .{message}) catch {
         // Fall back to debug print if stderr fails
         std.debug.print("ERROR: {s}\n", .{message});
@@ -84,6 +84,74 @@ const std = @import("std");
 ~proc warn {
     std.debug.print("⚠️  {s}\n", .{message});
     return .{ .printed = .{} };
+}
+
+// ============================================================================
+// FILE/STDIN READING - For interpreter and scripting
+// ============================================================================
+
+// Read entire stdin as text
+~pub event read_stdin {}
+| ok { text: []const u8 }
+| eof {}
+| failed { message: []const u8 }
+
+~proc read_stdin {
+    const stdin = std.fs.File.stdin();
+    const content = stdin.readToEndAlloc(std.heap.page_allocator, 1024 * 1024 * 10) catch |err| {
+        const msg = switch (err) {
+            error.OutOfMemory => "Input too large (max 10MB)",
+            else => "Failed to read stdin",
+        };
+        return .{ .failed = .{ .message = msg } };
+    };
+
+    if (content.len == 0) {
+        return .{ .eof = .{} };
+    }
+
+    return .{ .ok = .{ .text = content } };
+}
+
+// Read entire file as text
+~pub event read_file { path: []const u8 }
+| ok { text: []const u8 }
+| not_found {}
+| failed { message: []const u8 }
+
+~proc read_file {
+    const file = std.fs.cwd().openFile(path, .{}) catch |err| {
+        return switch (err) {
+            error.FileNotFound => .{ .not_found = .{} },
+            error.AccessDenied => .{ .failed = .{ .message = "Access denied" } },
+            error.IsDir => .{ .failed = .{ .message = "Path is a directory" } },
+            else => .{ .failed = .{ .message = "Failed to open file" } },
+        };
+    };
+    defer file.close();
+
+    const content = file.readToEndAlloc(std.heap.page_allocator, 1024 * 1024 * 10) catch |err| {
+        const msg = switch (err) {
+            error.OutOfMemory => "File too large (max 10MB)",
+            else => "Failed to read file",
+        };
+        return .{ .failed = .{ .message = msg } };
+    };
+
+    return .{ .ok = .{ .text = content } };
+}
+
+// Get command line arguments
+~pub event args {}
+| ok { argv: []const []const u8 }
+
+~proc args {
+    var arg_list = std.ArrayList([]const u8).init(std.heap.page_allocator);
+    var iter = std.process.args();
+    while (iter.next()) |arg| {
+        arg_list.append(arg) catch continue;
+    }
+    return .{ .ok = .{ .argv = arg_list.toOwnedSlice() catch &.{} } };
 }
 
 // ============================================================================

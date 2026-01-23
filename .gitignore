@@ -57,6 +57,9 @@ zig-out/
 *.hi
 a.out
 
+# koru_std build outputs
+koru_std/koru_out
+
 # Node.js dependencies (tooling only)
 node_modules/
 

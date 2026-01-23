@@ -123,12 +123,22 @@ const ast = @import("ast");
             code.appendSlice(allocator, I ++ "    out.* = .{ .branch = \"control\", .fields = &.{} };\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    return;\n") catch unreachable;
         } else {
+            // Generate dispatcher that handles both void and branched events
             code.appendSlice(allocator, I ++ "    const Input = main_module.") catch unreachable;
             code.appendSlice(allocator, event) catch unreachable;
             code.appendSlice(allocator, "_event.Input;\n") catch unreachable;
-            code.appendSlice(allocator, I ++ "    const r = main_module.") catch unreachable;
+            code.appendSlice(allocator, I ++ "    const Handler = main_module.") catch unreachable;
             code.appendSlice(allocator, event) catch unreachable;
-            code.appendSlice(allocator, "_event.handler(buildInput(Input, inv.args));\n") catch unreachable;
+            code.appendSlice(allocator, "_event;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    const ReturnType = @typeInfo(@TypeOf(Handler.handler)).@\"fn\".return_type.?;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    if (ReturnType == void) {\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        // Void event - just call and return empty branch\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        Handler.handler(buildInput(Input, inv.args));\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        out.* = .{ .branch = \"\", .fields = &.{} };\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "        return;\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    // Branched event - extract branch and fields\n") catch unreachable;
+            code.appendSlice(allocator, I ++ "    const r = Handler.handler(buildInput(Input, inv.args));\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    const S = struct { threadlocal var buf: [16]NamedField = undefined; };\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    const branch = @tagName(r);\n") catch unreachable;
             code.appendSlice(allocator, I ++ "    const field_count = switch (r) { inline else => |p| blk: {\n") catch unreachable;
