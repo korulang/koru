@@ -106,7 +106,19 @@ const DT: f64 = 0.01;
             | e e1 |> print_energy(e: e1)
                 |> for(0..iterations)
                     | each _ |>
-                        std.kernel:pairwise { const dx = k.x - k.other.x; const dy = k.y - k.other.y; const dz = k.z - k.other.z; const dsq = dx*dx + dy*dy + dz*dz; const mag = DT / (dsq * @sqrt(dsq)); k.vx -= dx * k.other.mass * mag; k.vy -= dy * k.other.mass * mag; k.vz -= dz * k.other.mass * mag; k.other.vx += dx * k.mass * mag; k.other.vy += dy * k.mass * mag; k.other.vz += dz * k.mass * mag }
+                        std.kernel:pairwise {
+                            const dx = k.x - k.other.x;
+                            const dy = k.y - k.other.y;
+                            const dz = k.z - k.other.z;
+                            const dsq = dx*dx + dy*dy + dz*dz;
+                            const mag = DT / (dsq * @sqrt(dsq));
+                            k.vx -= dx * k.other.mass * mag;
+                            k.vy -= dy * k.other.mass * mag;
+                            k.vz -= dz * k.other.mass * mag;
+                            k.other.vx += dx * k.mass * mag;
+                            k.other.vy += dy * k.mass * mag;
+                            k.other.vz += dz * k.mass * mag;
+                        }
                         |> advance_positions(bodies: k.ptr[0..k.len])
                     | done |> energy(bodies: k.ptr[0..k.len])
                         | e e2 |> print_energy(e: e2)

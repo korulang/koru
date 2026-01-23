@@ -754,7 +754,7 @@ const std = @import("std");
         allocator,
         \\const {0s} = struct {{
         \\    inline fn call(noalias {1s}: *@TypeOf({3s}.ptr[0]), noalias {2s}: *@TypeOf({3s}.ptr[0])) void {{
-        \\        {4s};
+        \\        {4s}
         \\    }}
         \\}};
         \\
