@@ -1,7 +1,2 @@
-[INTERPRETER] Parsing source (21 bytes)
-[INTERPRETER] Parsed 1 items
-[INTERPRETER] Found flow to execute
-[INTERPRETER] Validation passed
 GREET: Hello, World!
-[INTERPRETER] Execution complete, branch: greeted
 SUCCESS

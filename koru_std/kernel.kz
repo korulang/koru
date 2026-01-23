@@ -747,6 +747,13 @@ const std = @import("std");
     const known_len = if (init_source) |text| countInitElements(text) else null;
 
 
+    // Ensure body_code ends with semicolon (single-line bodies may not have one)
+    const body_trimmed = std.mem.trimRight(u8, body_code.items, " \t\n\r");
+    const needs_semi = body_trimmed.len == 0 or body_trimmed[body_trimmed.len - 1] != ';';
+    if (needs_semi) {
+        body_code.append(allocator, ';') catch unreachable;
+    }
+
     var code_buf = std.ArrayList(u8).initCapacity(allocator, body_code.items.len + 256) catch unreachable;
     defer code_buf.deinit(allocator);
 

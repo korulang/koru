@@ -250,14 +250,14 @@ pub const HandlePool = struct {
 
     pub fn init(allocator: std.mem.Allocator) HandlePool {
         return .{
-            .handles = std.ArrayList(Handle).init(allocator),
+            .handles = std.ArrayList(Handle){ .items = &.{}, .capacity = 0 },
             .next_id = 1,
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *HandlePool) void {
-        self.handles.deinit();
+        self.handles.deinit(self.allocator);
     }
 
     /// Register a new handle with an obligation

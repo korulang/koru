@@ -61,6 +61,12 @@ pub fn main() void {
     const result = koru_std.interpreter.run_event.handler(.{
         .source = BENCH_FLOW,
         .dispatcher = &dispatch_bench,
+        .cost_fn = null,
+        .creates_obligations_fn = null,
+        .discharges_obligations_fn = null,
+        .discharge_event_fn = null,
+        .budget = null,
+        .handle_pool = null,
     });
 
     const end = std.time.nanoTimestamp();
@@ -77,6 +83,9 @@ pub fn main() void {
             std.debug.print("Sum: {d} (expected: {d})\n", .{actual, expected});
             std.debug.print("Correct: {}\n", .{actual == expected});
             std.debug.print("Time: {d} ms\n", .{total_ms});
+        },
+        .exhausted => |e| {
+            std.debug.print("EXHAUSTED: {s}\n", .{e.last_event});
         },
         .parse_error => |e| {
             std.debug.print("PARSE ERROR: {s} at line {d}\n", .{e.message, e.line});

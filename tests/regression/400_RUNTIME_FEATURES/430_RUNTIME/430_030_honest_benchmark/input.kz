@@ -60,18 +60,36 @@ pub fn main() void {
         _ = koru_std.interpreter.run_event.handler(.{
             .source = ADD_SOURCE,
             .dispatcher = &dispatch_math,
+            .cost_fn = null,
+            .creates_obligations_fn = null,
+            .discharges_obligations_fn = null,
+            .discharge_event_fn = null,
+            .budget = null,
+            .handle_pool = null,
         });
 
         // Parse and execute multiply
         _ = koru_std.interpreter.run_event.handler(.{
             .source = MUL_SOURCE,
             .dispatcher = &dispatch_math,
+            .cost_fn = null,
+            .creates_obligations_fn = null,
+            .discharges_obligations_fn = null,
+            .discharge_event_fn = null,
+            .budget = null,
+            .handle_pool = null,
         });
 
         // Parse and execute subtract
         _ = koru_std.interpreter.run_event.handler(.{
             .source = SUB_SOURCE,
             .dispatcher = &dispatch_math,
+            .cost_fn = null,
+            .creates_obligations_fn = null,
+            .discharges_obligations_fn = null,
+            .discharge_event_fn = null,
+            .budget = null,
+            .handle_pool = null,
         });
     }
 

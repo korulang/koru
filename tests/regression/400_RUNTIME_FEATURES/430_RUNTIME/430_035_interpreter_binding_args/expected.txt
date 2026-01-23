@@ -1,7 +1,2 @@
-[INTERPRETER] Parsing source (41 bytes)
-[INTERPRETER] Parsed 1 items
-[INTERPRETER] Found flow to execute
-[INTERPRETER] Validation passed
 [consume] received n = '42'
-[INTERPRETER] Execution complete, branch: echoed
 Result: echoed

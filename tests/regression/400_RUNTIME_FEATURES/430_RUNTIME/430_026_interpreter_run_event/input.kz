@@ -23,6 +23,7 @@ const TEST_SOURCE = "~greet(name: \"World\")";
 ~std.runtime:get_scope(name: "test")
 | scope s |> std.interpreter:run(source: TEST_SOURCE, dispatcher: s.dispatcher)
     | result _ |> std.io:print.ln("SUCCESS")
+    | exhausted _ |> std.io:print.ln("EXHAUSTED")
     | parse_error _ |> std.io:print.ln("PARSE ERROR")
     | validation_error _ |> std.io:print.ln("VALIDATION ERROR")
     | dispatch_error _ |> std.io:print.ln("DISPATCH ERROR")
