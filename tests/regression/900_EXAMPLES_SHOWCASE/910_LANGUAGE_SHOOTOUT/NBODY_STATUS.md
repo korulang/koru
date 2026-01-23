@@ -9,10 +9,9 @@
 | Rank | Implementation | Time | vs Rust |
 |------|---------------|------|---------|
 | 1 | **Rust** | **1.36s** | **1.00x** |
-| 2 | **Zig noalias** | **1.37s** | **1.00x** ← TIED! |
-| 3 | Zig SIMD | 1.41s | 1.04x |
-| 4 | Zig forloop | 1.42s | 1.04x |
-| 5 | Koru arrayed capture | 1.43s | 1.05x |
+| 2 | **Zig noalias** | **1.34s** | **1.00x** ← TIED! |
+| 3 | **Koru kernel:pairwise** | **1.41s** | **1.04x** |
+| 4 | Koru arrayed capture | 1.43s | 1.06x |
 
 ## The Solution: Pointer Aliasing
 
@@ -98,16 +97,23 @@ for (0..N) |i| {
 
 ## Koru Implementations
 
-### kernel:pairwise (OPTIMIZED - matches Rust!)
+### kernel:pairwise (4% behind Rust)
 
-**`390_020_nbody_benchmark`** - Uses kernel DSL with noalias optimization:
+**`2101g_nbody_kernel_pairwise`** - Full benchmark using kernel DSL:
 ```koru
-~std.kernel:pairwise { k.vx += f * dx; k.other.vx -= f * dx }
+~parse_args()
+| n iterations |>
+    std.kernel:init(Body) { ... }
+    | kernel k |>
+        for(0..iterations)
+            | each _ |>
+                std.kernel:pairwise { k.vx -= dx * k.other.mass * mag; ... }
+                |> advance_positions(bodies: k.ptr[0..k.len])
 ```
 
-Generates the pointer-based pattern automatically. **No manual optimization needed.**
+Generates the noalias pointer pattern. 4% behind Rust - cause not yet investigated.
 
-### Manual capture (5% behind)
+### Manual capture (6% behind Rust)
 
 **`2101f_nbody_arrayed_capture`** - Uses array indexing without kernel DSL:
 ```koru
@@ -118,15 +124,23 @@ This approach doesn't benefit from kernel semantics - LLVM can't prove non-alias
 
 ### Recommendation
 
-**Use `kernel:pairwise` for pairwise computations.** The DSL knows the semantics and emits optimal code.
+**Use `kernel:pairwise` for pairwise computations.** The DSL generates noalias code automatically.
 
 ## Running Benchmarks
 
 ```bash
 cd tests/regression/900_EXAMPLES_SHOWCASE/910_LANGUAGE_SHOOTOUT
+
+# Build the Koru kernel:pairwise benchmark first
+cd 2101g_nbody_kernel_pairwise
+zig build-exe output_emitted.zig -O ReleaseFast --name a.out
+cd ..
+
+# Run benchmarks
 hyperfine --warmup 3 --runs 10 \
     "./2101_nbody/reference/nbody-rust 50000000" \
     "./nbody-noalias 50000000" \
+    "./2101g_nbody_kernel_pairwise/a.out 50000000" \
     "./2101f_nbody_arrayed_capture/a.out 50000000"
 ```
 
