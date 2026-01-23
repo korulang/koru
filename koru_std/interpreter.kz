@@ -372,10 +372,10 @@ pub const InterpreterContext = struct {
     dispatcher: ?*const fn(*const ast.Invocation, *DispatchResult) anyerror!void,
     // Cost lookup function - returns cost for an event name
     cost_fn: ?*const fn([]const u8) u64,
-    // Obligation lookup functions
-    creates_obligation_fn: ?ObligationFn,   // event -> obligation it creates
-    discharges_obligation_fn: ?ObligationFn, // event -> obligation it discharges
-    discharge_event_fn: ?ObligationFn,       // obligation -> event that discharges it
+    // Obligation lookup functions (events can create/discharge multiple obligations)
+    creates_obligations_fn: ?ObligationsArrayFn,   // event -> []obligations it creates
+    discharges_obligations_fn: ?ObligationsArrayFn, // event -> []obligations it discharges
+    discharge_event_fn: ?DischargeEventFn,         // obligation -> event that discharges it
     // Budget tracking (optional - null means unlimited)
     budget: ?*BudgetState,
     // Handle pool for resource tracking (optional)
@@ -388,7 +388,9 @@ pub const InterpreterContext = struct {
 
 pub const DispatchFn = *const fn(*const ast.Invocation, *DispatchResult) anyerror!void;
 pub const CostFn = *const fn([]const u8) u64;
-pub const ObligationFn = *const fn([]const u8) ?[]const u8;  // event -> obligation state
+// Obligation functions - events can create/discharge multiple obligations
+pub const ObligationsArrayFn = *const fn([]const u8) []const []const u8;  // event -> []obligations
+pub const DischargeEventFn = *const fn([]const u8) ?[]const u8;  // obligation -> event name
 
 // ============================================================================
 // AST VALIDATION - Pre-execution validation (shadowing, etc.)
@@ -698,9 +700,9 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     source: []const u8,
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
-    creates_obligation_fn: ?ObligationFn,   // event -> obligation it creates
-    discharges_obligation_fn: ?ObligationFn, // event -> obligation it discharges
-    discharge_event_fn: ?ObligationFn,       // obligation -> event that discharges it
+    creates_obligations_fn: ?ObligationsArrayFn,   // event -> []obligations it creates
+    discharges_obligations_fn: ?ObligationsArrayFn, // event -> []obligations it discharges
+    discharge_event_fn: ?DischargeEventFn,         // obligation -> event that discharges it
     budget: ?u64,  // Optional budget limit (null = unlimited)
     handle_pool: ?*HandlePool  // Optional external pool (for bridges)
 }
@@ -716,9 +718,9 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     flow: *const ast.Flow,
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
-    creates_obligation_fn: ?ObligationFn,
-    discharges_obligation_fn: ?ObligationFn,
-    discharge_event_fn: ?ObligationFn,
+    creates_obligations_fn: ?ObligationsArrayFn,
+    discharges_obligations_fn: ?ObligationsArrayFn,
+    discharge_event_fn: ?DischargeEventFn,
     budget: ?u64,  // Optional budget limit (null = unlimited)
     handle_pool: ?*HandlePool  // Optional external pool (for bridges)
 }
@@ -844,8 +846,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         .allocator = allocator,
         .dispatcher = dispatcher,
         .cost_fn = cost_fn,
-        .creates_obligation_fn = creates_obligation_fn,
-        .discharges_obligation_fn = discharges_obligation_fn,
+        .creates_obligations_fn = creates_obligations_fn,
+        .discharges_obligations_fn = discharges_obligations_fn,
         .discharge_event_fn = discharge_event_fn,
         .budget = &budget_state,
         .handle_pool = active_pool,
@@ -1488,25 +1490,30 @@ fn executeFlow(
 
             try dispatcher(&evaluated_inv, &dispatch_result);
 
-            // Track obligations for handle pool
+            // Track obligations for handle pool (supports multiple obligations per event)
             if (ctx.handle_pool) |pool| {
-                // Check if this event creates an obligation
-                if (ctx.creates_obligation_fn) |creates_fn| {
-                    if (creates_fn(event_name)) |obligation| {
+                // Check if this event creates obligations
+                if (ctx.creates_obligations_fn) |creates_fn| {
+                    const obligations = creates_fn(event_name);
+                    for (obligations, 0..) |obligation, i| {
                         // Find the discharge event for this obligation
                         const discharge_event = if (ctx.discharge_event_fn) |discharge_fn|
                             discharge_fn(obligation) orelse "unknown"
                         else
                             "unknown";
-                        // Create a binding name based on result
+                        // Create a binding name based on result and index
                         var binding_buf: [64]u8 = undefined;
-                        const binding_name = std.fmt.bufPrint(&binding_buf, "result.{s}", .{dispatch_result.branch}) catch "result";
+                        const binding_name = if (obligations.len > 1)
+                            std.fmt.bufPrint(&binding_buf, "result.{s}.{d}", .{dispatch_result.branch, i}) catch "result"
+                        else
+                            std.fmt.bufPrint(&binding_buf, "result.{s}", .{dispatch_result.branch}) catch "result";
                         _ = pool.acquire(binding_name, obligation, discharge_event) catch {};
                     }
                 }
-                // Check if this event discharges an obligation
-                if (ctx.discharges_obligation_fn) |discharges_fn| {
-                    if (discharges_fn(event_name)) |_| {
+                // Check if this event discharges obligations
+                if (ctx.discharges_obligations_fn) |discharges_fn| {
+                    const obligations = discharges_fn(event_name);
+                    if (obligations.len > 0) {
                         // Mark any matching handles as discharged
                         // For now, discharge by the first arg (typically the handle)
                         if (evaluated_inv.args.len > 0) {
@@ -1676,8 +1683,8 @@ fn executeFlow(
         .allocator = allocator,
         .dispatcher = dispatcher,
         .cost_fn = cost_fn,
-        .creates_obligation_fn = creates_obligation_fn,
-        .discharges_obligation_fn = discharges_obligation_fn,
+        .creates_obligations_fn = creates_obligations_fn,
+        .discharges_obligations_fn = discharges_obligations_fn,
         .discharge_event_fn = discharge_event_fn,
         .budget = &budget_state,
         .handle_pool = active_pool,

@@ -31,7 +31,8 @@ pub const BudgetState = @import("root").koru_std.interpreter.BudgetState;
 pub const Value = @import("root").koru_std.interpreter.Value;
 pub const DispatchFn = @import("root").koru_std.interpreter.DispatchFn;
 pub const CostFn = @import("root").koru_std.interpreter.CostFn;
-pub const ObligationFn = @import("root").koru_std.interpreter.ObligationFn;
+pub const ObligationsArrayFn = @import("root").koru_std.interpreter.ObligationsArrayFn;
+pub const DischargeEventFn = @import("root").koru_std.interpreter.DischargeEventFn;
 
 // ============================================================================
 // USER TIERS - Determines budget capacity and refill rate
