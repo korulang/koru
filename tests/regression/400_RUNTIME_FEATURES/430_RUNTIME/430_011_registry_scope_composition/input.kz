@@ -91,6 +91,17 @@ const DEBUG_CODE =
     | scope_not_found _ |> std.io:print.ln("User scope missing")
 | parse_error e |> std.io:print.ln("Parse error: {{e.message}}")
 
+// Test debug scope in non-debug builds (should be denied)
+~std.runtime:parse.source(source: DEBUG_CODE, file_name: "debug.kz", allocator: std.heap.page_allocator)
+| parsed p |> std.runtime:eval(ast: p.ast, scope: "admin")
+    | result |> std.io:print.ln("UNEXPECTED: Debug code ran without --debug")
+    | event_denied e |> std.io:print.ln("Debug denied: {{e.name}}")
+    | exhausted _ |> std.io:print.ln("Debug exhausted")
+    | validation_error _ |> std.io:print.ln("Debug validation error")
+    | dispatch_error _ |> std.io:print.ln("Debug dispatch error")
+    | scope_not_found _ |> std.io:print.ln("Debug scope missing")
+| parse_error e |> std.io:print.ln("Parse error: {{e.message}}")
+
 // Test admin scope with user code (should work - admin includes user)
 ~std.runtime:parse.source(source: USER_CODE, file_name: "user2.kz", allocator: std.heap.page_allocator)
 | parsed p |> std.runtime:eval(ast: p.ast, scope: "admin")
