@@ -200,13 +200,30 @@ const koru_parser = @import("koru_parser");
     //   [state!] in output = creates obligation (! suffix)
     //   [!state] in input = discharges obligation (! prefix)
 
+    // Local CreateSpec/DischargeSpec for codegen (mirrors runtime types)
+    const LocalCreateSpec = struct {
+        obligation_module: []const u8,
+        obligation_name: []const u8,
+        field_name: []const u8,
+        resource_type: []const u8,
+    };
+
+    const LocalDischargeSpec = struct {
+        obligation_module: []const u8,
+        obligation_name: []const u8,
+        arg_name: []const u8,
+    };
+
     const EventEntry = struct {
         name: []const u8,
         cost: u64,
-        creates_obligations: []const []const u8,    // From [state!] in outputs
-        discharges_obligations: []const []const u8, // From [!state] in inputs
+        creates_obligations: []const []const u8,    // Legacy: just names
+        discharges_obligations: []const []const u8, // Legacy: just names
+        creates_specs: []const LocalCreateSpec,     // Full specs
+        discharges_specs: []const LocalDischargeSpec,
         symbol: []const u8,
         dispatch_name: []const u8,
+        module_name: ?[]const u8,                   // Module this event belongs to
     };
 
     const ScopeDef = struct {
@@ -428,11 +445,17 @@ const koru_parser = @import("koru_parser");
         }
     };
 
-    // Helper: Parse phantom string to extract obligation name
-    // Returns (state_name, is_creates, is_discharges)
+    // Helper: Parse phantom string to extract obligation name and optional module qualifier
+    // Input: "opened!", "!opened", "sqlite3:opened!", "!fs:opened"
+    // Returns (module, name, is_creates, is_discharges)
     const parsePhantom = struct {
-        fn parse(alloc: std.mem.Allocator, phantom_str: []const u8) struct { name: ?[]const u8, creates: bool, discharges: bool } {
-            if (phantom_str.len == 0) return .{ .name = null, .creates = false, .discharges = false };
+        fn parse(alloc: std.mem.Allocator, phantom_str: []const u8) struct {
+            module: ?[]const u8,  // Module qualifier if present (e.g., "sqlite3")
+            name: ?[]const u8,    // Obligation name (e.g., "opened")
+            creates: bool,
+            discharges: bool,
+        } {
+            if (phantom_str.len == 0) return .{ .module = null, .name = null, .creates = false, .discharges = false };
 
             var str = phantom_str;
             var discharges = false;
@@ -451,22 +474,39 @@ const koru_parser = @import("koru_parser");
             }
 
             // Skip if neither creates nor discharges
-            if (!creates and !discharges) return .{ .name = null, .creates = false, .discharges = false };
+            if (!creates and !discharges) return .{ .module = null, .name = null, .creates = false, .discharges = false };
 
-            // Return the state name
+            // Check for module qualifier (e.g., "sqlite3:opened")
+            var module: ?[]const u8 = null;
+            var name = str;
+            if (std.mem.indexOf(u8, str, ":")) |colon_idx| {
+                module = alloc.dupe(u8, str[0..colon_idx]) catch null;
+                name = str[colon_idx + 1 ..];
+            }
+
             return .{
-                .name = alloc.dupe(u8, str) catch null,
+                .module = module,
+                .name = alloc.dupe(u8, name) catch null,
                 .creates = creates,
                 .discharges = discharges,
             };
         }
     }.parse;
 
-    // Helper: Extract obligations from EventDecl
+    // Helper: Extract obligations from EventDecl with full field/arg info
     const extractObligations = struct {
-        fn extract(alloc: std.mem.Allocator, ed: *const ast_reg.EventDecl) struct { creates: []const []const u8, discharges: []const []const u8 } {
+        fn extract(alloc: std.mem.Allocator, ed: *const ast_reg.EventDecl, module_name: ?[]const u8) struct {
+            creates: []const []const u8,
+            discharges: []const []const u8,
+            creates_specs: []const LocalCreateSpec,
+            discharges_specs: []const LocalDischargeSpec,
+        } {
             var creates = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
             var discharges = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
+            var creates_specs = std.ArrayList(LocalCreateSpec){ .items = &.{}, .capacity = 0 };
+            var discharges_specs = std.ArrayList(LocalDischargeSpec){ .items = &.{}, .capacity = 0 };
+
+            const default_module = module_name orelse "main";
 
             // Check input fields for [!state] (discharges)
             for (ed.input.fields) |field| {
@@ -474,7 +514,14 @@ const koru_parser = @import("koru_parser");
                     const result = parsePhantom(alloc, phantom_str);
                     if (result.discharges) {
                         if (result.name) |name| {
+                            // Prefer phantom qualifier, fall back to event module
+                            const obl_module = result.module orelse alloc.dupe(u8, default_module) catch default_module;
                             discharges.append(alloc, name) catch continue;
+                            discharges_specs.append(alloc, .{
+                                .obligation_module = obl_module,
+                                .obligation_name = name,
+                                .arg_name = alloc.dupe(u8, field.name) catch field.name,
+                            }) catch continue;
                         }
                     }
                 }
@@ -487,7 +534,28 @@ const koru_parser = @import("koru_parser");
                         const result = parsePhantom(alloc, phantom_str);
                         if (result.creates) {
                             if (result.name) |name| {
+                                // Prefer phantom qualifier, fall back to event module
+                                const obl_module = result.module orelse alloc.dupe(u8, default_module) catch default_module;
                                 creates.append(alloc, name) catch continue;
+                                // Extract resource type from field type (strip pointer syntax, keep bare type)
+                                var res_type: []const u8 = field.type;
+                                if (std.mem.startsWith(u8, res_type, "*")) {
+                                    res_type = res_type[1..];
+                                }
+                                // Strip phantom annotation if present
+                                if (std.mem.indexOf(u8, res_type, "[")) |idx| {
+                                    res_type = std.mem.trim(u8, res_type[0..idx], " ");
+                                }
+                                // Strip module qualifier from type (keep bare type name)
+                                if (std.mem.lastIndexOf(u8, res_type, ":")) |colon_idx| {
+                                    res_type = res_type[colon_idx + 1 ..];
+                                }
+                                creates_specs.append(alloc, .{
+                                    .obligation_module = obl_module,
+                                    .obligation_name = name,
+                                    .field_name = alloc.dupe(u8, field.name) catch field.name,
+                                    .resource_type = alloc.dupe(u8, res_type) catch res_type,
+                                }) catch continue;
                             }
                         }
                     }
@@ -497,6 +565,8 @@ const koru_parser = @import("koru_parser");
             return .{
                 .creates = creates.toOwnedSlice(alloc) catch &.{},
                 .discharges = discharges.toOwnedSlice(alloc) catch &.{},
+                .creates_specs = creates_specs.toOwnedSlice(alloc) catch &.{},
+                .discharges_specs = discharges_specs.toOwnedSlice(alloc) catch &.{},
             };
         }
     }.extract;
@@ -516,14 +586,14 @@ const koru_parser = @import("koru_parser");
     var events_list = std.ArrayList(EventEntry){ .items = &.{}, .capacity = 0 };
     for (resolved_events.items) |resolved| {
         const info = RegistryHelper.findEventInfo(event_infos, resolved.name) orelse continue;
-        const obligations = extractObligations(allocator, info.event_decl);
+        const obligations = extractObligations(allocator, info.event_decl, info.module_name);
         const symbol = Helpers.buildEventSymbol(allocator, info.module_name, info.event_decl.path.segments, program.main_module_name);
         const dispatch_ident = Helpers.mangleIdentifier(allocator, resolved.name);
         const dispatch_name = std.fmt.allocPrint(allocator, "dispatch_{s}_{s}", .{ scope_ident, dispatch_ident }) catch dispatch_ident;
 
         if (obligations.creates.len > 0 or obligations.discharges.len > 0) {
-            std.debug.print("[REGISTRY] Event '{s}': creates={d}, discharges={d}\n",
-                .{resolved.name, obligations.creates.len, obligations.discharges.len});
+            std.debug.print("[REGISTRY] Event '{s}': creates={d} specs, discharges={d} specs\n",
+                .{resolved.name, obligations.creates_specs.len, obligations.discharges_specs.len});
         }
 
         events_list.append(allocator, .{
@@ -531,8 +601,11 @@ const koru_parser = @import("koru_parser");
             .cost = resolved.cost,
             .creates_obligations = obligations.creates,
             .discharges_obligations = obligations.discharges,
+            .creates_specs = obligations.creates_specs,
+            .discharges_specs = obligations.discharges_specs,
             .symbol = symbol,
             .dispatch_name = dispatch_name,
+            .module_name = info.module_name,
         }) catch continue;
     }
 
@@ -684,7 +757,7 @@ const koru_parser = @import("koru_parser");
         const cost_str = std.fmt.bufPrint(&cost_buf, "{d}", .{event.cost}) catch "1";
         code.appendSlice(allocator, cost_str) catch unreachable;
 
-        // Emit creates_obligations array
+        // Emit creates_obligations array (legacy)
         code.appendSlice(allocator, ", .creates_obligations = &[_][]const u8{") catch unreachable;
         for (event.creates_obligations, 0..) |obl, i| {
             if (i > 0) code.appendSlice(allocator, ", ") catch unreachable;
@@ -694,13 +767,43 @@ const koru_parser = @import("koru_parser");
         }
         code.appendSlice(allocator, "}") catch unreachable;
 
-        // Emit discharges_obligations array
+        // Emit discharges_obligations array (legacy)
         code.appendSlice(allocator, ", .discharges_obligations = &[_][]const u8{") catch unreachable;
         for (event.discharges_obligations, 0..) |obl, i| {
             if (i > 0) code.appendSlice(allocator, ", ") catch unreachable;
             code.appendSlice(allocator, "\"") catch unreachable;
             code.appendSlice(allocator, obl) catch unreachable;
             code.appendSlice(allocator, "\"") catch unreachable;
+        }
+        code.appendSlice(allocator, "}") catch unreachable;
+
+        // Emit creates_specs array (full specs with field names)
+        code.appendSlice(allocator, ", .creates_specs = &[_]koru_std.runtime.CreateSpec{") catch unreachable;
+        for (event.creates_specs, 0..) |spec, i| {
+            if (i > 0) code.appendSlice(allocator, ", ") catch unreachable;
+            code.appendSlice(allocator, ".{ .obligation_module = \"") catch unreachable;
+            code.appendSlice(allocator, spec.obligation_module) catch unreachable;
+            code.appendSlice(allocator, "\", .obligation_name = \"") catch unreachable;
+            code.appendSlice(allocator, spec.obligation_name) catch unreachable;
+            code.appendSlice(allocator, "\", .field_name = \"") catch unreachable;
+            code.appendSlice(allocator, spec.field_name) catch unreachable;
+            code.appendSlice(allocator, "\", .resource_type = \"") catch unreachable;
+            code.appendSlice(allocator, spec.resource_type) catch unreachable;
+            code.appendSlice(allocator, "\" }") catch unreachable;
+        }
+        code.appendSlice(allocator, "}") catch unreachable;
+
+        // Emit discharges_specs array (full specs with arg names)
+        code.appendSlice(allocator, ", .discharges_specs = &[_]koru_std.runtime.DischargeSpec{") catch unreachable;
+        for (event.discharges_specs, 0..) |spec, i| {
+            if (i > 0) code.appendSlice(allocator, ", ") catch unreachable;
+            code.appendSlice(allocator, ".{ .obligation_module = \"") catch unreachable;
+            code.appendSlice(allocator, spec.obligation_module) catch unreachable;
+            code.appendSlice(allocator, "\", .obligation_name = \"") catch unreachable;
+            code.appendSlice(allocator, spec.obligation_name) catch unreachable;
+            code.appendSlice(allocator, "\", .arg_name = \"") catch unreachable;
+            code.appendSlice(allocator, spec.arg_name) catch unreachable;
+            code.appendSlice(allocator, "\" }") catch unreachable;
         }
         code.appendSlice(allocator, "}") catch unreachable;
 
@@ -757,6 +860,30 @@ const koru_parser = @import("koru_parser");
     code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    return null;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
+
+    // Generate creates_spec lookup - returns full specs for handle creation
+    code.appendSlice(allocator, I ++ "pub fn get_creates_spec_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, "(event_name: []const u8) []const koru_std.runtime.CreateSpec {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.creates_specs;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return &[_]koru_std.runtime.CreateSpec{};\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
+
+    // Generate discharges_spec lookup - returns full specs for discharge
+    code.appendSlice(allocator, I ++ "pub fn get_discharges_spec_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, "(event_name: []const u8) []const koru_std.runtime.DischargeSpec {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.discharges_specs;\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return &[_]koru_std.runtime.DischargeSpec{};\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
     code.appendSlice(allocator, I ++ "pub const ") catch unreachable;
@@ -829,11 +956,19 @@ pub const ObligationsArrayFn = @import("root").koru_std.interpreter.ObligationsA
 pub const DischargeEventFn = @import("root").koru_std.interpreter.DischargeEventFn;
 pub const FieldValue = @import("root").koru_std.interpreter.FieldValue;
 pub const NamedField = @import("root").koru_std.interpreter.NamedField;
+// Import spec types from interpreter
+pub const CreateSpec = @import("root").koru_std.interpreter.CreateSpec;
+pub const DischargeSpec = @import("root").koru_std.interpreter.DischargeSpec;
+pub const CreatesSpecFn = @import("root").koru_std.interpreter.CreatesSpecFn;
+pub const DischargesSpecFn = @import("root").koru_std.interpreter.DischargesSpecFn;
+
 pub const ScopeEvent = struct {
     name: []const u8,
     cost: u64,  // Budget cost for this event
-    creates_obligations: []const []const u8,    // States this event creates obligations for (from [state!])
-    discharges_obligations: []const []const u8, // States this event discharges (from [!state])
+    creates_obligations: []const []const u8,    // Legacy: just obligation names
+    discharges_obligations: []const []const u8, // Legacy: just obligation names
+    creates_specs: []const CreateSpec,          // Full specs with field names
+    discharges_specs: []const DischargeSpec,    // Full specs with arg names
     dispatcher: DispatchFn,
 };
 pub const ScopeDescriptor = struct {
@@ -848,6 +983,9 @@ pub const ScopeRuntime = struct {
     creates_obligations_fn: ?ObligationsArrayFn,
     discharges_obligations_fn: ?ObligationsArrayFn,
     discharge_event_fn: ?DischargeEventFn,
+    // New: full spec lookups with field/arg names
+    creates_spec_fn: ?CreatesSpecFn,
+    discharges_spec_fn: ?DischargesSpecFn,
 };
 
 fn mangleScopeName(comptime name: []const u8) []const u8 {
@@ -894,6 +1032,8 @@ fn buildScopeTable() []const ScopeRuntime {
         const creates_name = std.fmt.comptimePrint("get_creates_obligations_{s}", .{scope_ident});
         const discharges_name = std.fmt.comptimePrint("get_discharges_obligations_{s}", .{scope_ident});
         const discharge_event_name = std.fmt.comptimePrint("get_discharge_event_{s}", .{scope_ident});
+        const creates_spec_name = std.fmt.comptimePrint("get_creates_spec_{s}", .{scope_ident});
+        const discharges_spec_name = std.fmt.comptimePrint("get_discharges_spec_{s}", .{scope_ident});
 
         table[i] = .{
             .name = desc.name,
@@ -902,6 +1042,8 @@ fn buildScopeTable() []const ScopeRuntime {
             .creates_obligations_fn = if (@hasDecl(root.main_module, creates_name)) &@field(root.main_module, creates_name) else null,
             .discharges_obligations_fn = if (@hasDecl(root.main_module, discharges_name)) &@field(root.main_module, discharges_name) else null,
             .discharge_event_fn = if (@hasDecl(root.main_module, discharge_event_name)) &@field(root.main_module, discharge_event_name) else null,
+            .creates_spec_fn = if (@hasDecl(root.main_module, creates_spec_name)) &@field(root.main_module, creates_spec_name) else null,
+            .discharges_spec_fn = if (@hasDecl(root.main_module, discharges_spec_name)) &@field(root.main_module, discharges_spec_name) else null,
         };
         i += 1;
     }
@@ -915,7 +1057,9 @@ fn buildScopeTable() []const ScopeRuntime {
     cost_fn: ?CostFn,
     creates_obligations_fn: ?ObligationsArrayFn,
     discharges_obligations_fn: ?ObligationsArrayFn,
-    discharge_event_fn: ?DischargeEventFn
+    discharge_event_fn: ?DischargeEventFn,
+    creates_spec_fn: ?CreatesSpecFn,
+    discharges_spec_fn: ?DischargesSpecFn
 }
 | not_found {}
 
@@ -930,6 +1074,8 @@ fn buildScopeTable() []const ScopeRuntime {
                 .creates_obligations_fn = scope_info.creates_obligations_fn,
                 .discharges_obligations_fn = scope_info.discharges_obligations_fn,
                 .discharge_event_fn = scope_info.discharge_event_fn,
+                .creates_spec_fn = scope_info.creates_spec_fn,
+                .discharges_spec_fn = scope_info.discharges_spec_fn,
             } };
         }
     }
@@ -1005,8 +1151,11 @@ fn buildScopeTable() []const ScopeRuntime {
                 .creates_obligations_fn = s.creates_obligations_fn,
                 .discharges_obligations_fn = s.discharges_obligations_fn,
                 .discharge_event_fn = s.discharge_event_fn,
+                .creates_spec_fn = s.creates_spec_fn,
+                .discharges_spec_fn = s.discharges_spec_fn,
                 .budget = budget,
                 .handle_pool = handle_pool,
+                .scope_name = scope,  // Pass actual scope name for handle isolation
             });
             switch (result) {
                 .result => |r| return .{ .result = .{
@@ -1068,9 +1217,12 @@ fn buildScopeTable() []const ScopeRuntime {
                 .creates_obligations_fn = s.creates_obligations_fn,
                 .discharges_obligations_fn = s.discharges_obligations_fn,
                 .discharge_event_fn = s.discharge_event_fn,
+                .creates_spec_fn = s.creates_spec_fn,
+                .discharges_spec_fn = s.discharges_spec_fn,
                 .budget = budget,
                 .handle_pool = handle_pool,
                 .fail_fast = fail_fast,
+                .scope_name = scope,  // Pass actual scope name for handle isolation
             });
             switch (result) {
                 .result => |r| return .{ .result = .{

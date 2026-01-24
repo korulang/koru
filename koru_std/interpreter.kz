@@ -231,16 +231,29 @@ pub const BudgetState = struct {
 // ============================================================================
 
 pub const Handle = struct {
-    /// Symbolic name (h1, h2, ...)
-    name: []const u8,
-    /// Binding path that holds this handle (e.g., "f.file")
-    binding: []const u8,
-    /// Obligation state (e.g., "opened")
-    obligation: []const u8,
-    /// Event that discharges this obligation (e.g., "close")
+    /// Unique ID within this pool (persistent, incrementing)
+    id: u32,
+    /// Stable handle ID (string) passed through flows - from event output field
+    handle_id: []const u8,
+    /// Module that defines this obligation (e.g., "sqlite3", "fs", "mem")
+    obligation_module: []const u8,
+    /// Obligation name within that module (e.g., "opened", "allocated")
+    obligation_name: []const u8,
+    /// Event that discharges this obligation (e.g., "sqlite3:close")
     discharge_event: []const u8,
     /// Whether this handle has been discharged
     discharged: bool,
+    /// Which event created this resource (e.g., "sqlite3:open")
+    created_by_event: []const u8,
+    /// Resource type name for inspection (e.g., "Connection")
+    resource_type: []const u8,
+    /// Scope that owns this handle (for isolation enforcement)
+    scope_name: []const u8,
+
+    /// Helper to get fully-qualified obligation string (e.g., "sqlite3:opened")
+    pub fn fqObligation(self: *const Handle, buf: []u8) []const u8 {
+        return std.fmt.bufPrint(buf, "{s}:{s}", .{ self.obligation_module, self.obligation_name }) catch self.obligation_name;
+    }
 };
 
 pub const HandlePool = struct {
@@ -260,31 +273,59 @@ pub const HandlePool = struct {
         self.handles.deinit(self.allocator);
     }
 
-    /// Register a new handle with an obligation
-    pub fn acquire(self: *HandlePool, binding: []const u8, obligation: []const u8, discharge_event: []const u8) ![]const u8 {
-        var name_buf: [16]u8 = undefined;
-        const name = std.fmt.bufPrint(&name_buf, "h{d}", .{self.next_id}) catch "h?";
-        const name_copy = try self.allocator.dupe(u8, name);
+    /// Register a new handle and return its pool ID
+    pub fn acquire(
+        self: *HandlePool,
+        handle_id: []const u8,
+        obligation_module: []const u8,
+        obligation_name: []const u8,
+        discharge_event: []const u8,
+        created_by_event: []const u8,
+        resource_type: []const u8,
+        scope_name: []const u8,
+    ) !u32 {
+        const id = self.next_id;
         self.next_id += 1;
 
         try self.handles.append(self.allocator, .{
-            .name = name_copy,
-            .binding = try self.allocator.dupe(u8, binding),
-            .obligation = try self.allocator.dupe(u8, obligation),
+            .id = id,
+            .handle_id = try self.allocator.dupe(u8, handle_id),
+            .obligation_module = try self.allocator.dupe(u8, obligation_module),
+            .obligation_name = try self.allocator.dupe(u8, obligation_name),
             .discharge_event = try self.allocator.dupe(u8, discharge_event),
             .discharged = false,
+            .created_by_event = try self.allocator.dupe(u8, created_by_event),
+            .resource_type = try self.allocator.dupe(u8, resource_type),
+            .scope_name = try self.allocator.dupe(u8, scope_name),
         });
 
-        return name_copy;
+        return id;
     }
 
-    /// Mark a handle as discharged by binding name
-    pub fn discharge(self: *HandlePool, binding: []const u8) void {
+    /// Mark a handle as discharged by pool ID
+    pub fn dischargeById(self: *HandlePool, id: u32) void {
         for (self.handles.items) |*h| {
-            if (std.mem.eql(u8, h.binding, binding) and !h.discharged) {
+            if (h.id == id and !h.discharged) {
                 h.discharged = true;
                 return;
             }
+        }
+    }
+
+    /// Find handle by handle_id string (for explicit discharge)
+    pub fn findByHandleId(self: *HandlePool, handle_id: []const u8) ?*Handle {
+        for (self.handles.items) |*h| {
+            if (std.mem.eql(u8, h.handle_id, handle_id) and !h.discharged) {
+                return h;
+            }
+        }
+        return null;
+    }
+
+    /// Mark a handle as discharged by handle_id string (legacy compatibility)
+    pub fn discharge(self: *HandlePool, handle_id: []const u8) void {
+        if (self.findByHandleId(handle_id)) |h| {
+            h.discharged = true;
         }
     }
 
@@ -307,6 +348,11 @@ pub const HandlePool = struct {
             }
         }
         return result;
+    }
+
+    /// Get ALL handles (for bridge inspection - includes discharged)
+    pub fn getAllHandles(self: *const HandlePool) []const Handle {
+        return self.handles.items;
     }
 
     pub fn countUndischarged(self: *const HandlePool) usize {
@@ -376,10 +422,15 @@ pub const InterpreterContext = struct {
     creates_obligations_fn: ?ObligationsArrayFn,   // event -> []obligations it creates
     discharges_obligations_fn: ?ObligationsArrayFn, // event -> []obligations it discharges
     discharge_event_fn: ?DischargeEventFn,         // obligation -> event that discharges it
+    // Full spec lookup functions (with field/arg names for handle registry)
+    creates_spec_fn: ?CreatesSpecFn,               // event -> []CreateSpec
+    discharges_spec_fn: ?DischargesSpecFn,         // event -> []DischargeSpec
     // Budget tracking (optional - null means unlimited)
     budget: ?*BudgetState,
     // Handle pool for resource tracking (optional)
     handle_pool: ?*HandlePool,
+    // Scope name for handle isolation
+    scope_name: []const u8,
 };
 
 // ============================================================================
@@ -391,6 +442,25 @@ pub const CostFn = *const fn([]const u8) u64;
 // Obligation functions - events can create/discharge multiple obligations
 pub const ObligationsArrayFn = *const fn([]const u8) []const []const u8;  // event -> []obligations
 pub const DischargeEventFn = *const fn([]const u8) ?[]const u8;  // obligation -> event name
+
+// CreateSpec describes an obligation created by an event's output field
+pub const CreateSpec = struct {
+    obligation_module: []const u8,  // e.g., "sqlite3"
+    obligation_name: []const u8,    // e.g., "opened"
+    field_name: []const u8,         // which output field holds the handle ID
+    resource_type: []const u8,      // e.g., "Connection"
+};
+
+// DischargeSpec describes an obligation discharged by an event's input arg
+pub const DischargeSpec = struct {
+    obligation_module: []const u8,  // e.g., "sqlite3"
+    obligation_name: []const u8,    // e.g., "opened"
+    arg_name: []const u8,           // which input arg carries the handle ID
+};
+
+// Spec lookup functions - return full specs with field/arg names
+pub const CreatesSpecFn = *const fn([]const u8) []const CreateSpec;    // event -> []CreateSpec
+pub const DischargesSpecFn = *const fn([]const u8) []const DischargeSpec;  // event -> []DischargeSpec
 
 // ============================================================================
 // AST VALIDATION - Pre-execution validation (shadowing, etc.)
@@ -703,9 +773,12 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     creates_obligations_fn: ?ObligationsArrayFn,   // event -> []obligations it creates
     discharges_obligations_fn: ?ObligationsArrayFn, // event -> []obligations it discharges
     discharge_event_fn: ?DischargeEventFn,         // obligation -> event that discharges it
+    creates_spec_fn: ?CreatesSpecFn = null,        // event -> []CreateSpec with field names
+    discharges_spec_fn: ?DischargesSpecFn = null,  // event -> []DischargeSpec with arg names
     budget: ?u64,  // Optional budget limit (null = unlimited)
     handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
-    fail_fast: bool = true
+    fail_fast: bool = true,
+    scope_name: []const u8 = "default"  // Scope name for handle isolation
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
@@ -722,8 +795,11 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     creates_obligations_fn: ?ObligationsArrayFn,
     discharges_obligations_fn: ?ObligationsArrayFn,
     discharge_event_fn: ?DischargeEventFn,
+    creates_spec_fn: ?CreatesSpecFn = null,        // event -> []CreateSpec with field names
+    discharges_spec_fn: ?DischargesSpecFn = null,  // event -> []DischargeSpec with arg names
     budget: ?u64,  // Optional budget limit (null = unlimited)
-    handle_pool: ?*HandlePool  // Optional external pool (for bridges)
+    handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
+    scope_name: []const u8 = "default"  // Scope name for handle isolation
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
@@ -851,8 +927,11 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         .creates_obligations_fn = creates_obligations_fn,
         .discharges_obligations_fn = discharges_obligations_fn,
         .discharge_event_fn = discharge_event_fn,
+        .creates_spec_fn = creates_spec_fn,
+        .discharges_spec_fn = discharges_spec_fn,
         .budget = &budget_state,
         .handle_pool = active_pool,
+        .scope_name = scope_name,
     };
 
     // Execute the flow!
@@ -898,10 +977,10 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
             const undischarged = active_pool.getUndischarged();
             for (undischarged) |handle| {
                 if (!handle.discharged) {
-                    std.debug.print("[AUTO-DISCHARGE] Handle '{s}' with obligation '{s}'\n",
-                        .{handle.name, handle.obligation});
-                    // Mark as discharged (actual cleanup would call discharge event)
-                    active_pool.discharge(handle.binding);
+                    std.debug.print("[AUTO-DISCHARGE] Handle '{s}' [{s}:{s}]\n",
+                        .{handle.handle_id, handle.obligation_module, handle.obligation_name});
+                    // Mark as discharged (TODO: actually invoke discharge event)
+                    active_pool.dischargeById(handle.id);
                 }
             }
         }
@@ -1492,32 +1571,86 @@ fn executeFlow(
 
             try dispatcher(&evaluated_inv, &dispatch_result);
 
-            // Track obligations for handle pool (supports multiple obligations per event)
+            // Track obligations for handle pool using full specs (with field/arg names)
             if (ctx.handle_pool) |pool| {
-                // Check if this event creates obligations
-                if (ctx.creates_obligations_fn) |creates_fn| {
+                // Check if this event creates obligations - prefer new spec API
+                if (ctx.creates_spec_fn) |spec_fn| {
+                    const specs = spec_fn(event_name);
+                    for (specs) |spec| {
+                        // Find the discharge event for this obligation (use obligation_name, not fq)
+                        // discharge_event_fn expects just the name since it's scope-local
+                        const discharge_event = if (ctx.discharge_event_fn) |discharge_fn|
+                            discharge_fn(spec.obligation_name) orelse "unknown"
+                        else
+                            "unknown";
+                        // Extract handle_id from dispatch result using spec.field_name
+                        // Handle IDs must be strings - skip if not found or wrong type
+                        var handle_id: ?[]const u8 = null;
+                        for (dispatch_result.fields) |field| {
+                            if (std.mem.eql(u8, field.name, spec.field_name)) {
+                                handle_id = switch (field.value) {
+                                    .string_val => |s| s,
+                                    else => null,  // Only strings are valid handle IDs
+                                };
+                                break;
+                            }
+                        }
+                        // Only acquire if we got a valid string handle ID
+                        if (handle_id) |hid| {
+                            _ = pool.acquire(
+                                hid,
+                                spec.obligation_module,
+                                spec.obligation_name,
+                                discharge_event,
+                                event_name,  // created_by_event
+                                spec.resource_type,
+                                ctx.scope_name,
+                            ) catch {};
+                        }
+                    }
+                } else if (ctx.creates_obligations_fn) |creates_fn| {
+                    // Fallback to legacy API
                     const obligations = creates_fn(event_name);
                     for (obligations, 0..) |obligation, i| {
-                        // Find the discharge event for this obligation
                         const discharge_event = if (ctx.discharge_event_fn) |discharge_fn|
                             discharge_fn(obligation) orelse "unknown"
                         else
                             "unknown";
-                        // Create a binding name based on result and index
                         var binding_buf: [64]u8 = undefined;
                         const binding_name = if (obligations.len > 1)
                             std.fmt.bufPrint(&binding_buf, "result.{s}.{d}", .{dispatch_result.branch, i}) catch "result"
                         else
                             std.fmt.bufPrint(&binding_buf, "result.{s}", .{dispatch_result.branch}) catch "result";
-                        _ = pool.acquire(binding_name, obligation, discharge_event) catch {};
+                        _ = pool.acquire(
+                            binding_name,      // handle_id (legacy: use binding name)
+                            "unknown",         // obligation_module
+                            obligation,        // obligation_name
+                            discharge_event,
+                            event_name,
+                            "unknown",         // resource_type
+                            ctx.scope_name,
+                        ) catch {};
                     }
                 }
-                // Check if this event discharges obligations
-                if (ctx.discharges_obligations_fn) |discharges_fn| {
+
+                // Check if this event discharges obligations - prefer new spec API
+                if (ctx.discharges_spec_fn) |spec_fn| {
+                    const specs = spec_fn(event_name);
+                    for (specs) |spec| {
+                        // Extract handle_id from args using spec.arg_name
+                        for (evaluated_inv.args) |arg| {
+                            if (std.mem.eql(u8, arg.name, spec.arg_name)) {
+                                if (pool.findByHandleId(arg.value)) |handle| {
+                                    pool.dischargeById(handle.id);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                } else if (ctx.discharges_obligations_fn) |discharges_fn| {
+                    // Fallback to legacy API
                     const obligations = discharges_fn(event_name);
                     if (obligations.len > 0) {
-                        // Mark any matching handles as discharged
-                        // For now, discharge by the first arg (typically the handle)
                         if (evaluated_inv.args.len > 0) {
                             pool.discharge(evaluated_inv.args[0].value);
                         }
@@ -1688,8 +1821,11 @@ fn executeFlow(
         .creates_obligations_fn = creates_obligations_fn,
         .discharges_obligations_fn = discharges_obligations_fn,
         .discharge_event_fn = discharge_event_fn,
+        .creates_spec_fn = creates_spec_fn,
+        .discharges_spec_fn = discharges_spec_fn,
         .budget = &budget_state,
         .handle_pool = active_pool,
+        .scope_name = scope_name,
     };
 
     // Execute the flow!
