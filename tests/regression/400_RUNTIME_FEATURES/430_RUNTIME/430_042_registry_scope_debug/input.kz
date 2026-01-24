@@ -1,0 +1,40 @@
+// Test: Registry Scope - Debug Flag Enabled
+// Ensures [debug] entries are included when compiled with --debug.
+
+~import "$std/runtime"
+
+const std = @import("std");
+
+~pub event debug.dump_state {}
+| dumped {}
+
+~proc debug.dump_state {
+    return .{ .dumped = .{} };
+}
+
+~[registry:scope(admin)]std.runtime:register {
+    [debug]debug:*
+}
+
+pub fn main() void {
+    const segments = [_][]const u8{ "debug", "dump_state" };
+    const path = Path{
+        .module_qualifier = null,
+        .segments = &segments,
+    };
+    const inv = Invocation{
+        .path = path,
+        .args = &.{},
+    };
+
+    var result: DispatchResult = undefined;
+    dispatch_admin(&inv, &result) catch |err| {
+        std.debug.print("Dispatch error: {}\n", .{err});
+        std.process.exit(1);
+    };
+
+    if (!std.mem.eql(u8, result.branch, "dumped")) {
+        std.debug.print("Unexpected branch: {s}\n", .{result.branch});
+        std.process.exit(1);
+    }
+}
