@@ -943,7 +943,8 @@ fn buildScopeTable() []const ScopeRuntime {
 ~pub event parse.source {
     source: []const u8,
     file_name: []const u8,
-    allocator: std.mem.Allocator
+    allocator: std.mem.Allocator,
+    fail_fast: bool = true
 }
 | parsed { ast: koru_parser.ParseResult }
 | parse_error { message: []const u8 }
@@ -953,6 +954,7 @@ fn buildScopeTable() []const ScopeRuntime {
         return .{ .parse_error = .{ .message = @errorName(err) } };
     };
     defer parser.deinit();
+    parser.fail_fast = fail_fast;
 
     const result = parser.parse() catch |err| {
         return .{ .parse_error = .{ .message = @errorName(err) } };
@@ -1042,7 +1044,8 @@ fn buildScopeTable() []const ScopeRuntime {
     source: []const u8,
     scope: []const u8,
     budget: ?u64 = null,
-    handle_pool: ?*@import("root").koru_std.interpreter.HandlePool = null
+    handle_pool: ?*@import("root").koru_std.interpreter.HandlePool = null,
+    fail_fast: bool = true
 }
 | result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
@@ -1067,6 +1070,7 @@ fn buildScopeTable() []const ScopeRuntime {
                 .discharge_event_fn = s.discharge_event_fn,
                 .budget = budget,
                 .handle_pool = handle_pool,
+                .fail_fast = fail_fast,
             });
             switch (result) {
                 .result => |r| return .{ .result = .{

@@ -704,7 +704,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     discharges_obligations_fn: ?ObligationsArrayFn, // event -> []obligations it discharges
     discharge_event_fn: ?DischargeEventFn,         // obligation -> event that discharges it
     budget: ?u64,  // Optional budget limit (null = unlimited)
-    handle_pool: ?*HandlePool  // Optional external pool (for bridges)
+    handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
+    fail_fast: bool = true
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
@@ -770,6 +771,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         }};
     };
     defer parser.deinit();
+    parser.fail_fast = fail_fast;
 
     // Parse!
     const parse_result = parser.parse() catch {
