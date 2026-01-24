@@ -49,30 +49,6 @@ fn hasSourceBlock(s: []const u8) bool {
     return false;
 }
 
-/// Check for old tap syntax: ~source -> dest
-/// Old syntax is ~foo -> * or ~* -> bar, which should now be ~tap(foo -> *) or ~tap(* -> bar)
-/// Returns true if '->' appears at top level (outside parentheses) without being inside tap()
-fn isOldTapSyntax(s: []const u8) bool {
-    var paren_depth: i32 = 0;
-    var i: usize = 0;
-
-    while (i < s.len) : (i += 1) {
-        const c = s[i];
-
-        // Track paren depth
-        if (c == '(') paren_depth += 1;
-        if (c == ')') paren_depth -= 1;
-
-        // Check for '->' at top level (paren_depth == 0)
-        if (c == '-' and paren_depth == 0 and i + 1 < s.len and s[i + 1] == '>') {
-            // Found -> at top level - this is old tap syntax
-            return true;
-        }
-    }
-
-    return false;
-}
-
 /// Find '=' at the top level (not inside (), {}, or strings)
 /// Used inside parseSubflowImpl to find the split point
 fn findTopLevelEquals(s: []const u8) ?usize {
@@ -102,6 +78,33 @@ fn findTopLevelEquals(s: []const u8) ?usize {
     }
 
     return null;
+}
+
+fn hasTopLevelArrow(s: []const u8) bool {
+    var paren_depth: i32 = 0;
+    var brace_depth: i32 = 0;
+    var in_string = false;
+    var i: usize = 0;
+
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '"' and (i == 0 or s[i - 1] != '\\')) {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) continue;
+
+        if (c == '(') paren_depth += 1;
+        if (c == ')') paren_depth -= 1;
+        if (c == '{') brace_depth += 1;
+        if (c == '}') brace_depth -= 1;
+
+        if (c == '-' and paren_depth == 0 and brace_depth == 0 and i + 1 < s.len and s[i + 1] == '>') {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// Find '{' at top level (not inside (), [] or strings)
@@ -868,17 +871,6 @@ pub const Parser = struct {
             var subflow = try self.parseSubflowImpl();
             subflow.is_impl = is_impl;
             return .{ .subflow_impl = subflow };
-        } else if (isOldTapSyntax(remaining)) {
-            // Old tap syntax detected: ~source -> dest
-            // This was replaced with ~tap(source -> dest)
-            try self.reporter.addError(
-                .PARSE001,
-                self.current,
-                0,
-                "Old tap syntax. Use ~tap({s}) instead",
-                .{remaining},
-            );
-            return error.ParseError;
         } else if (std.mem.indexOfScalar(u8, remaining, '(') != null) {
             // It's an invocation with args
             return .{ .flow = try self.parseFlow(annotations.items) };
@@ -3245,6 +3237,16 @@ pub const Parser = struct {
                 .{},
             );
             return error.ZigCodeInFlow;
+        }
+        if (hasTopLevelArrow(clean)) {
+            try self.reporter.addError(
+                .PARSE001,
+                self.current,
+                0,
+                "invalid flow invocation",
+                .{},
+            );
+            return error.ParseError;
         }
 
         // Find the first pipe that's not inside parentheses or braces
