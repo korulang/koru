@@ -1,12 +1,15 @@
-// Test: std.runtime:run is fail-fast by default on parse errors
+// Test: std.runtime:run can opt into lenient parsing
 
 ~import "$std/runtime"
 ~import "$std/io"
+
+const std = @import("std");
 
 ~pub event ping {}
 | ok {}
 
 ~proc ping {
+    std.debug.print("PING\n", .{});
     return .{ .ok = .{} };
 }
 
@@ -20,7 +23,7 @@ const TEST_SOURCE =
     \\~ping()
 ;
 
-~std.runtime:run(source: TEST_SOURCE, scope: "api")
+~std.runtime:run(source: TEST_SOURCE, scope: "api", fail_fast: false)
 | result _ |> std.io:print.ln("OK")
 | exhausted _ |> std.io:print.ln("EXHAUSTED")
 | parse_error _ |> std.io:print.ln("PARSE ERROR")
