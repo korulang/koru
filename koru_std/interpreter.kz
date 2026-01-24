@@ -982,59 +982,13 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     const stable_value = result_value.clonePersistent();
     // std.debug.print("[INTERPRETER] Execution complete, branch: {s}\n", .{stable_value.branch});
 
-    // Auto-discharge only for LOCAL pools (not bridge-managed ones)
-    // Bridges manage their own lifecycle and discharge at session end
-    if (!using_external_pool) {
-        const undischarged_count = active_pool.countUndischarged();
-        if (undischarged_count > 0) {
-            const undischarged = active_pool.getUndischarged();
-            for (undischarged) |handle| {
-                if (!handle.discharged) {
-                    // Find the arg_name for this discharge event by looking up DischargeSpec
-                    var arg_name: ?[]const u8 = null;
-                    if (discharges_spec_fn) |spec_fn| {
-                        const specs = spec_fn(handle.discharge_event);
-                        // Match on obligation_module/name (don't assume first item)
-                        for (specs) |spec| {
-                            if (std.mem.eql(u8, spec.obligation_module, handle.obligation_module) and
-                                std.mem.eql(u8, spec.obligation_name, handle.obligation_name)) {
-                                arg_name = spec.arg_name;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (arg_name == null) {
-                        // No spec match - skip and log
-                        std.debug.print("[AUTO-DISCHARGE] No spec for '{s}' [{s}:{s}], skipping\n",
-                            .{handle.handle_id, handle.obligation_module, handle.obligation_name});
-                        continue;
-                    }
-
-                    // Build discharge invocation
-                    var discharge_inv = buildDischargeInvocation(
-                        handle.discharge_event,
-                        handle.handle_id,
-                        arg_name.?,
-                        allocator,
-                    );
-
-                    // Invoke the discharge event
-                    var discharge_result: DispatchResult = undefined;
-                    dispatcher(&discharge_inv, &discharge_result) catch |err| {
-                        std.debug.print("[AUTO-DISCHARGE] Failed '{s}': {s}\n",
-                            .{handle.discharge_event, @errorName(err)});
-                        continue;  // Don't mark as discharged if dispatch failed
-                    };
-                    std.debug.print("[AUTO-DISCHARGE] Invoked '{s}' for handle '{s}' [{s}:{s}]\n",
-                        .{handle.discharge_event, handle.handle_id, handle.obligation_module, handle.obligation_name});
-
-                    // Mark discharged after successful dispatch
-                    active_pool.dischargeById(handle.id);
-                }
-            }
-        }
-    }
+    autoDischargeHandles(
+        using_external_pool,
+        active_pool,
+        discharges_spec_fn,
+        dispatcher,
+        allocator,
+    );
 
     return .{ .result = .{
         .value = stable_value,
@@ -1046,6 +1000,68 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // ============================================================================
 // FLOW EXECUTION - The core interpreter loop
 // ============================================================================
+
+fn autoDischargeHandles(
+    using_external_pool: bool,
+    active_pool: *HandlePool,
+    discharges_spec_fn: ?DischargesSpecFn,
+    dispatcher: DispatchFn,
+    allocator: std.mem.Allocator,
+) void {
+    // Auto-discharge only for LOCAL pools (not bridge-managed ones)
+    // Bridges manage their own lifecycle and discharge at session end
+    if (using_external_pool) return;
+
+    const undischarged_count = active_pool.countUndischarged();
+    if (undischarged_count == 0) return;
+
+    const undischarged = active_pool.getUndischarged();
+    for (undischarged) |handle| {
+        if (!handle.discharged) {
+            // Find the arg_name for this discharge event by looking up DischargeSpec
+            var arg_name: ?[]const u8 = null;
+            if (discharges_spec_fn) |spec_fn| {
+                const specs = spec_fn(handle.discharge_event);
+                // Match on obligation_module/name (don't assume first item)
+                for (specs) |spec| {
+                    if (std.mem.eql(u8, spec.obligation_module, handle.obligation_module) and
+                        std.mem.eql(u8, spec.obligation_name, handle.obligation_name)) {
+                        arg_name = spec.arg_name;
+                        break;
+                    }
+                }
+            }
+
+            if (arg_name == null) {
+                // No spec match - skip and log
+                std.debug.print("[AUTO-DISCHARGE] No spec for '{s}' [{s}:{s}], skipping\n",
+                    .{handle.handle_id, handle.obligation_module, handle.obligation_name});
+                continue;
+            }
+
+            // Build discharge invocation
+            var discharge_inv = buildDischargeInvocation(
+                handle.discharge_event,
+                handle.handle_id,
+                arg_name.?,
+                allocator,
+            );
+
+            // Invoke the discharge event
+            var discharge_result: DispatchResult = undefined;
+            dispatcher(&discharge_inv, &discharge_result) catch |err| {
+                std.debug.print("[AUTO-DISCHARGE] Failed '{s}': {s}\n",
+                    .{handle.discharge_event, @errorName(err)});
+                continue;  // Don't mark as discharged if dispatch failed
+            };
+            std.debug.print("[AUTO-DISCHARGE] Invoked '{s}' for handle '{s}' [{s}:{s}]\n",
+                .{handle.discharge_event, handle.handle_id, handle.obligation_module, handle.obligation_name});
+
+            // Mark discharged after successful dispatch
+            active_pool.dischargeById(handle.id);
+        }
+    }
+}
 
 /// Build an AST invocation for a discharge event
 /// Used by auto-discharge to invoke cleanup events
@@ -1962,6 +1978,15 @@ fn executeFlow(
 
     const stable_value = result_value.clonePersistent();
     std.debug.print("[EVAL] Execution complete, branch: {s}\n", .{stable_value.branch});
+
+    autoDischargeHandles(
+        using_external_pool,
+        active_pool,
+        discharges_spec_fn,
+        dispatcher,
+        allocator,
+    );
+
     return .{ .result = .{
         .value = stable_value,
         .used = budget_state.used,
