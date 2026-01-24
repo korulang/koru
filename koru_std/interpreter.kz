@@ -990,9 +990,46 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
             const undischarged = active_pool.getUndischarged();
             for (undischarged) |handle| {
                 if (!handle.discharged) {
-                    std.debug.print("[AUTO-DISCHARGE] Handle '{s}' [{s}:{s}]\n",
-                        .{handle.handle_id, handle.obligation_module, handle.obligation_name});
-                    // Mark as discharged (TODO: actually invoke discharge event)
+                    // Find the arg_name for this discharge event by looking up DischargeSpec
+                    var arg_name: ?[]const u8 = null;
+                    if (discharges_spec_fn) |spec_fn| {
+                        const specs = spec_fn(handle.discharge_event);
+                        // Match on obligation_module/name (don't assume first item)
+                        for (specs) |spec| {
+                            if (std.mem.eql(u8, spec.obligation_module, handle.obligation_module) and
+                                std.mem.eql(u8, spec.obligation_name, handle.obligation_name)) {
+                                arg_name = spec.arg_name;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (arg_name == null) {
+                        // No spec match - skip and log
+                        std.debug.print("[AUTO-DISCHARGE] No spec for '{s}' [{s}:{s}], skipping\n",
+                            .{handle.handle_id, handle.obligation_module, handle.obligation_name});
+                        continue;
+                    }
+
+                    // Build discharge invocation
+                    var discharge_inv = buildDischargeInvocation(
+                        handle.discharge_event,
+                        handle.handle_id,
+                        arg_name.?,
+                        allocator,
+                    );
+
+                    // Invoke the discharge event
+                    var discharge_result: DispatchResult = undefined;
+                    dispatcher(&discharge_inv, &discharge_result) catch |err| {
+                        std.debug.print("[AUTO-DISCHARGE] Failed '{s}': {s}\n",
+                            .{handle.discharge_event, @errorName(err)});
+                        continue;  // Don't mark as discharged if dispatch failed
+                    };
+                    std.debug.print("[AUTO-DISCHARGE] Invoked '{s}' for handle '{s}' [{s}:{s}]\n",
+                        .{handle.discharge_event, handle.handle_id, handle.obligation_module, handle.obligation_name});
+
+                    // Mark discharged after successful dispatch
                     active_pool.dischargeById(handle.id);
                 }
             }
@@ -1009,6 +1046,55 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // ============================================================================
 // FLOW EXECUTION - The core interpreter loop
 // ============================================================================
+
+/// Build an AST invocation for a discharge event
+/// Used by auto-discharge to invoke cleanup events
+fn buildDischargeInvocation(
+    discharge_event: []const u8,
+    handle_id: []const u8,
+    arg_name: []const u8,
+    allocator: std.mem.Allocator,
+) ast.Invocation {
+    // Parse the event name (e.g., "sqlite3:close" -> module="sqlite3", segments=["close"])
+    var module_qualifier: ?[]const u8 = null;
+    var event_name: []const u8 = discharge_event;
+
+    if (std.mem.indexOf(u8, discharge_event, ":")) |colon_idx| {
+        module_qualifier = allocator.dupe(u8, discharge_event[0..colon_idx]) catch null;
+        event_name = discharge_event[colon_idx + 1 ..];
+    }
+
+    // Build path segments - use static array for fallback
+    const segment_copy = allocator.dupe(u8, event_name) catch event_name;
+    const segments_storage = allocator.alloc([]const u8, 1) catch {
+        // Fallback to empty segments
+        return .{
+            .path = .{ .module_qualifier = module_qualifier, .segments = &[_][]const u8{} },
+            .args = &[_]ast.Arg{},
+        };
+    };
+    segments_storage[0] = segment_copy;
+
+    // Build single argument with handle_id
+    const args_storage = allocator.alloc(ast.Arg, 1) catch {
+        return .{
+            .path = .{ .module_qualifier = module_qualifier, .segments = segments_storage },
+            .args = &[_]ast.Arg{},
+        };
+    };
+    args_storage[0] = .{
+        .name = allocator.dupe(u8, arg_name) catch arg_name,
+        .value = allocator.dupe(u8, handle_id) catch handle_id,
+    };
+
+    return .{
+        .path = .{
+            .module_qualifier = module_qualifier,
+            .segments = segments_storage,
+        },
+        .args = args_storage,
+    };
+}
 
 // Evaluate a simple expression against the environment
 // Handles: literals ("hello"), bindings (r), field access (r.message)
