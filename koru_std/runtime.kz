@@ -1035,6 +1035,72 @@ fn buildScopeTable() []const ScopeRuntime {
 }
 
 // ============================================================================
+// RUN - Parse and execute Koru source against a named scope
+// ============================================================================
+
+~pub event run {
+    source: []const u8,
+    scope: []const u8,
+    budget: ?u64 = null,
+    handle_pool: ?*@import("root").koru_std.interpreter.HandlePool = null
+}
+| result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
+| exhausted { used: u64, last_event: []const u8, handles: u32 }
+| parse_error { message: []const u8, line: u32, column: u32 }
+| validation_error { message: []const u8 }
+| event_denied { name: []const u8 }
+| dispatch_error { event_name: []const u8, message: []const u8 }
+| scope_not_found { scope_name: []const u8 }
+
+~proc run {
+    const interpreter_mod = @import("root").koru_std.interpreter;
+
+    const scope_result = get_scope_event.handler(.{ .name = scope });
+    switch (scope_result) {
+        .scope => |s| {
+            const result = interpreter_mod.run_event.handler(.{
+                .source = source,
+                .dispatcher = s.dispatcher,
+                .cost_fn = s.cost_fn,
+                .creates_obligations_fn = s.creates_obligations_fn,
+                .discharges_obligations_fn = s.discharges_obligations_fn,
+                .discharge_event_fn = s.discharge_event_fn,
+                .budget = budget,
+                .handle_pool = handle_pool,
+            });
+            switch (result) {
+                .result => |r| return .{ .result = .{
+                    .value = r.value,
+                    .used = r.used,
+                    .handles = r.handles,
+                } },
+                .exhausted => |e| return .{ .exhausted = .{
+                    .used = e.used,
+                    .last_event = e.last_event,
+                    .handles = e.handles,
+                } },
+                .parse_error => |e| return .{ .parse_error = .{
+                    .message = e.message,
+                    .line = e.line,
+                    .column = e.column,
+                } },
+                .validation_error => |e| return .{ .validation_error = .{ .message = e.message } },
+                .dispatch_error => |e| {
+                    if (std.mem.eql(u8, e.message, "EventDenied")) {
+                        return .{ .event_denied = .{ .name = e.event_name } };
+                    }
+                    return .{ .dispatch_error = .{
+                        .event_name = e.event_name,
+                        .message = e.message,
+                    } };
+                },
+            }
+        },
+        .not_found => return .{ .scope_not_found = .{ .scope_name = scope } },
+    }
+}
+
+// ============================================================================
 // COLLECT SCOPES - Comptime event that walks AST and generates dispatchers
 // ============================================================================
 
