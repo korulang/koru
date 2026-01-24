@@ -112,6 +112,9 @@ pub const Handle = struct {
     /// Optional resource type name for inspection (e.g., "Connection")
     resource_type: []const u8,
 
+    /// Scope that owns this handle (for isolation enforcement)
+    scope_name: []const u8,
+
     /// Helper to get fully-qualified obligation string
     pub fn fqObligation(self: *const Handle, buf: []u8) []const u8 {
         return std.fmt.bufPrint(buf, "{s}:{s}", .{self.obligation_module, self.obligation_name})
@@ -136,13 +139,14 @@ pub const HandlePool = struct {
         discharge_event: []const u8,
         created_by_event: []const u8,
         resource_type: []const u8,
+        scope_name: []const u8,
     ) !u32;
 
     /// Mark a handle as discharged by pool ID
     pub fn dischargeById(self: *HandlePool, id: u32) void;
 
-    /// Find handle by handle_id (for explicit discharge)
-    pub fn findByHandleId(self: *HandlePool, handle_id: []const u8) ?*Handle;
+    /// Find handle by handle_id within a scope (for explicit discharge)
+    pub fn findByHandleId(self: *HandlePool, handle_id: []const u8, scope_name: []const u8) ?*Handle;
 
     /// Get all undischarged handles (for cleanup / inspection)
     pub fn getUndischarged(self: *const HandlePool) []const Handle;
@@ -312,9 +316,17 @@ AI can reason across domains: "I have an open database connection and an allocat
    - Create resource with bridge pool, end request, verify handle persists
    - Start new request with same bridge, verify handle still visible
 
+## Design Decisions (Implemented)
+
+1. **Obligation module derivation:** phantom qualifier > event module (field type module skipped for simplicity)
+2. **Obligation name uniqueness:** obligation names must be unique within a scope; `discharge_event_fn` takes just the name
+3. **Handle ID type:** strings only; non-string field values skip handle acquisition
+4. **Scope isolation:** `findByHandleId(handle_id, scope_name)` requires matching scope to prevent cross-scope discharge
+5. **Scope name propagation:** passed from `get_scope` through `run`/`eval` to `InterpreterContext` to handles
+
 ## Open Questions
 
-1. **Handle ID format:** who generates IDs and what constraints apply?
+1. **Handle ID generation:** who generates IDs and what constraints apply?
 2. **Resource type metadata:** should events provide it, or should it be optional?
 
 ## Future Optimization: Obligation Tags

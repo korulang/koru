@@ -312,8 +312,21 @@ pub const HandlePool = struct {
         }
     }
 
-    /// Find handle by handle_id string (for explicit discharge)
-    pub fn findByHandleId(self: *HandlePool, handle_id: []const u8) ?*Handle {
+    /// Find handle by handle_id string within a specific scope (for explicit discharge)
+    /// Scope isolation prevents cross-scope handle collisions
+    pub fn findByHandleId(self: *HandlePool, handle_id: []const u8, scope_name: []const u8) ?*Handle {
+        for (self.handles.items) |*h| {
+            if (std.mem.eql(u8, h.handle_id, handle_id) and
+                std.mem.eql(u8, h.scope_name, scope_name) and
+                !h.discharged) {
+                return h;
+            }
+        }
+        return null;
+    }
+
+    /// Find handle by handle_id without scope check (for legacy/bridge inspection)
+    pub fn findByHandleIdAnyScope(self: *HandlePool, handle_id: []const u8) ?*Handle {
         for (self.handles.items) |*h| {
             if (std.mem.eql(u8, h.handle_id, handle_id) and !h.discharged) {
                 return h;
@@ -322,9 +335,9 @@ pub const HandlePool = struct {
         return null;
     }
 
-    /// Mark a handle as discharged by handle_id string (legacy compatibility)
+    /// Mark a handle as discharged by handle_id string (legacy compatibility, no scope check)
     pub fn discharge(self: *HandlePool, handle_id: []const u8) void {
-        if (self.findByHandleId(handle_id)) |h| {
+        if (self.findByHandleIdAnyScope(handle_id)) |h| {
             h.discharged = true;
         }
     }
@@ -1640,7 +1653,8 @@ fn executeFlow(
                         // Extract handle_id from args using spec.arg_name
                         for (evaluated_inv.args) |arg| {
                             if (std.mem.eql(u8, arg.name, spec.arg_name)) {
-                                if (pool.findByHandleId(arg.value)) |handle| {
+                                // Scope-aware lookup prevents cross-scope discharge
+                                if (pool.findByHandleId(arg.value, ctx.scope_name)) |handle| {
                                     pool.dischargeById(handle.id);
                                 }
                                 break;
