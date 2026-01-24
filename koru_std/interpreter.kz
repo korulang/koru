@@ -951,6 +951,13 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     const result_value = executeFlow(flow, &ctx) catch |err| {
         // Check if this was a budget exhaustion
         if (err == error.BudgetExhausted) {
+            autoDischargeHandles(
+                using_external_pool,
+                active_pool,
+                discharges_spec_fn,
+                dispatcher,
+                allocator,
+            );
             return .{ .exhausted = .{
                 .used = budget_state.used,
                 .last_event = budget_state.last_event,
@@ -972,6 +979,14 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
             @memcpy(name_buf[name_len..][0..seg.len], seg);
             name_len += seg.len;
         }
+
+        autoDischargeHandles(
+            using_external_pool,
+            active_pool,
+            discharges_spec_fn,
+            dispatcher,
+            allocator,
+        );
 
         return .{ .dispatch_error = .{
             .event_name = name_buf[0..name_len],
@@ -1948,6 +1963,13 @@ fn executeFlow(
     const result_value = executeFlow(flow, &ctx) catch |err| {
         // Check if this was a budget exhaustion
         if (err == error.BudgetExhausted) {
+            autoDischargeHandles(
+                using_external_pool,
+                active_pool,
+                discharges_spec_fn,
+                dispatcher,
+                allocator,
+            );
             return .{ .exhausted = .{
                 .used = budget_state.used,
                 .last_event = budget_state.last_event,
@@ -1969,6 +1991,14 @@ fn executeFlow(
             @memcpy(name_buf[name_len..][0..seg.len], seg);
             name_len += seg.len;
         }
+
+        autoDischargeHandles(
+            using_external_pool,
+            active_pool,
+            discharges_spec_fn,
+            dispatcher,
+            allocator,
+        );
 
         return .{ .dispatch_error = .{
             .event_name = name_buf[0..name_len],

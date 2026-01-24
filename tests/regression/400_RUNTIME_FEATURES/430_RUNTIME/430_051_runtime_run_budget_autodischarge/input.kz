@@ -1,0 +1,47 @@
+// Test: std.runtime:run auto-discharges on budget exhaustion
+
+~import "$std/runtime"
+~import "$std/io"
+
+const std = @import("std");
+
+~pub event open_handle {}
+| opened { handle: []const u8[opened!] }
+
+~proc open_handle {
+    std.debug.print("OPEN\n", .{});
+    return .{ .opened = .{ .handle = "h1" } };
+}
+
+~pub event close_handle { handle: []const u8[!opened] }
+| closed {}
+
+~proc close_handle {
+    std.debug.print("CLOSE\n", .{});
+    return .{ .closed = .{} };
+}
+
+~pub event step {}
+| done {}
+
+~proc step {
+    std.debug.print("STEP\n", .{});
+    return .{ .done = .{} };
+}
+
+~std.runtime:register(scope: "api") {
+    open_handle(1)
+    close_handle(1)
+    step(1)
+}
+
+const TEST_SOURCE = "~open_handle() | opened _ |> step()";
+
+~std.runtime:run(source: TEST_SOURCE, scope: "api", budget: 1)
+| result _ |> std.io:print.ln("OK")
+| exhausted _ |> std.io:print.ln("EXHAUSTED")
+| parse_error _ |> std.io:print.ln("PARSE ERROR")
+| validation_error _ |> std.io:print.ln("VALIDATION ERROR")
+| event_denied _ |> std.io:print.ln("EVENT DENIED")
+| dispatch_error _ |> std.io:print.ln("DISPATCH ERROR")
+| scope_not_found _ |> std.io:print.ln("SCOPE NOT FOUND")

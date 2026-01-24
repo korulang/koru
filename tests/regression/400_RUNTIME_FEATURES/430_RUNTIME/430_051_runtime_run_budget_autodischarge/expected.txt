@@ -1,0 +1,4 @@
+OPEN
+CLOSE
+[AUTO-DISCHARGE] Invoked 'close_handle' for handle 'h1' [main:opened]
+EXHAUSTED
