@@ -1,0 +1,42 @@
+// Test: Registry Scope - Typed Arguments
+// Ensures runtime dispatch parses bool/float/int args correctly.
+
+~import "$std/runtime"
+~import "$std/io"
+
+const std = @import("std");
+
+~pub event set_config {
+    enabled: bool,
+    ratio: f64,
+    count: i64,
+}
+| ok {
+    enabled: bool,
+    ratio: f64,
+    count: i64,
+}
+
+~proc set_config {
+    return .{ .ok = .{
+        .enabled = enabled,
+        .ratio = ratio,
+        .count = count,
+    } };
+}
+
+~std.runtime:register(scope: "config") {
+    set_config
+}
+
+const SOURCE = "~set_config(enabled: true, ratio: 3.5, count: 42)";
+
+~std.runtime:parse.source(source: SOURCE, file_name: "typed_args.kz", allocator: std.heap.page_allocator)
+| parsed p |> std.runtime:eval(ast: p.ast, scope: "config")
+    | result _ |> std.io:print.ln("OK")
+    | event_denied e |> std.io:print.ln("DENIED: {{e.name}}")
+    | exhausted _ |> std.io:print.ln("EXHAUSTED")
+    | validation_error _ |> std.io:print.ln("VALIDATION ERROR")
+    | dispatch_error _ |> std.io:print.ln("DISPATCH ERROR")
+    | scope_not_found _ |> std.io:print.ln("SCOPE NOT FOUND")
+| parse_error e |> std.io:print.ln("PARSE ERROR: {{e.message}}")
