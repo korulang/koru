@@ -329,14 +329,50 @@ upgraded later without changing the external interface.
 
 ## Implementation Order
 
-1. Update `Handle` struct
-2. Update `HandlePool.acquire` signature
-3. Extend registry generation with create/discharge field+arg names
-4. Update handle creation in `executeFlow`
-5. Implement `buildDischargeInvocation` helper
-6. Implement actual discharge invocation in auto-discharge
-7. Update explicit discharge path
-8. Write tests
+## Implementation Plan (Full)
+
+**Ownership:** Claude first pass, Codex review/cleanup.
+
+### Phase 0: Decisions
+1. **Scope enforcement choice**: recommend storing `scope_name` on each `Handle`
+   (avoids changing handle ID format). If rejected, use scope-tagged handle IDs.
+
+### Phase 1: Runtime Registry Metadata
+2. Extend `~std.runtime:register` generation to emit:
+   - `CreateSpec { obligation_module, obligation_name, field_name, resource_type }`
+   - `DischargeSpec { obligation_module, obligation_name, arg_name }`
+3. Emit per-scope lookup fns:
+   - `get_creates_spec_<scope>(event_name) []const CreateSpec`
+   - `get_discharges_spec_<scope>(event_name) []const DischargeSpec`
+4. Wire these into `get_scope` table alongside cost/obligation lookups.
+
+### Phase 2: HandlePool + Interpreter Wiring
+5. Update `Handle` struct and `HandlePool.acquire` signature to include:
+   - `handle_id`, `obligation_module`, `obligation_name`, `resource_type`
+   - optional `scope_name` if Phase 0 chooses stored scope enforcement
+6. Update `executeFlow`:
+   - On create: read `CreateSpec` for the event, extract `handle_id`
+     from `DispatchResult` by `field_name`, and `acquire`.
+   - On explicit discharge: read `DischargeSpec`, extract `handle_id`
+     from args by `arg_name`, and `dischargeById`.
+
+### Phase 3: Auto-Discharge Invocation
+7. Implement `buildDischargeInvocation` helper (arg-name aware).
+8. On local pool cleanup (success/error/exhaustion):
+   - Invoke discharge event per undischarged handle.
+   - Mark discharged after invocation (or on success only; decide and document).
+
+### Phase 4: Tests
+9. Add regressions:
+   - Basic auto-discharge (cleanup event called).
+   - Explicit discharge path (handle marked discharged).
+   - Error path cleanup.
+   - Budget exhaustion cleanup.
+   - Bridge persistence (handles survive, inspectable).
+
+### Phase 5: Bridge
+10. Add `inspectHandles` on `@koru/bridge` (future).
+
 
 ---
 
