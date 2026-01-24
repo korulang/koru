@@ -36,6 +36,33 @@ The interpreter only stores handle IDs and obligation metadata.
 Koru allows **one phantom obligation per type**. Multiple obligations are allowed
 only if they come from **multiple fields** (each field has at most one obligation).
 
+Handles are **scope-local**:
+- A handle ID is only valid within the scope/registry instance that created it.
+- `fs:read_lines` in scope A does not interop with `fs:read_lines` in scope B.
+- Cross-scope discharge is invalid unless both events are in the same scope.
+
+This avoids accidental capability leaks and keeps scopes as the unit of isolation.
+
+## Module-Namespaced Obligations
+
+Phantom obligations are **fully qualified** by their originating module:
+
+- `sqlite3:opened` - a SQLite connection
+- `fs:opened` - a file handle
+- `mem:allocated` - a memory buffer
+- `reaper:opened` - a REAPER audio track
+
+This prevents collision (`fs:opened` vs `sqlite3:opened`) and enables cross-module reasoning.
+A higher-level module can work with obligations from multiple domains:
+
+```koru
+// Orchestration that understands both sqlite3 and mem obligations
+~do_buffered_query(conn: *Connection[sqlite3:opened!], buf: *Buffer[mem:allocated!])
+| result { ... }
+```
+
+The registry captures the full `module:name` pair for each obligation.
+
 ## Data Structures
 
 ```zig
@@ -46,20 +73,29 @@ pub const Handle = struct {
     /// Stable handle ID (string) passed through flows
     handle_id: []const u8,
 
-    /// Phantom obligation type (e.g., "opened", "prepared")
-    obligation: []const u8,
+    /// Module that defines this obligation (e.g., "sqlite3", "fs", "mem")
+    obligation_module: []const u8,
 
-    /// Event that discharges this obligation (e.g., "close")
+    /// Obligation name within that module (e.g., "opened", "allocated")
+    obligation_name: []const u8,
+
+    /// Event that discharges this obligation (e.g., "sqlite3:close")
     discharge_event: []const u8,
 
     /// Whether this handle has been discharged
     discharged: bool,
 
-    /// Which event created this resource (for inspection)
+    /// Which event created this resource (e.g., "sqlite3:open")
     created_by_event: []const u8,
 
-    /// Optional resource type name for inspection (if provided by event)
+    /// Optional resource type name for inspection (e.g., "Connection")
     resource_type: []const u8,
+
+    /// Helper to get fully-qualified obligation string
+    pub fn fqObligation(self: *const Handle, buf: []u8) []const u8 {
+        return std.fmt.bufPrint(buf, "{s}:{s}", .{self.obligation_module, self.obligation_name})
+            catch self.obligation_name;
+    }
 };
 
 pub const HandlePool = struct {
@@ -74,7 +110,8 @@ pub const HandlePool = struct {
     pub fn acquire(
         self: *HandlePool,
         handle_id: []const u8,
-        obligation: []const u8,
+        obligation_module: []const u8,
+        obligation_name: []const u8,
         discharge_event: []const u8,
         created_by_event: []const u8,
         resource_type: []const u8,
@@ -107,12 +144,22 @@ To wire handle IDs correctly, scope registration must capture **field/arg names*
 Example metadata shape:
 
 ```zig
-pub const CreateSpec = struct { obligation: []const u8, field_name: []const u8 };
-pub const DischargeSpec = struct { obligation: []const u8, arg_name: []const u8 };
+pub const CreateSpec = struct {
+    obligation_module: []const u8,  // "sqlite3"
+    obligation_name: []const u8,    // "opened"
+    field_name: []const u8,         // "conn" (which output field holds handle ID)
+    resource_type: []const u8,      // "Connection"
+};
+
+pub const DischargeSpec = struct {
+    obligation_module: []const u8,  // "sqlite3"
+    obligation_name: []const u8,    // "opened"
+    arg_name: []const u8,           // "conn" (which input arg carries handle ID)
+};
 ```
 
-This avoids guessing by position and works with multiple obligations per event
-(as long as each obligation maps to a unique field/arg name).
+This avoids guessing by position, enables cross-module reasoning, and works with
+multiple obligations per event (as long as each obligation maps to a unique field/arg name).
 
 ## Auto-Discharge Flow
 
@@ -148,14 +195,15 @@ When an event creates obligations:
 if (ctx.creates_obligations_fn) |creates_fn| {
     const creates = creates_fn(event_name); // []CreateSpec
     for (creates) |spec| {
-        const discharge_event = discharge_event_for(spec.obligation);
+        const discharge_event = discharge_event_for(spec.obligation_module, spec.obligation_name);
         const handle_id = getFieldValue(dispatch_result.fields, spec.field_name);
         _ = pool.acquire(
             handle_id,
-            spec.obligation,
+            spec.obligation_module,
+            spec.obligation_name,
             discharge_event,
             event_name,
-            resource_type_for(spec.obligation),
+            spec.resource_type,
         ) catch {};
     }
 }
@@ -187,18 +235,28 @@ Example view:
 ```
 Bridge session: "audio-project-123"
 Active handles:
-  #1: conn_001 [opened!]
+  #1: conn_001 [sqlite3:opened]
+      type: Connection
       created by: sqlite3:open
       discharge: sqlite3:close
 
-  #2: img_004 [loaded!]
+  #2: img_004 [img:loaded]
+      type: Image
       created by: img:load
       discharge: img:close
 
-  #3: track_019 [opened!]
+  #3: track_019 [reaper:opened]
+      type: AudioTrack
       created by: reaper:open_track
       discharge: reaper:close_track
+
+  #4: buf_012 [mem:allocated]
+      type: Buffer
+      created by: mem:alloc
+      discharge: mem:free
 ```
+
+AI can reason across domains: "I have an open database connection and an allocated buffer."
 
 ## Files to Modify
 
@@ -237,6 +295,33 @@ Active handles:
 
 1. **Handle ID format:** who generates IDs and what constraints apply?
 2. **Resource type metadata:** should events provide it, or should it be optional?
+
+## Future Optimization: Obligation Tags
+
+Since scope registration knows all possible obligations at comptime, we can optimize
+string storage to integer tags:
+
+```zig
+// Generated per-scope at registration
+const obligation_modules = [_][]const u8{ "sqlite3", "mem" };
+const obligation_names = [_][]const u8{ "opened", "prepared", "allocated" };
+
+// Handle stores tags instead of strings
+pub const Handle = struct {
+    obligation_module_tag: u8,  // Index into obligation_modules
+    obligation_name_tag: u8,    // Index into obligation_names
+    // ...
+};
+```
+
+Benefits:
+- No string comparisons in hot paths
+- Smaller memory footprint
+- Type safety at scope boundary
+- Lookup functions provide human-readable names for inspection
+
+This is a pure optimization - the string-based design is correct and can be
+upgraded later without changing the external interface.
 
 ## Implementation Order
 
