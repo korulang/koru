@@ -47,6 +47,23 @@ Enforcement options (choose one):
 - Store `scope_name` (or a stable scope hash) on each `Handle` and check on acquire/discharge.
 - Prefix handle IDs with a scope tag (e.g., `api:h123`) and reject mismatches.
 
+## Handle Realms (Opt-In Shared Namespace)
+
+For bridge-centric workflows, a **handle realm** can be used to intentionally
+share handles across multiple scopes within the *same* bridge. This trades
+strict isolation for interoperability and avoids cross-scope marshalling.
+
+Rules:
+- Default realm = the scope name (scope-local isolation).
+- Opt-in realm = a host-provided `realm_key` (string or hash).
+- Handles carry a realm tag; discharge/lookup requires matching realm.
+- Realms never cross bridges unless the host reuses the same realm_key.
+
+Suggested realm derivation:
+- `realm_key = hash(sorted_scopes || bridge_salt)`
+- This allows multiple scopes to interop *within* a bridge but prevents
+  handles from leaking across bridges by default.
+
 ## Module-Namespaced Obligations
 
 Phantom obligations are **fully qualified** by their originating module:
@@ -336,6 +353,8 @@ upgraded later without changing the external interface.
 ### Phase 0: Decisions
 1. **Scope enforcement choice**: recommend storing `scope_name` on each `Handle`
    (avoids changing handle ID format). If rejected, use scope-tagged handle IDs.
+2. **Realm opt-in**: decide whether to support a shared `realm_key` (recommended for bridges),
+   and whether the realm tag is stored as string or hash.
 
 ### Phase 1: Runtime Registry Metadata
 2. Extend `~std.runtime:register` generation to emit:
@@ -349,7 +368,8 @@ upgraded later without changing the external interface.
 ### Phase 2: HandlePool + Interpreter Wiring
 5. Update `Handle` struct and `HandlePool.acquire` signature to include:
    - `handle_id`, `obligation_module`, `obligation_name`, `resource_type`
-   - optional `scope_name` if Phase 0 chooses stored scope enforcement
+   - `scope_name` (or scope hash) for isolation
+   - optional `realm_key` (string/hash) if shared realms are enabled
 6. Update `executeFlow`:
    - On create: read `CreateSpec` for the event, extract `handle_id`
      from `DispatchResult` by `field_name`, and `acquire`.
