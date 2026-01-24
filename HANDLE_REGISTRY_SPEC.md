@@ -43,6 +43,10 @@ Handles are **scope-local**:
 
 This avoids accidental capability leaks and keeps scopes as the unit of isolation.
 
+Enforcement options (choose one):
+- Store `scope_name` (or a stable scope hash) on each `Handle` and check on acquire/discharge.
+- Prefix handle IDs with a scope tag (e.g., `api:h123`) and reject mismatches.
+
 ## Module-Namespaced Obligations
 
 Phantom obligations are **fully qualified** by their originating module:
