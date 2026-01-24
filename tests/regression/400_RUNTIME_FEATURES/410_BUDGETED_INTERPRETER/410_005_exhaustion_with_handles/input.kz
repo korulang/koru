@@ -2,52 +2,48 @@
 // Even when exhausted, we clean up resources before returning
 
 ~import "$std/runtime"
-~import "$std/interpreter"
 ~import "$std/io"
 
 const std = @import("std");
 
-const File = struct { handle: i32 };
-
 ~pub event open { path: []const u8 }
-| opened { file: *File[opened!] }
+| opened { handle: []const u8[opened!] }
 
 ~proc open {
-    const f = std.heap.page_allocator.create(File) catch unreachable;
-    f.* = File{ .handle = 42 };
     std.debug.print("opened {s}\n", .{path});
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = .{ .handle = "file_1" } };
 }
 
-~pub event close { file: *File[!opened] }
+~pub event close { handle: []const u8[!opened] }
 | closed {}
 
 ~proc close {
     std.debug.print("auto-closing file\n", .{});
-    std.heap.page_allocator.destroy(file);
     return .{ .closed = .{} };
 }
 
-~pub event expensive_read { file: *File[opened] }
+~pub event expensive_read { handle: []const u8[opened] }
 | read { data: []const u8 }
 
 ~proc expensive_read {
     return .{ .read = .{ .data = "file contents" } };
 }
 
-~std.runtime:register(scope: "test", auto_discharge: true) {
+~std.runtime:register(scope: "test") {
     open(10)
     close(1)
     expensive_read(100)  // Very expensive!
 }
 
+const TEST_SOURCE = "~open(path: \"x.txt\")\n| opened f |> expensive_read(handle: f.handle)\n| read r |> result { r.data }";
+
 // Open file (10), then try expensive read (100) with only 50 budget
 // Should exhaust, but still auto-discharge the open file
-~std.interpreter:run(
-    source: "~open(path: \"x.txt\") | opened f |> expensive_read(file: f.file) | read r |> result { r.data }",
-    scope: "test",
-    budget: 50
-)
-| result r |> std.io:println(text: "FAIL: should have exhausted")
-| exhausted e |>
-    std.io:println(text: "PASS: exhausted with " ++ e.used ++ " used, auto-discharged: " ++ e.auto_discharged.len)
+~std.runtime:run(source: TEST_SOURCE, scope: "test", budget: 50, auto_discharge: true)
+| result _ |> std.io:println(text: "FAIL: should have exhausted")
+| exhausted e |> std.io:print.ln("PASS: exhausted with {{ e.used:d }} used, last event: {{ e.last_event:s }}")
+| parse_error _ |> std.io:println(text: "PARSE ERROR")
+| validation_error _ |> std.io:println(text: "VALIDATION ERROR")
+| event_denied _ |> std.io:println(text: "EVENT DENIED")
+| dispatch_error _ |> std.io:println(text: "DISPATCH ERROR")
+| scope_not_found _ |> std.io:println(text: "SCOPE NOT FOUND")

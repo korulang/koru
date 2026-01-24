@@ -1,0 +1,1 @@
+PASS: exhausted after 50 tokens, last event: expensive

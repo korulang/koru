@@ -3,43 +3,40 @@
 // Response includes active handles
 
 ~import "$std/runtime"
-~import "$std/interpreter"
 ~import "$std/io"
 
 const std = @import("std");
 
-const File = struct { handle: i32 };
-
 // Open creates an obligation
 ~pub event open { path: []const u8 }
-| opened { file: *File[opened!] }
+| opened { handle: []const u8[opened!] }
 
 ~proc open {
-    const f = std.heap.page_allocator.create(File) catch unreachable;
-    f.* = File{ .handle = 42 };
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = .{ .handle = "file_1" } };
 }
 
 // Close discharges the obligation
-~pub event close { file: *File[!opened] }
+~pub event close { handle: []const u8[!opened] }
 | closed {}
 
 ~proc close {
-    std.heap.page_allocator.destroy(file);
     return .{ .closed = .{} };
 }
 
 // Register scope - compiler infers close is discharge for open
-~std.runtime:register(scope: "test", auto_discharge: true) {
+~std.runtime:register(scope: "test") {
     open(10)
     close(1)
 }
 
+const TEST_SOURCE = "~open(path: \"test.txt\")\n| opened f |> result { path: \"test.txt\" }";
+
 // Open a file, don't close - should be in handle pool
-~std.interpreter:run(
-    source: "~open(path: \"test.txt\") | opened f |> result { path: \"test.txt\" }",
-    scope: "test",
-    budget: 100
-)
-| result r |> std.io:println(text: "PASS: handles tracked: " ++ r.handles.len)
-| exhausted e |> std.io:println(text: "FAIL: should not exhaust")
+~std.runtime:run(source: TEST_SOURCE, scope: "test", budget: 100, auto_discharge: false)
+| result r |> std.io:print.ln("PASS: handles tracked: {{ r.handles:d }}")
+| exhausted _ |> std.io:println(text: "FAIL: should not exhaust")
+| parse_error _ |> std.io:println(text: "PARSE ERROR")
+| validation_error _ |> std.io:println(text: "VALIDATION ERROR")
+| event_denied _ |> std.io:println(text: "EVENT DENIED")
+| dispatch_error _ |> std.io:println(text: "DISPATCH ERROR")
+| scope_not_found _ |> std.io:println(text: "SCOPE NOT FOUND")
