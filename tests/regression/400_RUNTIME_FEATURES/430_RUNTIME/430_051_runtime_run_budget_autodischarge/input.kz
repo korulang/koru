@@ -35,7 +35,7 @@ const std = @import("std");
     step(1)
 }
 
-const TEST_SOURCE = "~open_handle() | opened _ |> step()";
+const TEST_SOURCE = "~open_handle()\n| opened _ |> step()";
 
 ~std.runtime:run(source: TEST_SOURCE, scope: "api", budget: 1)
 | result _ |> std.io:print.ln("OK")
