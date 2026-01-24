@@ -791,7 +791,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     budget: ?u64,  // Optional budget limit (null = unlimited)
     handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
     fail_fast: bool = true,
-    scope_name: []const u8 = "default"  // Scope name for handle isolation
+    scope_name: []const u8 = "default",  // Scope name for handle isolation
+    auto_discharge: bool = true  // Auto-discharge undischarged handles at end
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
@@ -812,7 +813,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     discharges_spec_fn: ?DischargesSpecFn = null,  // event -> []DischargeSpec with arg names
     budget: ?u64,  // Optional budget limit (null = unlimited)
     handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
-    scope_name: []const u8 = "default"  // Scope name for handle isolation
+    scope_name: []const u8 = "default",  // Scope name for handle isolation
+    auto_discharge: bool = true  // Auto-discharge undischarged handles at end
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
@@ -952,15 +954,17 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         // Check if this was a budget exhaustion
         if (err == error.BudgetExhausted) {
             autoDischargeHandles(
+                auto_discharge,
                 using_external_pool,
                 active_pool,
                 discharges_spec_fn,
                 dispatcher,
                 allocator,
             );
+            const stable_last_event = std.heap.page_allocator.dupe(u8, budget_state.last_event) catch budget_state.last_event;
             return .{ .exhausted = .{
                 .used = budget_state.used,
-                .last_event = budget_state.last_event,
+                .last_event = stable_last_event,
                 .handles = @intCast(active_pool.countUndischarged()),
             }};
         }
@@ -981,6 +985,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         }
 
         autoDischargeHandles(
+            auto_discharge,
             using_external_pool,
             active_pool,
             discharges_spec_fn,
@@ -998,6 +1003,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     // std.debug.print("[INTERPRETER] Execution complete, branch: {s}\n", .{stable_value.branch});
 
     autoDischargeHandles(
+        auto_discharge,
         using_external_pool,
         active_pool,
         discharges_spec_fn,
@@ -1017,12 +1023,15 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 // ============================================================================
 
 fn autoDischargeHandles(
+    auto_discharge: bool,
     using_external_pool: bool,
     active_pool: *HandlePool,
     discharges_spec_fn: ?DischargesSpecFn,
     dispatcher: DispatchFn,
     allocator: std.mem.Allocator,
 ) void {
+    if (!auto_discharge) return;
+
     // Auto-discharge only for LOCAL pools (not bridge-managed ones)
     // Bridges manage their own lifecycle and discharge at session end
     if (using_external_pool) return;
@@ -1074,6 +1083,7 @@ fn autoDischargeHandles(
 
             // Mark discharged after successful dispatch
             active_pool.dischargeById(handle.id);
+
         }
     }
 }
@@ -1964,15 +1974,17 @@ fn executeFlow(
         // Check if this was a budget exhaustion
         if (err == error.BudgetExhausted) {
             autoDischargeHandles(
+                auto_discharge,
                 using_external_pool,
                 active_pool,
                 discharges_spec_fn,
                 dispatcher,
                 allocator,
             );
+            const stable_last_event = std.heap.page_allocator.dupe(u8, budget_state.last_event) catch budget_state.last_event;
             return .{ .exhausted = .{
                 .used = budget_state.used,
-                .last_event = budget_state.last_event,
+                .last_event = stable_last_event,
                 .handles = @intCast(active_pool.countUndischarged()),
             }};
         }
@@ -1993,6 +2005,7 @@ fn executeFlow(
         }
 
         autoDischargeHandles(
+            auto_discharge,
             using_external_pool,
             active_pool,
             discharges_spec_fn,
@@ -2010,6 +2023,7 @@ fn executeFlow(
     std.debug.print("[EVAL] Execution complete, branch: {s}\n", .{stable_value.branch});
 
     autoDischargeHandles(
+        auto_discharge,
         using_external_pool,
         active_pool,
         discharges_spec_fn,

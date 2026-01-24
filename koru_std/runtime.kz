@@ -1117,7 +1117,8 @@ fn buildScopeTable() []const ScopeRuntime {
     ast: koru_parser.ParseResult,
     scope: []const u8,
     budget: ?u64,
-    handle_pool: ?*@import("root").koru_std.interpreter.HandlePool
+    handle_pool: ?*@import("root").koru_std.interpreter.HandlePool,
+    auto_discharge: bool = true
 }
 | result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
@@ -1156,6 +1157,7 @@ fn buildScopeTable() []const ScopeRuntime {
                 .budget = budget,
                 .handle_pool = handle_pool,
                 .scope_name = scope,  // Pass actual scope name for handle isolation
+                .auto_discharge = auto_discharge,
             });
             switch (result) {
                 .result => |r| return .{ .result = .{
@@ -1194,7 +1196,8 @@ fn buildScopeTable() []const ScopeRuntime {
     scope: []const u8,
     budget: ?u64 = null,
     handle_pool: ?*@import("root").koru_std.interpreter.HandlePool = null,
-    fail_fast: bool = true
+    fail_fast: bool = true,
+    auto_discharge: bool = true
 }
 | result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
@@ -1223,6 +1226,7 @@ fn buildScopeTable() []const ScopeRuntime {
                 .handle_pool = handle_pool,
                 .fail_fast = fail_fast,
                 .scope_name = scope,  // Pass actual scope name for handle isolation
+                .auto_discharge = auto_discharge,
             });
             switch (result) {
                 .result => |r| return .{ .result = .{
