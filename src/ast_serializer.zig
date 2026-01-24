@@ -209,7 +209,8 @@ pub const AstSerializer = struct {
         try self.write("\n");
         self.dedent();
         try self.writeIndent();
-        try self.write("]\n");
+        try self.write("],\n");
+
         self.dedent();
         try self.write("}\n");
 
@@ -580,6 +581,19 @@ pub const AstSerializer = struct {
         self.dedent();
         try self.writeIndent();
         try self.write("},\n");
+
+        // Annotations
+        try self.writeIndent();
+        try self.write(".annotations = &.{\n");
+        self.indent();
+        for (flow.annotations) |ann| {
+            try self.writeIndent();
+            try self.writeString(ann);
+            try self.write(",\n");
+        }
+        self.dedent();
+        try self.writeIndent();
+        try self.write("},\n");
         
         // Pre-label (always write, even if null)
         try self.writeIndent();
@@ -791,6 +805,19 @@ pub const AstSerializer = struct {
         self.indent();
         for (invoc.args) |arg| {
             try self.serializeArg(&arg);
+            try self.write(",\n");
+        }
+        self.dedent();
+        try self.writeIndent();
+        try self.write("},\n");
+
+        // Annotations
+        try self.writeIndent();
+        try self.write(".annotations = &.{\n");
+        self.indent();
+        for (invoc.annotations) |ann| {
+            try self.writeIndent();
+            try self.writeString(ann);
             try self.write(",\n");
         }
         self.dedent();
@@ -1770,6 +1797,36 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write("],\n");
 
+        try self.writeIndent();
+        try self.write("\"annotations\": [\n");
+        self.indent();
+        for (flow.annotations, 0..) |ann, i| {
+            if (i > 0) try self.write(",\n");
+            try self.writeIndent();
+            try self.writeString(ann);
+        }
+        if (flow.annotations.len > 0) {
+            try self.write("\n");
+        }
+        self.dedent();
+        try self.writeIndent();
+        try self.write("],\n");
+
+        try self.writeIndent();
+        try self.write("\"annotations\": [\n");
+        self.indent();
+        for (flow.annotations, 0..) |ann, i| {
+            if (i > 0) try self.write(",\n");
+            try self.writeIndent();
+            try self.writeString(ann);
+        }
+        if (flow.annotations.len > 0) {
+            try self.write("\n");
+        }
+        self.dedent();
+        try self.writeIndent();
+        try self.write("],\n");
+
         // Labels
         try self.writeIndent();
         try self.write("\"pre_label\": ");
@@ -1815,6 +1872,21 @@ pub const AstSerializer = struct {
             try self.serializeContinuationJson(cont);
         }
         try self.write("\n");
+        self.dedent();
+        try self.writeIndent();
+        try self.write("],\n");
+
+        try self.writeIndent();
+        try self.write("\"annotations\": [\n");
+        self.indent();
+        for (flow.annotations, 0..) |ann, i| {
+            if (i > 0) try self.write(",\n");
+            try self.writeIndent();
+            try self.writeString(ann);
+        }
+        if (flow.annotations.len > 0) {
+            try self.write("\n");
+        }
         self.dedent();
         try self.writeIndent();
         try self.write("],\n");
@@ -1891,6 +1963,21 @@ pub const AstSerializer = struct {
             try self.write("}");
         }
         try self.write("\n");
+        self.dedent();
+        try self.writeIndent();
+        try self.write("],\n");
+
+        try self.writeIndent();
+        try self.write("\"annotations\": [\n");
+        self.indent();
+        for (inv.annotations, 0..) |ann, i| {
+            if (i > 0) try self.write(",\n");
+            try self.writeIndent();
+            try self.writeString(ann);
+        }
+        if (inv.annotations.len > 0) {
+            try self.write("\n");
+        }
         self.dedent();
         try self.writeIndent();
         try self.write("]\n");

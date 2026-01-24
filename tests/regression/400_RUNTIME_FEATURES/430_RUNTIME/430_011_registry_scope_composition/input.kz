@@ -41,7 +41,7 @@ const std = @import("std");
 
 // Internal scope - basic operations
 ~[registry:scope(internal)]std.runtime:register {
-    std.io:print.ln
+    std.io:println
 }
 
 // User scope - all user events via glob
@@ -64,20 +64,20 @@ const std = @import("std");
 // User code - should work with "user" scope
 const USER_CODE =
     \\~users.get(id: 42)
-    \\| found u |> std.io:print.ln("Found: {{u.name}}")
-    \\| not_found |> std.io:print.ln("Not found")
+    \\| found |> std.io:println(text: "Found")
+    \\| not_found |> std.io:println(text: "Not found")
 ;
 
 // Admin code - should work with "admin" scope, fail with "user" scope
 const ADMIN_CODE =
     \\~admin.delete_user(id: 42)
-    \\| deleted |> std.io:print.ln("User deleted")
+    \\| deleted |> std.io:println(text: "User deleted")
 ;
 
 // Debug code - should only work with "admin" scope AND --debug flag
 const DEBUG_CODE =
     \\~debug.dump_state()
-    \\| dumped d |> std.io:print.ln("State: {{d.json:s}}")
+    \\| dumped |> std.io:println(text: "State")
 ;
 
 // Test user scope
@@ -85,6 +85,10 @@ const DEBUG_CODE =
 | parsed p |> std.runtime:eval(ast: p.ast, scope: "user")
     | result |> std.io:print.ln("User code OK")
     | event_denied e |> std.io:print.ln("User denied: {{e.name}}")
+    | exhausted _ |> std.io:print.ln("User exhausted")
+    | validation_error _ |> std.io:print.ln("User validation error")
+    | dispatch_error _ |> std.io:print.ln("User dispatch error")
+    | scope_not_found _ |> std.io:print.ln("User scope missing")
 | parse_error e |> std.io:print.ln("Parse error: {{e.message}}")
 
 // Test admin scope with user code (should work - admin includes user)
@@ -92,6 +96,10 @@ const DEBUG_CODE =
 | parsed p |> std.runtime:eval(ast: p.ast, scope: "admin")
     | result |> std.io:print.ln("User code with admin scope OK")
     | event_denied e |> std.io:print.ln("Unexpected denial: {{e.name}}")
+    | exhausted _ |> std.io:print.ln("Admin exhausted")
+    | validation_error _ |> std.io:print.ln("Admin validation error")
+    | dispatch_error _ |> std.io:print.ln("Admin dispatch error")
+    | scope_not_found _ |> std.io:print.ln("Admin scope missing")
 | parse_error e |> std.io:print.ln("Parse error: {{e.message}}")
 
 // Test admin code with user scope (should fail)
@@ -99,4 +107,8 @@ const DEBUG_CODE =
 | parsed p |> std.runtime:eval(ast: p.ast, scope: "user")
     | result |> std.io:print.ln("UNEXPECTED: Admin code ran with user scope!")
     | event_denied e |> std.io:print.ln("Correctly denied admin event: {{e.name}}")
+    | exhausted _ |> std.io:print.ln("Admin code exhausted")
+    | validation_error _ |> std.io:print.ln("Admin code validation error")
+    | dispatch_error _ |> std.io:print.ln("Admin code dispatch error")
+    | scope_not_found _ |> std.io:print.ln("Admin code scope missing")
 | parse_error e |> std.io:print.ln("Parse error: {{e.message}}")

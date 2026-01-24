@@ -32,6 +32,7 @@ const koru_parser = @import("koru_parser");
     const ast_reg = @import("ast");
     const ast_functional = @import("ast_functional");
     const CompilerEnvRt = @import("root").CompilerEnv;
+    const registry_helpers_marker = "__KORU_RUNTIME_REGISTRY_HELPERS__";
 
     const Helpers = struct {
         fn stripQuotes(value: []const u8) []const u8 {
@@ -42,10 +43,19 @@ const koru_parser = @import("koru_parser");
         }
 
         fn findScopeAnnotation(annotations: []const []const u8) ?[]const u8 {
-            for (annotations) |ann| {
-                if (std.mem.startsWith(u8, ann, "registry:scope(") and std.mem.endsWith(u8, ann, ")")) {
-                    return ann["registry:scope(".len .. ann.len - 1];
-                }
+            for (annotations) |raw| {
+                var ann = std.mem.trim(u8, raw, " \t\r\n");
+                if (ann.len == 0) continue;
+                if (ann[0] == '@' and ann.len > 1) ann = ann[1..];
+
+                const open = std.mem.indexOf(u8, ann, "(") orelse continue;
+                if (ann[ann.len - 1] != ')') continue;
+                const name = std.mem.trim(u8, ann[0..open], " \t");
+                if (!std.mem.eql(u8, name, "registry:scope")) continue;
+
+                const arg = std.mem.trim(u8, ann[open + 1 .. ann.len - 1], " \t");
+                if (arg.len == 0) continue;
+                return stripQuotes(arg);
             }
             return null;
         }
@@ -59,6 +69,28 @@ const koru_parser = @import("koru_parser");
             if (findScopeAnnotation(inv.annotations)) |name| return name;
             if (findScopeAnnotation(flow_annotations)) |name| return name;
             return "default";
+        }
+
+        fn hasRegistryHelpers(prog: *const ast_reg.Program, module_name: []const u8) bool {
+            return findInItems(prog.items, module_name);
+        }
+
+        fn findInItems(items: []const ast_reg.Item, module_name: []const u8) bool {
+            for (items) |*ast_item| {
+                switch (ast_item.*) {
+                    .host_line => |hl| {
+                        if (std.mem.eql(u8, hl.module, module_name) and
+                            std.mem.indexOf(u8, hl.content, registry_helpers_marker) != null) {
+                            return true;
+                        }
+                    },
+                    .module_decl => |mod| {
+                        if (findInItems(mod.items, module_name)) return true;
+                    },
+                    else => {},
+                }
+            }
+            return false;
         }
 
         fn matchGlob(prefix: []const u8, event_name: []const u8) bool {
@@ -479,6 +511,8 @@ const koru_parser = @import("koru_parser");
     RegistryHelper.resolveScope(allocator, scope_defs, event_infos, scope_name, debug_enabled, &visited, &resolved_events);
 
     const scope_ident = Helpers.mangleIdentifier(allocator, scope_name);
+    const module_name = flow.invocation.path.module_qualifier orelse "main";
+    const emit_helpers = !Helpers.hasRegistryHelpers(program, module_name);
     var events_list = std.ArrayList(EventEntry){ .items = &.{}, .capacity = 0 };
     for (resolved_events.items) |resolved| {
         const info = RegistryHelper.findEventInfo(event_infos, resolved.name) orelse continue;
@@ -508,40 +542,65 @@ const koru_parser = @import("koru_parser");
     var code = std.ArrayList(u8){ .items = &.{}, .capacity = 0 };
     const I = "    "; // 4 spaces for main_module indentation
 
-    // Import required modules for generated code
-    code.appendSlice(allocator, I ++ "const dispatcher_std = @import(\"std\");\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "const dispatcher_ast = @import(\"ast\");\n\n") catch unreachable;
+    if (emit_helpers) {
+        code.appendSlice(allocator, I ++ "// " ++ registry_helpers_marker ++ "\n") catch unreachable;
 
-    // Export type aliases for user code (so they can use bare names like Path, Invocation, etc.)
-    code.appendSlice(allocator, I ++ "pub const Path = dispatcher_ast.DottedPath;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "pub const Arg = dispatcher_ast.Arg;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "pub const Invocation = dispatcher_ast.Invocation;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "pub const DispatchResult = koru_std.runtime.DispatchResult;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "const ScopeEvent = koru_std.runtime.ScopeEvent;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "const ScopeDescriptor = koru_std.runtime.ScopeDescriptor;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "const FieldValue = koru_std.runtime.FieldValue;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "const NamedField = koru_std.runtime.NamedField;\n\n") catch unreachable;
+        // Import required modules for generated code
+        code.appendSlice(allocator, I ++ "const dispatcher_std = @import(\"std\");\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const dispatcher_ast = @import(\"ast\");\n\n") catch unreachable;
 
-    // Helper function - strips quotes from string values
-    code.appendSlice(allocator, I ++ "fn getArg(args: []const dispatcher_ast.Arg, n: []const u8) ?[]const u8 {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    for (args) |arg| {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, arg.name, n)) {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "            var v = arg.value;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "            if (v.len >= 2 and v[0] == '\"' and v[v.len-1] == '\"') v = v[1..v.len-1];\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "            return v;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    return null;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
+        // Export type aliases for user code (so they can use bare names like Path, Invocation, etc.)
+        code.appendSlice(allocator, I ++ "pub const Path = dispatcher_ast.DottedPath;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "pub const Arg = dispatcher_ast.Arg;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "pub const Invocation = dispatcher_ast.Invocation;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "pub const DispatchResult = koru_std.runtime.DispatchResult;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const ScopeEvent = koru_std.runtime.ScopeEvent;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const ScopeDescriptor = koru_std.runtime.ScopeDescriptor;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const FieldValue = koru_std.runtime.FieldValue;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const NamedField = koru_std.runtime.NamedField;\n\n") catch unreachable;
 
-    // Helper function - builds Input struct from args using comptime reflection
-    code.appendSlice(allocator, I ++ "fn buildInput(comptime T: type, args: []const dispatcher_ast.Arg) T {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    var input: T = undefined;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    inline for (dispatcher_std.meta.fields(T)) |field| {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "        @field(input, field.name) = getArg(args, field.name) orelse \"\";\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    return input;\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
+        // Helper function - strips quotes from string values
+        code.appendSlice(allocator, I ++ "fn getArg(args: []const dispatcher_ast.Arg, n: []const u8) ?[]const u8 {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "    for (args) |arg| {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, arg.name, n)) {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            var v = arg.value;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            if (v.len >= 2 and v[0] == '\"' and v[v.len-1] == '\"') v = v[1..v.len-1];\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            return v;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "    return null;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
+
+        // Helper function - builds Input struct from args using comptime reflection
+        code.appendSlice(allocator, I ++ "fn buildInput(comptime T: type, args: []const dispatcher_ast.Arg) T {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "    var input: T = undefined;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "    inline for (dispatcher_std.meta.fields(T)) |field| {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        const raw = getArg(args, field.name) orelse \"\";\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        const F = field.type;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        if (F == bool) {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            @field(input, field.name) = dispatcher_std.mem.eql(u8, raw, \"true\") or dispatcher_std.mem.eql(u8, raw, \"1\");\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        } else switch (@typeInfo(F)) {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            .int => {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "                @field(input, field.name) = dispatcher_std.fmt.parseInt(F, raw, 10) catch 0;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            },\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            .float => {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "                @field(input, field.name) = dispatcher_std.fmt.parseFloat(F, raw) catch 0;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            },\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            .pointer => |ptr_info| {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "                if (ptr_info.size == .slice and ptr_info.child == u8) {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "                    @field(input, field.name) = raw;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "                } else {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "                    @field(input, field.name) = dispatcher_std.mem.zeroes(F);\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "                }\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            },\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            else => {\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "                @field(input, field.name) = dispatcher_std.mem.zeroes(F);\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "            },\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "    return input;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
+    }
 
     // Per-event dispatchers and descriptor table
     for (events_list.items) |event| {
@@ -614,7 +673,9 @@ const koru_parser = @import("koru_parser");
 
     // Scope descriptor and public dispatcher
     // Obligations are extracted from event signatures using phantom types
-    code.appendSlice(allocator, I ++ "const scope_events = [_]ScopeEvent{\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "const scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, " = [_]ScopeEvent{\n") catch unreachable;
     for (events_list.items) |event| {
         code.appendSlice(allocator, I ++ "    .{ .name = \"") catch unreachable;
         code.appendSlice(allocator, event.name) catch unreachable;
@@ -651,9 +712,11 @@ const koru_parser = @import("koru_parser");
 
     // Generate cost lookup function
     code.appendSlice(allocator, I ++ "pub fn get_event_cost_") catch unreachable;
-    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, "(event_name: []const u8) u64 {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    inline for (scope_events) |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.cost;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    return 1; // Default cost\n") catch unreachable;
@@ -661,18 +724,22 @@ const koru_parser = @import("koru_parser");
 
     // Generate obligation lookup functions (return arrays for multiple obligations)
     code.appendSlice(allocator, I ++ "pub fn get_creates_obligations_") catch unreachable;
-    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, "(event_name: []const u8) []const []const u8 {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    inline for (scope_events) |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.creates_obligations;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    return &[_][]const u8{};\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
     code.appendSlice(allocator, I ++ "pub fn get_discharges_obligations_") catch unreachable;
-    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, "(event_name: []const u8) []const []const u8 {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    inline for (scope_events) |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.discharges_obligations;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    return &[_][]const u8{};\n") catch unreachable;
@@ -680,9 +747,11 @@ const koru_parser = @import("koru_parser");
 
     // Generate discharge event lookup (for auto-discharge) - returns first event that discharges this obligation
     code.appendSlice(allocator, I ++ "pub fn get_discharge_event_") catch unreachable;
-    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, "(obligation: []const u8) ?[]const u8 {\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    inline for (scope_events) |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        for (ev.discharges_obligations) |dis| {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "            if (dispatcher_std.mem.eql(u8, obligation, dis)) return ev.name;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
@@ -691,13 +760,15 @@ const koru_parser = @import("koru_parser");
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
     code.appendSlice(allocator, I ++ "pub const ") catch unreachable;
-    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, "_descriptor: ScopeDescriptor = .{ .name = \"") catch unreachable;
     code.appendSlice(allocator, scope_name) catch unreachable;
-    code.appendSlice(allocator, "\", .events = &scope_events };\n") catch unreachable;
+    code.appendSlice(allocator, "\", .events = &scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, " };\n") catch unreachable;
 
     code.appendSlice(allocator, I ++ "pub fn dispatch_") catch unreachable;
-    code.appendSlice(allocator, scope_name) catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.runtime.DispatchResult) !void {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    var name_buf: [256]u8 = undefined;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    var name_len: usize = 0;\n") catch unreachable;
@@ -713,7 +784,9 @@ const koru_parser = @import("koru_parser");
     code.appendSlice(allocator, I ++ "        name_len += seg.len;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    const event_name = name_buf[0..name_len];\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    inline for (scope_events) |ev| {\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
+    code.appendSlice(allocator, scope_ident) catch unreachable;
+    code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "            return ev.dispatcher(inv, out);\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        }\n") catch unreachable;
@@ -729,7 +802,7 @@ const koru_parser = @import("koru_parser");
         .host_line = .{
             .content = generated_code,
             .location = .{ .file = "runtime:register", .line = 0, .column = 0 },
-            .module = flow.invocation.path.module_qualifier orelse "main",
+            .module = module_name,
         },
     };
 
@@ -777,6 +850,19 @@ pub const ScopeRuntime = struct {
     discharge_event_fn: ?DischargeEventFn,
 };
 
+fn mangleScopeName(comptime name: []const u8) []const u8 {
+    if (name.len == 0) return "";
+    comptime var buf: [name.len]u8 = undefined;
+    inline for (name, 0..) |c, i| {
+        const is_alnum = (c >= 'a' and c <= 'z') or
+            (c >= 'A' and c <= 'Z') or
+            (c >= '0' and c <= '9') or
+            (c == '_');
+        buf[i] = if (is_alnum) c else '_';
+    }
+    return buf[0..];
+}
+
 fn buildScopeTable() []const ScopeRuntime {
     const root = @import("root");
     const decls = std.meta.declarations(root.main_module);
@@ -787,7 +873,8 @@ fn buildScopeTable() []const ScopeRuntime {
         const decl_value = @field(root.main_module, decl.name);
         if (@TypeOf(decl_value) != ScopeDescriptor) continue;
         const desc = decl_value;
-        const dispatch_name = std.fmt.comptimePrint("dispatch_{s}", .{desc.name});
+        const scope_ident = mangleScopeName(desc.name);
+        const dispatch_name = std.fmt.comptimePrint("dispatch_{s}", .{scope_ident});
         if (!@hasDecl(root.main_module, dispatch_name)) continue;
         count += 1;
     }
@@ -799,14 +886,14 @@ fn buildScopeTable() []const ScopeRuntime {
         const decl_value = @field(root.main_module, decl.name);
         if (@TypeOf(decl_value) != ScopeDescriptor) continue;
         const desc = decl_value;
-
-        const dispatch_name = std.fmt.comptimePrint("dispatch_{s}", .{desc.name});
+        const scope_ident = mangleScopeName(desc.name);
+        const dispatch_name = std.fmt.comptimePrint("dispatch_{s}", .{scope_ident});
         if (!@hasDecl(root.main_module, dispatch_name)) continue;
 
-        const cost_name = std.fmt.comptimePrint("get_event_cost_{s}", .{desc.name});
-        const creates_name = std.fmt.comptimePrint("get_creates_obligations_{s}", .{desc.name});
-        const discharges_name = std.fmt.comptimePrint("get_discharges_obligations_{s}", .{desc.name});
-        const discharge_event_name = std.fmt.comptimePrint("get_discharge_event_{s}", .{desc.name});
+        const cost_name = std.fmt.comptimePrint("get_event_cost_{s}", .{scope_ident});
+        const creates_name = std.fmt.comptimePrint("get_creates_obligations_{s}", .{scope_ident});
+        const discharges_name = std.fmt.comptimePrint("get_discharges_obligations_{s}", .{scope_ident});
+        const discharge_event_name = std.fmt.comptimePrint("get_discharge_event_{s}", .{scope_ident});
 
         table[i] = .{
             .name = desc.name,
