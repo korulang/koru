@@ -1,12 +1,16 @@
 // package.kz - Package manager integration for Koru
 //
-// This module provides events for declaring external package dependencies
-// from various package managers (npm, cargo, go, pip).
+// This module provides events for declaring Koru package dependencies
+// distributed via various package managers (npm, cargo, go, pip).
+//
+// NOTE: These are for importing KORU PACKAGES that happen to be distributed
+// through these package managers, not for importing native JS/Rust/Go/Python
+// code directly into Koru.
 //
 // Usage:
 //   ~std.package:requires.npm {
-//       "@koru/graphics": "^1.0.0",
-//       "lodash": "^4.17.21"
+//       "@korulang/sqlite3": "^0.0.1",
+//       "@koru/graphics": "^1.0.0"
 //   }
 //
 // Then run: koruc main.kz i
@@ -16,6 +20,7 @@
 //   1. Collect all package:requires.npm invocations from your code
 //   2. Generate package.json
 //   3. Run npm install
+
 
 ~import "$std/compiler"
 
@@ -123,7 +128,7 @@
     }
 }
 
-// npm packages (JavaScript/TypeScript via Node Package Manager)
+// Koru packages distributed via npm
 ~[comptime|norun]pub event requires.npm { source: Source }
 
 ~proc requires.npm {
@@ -131,21 +136,21 @@
     // The compiler collects these during post-semantic analysis
 }
 
-// Rust crates (via Cargo)
+// Koru packages distributed via Cargo
 ~[comptime|norun]pub event requires.cargo { source: Source }
 
 ~proc requires.cargo {
     // Void event - collected by compiler
 }
 
-// Go modules
+// Koru packages distributed via Go modules
 ~[comptime|norun]pub event requires.go { source: Source }
 
 ~proc requires.go {
     // Void event - collected by compiler
 }
 
-// Python packages (via pip)
+// Koru packages distributed via pip
 ~[comptime|norun]pub event requires.pip { source: Source }
 
 ~proc requires.pip {

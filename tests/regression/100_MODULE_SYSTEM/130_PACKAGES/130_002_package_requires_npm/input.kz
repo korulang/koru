@@ -17,11 +17,11 @@
 }
 
 ~std.package:requires.npm {
-    "lodash": "^4.17.21"
+    "@korulang/utils": "^1.0.0"
 }
 
 ~std.package:requires.npm {
-    "axios": "^1.6.0"
+    "@korulang/http": "^0.1.0"
 }
 
 ~event main {}
