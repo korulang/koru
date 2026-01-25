@@ -17,11 +17,11 @@
 }
 
 ~std.package:requires.npm {
-    "@korulang/utils": "^1.0.0"
+    "@korulang/gzip": "^1.0.0"
 }
 
 ~std.package:requires.npm {
-    "@korulang/http": "^0.1.0"
+    "@korulang/sqlite3": "^0.1.0"
 }
 
 ~event main {}
