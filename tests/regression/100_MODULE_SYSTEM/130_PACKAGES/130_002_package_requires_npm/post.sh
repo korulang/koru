@@ -14,17 +14,17 @@ else
     exit 1
 fi
 
-if echo "$AST_JSON" | grep -q 'lodash'; then
-    echo "✓ Source parameter captured lodash requirement in AST"
+if echo "$AST_JSON" | grep -q '@korulang/gzip'; then
+    echo "✓ Source parameter captured @korulang/gzip requirement in AST"
 else
-    echo "✗ Source parameter did NOT capture lodash requirement"
+    echo "✗ Source parameter did NOT capture @korulang/gzip requirement"
     exit 1
 fi
 
-if echo "$AST_JSON" | grep -q 'axios'; then
-    echo "✓ Source parameter captured axios requirement in AST"
+if echo "$AST_JSON" | grep -q '@korulang/sqlite3'; then
+    echo "✓ Source parameter captured @korulang/sqlite3 requirement in AST"
 else
-    echo "✗ Source parameter did NOT capture axios requirement"
+    echo "✗ Source parameter did NOT capture @korulang/sqlite3 requirement"
     exit 1
 fi
 
