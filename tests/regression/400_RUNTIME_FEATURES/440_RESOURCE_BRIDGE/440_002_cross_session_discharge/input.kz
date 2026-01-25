@@ -1,0 +1,82 @@
+// Test: Cross-session handle discharge
+// The core bridge scenario: create handle in run 1, discharge in run 2
+//
+// This is the Hollywood OS pattern - state persists across turns,
+// human or AI can act on resources created in previous turns.
+
+~import "$std/runtime"
+~import "$std/io"
+
+const std = @import("std");
+const HandlePool = @import("root").koru_std.interpreter.HandlePool;
+
+// External pool - the bridge
+var bridge_pool = HandlePool.init(std.heap.page_allocator);
+
+// Events with obligations
+~pub event open { path: []const u8 }
+| opened []const u8[opened!]
+
+~open = opened "file_1"
+
+~pub event close { handle: []const u8[!opened] }
+| closed {}
+
+~proc close {
+    std.debug.print("close() called for handle\n", .{});
+    return .{ .closed = .{} };
+}
+
+~std.runtime:register(scope: "files") {
+    open(10)
+    close(1)
+}
+
+// Session 1: Open a file (creates obligation)
+const SESSION_1 = "~open(path: \"test.txt\")\n| opened h |> result { handle: h }";
+
+// Session 2: Close the file (discharges obligation)
+const SESSION_2 = "~close(handle: \"file_1\")\n| closed |> result {}";
+
+// Run session 1 - creates handle on bridge
+~std.runtime:run(source: SESSION_1, scope: "files", budget: 100, handle_pool: &bridge_pool, auto_discharge: false)
+| result r1 |> run_session_2(handles_after_open: r1.handles)
+    | done d |> std.io:print.ln("PASS: open={{ d.after_open:d }}, close={{ d.after_close:d }}")
+    | fail f |> std.io:print.ln("FAIL: {{ f.reason }}")
+| exhausted _ |> std.io:println(text: "FAIL: session 1 exhausted")
+| parse_error _ |> std.io:println(text: "FAIL: session 1 parse_error")
+| validation_error _ |> std.io:println(text: "FAIL: session 1 validation_error")
+| event_denied _ |> std.io:println(text: "FAIL: session 1 event_denied")
+| dispatch_error _ |> std.io:println(text: "FAIL: session 1 dispatch_error")
+| scope_not_found _ |> std.io:println(text: "FAIL: session 1 scope_not_found")
+
+// Helper event to run session 2 and report both counts
+~event run_session_2 { handles_after_open: u32 }
+| done { after_open: u32, after_close: u32 }
+| fail { reason: []const u8 }
+
+~proc run_session_2 {
+    std.debug.print("Session 1 left {} handle(s) on bridge\n", .{handles_after_open});
+
+    // Run session 2 to discharge the handle
+    const result = @import("root").koru_std.runtime.run_event.handler(.{
+        .source = SESSION_2,
+        .scope = "files",
+        .budget = 100,
+        .handle_pool = &bridge_pool,
+        .auto_discharge = false,
+    });
+
+    switch (result) {
+        .result => |r| {
+            std.debug.print("Session 2 complete, {} handle(s) remaining\n", .{r.handles});
+            return .{ .done = .{ .after_open = handles_after_open, .after_close = r.handles } };
+        },
+        .exhausted => return .{ .fail = .{ .reason = "session 2 exhausted" } },
+        .parse_error => return .{ .fail = .{ .reason = "session 2 parse error" } },
+        .validation_error => return .{ .fail = .{ .reason = "session 2 validation error" } },
+        .event_denied => return .{ .fail = .{ .reason = "session 2 event denied" } },
+        .dispatch_error => return .{ .fail = .{ .reason = "session 2 dispatch error" } },
+        .scope_not_found => return .{ .fail = .{ .reason = "session 2 scope not found" } },
+    }
+}

@@ -1,0 +1,4 @@
+Session 1 left 1 handle(s) on bridge
+close() called for handle
+Session 2 complete, 0 handle(s) remaining
+PASS: open=1, close=0
