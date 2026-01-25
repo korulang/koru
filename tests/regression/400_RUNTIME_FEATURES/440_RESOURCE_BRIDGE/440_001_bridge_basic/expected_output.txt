@@ -1,0 +1,1 @@
+PASS: external pool has 1 handle(s)
