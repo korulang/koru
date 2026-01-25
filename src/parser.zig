@@ -6322,8 +6322,21 @@ pub const Parser = struct {
             }
             
             // Check for cross-module type reference: module.path:TypeName
+            // Handle type prefixes like ?*, *, [], []const that come before the module path
             var module_path: ?[]const u8 = null;
             var actual_type = field_type;
+            var type_prefix: []const u8 = "";
+
+            // Strip type prefix before looking for module colon
+            // Order matters - check longer prefixes first
+            const prefixes = [_][]const u8{ "[]const ", "?*const ", "*const ", "[]", "?*", "?", "*" };
+            for (prefixes) |prefix| {
+                if (std.mem.startsWith(u8, field_type, prefix)) {
+                    type_prefix = prefix;
+                    field_type = field_type[prefix.len..];
+                    break;
+                }
+            }
 
             // Count colons - should be 0 (local type) or 1 (cross-module type)
             const colon_count = std.mem.count(u8, field_type, ":");
@@ -6337,10 +6350,18 @@ pub const Parser = struct {
 
             // Parse cross-module type reference
             if (std.mem.indexOfScalar(u8, field_type, ':')) |module_colon_idx| {
-                // Extract module path before the colon
+                // Extract module path before the colon (now without prefix)
                 module_path = try self.allocator.dupe(u8, field_type[0..module_colon_idx]);
-                // Everything after colon is the type name
-                actual_type = field_type[module_colon_idx + 1..];
+                // Everything after colon is the type name, with prefix restored
+                const base_type = field_type[module_colon_idx + 1..];
+                if (type_prefix.len > 0) {
+                    actual_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, base_type });
+                } else {
+                    actual_type = base_type;
+                }
+            } else if (type_prefix.len > 0) {
+                // No colon but had a prefix - restore it
+                actual_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, field_type });
             }
 
             const field = ast.Field{

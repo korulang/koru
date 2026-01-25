@@ -406,10 +406,27 @@ fn writeEscapedSegment(emitter: *CodeEmitter, name: []const u8) !void {
 /// Helper: Write field type with proper module path handling
 pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name: ?[]const u8) !void {
     if (field.module_path) |module_path| {
-        // Cross-module type reference: module.path:Type -> koru_module.path.Type
+        // Cross-module type reference: module.path:Type -> prefix + koru_module.path.Type
+        // Extract any type prefix (?*, *, [], []const) from the type name
+        var type_name = field.type;
+        var type_prefix: []const u8 = "";
+
+        const prefixes = [_][]const u8{ "[]const ", "?*const ", "*const ", "[]", "?*", "?", "*" };
+        for (prefixes) |prefix| {
+            if (std.mem.startsWith(u8, type_name, prefix)) {
+                type_prefix = prefix;
+                type_name = type_name[prefix.len..];
+                break;
+            }
+        }
+
+        // Write: prefix + module_path + . + base_type
+        if (type_prefix.len > 0) {
+            try emitter.write(type_prefix);
+        }
         try writeModulePath(emitter, module_path, main_module_name);
         try emitter.write(".");
-        try emitter.write(field.type);
+        try emitter.write(type_name);
     } else {
         // Regular type - apply prefixes for known AST/Std types to avoid shadowing
         // We use string replacement to handle pointers (*const Program) and slices ([]Item)
