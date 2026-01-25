@@ -1,0 +1,73 @@
+// Koru Interactive Compiler Mode
+// ===============================
+//
+// Usage:
+//   koruc myapp.kz --inter
+//
+// Launches an interactive TUI during compilation, allowing you to:
+// - Inspect the AST at each pipeline stage
+// - Step through transforms
+// - Query the AI about the code
+// - Run a REPL against the program scope
+//
+// This is a COMPTIME-ONLY feature - it runs during backend compilation,
+// not in the final binary.
+
+~[comptime]
+
+const std = @import("std");
+
+// Declare the --inter flag
+~std.compiler:flag.declare {
+  "name": "inter",
+  "description": "Launch interactive compiler TUI for debugging and exploration",
+  "type": "boolean"
+}
+
+// Simple snapshot of compiler context for inter display
+// We duplicate the needed fields to avoid circular type dependencies
+pub const ContextSnapshot = struct {
+    passes_completed: u32,
+};
+
+// The interactive mode entry point
+// Called from the compiler pipeline with all stage contexts
+~[comptime] pub event start {
+    contexts: []const ContextSnapshot,
+}
+| launched {}
+| skipped {}
+
+~proc start {
+    // Always print to verify the integration works
+    std.debug.print("\n[INTER] inter:start called with {d} contexts\n", .{contexts.len});
+
+    // CompilerEnv is provided globally by the compiler backend
+    const env = @import("root").CompilerEnv;
+
+    // Check if --inter flag is set
+    if (!env.hasFlag("inter")) {
+        std.debug.print("[INTER] --inter flag not set, skipping\n", .{});
+        return .{ .skipped = .{} };
+    }
+
+    std.debug.print("\n", .{});
+    std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
+    std.debug.print("║  KORU INTERACTIVE COMPILER                                   ║\n", .{});
+    std.debug.print("║  --inter mode activated                                      ║\n", .{});
+    std.debug.print("╠══════════════════════════════════════════════════════════════╣\n", .{});
+    std.debug.print("║  Pipeline stages captured: {d:<33}║\n", .{contexts.len});
+    std.debug.print("╚══════════════════════════════════════════════════════════════╝\n", .{});
+    std.debug.print("\n", .{});
+
+    // List what we have
+    for (contexts, 0..) |ctx, i| {
+        std.debug.print("  c{d}: {d} passes completed\n", .{i, ctx.passes_completed});
+    }
+
+    std.debug.print("\n", .{});
+    std.debug.print("TODO: Launch TUI here (vaxis integration)\n", .{});
+    std.debug.print("\n", .{});
+
+    return .{ .launched = .{} };
+}

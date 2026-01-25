@@ -862,7 +862,7 @@ fn isIdentChar(c: u8) bool {
 ///   "[]i32" -> "i32"
 ///   "[]*Handle" -> "*Handle"
 ///   "[]const threading:WorkerHandle" -> "threading:WorkerHandle"
-fn extractSliceElementType(slice_type: []const u8) ?[]const u8 {
+pub fn extractSliceElementType(slice_type: []const u8) ?[]const u8 {
     // Must start with []
     if (slice_type.len < 2 or slice_type[0] != '[' or slice_type[1] != ']') {
         return null;
@@ -1949,7 +1949,56 @@ fn emitSubflowContinuationsWithDepth(
 
                                     try emitter.write(param_name);
                                     try emitter.write(" = ");
-                                    try emitter.write(arg.value);
+
+                                    // Check for Koru array literal syntax: [a, b, c]
+                                    // Transform to Zig: &[_]ElementType{ a, b, c }
+                                    if (arg.value.len >= 2 and arg.value[0] == '[' and arg.value[arg.value.len - 1] == ']') {
+                                        // Look up the parameter type from the event type
+                                        var element_type: ?[]const u8 = null;
+                                        if (event_type) |et| {
+                                            if (et.input_shape) |shape| {
+                                                for (shape.fields) |field| {
+                                                    if (std.mem.eql(u8, field.name, param_name)) {
+                                                        element_type = extractSliceElementType(field.type);
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        const contents = arg.value[1 .. arg.value.len - 1]; // Strip [ and ]
+
+                                        // Create a minimal EmissionContext for emitArrayContents
+                                        var minimal_ctx = EmissionContext{
+                                            .allocator = std.heap.page_allocator,
+                                        };
+
+                                        // Check if element type is a primitive (no uppercase = primitive like i32, u8, etc.)
+                                        // Custom types (like ContextSnapshot) need module qualification we don't have,
+                                        // so use anonymous array syntax and let Zig infer the type
+                                        const is_primitive = if (element_type) |et| blk: {
+                                            for (et) |c| {
+                                                if (c >= 'A' and c <= 'Z') break :blk false;
+                                            }
+                                            break :blk true;
+                                        } else false;
+
+                                        if (element_type != null and is_primitive) {
+                                            // Emit proper Zig array literal with explicit primitive type
+                                            try emitter.write("&[_]");
+                                            try emitter.write(element_type.?);
+                                            try emitter.write("{ ");
+                                            try emitArrayContents(emitter, &minimal_ctx, contents);
+                                            try emitter.write(" }");
+                                        } else {
+                                            // Custom type or no type info - use anonymous array (let Zig infer)
+                                            try emitter.write("&.{ ");
+                                            try emitArrayContents(emitter, &minimal_ctx, contents);
+                                            try emitter.write(" }");
+                                        }
+                                    } else {
+                                        try emitter.write(arg.value);
+                                    }
                                 }
                                 try emitter.write(" });\n");
             

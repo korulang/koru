@@ -1860,7 +1860,38 @@ pub const VisitorEmitter = struct {
 
                                             try self.code_emitter.write(param_name);
                                             try self.code_emitter.write(" = ");
-                                            try self.code_emitter.write(arg.value);
+
+                                            // Check for Koru array literal syntax: [a, b, c]
+                                            // Transform to Zig: &[_]ElementType{ a, b, c }
+                                            if (arg.value.len >= 2 and arg.value[0] == '[' and arg.value[arg.value.len - 1] == ']') {
+                                                // Look up the parameter type from the invoked event declaration
+                                                var element_type: ?[]const u8 = null;
+                                                if (invoked_event) |inv_event| {
+                                                    for (inv_event.input.fields) |field| {
+                                                        if (std.mem.eql(u8, field.name, param_name)) {
+                                                            element_type = emitter.extractSliceElementType(field.type);
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+
+                                                const contents = arg.value[1 .. arg.value.len - 1]; // Strip [ and ]
+                                                if (element_type) |et| {
+                                                    // Emit proper Zig array literal with explicit type
+                                                    try self.code_emitter.write("&[_]");
+                                                    try self.code_emitter.write(et);
+                                                    try self.code_emitter.write("{ ");
+                                                    try self.code_emitter.write(contents);
+                                                    try self.code_emitter.write(" }");
+                                                } else {
+                                                    // No type info - emit as anonymous array (let Zig infer)
+                                                    try self.code_emitter.write("&.{ ");
+                                                    try self.code_emitter.write(contents);
+                                                    try self.code_emitter.write(" }");
+                                                }
+                                            } else {
+                                                try self.code_emitter.write(arg.value);
+                                            }
                                         }
                                         // NOTE: Comptime injection of program/allocator is now handled
                                         // by emitArgs in emitter_helpers.zig

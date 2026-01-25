@@ -1,6 +1,7 @@
 ~[comptime]
 
 ~import "$std/testing"
+~import "$std/inter"
 
 const std = @import("std");
 const ast = @import("ast");
@@ -431,7 +432,7 @@ pub const CompilerContext = struct {
 // The frontend collects these during --help to build flag documentation.
 //
 // Usage:
-//   ~compiler:flags.declare {
+//   ~compiler:flag.declare {
 //     "name": "fusion",
 //     "description": "Enable event fusion optimization",
 //     "type": "boolean"
@@ -441,21 +442,21 @@ pub const CompilerContext = struct {
 // This makes help metacircular - discovered by parsing, not hardcoded!
 
 
-~[comptime|norun]pub event flags.declare { source: Source }
+~[comptime|norun]pub event flag.declare { source: Source }
 
-~flags.declare {
+~flag.declare {
   "name": "fusion",
   "description": "Enable event fusion optimization for zero-cost abstractions",
   "type": "boolean"
 }
 
-~flags.declare {
+~flag.declare {
   "name": "ccp",
   "description": "Enable Compiler Communication Protocol for AI observability",
   "type": "boolean"
 }
 
-~flags.declare {
+~flag.declare {
   "name": "verbose",
   "description": "Enable verbose compiler output and debug logging",
   "type": "boolean"
@@ -506,6 +507,7 @@ pub const CompilerContext = struct {
 
 // Default implementation of the compiler coordinator
 // Users who don't override get this standard pipeline
+
 ~coordinate = context_create(program_ast, allocator)
 | created c0 |> frontend(ctx: c0.ctx)
   | ctx c1 |> transform_taps(ctx: c1)
@@ -514,7 +516,17 @@ pub const CompilerContext = struct {
         | ctx c4 |> optimize(ctx: c4)
           | ctx c5 |> emission(ctx: c5)
             | ctx c6 |> metrics_format(passes_completed: c6.ctx.passes_completed, allocator: allocator)
-              | formatted m |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }
+              | formatted m |> std.inter:start(contexts: [
+                  { passes_completed: c0.ctx.passes_completed },
+                  { passes_completed: c1.passes_completed },
+                  { passes_completed: c2.passes_completed },
+                  { passes_completed: c3.passes_completed },
+                  { passes_completed: c4.passes_completed },
+                  { passes_completed: c5.passes_completed },
+                  { passes_completed: c6.ctx.passes_completed }
+                ])
+                | launched |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }
+                | skipped |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }
       | failed f |> error { message: f.message }
 
 // Composable pipeline segments - users can mix and match!
@@ -1829,13 +1841,13 @@ const joinPathAlloc = struct {
 // Inserts disposal calls before terminators when exactly one disposal option exists
 
 // Flags for auto-discharge control (co-located with implementation!)
-~flags.declare {
+~flag.declare {
   "name": "auto-discharge=disable",
   "description": "Disable automatic disposal insertion - phantom errors will fire for unsatisfied obligations",
   "type": "boolean"
 }
 
-~flags.declare {
+~flag.declare {
   "name": "auto-discharge=warn",
   "description": "Emit warnings when auto-discharge inserts disposal calls (for debugging obligation handling)",
   "type": "boolean"

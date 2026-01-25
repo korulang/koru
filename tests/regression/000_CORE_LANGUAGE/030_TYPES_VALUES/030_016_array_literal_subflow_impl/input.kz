@@ -1,0 +1,60 @@
+// TEST: Array literal in subflow implementation
+//
+// Array literals work in regular comptime flows but fail in subflow implementations
+// using the `~event = flow` syntax.
+//
+// This test mimics the compiler.kz coordinate pattern:
+//   ~[abstract] event coordinate { ... }
+//   ~coordinate = step1() | result r |> step2(values: [r.a, r.b, r.c])
+
+const std = @import("std");
+
+const Context = struct {
+    id: u32,
+};
+
+// Abstract event with multiple contexts
+~[comptime|abstract] event process { allocator: std.mem.Allocator }
+| done { count: u32 }
+
+// Step 1: Create contexts
+~[comptime] event setup {}
+| ready { c0: Context, c1: Context, c2: Context }
+
+~proc setup {
+    return .{ .ready = .{
+        .c0 = .{ .id = 0 },
+        .c1 = .{ .id = 1 },
+        .c2 = .{ .id = 2 },
+    } };
+}
+
+// Step 2: Process array of contexts
+~[comptime] event consume { contexts: []const Context }
+| consumed { count: u32 }
+
+~proc consume {
+    std.debug.print("[COMPTIME] Processing {} contexts\n", .{contexts.len});
+    return .{ .consumed = .{ .count = @intCast(contexts.len) } };
+}
+
+// THE KEY TEST: Subflow implementation with array literal
+// This syntax (`~process = ...`) creates a subflow_impl
+// Array literals inside subflow_impl flows emit incorrectly
+~process = setup()
+| ready r |> consume(contexts: [r.c0, r.c1, r.c2])
+    | consumed c |> done { count: c.count }
+
+// Trigger the flow
+~process(allocator: std.heap.page_allocator)
+| done d |> report(count: d.count)
+
+~[comptime] event report { count: u32 }
+
+~proc report {
+    if (count == 3) {
+        std.debug.print("PASS: subflow array literal works\n", .{});
+    } else {
+        std.debug.print("FAIL: expected 3, got {}\n", .{count});
+    }
+}
