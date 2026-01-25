@@ -2947,7 +2947,22 @@ pub const Parser = struct {
 
             // Check if this line has an inline continuation (|> on same line)
             // This is needed for void event chaining: ~void_event() |> another_event()
-            const has_inline_continuation = std.mem.indexOf(u8, invocation_str, "|>") != null;
+            // Must skip |> inside string literals
+            const has_inline_continuation = blk: {
+                var j: usize = 0;
+                var in_str = false;
+                while (j < invocation_str.len) : (j += 1) {
+                    const ch = invocation_str[j];
+                    if (ch == '"' and (j == 0 or invocation_str[j - 1] != '\\')) {
+                        in_str = !in_str;
+                        continue;
+                    }
+                    if (!in_str and ch == '|' and j + 1 < invocation_str.len and invocation_str[j + 1] == '>') {
+                        break :blk true;
+                    }
+                }
+                break :blk false;
+            };
 
             if (has_inline_continuation) {
                 // Parse inline continuation from the same line

@@ -1,1 +1,0 @@
-Parser should ignore inline continuation tokens inside string literals.

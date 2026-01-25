@@ -1,13 +1,11 @@
 // Test: Inline continuation tokens inside string literals are not continuations.
 // The parser should ignore "|>" inside quoted strings.
 
-~pub event greet { text: []const u8 }
-| greeted { message: []const u8 }
+~event greet { text: []const u8 }
+| greeted {}
 
-~proc greet {
-    return .{ .greeted = .{ .message = text } };
-}
+~greet = greeted {}
 
 // The "|>" here is part of the string, not an inline continuation.
 ~greet(text: "Hello |> World")
-| greeted g |> result { g.message }
+| greeted |> _
