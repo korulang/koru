@@ -517,13 +517,13 @@ pub const CompilerContext = struct {
           | ctx c5 |> emission(ctx: c5)
             | ctx c6 |> metrics_format(passes_completed: c6.ctx.passes_completed, allocator: allocator)
               | formatted m |> std.inter:start(contexts: [
-                  { passes_completed: c0.ctx.passes_completed },
-                  { passes_completed: c1.passes_completed },
-                  { passes_completed: c2.passes_completed },
-                  { passes_completed: c3.passes_completed },
-                  { passes_completed: c4.passes_completed },
-                  { passes_completed: c5.passes_completed },
-                  { passes_completed: c6.ctx.passes_completed }
+                  c0.ctx,
+                  c1,
+                  c2,
+                  c3,
+                  c4,
+                  c5,
+                  c6.ctx
                 ])
                 | launched |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }
                 | skipped |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }

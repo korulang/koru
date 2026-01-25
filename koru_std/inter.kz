@@ -15,6 +15,8 @@
 
 ~[comptime]
 
+~import "$std/compiler"
+
 const std = @import("std");
 
 // Declare the --inter flag
@@ -24,16 +26,10 @@ const std = @import("std");
   "type": "boolean"
 }
 
-// Simple snapshot of compiler context for inter display
-// We duplicate the needed fields to avoid circular type dependencies
-pub const ContextSnapshot = struct {
-    passes_completed: u32,
-};
-
 // The interactive mode entry point
-// Called from the compiler pipeline with all stage contexts
+// Called from the compiler pipeline with contexts from each stage
 ~[comptime] pub event start {
-    contexts: []const ContextSnapshot,
+    contexts: []const std.compiler:CompilerContext,
 }
 | launched {}
 | skipped {}
@@ -62,12 +58,10 @@ pub const ContextSnapshot = struct {
 
     // List what we have
     for (contexts, 0..) |ctx, i| {
-        std.debug.print("  c{d}: {d} passes completed\n", .{i, ctx.passes_completed});
+        std.debug.print("  Stage {d}: {d} passes completed, {d} items\n", .{i + 1, ctx.passes_completed, ctx.ast.items.len});
     }
 
-    std.debug.print("\n", .{});
-    std.debug.print("TODO: Launch TUI here (vaxis integration)\n", .{});
-    std.debug.print("\n", .{});
+    std.debug.print("\n[inter] REPL not yet implemented (need std.io:readln)\n", .{});
 
     return .{ .launched = .{} };
 }

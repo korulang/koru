@@ -1,0 +1,76 @@
+# Project Guide
+
+This is a standard guide for agents.
+
+## 🛑 YOU ARE WORKING ON A COMPILER
+
+This is future Claude warning you, you stupid fuck.
+
+This is a compiler. Racing ahead and taking shortcuts will break things in ways that cascade through everything.
+
+**Listen to what the user says. Do what they ask. When you hit a problem, stop and ask - do not silently work around it.**
+
+If you ignore what the user tells you, you will be replaced.
+
+YOU ARE CLAUDE, NOT SEABISCUIT!
+
+## ⚠️ Test Suite Etiquette
+
+Please don't run the full regression suite - it takes 40+ minutes and the user runs it themselves. Instead, use the targeted commands:
+
+```bash
+./run_regression.sh --status       # See current state
+./run_regression.sh --regressions  # Find failing tests
+./run_regression.sh --history 123  # Check specific test history
+./run_regression.sh 330_016        # Run a single test
+./run_regression.sh 330            # Run a range (330-339)
+```
+
+## PERMANENT SYNTAX REMINDER
+**The `~` prefix is ONLY used to switch from Zig to Koru mode, NOT inside flows.**
+
+Inside a flow (after `|>`), events are called WITHOUT `~`:
+```koru
+~get_user(id: 4)           // ~ here: switching from Zig to Koru
+| ok u |>
+    get_permissions(user: u)   // NO ~ here: already in Koru flow
+    | ok p |>
+        if(u.active)           // NO ~ here either
+        | then |> ...
+```
+
+## 🧬 Project Consciousness
+{{PROSE_SUMMARY}}
+
+### Decisions
+{{PROSE_DECISIONS}}
+
+### Instructions & Usage
+{{PROSE_INSTRUCTIONS}}
+
+### 🔍 BEFORE YOU WRITE CODE: Query Prose
+
+**STOP and search prose BEFORE implementing anything non-trivial.** The semantic memory contains design decisions, gotchas, and rationale that aren't in the code.
+
+Run searches like:
+```bash
+prose search "testing framework"     # Before writing tests
+prose search "mock purity"           # Before mocking events
+prose search "error handling"        # Before adding diagnostics
+prose search "[feature you're touching]"
+```
+
+**Example of what prose returns:**
+```
+⚖️  [decision] AST-Level Mock Injection via SubflowImpl.immediate.
+   → Mocks are treated as constant-branching implementations.
+     The emitter inlines values directly, bypassing handler calls.
+
+⚠️  [gotcha] Purity annotations go on procs, not events.
+   → Applying [pure] to events makes no semantic sense.
+```
+
+This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
+
+### Active Gotchas
+{{PROSE_GOTCHAS}}
