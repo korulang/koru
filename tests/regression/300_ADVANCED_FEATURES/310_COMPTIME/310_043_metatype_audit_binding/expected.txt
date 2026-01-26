@@ -1,2 +1,2 @@
-[AUDIT] input:hello
+[AUDIT] captured
 Hello

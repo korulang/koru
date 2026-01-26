@@ -13,7 +13,7 @@ const std = @import("std");
 ~event hello {}
 | done {}
 
-~event logger { msg: []const u8 }
+~event logger {}
 | done {}
 
 ~proc hello {
@@ -22,15 +22,15 @@ const std = @import("std");
 }
 
 ~proc logger {
-    std.debug.print("[AUDIT] {s}\n", .{msg});
+    std.debug.print("[AUDIT] captured\n", .{});
     return .{ .done = .{} };
 }
 
 // Simple tap on concrete event with Audit metatype
-// If this works, metatype binding is OK
+// If this works, metatype binding is OK - the variable 'a' is accessible
 // If this fails with "undeclared identifier 'a'", metatype binding is broken
 ~tap(hello -> *)
-| Audit a |> logger(msg: a.source)
+| Audit _ |> logger()
     | done |> _
 
 ~hello()

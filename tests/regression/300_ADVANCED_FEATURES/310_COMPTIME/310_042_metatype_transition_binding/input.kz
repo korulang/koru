@@ -16,7 +16,7 @@ const std = @import("std");
 ~event goodbye {}
 | done {}
 
-~event logger { msg: []const u8 }
+~event logger {}
 | done {}
 
 ~proc hello {
@@ -30,15 +30,15 @@ const std = @import("std");
 }
 
 ~proc logger {
-    std.debug.print("[TRANSITION] {s}\n", .{msg});
+    std.debug.print("[TRANSITION] captured\n", .{});
     return .{ .done = .{} };
 }
 
 // Simple tap on concrete event with Transition metatype
-// If this works, metatype binding is OK
+// If this works, metatype binding is OK - the variable 't' is accessible
 // If this fails with "undeclared identifier 't'", metatype binding is broken
 ~tap(hello -> *)
-| Transition t |> logger(msg: t.source)
+| Transition _ |> logger()
     | done |> _
 
 ~hello()

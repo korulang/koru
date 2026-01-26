@@ -752,7 +752,7 @@ pub fn emitTapsNamespace(
         try emitter.writeLine("source: []const u8,           // interned string");
         try emitter.writeLine("destination: ?[]const u8,     // interned string (null for terminal)");
         try emitter.writeLine("branch: []const u8,           // interned string");
-        try emitter.writeLine("timestamp_ns: u64,            // when this transition occurred");
+        try emitter.writeLine("timestamp_ns: i128,           // nanoseconds since epoch (runtime capture)");
         try emitter.writeLine("payload: ?[]const u8,         // serialized continuation payload");
         try emitter.writeLine("// TODO: Add stack trace, thread ID, other forensic data");
         emitter.dedent();
@@ -2095,8 +2095,15 @@ fn emitSubflowContinuationsWithDepth(
                                 if (!is_transition) {
                                     try emitter.write(indent);
                                     try emitter.write("            .timestamp_ns = __koru_std.time.nanoTimestamp(),\n");
+
+                                    // .payload field - ONLY for Audit
+                                    const is_audit = std.mem.eql(u8, mb.metatype, "Audit");
+                                    if (is_audit) {
+                                        try emitter.write(indent);
+                                        try emitter.write("            .payload = null,  // TODO: Serialize continuation payload\n");
+                                    }
                                 }
-            
+
                                 try emitter.write(indent);
                                 try emitter.write("        };\n");
                             },

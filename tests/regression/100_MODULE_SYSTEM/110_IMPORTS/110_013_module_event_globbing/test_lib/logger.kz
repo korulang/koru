@@ -1,6 +1,8 @@
 // Universal logger using module-level event globbing
 // Demonstrates the power of wildcard patterns in taps
 
+~import "$std/taps"
+
 const std = @import("std");
 
 // Define a logging event
@@ -18,16 +20,16 @@ const std = @import("std");
 
 // Tap for compute event (.result branch)
 // Note: Tap flows must end with void - they're observers, not transformers
-~input:* -> *
+~tap(input:* -> *)
 | result |> log(event_name: "compute")
     | done |> _
 
 // Tap for format event (.formatted branch)
-~input:* -> *
+~tap(input:* -> *)
 | formatted |> log(event_name: "format")
     | done |> _
 
 // Tap for display event (.done branch)
-~input:* -> *
+~tap(input:* -> *)
 | done |> log(event_name: "display")
     | done |> _
