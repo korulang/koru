@@ -1,0 +1,8 @@
+PHASE 2: Scope - #loop/@loop support
+
+Label-based loops (#loop/@loop) also need scope tracking.
+The branch containing @loop is the repeating scope.
+
+Scope analyzer must trace @loop jumps back to #loop to identify scope boundaries.
+
+This test: Open file in loop body, jump back → auto-dispose before @loop

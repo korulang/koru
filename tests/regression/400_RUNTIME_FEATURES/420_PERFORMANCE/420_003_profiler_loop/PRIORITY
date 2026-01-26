@@ -1,0 +1,12 @@
+Imported module taps emitted as runtime code instead of compile-time transforms
+
+The tap transform works correctly for user code (test 507 passes), but when taps
+are defined in an imported library (profiler.kz), the tap flows are emitted as
+runtime calls instead of being processed as compile-time transforms.
+
+Symptom: Generated code contains invalid Zig like:
+  koru_std.profiler.tap_event.handler(.{ .koru:start -> * = koru:start -> * });
+
+Root cause: Transform runner or emitter not handling tap flows in imported modules.
+
+See working test: 360_TAPS_OBSERVERS/507_meta_event_taps

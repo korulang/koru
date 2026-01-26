@@ -1,0 +1,8 @@
+KNOWN_BUG: Phantom obligations not tracked across label jumps
+
+This test documents a gap in the phantom checker:
+- When @label jumps occur, open obligations are not verified
+- The test SHOULD fail compilation but currently PASSES
+- Discovered during Orisha HTTP server development
+
+When fixed, remove this SKIP file and add MUST_FAIL marker.

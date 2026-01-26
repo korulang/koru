@@ -38,6 +38,7 @@
 !**/*.md
 !**/.MARKER
 !**/TODO
+!**/PRIORITY
 !**/BROKEN
 !**/BUG_*
 !**/THRESHOLD
