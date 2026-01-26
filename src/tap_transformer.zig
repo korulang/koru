@@ -27,6 +27,78 @@ fn shouldIncludeTap(tap: *const TapEntry, emit_mode: EmitMode) bool {
     }
 }
 
+const OpaqueEventSet = std.StringHashMap(void);
+
+fn hasOpaqueAnnotation(annotations: []const []const u8) bool {
+    return purity_helpers.hasAnnotation(annotations, "opaque");
+}
+
+fn buildOpaqueEventSet(items: []const ast.Item, allocator: std.mem.Allocator) !OpaqueEventSet {
+    var set = OpaqueEventSet.init(allocator);
+    errdefer deinitOpaqueEventSet(&set, allocator);
+    try collectOpaqueEvents(items, allocator, &set);
+    return set;
+}
+
+fn deinitOpaqueEventSet(set: *OpaqueEventSet, allocator: std.mem.Allocator) void {
+    var it = set.keyIterator();
+    while (it.next()) |key| {
+        allocator.free(key.*);
+    }
+    set.deinit();
+}
+
+fn collectOpaqueEvents(
+    items: []const ast.Item,
+    allocator: std.mem.Allocator,
+    set: *OpaqueEventSet,
+) !void {
+    for (items) |item| {
+        switch (item) {
+            .event_decl => |event| {
+                if (hasOpaqueAnnotation(event.annotations)) {
+                    const canonical = try eventDeclToCanonicalName(allocator, &event);
+                    if (set.contains(canonical)) {
+                        allocator.free(canonical);
+                    } else {
+                        try set.put(canonical, {});
+                    }
+                }
+            },
+            .module_decl => |module| {
+                try collectOpaqueEvents(module.items, allocator, set);
+            },
+            else => {},
+        }
+    }
+}
+
+fn eventDeclToCanonicalName(allocator: std.mem.Allocator, event: *const ast.EventDecl) ![]const u8 {
+    var len: usize = event.module.len + 1; // module:
+    for (event.path.segments, 0..) |seg, i| {
+        if (i > 0) len += 1;
+        len += seg.len;
+    }
+
+    const result = try allocator.alloc(u8, len);
+    var pos: usize = 0;
+    @memcpy(result[pos..pos + event.module.len], event.module);
+    pos += event.module.len;
+    result[pos] = ':';
+    pos += 1;
+
+    for (event.path.segments, 0..) |seg, i| {
+        if (i > 0) {
+            result[pos] = '.';
+            pos += 1;
+        }
+        @memcpy(result[pos..pos + seg.len], seg);
+        pos += seg.len;
+    }
+
+    return result;
+}
+
 /// Transform AST to insert tap invocations as regular flow code
 /// This enables the optimizer to see and optimize taps (zero-cost abstraction!)
 /// Only inserts taps whose mode annotations match the emit_mode
@@ -39,6 +111,9 @@ pub fn transformAst(
     if (DEBUG) std.debug.print("TAP TRANSFORMER: Starting AST transformation (mode: {s})\n", .{@tagName(emit_mode)});
     if (DEBUG) std.debug.print("TAP TRANSFORMER: Tap registry has {} entries\n", .{tap_registry.entries.items.len});
 
+    var opaque_events = try buildOpaqueEventSet(source_ast.items, allocator);
+    defer deinitOpaqueEventSet(&opaque_events, allocator);
+
     // Transform all items recursively
     const transformed_items = try transformItems(
         source_ast.items,
@@ -46,6 +121,7 @@ pub fn transformAst(
         emit_mode,
         allocator,
         source_ast.main_module_name,
+        &opaque_events,
     );
 
     // Create new Program with transformed items
@@ -67,6 +143,7 @@ fn transformItems(
     emit_mode: EmitMode,
     allocator: std.mem.Allocator,
     main_module_name: []const u8,
+    opaque_events: *const OpaqueEventSet,
 ) ![]const ast.Item {
     var transformed = try std.ArrayList(ast.Item).initCapacity(allocator, items.len);
     defer transformed.deinit(allocator);
@@ -84,6 +161,7 @@ fn transformItems(
                     emit_mode,
                     allocator,
                     main_module_name,
+                    opaque_events,
                 );
                 try transformed.append(allocator, ast.Item{ .subflow_impl = transformed_subflow });
             },
@@ -91,6 +169,11 @@ fn transformItems(
                 // Transform top-level flows (e.g., ~hello() | done |> _)
                 // These are flow-level taps that should fire when the main invocation completes
                 if (DEBUG) std.debug.print("TAP TRANSFORMER: Found top-level flow invoking: {s}\n", .{flow.invocation.path.segments[0]});
+
+                if (hasOpaqueAnnotation(flow.annotations)) {
+                    try transformed.append(allocator, item);
+                    continue;
+                }
 
                 // Get the invoked event name
                 const invoked_event = try pathToString(flow.invocation.path, allocator);
@@ -105,6 +188,7 @@ fn transformItems(
                     tap_registry,
                     emit_mode,
                     allocator,
+                    opaque_events,
                 );
 
                 var new_flow = flow;
@@ -119,6 +203,7 @@ fn transformItems(
                     emit_mode,
                     allocator,
                     main_module_name,
+                    opaque_events,
                 );
 
                 var new_module = module;
@@ -142,6 +227,7 @@ fn transformSubflow(
     emit_mode: EmitMode,
     allocator: std.mem.Allocator,
     main_module_name: []const u8,
+    opaque_events: *const OpaqueEventSet,
 ) !ast.SubflowImpl {
     _ = main_module_name; // No longer needed - all paths are canonical
 
@@ -153,6 +239,10 @@ fn transformSubflow(
     // Transform the subflow body
     const transformed_body = switch (subflow.body) {
         .flow => |flow| blk: {
+            if (hasOpaqueAnnotation(flow.annotations)) {
+                break :blk ast.SubflowBody{ .flow = flow };
+            }
+
             // Get the invoked event name from the main invocation (already canonical!)
             const invoked_event = try pathToString(flow.invocation.path, allocator);
             defer allocator.free(invoked_event);
@@ -166,6 +256,7 @@ fn transformSubflow(
                 tap_registry,
                 emit_mode,
                 allocator,
+                opaque_events,
             );
 
             var new_flow = flow;
@@ -187,6 +278,7 @@ fn transformContinuationsWithInvokedEvent(
     tap_registry: *TapRegistry,
     emit_mode: EmitMode,
     allocator: std.mem.Allocator,
+    opaque_events: *const OpaqueEventSet,
 ) ![]const ast.Continuation {
     // V1: Counter for generating unique binding IDs
     // V2: Will be replaced with structural hash context (API stays the same!)
@@ -198,6 +290,7 @@ fn transformContinuationsWithInvokedEvent(
         tap_registry,
         emit_mode,
         allocator,
+        opaque_events,
         &binding_hash_counter,
     );
 }
@@ -328,6 +421,7 @@ fn transformContinuationsWithInvokedEventInternal(
     tap_registry: *TapRegistry,
     emit_mode: EmitMode,
     allocator: std.mem.Allocator,
+    opaque_events: *const OpaqueEventSet,
     binding_hash_counter: *usize,  // Shared counter for all recursion levels!
 ) ![]const ast.Continuation {
     var transformed = try std.ArrayList(ast.Continuation).initCapacity(allocator, continuations.len);
@@ -371,67 +465,77 @@ fn transformContinuationsWithInvokedEventInternal(
         const destination = try findDestinationEventFromStep(cont.node, allocator);
         defer if (destination) |dest| allocator.free(dest);
 
-        // Check for taps FROM the invoked event ON this branch TO destination (or terminal if null)
-        const all_matching_taps = try tap_registry.getMatchingTaps(
-            invoked_event,
-            cont.branch,
-            destination,
-        );
-        defer allocator.free(all_matching_taps);
+        const invoked_is_opaque = opaque_events.contains(invoked_event);
 
-        // Filter taps by mode annotations (comptime vs runtime)
-        var mode_filtered_taps = try std.ArrayList(TapEntry).initCapacity(allocator, all_matching_taps.len);
-        defer mode_filtered_taps.deinit(allocator);
+        var matching_taps: []const TapEntry = &[_]TapEntry{};
+        var all_matching_count: usize = 0;
+        var free_matching_taps = false;
 
-        // Extract module from invoked event for opaque tap filtering
-        // After canonicalization, both tap.source_module and event module_qualifier use canonical names
-        const invoked_module = if (std.mem.indexOfScalar(u8, invoked_event, ':')) |colon_idx|
-            invoked_event[0..colon_idx]
-        else
-            "";
+        if (!invoked_is_opaque) {
+            // Check for taps FROM the invoked event ON this branch TO destination (or terminal if null)
+            const all_matching_taps = try tap_registry.getMatchingTaps(
+                invoked_event,
+                cont.branch,
+                destination,
+            );
+            defer allocator.free(all_matching_taps);
+            all_matching_count = all_matching_taps.len;
 
-        for (all_matching_taps) |tap| {
-            if (shouldIncludeTap(&tap, emit_mode)) {
-                if (DEBUG) std.debug.print("TAP TRANSFORMER:     Considering tap: is_opaque={} source_module='{s}' invoked_module='{s}'\n", .{tap.is_opaque, tap.source_module, invoked_module});
+            // Filter taps by mode annotations (comptime vs runtime)
+            var mode_filtered_taps = try std.ArrayList(TapEntry).initCapacity(allocator, all_matching_taps.len);
+            defer mode_filtered_taps.deinit(allocator);
 
-                // Skip opaque taps from observing events in their own module (prevents recursion)
-                if (tap.is_opaque and invoked_module.len > 0 and std.mem.eql(u8, tap.source_module, invoked_module)) {
-                    if (DEBUG) std.debug.print("TAP TRANSFORMER:     SKIPPING: Opaque tap from module '{s}' observing own module event '{s}'\n", .{tap.source_module, invoked_event});
-                    continue;
-                }
+            // Extract module from invoked event for opaque tap filtering
+            // After canonicalization, both tap.source_module and event module_qualifier use canonical names
+            const invoked_module = if (std.mem.indexOfScalar(u8, invoked_event, ':')) |colon_idx|
+                invoked_event[0..colon_idx]
+            else
+                "";
 
-                // Skip ALL taps when inside opaque tap context
-                if (is_from_opaque_tap) {
-                    if (DEBUG) std.debug.print("TAP TRANSFORMER:     SKIPPING: Inside opaque tap context\n", .{});
-                    continue;
-                }
+            for (all_matching_taps) |tap| {
+                if (shouldIncludeTap(&tap, emit_mode)) {
+                    if (DEBUG) std.debug.print("TAP TRANSFORMER:     Considering tap: is_opaque={} source_module='{s}' invoked_module='{s}'\n", .{tap.is_opaque, tap.source_module, invoked_module});
 
-                // Skip taps that would match their own step's event (prevents infinite recursion)
-                // This happens with universal taps like ~* -> * | Transition |> observer()
-                // where observer() itself would trigger the same tap
-                if (tap.step) |tap_step| {
-                    const tap_event = try findDestinationEventFromStep(tap_step, allocator);
-                    defer if (tap_event) |te| allocator.free(te);
+                    // Skip opaque taps from observing events in their own module (prevents recursion)
+                    if (tap.is_opaque and invoked_module.len > 0 and std.mem.eql(u8, tap.source_module, invoked_module)) {
+                        if (DEBUG) std.debug.print("TAP TRANSFORMER:     SKIPPING: Opaque tap from module '{s}' observing own module event '{s}'\n", .{tap.source_module, invoked_event});
+                        continue;
+                    }
 
-                    if (tap_event) |te| {
-                        if (std.mem.eql(u8, te, invoked_event)) {
-                            if (DEBUG) std.debug.print("TAP TRANSFORMER:     SKIPPING: Tap's own step event '{s}' matches invoked event\n", .{te});
-                            continue;
+                    // Skip ALL taps when inside opaque tap context
+                    if (is_from_opaque_tap) {
+                        if (DEBUG) std.debug.print("TAP TRANSFORMER:     SKIPPING: Inside opaque tap context\n", .{});
+                        continue;
+                    }
+
+                    // Skip taps that would match their own step's event (prevents infinite recursion)
+                    // This happens with universal taps like ~* -> * | Transition |> observer()
+                    // where observer() itself would trigger the same tap
+                    if (tap.step) |tap_step| {
+                        const tap_event = try findDestinationEventFromStep(tap_step, allocator);
+                        defer if (tap_event) |te| allocator.free(te);
+
+                        if (tap_event) |te| {
+                            if (std.mem.eql(u8, te, invoked_event)) {
+                                if (DEBUG) std.debug.print("TAP TRANSFORMER:     SKIPPING: Tap's own step event '{s}' matches invoked event\n", .{te});
+                                continue;
+                            }
                         }
                     }
+
+                    try mode_filtered_taps.append(allocator, tap);
                 }
-
-                try mode_filtered_taps.append(allocator, tap);
             }
-        }
 
-        const matching_taps = try mode_filtered_taps.toOwnedSlice(allocator);
-        defer allocator.free(matching_taps);
+            matching_taps = try mode_filtered_taps.toOwnedSlice(allocator);
+            free_matching_taps = true;
+        }
+        defer if (free_matching_taps) allocator.free(matching_taps);
 
         if (DEBUG) std.debug.print("TAP TRANSFORMER: Checking taps FROM '{s}' ON '{s}' → {d} matches ({d} after mode filtering)\n", .{
             invoked_event,
             cont.branch,
-            all_matching_taps.len,
+            all_matching_count,
             matching_taps.len,
         });
 
@@ -528,6 +632,7 @@ fn transformContinuationsWithInvokedEventInternal(
                 tap_registry,
                 emit_mode,
                 allocator,
+                opaque_events,
                 binding_hash_counter,  // Share the counter!
             );
         }

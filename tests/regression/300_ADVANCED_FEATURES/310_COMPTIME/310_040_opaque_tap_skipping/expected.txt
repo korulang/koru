@@ -1,2 +1,4 @@
+[INTERNAL] koru:start
 Hello
 [INTERNAL] input:hello
+[INTERNAL] koru:end

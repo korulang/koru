@@ -27,6 +27,8 @@
 ~[comptime]
 
 const std = @import("std");
+// Global counter to ensure metatype bindings are unique across all tap transforms.
+var metatype_binding_counter: usize = 0;
 
 // ============================================================================
 // TAP TRANSFORM
@@ -109,6 +111,66 @@ const std = @import("std");
     // ========================================================================
 
     const Helper = struct {
+        fn hasAnnotation(annotations: []const []const u8, name: []const u8) bool {
+            for (annotations) |ann| {
+                if (std.mem.eql(u8, ann, name)) return true;
+            }
+            return false;
+        }
+
+        fn flowIsOpaque(flow: *const ast.Flow) bool {
+            return hasAnnotation(flow.annotations, "opaque");
+        }
+
+        fn continuationFromOpaqueTap(cont: *const ast.Continuation) bool {
+            if (cont.node) |step| {
+                return switch (step) {
+                    .invocation => |inv| inv.from_opaque_tap,
+                    .label_with_invocation => |lwi| lwi.invocation.from_opaque_tap,
+                    .metatype_binding => |mb| mb.from_opaque_tap,
+                    .conditional_block => |cb| cb.from_opaque_tap,
+                    else => false,
+                };
+            }
+            return false;
+        }
+
+        fn collectOpaqueEvents(
+            items: []const ast.Item,
+            alloc: std.mem.Allocator,
+            opaque_events: *std.StringHashMap(void),
+        ) !void {
+            for (items) |ast_item| {
+                switch (ast_item) {
+                    .event_decl => |event| {
+                        if (hasAnnotation(event.annotations, "opaque")) {
+                            const canonical = buildCanonicalName(alloc, &event.path, event.module) catch continue;
+                            if (opaque_events.contains(canonical)) {
+                                alloc.free(canonical);
+                            } else {
+                                try opaque_events.put(canonical, {});
+                            }
+                        }
+                    },
+                    .module_decl => |module| {
+                        try collectOpaqueEvents(module.items, alloc, opaque_events);
+                    },
+                    else => {},
+                }
+            }
+        }
+
+        fn isEventOpaque(
+            opaque_events: *const std.StringHashMap(void),
+            path: *const ast.DottedPath,
+            containing_module: ?[]const u8,
+            alloc: std.mem.Allocator,
+        ) bool {
+            const canonical = buildCanonicalName(alloc, path, containing_module) catch return false;
+            defer alloc.free(canonical);
+            return opaque_events.contains(canonical);
+        }
+
         // Match a segment with glob wildcard support
         // Supports: exact match, full wildcard (*), prefix wildcard (*.foo), suffix wildcard (foo.*, foo*)
         fn matchSegment(pattern: []const u8, value: []const u8) bool {
@@ -245,6 +307,87 @@ const std = @import("std");
             return ast.Step{ .invocation = new_inv };
         }
 
+        // Rewrite binding references in invocation args (shared helper)
+        fn rewriteInvocationBinding(
+            alloc: std.mem.Allocator,
+            inv: ast.Invocation,
+            old_binding: []const u8,
+            new_binding: []const u8,
+        ) !ast.Invocation {
+            const rewritten_args = alloc.alloc(ast.Arg, inv.args.len) catch unreachable;
+
+            for (inv.args, 0..) |arg, i| {
+                var new_arg = arg;
+                new_arg.value = try rewriteBindingInValue(alloc, arg.value, old_binding, new_binding);
+                rewritten_args[i] = new_arg;
+            }
+
+            var new_inv = inv;
+            new_inv.args = rewritten_args;
+            return new_inv;
+        }
+
+        // Rewrite binding references in a Step (invocations + label invocations)
+        fn rewriteStepBindingDeep(
+            alloc: std.mem.Allocator,
+            step: ast.Step,
+            old_binding: []const u8,
+            new_binding: []const u8,
+        ) !ast.Step {
+            switch (step) {
+                .invocation => {
+                    const new_inv = try rewriteInvocationBinding(alloc, step.invocation, old_binding, new_binding);
+                    return ast.Step{ .invocation = new_inv };
+                },
+                .label_with_invocation => {
+                    var lwi = step.label_with_invocation;
+                    lwi.invocation = try rewriteInvocationBinding(alloc, lwi.invocation, old_binding, new_binding);
+                    return ast.Step{ .label_with_invocation = lwi };
+                },
+                .label_jump => {
+                    var lj = step.label_jump;
+                    const rewritten_args = alloc.alloc(ast.Arg, lj.args.len) catch unreachable;
+                    for (lj.args, 0..) |arg, i| {
+                        var new_arg = arg;
+                        new_arg.value = try rewriteBindingInValue(alloc, arg.value, old_binding, new_binding);
+                        rewritten_args[i] = new_arg;
+                    }
+                    lj.args = rewritten_args;
+                    return ast.Step{ .label_jump = lj };
+                },
+                else => return step,
+            }
+        }
+
+        // Rewrite binding references in continuation tree (tap handler only)
+        fn rewriteBindingInContinuations(
+            alloc: std.mem.Allocator,
+            continuations: []const ast.Continuation,
+            old_binding: []const u8,
+            new_binding: []const u8,
+        ) ![]ast.Continuation {
+            var rewritten = try alloc.alloc(ast.Continuation, continuations.len);
+            for (continuations, 0..) |cont, i| {
+                var new_cont = cont;
+                if (cont.node) |step| {
+                    new_cont.node = try rewriteStepBindingDeep(alloc, step, old_binding, new_binding);
+                }
+                if (cont.condition) |cond| {
+                    new_cont.condition = try rewriteBindingInValue(alloc, cond, old_binding, new_binding);
+                }
+                if (cont.continuations.len > 0) {
+                    new_cont.continuations = try rewriteBindingInContinuations(
+                        alloc,
+                        cont.continuations,
+                        old_binding,
+                        new_binding,
+                    );
+                }
+                rewritten[i] = new_cont;
+            }
+            return rewritten;
+        }
+
         // Splice original flow into tap terminal points
         fn spliceContinuations(
             alloc: std.mem.Allocator,
@@ -299,6 +442,7 @@ const std = @import("std");
             tap_condition: ?[]const u8,  // The tap's when clause condition (string)
             tap_condition_expr: ?*ast.Expression,  // The tap's when clause parsed expression
             mark_inserted: bool,  // Kept for API compatibility but no longer used - all invocations are marked
+            tap_is_opaque: bool,  // True if this tap has [opaque]
             tap_branch: []const u8,  // The tap's branch (e.g., "Profile", "Transition", or regular branch)
             source_event: ?[]const u8,  // Canonical source event for metatypes
         ) !ast.Continuation {
@@ -309,75 +453,30 @@ const std = @import("std");
                                std.mem.eql(u8, tap_branch, "Audit");
             var final_conts: []ast.Continuation = undefined;
 
-            if (tap_conts.len > 0) {
-                // Case B: Splice original flow into tap's terminal points
-                // SPECIAL CASE: If original.node is metatype_binding (from a previous metatype tap)
-                // and this is NOT a metatype tap, skip wrapping entirely to preserve the profiler.
-                // Specific taps (like koru:end -> write_footer) won't fire when profiling is active,
-                // but the profiler will correctly capture all transitions.
-                if (original.node) |orig_step| {
-                    const orig_is_metatype = orig_step == .metatype_binding;
-                    const orig_type_name: []const u8 = switch (orig_step) {
-                        .invocation => "invocation",
-                        .metatype_binding => "metatype_binding",
-                        .terminal => "terminal",
-                        else => "other",
-                    };
-                    std.debug.print("[tap] Case B check: orig_type='{s}', orig_is_metatype={}, is_metatype_tap={}, tap_branch='{s}'\n",
-                        .{orig_type_name, orig_is_metatype, is_metatype_tap, tap_branch});
-                    if (orig_is_metatype and !is_metatype_tap) {
-                        // Already wrapped by metatype tap and we're not a metatype tap - skip wrapping
-                        // Return original unchanged to preserve the profiler's wrapping
-                        std.debug.print("[tap] Skipping non-metatype tap wrap - original already has metatype_binding\n", .{});
-                        return original.*;
-                    } else {
-                        final_conts = try spliceContinuations(alloc, tap_conts, original.node, original.continuations);
-                    }
-                } else {
-                    final_conts = try spliceContinuations(alloc, tap_conts, original.node, original.continuations);
-                }
-            } else {
-                // Case A: Simple void tap, resume original flow on void branch ""
-                const inner_cont = try alloc.create(ast.Continuation);
-                inner_cont.* = ast.Continuation{
-                    .branch = "",           // Resume on void branch for void taps
-                    .binding = null,
-                    .binding_type = .branch_payload,
-                    .node = original.node,
-                    .continuations = original.continuations,
-                    .indent = original.indent,
-                    .condition = null,
-                    .condition_expr = null,
-                };
-                final_conts = try alloc.alloc(ast.Continuation, 1);
-                final_conts[0] = inner_cont.*;
-            }
-
             // Rewrite tap step's binding references if needed
             // e.g., "f.file.handle" → "_tap_0.file.handle" (using synthesized or original binding)
             var rewritten_step = tap_stp;
             var effective_binding = original.binding;
             var rewritten_condition = tap_condition;
+            var metatype_unique_binding: ?[]const u8 = null;
+            var tap_conts_to_use = tap_conts;
 
             // For metatype taps, we need to synthesize a unique binding name for the metatype
             // struct and rewrite references to use it (e.g., p.source → _profile_5319.source)
-            var metatype_unique_binding: ?[]const u8 = null;
             if (is_metatype_tap and tap_binding != null) {
                 const tb = tap_binding.?;
                 // Synthesize unique binding for metatype struct
-                var hash: u32 = 0;
-                for (original.branch) |c| hash = hash *% 31 +% c;
-                hash = hash *% 31 +% @as(u32, @intCast(original.indent));
-                if (tap_stp == .invocation) {
-                    for (tap_stp.invocation.path.segments) |seg| {
-                        for (seg) |c| hash = hash *% 31 +% c;
-                    }
-                }
+                const binding_id = metatype_binding_counter;
+                metatype_binding_counter += 1;
                 var buf: [32]u8 = undefined;
-                const synth_binding = std.fmt.bufPrint(&buf, "_profile_{d}", .{hash % 100000}) catch "_profile_0";
+                const synth_binding = std.fmt.bufPrint(&buf, "_profile_{d}", .{binding_id}) catch "_profile_0";
                 metatype_unique_binding = alloc.dupe(u8, synth_binding) catch null;
                 if (metatype_unique_binding) |ub| {
                     rewritten_step = try rewriteStepBinding(alloc, tap_stp, tb, ub);
+                    tap_conts_to_use = try rewriteBindingInContinuations(alloc, tap_conts, tb, ub);
+                    if (tap_condition) |cond| {
+                        rewritten_condition = try rewriteBindingInValue(alloc, cond, tb, ub);
+                    }
                     std.debug.print("[tap] Metatype binding '{s}' → '{s}'\n", .{tb, ub});
                 }
             } else if (tap_binding != null) {
@@ -399,6 +498,7 @@ const std = @import("std");
                         const synth_binding = std.fmt.bufPrint(&buf, "_tap_{d}", .{hash % 100000}) catch "_tap_0";
                         effective_binding = alloc.dupe(u8, synth_binding) catch ob;
                         rewritten_step = try rewriteStepBinding(alloc, tap_stp, tb, effective_binding.?);
+                        tap_conts_to_use = try rewriteBindingInContinuations(alloc, tap_conts, tb, effective_binding.?);
                         // Also rewrite the condition string
                         if (tap_condition) |cond| {
                             rewritten_condition = try rewriteBindingInValue(alloc, cond, tb, effective_binding.?);
@@ -406,6 +506,7 @@ const std = @import("std");
                         std.debug.print("[tap] Synthesized binding '_' → '{s}', rewrote '{s}' → '{s}'\n", .{effective_binding.?, tb, effective_binding.?});
                     } else {
                         rewritten_step = try rewriteStepBinding(alloc, tap_stp, tb, ob);
+                        tap_conts_to_use = try rewriteBindingInContinuations(alloc, tap_conts, tb, ob);
                         // Also rewrite the condition string
                         if (tap_condition) |cond| {
                             rewritten_condition = try rewriteBindingInValue(alloc, cond, tb, ob);
@@ -430,6 +531,7 @@ const std = @import("std");
                     effective_binding = alloc.dupe(u8, synth_binding) catch null;
                     if (effective_binding) |eb| {
                         rewritten_step = try rewriteStepBinding(alloc, tap_stp, tb, eb);
+                        tap_conts_to_use = try rewriteBindingInContinuations(alloc, tap_conts, tb, eb);
                         // Also rewrite the condition string
                         if (tap_condition) |cond| {
                             rewritten_condition = try rewriteBindingInValue(alloc, cond, tb, eb);
@@ -439,6 +541,50 @@ const std = @import("std");
                 }
             }
 
+            if (tap_conts_to_use.len > 0) {
+                // Case B: Splice original flow into tap's terminal points
+                // SPECIAL CASE: If original.node is metatype_binding (from a previous metatype tap)
+                // and this is NOT a metatype tap, skip wrapping entirely to preserve the profiler.
+                // Specific taps (like koru:end -> write_footer) won't fire when profiling is active,
+                // but the profiler will correctly capture all transitions.
+                if (original.node) |orig_step| {
+                    const orig_is_metatype = orig_step == .metatype_binding;
+                    const orig_type_name: []const u8 = switch (orig_step) {
+                        .invocation => "invocation",
+                        .metatype_binding => "metatype_binding",
+                        .terminal => "terminal",
+                        else => "other",
+                    };
+                    std.debug.print("[tap] Case B check: orig_type='{s}', orig_is_metatype={}, is_metatype_tap={}, tap_branch='{s}'\n",
+                        .{orig_type_name, orig_is_metatype, is_metatype_tap, tap_branch});
+                    if (orig_is_metatype and !is_metatype_tap) {
+                        // Already wrapped by metatype tap and we're not a metatype tap - skip wrapping
+                        // Return original unchanged to preserve the profiler's wrapping
+                        std.debug.print("[tap] Skipping non-metatype tap wrap - original already has metatype_binding\n", .{});
+                        return original.*;
+                    } else {
+                        final_conts = try spliceContinuations(alloc, tap_conts_to_use, original.node, original.continuations);
+                    }
+                } else {
+                    final_conts = try spliceContinuations(alloc, tap_conts_to_use, original.node, original.continuations);
+                }
+            } else {
+                // Case A: Simple void tap, resume original flow on void branch ""
+                const inner_cont = try alloc.create(ast.Continuation);
+                inner_cont.* = ast.Continuation{
+                    .branch = "",           // Resume on void branch for void taps
+                    .binding = null,
+                    .binding_type = .branch_payload,
+                    .node = original.node,
+                    .continuations = original.continuations,
+                    .indent = original.indent,
+                    .condition = null,
+                    .condition_expr = null,
+                };
+                final_conts = try alloc.alloc(ast.Continuation, 1);
+                final_conts[0] = inner_cont.*;
+            }
+
             // CRITICAL: Mark ALL tap-inserted invocations to prevent double-wrapping
             // by transformNestedInvocations. Without this, non-wildcard taps like
             // "koru:end -> * | done |> write_footer()" would have write_footer() wrapped
@@ -446,11 +592,13 @@ const std = @import("std");
             if (rewritten_step == .invocation) {
                 var marked_inv = rewritten_step.invocation;
                 marked_inv.inserted_by_tap = true;
+                marked_inv.from_opaque_tap = tap_is_opaque;
                 rewritten_step = ast.Step{ .invocation = marked_inv };
                 std.debug.print("[tap] Marked invocation as inserted_by_tap=true\n", .{});
             } else if (rewritten_step == .label_with_invocation) {
                 var marked_lwi = rewritten_step.label_with_invocation;
                 marked_lwi.invocation.inserted_by_tap = true;
+                marked_lwi.invocation.from_opaque_tap = tap_is_opaque;
                 rewritten_step = ast.Step{ .label_with_invocation = marked_lwi };
             }
 
@@ -483,6 +631,7 @@ const std = @import("std");
                         .dest_event = dest_event,
                         .branch = alloc.dupe(u8, original.branch) catch original.branch,
                         .inserted_by_tap = true,
+                        .from_opaque_tap = tap_is_opaque,
                     } };
 
                     // Create inner continuation that runs the tap step
@@ -557,6 +706,7 @@ const std = @import("std");
             tap_branches: []const ast.Continuation,  // ALL tap continuations
             is_meta: bool,
             mark_inserted: bool,  // True if inserted invocations should be marked (wildcard taps only)
+            tap_is_opaque: bool,  // True if this tap has [opaque]
             source_event: ?[]const u8,  // Canonical source event name for metatypes (e.g., "input:hello")
             dest_pattern: []const u8,
             is_dest_wildcard: bool,
@@ -611,6 +761,7 @@ const std = @import("std");
                         tap_condition,
                         tap_condition_expr,
                         mark_inserted,
+                        tap_is_opaque,
                         tap_cont.branch,
                         source_event,
                     );
@@ -631,12 +782,17 @@ const std = @import("std");
             var any_modified = false;
 
             for (continuations, 0..) |*cont, i| {
+                if (continuationFromOpaqueTap(cont)) {
+                    new_conts[i] = cont.*;
+                    continue;
+                }
+
                 // Skip void branches ("") - these are internal plumbing from tap wrappers
                 // Metatype taps should only wrap actual event transitions, not intermediate connectors
                 if (cont.branch.len == 0) {
                     // Don't wrap void branches, just recurse into nested continuations
                     const nested = try transformContinuations(
-                        alloc, cont.continuations, tap_branches, is_meta, mark_inserted,
+                        alloc, cont.continuations, tap_branches, is_meta, mark_inserted, tap_is_opaque,
                         source_event, dest_pattern, is_dest_wildcard, containing_module
                     );
                     new_conts[i] = cont.*;
@@ -658,19 +814,26 @@ const std = @import("std");
                         // If we reached here, the flow already matched the destination pattern.
 
                         const tap_step = tap_cont.node orelse continue;
+                        const tap_nested = tap_cont.continuations;
+                        const tap_binding = tap_cont.binding;
+                        const tap_condition = tap_cont.condition;
+                        const tap_condition_expr = tap_cont.condition_expr;
 
-                        // Create new continuation with tap as the node
-                        // Keep original continuations - tap step is inserted as new node
-                        new_conts[i] = ast.Continuation{
-                            .branch = cont.branch,
-                            .binding = cont.binding,
-                            .condition = cont.condition,
-                            .condition_expr = cont.condition_expr,
-                            .node = tap_step,
-                            .indent = cont.indent,
-                            .continuations = cont.continuations,
-                            .location = cont.location,
-                        };
+                        // Use the same wrapper path as non-terminal continuations so
+                        // metatype bindings are rewritten consistently.
+                        new_conts[i] = try wrapContinuation(
+                            alloc,
+                            cont,
+                            tap_step,
+                            tap_nested,
+                            tap_binding,
+                            tap_condition,
+                            tap_condition_expr,
+                            mark_inserted,
+                            tap_is_opaque,
+                            tap_cont.branch,
+                            source_event,
+                        );
                         any_modified = true;
                         tap_inserted = true;
                         break;  // Only insert first matching tap for terminals
@@ -679,7 +842,7 @@ const std = @import("std");
                     if (!tap_inserted) {
                         // No matching tap, recurse into nested continuations
                         const nested = try transformContinuations(
-                            alloc, cont.continuations, tap_branches, is_meta, mark_inserted,
+                            alloc, cont.continuations, tap_branches, is_meta, mark_inserted, tap_is_opaque,
                             source_event, dest_pattern, is_dest_wildcard, containing_module
                         );
                         new_conts[i] = cont.*;
@@ -710,7 +873,19 @@ const std = @import("std");
                     const tap_condition_expr = tap_cont.condition_expr;
 
                     // Wrap with this tap handler (chain multiple wraps)
-                    wrapped_cont = try wrapContinuation(alloc, &wrapped_cont, tap_step, tap_nested, tap_binding, tap_condition, tap_condition_expr, mark_inserted, tap_cont.branch, source_event);
+                    wrapped_cont = try wrapContinuation(
+                        alloc,
+                        &wrapped_cont,
+                        tap_step,
+                        tap_nested,
+                        tap_binding,
+                        tap_condition,
+                        tap_condition_expr,
+                        mark_inserted,
+                        tap_is_opaque,
+                        tap_cont.branch,
+                        source_event,
+                    );
                     wrap_count += 1;
                     std.debug.print("[tap] Wrapped continuation at branch '{s}' (tap {d})\n", .{cont.branch, wrap_count});
                 }
@@ -721,7 +896,7 @@ const std = @import("std");
                 } else {
                     // No matching taps, but recurse into nested continuations
                     const nested = try transformContinuations(
-                        alloc, cont.continuations, tap_branches, is_meta, mark_inserted,
+                        alloc, cont.continuations, tap_branches, is_meta, mark_inserted, tap_is_opaque,
                         source_event, dest_pattern, is_dest_wildcard, containing_module
                     );
                     new_conts[i] = cont.*;
@@ -738,9 +913,11 @@ const std = @import("std");
             continuations: []const ast.Continuation,
             source_pattern: []const u8,
             source_wildcard: bool,
+            tap_is_opaque: bool,
             dest_pattern: []const u8,
             is_dest_wildcard: bool,
             containing_module: ?[]const u8,
+            opaque_events: *const std.StringHashMap(void),
             tap_branches: []const ast.Continuation,  // ALL tap continuations
             is_meta: bool,
         ) !struct { conts: []ast.Continuation, modified: bool } {
@@ -750,6 +927,11 @@ const std = @import("std");
             for (continuations, 0..) |*cont, i| {
                 var this_cont = cont.*;
                 var matched_here = false;
+
+                if (continuationFromOpaqueTap(cont)) {
+                    new_conts[i] = cont.*;
+                    continue;
+                }
 
                 // Check if this continuation's node is an invocation matching source
                 // Also check label_with_invocation which wraps invocations with #label prefix
@@ -779,6 +961,8 @@ const std = @import("std");
                             // ALSO skip recursion into this continuation's continuations
                             std.debug.print("[tap] -> Skipping (inserted_by_tap and wildcard)\n", .{});
                             matched_here = true; // Prevents recursion below
+                        } else if (isEventOpaque(opaque_events, &inv.path, containing_module, alloc)) {
+                            // Opaque events opt-out of tap wrapping.
                         } else if (pathMatches(source_pattern, source_wildcard, &inv.path, containing_module, alloc)) {
                             // Found a nested invocation matching source!
                             // Build canonical source event name for metatypes
@@ -786,7 +970,7 @@ const std = @import("std");
 
                             // Transform its continuations (what happens after it returns)
                             const nested_result = try transformContinuations(
-                                alloc, cont.continuations, tap_branches, is_meta, source_wildcard, src_event,
+                                alloc, cont.continuations, tap_branches, is_meta, source_wildcard, tap_is_opaque, src_event,
                                 dest_pattern, is_dest_wildcard, containing_module  // mark_inserted = source_wildcard
                             );
                             this_cont.continuations = nested_result.conts;
@@ -810,8 +994,8 @@ const std = @import("std");
                     // Non-wildcard taps: safe to recurse (they only match specific events)
                     const conts_to_recurse = if (matched_here) cont.continuations else this_cont.continuations;
                     const deeper = try transformNestedInvocations(
-                        alloc, conts_to_recurse, source_pattern, source_wildcard,
-                        dest_pattern, is_dest_wildcard, containing_module, tap_branches, is_meta
+                        alloc, conts_to_recurse, source_pattern, source_wildcard, tap_is_opaque,
+                        dest_pattern, is_dest_wildcard, containing_module, opaque_events, tap_branches, is_meta
                     );
 
                     // If we matched here, the deeper recursion found nested invocations
@@ -844,6 +1028,18 @@ const std = @import("std");
         }
     };
 
+    const tap_is_opaque = Helper.hasAnnotation(tap_flow.annotations, "opaque");
+
+    var opaque_events = std.StringHashMap(void).init(allocator);
+    defer {
+        var it = opaque_events.keyIterator();
+        while (it.next()) |key| {
+            allocator.free(key.*);
+        }
+        opaque_events.deinit();
+    }
+    Helper.collectOpaqueEvents(program.items, allocator, &opaque_events) catch unreachable;
+
     // Build new program with transformed flows
     var new_items = std.ArrayList(ast.Item).initCapacity(allocator, program.items.len) catch unreachable;
     var any_tap_inserted = false;
@@ -857,13 +1053,20 @@ const std = @import("std");
             var flow_modified = false;
             var new_continuations = flow.continuations;
 
+            if (Helper.flowIsOpaque(flow)) {
+                new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
+                continue;
+            }
+
+            const invoked_is_opaque = Helper.isEventOpaque(&opaque_events, &flow.invocation.path, flow.module, allocator);
+
             // CASE 1: Top-level flow matches source AND destination - transform its continuations
             // Source pattern: what event we're observing (e.g., "foo" in "foo -> *")
             // Destination pattern: what event is being called (e.g., "bar" in "* -> bar")
             // For "* -> target", we only tap flows that CALL target
             const source_matches = Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator);
             const dest_matches = dest_is_wildcard or Helper.pathMatches(dest_final, false, &flow.invocation.path, flow.module, allocator);
-            if (source_matches and dest_matches) {
+            if (!invoked_is_opaque and source_matches and dest_matches) {
                 // Build canonical source event name for metatypes
                 const src_event = Helper.buildCanonicalName(allocator, &flow.invocation.path, flow.module) catch null;
 
@@ -871,7 +1074,7 @@ const std = @import("std");
                 // wraps the continuations (observes after the event returns).
                 // The key feature is FILTERING: only flows calling the destination get tapped.
                 const result = Helper.transformContinuations(
-                    allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event,
+                    allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, tap_is_opaque, src_event,
                     dest_final, dest_is_wildcard, flow.module
                 ) catch unreachable;
 
@@ -883,8 +1086,8 @@ const std = @import("std");
 
             // CASE 2: Check for NESTED invocations matching source
             const nested_result = Helper.transformNestedInvocations(
-                allocator, new_continuations, source, source_is_wildcard,
-                dest_final, dest_is_wildcard, flow.module, all_tap_branches, is_metatype
+                allocator, new_continuations, source, source_is_wildcard, tap_is_opaque,
+                dest_final, dest_is_wildcard, flow.module, &opaque_events, all_tap_branches, is_metatype
             ) catch unreachable;
 
             if (nested_result.modified) {
@@ -922,13 +1125,20 @@ const std = @import("std");
                 var flow_modified = false;
                 var new_continuations = flow.continuations;
 
+                if (Helper.flowIsOpaque(flow)) {
+                    new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
+                    continue;
+                }
+
+                const invoked_is_opaque = Helper.isEventOpaque(&opaque_events, &flow.invocation.path, flow.module, allocator);
+
                 // CASE 1: Top-level flow matches source - transform its continuations
-                if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
+                if (!invoked_is_opaque and Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
                     // Build canonical source event name for metatypes
                     const src_event = Helper.buildCanonicalName(allocator, &flow.invocation.path, flow.module) catch null;
 
                     const result = Helper.transformContinuations(
-                        allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event,
+                        allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, tap_is_opaque, src_event,
                         dest_final, dest_is_wildcard, flow.module
                     ) catch unreachable;
 
@@ -940,8 +1150,8 @@ const std = @import("std");
 
                 // CASE 2: Check for NESTED invocations matching source
                 const nested_result = Helper.transformNestedInvocations(
-                    allocator, new_continuations, source, source_is_wildcard,
-                    dest_final, dest_is_wildcard, flow.module, all_tap_branches, is_metatype
+                    allocator, new_continuations, source, source_is_wildcard, tap_is_opaque,
+                    dest_final, dest_is_wildcard, flow.module, &opaque_events, all_tap_branches, is_metatype
                 ) catch unreachable;
 
                 if (nested_result.modified) {
@@ -1040,13 +1250,20 @@ const std = @import("std");
                     var flow_modified = false;
                     var new_continuations = flow.continuations;
 
+                    if (Helper.flowIsOpaque(flow)) {
+                        new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
+                        continue;
+                    }
+
+                    const invoked_is_opaque = Helper.isEventOpaque(&opaque_events, &flow.invocation.path, flow.module, allocator);
+
                     // Check if flow matches source pattern
-                    if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
+                    if (!invoked_is_opaque and Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
                         // Build canonical source event name for metatypes
                         const src_event = Helper.buildCanonicalName(allocator, &flow.invocation.path, flow.module) catch null;
 
                         const result = Helper.transformContinuations(
-                            allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event,
+                            allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, tap_is_opaque, src_event,
                             dest_final, dest_is_wildcard, flow.module
                         ) catch unreachable;
 
@@ -1058,8 +1275,8 @@ const std = @import("std");
 
                     // Check nested invocations
                     const nested_result = Helper.transformNestedInvocations(
-                        allocator, new_continuations, source, source_is_wildcard,
-                        dest_final, dest_is_wildcard, flow.module, all_tap_branches, is_metatype
+                        allocator, new_continuations, source, source_is_wildcard, tap_is_opaque,
+                        dest_final, dest_is_wildcard, flow.module, &opaque_events, all_tap_branches, is_metatype
                     ) catch unreachable;
 
                     if (nested_result.modified) {
@@ -1095,13 +1312,20 @@ const std = @import("std");
                         var flow_modified = false;
                         var new_continuations = flow.continuations;
 
+                        if (Helper.flowIsOpaque(flow)) {
+                            new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
+                            continue;
+                        }
+
+                        const invoked_is_opaque = Helper.isEventOpaque(&opaque_events, &flow.invocation.path, flow.module, allocator);
+
                         // Check if flow matches source pattern
-                        if (Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
+                        if (!invoked_is_opaque and Helper.pathMatches(source, source_is_wildcard, &flow.invocation.path, flow.module, allocator)) {
                             // Build canonical source event name for metatypes
                             const src_event = Helper.buildCanonicalName(allocator, &flow.invocation.path, flow.module) catch null;
 
                             const result = Helper.transformContinuations(
-                                allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, src_event,
+                                allocator, flow.continuations, all_tap_branches, is_metatype, source_is_wildcard, tap_is_opaque, src_event,
                                 dest_final, dest_is_wildcard, flow.module
                             ) catch unreachable;
 
@@ -1113,8 +1337,8 @@ const std = @import("std");
 
                         // Check nested invocations
                         const nested_result = Helper.transformNestedInvocations(
-                            allocator, new_continuations, source, source_is_wildcard,
-                            dest_final, dest_is_wildcard, flow.module, all_tap_branches, is_metatype
+                            allocator, new_continuations, source, source_is_wildcard, tap_is_opaque,
+                            dest_final, dest_is_wildcard, flow.module, &opaque_events, all_tap_branches, is_metatype
                         ) catch unreachable;
 
                         if (nested_result.modified) {

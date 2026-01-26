@@ -29,7 +29,7 @@ const std = @import("std");
 
 // Module wildcard tap observes all events in input module with metatype
 ~tap(input:* -> *)
-| Profile p |> logger(msg: p.source)
+| Profile p |> app.test_lib.logger:log(msg: p.source)
     | done |> _
 
 ~hello()

@@ -25,68 +25,66 @@ const result_2 = main_module.logger_event.handler(.{ .msg = p.source });
 
 The binding variable `p` is out of scope when the continuation tries to use it.
 
-## Root Cause Analysis
+## Observations (Ground Truth So Far)
 
-### Key Difference: Concrete vs Wildcard Patterns
+- The active transform is `koru_std/taps.kz` (not `tap_transformer.zig`).
+- Transform logs show binding rewrite *does* run for wildcard taps:
+  - `Metatype binding 'p' → '_profile_N'`
+- Emitted Zig still shows `p.source` in wildcard tap handlers.
+- Tap registry + Profile metatype should always use canonical event names (module-qualified), even when invocations are written locally.
+- The unqualified call `logger(msg: p.source)` resolves to `module_qualifier = "input"` with segment `logger`.
+  - The imported module defines `log`, not `logger`.
+  - This may be a separate test validity issue or a missing resolution rule.
 
-**Concrete Pattern (working - 310_044):**
-```koru
-~tap(hello -> *)
-| Profile p |> logger(msg: p.source)
-```
-- Pattern matches specific event: `hello`
-- Binding name rewriting happens: `p` → `_profile_0`
-- Generated variable: `const _profile_0 = taps.Profile{...}`
+## Revised Root Cause Hypotheses
 
-**Wildcard Pattern (broken - 510_070):**
-```koru
-~tap(* -> *)
-| Profile p |> logger(msg: p.source)
-```
-- Pattern matches all events via glob
-- Binding name rewriting **MAY NOT BE HAPPENING** for wildcard matches
-- Generated variable references `p` (original name) instead of `_profile_N`
-- Scope block closes before continuation executes
+### Hypothesis 0: Tap-on-tap splicing (most likely)
+- There are two taps active in these tests: the one in `input.kz` and the one in `test_lib/logger.kz`.
+- The logger tap wraps the `~tap(...)` flow itself (source event becomes `std.taps:tap` or module-local `tap`).
+- That splice injects the *other* tap’s handler into runtime flows **before** the metatype binding exists.
+- Result: `p.source` appears in emitted Zig without a `const _profile_N`, causing the undefined identifier error.
 
-### Two Possible Issues
+### Hypothesis A: Rewrite runs but doesn’t stick in the transformed AST
+- `rewriteStepBinding` executes, but the rewritten step is not the one that ends up in the final continuation tree.
+- Possible causes:
+  - `wrapContinuation` constructs a rewritten step but later reuses the original tap continuation node.
+  - A later transform pass replaces the rewritten step with an older copy.
 
-**Issue A: Binding Name Rewriting Failure**
-- For wildcard patterns, the `tap_binding` parameter in `tap_transformer.zig` might be null
-- Without `tap_binding`, the rewrite logic (`rewriteStepBinding`) doesn't run
-- Original binding name `p` stays in AST unchanged
-- But variable declared as `_profile_0` - name mismatch!
+### Hypothesis B: Rewrite misses the representation actually emitted
+- `rewriteStepBinding` only edits `arg.value`.
+- If emission uses `arg.expression_value.text`, it will still emit `p.source`.
+- Need to confirm which field is used for `msg` in the transformed AST.
 
-**Issue B: Scope Block Wrapping Problem**
-- Even if rewriting works, scope blocks (lines 4922-4943 in `emitter_helpers.zig`) isolate metatype bindings
-- Continuations emitted AFTER scope block closes
-- Binding `_profile_0` is out of scope when continuation tries to use it
+### Hypothesis C: The tap handler invocation is invalid
+- The call `logger(...)` may be wrong if Koru requires qualified paths.
+- Even with `p` fixed, the test might still be invalid unless `logger` resolves.
 
 ## Solution Design
 
 ### Investigation Phase (Quick)
 
-**For Codex to discover:**
-1. Check if wildcard patterns have `tap_binding` (original binding name) or if it's null
-2. Print AST before/after binding rewrite to see if names actually change
-3. Check if scope blocks are being applied to wildcard taps
-4. Verify if binding rewrite is even being called for wildcard patterns
+**Next checks (order matters):**
+1. Inspect the *transformed AST* for the inserted tap handler and confirm whether the arg is `p.source` or `_profile_N.source`.
+2. Add temporary debug prints in `wrapContinuation` to log tap step args before/after `rewriteStepBinding`.
+3. Confirm whether emission uses `arg.value` or `arg.expression_value.text` for this field.
+4. Decide whether unqualified `logger(...)` is valid Koru (test may be wrong).
 
-### Fix Options
+### Fix Options (Conditional)
 
-**Option 1: Fix Binding Rewriting for Wildcards** (likely correct)
-- Ensure `tap_binding` is properly extracted for wildcard patterns in tap_transformer
-- Verify `rewriteStepBinding` is called with correct parameters
-- Test that binding name rewriting works for all pattern types
+**Option 0: Prevent taps from wrapping tap declarations**
+- Skip flows whose invocation is `tap` (the transform event) when applying taps.
+- This prevents tap-on-tap splicing and removes the `p.source` leak.
+- Open question: should this be limited to `std.taps:tap` only?
 
-**Option 2: Remove Scope Block Wrapping** (if necessary)
-- Revert lines 4922-4943 in emitter_helpers.zig
-- Rely on counter-based unique naming (already works)
-- Verify 310_044 still passes without scopes
+**Option 1: Ensure rewrite lands in the AST**
+- If the transformed AST still has `p.source`, fix the transform to use the rewritten step.
+- Likely in `koru_std/taps.kz` (wrap/splice path).
 
-**Option 3: Move Continuations Inside Scope** (proper fix)
-- Keep scope block wrapping
-- Ensure continuations are emitted INSIDE the scope, not after
-- Requires understanding how continuations are structured in emitter
+**Option 2: Rewrite expression payloads too**
+- If the arg uses `expression_value.text`, extend rewrite to update that field.
+
+**Option 3: Clarify unqualified invocation**
+- If `logger(...)` is invalid, update the test to use the correct qualified event name.
 
 ## Test Cases
 
@@ -136,14 +134,14 @@ Status: PASSING ✅ - Use as reference for how binding rewriting SHOULD work
 ## Implementation Order
 
 1. **Debug Investigation** (20-30 min)
-   - Add debug output to tap_transformer to show tap_binding values for each pattern type
-   - Compare concrete patterns vs wildcard patterns
-   - Check if binding rewriting is being called
+   - Add debug output in `koru_std/taps.kz` around `wrapContinuation`.
+   - Confirm the transformed AST contains the rewritten binding.
+   - Verify whether `arg.value` or `arg.expression_value.text` is emitted.
 
 2. **Apply Fix** (30-60 min depending on root cause)
-   - Option 1 if binding rewriting isn't happening
-   - Option 2 if scopes are the issue
-   - Option 3 if structure changes needed
+   - Option 1 if the rewritten step is lost.
+   - Option 2 if expression payloads aren’t rewritten.
+   - Option 3 if `logger(...)` is invalid and the test must be corrected.
 
 3. **Verify All Tests Pass** (10 min)
    ```bash
@@ -156,7 +154,7 @@ Status: PASSING ✅ - Use as reference for how binding rewriting SHOULD work
 - `koru_std/taps.kz` (lines 114-150) - `pathMatches()` function for pattern matching
 - `koru_std/taps.kz` (lines 360-410) - Binding rewriting logic (`rewriteStepBinding`)
 - `koru_std/taps.kz` (lines 366-380) - Metatype binding counter and name synthesis
-- `src/emitter_helpers.zig` (lines 4922-4943) - Scope block wrapping for metatype_binding
+- `koru_std/taps.kz` (lines 290-520) - `wrapContinuation` and metatype binding insertion
 
 ### Tests
 - `310_044_metatype_multiple_observers/` - PASSING ✅ (reference)
@@ -187,7 +185,7 @@ Should see:
 ## Important Notes
 
 ### DO
-- Add debug output to understand why binding rewriting differs for wildcards
+- Add debug output in `koru_std/taps.kz` to confirm the rewritten step is used
 - Run 310_044 frequently to ensure it doesn't break
 - Test all three wildcard patterns - they're similar but with different pattern types
 - Document findings in this spec file before implementing

@@ -4918,12 +4918,36 @@ pub fn emitContinuationBody(
         // Label case is done - no remaining steps to process
     } else {
         // Normal case - no label_with_invocation
-    // Check if this is a void step that doesn't produce a result
-    // metatype_binding creates a Profile/Transition struct but doesn't produce a switchable result
-    const is_void_step = if (cont.node) |step|
-        (step == .assignment or step == .inline_code or step == .foreach or step == .metatype_binding)
-    else
-        false;
+
+        const is_metatype_binding = if (cont.node) |step| step == .metatype_binding else false;
+        if (is_metatype_binding) {
+            // Scope metatype bindings so identical names don't collide across observers.
+            try emitter.writeIndent();
+            try emitter.write("{\n");
+            emitter.indent();
+
+            if (cont.node) |*step| {
+                try emitPipelineStep(emitter, ctx, cont, step, 0, result_counter);
+            }
+
+            if (cont.continuations.len > 0) {
+                for (cont.continuations) |*nested_cont| {
+                    try emitContinuationBody(emitter, ctx, nested_cont, result_counter);
+                }
+            }
+
+            emitter.dedent();
+            try emitter.writeIndent();
+            try emitter.write("}\n");
+            return;
+        }
+
+        // Check if this is a void step that doesn't produce a result
+        // metatype_binding creates a Profile/Transition struct but doesn't produce a switchable result
+        const is_void_step = if (cont.node) |step|
+            (step == .assignment or step == .inline_code or step == .foreach or step == .metatype_binding)
+        else
+            false;
 
         if (cont.node) |*step| {
             try emitPipelineStep(emitter, ctx, cont, step, 0, result_counter);
@@ -5168,6 +5192,13 @@ fn emitStep(
             if (!is_transition) {
                 try emitter.writeIndent();
                 try emitter.write(".timestamp_ns = __koru_std.time.nanoTimestamp(),\n");
+
+                // .payload field - ONLY for Audit
+                const is_audit = std.mem.eql(u8, mb.metatype, "Audit");
+                if (is_audit) {
+                    try emitter.writeIndent();
+                    try emitter.write(".payload = null,  // TODO: Serialize continuation payload\n");
+                }
             }
 
             emitter.dedent();

@@ -40,17 +40,18 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Finalize the core budgeted interpreter implementation and align the runtime with the Hollywood OS vision of serializable, AI-inspectable resource handles.
+Align and document the Kernel feature (high-performance memory processing) and its DSL syntax to bridge the gap between intent and implementation.
 
 ### Decisions
-- **Implemented dynamic scope lookup via comptime reflection in std.runtime:get_scope.**: Enables a portable budgeted interpreter to resolve scopes by name without hardcoding dispatchers in the compiler, facilitating generic runtime execution.
-- **Adopted string-based Handle IDs (Option 1) for the interpreter's resource registry.**: String IDs are serializable, AI-inspectable, and safer for cross-request persistence in bridge sessions compared to raw pointers.
-- **Implemented active auto-discharge invocation on success, budget exhaustion, and dispatch errors.**: Ensures resources (e.g., file handles, DB connections) are physically cleaned up via Koru events even when the interpreter bails out early.
-- **Enforced scope-local handle isolation by default with an opt-in 'handle realm' for cross-scope sharing.**: Maintains capability boundaries in multi-tenant environments while allowing explicit resource sharing within a unified bridge session.
-- **Set fail_fast: bool = true as the default for std.runtime entry points.**: Ensures strict execution by default to catch errors early, aligning with the project's reliability goals.
-- **Integrated Codex CLI session ingestion into the 'prose' evolution tool.**: Enables cross-tool memory by allowing the evolution tool to process Codex logs alongside Claude sessions.
-- **Downgraded 'prose' tool output to 'supplemental context' rather than 'ground truth' in AGENTS.md.**: Re-establishes that running code and tests are the ultimate source of truth, preventing AI models from prioritizing historical prose over current state.
-- **Adopted module-namespaced phantom obligations (e.g., sqlite3:opened).**: Prevents obligation collisions across different libraries and enables precise cross-module resource reasoning.
+- **Kernel DSL syntax uses a colon-prefixed naming convention (e.g., kernel:shape, kernel:init, kernel:pairwise).**: Maintains consistency with Koru's existing specialized transform patterns (e.g., ~std.types:struct) and is validated by regression tests 390_001-004.
+- **Kernel execution is handled via Source bindings using pipeline syntax (e.g., | kernel k |>).**: Allows passing raw code blocks into standard library kernel blocks for specialized memory layout and GPU-expressible processing.
+- **Standardizing on 'kernel:init' over 'kernel:initialize'.**: Resolves naming drift found between different regression tests to ensure compiler implementation consistency.
+- **Adopted unique '_profile_<n>' binding names for metatype observers via a module-level counter.**: Zig forbids variable shadowing even in nested scopes. Deterministic counters provide safety where block isolation alone fails in the generated Zig code.
+- **Implementing `koru_std/logging.kz` as a first-class language feature.**: Forces improvement of the Zig-to-Koru interop story and dogfoods the standard library to replace 600+ raw debug prints.
+- **Differentiating 'debug spew' from 'code-gen templates' during print cleanup.**: Many print calls in the emitter are functional templates for generated code; indiscriminate deletion would break the compiler. Use line-prefix filtering (avoiding `\\\\`) to protect templates.
+- **Adopted string-based Handle IDs and enforced scope-local isolation with opt-in 'realms'.**: String IDs are serializable and AI-inspectable; realms allow explicit resource sharing while maintaining capability boundaries.
+- **Integrated glob pattern matching into the taps.kz transform.**: Allows taps to match module-qualified and wildcard patterns (input:*) without changing core language semantics.
+- **Bulk-migrate `std.debug.print` to `log.debug` using line-prefix filtering.**: Safely automates the migration of 100+ calls while preserving critical code-generation templates identified in the emitter.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -92,12 +93,12 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **The interpreter's naive inline-continuation detection (`|>`) can be triggered by sequences inside string literals.**: Use explicit newlines in Koru source strings for interpreter tests to avoid ambiguous single-line parsing until the parser is updated to ignore tokens inside strings.
-- **Handle IDs or metadata allocated using the interpreter's internal ArenaAllocator will be freed when the interpreter returns, causing segfaults if accessed later.**: Persist data that must survive the interpreter call (like last_event or handle lists) using a more permanent allocator like page_allocator.
-- **Field shorthand in Koru branch constructors (e.g., `result { g.message }`) is invalid; it only supports bare identifiers.**: Use explicit field assignment `result { message: g.message }` or braceless forms where applicable.
-- **Weakening or 'nerfing' tests to force a pass state during language evolution breaks the metacircular feedback loop.**: Never simplify test logic to bypass failures. If a test fails, investigate the root cause (parser limitations or invalid syntax) and treat the test as the ground truth.
+- **Naming drift between kernel keywords (kernel:init vs kernel:initialize) in regression tests.**: Standardize on 'kernel:init' as the canonical keyword and align all 390_KERNEL suite tests.
+- **Kernel regression tests (390_003/004) are currently failing with empty output.**: Do not assume the feature is functional; the transform/emission logic for kernel pipelines is likely missing or broken in the compiler.
+- **Metadata loss (source_value/expression_value pointers) during AST cloning in auto_dispose_inserter.zig.**: Ensure synthetic bindings preserve the metadata pointers of the bindings they replace to avoid 'ComptimeEventNotTransformed' errors in the emitter.
+- **Auto-dispose logic running before control flow transforms can break pattern matching.**: Ensure auto_dispose explicitly handles ForeachNode structures, as the ~for transform occurs in the frontend segment before analysis.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 1/25/2026, 11:38:30 PM
+> Last updated: 1/26/2026, 4:27:06 PM
