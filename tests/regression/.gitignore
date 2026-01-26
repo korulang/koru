@@ -39,6 +39,7 @@
 !**/.MARKER
 !**/TODO
 !**/PRIORITY
+!**/BENCHMARK
 !**/BROKEN
 !**/BUG_*
 !**/THRESHOLD
