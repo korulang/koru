@@ -1,4 +1,11 @@
-[TAP] input:hello
+[TAP] std.taps:tap
+[TAP] koru:start
+[TAP] koru:start
 Hello
-[TAP] input:goodbye
+[TAP] std.taps:tap
+[TAP] input:hello
+[TAP] input:hello
 Goodbye
+[TAP] std.taps:tap
+[TAP] koru:end
+[TAP] koru:end
