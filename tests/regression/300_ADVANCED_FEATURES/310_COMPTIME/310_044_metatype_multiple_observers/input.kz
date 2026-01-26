@@ -1,0 +1,30 @@
+// Test 310_044: Multiple metatype observers on same transition
+// Both Profile and Transition metatypes should fire on the same event
+// This verifies that multiple metatype bindings work together
+
+~import "$std/taps"
+
+~event hello { }
+| done { }
+
+~event logger { msg: []const u8 }
+| done { }
+
+~[pure]proc hello {
+    return .{ .done = .{} };
+}
+
+~[pure]proc logger {
+    return .{ .done = .{} };
+}
+
+// Observe with both Profile and Transition on same event
+// Both metatype handlers should fire - note multiple branch handlers in one tap()
+~tap(hello -> *)
+| Profile p |> logger(msg: p.source)
+    | done |> _
+| Profile p2 |> logger(msg: p2.source)
+    | done |> _
+
+~hello()
+| done |> _

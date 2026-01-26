@@ -1,0 +1,37 @@
+// Test 310_046: Metatype enum helper functions
+// Verify that Transition metatype with enum-based fields compiles and works
+// The taps namespace should have eventToString() and branchToString() helpers
+
+~import "$std/taps"
+
+~event process { value: i32 }
+| ok { result: i32 }
+| error { msg: []const u8 }
+
+~event logger { msg: []const u8 }
+| done { }
+
+~[pure]proc process {
+    if (value > 0) {
+        return .{ .ok = .{ .result = value } };
+    }
+    return .{ .error = .{ .msg = "negative" } };
+}
+
+~[pure]proc logger {
+    return .{ .done = .{} };
+}
+
+// Tap that captures Transition (enum-based metatype)
+// The compiler should emit eventToString() and branchToString() helpers in taps namespace
+~tap(process -> *)
+| Transition _ |> logger(msg: "transition")
+    | done |> _
+
+~process(value: 5)
+| ok _ |> _
+| error _ |> _
+
+~process(value: -1)
+| ok _ |> _
+| error _ |> _

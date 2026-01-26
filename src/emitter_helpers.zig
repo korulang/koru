@@ -2077,7 +2077,14 @@ fn emitSubflowContinuationsWithDepth(
                                     if (mb.branch.len == 0) {
                                         try emitter.write("__void");
                                     } else {
-                                        try emitter.write(mb.branch);
+                                        // Escape keywords (e.g., .@"error" for error branch)
+                                        if (codegen_utils.needsEscaping(mb.branch)) {
+                                            try emitter.write("@\"");
+                                            try emitter.write(mb.branch);
+                                            try emitter.write("\"");
+                                        } else {
+                                            try emitter.write(mb.branch);
+                                        }
                                     }
                                     try emitter.write(",\n");
                                 } else {
@@ -5112,7 +5119,14 @@ fn emitStep(
                 if (mb.branch.len == 0) {
                     try emitter.write("__void");
                 } else {
-                    try emitter.write(mb.branch);
+                    // Escape keywords (e.g., .@"error" for error branch)
+                    if (codegen_utils.needsEscaping(mb.branch)) {
+                        try emitter.write("@\"");
+                        try emitter.write(mb.branch);
+                        try emitter.write("\"");
+                    } else {
+                        try emitter.write(mb.branch);
+                    }
                 }
                 try emitter.write(",\n");
             } else {

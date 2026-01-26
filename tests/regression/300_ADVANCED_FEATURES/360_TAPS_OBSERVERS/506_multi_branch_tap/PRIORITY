@@ -1,0 +1,8 @@
+Feature: Multi-branch tap handlers with fan-out
+Description: Verify that a single ~tap() declaration can have multiple handlers for the same branch
+Acceptance Criteria:
+  - Single ~tap(foo -> *) block should support multiple handlers for same branch
+  - All matching handlers should fire (e.g., both log_success and audit_success on success branch)
+  - Different branches can have different numbers of handlers
+  - This is the "nice" syntax compared to separate ~tap() declarations
+  - Should work with event field access (e.g., s.result) passed to handler events
