@@ -55,6 +55,8 @@ regression_run_one_test() {
     # Print category header when entering a new category directory
     PARENT_DIR=$(basename "$(dirname "$test_dir")")
     SKIP_CATEGORY=false
+    BENCHMARK_CATEGORY=false
+    BENCHMARK_REASON=""
     if [ "$PARENT_DIR" != "regression" ] && [ "$PARENT_DIR" != "$CURRENT_CATEGORY" ]; then
         CURRENT_CATEGORY="$PARENT_DIR"
         # Extract category name from directory name
@@ -80,11 +82,23 @@ regression_run_one_test() {
             echo -e "${YELLOW}⏭️  Category skipped: $SKIP_REASON${NC}"
             echo ""
         fi
+
+        # Check for category-level BENCHMARK file
+        if [ -f "$CATEGORY_DIR/BENCHMARK" ]; then
+            BENCHMARK_CATEGORY=true
+            BENCHMARK_REASON=$(head -1 "$CATEGORY_DIR/BENCHMARK" 2>/dev/null || echo "No description")
+            echo -e "${CYAN}📊 Category benchmark: $BENCHMARK_REASON${NC}"
+            echo ""
+        fi
     elif [ "$PARENT_DIR" != "regression" ]; then
         # Still in same category, check if category was marked to skip
         CATEGORY_DIR="$(dirname "$test_dir")"
         if [ -f "$CATEGORY_DIR/SKIP" ]; then
             SKIP_CATEGORY=true
+        fi
+        if [ -f "$CATEGORY_DIR/BENCHMARK" ]; then
+            BENCHMARK_CATEGORY=true
+            BENCHMARK_REASON=$(head -1 "$CATEGORY_DIR/BENCHMARK" 2>/dev/null || echo "No description")
         fi
     fi
 
@@ -95,6 +109,16 @@ regression_run_one_test() {
         echo -e "${CYAN}📊 BENCHMARK${NC}"
         BENCHMARK_CONTENT=$(cat "$test_dir/BENCHMARK" 2>/dev/null || echo "No description")
         echo "  $BENCHMARK_CONTENT"
+        BENCHMARK_TESTS=$((BENCHMARK_TESTS + 1))
+        return 0
+    fi
+
+    # Check for category-level BENCHMARK - skip all tests in this category
+    if [ "$BENCHMARK_CATEGORY" = true ]; then
+        echo -e "${CYAN}📊 BENCHMARK (category)${NC}"
+        if [ -n "$BENCHMARK_REASON" ]; then
+            echo "  $BENCHMARK_REASON"
+        fi
         BENCHMARK_TESTS=$((BENCHMARK_TESTS + 1))
         return 0
     fi
