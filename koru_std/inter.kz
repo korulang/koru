@@ -58,7 +58,11 @@ const std = @import("std");
 
     // List what we have
     for (contexts, 0..) |ctx, i| {
-        std.debug.print("  Stage {d}: {d} passes completed, {d} items\n", .{i + 1, ctx.passes_completed, ctx.ast.items.len});
+        if (ctx.current_pass) |pass| {
+            std.debug.print("  {d}. {s:<20} ({d} passes, {d} items)\n", .{i + 1, pass, ctx.passes_completed, ctx.ast.items.len});
+        } else {
+            std.debug.print("  {d}. (unnamed)            ({d} passes, {d} items)\n", .{i + 1, ctx.passes_completed, ctx.ast.items.len});
+        }
     }
 
     std.debug.print("\n", .{});
@@ -101,6 +105,9 @@ const std = @import("std");
             if (stage_idx < contexts.len) {
                 const ctx = contexts[stage_idx];
                 std.debug.print("\n=== Stage {d} Stats ===\n", .{stage_idx + 1});
+                if (ctx.current_pass) |pass| {
+                    std.debug.print("  Current pass: {s}\n", .{pass});
+                }
                 std.debug.print("  Passes completed: {d}\n", .{ctx.passes_completed});
                 std.debug.print("  Total items: {d}\n", .{ctx.ast.items.len});
 

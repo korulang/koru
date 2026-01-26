@@ -543,7 +543,7 @@ pub const CompilerContext = struct {
         .errors = std.ArrayList(CompilerError){},
         .warnings = std.ArrayList(CompilerWarning){},
         .error_policy = .collect_all,
-        .current_pass = null,
+        .current_pass = "init",
         .passes_completed = 0,
         .tap_registry = null,
     };
@@ -641,6 +641,7 @@ pub const CompilerContext = struct {
     updated_ctx.ast = transformed_ast;
     updated_ctx.tap_registry = registry_ptr;
     updated_ctx.passes_completed += 1;
+    updated_ctx.current_pass = "transform_taps";
 
     return .{ .ctx = updated_ctx };
 }
@@ -655,6 +656,7 @@ pub const CompilerContext = struct {
 // Finds ~test invocations in AST and generates Zig test blocks
 ~proc test_generation {
     var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "test_generation";
 
     // Import needed modules
     const ast_mod = @import("ast");
@@ -1124,6 +1126,7 @@ const emitFlowWithMocks = struct {
 ~proc optimize {
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
+    updated_ctx.current_pass = "optimize";
     return .{ .ctx = updated_ctx };
 }
 
@@ -1282,6 +1285,7 @@ const emitFlowWithMocks = struct {
 
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
+    updated_ctx.current_pass = "emission";
     return .{ .ctx = .{ .ctx = updated_ctx, .code = final_code } };
 }
 
@@ -1669,6 +1673,7 @@ const joinPathAlloc = struct {
     updated_ctx.ast = transformed_ast;  // Filtered AST for emission
     // updated_ctx.original_ast stays the same - unfiltered AST for TypeRegistry
     updated_ctx.passes_completed += 1;
+    updated_ctx.current_pass = "evaluate_comptime";
 
     return .{ .ctx = updated_ctx };
 }
@@ -1677,6 +1682,7 @@ const joinPathAlloc = struct {
 ~proc check_structure {
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "check_structure";
 
     // Use the Zig shape_checker library for structural validation
     const shape_checker = @import("shape_checker");
@@ -1765,6 +1771,7 @@ const joinPathAlloc = struct {
 ~proc check_flow {
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "check_flow";
 
     // Use the Zig flow_checker library for flow validation
     const flow_checker = @import("flow_checker");
@@ -1864,6 +1871,7 @@ const joinPathAlloc = struct {
     const warn_mode = CompilerEnv.hasFlag("auto-discharge=warn");
 
     var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "auto_discharge";
 
     const auto_discharge_inserter = @import("auto_discharge_inserter");
     const errors_mod = @import("errors");
@@ -1938,6 +1946,7 @@ const joinPathAlloc = struct {
     std.debug.print("\n[PHANTOM-KORU] Starting phantom check proc...\n", .{});
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "check_phantom";
 
     // Use the Zig phantom_semantic_checker library for phantom state validation
     const phantom_semantic_checker = @import("phantom_semantic_checker");
@@ -2014,6 +2023,7 @@ const joinPathAlloc = struct {
 // Tracks [pure] annotations - developer assertion, trusted without verification
 ~proc check_purity {
     var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "check_purity";
 
     // Purity is determined by [pure] annotation only
     // We don't analyze host (Zig) code - if you say it's pure, we trust you
