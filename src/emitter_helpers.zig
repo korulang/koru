@@ -2027,13 +2027,21 @@ fn emitSubflowContinuationsWithDepth(
                             .metatype_binding => |mb| {
                                 // Emit metatype construction (Profile/Transition/Audit)
                                 // Transition uses enum literals (fast), Profile uses strings (heavier with timing)
+                                // Wrap in scope block with fixed synthesized name so multiple bindings don't collide
                                 try emitter.write(indent);
-                                try emitter.write("        const ");
-                                try emitter.write(mb.binding);
+                                try emitter.write("        {\n");
+                                try emitter.write(indent);
+                                try emitter.write("            const __koru_metatype_");
+                                // Use synthesized name: __koru_metatype_profile, __koru_metatype_transition, __koru_metatype_audit
+                                var metatype_lower: [16]u8 = undefined;
+                                for (mb.metatype, 0..) |c, i| {
+                                    metatype_lower[i] = std.ascii.toLower(c);
+                                }
+                                try emitter.write(metatype_lower[0..mb.metatype.len]);
                                 try emitter.write(" = taps.");
                                 try emitter.write(mb.metatype);
                                 try emitter.write("{\n");
-            
+
                                 const is_transition = std.mem.eql(u8, mb.metatype, "Transition");
             
                                 // .source field - enum literal for Transition, string for Profile
@@ -2113,6 +2121,19 @@ fn emitSubflowContinuationsWithDepth(
 
                                 try emitter.write(indent);
                                 try emitter.write("        };\n");
+
+                                // Emit continuations inside the scope block
+                                if (cont.continuations.len > 0) {
+                                    var deeper_indent_buf: [128]u8 = undefined;
+                                    @memcpy(deeper_indent_buf[0..indent.len], indent);
+                                    const extra = "            ";
+                                    @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
+                                    const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
+                                    try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix);
+                                }
+
+                                try emitter.write(indent);
+                                try emitter.write("        }\n");  // Close scope block
                             },
                             .branch_constructor => |bc| {
                                 // Branch constructor - emit return statement
@@ -2148,10 +2169,12 @@ fn emitSubflowContinuationsWithDepth(
                     }
             
                     // After emitting the step, recurse into nested continuations if present
+                    // Exception: metatype_binding handles its own continuation recursion inside its scope block
                     // This must be OUTSIDE the step check so it runs regardless of what the step type was
                     // Use last_result_idx + 1 as the depth for nested continuations (not depth + 1)
                     // because metatype_binding steps don't create result variables
-                    if (cont.continuations.len > 0) {
+                    const is_metatype_binding = if (cont.node) |step| step == .metatype_binding else false;
+                    if (cont.continuations.len > 0 and !is_metatype_binding) {
                         var deeper_indent_buf: [128]u8 = undefined;
                         @memcpy(deeper_indent_buf[0..indent.len], indent);
                         const extra = "        ";
@@ -5068,6 +5091,7 @@ fn emitStep(
         .metatype_binding => |*mb| {
             // Emit metatype construction (Profile/Transition/Audit)
             // Transition uses enum literals (fast), Profile uses strings (heavier with timing)
+            // Wrap in scope block with fixed synthesized name so multiple bindings don't collide
             try emitter.writeIndent();
             try emitter.write("const ");
             try emitter.write(mb.binding);
