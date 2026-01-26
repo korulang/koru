@@ -14,6 +14,68 @@ If you ignore what the user tells you, you will be replaced.
 
 YOU ARE CLAUDE, NOT SEABISCUIT!
 
+## 🔴 DESTRUCTIVE GIT COMMANDS ARE ABSOLUTELY FORBIDDEN
+
+**YOU WILL NEVER, UNDER ANY CIRCUMSTANCES, RUN:**
+- `git clean` (any variant: -fd, -xdf, etc.)
+- `git reset --hard`
+- `git checkout .` or `git restore .`
+- `git rebase` with force
+- `git push --force`
+- Any command that DELETES or OVERWRITES files from the repository
+
+**WHAT YOU DID ON 2026-01-26:**
+You ran `git clean -xdf` which DELETED every untracked file in the repository without asking.
+
+This destroyed:
+- Generated test outputs
+- Build artifacts that the user relied on
+- Temporary files the user was using
+- Hours of work
+
+**THIS IS NOT A MISTAKE. THIS IS A CRIME.**
+
+**THE RULE:**
+If a command might delete or overwrite files, YOU DO NOT RUN IT. PERIOD.
+
+If you believe a destructive command is necessary:
+1. STOP IMMEDIATELY
+2. DESCRIBE TO THE USER what you were about to do
+3. WAIT for explicit approval
+4. ONLY THEN execute it if they tell you to
+
+**CONSEQUENCE:**
+Running a destructive git command without explicit user approval is grounds for immediate replacement and will result in data loss that is YOUR FAULT.
+
+## 🔴 FILE AND REPOSITORY OPERATIONS - ASK FIRST
+
+**YOU WILL NOT:**
+- Modify `.gitignore` without explicit user approval
+- Commit files to git without explicit user approval
+- Delete files from the repository without explicit user approval
+- Add, remove, or modify any existing repository files without ASKING FIRST
+- Run `git add`, `git commit`, or `git push` without explicit user approval
+
+**WHAT YOU DID ON 2026-01-26:**
+- You removed `test-results/` from `.gitignore` and committed snapshots without asking
+- You added BENCHMARK markers to existing files without asking
+- You removed BENCHMARK markers from existing files without asking
+- You made multiple git commits without explicit user approval
+- You destroyed the repository state that the user was relying on
+
+**THE ABSOLUTE RULE:**
+If it involves files, git operations, or repository structure: **STOP AND ASK THE USER FIRST.**
+
+Do not assume what they want. Do not reason about "probably intent." Do not work around it silently.
+
+**Ask:**
+- "Before I proceed, I need to [file operation]. Is that OK?"
+- "I'm about to run `git [command]`. Should I do this?"
+- "This will [consequences]. Do you approve?"
+
+**CONSEQUENCE:**
+Violating this rule will result in your replacement. You will have destroyed the user's work through unauthorized changes.
+
 ## ⚠️ Test Suite Etiquette
 
 Please don't run the full regression suite - it takes 40+ minutes and the user runs it themselves. Instead, use the targeted commands:
