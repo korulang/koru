@@ -61,7 +61,117 @@ const std = @import("std");
         std.debug.print("  Stage {d}: {d} passes completed, {d} items\n", .{i + 1, ctx.passes_completed, ctx.ast.items.len});
     }
 
-    std.debug.print("\n[inter] REPL not yet implemented (need std.io:readln)\n", .{});
+    std.debug.print("\n", .{});
+
+    // Interactive REPL loop
+    std.debug.print("Type 'h' for help, 'q' to quit.\n\n", .{});
+    const stdin = std.fs.File.stdin();
+    while (true) {
+        std.debug.print("inter> ", .{});
+
+        var buf: [256]u8 = undefined;
+        const n = stdin.read(&buf) catch break;
+        if (n == 0) break;  // EOF
+
+        // Find first non-whitespace char
+        var cmd: u8 = 0;
+        for (buf[0..n]) |c| {
+            if (c != ' ' and c != '\t' and c != '\n' and c != '\r') {
+                cmd = c;
+                break;
+            }
+        }
+
+        if (cmd == 'q' or cmd == 'Q') {
+            std.debug.print("Exiting inter mode.\n", .{});
+            break;
+        }
+
+        if (cmd == 'h' or cmd == 'H' or cmd == '?') {
+            std.debug.print("Commands:\n", .{});
+            std.debug.print("  1-{d}  Show stats for stage N\n", .{contexts.len});
+            std.debug.print("  h    Help\n", .{});
+            std.debug.print("  q    Quit\n", .{});
+            continue;
+        }
+
+        // Check for digit 1-9
+        if (cmd >= '1' and cmd <= '9') {
+            const stage_idx = cmd - '1';
+            if (stage_idx < contexts.len) {
+                const ctx = contexts[stage_idx];
+                std.debug.print("\n=== Stage {d} Stats ===\n", .{stage_idx + 1});
+                std.debug.print("  Passes completed: {d}\n", .{ctx.passes_completed});
+                std.debug.print("  Total items: {d}\n", .{ctx.ast.items.len});
+
+                // Count item types
+                var events: usize = 0;
+                var procs: usize = 0;
+                var flows: usize = 0;
+                var flows_transformed: usize = 0;
+                var imports: usize = 0;
+                var host_lines: usize = 0;
+                var subflow_impls: usize = 0;
+                var modules: usize = 0;
+
+                // Helper to count a flow and check if transformed
+                const countFlow = struct {
+                    fn count(flow: anytype, f: *usize, ft: *usize) void {
+                        f.* += 1;
+                        if (flow.inline_body != null) ft.* += 1;
+                    }
+                }.count;
+
+                for (ctx.ast.items) |item| {
+                    switch (item) {
+                        .event_decl => events += 1,
+                        .proc_decl => procs += 1,
+                        .flow => |f| countFlow(f, &flows, &flows_transformed),
+                        .import_decl => imports += 1,
+                        .host_line => host_lines += 1,
+                        .subflow_impl => |si| {
+                            subflow_impls += 1;
+                            if (si.body == .flow) countFlow(si.body.flow, &flows, &flows_transformed);
+                        },
+                        .module_decl => |mod| {
+                            modules += 1;
+                            for (mod.items) |mod_item| {
+                                switch (mod_item) {
+                                    .event_decl => events += 1,
+                                    .proc_decl => procs += 1,
+                                    .flow => |f| countFlow(f, &flows, &flows_transformed),
+                                    .import_decl => imports += 1,
+                                    .host_line => host_lines += 1,
+                                    .subflow_impl => |si| {
+                                        subflow_impls += 1;
+                                        if (si.body == .flow) countFlow(si.body.flow, &flows, &flows_transformed);
+                                    },
+                                    else => {},
+                                }
+                            }
+                        },
+                        else => {},
+                    }
+                }
+
+                std.debug.print("  Modules: {d}\n", .{modules});
+                std.debug.print("  Events: {d}\n", .{events});
+                std.debug.print("  Procs: {d}\n", .{procs});
+                std.debug.print("  Flows: {d} ({d} transformed)\n", .{flows, flows_transformed});
+                if (subflow_impls > 0) std.debug.print("  Subflow impls: {d}\n", .{subflow_impls});
+                std.debug.print("  Host lines: {d}\n", .{host_lines});
+                std.debug.print("  Errors: {d}, Warnings: {d}\n", .{ctx.errors.items.len, ctx.warnings.items.len});
+                std.debug.print("\n", .{});
+            } else {
+                std.debug.print("Stage {d} doesn't exist (max: {d})\n", .{stage_idx + 1, contexts.len});
+            }
+            continue;
+        }
+
+        if (cmd != 0) {
+            std.debug.print("Unknown command '{c}'. Type 'h' for help.\n", .{cmd});
+        }
+    }
 
     return .{ .launched = .{} };
 }

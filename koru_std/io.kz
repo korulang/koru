@@ -44,6 +44,23 @@ const std = @import("std");
     return .{ .failed = .{ .message = "readln not yet implemented" } };
 }
 
+// Simple line reader - returns the line, or empty string on EOF/error
+// No error handling, just returns what it gets
+~pub event read.ln {}
+| ok { line: []const u8 }
+
+~proc read.ln {
+    const stdin = std.fs.File.stdin();
+    var buf: [4096]u8 = undefined;
+    const n = stdin.read(&buf) catch return .{ .ok = .{ .line = "" } };
+    if (n == 0) return .{ .ok = .{ .line = "" } };
+    // Find newline and exclude it
+    var end: usize = 0;
+    while (end < n and buf[end] != '\n') : (end += 1) {}
+    const duped = std.heap.page_allocator.dupe(u8, buf[0..end]) catch "";
+    return .{ .ok = .{ .line = duped } };
+}
+
 // Debug print for development
 // NOTE: debug with anytype would require runtime support - skipping for now
 // ~pub event io.debug { label: []const u8, value: anytype }

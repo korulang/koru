@@ -1280,27 +1280,27 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
 /// Also used for derive handlers which generate new declarations from event declarations
 /// Detection is TYPE-DRIVEN: *const Invocation = transform, *const EventDecl = derive
 const TransformEvent = struct {
-    stub_name: []const u8,    // e.g., "control_if" - unique name for call_handler_X function
-    match_name: []const u8,   // e.g., "if" - event name with dots for matching
-    event_name: []const u8,   // e.g., "if" - original event name for handler struct lookup
+    stub_name: []const u8, // e.g., "control_if" - unique name for call_handler_X function
+    match_name: []const u8, // e.g., "if" - event name with dots for matching
+    event_name: []const u8, // e.g., "if" - original event name for handler struct lookup
     module_path: ?[]const u8, // e.g., "koru_std.control" for stdlib, null for main_module
-    has_source: bool,         // Event accepts source: Source[T] parameter
-    has_expression: bool,     // Event accepts expr: Expression parameter
-    has_invocation: bool,     // Event accepts invocation: *const Invocation parameter
-    has_event_decl: bool,     // Event accepts event_decl: *const EventDecl parameter
-    has_item: bool,           // Event accepts item: *const Item parameter
-    has_program_ast: bool,    // Event accepts program: *const Program parameter
-    has_allocator: bool,      // Event accepts allocator: std.mem.Allocator parameter
+    has_source: bool, // Event accepts source: Source[T] parameter
+    has_expression: bool, // Event accepts expr: Expression parameter
+    has_invocation: bool, // Event accepts invocation: *const Invocation parameter
+    has_event_decl: bool, // Event accepts event_decl: *const EventDecl parameter
+    has_item: bool, // Event accepts item: *const Item parameter
+    has_program_ast: bool, // Event accepts program: *const Program parameter
+    has_allocator: bool, // Event accepts allocator: std.mem.Allocator parameter
     has_event_name_field: bool, // Event accepts event_name: []const u8 parameter (for glob patterns)
-    returns_program: bool,    // Event returns transformed{ program: *const Program }
-    has_failed: bool,         // Event has failed{ error: []const u8 } branch
-    has_compile_error: bool,  // Event has compile_error{ message: []const u8 } branch
+    returns_program: bool, // Event returns transformed{ program: *const Program }
+    has_failed: bool, // Event has failed{ error: []const u8 } branch
+    has_compile_error: bool, // Event has compile_error{ message: []const u8 } branch
 };
 
 /// CommandInfo stores CLI command metadata for [comptime|command] events
 /// Commands run instead of normal compilation when invoked via `koruc file.kz <command>`
 const CommandInfo = struct {
-    name: []const u8,         // e.g., "install" - command name for CLI
+    name: []const u8, // e.g., "install" - command name for CLI
     handler_name: []const u8, // e.g., "package_install" - Zig function name
     module_path: ?[]const u8, // e.g., "koru_std.package" for stdlib commands
 };
@@ -1423,8 +1423,8 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                 transform_events[transform_count] = .{
                     .stub_name = stub_name,
                     .match_name = match_name,
-                    .event_name = stub_name,  // For top-level, stub_name = event_name
-                    .module_path = null,  // Top-level events are in main_module
+                    .event_name = stub_name, // For top-level, stub_name = event_name
+                    .module_path = null, // Top-level events are in main_module
                     .has_source = has_source,
                     .has_expression = has_expression,
                     .has_invocation = has_invocation,
@@ -1466,7 +1466,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                         // Convert "std.control" to "koru_std.control" by replacing first "std" with "koru_std"
                         if (std.mem.startsWith(u8, module.logical_name, "std.")) {
                             @memcpy(module_path_buf[0..9], "koru_std.");
-                            const rest = module.logical_name[4..];  // Skip "std."
+                            const rest = module.logical_name[4..]; // Skip "std."
                             @memcpy(module_path_buf[9 .. 9 + rest.len], rest);
                             module_path_len = 9 + rest.len;
                             module_name = rest;
@@ -1550,7 +1550,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                             .stub_name = stub_name,
                             .match_name = match_name,
                             .event_name = event_name_duped,
-                            .module_path = module_path,  // Transform is in imported module
+                            .module_path = module_path, // Transform is in imported module
                             .has_source = has_source,
                             .has_expression = has_expression,
                             .has_invocation = has_invocation,
@@ -1819,8 +1819,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 transform_events[transform_count] = .{
                     .stub_name = stub_name,
                     .match_name = match_name,
-                    .event_name = stub_name,  // For top-level, stub_name = event_name
-                    .module_path = null,  // Top-level events are in main_module
+                    .event_name = stub_name, // For top-level, stub_name = event_name
+                    .module_path = null, // Top-level events are in main_module
                     .has_source = has_source_param,
                     .has_expression = has_expression_param,
                     .has_invocation = has_invocation_param,
@@ -1885,7 +1885,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             const rest = module.logical_name[4..];
                             @memcpy(module_path_buf[9 .. 9 + rest.len], rest);
                             module_path_len = 9 + rest.len;
-                            module_name = rest;  // e.g., "control" or "compiler_requirements"
+                            module_name = rest; // e.g., "control" or "compiler_requirements"
                         } else if (std.mem.eql(u8, module.logical_name, "std")) {
                             @memcpy(module_path_buf[0..8], "koru_std");
                             module_path_len = 8;
@@ -1957,7 +1957,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         transform_events[transform_count] = .{
                             .stub_name = stub_name,
                             .match_name = match_name,
-                            .event_name = event_name,  // Original event name for handler lookup
+                            .event_name = event_name, // Original event name for handler lookup
                             .module_path = module_path,
                             .has_source = has_source_param,
                             .has_expression = has_expression_param,
@@ -2335,13 +2335,13 @@ fn joinPathSegmentsWithDots(allocator: std.mem.Allocator, segments: []const []co
     var result = try allocator.alloc(u8, total_len);
     var pos: usize = 0;
 
-    @memcpy(result[pos..pos + segments[0].len], segments[0]);
+    @memcpy(result[pos .. pos + segments[0].len], segments[0]);
     pos += segments[0].len;
 
     for (segments[1..]) |seg| {
         result[pos] = '.';
         pos += 1;
-        @memcpy(result[pos..pos + seg.len], seg);
+        @memcpy(result[pos .. pos + seg.len], seg);
         pos += seg.len;
     }
 
@@ -2719,7 +2719,7 @@ fn deriveCanonicalName(allocator: std.mem.Allocator, import_path: []const u8) ![
         // "helper" → "helper"
         const last_slash = std.mem.lastIndexOfScalar(u8, without_ext, '/');
         const package_name = if (last_slash) |pos|
-            without_ext[pos + 1..]
+            without_ext[pos + 1 ..]
         else
             without_ext;
 
@@ -2746,7 +2746,7 @@ fn queueParentImports(
     // Find the alias and path parts
     const slash_pos = std.mem.indexOf(u8, import_path, "/") orelse return;
     const alias = import_path[0..slash_pos]; // e.g., "$std"
-    const subpath = import_path[slash_pos + 1..]; // e.g., "io/file"
+    const subpath = import_path[slash_pos + 1 ..]; // e.g., "io/file"
 
     // If subpath is empty or has no further segments, nothing to queue
     if (subpath.len == 0) return;
@@ -2885,7 +2885,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
     const has_file = resolved.file_path != null;
     const has_dir = resolved.dir_path != null;
 
-    std.debug.print("processImport: has_file={}, has_dir={}\n", .{has_file, has_dir});
+    std.debug.print("processImport: has_file={}, has_dir={}\n", .{ has_file, has_dir });
 
     // Helper to load submodules from directory
     const loadSubmodules = struct {
@@ -2922,7 +2922,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
 
                 const source = try file.readToEndAlloc(parse_alloc, 1024 * 1024);
                 var parser = try Parser.init(parse_alloc, source, file_path, &[_][]const u8{}, null);
-                parser.fail_fast = false;  // Don't validate event refs during import - allows transitive imports with circular deps
+                parser.fail_fast = false; // Don't validate event refs during import - allows transitive imports with circular deps
                 defer parser.deinit();
 
                 const parse_result = try parser.parse();
@@ -2965,7 +2965,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
 
             const source = try file.readToEndAlloc(parse_alloc, 1024 * 1024);
             var parser = try Parser.init(parse_alloc, source, file_path, &[_][]const u8{}, null);
-            parser.fail_fast = false;  // Don't validate event refs during import - allows transitive imports with circular deps
+            parser.fail_fast = false; // Don't validate event refs during import - allows transitive imports with circular deps
             defer parser.deinit();
 
             const parse_result = try parser.parse();
@@ -3183,9 +3183,9 @@ fn parseFlagDeclaration(allocator: std.mem.Allocator, json_text: []const u8) !Fl
 
     // Extract name
     if (std.mem.indexOf(u8, json_text, "\"name\"")) |name_start| {
-        const after_name = json_text[name_start + 6..]; // Skip "name"
+        const after_name = json_text[name_start + 6 ..]; // Skip "name"
         if (std.mem.indexOf(u8, after_name, "\"")) |open_quote| {
-            const value_start = after_name[open_quote + 1..];
+            const value_start = after_name[open_quote + 1 ..];
             if (std.mem.indexOf(u8, value_start, "\"")) |close_quote| {
                 name = try allocator.dupe(u8, value_start[0..close_quote]);
             }
@@ -3194,9 +3194,9 @@ fn parseFlagDeclaration(allocator: std.mem.Allocator, json_text: []const u8) !Fl
 
     // Extract description
     if (std.mem.indexOf(u8, json_text, "\"description\"")) |desc_start| {
-        const after_desc = json_text[desc_start + 13..]; // Skip "description"
+        const after_desc = json_text[desc_start + 13 ..]; // Skip "description"
         if (std.mem.indexOf(u8, after_desc, "\"")) |open_quote| {
-            const value_start = after_desc[open_quote + 1..];
+            const value_start = after_desc[open_quote + 1 ..];
             if (std.mem.indexOf(u8, value_start, "\"")) |close_quote| {
                 description = try allocator.dupe(u8, value_start[0..close_quote]);
             }
@@ -3205,9 +3205,9 @@ fn parseFlagDeclaration(allocator: std.mem.Allocator, json_text: []const u8) !Fl
 
     // Extract type
     if (std.mem.indexOf(u8, json_text, "\"type\"")) |type_start| {
-        const after_type = json_text[type_start + 6..]; // Skip "type"
+        const after_type = json_text[type_start + 6 ..]; // Skip "type"
         if (std.mem.indexOf(u8, after_type, "\"")) |open_quote| {
-            const value_start = after_type[open_quote + 1..];
+            const value_start = after_type[open_quote + 1 ..];
             if (std.mem.indexOf(u8, value_start, "\"")) |close_quote| {
                 flag_type = try allocator.dupe(u8, value_start[0..close_quote]);
             }
@@ -3221,7 +3221,7 @@ fn parseFlagDeclaration(allocator: std.mem.Allocator, json_text: []const u8) !Fl
     };
 }
 
-/// Collect all compiler.flags.declare invocations from AST
+/// Collect all compiler.flag.declare invocations from AST
 fn collectFlagDeclarations(allocator: std.mem.Allocator, program: *const ast.Program) ![]FlagDeclaration {
     var flags = try std.ArrayList(FlagDeclaration).initCapacity(allocator, 4);
     errdefer {
@@ -3236,9 +3236,9 @@ fn collectFlagDeclarations(allocator: std.mem.Allocator, program: *const ast.Pro
         if (item == .flow) {
             // TODO: Shouldn't this ALSO check if the "namespace" is "compiler"?
             const flow = item.flow;
-            // Check if this is compiler.flags.declare
+            // Check if this is compiler.flag.declare
             if (flow.invocation.path.segments.len == 2 and
-                std.mem.eql(u8, flow.invocation.path.segments[0], "flags") and
+                std.mem.eql(u8, flow.invocation.path.segments[0], "flag") and
                 std.mem.eql(u8, flow.invocation.path.segments[1], "declare"))
             {
                 // Extract source parameter (stored in .value for anonymous blocks)
@@ -3291,7 +3291,7 @@ const ShellCommand = struct {
 
 const ZigCommand = struct {
     name: []const u8,
-    source: []const u8,  // Zig source code with execute() function
+    source: []const u8, // Zig source code with execute() function
 
     fn deinit(self: *ZigCommand, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -3302,7 +3302,7 @@ const ZigCommand = struct {
 const KoruCommand = struct {
     name: []const u8,
     description: []const u8,
-    flow: *const ast.Flow,  // The flow continuation (| execute ctx |> ...)
+    flow: *const ast.Flow, // The flow continuation (| execute ctx |> ...)
 
     fn deinit(self: *KoruCommand, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -3518,8 +3518,8 @@ fn collectZigCommands(allocator: std.mem.Allocator, program: *const ast.Program)
                         if (std.mem.eql(u8, arg.name, "name")) {
                             // Strip quotes from name value
                             const raw_name = arg.value;
-                            const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len-1] == '"')
-                                raw_name[1..raw_name.len-1]
+                            const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len - 1] == '"')
+                                raw_name[1 .. raw_name.len - 1]
                             else
                                 raw_name;
                             name = try allocator.dupe(u8, trimmed);
@@ -3555,8 +3555,8 @@ fn collectZigCommands(allocator: std.mem.Allocator, program: *const ast.Program)
                                 if (std.mem.eql(u8, arg.name, "name")) {
                                     // Strip quotes from name value
                                     const raw_name = arg.value;
-                                    const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len-1] == '"')
-                                        raw_name[1..raw_name.len-1]
+                                    const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len - 1] == '"')
+                                        raw_name[1 .. raw_name.len - 1]
                                     else
                                         raw_name;
                                     name = try allocator.dupe(u8, trimmed);
@@ -3609,15 +3609,15 @@ fn collectKoruCommands(allocator: std.mem.Allocator, program: *const ast.Program
                     for (flow.invocation.args) |arg| {
                         if (std.mem.eql(u8, arg.name, "name")) {
                             const raw = arg.value;
-                            const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len-1] == '"')
-                                raw[1..raw.len-1]
+                            const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"')
+                                raw[1 .. raw.len - 1]
                             else
                                 raw;
                             name = try allocator.dupe(u8, trimmed);
                         } else if (std.mem.eql(u8, arg.name, "description")) {
                             const raw = arg.value;
-                            const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len-1] == '"')
-                                raw[1..raw.len-1]
+                            const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"')
+                                raw[1 .. raw.len - 1]
                             else
                                 raw;
                             description = try allocator.dupe(u8, trimmed);
@@ -3651,15 +3651,15 @@ fn collectKoruCommands(allocator: std.mem.Allocator, program: *const ast.Program
                             for (flow.invocation.args) |arg| {
                                 if (std.mem.eql(u8, arg.name, "name")) {
                                     const raw = arg.value;
-                                    const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len-1] == '"')
-                                        raw[1..raw.len-1]
+                                    const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"')
+                                        raw[1 .. raw.len - 1]
                                     else
                                         raw;
                                     name = try allocator.dupe(u8, trimmed);
                                 } else if (std.mem.eql(u8, arg.name, "description")) {
                                     const raw = arg.value;
-                                    const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len-1] == '"')
-                                        raw[1..raw.len-1]
+                                    const trimmed = if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"')
+                                        raw[1 .. raw.len - 1]
                                     else
                                         raw;
                                     description = try allocator.dupe(u8, trimmed);
@@ -3707,8 +3707,8 @@ const BuildStepCandidate = struct {
     name: []const u8,
     script: []const u8,
     dependencies: [][]const u8,
-    module: []const u8,  // Which module defined this (e.g., "main", "std.build")
-    is_default: bool,    // Has ~[default] annotation
+    module: []const u8, // Which module defined this (e.g., "main", "std.build")
+    is_default: bool, // Has ~[default] annotation
 
     fn deinit(self: *BuildStepCandidate, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -3723,7 +3723,7 @@ const BuildStepCandidate = struct {
 
 const BuildStepCollection = struct {
     candidates: []BuildStepCandidate,
-    has_user_defined: bool,  // true if ANY non-default step was found
+    has_user_defined: bool, // true if ANY non-default step was found
 };
 
 /// Check if annotations contain "default"
@@ -3772,7 +3772,7 @@ fn collectBuildStepCandidates(allocator: std.mem.Allocator, program: *const ast.
         candidates.deinit(allocator);
     }
 
-    var has_user_defined = false;  // Track if we find any non-default steps
+    var has_user_defined = false; // Track if we find any non-default steps
 
     // Walk top-level items (main module)
     for (program.items) |item| {
@@ -3792,8 +3792,8 @@ fn collectBuildStepCandidates(allocator: std.mem.Allocator, program: *const ast.
                         if (std.mem.eql(u8, arg.name, "name")) {
                             // Strip quotes from name value
                             const raw_name = arg.value;
-                            const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len-1] == '"')
-                                raw_name[1..raw_name.len-1]
+                            const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len - 1] == '"')
+                                raw_name[1 .. raw_name.len - 1]
                             else
                                 raw_name;
                             name = try allocator.dupe(u8, trimmed);
@@ -3808,7 +3808,7 @@ fn collectBuildStepCandidates(allocator: std.mem.Allocator, program: *const ast.
                         // Check for ~[default] annotation
                         const is_default = hasDefaultAnnotation(flow.annotations);
                         if (!is_default) {
-                            has_user_defined = true;  // Found a user-defined step
+                            has_user_defined = true; // Found a user-defined step
                         }
                         try candidates.append(allocator, BuildStepCandidate{
                             .name = name.?,
@@ -3837,8 +3837,8 @@ fn collectBuildStepCandidates(allocator: std.mem.Allocator, program: *const ast.
                             for (flow.invocation.args) |arg| {
                                 if (std.mem.eql(u8, arg.name, "name")) {
                                     const raw_name = arg.value;
-                                    const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len-1] == '"')
-                                        raw_name[1..raw_name.len-1]
+                                    const trimmed = if (raw_name.len >= 2 and raw_name[0] == '"' and raw_name[raw_name.len - 1] == '"')
+                                        raw_name[1 .. raw_name.len - 1]
                                     else
                                         raw_name;
                                     name = try allocator.dupe(u8, trimmed);
@@ -3853,7 +3853,7 @@ fn collectBuildStepCandidates(allocator: std.mem.Allocator, program: *const ast.
                                 // Check for ~[default] annotation
                                 const is_default = hasDefaultAnnotation(flow.annotations);
                                 if (!is_default) {
-                                    has_user_defined = true;  // Found a user-defined step
+                                    has_user_defined = true; // Found a user-defined step
                                 }
                                 try candidates.append(allocator, BuildStepCandidate{
                                     .name = name.?,
@@ -3955,20 +3955,19 @@ fn resolveBuildSteps(allocator: std.mem.Allocator, candidates: []BuildStepCandid
 
             // Valid case: 1 default + 1 non-default = override
             if (defaults.items.len == 1 and non_defaults.items.len == 1) {
-                std.debug.print("  ✓ {s}: {s} (default) overridden by {s}\n",
-                    .{name, defaults.items[0].module, non_defaults.items[0].module});
+                std.debug.print("  ✓ {s}: {s} (default) overridden by {s}\n", .{ name, defaults.items[0].module, non_defaults.items[0].module });
                 break :blk non_defaults.items[0];
             }
 
             // Valid case: Only non-default
             if (non_defaults.items.len == 1) {
-                std.debug.print("  ✓ {s}: {s}\n", .{name, non_defaults.items[0].module});
+                std.debug.print("  ✓ {s}: {s}\n", .{ name, non_defaults.items[0].module });
                 break :blk non_defaults.items[0];
             }
 
             // Valid case: Only default
             if (defaults.items.len == 1) {
-                std.debug.print("  ✓ {s}: {s} (default)\n", .{name, defaults.items[0].module});
+                std.debug.print("  ✓ {s}: {s} (default)\n", .{ name, defaults.items[0].module });
                 break :blk defaults.items[0];
             }
 
@@ -4029,7 +4028,7 @@ fn topologicalSortSteps(allocator: std.mem.Allocator, steps: []const BuildStep) 
                 try adj_list[dep_idx].append(allocator, i);
                 in_degree[i] += 1;
             } else {
-                std.debug.print("Error: Step '{s}' depends on unknown step '{s}'\n", .{step.name, dep_name});
+                std.debug.print("Error: Step '{s}' depends on unknown step '{s}'\n", .{ step.name, dep_name });
                 return error.UnknownDependency;
             }
         }
@@ -4064,13 +4063,13 @@ fn topologicalSortSteps(allocator: std.mem.Allocator, steps: []const BuildStep) 
     // If we didn't process all nodes, there's a cycle
     if (result.items.len != n) {
         std.debug.print("Error: Circular dependency detected in build steps!\n", .{});
-        std.debug.print("Processed {d} of {d} steps.\n", .{result.items.len, n});
+        std.debug.print("Processed {d} of {d} steps.\n", .{ result.items.len, n });
 
         // Find which steps are part of the cycle
         std.debug.print("Steps involved in cycle:\n", .{});
         for (in_degree, 0..) |degree, i| {
             if (degree > 0) {
-                std.debug.print("  - {s} (waiting on {d} dependencies)\n", .{steps[i].name, degree});
+                std.debug.print("  - {s} (waiting on {d} dependencies)\n", .{ steps[i].name, degree });
             }
         }
 
@@ -4164,7 +4163,7 @@ fn executeBuildSteps(allocator: std.mem.Allocator, steps: []const BuildStep) !vo
         switch (result.term) {
             .Exited => |code| {
                 if (code != 0) {
-                    std.debug.print("✗ Step '{s}' failed with exit code {d}\n", .{step.name, code});
+                    std.debug.print("✗ Step '{s}' failed with exit code {d}\n", .{ step.name, code });
                     return error.BuildStepFailed;
                 }
                 std.debug.print("✓ Step '{s}' completed successfully\n", .{step.name});
@@ -4365,7 +4364,7 @@ fn fixupExpressionArgs(
                 // Fix the arg: set name to 'expr' and value to the expression
                 arg.value = try allocator.dupe(u8, expr_text);
                 arg.name = try allocator.dupe(u8, "expr");
-                break;  // Only one implicit expr
+                break; // Only one implicit expr
             }
         }
     }
@@ -4373,7 +4372,7 @@ fn fixupExpressionArgs(
     // Also set expression_value for explicitly named Expression args
     const mutable_args2 = @constCast(invocation.args);
     for (mutable_args2) |*arg| {
-        if (arg.expression_value != null) continue;  // Already set
+        if (arg.expression_value != null) continue; // Already set
 
         for (event_decl.input.fields) |field| {
             if (std.mem.eql(u8, field.name, arg.name) and field.is_expression) {
@@ -4409,7 +4408,8 @@ fn findEventDecl(
                             // Match EXACT path - for single segment, must be just that segment
                             // This avoids matching "if.impl" when looking for "if"
                             if (event_decl.path.segments.len == 1 and
-                                std.mem.eql(u8, event_decl.path.segments[0], target_event)) {
+                                std.mem.eql(u8, event_decl.path.segments[0], target_event))
+                            {
                                 return event_decl;
                             }
                         }
@@ -5022,7 +5022,7 @@ pub fn main() !void {
             ) catch |err| {
                 // If we can't read compiler.kz, just show basic help
                 if (err != error.FileNotFound) {
-                    std.debug.print("Warning: Could not read {s}: {}\n", .{compiler_kz_path, err});
+                    std.debug.print("Warning: Could not read {s}: {}\n", .{ compiler_kz_path, err });
                 }
                 return;
             };
@@ -5059,7 +5059,7 @@ pub fn main() !void {
             if (flags.len > 0) {
                 try printStdout(allocator, "\nBackend Compiler Flags (discovered from compiler.kz):\n", .{});
                 for (flags) |flag| {
-                    try printStdout(allocator, "  --{s:<15} {s}\n", .{flag.name, flag.description});
+                    try printStdout(allocator, "  --{s:<15} {s}\n", .{ flag.name, flag.description });
                 }
             }
 
@@ -5283,7 +5283,7 @@ pub fn main() !void {
             if (event_type.input_shape) |shape| {
                 for (shape.fields, 0..) |field, field_idx| {
                     if (field_idx > 0) try printStdout(allocator, ",\n", .{});
-                    try printStdout(allocator, "        {{\"name\": \"{s}\", \"type\": \"{s}\", \"is_source\": {}}}", .{field.name, field.type, field.is_source});
+                    try printStdout(allocator, "        {{\"name\": \"{s}\", \"type\": \"{s}\", \"is_source\": {}}}", .{ field.name, field.type, field.is_source });
                 }
             }
             try printStdout(allocator, "\n      ],\n", .{});
@@ -5431,8 +5431,8 @@ pub fn main() !void {
                         // Pass additional args as positional parameters to the shell
                         // sh -c 'script' sh arg1 arg2 arg3...
                         if (arg_idx + 2 < args.len) {
-                            try exec_argv.append(allocator, "sh");  // $0 for the script
-                            for (args[arg_idx + 2..]) |extra_arg| {
+                            try exec_argv.append(allocator, "sh"); // $0 for the script
+                            for (args[arg_idx + 2 ..]) |extra_arg| {
                                 try exec_argv.append(allocator, extra_arg);
                             }
                         }
@@ -5965,7 +5965,7 @@ pub fn main() !void {
     for (source_file.items) |item| {
         if (item == .module_decl) {
             const module = item.module_decl;
-            std.debug.print("DEBUG:   Module: {s} (has_comptime: {any})\n", .{module.logical_name, module.annotations});
+            std.debug.print("DEBUG:   Module: {s} (has_comptime: {any})\n", .{ module.logical_name, module.annotations });
         }
     }
     const comptime_result = try generateComptimeBackendEmitted(compile_allocator, &source_file, &user_registry);
@@ -6258,25 +6258,17 @@ pub fn main() !void {
         defer if (backend_path.ptr != backend_exe.ptr) allocator.free(backend_path);
 
         // Run backend in the output directory
-        // Note: default max_output_bytes is only 50KB, way too small for large compilations
-        const backend_result = try std.process.Child.run(.{
-            .allocator = allocator,
-            .argv = backend_args_list.items,
-            .cwd = output_dir_for_build,
-            .max_output_bytes = 10 * 1024 * 1024, // 10MB should be plenty
-        });
-        defer allocator.free(backend_result.stdout);
-        defer allocator.free(backend_result.stderr);
+        // Use ChildProcess directly to allow stdin inheritance for interactive features like --inter
+        var child = std.process.Child.init(backend_args_list.items, allocator);
+        child.cwd = output_dir_for_build;
+        child.stdin_behavior = .Inherit;  // Allow interactive stdin for --inter REPL
+        child.stdout_behavior = .Inherit; // Stream output directly
+        child.stderr_behavior = .Inherit; // Stream errors directly
 
-        // Print backend output
-        if (backend_result.stdout.len > 0) {
-            try printStdout(allocator, "{s}", .{backend_result.stdout});
-        }
-        if (backend_result.stderr.len > 0) {
-            try printStdout(allocator, "{s}", .{backend_result.stderr});
-        }
+        try child.spawn();
+        const term = try child.wait();
 
-        if (backend_result.term.Exited != 0) {
+        if (term.Exited != 0) {
             try printStderr(allocator, "✗ Backend execution failed\n", .{});
             std.process.exit(1);
         }
