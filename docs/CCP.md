@@ -13,7 +13,7 @@ koruc --ccp
 # Compiler enters daemon mode, waits for JSONL commands on stdin
 ```
 
-No source file argument - files are specified via commands.
+Daemon mode is only activated when no input file is provided. If you pass an input file with `--ccp`, the compiler runs normally and the `ccp` flag is forwarded into the backend (for runtime observability).
 
 ## Protocol
 
