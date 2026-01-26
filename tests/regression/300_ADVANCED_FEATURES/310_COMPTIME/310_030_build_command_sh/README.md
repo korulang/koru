@@ -34,4 +34,4 @@ Args: one two three
 ## Related
 
 - `build:requires` - Build dependencies (backend pass)
-- `flags.declare` - Compiler flags (frontend collection pattern this follows)
+- `flag.declare` - Compiler flags (frontend collection pattern this follows)

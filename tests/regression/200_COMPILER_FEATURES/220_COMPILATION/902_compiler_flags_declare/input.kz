@@ -1,7 +1,7 @@
-// Test if compiler.flags.declare can be invoked from user code
+// Test if compiler.flag.declare can be invoked from user code
 // NOTE: Use fully qualified namespace with colon syntax
 
-~std.compiler:flags.declare {
+~std.compiler:flag.declare {
   "name": "test",
   "description": "Test flag",
   "type": "boolean"

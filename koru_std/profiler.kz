@@ -43,7 +43,6 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
 
 // Event: Write Chrome Tracing header
 ~[comptime|runtime] event write_header {}
-| done {}
 
 ~proc write_header {
     // Only create file if not already created by write_event
@@ -51,14 +50,12 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
     if (profile_file == null) {
         profile_file = std.fs.cwd().createFile("/tmp/koru_profile.json", .{}) catch {
             std.debug.print("ERROR: Failed to create profile file\n", .{});
-            return .{ .done = .{} };
         };
 
         // Write Chrome Tracing JSON header
         const header = "{\"traceEvents\":[\n";
         _ = profile_file.?.write(header) catch {
             std.debug.print("ERROR: Failed to write profile header\n", .{});
-            return .{ .done = .{} };
         };
     }
 
@@ -77,12 +74,11 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
     source: []const u8,
     timestamp_ns: i128,
 }
-| done {}
 
 ~proc write_event {
     // Don't create new file after profiler has finished (prevents truncating data)
     if (profiler_finished) {
-        return .{ .done = .{} };
+        return;
     }
 
     // Auto-create file if needed (handles case where universal tap's write_event
@@ -90,23 +86,23 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
     if (profile_file == null) {
         profile_file = std.fs.cwd().createFile("/tmp/koru_profile.json", .{}) catch {
             std.debug.print("ERROR: Failed to create profile file in write_event\n", .{});
-            return .{ .done = .{} };
+            return;
         };
         // Write JSON header
         const header = "{\"traceEvents\":[\n";
         _ = profile_file.?.write(header) catch {
             std.debug.print("ERROR: Failed to write profile header\n", .{});
-            return .{ .done = .{} };
+            return;
         };
         first_event = true;
     }
-    const file = profile_file orelse return .{ .done = .{} };
+    const file = profile_file orelse return;
 
     // First event: just buffer it, don't write yet
     if (previous_timestamp_ns == 0) {
         previous_timestamp_ns = timestamp_ns;
         previous_event_name = source;
-        return .{ .done = .{} };
+        return;
     }
 
     // We have a previous event buffered - write it now with duration to current event
@@ -137,7 +133,7 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
     const json = std.fmt.bufPrint(buffer[pos..],
         "{{\"name\":\"{s}\",\"cat\":\"transition\",\"ph\":\"X\",\"ts\":{d},\"dur\":{d},\"pid\":0,\"tid\":0}}",
         .{previous_event_name, start_us, duration_us}
-    ) catch return .{ .done = .{} };
+    ) catch return;
     pos += json.len;
 
     _ = file.write(buffer[0..pos]) catch {
@@ -148,15 +144,14 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
     previous_timestamp_ns = timestamp_ns;
     previous_event_name = source;
 
-    return .{ .done = .{} };
+    return;
 }
 
 // Event: Write Chrome Tracing footer and close file
 ~[comptime|runtime] event write_footer {}
-| done {}
 
 ~proc write_footer {
-    const file = profile_file orelse return .{ .done = .{} };
+    const file = profile_file orelse return;
 
     // Write the final buffered event (if any) with small duration
     if (previous_timestamp_ns != 0) {
@@ -178,7 +173,7 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
             .{previous_event_name, start_us}
         ) catch {
             std.debug.print("ERROR: Failed to format final event\n", .{});
-            return .{ .done = .{} };
+            return;
         };
         pos += json.len;
 
@@ -205,25 +200,22 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
     previous_timestamp_ns = 0;
     previous_event_name = "";
 
-    return .{ .done = .{} };
+    return;
 }
 
 // TAP: Program start - write header
 // TODO: [opaque] annotation not yet supported in ~tap() - prevents other taps from observing profiler
-~tap(koru:start -> *)
+~[opaque]tap(koru:start -> *)
 | done |> write_header()
-    | done |> _
 
 // TAP: Program end - write footer and close
 // NOTE: This tap MUST come BEFORE the universal tap so write_footer gets profiled
 // TODO: [opaque] annotation not yet supported in ~tap()
-~tap(koru:end -> *)
+~[opaque]tap(koru:end -> *)
 | done |> write_footer()
-    | done |> _
 
 // TAP: Every transition - write event
 // NOTE: Universal tap runs LAST so it wraps all other tap-inserted calls (like write_footer)
 // TODO: [opaque] prevents infinite recursion (profiler won't observe itself)
-~tap(* -> *)
+~[opaque]tap(* -> *)
 | Profile p |> write_event(source: p.source, timestamp_ns: p.timestamp_ns)
-    | done |> _
