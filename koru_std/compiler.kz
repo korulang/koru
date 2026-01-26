@@ -1457,21 +1457,13 @@ const joinPathAlloc = struct {
 
     // std.debug.print("  Detected {} comptime events, {} invocations\n", .{comptime_count, invocations_found});
 
-    // Phase 2.4: Execute comptime flows (if they exist)
-    // comptime_main() calls all comptime_flowN() functions at Zig RUNTIME (when ./backend runs)
-    // Pass program AST and allocator for injection into comptime events that need them
     const backend_output = @import("backend_output_emitted.zig");
-    if (@hasDecl(backend_output, "comptime_main")) {
-        std.debug.print("[PHASE 2.4] Executing comptime_main() - running comptime flows\n", .{});
-        backend_output.comptime_main(ctx.ast, ctx.allocator);
-        std.debug.print("[PHASE 2.4] Comptime flows execution complete\n", .{});
-    }
 
-    // Phase 2.5: Execute transform handlers (if they exist)
-    // NOTE: run_pass() is generated into backend_output_emitted.zig by the frontend
-    // It's only present if there are [comptime|transform] events in the source
+    // Phase 2.4: Execute transform handlers FIRST (if they exist)
+    // NOTE: Transforms run BEFORE comptime events so that comptime events
+    // (like tap injection) can see the fully-transformed AST
     const transform_updated_ctx = if (@hasDecl(backend_output, "run_pass")) blk: {
-        std.debug.print("[PHASE 2.5] Calling run_pass for transforms\\n", .{});
+        std.debug.print("[PHASE 2.4] Calling run_pass for transforms\\n", .{});
 
         // DUMP POINT 3: AST before transform handlers
         backend_output.dumpAST(ctx.ast, "3-pre-transform", ctx.allocator);
@@ -1489,6 +1481,15 @@ const joinPathAlloc = struct {
         transform_ctx.ast = post_transform_ast;
         break :blk transform_ctx;
     } else ctx;
+
+    // Phase 2.5: Execute comptime flows AFTER transforms (if they exist)
+    // comptime_main() calls all comptime_flowN() functions at Zig RUNTIME (when ./backend runs)
+    // Now sees the transformed AST, enabling comptime events to do post-transform work
+    if (@hasDecl(backend_output, "comptime_main")) {
+        std.debug.print("[PHASE 2.5] Executing comptime_main() - running comptime flows\n", .{});
+        backend_output.comptime_main(transform_updated_ctx.ast, transform_updated_ctx.allocator);
+        std.debug.print("[PHASE 2.5] Comptime flows execution complete\n", .{});
+    }
 
     // Phase 2.6: Rebuild comptime_events list from transformed AST
     // Transforms may have added/removed events, so we need to rescan
