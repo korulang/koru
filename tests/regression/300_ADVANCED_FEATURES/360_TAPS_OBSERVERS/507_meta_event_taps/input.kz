@@ -1,0 +1,29 @@
+// ============================================================================
+// Test 507: Meta-event taps (koru:start and koru:end)
+// ============================================================================
+// Tests that synthesized meta-events can be tapped for program lifecycle
+// observation. The compiler injects koru:start at program begin and koru:end
+// at program end.
+
+~import "$std/io"
+~import "$std/taps"
+
+// Simple event to prove main program runs
+~event greet { name: []const u8 }
+
+~proc greet {
+    std.debug.print("Hello, {s}!\n", .{name});
+}
+
+const std = @import("std");
+
+// Tap program start
+~tap(koru:start -> *)
+| done |> std.io:println(text: "START: Program beginning")
+
+// Tap program end
+~tap(koru:end -> *)
+| done |> std.io:println(text: "END: Program finishing")
+
+// Main flow
+~greet(name: "World")
