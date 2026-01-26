@@ -510,24 +510,22 @@ pub const CompilerContext = struct {
 
 ~coordinate = context_create(program_ast, allocator)
 | created c0 |> frontend(ctx: c0.ctx)
-  | ctx c1 |> transform_taps(ctx: c1)
-    | ctx c2 |> analysis(ctx: c2)
-      | ctx c3 |> test_generation(ctx: c3)
-        | ctx c4 |> optimize(ctx: c4)
-          | ctx c5 |> emission(ctx: c5)
-            | ctx c6 |> metrics_format(passes_completed: c6.ctx.passes_completed, allocator: allocator)
-              | formatted m |> std.inter:start(contexts: [
-                  c0.ctx,
-                  c1,
-                  c2,
-                  c3,
-                  c4,
-                  c5,
-                  c6.ctx
-                ])
-                | launched |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }
-                | skipped |> coordinated { ast: c6.ctx.ast, code: c6.code, metrics: m.metrics }
-      | failed f |> error { message: f.message }
+  | ctx c1 |> analysis(ctx: c1)
+    | ctx c2 |> test_generation(ctx: c2)
+      | ctx c3 |> optimize(ctx: c3)
+        | ctx c4 |> emission(ctx: c4)
+          | ctx c5 |> metrics_format(passes_completed: c5.ctx.passes_completed, allocator: allocator)
+            | formatted m |> std.inter:start(contexts: [
+                c0.ctx,
+                c1,
+                c2,
+                c3,
+                c4,
+                c5.ctx
+              ])
+              | launched |> coordinated { ast: c5.ctx.ast, code: c5.code, metrics: m.metrics }
+              | skipped |> coordinated { ast: c5.ctx.ast, code: c5.code, metrics: m.metrics }
+    | failed f |> error { message: f.message }
 
 // Composable pipeline segments - users can mix and match!
 
