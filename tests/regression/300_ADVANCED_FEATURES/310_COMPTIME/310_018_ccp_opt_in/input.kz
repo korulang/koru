@@ -14,4 +14,4 @@ const std = @import("std");
 }
 
 ~greet(name: "Koru")
-| greeting |> _
+| greeting _ |> _

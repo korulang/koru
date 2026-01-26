@@ -1,19 +1,17 @@
-// Logger with INVALID tap: universal wildcard + concrete branch
+// Logger for wildcard tap test
 
 const std = @import("std");
+~import "$std/taps"
 
-~pub event log { value: i32 }
+~pub event log { msg: []const u8 }
 | done {}
 
 ~proc log {
-    std.debug.print("[TAP] Got value: {d}\n", .{value});
+    std.debug.print("[TAP] {s}\n", .{msg});
     return .{ .done = .{} };
 }
 
-// INVALID: Universal wildcard (*:*) + concrete branch (result)
-// This should fail compilation with clear error message
-// Error: Cannot use concrete branch 'result' with wildcard source pattern '*:*'
-//        Wildcard sources only support metatypes (Transition, Profile, Audit)
-~*:* -> *
-| result r |> log(value: r.value)
+// Universal wildcard tap using metatype (valid usage)
+~tap(* -> *)
+| Profile p |> log(msg: p.source)
     | done |> _

@@ -1,0 +1,6 @@
+BLOCKED: Waiting for opaque annotation support in tap transform
+
+This test is blocked by:
+  310_040_opaque_tap_skipping (PRIORITY)
+
+See: tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_018_ccp_opt_in/TODO

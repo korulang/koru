@@ -1,0 +1,20 @@
+Fix metatype binding codegen in tap transform
+
+DESCRIPTION:
+When universal wildcard taps (* -> *) use metatype branches (Profile),
+the generated code fails to properly bind the metatype variable (e.g., 'p').
+Error: "use of undeclared identifier 'p'" when accessing p.source.
+
+ACCEPTANCE CRITERIA:
+1. Metatype binding creates proper scope for metatype struct access
+2. Profile variable 'p' accessible in tap handler invocation
+3. Test passes with output: "[TAP] input:hello\nHello\n[TAP] input:goodbye\nGoodbye\n"
+
+ROOT CAUSE:
+The metatype_binding transformation in taps.kz (around line 441-487) needs
+to properly set up variable scope or inject the metatype struct into the
+generated invocation context.
+
+RELATED:
+- This also blocks 310_018 (CCP opt-in) and 310_019 (CCP flag injection)
+- See also: 510_071, 510_072 (other wildcard pattern issues)

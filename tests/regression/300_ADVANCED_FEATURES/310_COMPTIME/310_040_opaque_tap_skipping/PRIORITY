@@ -1,0 +1,22 @@
+Implement opaque annotation checking in tap transform
+
+DESCRIPTION:
+The tap transform (koru_std/taps.kz) must respect [opaque] annotations
+on events to prevent infinite recursion and allow internal implementation
+events to be called safely from tap handlers.
+
+ACCEPTANCE CRITERIA:
+1. Tap transform walks program's event declarations during processing
+2. Collects events marked with [opaque] annotation
+3. When matching invocations for wrapping, skips any event that has [opaque]
+4. Test passes: "Hello\n[INTERNAL] input:hello\n"
+
+BLOCKS:
+- tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_018_ccp_opt_in
+- tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_019_ccp_flag_injection
+
+RATIONALE:
+Without opaque support, universal taps recursively tap themselves through
+internal events, causing infinite loops and type checking failures.
+This is critical for CCP (Compiler Control Protocol) and any other
+observability systems that generate their own events.

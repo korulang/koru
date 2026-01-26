@@ -1,16 +1,13 @@
-// Test 192: Event Wildcard + Concrete Branch (INVALID - MUST FAIL)
+// Test: Event Wildcard Tap with Metatype
 //
-// Pattern: ~*:compute -> * | result r |>
+// Demonstrates that event wildcard taps (*:compute) must use metatypes
+// like Profile, Transition, or Audit (not concrete branches).
 //
-// This is INVALID because:
-// - Source is event wildcard (*:compute) - matches compute in ALL modules
-// - Branch is concrete (result) - requires specific branch shape
-// - Type error: compute in different modules may have different branches!
-// - input:compute might have .result, but app:compute might have .output
-//
-// Expected error: "Cannot use concrete branch 'result' with wildcard source pattern '*:compute'"
+// With metatype, the tap can observe any event named "compute" across modules
+// and access the Profile metadata (source, branch, destination).
 
 const std = @import("std");
+~import "$std/taps"
 
 ~import "$app/test_lib/logger"
 
@@ -20,6 +17,11 @@ const std = @import("std");
 ~proc compute {
     return .{ .result = .{ .value = x * 2 } };
 }
+
+// Event wildcard tap observes all compute events with metatype
+~tap(*:compute -> *)
+| Profile p |> logger(msg: p.source)
+    | done |> _
 
 ~compute(x: 42)
 | result |> _

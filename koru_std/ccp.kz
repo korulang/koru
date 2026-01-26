@@ -15,18 +15,22 @@
 //
 // Related: docs/CCP.md
 
+~import "$std/taps"
+
 const std = @import("std");
 
 // Note: Transition type is a magical ambient type emitted by the compiler
 // when any tap uses it. No need to define it here.
 
 // Event: Emit a transition event as JSONL to stdout
-~event emit_transition {
+// Marked [opaque] to prevent infinite recursion from universal tap
+~[opaque] event emit_transition {
     source: []const u8,
     branch: []const u8,
     destination: ?[]const u8,
     timestamp_ns: i128,
 }
+| done {}
 
 ~proc emit_transition {
     var buffer: [8192]u8 = undefined;
@@ -89,6 +93,7 @@ const std = @import("std");
 
     // Write to stdout (compiler diagnostics go to stderr)
     std.debug.print("{s}", .{buffer[0..pos]});
+    return .{ .done = .{} };
 }
 
 // UNIVERSAL TAP: Observe ALL event transitions in the program
@@ -104,5 +109,6 @@ const std = @import("std");
 // - timestamp_ns: Execution time (null unless profiling enabled)
 //
 // Self-governing: Only fires when --ccp flag is set AND this module is imported
-~* -> *
-| Profile t |> emit_transition(t.source, t.branch, t.destination, t.timestamp_ns)
+~tap(* -> *)
+| Profile t |> emit_transition(source: t.source, branch: t.branch, destination: t.destination, timestamp_ns: t.timestamp_ns)
+    | done |> _

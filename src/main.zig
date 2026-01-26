@@ -2927,6 +2927,13 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
 
                 const parse_result = try parser.parse();
 
+                // Abort on parse errors in imported files
+                if (parser.reporter.hasErrors()) {
+                    const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+                    try parser.reporter.printErrors(stderr_writer);
+                    std.process.exit(1);
+                }
+
                 var public_events = std.ArrayListAligned(ast.EventDecl, null){ .items = &.{}, .capacity = 0 };
                 for (parse_result.source_file.items) |item| {
                     if (item == .event_decl and item.event_decl.is_public) {
@@ -2969,6 +2976,13 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
             defer parser.deinit();
 
             const parse_result = try parser.parse();
+
+            // Abort on parse errors in imported files
+            if (parser.reporter.hasErrors()) {
+                const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+                try parser.reporter.printErrors(stderr_writer);
+                std.process.exit(1);
+            }
 
             var public_events = std.ArrayListAligned(ast.EventDecl, null){ .items = &.{}, .capacity = 0 };
             for (parse_result.source_file.items) |item| {

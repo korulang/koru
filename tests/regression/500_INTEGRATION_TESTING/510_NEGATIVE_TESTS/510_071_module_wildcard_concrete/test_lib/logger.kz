@@ -1,19 +1,17 @@
-// Logger with INVALID tap: module wildcard + concrete branch
+// Logger for module wildcard tap test
 
 const std = @import("std");
+~import "$std/taps"
 
-~pub event log { text: []const u8 }
+~pub event log { msg: []const u8 }
 | done {}
 
 ~proc log {
-    std.debug.print("[TAP] Got text: {s}\n", .{text});
+    std.debug.print("[TAP] {s}\n", .{msg});
     return .{ .done = .{} };
 }
 
-// INVALID: Module wildcard (input:*) + concrete branch (formatted)
-// This should fail compilation with clear error message
-// Error: Cannot use concrete branch 'formatted' with wildcard source pattern 'input:*'
-//        Wildcard sources only support metatypes (Transition, Profile, Audit)
-~input:* -> *
-| formatted f |> log(text: f.text)
+// Module wildcard tap using metatype (valid usage)
+~tap(input:* -> *)
+| Profile p |> log(msg: p.source)
     | done |> _

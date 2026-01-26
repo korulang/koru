@@ -1,0 +1,41 @@
+// Test 310_040: Opaque Events Are Skipped By Taps
+//
+// Demonstrates that events marked [opaque] are NOT wrapped by taps.
+// This prevents infinite recursion when internal implementation events
+// are called from within tap handlers.
+//
+// Example: A universal tap (* -> *) should not tap [opaque] events,
+// allowing internal events (like emit_transition in CCP) to be called
+// safely from tap handlers without creating infinite loops.
+
+const std = @import("std");
+~import "$std/taps"
+
+// Public event - will be tapped
+~event hello {}
+| done {}
+
+// Internal event - marked opaque to prevent tapping
+~[opaque] event internal_log { msg: []const u8 }
+| done {}
+
+~proc hello {
+    std.debug.print("Hello\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc internal_log {
+    std.debug.print("[INTERNAL] {s}\n", .{msg});
+    return .{ .done = .{} };
+}
+
+// Universal tap - should wrap hello() but NOT internal_log()
+~tap(* -> *)
+| Profile p |> internal_log(msg: p.source)
+    | done |> _
+
+// Call hello - tap should fire and call internal_log
+// The internal_log call from the tap should NOT be wrapped again
+// (it's opaque, so tap won't try to tap it)
+~hello()
+| done |> _

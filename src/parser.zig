@@ -6229,7 +6229,10 @@ pub const Parser = struct {
         for (field_strings.items) |field_str| {
             const trimmed_field = lexer.trim(field_str);
             if (trimmed_field.len == 0) continue;
-            
+
+            // Skip comment-only fields (from inline comments like "x: i32,  // comment")
+            if (std.mem.startsWith(u8, trimmed_field, "//")) continue;
+
             const colon_idx = std.mem.indexOf(u8, trimmed_field, ":") orelse {
                 try self.reporter.addError(
                     .PARSE003,
