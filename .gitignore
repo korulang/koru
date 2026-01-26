@@ -27,6 +27,7 @@
 !KORU.md
 !STATUS.md
 !CLAUDE.md
+!CLAUDE.md.template
 !DOCUMENTATION.md
 !CONTRIBUTING.md
 
@@ -185,8 +186,6 @@ tests/benchmarks/**/actual.txt
 
 .env
 .claude/
-CLAUDE.md
-CLAUDE.md.template
 package.json
 test-results/
 zig-out/
