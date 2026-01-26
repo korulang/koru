@@ -1,0 +1,47 @@
+// Test 647: deps:requires.system - System dependency declarations
+//
+// This test validates that system-level dependencies can be declared
+// and checked via the deps command.
+//
+// Run: koruc input.kz deps
+// Expected: Shows status of declared system dependencies
+
+~import "$std/deps"
+
+// Declare system dependencies using Source blocks (like requires.npm)
+
+~std.deps:requires.system {
+    "name": "curl",
+    "check": "curl-config --version",
+    "brew": "curl",
+    "apt": "libcurl4-openssl-dev",
+    "dnf": "libcurl-devel",
+    "pacman": "curl"
+}
+
+~std.deps:requires.system {
+    "name": "zlib",
+    "check": "pkg-config --modversion zlib",
+    "brew": "zlib",
+    "apt": "zlib1g-dev",
+    "dnf": "zlib-devel",
+    "pacman": "zlib"
+}
+
+// A fake dependency that won't be installed (for testing missing deps)
+~std.deps:requires.system {
+    "name": "nonexistent-lib",
+    "check": "nonexistent-check-command --version",
+    "brew": "nonexistent-brew-pkg",
+    "apt": "nonexistent-apt-pkg"
+}
+
+~event main {}
+| done {}
+
+~proc main {
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

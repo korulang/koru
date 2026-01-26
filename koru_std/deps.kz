@@ -1,0 +1,348 @@
+// deps.kz - System dependency management for Koru
+//
+// This module provides events for declaring system-level dependencies
+// (libraries installed via brew, apt, dnf, pacman, etc.) that are required
+// for Koru packages to build.
+//
+// Usage in a library (e.g., curl/index.kz):
+//
+//   ~import "$std/deps"
+//
+//   ~std.deps:requires.system {
+//       "name": "curl",
+//       "check": "curl-config --version",
+//       "brew": "curl",
+//       "apt": "libcurl4-openssl-dev"
+//   }
+//
+// Then users can run:
+//   koruc main.kz deps           # Show status of all system dependencies
+//   koruc main.kz deps install   # Install missing deps (auto-detects package manager)
+//   koruc main.kz deps install --pm brew   # Force specific package manager
+
+~import "$std/compiler"
+
+~[comptime]
+
+// ============================================================
+// DEPS COMMAND - Check and install system dependencies
+// ============================================================
+
+~std.compiler:command.declare {
+    "name": "deps",
+    "description": "Check and install system dependencies from requires.system declarations"
+}
+
+~[comptime|command]pub event deps {
+    program: *const Program,
+    allocator: __koru_std.mem.Allocator,
+    argv: []const []const u8,
+}
+
+~proc deps {
+    const std = @import("std");
+
+    // Helper types
+    const SystemDep = struct {
+        name: []const u8 = "",
+        check: []const u8 = "",
+        brew: []const u8 = "",
+        apt: []const u8 = "",
+        dnf: []const u8 = "",
+        pacman: []const u8 = "",
+        apk: []const u8 = "",
+    };
+
+    const CheckResult = struct {
+        success: bool,
+        output: []const u8,
+    };
+
+    // Helper functions
+    const helpers = struct {
+        fn detectPackageManager(alloc: std.mem.Allocator) ?[]const u8 {
+            const pms = [_]struct { name: []const u8, check_cmd: []const u8 }{
+                .{ .name = "brew", .check_cmd = "brew --version" },
+                .{ .name = "apt", .check_cmd = "apt --version" },
+                .{ .name = "dnf", .check_cmd = "dnf --version" },
+                .{ .name = "pacman", .check_cmd = "pacman --version" },
+                .{ .name = "apk", .check_cmd = "apk --version" },
+            };
+
+            for (pms) |pm| {
+                const result = std.process.Child.run(.{
+                    .allocator = alloc,
+                    .argv = &[_][]const u8{ "sh", "-c", pm.check_cmd },
+                }) catch continue;
+                defer alloc.free(result.stdout);
+                defer alloc.free(result.stderr);
+
+                if (result.term.Exited == 0) {
+                    return pm.name;
+                }
+            }
+            return null;
+        }
+
+        fn runCheck(alloc: std.mem.Allocator, cmd: []const u8) CheckResult {
+            const result = std.process.Child.run(.{
+                .allocator = alloc,
+                .argv = &[_][]const u8{ "sh", "-c", cmd },
+            }) catch return .{ .success = false, .output = "" };
+
+            defer alloc.free(result.stderr);
+
+            if (result.term.Exited == 0) {
+                return .{ .success = true, .output = result.stdout };
+            } else {
+                alloc.free(result.stdout);
+                return .{ .success = false, .output = "" };
+            }
+        }
+
+        fn runInstall(alloc: std.mem.Allocator, pm: []const u8, pkg: []const u8) CheckResult {
+            const cmd = if (std.mem.eql(u8, pm, "brew"))
+                std.fmt.allocPrint(alloc, "brew install {s}", .{pkg}) catch return .{ .success = false, .output = "" }
+            else if (std.mem.eql(u8, pm, "apt"))
+                std.fmt.allocPrint(alloc, "sudo apt install -y {s}", .{pkg}) catch return .{ .success = false, .output = "" }
+            else if (std.mem.eql(u8, pm, "dnf"))
+                std.fmt.allocPrint(alloc, "sudo dnf install -y {s}", .{pkg}) catch return .{ .success = false, .output = "" }
+            else if (std.mem.eql(u8, pm, "pacman"))
+                std.fmt.allocPrint(alloc, "sudo pacman -S --noconfirm {s}", .{pkg}) catch return .{ .success = false, .output = "" }
+            else if (std.mem.eql(u8, pm, "apk"))
+                std.fmt.allocPrint(alloc, "sudo apk add {s}", .{pkg}) catch return .{ .success = false, .output = "" }
+            else
+                return .{ .success = false, .output = "" };
+
+            defer alloc.free(cmd);
+
+            const result = std.process.Child.run(.{
+                .allocator = alloc,
+                .argv = &[_][]const u8{ "sh", "-c", cmd },
+            }) catch return .{ .success = false, .output = "" };
+
+            defer alloc.free(result.stderr);
+
+            if (result.term.Exited == 0) {
+                return .{ .success = true, .output = result.stdout };
+            } else {
+                alloc.free(result.stdout);
+                const err_copy = alloc.dupe(u8, result.stderr) catch "";
+                return .{ .success = false, .output = err_copy };
+            }
+        }
+
+        fn firstLine(s: []const u8) []const u8 {
+            const trimmed = std.mem.trim(u8, s, " \t\n\r");
+            if (std.mem.indexOf(u8, trimmed, "\n")) |idx| {
+                return trimmed[0..idx];
+            }
+            return trimmed;
+        }
+
+        fn parseJsonField(source: []const u8, field: []const u8) []const u8 {
+            // Simple JSON field extraction: find "field": "value"
+            var search_buf: [64]u8 = undefined;
+            const search_pattern = std.fmt.bufPrint(&search_buf, "\"{s}\":", .{field}) catch return "";
+
+            if (std.mem.indexOf(u8, source, search_pattern)) |start| {
+                const after_key = source[start + search_pattern.len ..];
+                // Skip whitespace
+                var i: usize = 0;
+                while (i < after_key.len and (after_key[i] == ' ' or after_key[i] == '\t' or after_key[i] == '\n')) : (i += 1) {}
+                if (i >= after_key.len or after_key[i] != '"') return "";
+                i += 1; // Skip opening quote
+                const value_start = i;
+                while (i < after_key.len and after_key[i] != '"') : (i += 1) {}
+                return after_key[value_start..i];
+            }
+            return "";
+        }
+    };
+
+    // Parse argv
+    var do_install = false;
+    var forced_pm: ?[]const u8 = null;
+
+    var i: usize = 0;
+    while (i < argv.len) : (i += 1) {
+        const arg = argv[i];
+        if (std.mem.eql(u8, arg, "install")) {
+            do_install = true;
+        } else if (std.mem.eql(u8, arg, "--pm") and i + 1 < argv.len) {
+            i += 1;
+            forced_pm = argv[i];
+        }
+    }
+
+    const detected_pm = forced_pm orelse helpers.detectPackageManager(allocator);
+
+    // Collect requires.system declarations
+    var deps_list = std.ArrayListUnmanaged(SystemDep){};
+    defer deps_list.deinit(allocator);
+
+    for (program.items) |item| {
+        if (item == .flow) {
+            const flow = item.flow;
+            if (flow.invocation.path.module_qualifier) |mq| {
+                if (std.mem.eql(u8, mq, "std.deps") and
+                    flow.invocation.path.segments.len == 2 and
+                    std.mem.eql(u8, flow.invocation.path.segments[0], "requires") and
+                    std.mem.eql(u8, flow.invocation.path.segments[1], "system"))
+                {
+                    // Extract source parameter
+                    for (flow.invocation.args) |arg| {
+                        if (std.mem.eql(u8, arg.name, "source")) {
+                            var dep = SystemDep{};
+                            dep.name = helpers.parseJsonField(arg.value, "name");
+                            dep.check = helpers.parseJsonField(arg.value, "check");
+                            dep.brew = helpers.parseJsonField(arg.value, "brew");
+                            dep.apt = helpers.parseJsonField(arg.value, "apt");
+                            dep.dnf = helpers.parseJsonField(arg.value, "dnf");
+                            dep.pacman = helpers.parseJsonField(arg.value, "pacman");
+                            dep.apk = helpers.parseJsonField(arg.value, "apk");
+
+                            if (dep.name.len > 0) {
+                                deps_list.append(allocator, dep) catch {
+                                    std.debug.print("Out of memory\n", .{});
+                                    return;
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (deps_list.items.len == 0) {
+        std.debug.print("No system dependencies declared.\n", .{});
+        std.debug.print("Use: ~std.deps:requires.system {{ \"name\": \"...\", \"check\": \"...\", \"brew\": \"...\" }}\n", .{});
+        return;
+    }
+
+    std.debug.print("\nSystem dependencies for this project:\n\n", .{});
+
+    var missing = std.ArrayListUnmanaged(SystemDep){};
+    defer missing.deinit(allocator);
+
+    for (deps_list.items) |dep| {
+        if (dep.check.len > 0) {
+            const result = helpers.runCheck(allocator, dep.check);
+            if (result.success) {
+                std.debug.print("  {s} \x1b[32m✓\x1b[0m", .{dep.name});
+                if (result.output.len > 0) {
+                    const first_line = helpers.firstLine(result.output);
+                    std.debug.print(" ({s})\n", .{first_line});
+                    allocator.free(result.output);
+                } else {
+                    std.debug.print("\n", .{});
+                }
+            } else {
+                std.debug.print("  {s} \x1b[31m✗\x1b[0m (not found)\n", .{dep.name});
+                missing.append(allocator, dep) catch {};
+            }
+        } else {
+            std.debug.print("  {s} \x1b[33m?\x1b[0m (no check command)\n", .{dep.name});
+        }
+
+        // Show package options
+        std.debug.print("       ", .{});
+        var has_any = false;
+        if (dep.brew.len > 0) {
+            if (detected_pm != null and std.mem.eql(u8, detected_pm.?, "brew")) {
+                std.debug.print("\x1b[1mbrew: {s}\x1b[0m", .{dep.brew});
+            } else {
+                std.debug.print("brew: {s}", .{dep.brew});
+            }
+            has_any = true;
+        }
+        if (dep.apt.len > 0) {
+            if (has_any) std.debug.print(" | ", .{});
+            if (detected_pm != null and std.mem.eql(u8, detected_pm.?, "apt")) {
+                std.debug.print("\x1b[1mapt: {s}\x1b[0m", .{dep.apt});
+            } else {
+                std.debug.print("apt: {s}", .{dep.apt});
+            }
+            has_any = true;
+        }
+        if (dep.dnf.len > 0) {
+            if (has_any) std.debug.print(" | ", .{});
+            std.debug.print("dnf: {s}", .{dep.dnf});
+            has_any = true;
+        }
+        if (dep.pacman.len > 0) {
+            if (has_any) std.debug.print(" | ", .{});
+            std.debug.print("pacman: {s}", .{dep.pacman});
+            has_any = true;
+        }
+        if (!has_any) {
+            std.debug.print("(no packages defined)", .{});
+        }
+        std.debug.print("\n", .{});
+    }
+
+    std.debug.print("\n", .{});
+
+    if (missing.items.len == 0) {
+        std.debug.print("\x1b[32mAll system dependencies are installed!\x1b[0m\n", .{});
+        return;
+    }
+
+    if (!do_install) {
+        std.debug.print("To install missing dependencies:\n", .{});
+        std.debug.print("  koruc <file>.kz deps install", .{});
+        if (detected_pm) |pm| {
+            std.debug.print(" (detected: {s})\n", .{pm});
+        } else {
+            std.debug.print(" --pm <brew|apt|dnf|pacman|apk>\n", .{});
+        }
+        return;
+    }
+
+    const pm = detected_pm orelse {
+        std.debug.print("\x1b[31mCould not detect package manager. Use --pm to specify.\x1b[0m\n", .{});
+        return;
+    };
+
+    std.debug.print("Installing {d} missing dependencies with {s}...\n\n", .{ missing.items.len, pm });
+
+    for (missing.items) |dep| {
+        const pkg_name = if (std.mem.eql(u8, pm, "brew") and dep.brew.len > 0) dep.brew
+            else if (std.mem.eql(u8, pm, "apt") and dep.apt.len > 0) dep.apt
+            else if (std.mem.eql(u8, pm, "dnf") and dep.dnf.len > 0) dep.dnf
+            else if (std.mem.eql(u8, pm, "pacman") and dep.pacman.len > 0) dep.pacman
+            else if (std.mem.eql(u8, pm, "apk") and dep.apk.len > 0) dep.apk
+            else "";
+
+        if (pkg_name.len == 0) {
+            std.debug.print("  {s}: \x1b[33mno package defined for {s}\x1b[0m\n", .{ dep.name, pm });
+            continue;
+        }
+
+        std.debug.print("  Installing {s}...\n", .{pkg_name});
+
+        const install_result = helpers.runInstall(allocator, pm, pkg_name);
+        if (install_result.success) {
+            std.debug.print("    \x1b[32m✓\x1b[0m installed\n", .{});
+        } else {
+            std.debug.print("    \x1b[31m✗\x1b[0m failed\n", .{});
+            if (install_result.output.len > 0) {
+                std.debug.print("    {s}\n", .{install_result.output});
+            }
+        }
+        if (install_result.output.len > 0) allocator.free(install_result.output);
+    }
+
+    std.debug.print("\n", .{});
+}
+
+// ============================================================
+// REQUIRES.SYSTEM EVENT - Declare a system dependency
+// ============================================================
+
+~[comptime|norun]pub event requires.system { source: Source }
+
+~proc requires.system {
+    // Void event - collected during AST walking
+}
