@@ -1,5 +1,5 @@
 const std = @import("std");
-const DEBUG = false;  // Set to true for verbose logging
+const log = @import("log");
 const ast = @import("ast");
 const TapRegistry = @import("tap_registry").TapRegistry;
 const TapEntry = @import("tap_registry").TapEntry;
@@ -108,8 +108,8 @@ pub fn transformAst(
     emit_mode: EmitMode,
     allocator: std.mem.Allocator,
 ) !*ast.Program {
-    if (DEBUG) std.debug.print("TAP TRANSFORMER: Starting AST transformation (mode: {s})\n", .{@tagName(emit_mode)});
-    if (DEBUG) std.debug.print("TAP TRANSFORMER: Tap registry has {} entries\n", .{tap_registry.entries.items.len});
+    log.debug("TAP TRANSFORMER: Starting AST transformation (mode: {s})\n", .{@tagName(emit_mode)});
+    log.debug("TAP TRANSFORMER: Tap registry has {} entries\n", .{tap_registry.entries.items.len});
 
     var opaque_events = try buildOpaqueEventSet(source_ast.items, allocator);
     defer deinitOpaqueEventSet(&opaque_events, allocator);
@@ -148,12 +148,12 @@ fn transformItems(
     var transformed = try std.ArrayList(ast.Item).initCapacity(allocator, items.len);
     defer transformed.deinit(allocator);
 
-    if (DEBUG) std.debug.print("TAP TRANSFORMER: transformItems processing {} items\n", .{items.len});
+    log.debug("TAP TRANSFORMER: transformItems processing {} items\n", .{items.len});
 
     for (items) |item| {
         switch (item) {
             .subflow_impl => |subflow| {
-                if (DEBUG) std.debug.print("TAP TRANSFORMER: Found subflow for event: {s}\n", .{subflow.event_path.segments[0]});
+                log.debug("TAP TRANSFORMER: Found subflow for event: {s}\n", .{subflow.event_path.segments[0]});
                 // Transform this subflow
                 const transformed_subflow = try transformSubflow(
                     &subflow,
@@ -168,7 +168,7 @@ fn transformItems(
             .flow => |flow| {
                 // Transform top-level flows (e.g., ~hello() | done |> _)
                 // These are flow-level taps that should fire when the main invocation completes
-                if (DEBUG) std.debug.print("TAP TRANSFORMER: Found top-level flow invoking: {s}\n", .{flow.invocation.path.segments[0]});
+                log.debug("TAP TRANSFORMER: Found top-level flow invoking: {s}\n", .{flow.invocation.path.segments[0]});
 
                 if (hasOpaqueAnnotation(flow.annotations)) {
                     try transformed.append(allocator, item);
@@ -179,7 +179,7 @@ fn transformItems(
                 const invoked_event = try pathToString(flow.invocation.path, allocator);
                 defer allocator.free(invoked_event);
 
-                if (DEBUG) std.debug.print("TAP TRANSFORMER: Top-level flow invokes '{s}'\n", .{invoked_event});
+                log.debug("TAP TRANSFORMER: Top-level flow invokes '{s}'\n", .{invoked_event});
 
                 // Transform continuations - check for taps FROM the invoked event ON each branch
                 const transformed_continuations = try transformContinuationsWithInvokedEvent(
@@ -247,7 +247,7 @@ fn transformSubflow(
             const invoked_event = try pathToString(flow.invocation.path, allocator);
             defer allocator.free(invoked_event);
 
-            if (DEBUG) std.debug.print("TAP TRANSFORMER: Subflow '{s}' invokes '{s}'\n", .{source_event_canonical, invoked_event});
+            log.debug("TAP TRANSFORMER: Subflow '{s}' invokes '{s}'\n", .{source_event_canonical, invoked_event});
 
             // Transform continuations - check for taps FROM the invoked event ON each branch
             const transformed_continuations = try transformContinuationsWithInvokedEvent(
@@ -330,7 +330,7 @@ fn mergeTapContinuationsWithOriginal(
 
         if (is_pass_through) {
             // Pass-through: replace tap's step with original step, use original continuations
-            if (DEBUG) std.debug.print("TAP TRANSFORMER: Found pass-through point, replacing with original step\n", .{});
+            log.debug("TAP TRANSFORMER: Found pass-through point, replacing with original step\n", .{});
 
             // Rewrite original step to use target_binding if needed
             const rewritten_step = if (original_step) |step| blk: {
@@ -428,7 +428,7 @@ fn transformContinuationsWithInvokedEventInternal(
     defer transformed.deinit(allocator);
 
     for (continuations) |cont| {
-        if (DEBUG) std.debug.print("TAP TRANSFORMER: Checking continuation for branch '{s}'\n", .{cont.branch});
+        log.debug("TAP TRANSFORMER: Checking continuation for branch '{s}'\n", .{cont.branch});
 
         // Check if this continuation's step is from an opaque tap
         // If so, skip tap insertion to prevent "tap code observing tap code"
@@ -436,15 +436,15 @@ fn transformContinuationsWithInvokedEventInternal(
         if (cont.node) |step| {
             const step_from_opaque = switch (step) {
                 .invocation => |inv| blk: {
-                    if (DEBUG) std.debug.print("TAP TRANSFORMER:   Step: invocation from_opaque_tap={} inserted_by_tap={}\n", .{inv.from_opaque_tap, inv.inserted_by_tap});
+                    log.debug("TAP TRANSFORMER:   Step: invocation from_opaque_tap={} inserted_by_tap={}\n", .{inv.from_opaque_tap, inv.inserted_by_tap});
                     break :blk inv.from_opaque_tap;
                 },
                 .metatype_binding => |mb| blk: {
-                    if (DEBUG) std.debug.print("TAP TRANSFORMER:   Step: metatype_binding from_opaque_tap={} inserted_by_tap={}\n", .{mb.from_opaque_tap, mb.inserted_by_tap});
+                    log.debug("TAP TRANSFORMER:   Step: metatype_binding from_opaque_tap={} inserted_by_tap={}\n", .{mb.from_opaque_tap, mb.inserted_by_tap});
                     break :blk mb.from_opaque_tap;
                 },
                 .conditional_block => |cb| blk: {
-                    if (DEBUG) std.debug.print("TAP TRANSFORMER:   Step: conditional_block from_opaque_tap={} inserted_by_tap={}\n", .{cb.from_opaque_tap, cb.inserted_by_tap});
+                    log.debug("TAP TRANSFORMER:   Step: conditional_block from_opaque_tap={} inserted_by_tap={}\n", .{cb.from_opaque_tap, cb.inserted_by_tap});
                     break :blk cb.from_opaque_tap;
                 },
                 else => false,
@@ -455,7 +455,7 @@ fn transformContinuationsWithInvokedEventInternal(
         }
 
         if (is_from_opaque_tap) {
-            if (DEBUG) std.debug.print("TAP TRANSFORMER: Skipping tap insertion - continuation is from opaque tap\n", .{});
+            log.debug("TAP TRANSFORMER: Skipping tap insertion - continuation is from opaque tap\n", .{});
             // Return continuation unchanged - no tap insertion
             try transformed.append(allocator, cont);
             continue;
@@ -494,17 +494,17 @@ fn transformContinuationsWithInvokedEventInternal(
 
             for (all_matching_taps) |tap| {
                 if (shouldIncludeTap(&tap, emit_mode)) {
-                    if (DEBUG) std.debug.print("TAP TRANSFORMER:     Considering tap: is_opaque={} source_module='{s}' invoked_module='{s}'\n", .{tap.is_opaque, tap.source_module, invoked_module});
+                    log.debug("TAP TRANSFORMER:     Considering tap: is_opaque={} source_module='{s}' invoked_module='{s}'\n", .{tap.is_opaque, tap.source_module, invoked_module});
 
                     // Skip opaque taps from observing events in their own module (prevents recursion)
                     if (tap.is_opaque and invoked_module.len > 0 and std.mem.eql(u8, tap.source_module, invoked_module)) {
-                        if (DEBUG) std.debug.print("TAP TRANSFORMER:     SKIPPING: Opaque tap from module '{s}' observing own module event '{s}'\n", .{tap.source_module, invoked_event});
+                        log.debug("TAP TRANSFORMER:     SKIPPING: Opaque tap from module '{s}' observing own module event '{s}'\n", .{tap.source_module, invoked_event});
                         continue;
                     }
 
                     // Skip ALL taps when inside opaque tap context
                     if (is_from_opaque_tap) {
-                        if (DEBUG) std.debug.print("TAP TRANSFORMER:     SKIPPING: Inside opaque tap context\n", .{});
+                        log.debug("TAP TRANSFORMER:     SKIPPING: Inside opaque tap context\n", .{});
                         continue;
                     }
 
@@ -517,7 +517,7 @@ fn transformContinuationsWithInvokedEventInternal(
 
                         if (tap_event) |te| {
                             if (std.mem.eql(u8, te, invoked_event)) {
-                                if (DEBUG) std.debug.print("TAP TRANSFORMER:     SKIPPING: Tap's own step event '{s}' matches invoked event\n", .{te});
+                                log.debug("TAP TRANSFORMER:     SKIPPING: Tap's own step event '{s}' matches invoked event\n", .{te});
                                 continue;
                             }
                         }
@@ -532,7 +532,7 @@ fn transformContinuationsWithInvokedEventInternal(
         }
         defer if (free_matching_taps) allocator.free(matching_taps);
 
-        if (DEBUG) std.debug.print("TAP TRANSFORMER: Checking taps FROM '{s}' ON '{s}' → {d} matches ({d} after mode filtering)\n", .{
+        log.debug("TAP TRANSFORMER: Checking taps FROM '{s}' ON '{s}' → {d} matches ({d} after mode filtering)\n", .{
             invoked_event,
             cont.branch,
             all_matching_count,
@@ -565,8 +565,8 @@ fn transformContinuationsWithInvokedEventInternal(
         var transformed_continuations: []const ast.Continuation = cont.continuations;
 
         if (matching_taps.len > 0) {
-            if (DEBUG) std.debug.print("TAP TRANSFORMER: Inserting {d} tap(s) into continuation!\n", .{matching_taps.len});
-            if (DEBUG) std.debug.print("TAP TRANSFORMER: Using target_binding: '{s}'\n", .{target_binding});
+            log.debug("TAP TRANSFORMER: Inserting {d} tap(s) into continuation!\n", .{matching_taps.len});
+            log.debug("TAP TRANSFORMER: Using target_binding: '{s}'\n", .{target_binding});
 
             // For now, handle the first matching tap (TODO: chain multiple taps)
             const tap = matching_taps[0];

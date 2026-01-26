@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const ast = @import("ast");
 const lexer = @import("lexer");
 const errors = @import("errors");
@@ -9,7 +10,6 @@ const ModuleResolver = @import("module_resolver").ModuleResolver;
 // Re-export ExpressionParser for runtime use (e.g., interpreter ~if)
 pub const ExpressionParser = expression_parser.ExpressionParser;
 
-const DEBUG = false;  // Set to true for verbose parser logging
 
 /// Check if line has a source block pattern: `eventName { ... }` or `eventName(args) { ... }`
 /// Source blocks are opaque - their content should not affect parsing decisions.
@@ -1082,9 +1082,9 @@ pub const Parser = struct {
         }
 
         const path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
-        if (DEBUG) std.debug.print("PARSER parseEventDeclWithAnnotations: Just parsed event path: module={s} segments=", .{if (path.module_qualifier) |m| m else "null"});
-        if (DEBUG) for (path.segments) |s| std.debug.print("{s}.", .{s});
-        std.debug.print("\n", .{});
+        log.debug("PARSER parseEventDeclWithAnnotations: Just parsed event path: module={s} segments=", .{if (path.module_qualifier) |m| m else "null"});
+        if (log.level == .debug) for (path.segments) |s| log.debug("{s}.", .{s});
+        log.debug("\n", .{});
 
         const shape_source = if (brace_idx_opt) |idx|
             trimmed_after_event[idx..]
@@ -1362,7 +1362,7 @@ pub const Parser = struct {
             .module = try self.allocator.dupe(u8, self.module_name),
         };
 
-        if (DEBUG) std.debug.print("PARSER: Created EventDecl module='{s}', path.module_qualifier={s}\n", .{event_decl.module, if (event_decl.path.module_qualifier) |m| m else "null"});
+        log.debug("PARSER: Created EventDecl module='{s}', path.module_qualifier={s}\n", .{event_decl.module, if (event_decl.path.module_qualifier) |m| m else "null"});
 
         // Register the event with the type registry
         const path_str = try self.pathToString(event_decl.path);
@@ -2663,12 +2663,12 @@ pub const Parser = struct {
         }
         
         if (depth != 0) {
-            std.debug.print("ERROR: Proc body extraction failed! Final depth = {}, body_lines count = {}\n", .{depth, body_lines.items.len});
+            log.debug("ERROR: Proc body extraction failed! Final depth = {}, body_lines count = {}\n", .{depth, body_lines.items.len});
             if (body_lines.items.len > 0) {
-                std.debug.print("  First line: {s}\n", .{body_lines.items[0]});
+                log.debug("  First line: {s}\n", .{body_lines.items[0]});
                 if (body_lines.items.len > 1) {
                     const last = body_lines.items[body_lines.items.len - 1];
-                    std.debug.print("  Last line: {s}\n", .{last});
+                    log.debug("  Last line: {s}\n", .{last});
                 }
             }
             try self.reporter.addError(
@@ -3107,7 +3107,7 @@ pub const Parser = struct {
         }
         
         // Check for print patterns with format strings and tuple args
-        if (std.mem.indexOf(u8, content, "std.debug.print") != null or
+        if (std.mem.indexOf(u8, content, "log.debug") != null or
             std.mem.indexOf(u8, content, "std.log") != null) {
             return true;
         }
@@ -3240,7 +3240,7 @@ pub const Parser = struct {
         // Remove label anchors if present (both # and @ for now)
         var clean = lexer.withoutLabelAnchor(line);
         clean = lexer.withoutLabel(clean);
-        if (DEBUG) std.debug.print("[DEBUG] parseEventInvocation: input='{s}'\n", .{clean});
+        log.debug("[DEBUG] parseEventInvocation: input='{s}'\n", .{clean});
 
         // Detect Zig code patterns and report error
         if (self.looksLikeZigCode(clean)) {
@@ -3294,7 +3294,7 @@ pub const Parser = struct {
         // Check for Source block syntax: eventName [Type]{ ... }
         // Look for ]{ pattern to distinguish from array types like [100]f64
         const source_block_marker = std.mem.indexOf(u8, invocation_part, "]{");
-        if (DEBUG) std.debug.print("[DEBUG] parseEventInvocation: source_block_marker={?d} invocation_part='{s}'\n", .{source_block_marker, invocation_part});
+        log.debug("[DEBUG] parseEventInvocation: source_block_marker={?d} invocation_part='{s}'\n", .{source_block_marker, invocation_part});
 
         if (source_block_marker) |marker_idx| {
             // Find the opening [ by searching backwards from ]{
@@ -3366,9 +3366,9 @@ pub const Parser = struct {
                 defer self.allocator.free(path_str);
 
                 // Look up event type
-                if (DEBUG) std.debug.print("[DEBUG] parseEventInvocation: path_str='{s}' existing_args.len={d} source_text='{s}'\n", .{path_str, existing_args.len, source_text});
+                log.debug("[DEBUG] parseEventInvocation: path_str='{s}' existing_args.len={d} source_text='{s}'\n", .{path_str, existing_args.len, source_text});
                 if (self.registry.getEventType(path_str)) |event_type| {
-                    if (DEBUG) std.debug.print("[DEBUG] parseEventInvocation: event found in registry, calling createImplicitSourceInvocation\n", .{});
+                    log.debug("[DEBUG] parseEventInvocation: event found in registry, calling createImplicitSourceInvocation\n", .{});
                     // Create base invocation with existing args
                     const base_invocation = ast.Invocation{
                         .path = parsed_path,
@@ -3384,7 +3384,7 @@ pub const Parser = struct {
                     );
                 } else {
                     // Event not found in registry - use default source param name "source"
-                    if (DEBUG) std.debug.print("[DEBUG] parseEventInvocation: event NOT in registry, adding source with default name\n", .{});
+                    log.debug("[DEBUG] parseEventInvocation: event NOT in registry, adding source with default name\n", .{});
 
                     // Create new args with source
                     var new_args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, existing_args.len + 1);
@@ -4959,7 +4959,7 @@ pub const Parser = struct {
             // Handle multi-line source blocks in continuations
             // If full_rest ends with { (after trimming), collect lines until matching }
             const trimmed_rest = lexer.trim(full_rest);
-            if (DEBUG) std.debug.print("[DEBUG] parseBranchContinuationBase: trimmed_rest='{s}' ends_with_brace={}\n", .{trimmed_rest, trimmed_rest.len > 0 and trimmed_rest[trimmed_rest.len - 1] == '{'});
+            log.debug("[DEBUG] parseBranchContinuationBase: trimmed_rest='{s}' ends_with_brace={}\n", .{trimmed_rest, trimmed_rest.len > 0 and trimmed_rest[trimmed_rest.len - 1] == '{'});
             if (trimmed_rest.len > 0 and trimmed_rest[trimmed_rest.len - 1] == '{') {
                 // Multi-line source block - collect content
                 var source_buf = try std.ArrayList(u8).initCapacity(self.allocator, 256);
@@ -5141,7 +5141,7 @@ pub const Parser = struct {
         // Source blocks need special handling - they capture raw text, not collapsed content
         const has_open_brace = std.mem.indexOf(u8, content, "{") != null;
         const has_close_brace = std.mem.indexOf(u8, content, "}") != null;
-        if (DEBUG) std.debug.print("[DEBUG] parsePipelineContinuationBase: content='{s}' has_open={} has_close={}\n", .{content, has_open_brace, has_close_brace});
+        log.debug("[DEBUG] parsePipelineContinuationBase: content='{s}' has_open={} has_close={}\n", .{content, has_open_brace, has_close_brace});
         if (has_open_brace and !has_close_brace) {
             const brace_idx = std.mem.lastIndexOf(u8, content, "{") orelse unreachable;
             var invocation_str = lexer.trim(content[0..brace_idx]);
@@ -5177,9 +5177,9 @@ pub const Parser = struct {
 
             if (has_source_param) {
                 // This IS a Source block - parse it properly!
-                if (DEBUG) std.debug.print("[DEBUG] parsePipelineContinuationBase: has_source_param=true, path={s}\n", .{path_str});
+                log.debug("[DEBUG] parsePipelineContinuationBase: has_source_param=true, path={s}\n", .{path_str});
                 const result = try self.parseImplicitSourceBlock(indent, phantom_type);
-                if (DEBUG) std.debug.print("[DEBUG] parseImplicitSourceBlock returned source len={d}\n", .{result.source.len});
+                log.debug("[DEBUG] parseImplicitSourceBlock returned source len={d}\n", .{result.source.len});
 
                 // Create the invocation with source_value
                 var final_invocation: ast.Invocation = undefined;
@@ -6721,7 +6721,7 @@ pub const Parser = struct {
     fn parseAndRegisterImport(self: *Parser, import_path: []const u8, namespace: []const u8) anyerror!void {
         // If no resolver is available (help text parsing), skip import resolution
         const resolver = self.resolver orelse {
-            if (DEBUG) std.debug.print("Parser: No resolver available, skipping import resolution for: {s}\n", .{import_path});
+            log.debug("Parser: No resolver available, skipping import resolution for: {s}\n", .{import_path});
             return;
         };
 
@@ -6771,7 +6771,7 @@ pub const Parser = struct {
         // Check for circular import - if this file is already being parsed, skip it
         // The events will be registered when the original parse completes
         if (resolver.isBeingParsed(file_path)) {
-            if (DEBUG) std.debug.print("CIRCULAR IMPORT: Skipping '{s}' (already being parsed)\n", .{file_path});
+            log.debug("CIRCULAR IMPORT: Skipping '{s}' (already being parsed)\n", .{file_path});
             return;
         }
 

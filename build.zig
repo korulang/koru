@@ -23,12 +23,20 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+
+    // Log module for compiler verbosity control
+    const log_module = b.createModule(.{
+        .root_source_file = b.path("src/log.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     // Config module for koru.json parsing
     const config_module = b.createModule(.{
         .root_source_file = b.path("src/config.zig"),
         .target = target,
         .optimize = optimize,
     });
+    config_module.addImport("log", log_module);
 
     // Module resolver for import path resolution
     const module_resolver_module = b.createModule(.{
@@ -37,6 +45,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     module_resolver_module.addImport("config", config_module);
+    module_resolver_module.addImport("log", log_module);
 
     // AST depends on errors for SourceLocation
     ast_module.addImport("errors", errors_module);
@@ -48,6 +57,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     type_registry_module.addImport("ast", ast_module);
+    type_registry_module.addImport("log", log_module);
 
     // Keyword registry module for [keyword] annotation resolution
     const keyword_registry_module = b.createModule(.{
@@ -67,6 +77,7 @@ pub fn build(b: *std.Build) void {
     parser_module.addImport("errors", errors_module);
     parser_module.addImport("type_registry", type_registry_module);
     parser_module.addImport("module_resolver", module_resolver_module);
+    parser_module.addImport("log", log_module);
     
     // Expression parser module
     const expression_parser_module = b.createModule(.{
@@ -139,6 +150,7 @@ pub fn build(b: *std.Build) void {
     shape_checker_module.addImport("errors", errors_module);
     shape_checker_module.addImport("phantom_parser", phantom_parser_module);
     shape_checker_module.addImport("branch_checker", branch_checker_module);
+    shape_checker_module.addImport("log", log_module);
 
     // Flow checker module
     const flow_checker_module = b.createModule(.{
@@ -159,6 +171,7 @@ pub fn build(b: *std.Build) void {
     phantom_semantic_checker_module.addImport("ast", ast_module);
     phantom_semantic_checker_module.addImport("errors", errors_module);
     phantom_semantic_checker_module.addImport("phantom_parser", phantom_parser_module);
+    phantom_semantic_checker_module.addImport("log", log_module);
 
     // Type context module (moved here to avoid duplicate definition)
     const type_context_module = b.createModule(.{
@@ -188,6 +201,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     tap_collector_module.addImport("ast", ast_module);
+    tap_collector_module.addImport("log", log_module);
     
     // Tap codegen module for Event Tap code generation
     const tap_codegen_module = b.createModule(.{
@@ -204,6 +218,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     compiler_requires_module.addImport("ast", ast_module);
+    compiler_requires_module.addImport("log", log_module);
 
     // Package requirements collector module for ~std.package:requires.* AST walking
     const package_requires_module = b.createModule(.{
@@ -219,6 +234,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    emit_build_zig_module.addImport("log", log_module);
 
     // Package file generation library for package.json, Cargo.toml, etc.
     const emit_package_files_module = b.createModule(.{
@@ -238,6 +254,7 @@ pub fn build(b: *std.Build) void {
     shape_analyzer_module.addImport("type_inference", type_inference_module);
     shape_analyzer_module.addImport("type_registry", type_registry_module);
     shape_analyzer_module.addImport("type_context", type_context_module);
+    shape_analyzer_module.addImport("log", log_module);
     
     // Note: Old emitter.zig removed - we use ast_serializer now for metacircular compilation
     
@@ -276,6 +293,7 @@ pub fn build(b: *std.Build) void {
     });
     ast_serializer_module.addImport("ast", ast_module);
     ast_serializer_module.addImport("parser", parser_module);
+    ast_serializer_module.addImport("log", log_module);
 
     // Compiler Config module - feature flags and configuration
     const compiler_config_module = b.createModule(.{
@@ -295,6 +313,7 @@ pub fn build(b: *std.Build) void {
     emitter_helpers_module.addImport("compiler_config", compiler_config_module);
     emitter_helpers_module.addImport("type_registry", type_registry_module);
     emitter_helpers_module.addImport("codegen_utils", codegen_utils_module);
+    emitter_helpers_module.addImport("log", log_module);
 
     // Old emitter.zig DELETED - using visitor_emitter now
 
@@ -307,6 +326,7 @@ pub fn build(b: *std.Build) void {
 
     // Add annotation_parser to flow_checker (defined earlier, but needs this dep)
     flow_checker_module.addImport("annotation_parser", annotation_parser_module);
+    flow_checker_module.addImport("log", log_module);
 
     // Visitor Emitter module - visitor-based orchestration
     const visitor_emitter_module = b.createModule(.{
@@ -320,6 +340,7 @@ pub fn build(b: *std.Build) void {
     visitor_emitter_module.addImport("type_registry", type_registry_module);
     visitor_emitter_module.addImport("annotation_parser", annotation_parser_module);
     visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
+    visitor_emitter_module.addImport("log", log_module);
 
     // Tap Pattern Matcher module - pattern matching for tap registration
     const glob_pattern_matcher_module = b.createModule(.{
@@ -337,6 +358,7 @@ pub fn build(b: *std.Build) void {
     tap_registry_module.addImport("ast", ast_module);
     tap_registry_module.addImport("errors", errors_module);
     tap_registry_module.addImport("glob_pattern_matcher", glob_pattern_matcher_module);
+    tap_registry_module.addImport("log", log_module);
 
     // Runtime Registry module - backend pass for runtime scope collection
     const runtime_registry_module = b.createModule(.{
@@ -352,6 +374,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     canonicalize_names_module.addImport("ast", ast_module);
+    canonicalize_names_module.addImport("log", log_module);
 
     // Meta Events module - Inject koru:start and koru:end lifecycle events into AST
     const meta_events_module = b.createModule(.{
@@ -370,6 +393,7 @@ pub fn build(b: *std.Build) void {
     });
     validate_abstract_impl_module.addImport("ast", ast_module);
     validate_abstract_impl_module.addImport("errors", errors_module);
+    validate_abstract_impl_module.addImport("log", log_module);
 
     // Resolve Abstract/Impl module - renames defaults to .default when overrides exist
     const resolve_abstract_impl_module = b.createModule(.{
@@ -386,6 +410,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     interpreter_module.addImport("ast", ast_module);
+    interpreter_module.addImport("log", log_module);
 
     // Tap Transformer module - AST transformation pass for zero-cost taps
     const tap_transformer_module = b.createModule(.{
@@ -396,6 +421,7 @@ pub fn build(b: *std.Build) void {
     tap_transformer_module.addImport("ast", ast_module);
     tap_transformer_module.addImport("tap_registry", tap_registry_module);
     tap_transformer_module.addImport("emitter_helpers", emitter_helpers_module);
+    tap_transformer_module.addImport("log", log_module);
     // NOTE: purity_helpers dependency added later after module is defined
 
     // Now add tap_registry to modules that need it
@@ -414,6 +440,7 @@ pub fn build(b: *std.Build) void {
     
     // Add module imports to koruc
     exe.root_module.addImport("parser", parser_module);
+    exe.root_module.addImport("log", log_module);
     exe.root_module.addImport("shape_checker", shape_checker_module);
     exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
     exe.root_module.addImport("tap_collector", tap_collector_module);
@@ -489,6 +516,7 @@ pub fn build(b: *std.Build) void {
     auto_discharge_inserter_module.addImport("ast_functional", ast_functional_module);
     auto_discharge_inserter_module.addImport("errors", errors_module);
     auto_discharge_inserter_module.addImport("phantom_parser", phantom_parser_module);
+    auto_discharge_inserter_module.addImport("log", log_module);
     exe.root_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
 
     // Fusion Optimizer module (EXPERIMENTAL)
@@ -544,6 +572,7 @@ pub fn build(b: *std.Build) void {
     transform_pass_runner_module.addImport("annotation_parser", annotation_parser_module);
     transform_pass_runner_module.addImport("template_utils", template_utils_module);
     transform_pass_runner_module.addImport("liquid", liquid_module);
+    transform_pass_runner_module.addImport("log", log_module);
     exe.root_module.addImport("transform_pass_runner", transform_pass_runner_module);
 
     // NOTE: compiler.zig (CompilerBootstrap) removed - abstract/impl handles coordinate overrides

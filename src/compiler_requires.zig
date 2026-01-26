@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const ast = @import("ast");
 
 /// CompilerRequiresCollector gathers build requirements from the AST.
@@ -40,7 +41,7 @@ pub const CompilerRequiresCollector = struct {
 
     /// Collect all ~compiler:requires invocations from the source file
     pub fn collectFromSourceFile(self: *CompilerRequiresCollector, source_file: *const ast.Program) !void {
-        std.debug.print("[CompilerRequiresCollector] Starting collection from {} items\n", .{source_file.items.len});
+        log.debug("[CompilerRequiresCollector] Starting collection from {} items\n", .{source_file.items.len});
 
         // Walk top-level items
         for (source_file.items) |item| {
@@ -49,17 +50,17 @@ pub const CompilerRequiresCollector = struct {
                     try self.checkFlowForRequires(&flow);
                 },
                 .module_decl => |module| {
-                    std.debug.print("[CompilerRequiresCollector] Checking module: {s} ({} items)\n", .{ module.logical_name, module.items.len });
+                    log.debug("[CompilerRequiresCollector] Checking module: {s} ({} items)\n", .{ module.logical_name, module.items.len });
                     // Also check imported modules
                     for (module.items) |mod_item| {
                         const item_type = @tagName(mod_item);
-                        std.debug.print("[CompilerRequiresCollector]   Item type: {s}\n", .{item_type});
+                        log.debug("[CompilerRequiresCollector]   Item type: {s}\n", .{item_type});
                         switch (mod_item) {
                             .flow => |flow_inner| {
                                 try self.checkFlowForRequires(&flow_inner);
                             },
                             .parse_error => |err| {
-                                std.debug.print("[CompilerRequiresCollector]   PARSE ERROR: {s}\n", .{err.message});
+                                log.debug("[CompilerRequiresCollector]   PARSE ERROR: {s}\n", .{err.message});
                             },
                             else => {},
                         }
@@ -75,7 +76,7 @@ pub const CompilerRequiresCollector = struct {
             if (flow.invocation.path.segments.len < 1) return;
 
             // DEBUG: Print what we're checking
-            std.debug.print("[CompilerRequiresCollector] Checking flow: {s}:{s}\n", .{ mq, flow.invocation.path.segments[0] });
+            log.debug("[CompilerRequiresCollector] Checking flow: {s}:{s}\n", .{ mq, flow.invocation.path.segments[0] });
 
             // Check for std.build:requires (for OUTPUT binary)
             const is_build_module = std.mem.endsWith(u8, mq, ".build") or std.mem.eql(u8, mq, "build");
@@ -91,10 +92,10 @@ pub const CompilerRequiresCollector = struct {
                 std.mem.eql(u8, flow.invocation.path.segments[0], "requires");
 
             if (is_build_requires) {
-                std.debug.print("[CompilerRequiresCollector] ✓ FOUND build:requires (for output binary)!\n", .{});
+                log.debug("[CompilerRequiresCollector] ✓ FOUND build:requires (for output binary)!\n", .{});
                 try self.extractAndAddSource(flow, &self.build_requirements);
             } else if (is_compiler_requires) {
-                std.debug.print("[CompilerRequiresCollector] ✓ FOUND compiler:requires (for backend)!\n", .{});
+                log.debug("[CompilerRequiresCollector] ✓ FOUND compiler:requires (for backend)!\n", .{});
                 try self.extractAndAddSource(flow, &self.compiler_requirements);
             }
         }
@@ -108,14 +109,14 @@ pub const CompilerRequiresCollector = struct {
 
                 // Deduplicate by content
                 if (self.seen_requirements.contains(source_code)) {
-                    std.debug.print("[CompilerRequiresCollector]   Skipping duplicate requirement\n", .{});
+                    log.debug("[CompilerRequiresCollector]   Skipping duplicate requirement\n", .{});
                     continue;
                 }
 
                 const source_copy = try self.allocator.dupe(u8, source_code);
                 try target_list.append(self.allocator, source_copy);
                 try self.seen_requirements.put(source_copy, {});
-                std.debug.print("[CompilerRequiresCollector]   Added requirement ({d} bytes)\n", .{source_code.len});
+                log.debug("[CompilerRequiresCollector]   Added requirement ({d} bytes)\n", .{source_code.len});
             }
         }
     }

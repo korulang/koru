@@ -1,7 +1,7 @@
 const std = @import("std");
+const log = @import("log");
 const Config = @import("config").Config;
 
-const DEBUG = false;  // Set to true for verbose module resolution logging
 
 /// ModuleResolver handles finding and loading Koru modules from various locations
 /// Search order:
@@ -132,16 +132,16 @@ pub const ModuleResolver = struct {
     }
     
     fn findDefaultStdlibPath(self: *ModuleResolver) !?[]const u8 {
-        if (DEBUG) std.debug.print("ModuleResolver: Searching for stdlib (koru_std)...\n", .{});
+        log.debug("ModuleResolver: Searching for stdlib (koru_std)...\n", .{});
 
         // Try: /usr/local/lib/koru_std (global installation)
         const global_path = "/usr/local/lib/koru_std";
-        if (DEBUG) std.debug.print("  Trying: {s}\n", .{global_path});
+        log.debug("  Trying: {s}\n", .{global_path});
         if (std.fs.cwd().access(global_path, .{})) |_| {
-            if (DEBUG) std.debug.print("  ✓ FOUND stdlib at: {s}\n", .{global_path});
+            log.debug("  ✓ FOUND stdlib at: {s}\n", .{global_path});
             return try self.allocator.dupe(u8, global_path);
         } else |err| {
-            if (DEBUG) std.debug.print("  ✗ Not found: {}\n", .{err});
+            log.debug("  ✗ Not found: {}\n", .{err});
         }
 
         // Get the path to the current executable for relative lookups
@@ -155,12 +155,12 @@ pub const ModuleResolver = struct {
         });
         defer self.allocator.free(candidate1);
 
-        if (DEBUG) std.debug.print("  Trying: {s}\n", .{candidate1});
+        log.debug("  Trying: {s}\n", .{candidate1});
         if (std.fs.cwd().access(candidate1, .{})) |_| {
-            if (DEBUG) std.debug.print("  ✓ FOUND stdlib at: {s}\n", .{candidate1});
+            log.debug("  ✓ FOUND stdlib at: {s}\n", .{candidate1});
             return try self.allocator.dupe(u8, candidate1);
         } else |err| {
-            if (DEBUG) std.debug.print("  ✗ Not found: {}\n", .{err});
+            log.debug("  ✗ Not found: {}\n", .{err});
         }
 
         // Try: executable_dir/../../koru_std (for zig-out/bin/koruc)
@@ -169,24 +169,24 @@ pub const ModuleResolver = struct {
         });
         defer self.allocator.free(candidate2);
 
-        if (DEBUG) std.debug.print("  Trying: {s}\n", .{candidate2});
+        log.debug("  Trying: {s}\n", .{candidate2});
         if (std.fs.cwd().access(candidate2, .{})) |_| {
-            if (DEBUG) std.debug.print("  ✓ FOUND stdlib at: {s}\n", .{candidate2});
+            log.debug("  ✓ FOUND stdlib at: {s}\n", .{candidate2});
             return try self.allocator.dupe(u8, candidate2);
         } else |err| {
-            if (DEBUG) std.debug.print("  ✗ Not found: {}\n", .{err});
+            log.debug("  ✗ Not found: {}\n", .{err});
         }
 
         // Try: ./koru_std (current directory)
-        if (DEBUG) std.debug.print("  Trying: ./koru_std\n", .{});
+        log.debug("  Trying: ./koru_std\n", .{});
         if (std.fs.cwd().access("koru_std", .{})) |_| {
-            if (DEBUG) std.debug.print("  ✓ FOUND stdlib at: ./koru_std\n", .{});
+            log.debug("  ✓ FOUND stdlib at: ./koru_std\n", .{});
             return try self.allocator.dupe(u8, "koru_std");
         } else |err| {
-            if (DEBUG) std.debug.print("  ✗ Not found: {}\n", .{err});
+            log.debug("  ✗ Not found: {}\n", .{err});
         }
 
-        if (DEBUG) std.debug.print("  ✗✗✗ STDLIB NOT FOUND ANYWHERE ✗✗✗\n", .{});
+        log.debug("  ✗✗✗ STDLIB NOT FOUND ANYWHERE ✗✗✗\n", .{});
         return null;
     }
     
@@ -241,12 +241,12 @@ pub const ModuleResolver = struct {
         import_path: []const u8,
         base_file: ?[]const u8,
     ) !ResolveResult {
-        if (DEBUG) std.debug.print("\n═══ ModuleResolver.resolveBoth() ═══\n", .{});
-        if (DEBUG) std.debug.print("  Import path: '{s}'\n", .{import_path});
+        log.debug("\n═══ ModuleResolver.resolveBoth() ═══\n", .{});
+        log.debug("  Import path: '{s}'\n", .{import_path});
         if (base_file) |bf| {
-            if (DEBUG) std.debug.print("  Base file: '{s}'\n", .{bf});
+            log.debug("  Base file: '{s}'\n", .{bf});
         } else {
-            if (DEBUG) std.debug.print("  Base file: (none)\n", .{});
+            log.debug("  Base file: (none)\n", .{});
         }
 
         var result = ResolveResult{
@@ -262,7 +262,7 @@ pub const ModuleResolver = struct {
             const alias_end = slash_pos orelse import_path.len;
             const alias = import_path[1..alias_end];
 
-            if (DEBUG) std.debug.print("  Resolving alias: ${s}\n", .{alias});
+            log.debug("  Resolving alias: ${s}\n", .{alias});
 
             if (self.config.paths.get(alias)) |alias_paths| {
                 // Iterate through fallback chain - try each path until one exists
@@ -274,7 +274,7 @@ pub const ModuleResolver = struct {
                         alias_path_raw;
                     defer if (alias_path.ptr != alias_path_raw.ptr) self.allocator.free(alias_path);
 
-                    if (DEBUG) std.debug.print("  [FALLBACK {}/{}] Trying: {s}\n", .{ path_idx + 1, alias_paths.len, alias_path });
+                    log.debug("  [FALLBACK {}/{}] Trying: {s}\n", .{ path_idx + 1, alias_paths.len, alias_path });
 
                     // Build the path to check (alias + remainder if any)
                     const path_to_resolve = if (slash_pos) |pos| blk: {
@@ -296,7 +296,7 @@ pub const ModuleResolver = struct {
                         try std.fs.path.resolve(self.allocator, &[_][]const u8{ self.project_root, path_to_resolve });
                     defer self.allocator.free(absolute_path);
 
-                    if (DEBUG) std.debug.print("    Resolved to: {s}\n", .{absolute_path});
+                    log.debug("    Resolved to: {s}\n", .{absolute_path});
 
                     // Check for BOTH file and directory
                     var found_something = false;
@@ -308,7 +308,7 @@ pub const ModuleResolver = struct {
                             &[_][]const u8{absolute_path}
                         );
                         result.dir_path = dir_resolved;
-                        if (DEBUG) std.debug.print("    ✓ FOUND directory: {s}\n", .{dir_resolved});
+                        log.debug("    ✓ FOUND directory: {s}\n", .{dir_resolved});
                         found_something = true;
                     }
 
@@ -326,28 +326,28 @@ pub const ModuleResolver = struct {
                             &[_][]const u8{path_with_ext}
                         );
                         result.file_path = file_resolved;
-                        if (DEBUG) std.debug.print("    ✓ FOUND file: {s}\n", .{file_resolved});
+                        log.debug("    ✓ FOUND file: {s}\n", .{file_resolved});
                         found_something = true;
                     } else |_| {}
 
                     // If we found something at this fallback path, return it
                     if (found_something) {
-                        if (DEBUG) std.debug.print("  ✓ Resolved via fallback {}/{}\n", .{ path_idx + 1, alias_paths.len });
+                        log.debug("  ✓ Resolved via fallback {}/{}\n", .{ path_idx + 1, alias_paths.len });
                         return result;
                     }
 
-                    if (DEBUG) std.debug.print("    ✗ Nothing found, trying next fallback...\n", .{});
+                    log.debug("    ✗ Nothing found, trying next fallback...\n", .{});
                 }
 
                 // None of the fallback paths worked
-                if (DEBUG) std.debug.print("\n✗✗✗ FATAL: Alias ${s} - all {} fallback paths exhausted ✗✗✗\n", .{ alias, alias_paths.len });
+                log.debug("\n✗✗✗ FATAL: Alias ${s} - all {} fallback paths exhausted ✗✗✗\n", .{ alias, alias_paths.len });
                 return error.ModuleNotFound;
             } else {
-                if (DEBUG) std.debug.print("✗✗✗ FATAL: Unknown import alias: ${s}\n", .{alias});
-                if (DEBUG) std.debug.print("Available aliases from koru.json:\n", .{});
+                log.debug("✗✗✗ FATAL: Unknown import alias: ${s}\n", .{alias});
+                log.debug("Available aliases from koru.json:\n", .{});
                 var iter = self.config.paths.iterator();
                 while (iter.next()) |entry| {
-                    if (DEBUG) std.debug.print("  ${s} -> [{} paths]\n", .{ entry.key_ptr.*, entry.value_ptr.*.len });
+                    log.debug("  ${s} -> [{} paths]\n", .{ entry.key_ptr.*, entry.value_ptr.*.len });
                 }
                 return error.UnknownImportAlias;
             }
@@ -368,7 +368,7 @@ pub const ModuleResolver = struct {
                 if (isDirectory(dir_candidate)) {
                     const resolved = try std.fs.path.resolve(alloc, &[_][]const u8{dir_candidate});
                     res.dir_path = resolved;
-                    if (DEBUG) std.debug.print("      ✓ FOUND directory: {s}\n", .{resolved});
+                    log.debug("      ✓ FOUND directory: {s}\n", .{resolved});
                     found_any = true;
                 }
 
@@ -389,7 +389,7 @@ pub const ModuleResolver = struct {
                 if (std.fs.cwd().access(file_candidate, .{})) |_| {
                     const resolved = try std.fs.path.resolve(alloc, &[_][]const u8{file_candidate});
                     res.file_path = resolved;
-                    if (DEBUG) std.debug.print("      ✓ FOUND file: {s}\n", .{resolved});
+                    log.debug("      ✓ FOUND file: {s}\n", .{resolved});
                     found_any = true;
                 } else |_| {}
 
@@ -405,7 +405,7 @@ pub const ModuleResolver = struct {
         }
 
         // 2. Relative to importing file
-        if (DEBUG) std.debug.print("  [2] Trying relative to importing file...\n", .{});
+        log.debug("  [2] Trying relative to importing file...\n", .{});
         if (base_file) |base| {
             const base_dir = std.fs.path.dirname(base) orelse ".";
             if (try checkBoth(self.allocator, base_dir, resolved_import_path, &result)) {
@@ -414,7 +414,7 @@ pub const ModuleResolver = struct {
         }
 
         // 3. KORU_PATH search paths
-        if (DEBUG) std.debug.print("  [3] Trying KORU_PATH search paths...\n", .{});
+        log.debug("  [3] Trying KORU_PATH search paths...\n", .{});
         for (self.search_paths.items) |search_path| {
             if (try checkBoth(self.allocator, search_path, resolved_import_path, &result)) {
                 return result;
@@ -422,7 +422,7 @@ pub const ModuleResolver = struct {
         }
 
         // 4. Standard library
-        if (DEBUG) std.debug.print("  [4] Trying standard library...\n", .{});
+        log.debug("  [4] Trying standard library...\n", .{});
         if (self.stdlib_path) |stdlib| {
             if (try checkBoth(self.allocator, stdlib, resolved_import_path, &result)) {
                 return result;
@@ -430,7 +430,7 @@ pub const ModuleResolver = struct {
         }
 
         // Nothing found
-        if (DEBUG) std.debug.print("\n✗✗✗ FATAL: Module not found: '{s}' ✗✗✗\n", .{import_path});
+        log.debug("\n✗✗✗ FATAL: Module not found: '{s}' ✗✗✗\n", .{import_path});
         return error.ModuleNotFound;
     }
 
@@ -442,12 +442,12 @@ pub const ModuleResolver = struct {
         import_path: []const u8,
         base_file: ?[]const u8,
     ) ![]u8 {
-        if (DEBUG) std.debug.print("\n═══ ModuleResolver.resolve() ═══\n", .{});
-        if (DEBUG) std.debug.print("  Import path: '{s}'\n", .{import_path});
+        log.debug("\n═══ ModuleResolver.resolve() ═══\n", .{});
+        log.debug("  Import path: '{s}'\n", .{import_path});
         if (base_file) |bf| {
-            if (DEBUG) std.debug.print("  Base file: '{s}'\n", .{bf});
+            log.debug("  Base file: '{s}'\n", .{bf});
         } else {
-            if (DEBUG) std.debug.print("  Base file: (none)\n", .{});
+            log.debug("  Base file: (none)\n", .{});
         }
 
         // Handle $alias path prefixes
@@ -459,7 +459,7 @@ pub const ModuleResolver = struct {
             const alias_end = slash_pos orelse import_path.len;
             const alias = import_path[1..alias_end]; // Skip the '$'
 
-            if (DEBUG) std.debug.print("  Resolving alias: ${s}\n", .{alias});
+            log.debug("  Resolving alias: ${s}\n", .{alias});
 
             // Look up alias in config.paths (now returns array of fallback paths)
             if (self.config.paths.get(alias)) |alias_paths| {
@@ -472,7 +472,7 @@ pub const ModuleResolver = struct {
                         alias_path_raw;
                     defer if (alias_path.ptr != alias_path_raw.ptr) self.allocator.free(alias_path);
 
-                    if (DEBUG) std.debug.print("  ✓ Trying fallback: {s}\n", .{alias_path});
+                    log.debug("  ✓ Trying fallback: {s}\n", .{alias_path});
 
                     // Build the path to check (alias + remainder if any)
                     const path_to_resolve = if (slash_pos) |pos| blk: {
@@ -493,7 +493,7 @@ pub const ModuleResolver = struct {
                         try std.fs.path.resolve(self.allocator, &[_][]const u8{ self.project_root, path_to_resolve });
                     defer self.allocator.free(absolute_path);
 
-                    if (DEBUG) std.debug.print("    Resolved to (absolute): {s}\n", .{absolute_path});
+                    log.debug("    Resolved to (absolute): {s}\n", .{absolute_path});
 
                     // Check if it's a directory
                     if (isDirectory(absolute_path)) {
@@ -501,7 +501,7 @@ pub const ModuleResolver = struct {
                             self.allocator,
                             &[_][]const u8{absolute_path}
                         );
-                        if (DEBUG) std.debug.print("    ✓ FOUND directory: {s}\n", .{resolved});
+                        log.debug("    ✓ FOUND directory: {s}\n", .{resolved});
                         return resolved;
                     }
 
@@ -518,22 +518,22 @@ pub const ModuleResolver = struct {
                             self.allocator,
                             &[_][]const u8{path_with_ext}
                         );
-                        if (DEBUG) std.debug.print("    ✓ FOUND file: {s}\n", .{resolved});
+                        log.debug("    ✓ FOUND file: {s}\n", .{resolved});
                         return resolved;
                     } else |_| {
-                        if (DEBUG) std.debug.print("    ✗ Not found, trying next fallback...\n", .{});
+                        log.debug("    ✗ Not found, trying next fallback...\n", .{});
                     }
                 }
                 // None of the fallback paths worked
-                if (DEBUG) std.debug.print("\n✗✗✗ FATAL: Alias ${s} - all fallback paths exhausted ✗✗✗\n", .{alias});
+                log.debug("\n✗✗✗ FATAL: Alias ${s} - all fallback paths exhausted ✗✗✗\n", .{alias});
                 return error.ModuleNotFound;
             } else {
                 // Alias not found in config
-                if (DEBUG) std.debug.print("✗✗✗ FATAL: Unknown import alias: ${s}\n", .{alias});
-                if (DEBUG) std.debug.print("Available aliases from koru.json:\n", .{});
+                log.debug("✗✗✗ FATAL: Unknown import alias: ${s}\n", .{alias});
+                log.debug("Available aliases from koru.json:\n", .{});
                 var iter = self.config.paths.iterator();
                 while (iter.next()) |entry| {
-                    if (DEBUG) std.debug.print("  ${s} -> [{} paths]\n", .{ entry.key_ptr.*, entry.value_ptr.*.len });
+                    log.debug("  ${s} -> [{} paths]\n", .{ entry.key_ptr.*, entry.value_ptr.*.len });
                 }
                 return error.UnknownImportAlias;
             }
@@ -554,7 +554,7 @@ pub const ModuleResolver = struct {
         }
         
         // 2. Try relative to the importing file
-        if (DEBUG) std.debug.print("  [2] Trying relative to importing file...\n", .{});
+        log.debug("  [2] Trying relative to importing file...\n", .{});
         if (base_file) |base| {
             const base_dir = std.fs.path.dirname(base) orelse ".";
 
@@ -565,16 +565,16 @@ pub const ModuleResolver = struct {
             );
             defer self.allocator.free(dir_candidate);
 
-            if (DEBUG) std.debug.print("    Checking directory: {s}\n", .{dir_candidate});
+            log.debug("    Checking directory: {s}\n", .{dir_candidate});
             if (isDirectory(dir_candidate)) {
                 const resolved = try std.fs.path.resolve(
                     self.allocator,
                     &[_][]const u8{dir_candidate}
                 );
-                if (DEBUG) std.debug.print("    ✓ FOUND directory: {s}\n", .{resolved});
+                log.debug("    ✓ FOUND directory: {s}\n", .{resolved});
                 return resolved;
             } else {
-                if (DEBUG) std.debug.print("    ✗ Not a directory\n", .{});
+                log.debug("    ✗ Not a directory\n", .{});
             }
 
             // Try as file - add .kz extension only if not already present
@@ -591,25 +591,25 @@ pub const ModuleResolver = struct {
             );
             defer self.allocator.free(file_candidate);
 
-            if (DEBUG) std.debug.print("    Checking file: {s}\n", .{file_candidate});
+            log.debug("    Checking file: {s}\n", .{file_candidate});
             if (std.fs.cwd().access(file_candidate, .{})) |_| {
                 const resolved = try std.fs.path.resolve(
                     self.allocator,
                     &[_][]const u8{file_candidate}
                 );
-                if (DEBUG) std.debug.print("    ✓ FOUND file: {s}\n", .{resolved});
+                log.debug("    ✓ FOUND file: {s}\n", .{resolved});
                 return resolved;
             } else |err| {
-                if (DEBUG) std.debug.print("    ✗ Not found: {}\n", .{err});
+                log.debug("    ✗ Not found: {}\n", .{err});
             }
         } else {
-            if (DEBUG) std.debug.print("    (skipped - no base file)\n", .{});
+            log.debug("    (skipped - no base file)\n", .{});
         }
         
         // 3. Try each search path from KORU_PATH
-        if (DEBUG) std.debug.print("  [3] Trying KORU_PATH search paths ({} paths)...\n", .{self.search_paths.items.len});
+        log.debug("  [3] Trying KORU_PATH search paths ({} paths)...\n", .{self.search_paths.items.len});
         for (self.search_paths.items) |search_path| {
-            if (DEBUG) std.debug.print("    Searching in: {s}\n", .{search_path});
+            log.debug("    Searching in: {s}\n", .{search_path});
 
             // Try directory
             const dir_candidate = try std.fs.path.join(
@@ -618,16 +618,16 @@ pub const ModuleResolver = struct {
             );
             defer self.allocator.free(dir_candidate);
 
-            if (DEBUG) std.debug.print("      Checking directory: {s}\n", .{dir_candidate});
+            log.debug("      Checking directory: {s}\n", .{dir_candidate});
             if (isDirectory(dir_candidate)) {
                 const resolved = try std.fs.path.resolve(
                     self.allocator,
                     &[_][]const u8{dir_candidate}
                 );
-                if (DEBUG) std.debug.print("      ✓ FOUND directory: {s}\n", .{resolved});
+                log.debug("      ✓ FOUND directory: {s}\n", .{resolved});
                 return resolved;
             } else {
-                if (DEBUG) std.debug.print("      ✗ Not a directory\n", .{});
+                log.debug("      ✗ Not a directory\n", .{});
             }
 
             // Try file - add .kz extension only if not already present
@@ -644,23 +644,23 @@ pub const ModuleResolver = struct {
             );
             defer self.allocator.free(file_candidate);
 
-            if (DEBUG) std.debug.print("      Checking file: {s}\n", .{file_candidate});
+            log.debug("      Checking file: {s}\n", .{file_candidate});
             if (std.fs.cwd().access(file_candidate, .{})) |_| {
                 const resolved = try std.fs.path.resolve(
                     self.allocator,
                     &[_][]const u8{file_candidate}
                 );
-                if (DEBUG) std.debug.print("      ✓ FOUND file: {s}\n", .{resolved});
+                log.debug("      ✓ FOUND file: {s}\n", .{resolved});
                 return resolved;
             } else |err| {
-                if (DEBUG) std.debug.print("      ✗ Not found: {}\n", .{err});
+                log.debug("      ✗ Not found: {}\n", .{err});
             }
         }
 
         // 4. Try the standard library
-        if (DEBUG) std.debug.print("  [4] Trying standard library...\n", .{});
+        log.debug("  [4] Trying standard library...\n", .{});
         if (self.stdlib_path) |stdlib| {
-            if (DEBUG) std.debug.print("    Stdlib path: {s}\n", .{stdlib});
+            log.debug("    Stdlib path: {s}\n", .{stdlib});
 
             // Try directory
             const dir_candidate = try std.fs.path.join(
@@ -669,16 +669,16 @@ pub const ModuleResolver = struct {
             );
             defer self.allocator.free(dir_candidate);
 
-            if (DEBUG) std.debug.print("    Checking directory: {s}\n", .{dir_candidate});
+            log.debug("    Checking directory: {s}\n", .{dir_candidate});
             if (isDirectory(dir_candidate)) {
                 const resolved = try std.fs.path.resolve(
                     self.allocator,
                     &[_][]const u8{dir_candidate}
                 );
-                if (DEBUG) std.debug.print("    ✓ FOUND directory: {s}\n", .{resolved});
+                log.debug("    ✓ FOUND directory: {s}\n", .{resolved});
                 return resolved;
             } else {
-                if (DEBUG) std.debug.print("    ✗ Not a directory\n", .{});
+                log.debug("    ✗ Not a directory\n", .{});
             }
 
             // Try file - add .kz extension only if not already present
@@ -695,29 +695,29 @@ pub const ModuleResolver = struct {
             );
             defer self.allocator.free(file_candidate);
 
-            if (DEBUG) std.debug.print("    Checking file: {s}\n", .{file_candidate});
+            log.debug("    Checking file: {s}\n", .{file_candidate});
             if (std.fs.cwd().access(file_candidate, .{})) |_| {
                 const resolved = try std.fs.path.resolve(
                     self.allocator,
                     &[_][]const u8{file_candidate}
                 );
-                if (DEBUG) std.debug.print("    ✓ FOUND file: {s}\n", .{resolved});
+                log.debug("    ✓ FOUND file: {s}\n", .{resolved});
                 return resolved;
             } else |err| {
-                if (DEBUG) std.debug.print("    ✗ Not found: {}\n", .{err});
+                log.debug("    ✗ Not found: {}\n", .{err});
             }
         } else {
-            if (DEBUG) std.debug.print("    (no stdlib path configured)\n", .{});
+            log.debug("    (no stdlib path configured)\n", .{});
         }
 
         // Module not found
-        if (DEBUG) std.debug.print("\n✗✗✗ FATAL: Module not found: '{s}' ✗✗✗\n", .{import_path});
-        if (DEBUG) std.debug.print("Tried:\n", .{});
-        if (DEBUG) std.debug.print("  - Absolute path\n", .{});
-        if (DEBUG) std.debug.print("  - Relative to base file\n", .{});
-        if (DEBUG) std.debug.print("  - KORU_PATH ({} paths)\n", .{self.search_paths.items.len});
+        log.debug("\n✗✗✗ FATAL: Module not found: '{s}' ✗✗✗\n", .{import_path});
+        log.debug("Tried:\n", .{});
+        log.debug("  - Absolute path\n", .{});
+        log.debug("  - Relative to base file\n", .{});
+        log.debug("  - KORU_PATH ({} paths)\n", .{self.search_paths.items.len});
         if (self.stdlib_path) |stdlib| {
-            if (DEBUG) std.debug.print("  - Standard library: {s}\n", .{stdlib});
+            log.debug("  - Standard library: {s}\n", .{stdlib});
         }
         return error.ModuleNotFound;
     }

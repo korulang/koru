@@ -1,4 +1,5 @@
 //! Koru Interpreter Core
+const log = @import("log");
 //!
 //! This module provides the core interpreter logic for executing Koru flows.
 //! It is used by:
@@ -544,7 +545,7 @@ pub fn executeFlow(
         std.mem.eql(u8, inv.path.segments[0], "for"));
 
     if (is_if) {
-        std.debug.print("[INTERPRETER] Detected ~if, evaluating condition\n", .{});
+        log.debug("[INTERPRETER] Detected ~if, evaluating condition\n", .{});
 
         // Get expression from the first arg (should be the condition)
         var condition_result: bool = false;
@@ -560,7 +561,7 @@ pub fn executeFlow(
 
             {
                 // Runtime parsing: parse the expression string using ExpressionParser
-                std.debug.print("[INTERPRETER] Parsing expression: '{s}'\n", .{expr_text});
+                log.debug("[INTERPRETER] Parsing expression: '{s}'\n", .{expr_text});
 
                 // Quick check for simple literals first
                 if (std.mem.eql(u8, expr_text, "true")) {
@@ -576,13 +577,13 @@ pub fn executeFlow(
                         // Evaluate the parsed expression against our bindings
                         if (evaluateExpression(parsed_expr, ctx.expr_bindings)) |eval_result| {
                             condition_result = eval_result.isTruthy();
-                            std.debug.print("[INTERPRETER] Expression evaluated to: {}\n", .{condition_result});
+                            log.debug("[INTERPRETER] Expression evaluated to: {}\n", .{condition_result});
                         } else |err| {
-                            std.debug.print("[INTERPRETER] Expression eval error: {s}\n", .{@errorName(err)});
+                            log.debug("[INTERPRETER] Expression eval error: {s}\n", .{@errorName(err)});
                             condition_result = false;
                         }
                     } else |parse_err| {
-                        std.debug.print("[INTERPRETER] Expression parse error: {s}\n", .{@errorName(parse_err)});
+                        log.debug("[INTERPRETER] Expression parse error: {s}\n", .{@errorName(parse_err)});
                         // Fallback: try as simple identifier binding
                         if (ctx.expr_bindings.get(expr_text)) |val| {
                             condition_result = val.isTruthy();
@@ -591,14 +592,14 @@ pub fn executeFlow(
                         }
                     }
                 }
-                std.debug.print("[INTERPRETER] Condition (from string '{s}'): {}\n", .{ expr_text, condition_result });
+                log.debug("[INTERPRETER] Condition (from string '{s}'): {}\n", .{ expr_text, condition_result });
             }
         }
 
         // Set the branch based on condition result
         dispatch_result.branch = if (condition_result) "then" else "else";
         dispatch_result.fields = &[_]NamedField{};
-        std.debug.print("[INTERPRETER] ~if taking branch: | {s} |>\n", .{dispatch_result.branch});
+        log.debug("[INTERPRETER] ~if taking branch: | {s} |>\n", .{dispatch_result.branch});
     } else if (is_for) {
         // =====================================================================
         // SPECIAL HANDLING: ~for - Runtime loop
@@ -845,7 +846,7 @@ pub fn runSource(
     parser_module: anytype,
     errors_module: anytype,
 ) RunResult {
-    std.debug.print("[INTERPRETER] Parsing source ({d} bytes)\n", .{source.len});
+    log.debug("[INTERPRETER] Parsing source ({d} bytes)\n", .{source.len});
 
     // Create allocator for parsing
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -900,7 +901,7 @@ pub fn runSource(
         } };
     };
 
-    std.debug.print("[INTERPRETER] Parsed {d} items\n", .{parse_result.source_file.items.len});
+    log.debug("[INTERPRETER] Parsed {d} items\n", .{parse_result.source_file.items.len});
 
     // Find the first flow to execute
     var flow_to_run: ?*const ast.Flow = null;
@@ -920,16 +921,16 @@ pub fn runSource(
     }
 
     const flow = flow_to_run.?;
-    std.debug.print("[INTERPRETER] Found flow to execute\n", .{});
+    log.debug("[INTERPRETER] Found flow to execute\n", .{});
 
     // Validation pass
     if (validateFlow(flow, allocator)) |validation_err| {
-        std.debug.print("[INTERPRETER] Validation failed: {s} (binding: {s})\n", .{ validation_err.message, validation_err.binding_name });
+        log.debug("[INTERPRETER] Validation failed: {s} (binding: {s})\n", .{ validation_err.message, validation_err.binding_name });
         return .{ .validation_error = .{
             .message = validation_err.message,
         } };
     }
-    std.debug.print("[INTERPRETER] Validation passed\n", .{});
+    log.debug("[INTERPRETER] Validation passed\n", .{});
 
     // Create environment and context
     var env = Environment.init(allocator);
@@ -973,7 +974,7 @@ pub fn runSource(
     };
 
     const stable_value = result_value.clonePersistent();
-    std.debug.print("[INTERPRETER] Execution complete, branch: {s}\n", .{stable_value.branch});
+    log.debug("[INTERPRETER] Execution complete, branch: {s}\n", .{stable_value.branch});
     return .{ .result = .{ .value = stable_value } };
 }
 
@@ -983,7 +984,7 @@ pub fn evalFlow(
     dispatcher: DispatchFn,
     expr_parser_module: anytype,
 ) EvalResult {
-    std.debug.print("[EVAL] Starting execution of pre-parsed flow\n", .{});
+    log.debug("[EVAL] Starting execution of pre-parsed flow\n", .{});
 
     // Create allocator for execution
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -992,12 +993,12 @@ pub fn evalFlow(
 
     // Validation pass
     if (validateFlow(flow, allocator)) |validation_err| {
-        std.debug.print("[EVAL] Validation failed: {s} (binding: {s})\n", .{ validation_err.message, validation_err.binding_name });
+        log.debug("[EVAL] Validation failed: {s} (binding: {s})\n", .{ validation_err.message, validation_err.binding_name });
         return .{ .validation_error = .{
             .message = validation_err.message,
         } };
     }
-    std.debug.print("[EVAL] Validation passed\n", .{});
+    log.debug("[EVAL] Validation passed\n", .{});
 
     // Create environment and context
     var env = Environment.init(allocator);
@@ -1041,6 +1042,6 @@ pub fn evalFlow(
     };
 
     const stable_value = result_value.clonePersistent();
-    std.debug.print("[EVAL] Execution complete, branch: {s}\n", .{stable_value.branch});
+    log.debug("[EVAL] Execution complete, branch: {s}\n", .{stable_value.branch});
     return .{ .result = .{ .value = stable_value } };
 }

@@ -1,5 +1,5 @@
 const std = @import("std");
-const DEBUG = false;  // Set to true for verbose logging
+const log = @import("log");
 const ast = @import("ast");
 const errors = @import("errors");
 const glob_pattern_matcher = @import("glob_pattern_matcher");
@@ -88,14 +88,14 @@ pub const TapRegistry = struct {
         var matches = try std.ArrayList(TapEntry).initCapacity(self.allocator, 0);
         errdefer matches.deinit(self.allocator);
 
-        if (DEBUG) std.debug.print("TAP REGISTRY: getMatchingTaps: source='{s}' branch='{s}' dest='{s}'\n", .{
+        log.debug("TAP REGISTRY: getMatchingTaps: source='{s}' branch='{s}' dest='{s}'\n", .{
             source,
             branch,
             destination orelse "(null)",
         });
 
         for (self.entries.items) |entry| {
-            if (DEBUG) std.debug.print("TAP REGISTRY:   Checking entry: source_pattern='{s}' branch='{s}'\n", .{
+            log.debug("TAP REGISTRY:   Checking entry: source_pattern='{s}' branch='{s}'\n", .{
                 entry.source_pattern,
                 entry.branch,
             });
@@ -105,7 +105,7 @@ pub const TapRegistry = struct {
                                std.mem.eql(u8, entry.branch, "Profile") or
                                std.mem.eql(u8, entry.branch, "Audit");
             if (!is_metatype and !std.mem.eql(u8, entry.branch, branch)) {
-                if (DEBUG) std.debug.print("TAP REGISTRY:     ❌ Branch mismatch\n", .{});
+                log.debug("TAP REGISTRY:     ❌ Branch mismatch\n", .{});
                 continue;
             }
 
@@ -117,7 +117,7 @@ pub const TapRegistry = struct {
                     entry.source_is_qualified,
                 );
                 if (!source_matches) {
-                    if (DEBUG) std.debug.print("TAP REGISTRY:     ❌ Source pattern mismatch\n", .{});
+                    log.debug("TAP REGISTRY:     ❌ Source pattern mismatch\n", .{});
                     continue;
                 }
             }
@@ -132,18 +132,18 @@ pub const TapRegistry = struct {
                             entry.dest_is_qualified,
                         );
                         if (!matches_dest) {
-                            if (DEBUG) std.debug.print("TAP REGISTRY:     ❌ Destination pattern mismatch\n", .{});
+                            log.debug("TAP REGISTRY:     ❌ Destination pattern mismatch\n", .{});
                             continue;
                         }
                     } else {
                         // Pattern expects destination but transition is terminal
-                        if (DEBUG) std.debug.print("TAP REGISTRY:     ❌ Pattern expects destination but transition is terminal\n", .{});
+                        log.debug("TAP REGISTRY:     ❌ Pattern expects destination but transition is terminal\n", .{});
                         continue;
                     }
                 }
             }
 
-            if (DEBUG) std.debug.print("TAP REGISTRY:     ✅ MATCH!\n", .{});
+            log.debug("TAP REGISTRY:     ✅ MATCH!\n", .{});
             try matches.append(self.allocator, entry);
         }
 
@@ -338,14 +338,14 @@ pub fn buildTapRegistry(
     items: []const ast.Item,
     allocator: std.mem.Allocator,
 ) !TapRegistry {
-    std.debug.print("BUILD TAP REGISTRY: Starting...\n", .{});
+    log.debug("BUILD TAP REGISTRY: Starting...\n", .{});
     var registry = TapRegistry.init(allocator);
     errdefer registry.deinit();
 
     // Recursively collect taps from all items (including nested modules)
     try collectTapsRecursive(items, allocator, &registry);
 
-    std.debug.print("BUILD TAP REGISTRY: Complete. Found {} taps\n", .{registry.entries.items.len});
+    log.debug("BUILD TAP REGISTRY: Complete. Found {} taps\n", .{registry.entries.items.len});
     return registry;
 }
 
@@ -396,22 +396,22 @@ fn collectTapsRecursive(
                                        std.mem.eql(u8, cont.branch, "Audit");
 
                     if (has_wildcard and !is_metatype) {
-                        std.debug.print("\n", .{});
-                        std.debug.print("ERROR: Invalid tap pattern in module '{s}'\n", .{tap.module});
-                        std.debug.print("  Pattern: {s} -> * | {s}\n", .{source_pattern, cont.branch});
-                        std.debug.print("\n", .{});
-                        std.debug.print("  Problem: Cannot use concrete branch '{s}' with wildcard source pattern '{s}'\n",
+                        log.debug("\n", .{});
+                        log.debug("ERROR: Invalid tap pattern in module '{s}'\n", .{tap.module});
+                        log.debug("  Pattern: {s} -> * | {s}\n", .{source_pattern, cont.branch});
+                        log.debug("\n", .{});
+                        log.debug("  Problem: Cannot use concrete branch '{s}' with wildcard source pattern '{s}'\n",
                                        .{cont.branch, source_pattern});
-                        std.debug.print("           Wildcard sources match multiple events with different branch shapes.\n", .{});
-                        std.debug.print("\n", .{});
-                        std.debug.print("  Solution: Use metatypes for wildcard sources:\n", .{});
-                        std.debug.print("    ~{s} -> * | Transition t |>  // Transition metadata\n", .{source_pattern});
-                        std.debug.print("    ~{s} -> * | Profile p |>     // Profiling\n", .{source_pattern});
-                        std.debug.print("    ~{s} -> * | Audit a |>       // Auditing\n", .{source_pattern});
-                        std.debug.print("\n", .{});
-                        std.debug.print("  Or use a concrete source:\n", .{});
-                        std.debug.print("    ~main:compute -> * | {s} r |>  // Type safe!\n", .{cont.branch});
-                        std.debug.print("\n", .{});
+                        log.debug("           Wildcard sources match multiple events with different branch shapes.\n", .{});
+                        log.debug("\n", .{});
+                        log.debug("  Solution: Use metatypes for wildcard sources:\n", .{});
+                        log.debug("    ~{s} -> * | Transition t |>  // Transition metadata\n", .{source_pattern});
+                        log.debug("    ~{s} -> * | Profile p |>     // Profiling\n", .{source_pattern});
+                        log.debug("    ~{s} -> * | Audit a |>       // Auditing\n", .{source_pattern});
+                        log.debug("\n", .{});
+                        log.debug("  Or use a concrete source:\n", .{});
+                        log.debug("    ~main:compute -> * | {s} r |>  // Type safe!\n", .{cont.branch});
+                        log.debug("\n", .{});
                         return error.InvalidTapPattern;
                     }
 
@@ -432,7 +432,7 @@ fn collectTapsRecursive(
                         .location = tap.location,
                     };
 
-                    if (DEBUG) std.debug.print("TAP REGISTRY: Registered tap: source='{s}' (qualified={}) dest='{s}' (qualified={}) branch='{s}' source_module='{s}' is_opaque={}\n", .{
+                    log.debug("TAP REGISTRY: Registered tap: source='{s}' (qualified={}) dest='{s}' (qualified={}) branch='{s}' source_module='{s}' is_opaque={}\n", .{
                         source_pattern,
                         source_is_qualified,
                         dest_pattern orelse "(null)",

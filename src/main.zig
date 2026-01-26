@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const Parser = @import("parser").Parser;
 const errors = @import("errors");
 const ErrorReporter = errors.ErrorReporter;
@@ -435,11 +436,11 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
 
         // Debug: Print detected transform events (events with Source/Program params)
         if (transform_event_names.items.len > 0) {
-            std.debug.print("\n=== TRANSFORM EVENT DETECTION ===\n", .{});
+            log.debug("\n=== TRANSFORM EVENT DETECTION ===\n", .{});
             for (transform_event_names.items) |name| {
-                std.debug.print("  Detected transform event: {s}\n", .{name});
+                log.debug("  Detected transform event: {s}\n", .{name});
             }
-            std.debug.print("=================================\n\n", .{});
+            log.debug("=================================\n\n", .{});
         }
 
         // Step 2: Find comptime flows
@@ -480,12 +481,12 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                 var matched = false;
                 for (comptime_event_names.items) |comptime_name| {
                     if (std.mem.eql(u8, inv_name, comptime_name)) {
-                        std.debug.print("  [MATCH] Flow '{s}' (idx={}) matches comptime event '{s}'\n", .{ inv_name, idx, comptime_name });
+                        log.debug("  [MATCH] Flow '{s}' (idx={}) matches comptime event '{s}'\n", .{ inv_name, idx, comptime_name });
                         try comptime_flows.append(allocator, .{
                             .ast_index = idx,
                             .flow = flow,
                         });
-                        std.debug.print("    → Appended to comptime_flows, now {} items\n", .{comptime_flows.items.len});
+                        log.debug("    → Appended to comptime_flows, now {} items\n", .{comptime_flows.items.len});
                         matched = true;
                         break;
                     }
@@ -501,15 +502,15 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                             // Glob patterns don't have concrete event structs and should NOT generate thunks
                             const is_glob = std.mem.indexOfScalar(u8, transform_name, '*') != null;
                             if (is_glob) {
-                                std.debug.print("  [MATCH-GLOB-TRANSFORM] Flow '{s}' matches glob transform '{s}' - handled by transform pass, not thunks\n", .{ inv_name, transform_name });
+                                log.debug("  [MATCH-GLOB-TRANSFORM] Flow '{s}' matches glob transform '{s}' - handled by transform pass, not thunks\n", .{ inv_name, transform_name });
                                 // Don't add to comptime_flows - the transform pass will handle this
                             } else {
-                                std.debug.print("  [MATCH-TRANSFORM] Flow '{s}' (idx={}) matches transform event '{s}'\n", .{ inv_name, idx, transform_name });
+                                log.debug("  [MATCH-TRANSFORM] Flow '{s}' (idx={}) matches transform event '{s}'\n", .{ inv_name, idx, transform_name });
                                 try comptime_flows.append(allocator, .{
                                     .ast_index = idx,
                                     .flow = flow,
                                 });
-                                std.debug.print("    → Appended to comptime_flows, now {} items\n", .{comptime_flows.items.len});
+                                log.debug("    → Appended to comptime_flows, now {} items\n", .{comptime_flows.items.len});
                             }
                             break;
                         }
@@ -550,7 +551,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                         var matched = false;
                         for (comptime_event_names.items) |comptime_name| {
                             if (std.mem.eql(u8, inv_name, comptime_name)) {
-                                std.debug.print("  [MATCH-MODULE] Flow '{s}' in module matches comptime event '{s}'\n", .{ inv_name, comptime_name });
+                                log.debug("  [MATCH-MODULE] Flow '{s}' in module matches comptime event '{s}'\n", .{ inv_name, comptime_name });
                                 // Note: Using top-level index for module flows
                                 // The AST walker will need to handle this correctly
                                 try comptime_flows.append(allocator, .{
@@ -570,10 +571,10 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                                     // Check if this is a glob pattern (contains *)
                                     const is_glob = std.mem.indexOfScalar(u8, transform_name, '*') != null;
                                     if (is_glob) {
-                                        std.debug.print("  [MATCH-MODULE-GLOB-TRANSFORM] Flow '{s}' matches glob transform '{s}' - handled by transform pass\n", .{ inv_name, transform_name });
+                                        log.debug("  [MATCH-MODULE-GLOB-TRANSFORM] Flow '{s}' matches glob transform '{s}' - handled by transform pass\n", .{ inv_name, transform_name });
                                         // Don't add to comptime_flows
                                     } else {
-                                        std.debug.print("  [MATCH-MODULE-TRANSFORM] Flow '{s}' in module matches transform event '{s}'\n", .{ inv_name, transform_name });
+                                        log.debug("  [MATCH-MODULE-TRANSFORM] Flow '{s}' in module matches transform event '{s}'\n", .{ inv_name, transform_name });
                                         try comptime_flows.append(allocator, .{
                                             .ast_index = idx,
                                             .flow = flow,
@@ -590,7 +591,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
 
         // Debug: Print detected comptime flows
         if (comptime_flows.items.len > 0) {
-            std.debug.print("\n=== COMPTIME FLOW DETECTION ===\n", .{});
+            log.debug("\n=== COMPTIME FLOW DETECTION ===\n", .{});
             for (comptime_flows.items) |flow_info| {
                 const flow = flow_info.flow;
                 // Build invocation name for display
@@ -611,9 +612,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                     inv_name_len += seg.len;
                 }
                 const inv_name = inv_name_buf[0..inv_name_len];
-                std.debug.print("  Detected comptime flow: {s} (ast_index={})\n", .{ inv_name, flow_info.ast_index });
+                log.debug("  Detected comptime flow: {s} (ast_index={})\n", .{ inv_name, flow_info.ast_index });
             }
-            std.debug.print("===============================\n\n", .{});
+            log.debug("===============================\n\n", .{});
         }
 
         // Build a map of module aliases to full module paths
@@ -860,9 +861,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
 
         // NO FALLBACK - if compiler module not found, FAIL LOUDLY
         if (compiler_module_name == null) {
-            std.debug.print("\n✗✗✗ FATAL: Compiler module not found in source_file.items ✗✗✗\n", .{});
-            std.debug.print("Backend generation requires the compiler module to be imported.\n", .{});
-            std.debug.print("This should have been auto-injected during parsing.\n", .{});
+            log.err("\n✗✗✗ FATAL: Compiler module not found in source_file.items ✗✗✗\n", .{});
+            log.err("Backend generation requires the compiler module to be imported.\n", .{});
+            log.err("This should have been auto-injected during parsing.\n", .{});
             return error.CompilerModuleNotFound;
         }
 
@@ -1251,7 +1252,7 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
 
     // Transform AST - insert taps before emission
     // Taps are inserted into the AST as regular flow code (zero-cost abstraction!)
-    std.debug.print("DEBUG: Running AST transformation in generateComptimeBackendEmitted\n", .{});
+    log.debug("DEBUG: Running AST transformation in generateComptimeBackendEmitted\n", .{});
     const tap_transformer = @import("tap_transformer");
     const ast_to_emit = try tap_transformer.transformAst(source_file, &tap_registry, .comptime_only, allocator);
 
@@ -1765,11 +1766,11 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     defer allocator.free(event_name);
 
                     const handler_type = if (has_event_decl_param) "derive" else "transform";
-                    std.debug.print("\nERROR: Event '{s}' consumes *const {s} but won't be emitted to backend\n", .{ event_name, if (has_event_decl_param) "EventDecl" else "Invocation" });
-                    std.debug.print("\n", .{});
-                    std.debug.print("AST-consuming handlers must be available at compile-time. Add [comptime]:\n", .{});
-                    std.debug.print("  ~[comptime] event {s} {{ ... }}\n", .{event_name});
-                    std.debug.print("\n", .{});
+                    log.err("\nERROR: Event '{s}' consumes *const {s} but won't be emitted to backend\n", .{ event_name, if (has_event_decl_param) "EventDecl" else "Invocation" });
+                    log.err("\n", .{});
+                    log.err("AST-consuming handlers must be available at compile-time. Add [comptime]:\n", .{});
+                    log.err("  ~[comptime] event {s} {{ ... }}\n", .{event_name});
+                    log.err("\n", .{});
                     _ = handler_type;
                     return error.TransformMissingComptimeAnnotation;
                 }
@@ -2052,7 +2053,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             // Derive handler: extract event_decl from the item
             try code_emitter.write("    // Extract event declaration from node\n");
             try code_emitter.write("    const event_decl = if (node == .item and node.item.* == .event_decl) &node.item.event_decl else {\n");
-            try code_emitter.write("        transform_std.debug.print(\"ERROR: Derive handler called with non-event_decl node\\n\", .{});\n");
+            try code_emitter.write("        transform_log.debug(\"ERROR: Derive handler called with non-event_decl node\\n\", .{});\n");
             try code_emitter.write("        @panic(\"derive: expected event_decl node\");\n");
             try code_emitter.write("    };\n");
         } else if (event.has_invocation or event.has_item) {
@@ -2062,7 +2063,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             // If handler needs item, find it using ASTNode helper
             if (event.has_item) {
                 try code_emitter.write("    const item = __koru_ast.ASTNode.findContainingItem(program, invocation) orelse {\n");
-                try code_emitter.write("        transform_std.debug.print(\"ERROR: Could not find containing item for invocation\\n\", .{});\n");
+                try code_emitter.write("        transform_log.debug(\"ERROR: Could not find containing item for invocation\\n\", .{});\n");
                 try code_emitter.write("        @panic(\"transform: invocation not found in program\");\n");
                 try code_emitter.write("    };\n");
             }
@@ -2078,13 +2079,13 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
         // DEBUG: Show what we're processing
         if (event.has_event_decl) {
-            const debug_derive = try std.fmt.bufPrint(&buf, "    transform_std.debug.print(\"[DERIVE] {s}: processing event declaration\\n\", .{{}});\n", .{event.stub_name});
+            const debug_derive = try std.fmt.bufPrint(&buf, "    transform_log.debug(\"[DERIVE] {s}: processing event declaration\\n\", .{{}});\n", .{event.stub_name});
             try code_emitter.write(debug_derive);
         } else if (event.has_invocation or event.has_item) {
-            const debug_count = try std.fmt.bufPrint(&buf, "    transform_std.debug.print(\"[TRANSFORM] {s}: {{d}} args\\n\", .{{invocation.args.len}});\n", .{event.stub_name});
+            const debug_count = try std.fmt.bufPrint(&buf, "    transform_log.debug(\"[TRANSFORM] {s}: {{d}} args\\n\", .{{invocation.args.len}});\n", .{event.stub_name});
             try code_emitter.write(debug_count);
             try code_emitter.write("    for (invocation.args, 0..) |arg, i| {\n");
-            try code_emitter.write("        transform_std.debug.print(\"  Arg[{d}]: name='{s}' has_source={} has_expr={}\\n\", .{i, arg.name, arg.source_value != null, arg.expression_value != null});\n");
+            try code_emitter.write("        transform_log.debug(\"  Arg[{d}]: name='{s}' has_source={} has_expr={}\\n\", .{i, arg.name, arg.source_value != null, arg.expression_value != null});\n");
             try code_emitter.write("    }\n");
         }
 
@@ -2118,7 +2119,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 try code_emitter.write("        .transformed => |t| t.program,\n");
                 if (event.has_failed) {
                     try code_emitter.write("        .failed => |f| {\n");
-                    try code_emitter.write("            transform_std.debug.print(\"Derive failed: {s}\\n\", .{f.@\"error\"});\n");
+                    try code_emitter.write("            transform_log.debug(\"Derive failed: {s}\\n\", .{f.@\"error\"});\n");
                     try code_emitter.write("            return error.DeriveFailed;\n");
                     try code_emitter.write("        },\n");
                 }
@@ -2196,13 +2197,13 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 try code_emitter.write("            .transformed => |t| t.program,\n");
                 if (event.has_failed) {
                     try code_emitter.write("            .failed => |f| {\n");
-                    try code_emitter.write("                transform_std.debug.print(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");
+                    try code_emitter.write("                transform_log.debug(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");
                     try code_emitter.write("                return error.TransformFailed;\n");
                     try code_emitter.write("            },\n");
                 }
                 if (event.has_compile_error) {
                     try code_emitter.write("            .compile_error => |ce| {\n");
-                    try code_emitter.write("                transform_std.debug.print(\"Compile error: {s}\\n\", .{ce.message});\n");
+                    try code_emitter.write("                transform_log.debug(\"Compile error: {s}\\n\", .{ce.message});\n");
                     try code_emitter.write("                return error.CompileError;\n");
                     try code_emitter.write("            },\n");
                 }
@@ -2781,7 +2782,7 @@ fn queueParentImports(
     const parent_path_owned = try allocator.dupe(u8, parent_path);
     const parent_local_name = try allocator.dupe(u8, parent_namespace.items);
 
-    std.debug.print("AUTO-IMPORT: Queueing parent '{s}' (namespace: {s})\n", .{ parent_path_owned, parent_local_name });
+    log.debug("AUTO-IMPORT: Queueing parent '{s}' (namespace: {s})\n", .{ parent_path_owned, parent_local_name });
 
     // Create synthetic ImportDecl for the parent
     const synthetic_import = ast.ImportDecl{
@@ -2842,7 +2843,7 @@ fn queueIndexImport(
     // This prevents the main file from being imported as a module when it
     // imports something from its own namespace (e.g., $orisha/router from src/index.kz)
     if (std.mem.eql(u8, resolved.file_path.?, entry_file)) {
-        std.debug.print("AUTO-IMPORT: Skipping index '{s}' (same as entry file)\n", .{resolved.file_path.?});
+        log.debug("AUTO-IMPORT: Skipping index '{s}' (same as entry file)\n", .{resolved.file_path.?});
         return;
     }
 
@@ -2851,7 +2852,7 @@ fn queueIndexImport(
     const index_path_owned = try allocator.dupe(u8, index_path);
     const index_local_name = try allocator.dupe(u8, alias_name);
 
-    std.debug.print("AUTO-IMPORT: Queueing index '{s}' (namespace: {s})\n", .{ index_path_owned, index_local_name });
+    log.debug("AUTO-IMPORT: Queueing index '{s}' (namespace: {s})\n", .{ index_path_owned, index_local_name });
 
     // Create synthetic ImportDecl for index.kz
     const synthetic_import = ast.ImportDecl{
@@ -2877,7 +2878,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
     const has_file = resolved.file_path != null;
     const has_dir = resolved.dir_path != null;
 
-    std.debug.print("processImport: has_file={}, has_dir={}\n", .{ has_file, has_dir });
+    log.debug("processImport: has_file={}, has_dir={}\n", .{ has_file, has_dir });
 
     // Helper to load submodules from directory
     const loadSubmodules = struct {
@@ -2898,14 +2899,14 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
                 // Skip the entry file - it's already compiled as main_module
                 // This prevents duplication when a file imports its own directory
                 if (std.mem.eql(u8, file_path, entry_file_to_exclude)) {
-                    std.debug.print("SUBMODULE: Skipping entry file '{s}' (already main_module)\n", .{file_path});
+                    log.debug("SUBMODULE: Skipping entry file '{s}' (already main_module)\n", .{file_path});
                     continue;
                 }
 
                 // Skip index.kz - it represents the directory itself, not a submodule
                 // The directory's source_file is populated from index.kz separately
                 if (std.mem.eql(u8, std.fs.path.basename(file_path), "index.kz")) {
-                    std.debug.print("SUBMODULE: Skipping index.kz '{s}' (loaded as directory source)\n", .{file_path});
+                    log.debug("SUBMODULE: Skipping index.kz '{s}' (loaded as directory source)\n", .{file_path});
                     continue;
                 }
 
@@ -3001,21 +3002,21 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
     if (has_file and has_dir) {
         // ERROR: Both foo.kz and foo/ exist - this is ambiguous
         // Modules must be self-contained: use EITHER foo.kz OR foo/index.kz
-        std.debug.print("\n", .{});
-        std.debug.print("error[KORU200]: Ambiguous module structure\n", .{});
-        std.debug.print("  --> {s}\n", .{import_decl.path});
-        std.debug.print("  |\n", .{});
-        std.debug.print("  | Found both '{s}.kz' and '{s}/' directory\n", .{ module_name, module_name });
-        std.debug.print("  | \n", .{});
-        std.debug.print("  | Modules must be self-contained. Choose one:\n", .{});
-        std.debug.print("  |   - Single file: {s}.kz\n", .{module_name});
-        std.debug.print("  |   - Directory:   {s}/index.kz (with submodules)\n", .{module_name});
-        std.debug.print("  |\n", .{});
-        std.debug.print("  = help: Delete or rename one of them\n\n", .{});
+        log.err("\n", .{});
+        log.err("error[KORU200]: Ambiguous module structure\n", .{});
+        log.err("  --> {s}\n", .{import_decl.path});
+        log.err("  |\n", .{});
+        log.err("  | Found both '{s}.kz' and '{s}/' directory\n", .{ module_name, module_name });
+        log.err("  | \n", .{});
+        log.err("  | Modules must be self-contained. Choose one:\n", .{});
+        log.err("  |   - Single file: {s}.kz\n", .{module_name});
+        log.err("  |   - Directory:   {s}/index.kz (with submodules)\n", .{module_name});
+        log.err("  |\n", .{});
+        log.err("  = help: Delete or rename one of them\n\n", .{});
         return error.ModuleNotFound; // TODO: Add proper AmbiguousModule error
     } else if (has_dir) {
         // ONLY directory
-        std.debug.print("  Importing directory only: {s}\n", .{import_decl.path});
+        log.debug("  Importing directory only: {s}\n", .{import_decl.path});
 
         const submodules = try loadSubmodules(allocator, parse_allocator, resolver, resolved.dir_path.?, entry_file);
 
@@ -3028,7 +3029,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
         const index_file = std.fs.cwd().openFile(index_path, .{}) catch |err| {
             if (err == error.FileNotFound) {
                 // No index.kz - use empty source_file (original behavior)
-                std.debug.print("  No index.kz found in directory\n", .{});
+                log.debug("  No index.kz found in directory\n", .{});
                 return ImportedModule{
                     .logical_name = module_name,
                     .canonical_path = try allocator.dupe(u8, resolved.dir_path.?),
@@ -3043,7 +3044,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
         index_file.close();
 
         // index.kz exists - parse it and use its content
-        std.debug.print("  Loading index.kz from directory: {s}\n", .{index_path});
+        log.debug("  Loading index.kz from directory: {s}\n", .{index_path});
         const index_data = try loadFile(allocator, parse_allocator, index_path);
 
         return ImportedModule{
@@ -3056,7 +3057,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
         };
     } else {
         // ONLY file
-        std.debug.print("  Importing file only: {s}\n", .{import_decl.path});
+        log.debug("  Importing file only: {s}\n", .{import_decl.path});
 
         const file_data = try loadFile(allocator, parse_allocator, resolved.file_path.?);
 
@@ -3324,7 +3325,7 @@ const KoruCommand = struct {
 fn emitNodeAsZig(allocator: std.mem.Allocator, zig_source: *std.ArrayList(u8), node: ast.Node, indent: []const u8) !void {
     switch (node) {
         .invocation => |inv| {
-            // Check for std.io:println - emit as std.debug.print
+            // Check for std.io:println - emit as log.debug
             const is_std_io = inv.path.module_qualifier != null and
                 std.mem.eql(u8, inv.path.module_qualifier.?, "std.io");
             const is_println = inv.path.segments.len == 1 and
@@ -3332,7 +3333,7 @@ fn emitNodeAsZig(allocator: std.mem.Allocator, zig_source: *std.ArrayList(u8), n
 
             if (is_std_io and is_println) {
                 try zig_source.appendSlice(allocator, indent);
-                try zig_source.appendSlice(allocator, "std.debug.print(");
+                try zig_source.appendSlice(allocator, "log.debug(");
 
                 // Get the message argument
                 if (inv.args.len > 0) {
@@ -3914,7 +3915,7 @@ fn resolveBuildSteps(allocator: std.mem.Allocator, candidates: []BuildStepCandid
         resolved.deinit(allocator);
     }
 
-    std.debug.print("\n📦 Collecting build steps...\n", .{});
+    log.debug("\n📦 Collecting build steps...\n", .{});
 
     var group_iter = groups.iterator();
     while (group_iter.next()) |entry| {
@@ -3939,41 +3940,41 @@ fn resolveBuildSteps(allocator: std.mem.Allocator, candidates: []BuildStepCandid
         const chosen: BuildStepCandidate = blk: {
             // Error case: Multiple defaults
             if (defaults.items.len > 1) {
-                std.debug.print("\n❌ Compilation Error: Multiple default implementations for '{s}'\n", .{name});
+                log.debug("\n❌ Compilation Error: Multiple default implementations for '{s}'\n", .{name});
                 for (defaults.items) |d| {
-                    std.debug.print("  → {s}:step (line ?) [default]\n", .{d.module});
+                    log.debug("  → {s}:step (line ?) [default]\n", .{d.module});
                 }
-                std.debug.print("\nOnly one default implementation per name is allowed.\n", .{});
-                std.debug.print("This is a standard library bug.\n", .{});
+                log.debug("\nOnly one default implementation per name is allowed.\n", .{});
+                log.debug("This is a standard library bug.\n", .{});
                 return error.MultipleDefaults;
             }
 
             // Error case: Multiple non-defaults
             if (non_defaults.items.len > 1) {
-                std.debug.print("\n❌ Compilation Error: Ambiguous step definition for '{s}'\n", .{name});
+                log.debug("\n❌ Compilation Error: Ambiguous step definition for '{s}'\n", .{name});
                 for (non_defaults.items) |nd| {
-                    std.debug.print("  → {s}:step (line ?)\n", .{nd.module});
+                    log.debug("  → {s}:step (line ?)\n", .{nd.module});
                 }
-                std.debug.print("\nMultiple non-default implementations found.\n", .{});
-                std.debug.print("Remove duplicates or mark one as default.\n", .{});
+                log.debug("\nMultiple non-default implementations found.\n", .{});
+                log.debug("Remove duplicates or mark one as default.\n", .{});
                 return error.AmbiguousDefinition;
             }
 
             // Valid case: 1 default + 1 non-default = override
             if (defaults.items.len == 1 and non_defaults.items.len == 1) {
-                std.debug.print("  ✓ {s}: {s} (default) overridden by {s}\n", .{ name, defaults.items[0].module, non_defaults.items[0].module });
+                log.debug("  ✓ {s}: {s} (default) overridden by {s}\n", .{ name, defaults.items[0].module, non_defaults.items[0].module });
                 break :blk non_defaults.items[0];
             }
 
             // Valid case: Only non-default
             if (non_defaults.items.len == 1) {
-                std.debug.print("  ✓ {s}: {s}\n", .{ name, non_defaults.items[0].module });
+                log.debug("  ✓ {s}: {s}\n", .{ name, non_defaults.items[0].module });
                 break :blk non_defaults.items[0];
             }
 
             // Valid case: Only default
             if (defaults.items.len == 1) {
-                std.debug.print("  ✓ {s}: {s} (default)\n", .{ name, defaults.items[0].module });
+                log.debug("  ✓ {s}: {s} (default)\n", .{ name, defaults.items[0].module });
                 break :blk defaults.items[0];
             }
 
@@ -4034,7 +4035,7 @@ fn topologicalSortSteps(allocator: std.mem.Allocator, steps: []const BuildStep) 
                 try adj_list[dep_idx].append(allocator, i);
                 in_degree[i] += 1;
             } else {
-                std.debug.print("Error: Step '{s}' depends on unknown step '{s}'\n", .{ step.name, dep_name });
+                log.debug("Error: Step '{s}' depends on unknown step '{s}'\n", .{ step.name, dep_name });
                 return error.UnknownDependency;
             }
         }
@@ -4068,14 +4069,14 @@ fn topologicalSortSteps(allocator: std.mem.Allocator, steps: []const BuildStep) 
 
     // If we didn't process all nodes, there's a cycle
     if (result.items.len != n) {
-        std.debug.print("Error: Circular dependency detected in build steps!\n", .{});
-        std.debug.print("Processed {d} of {d} steps.\n", .{ result.items.len, n });
+        log.debug("Error: Circular dependency detected in build steps!\n", .{});
+        log.debug("Processed {d} of {d} steps.\n", .{ result.items.len, n });
 
         // Find which steps are part of the cycle
-        std.debug.print("Steps involved in cycle:\n", .{});
+        log.debug("Steps involved in cycle:\n", .{});
         for (in_degree, 0..) |degree, i| {
             if (degree > 0) {
-                std.debug.print("  - {s} (waiting on {d} dependencies)\n", .{ steps[i].name, degree });
+                log.debug("  - {s} (waiting on {d} dependencies)\n", .{ steps[i].name, degree });
             }
         }
 
@@ -4124,7 +4125,7 @@ fn executeBuildSteps(allocator: std.mem.Allocator, steps: []const BuildStep) !vo
         }
     }
 
-    std.debug.print("\n🔨 Executing {d} build step(s)...\n", .{needed.count()});
+    log.debug("\n🔨 Executing {d} build step(s)...\n", .{needed.count()});
 
     // Topologically sort the steps
     const order = try topologicalSortSteps(allocator, steps);
@@ -4137,14 +4138,14 @@ fn executeBuildSteps(allocator: std.mem.Allocator, steps: []const BuildStep) !vo
             // Skip this default step - nothing needs it
             continue;
         }
-        std.debug.print("\n📦 Step: {s}\n", .{step.name});
+        log.debug("\n📦 Step: {s}\n", .{step.name});
         if (step.dependencies.len > 0) {
-            std.debug.print("  Dependencies: ", .{});
+            log.debug("  Dependencies: ", .{});
             for (step.dependencies, 0..) |dep, i| {
-                if (i > 0) std.debug.print(", ", .{});
-                std.debug.print("{s}", .{dep});
+                if (i > 0) log.debug(", ", .{});
+                log.debug("{s}", .{dep});
             }
-            std.debug.print("\n", .{});
+            log.debug("\n", .{});
         }
 
         // Execute the shell script
@@ -4169,19 +4170,19 @@ fn executeBuildSteps(allocator: std.mem.Allocator, steps: []const BuildStep) !vo
         switch (result.term) {
             .Exited => |code| {
                 if (code != 0) {
-                    std.debug.print("✗ Step '{s}' failed with exit code {d}\n", .{ step.name, code });
+                    log.debug("✗ Step '{s}' failed with exit code {d}\n", .{ step.name, code });
                     return error.BuildStepFailed;
                 }
-                std.debug.print("✓ Step '{s}' completed successfully\n", .{step.name});
+                log.debug("✓ Step '{s}' completed successfully\n", .{step.name});
             },
             else => {
-                std.debug.print("✗ Step '{s}' terminated abnormally\n", .{step.name});
+                log.debug("✗ Step '{s}' terminated abnormally\n", .{step.name});
                 return error.BuildStepFailed;
             },
         }
     }
 
-    std.debug.print("\n✅ All build steps completed successfully!\n\n", .{});
+    log.debug("\n✅ All build steps completed successfully!\n\n", .{});
 }
 
 // ============================================================================
@@ -4220,7 +4221,7 @@ fn buildKeywordRegistry(
                     const module_path = event.path.module_qualifier orelse "main";
 
                     try registry.registerKeyword(keyword_name, canonical_path, module_path);
-                    std.debug.print("  Registered keyword '{s}' -> '{s}'\n", .{ keyword_name, canonical_path });
+                    log.debug("  Registered keyword '{s}' -> '{s}'\n", .{ keyword_name, canonical_path });
                 }
             },
             .module_decl => |module| {
@@ -4491,9 +4492,9 @@ fn resolveKeywordInPath(
     const resolve_result = registry.resolveKeyword(potential_keyword) catch |err| switch (err) {
         error.KeywordCollision => {
             const collision_info = registry.getCollisionInfo(potential_keyword).?;
-            std.debug.print("ERROR: Ambiguous keyword '{s}' - defined in:\n", .{potential_keyword});
+            log.err("ERROR: Ambiguous keyword '{s}' - defined in:\n", .{potential_keyword});
             for (collision_info) |info| {
-                std.debug.print("  - {s} (from {s})\n", .{ info.canonical_path, info.module_path });
+                log.err("  - {s} (from {s})\n", .{ info.canonical_path, info.module_path });
             }
             return error.AmbiguousKeyword;
         },
@@ -4503,7 +4504,7 @@ fn resolveKeywordInPath(
         // Parse canonical path "module:event" to extract module_qualifier
         if (std.mem.indexOf(u8, canonical, ":")) |colon_pos| {
             path.module_qualifier = try allocator.dupe(u8, canonical[0..colon_pos]);
-            std.debug.print("  Resolved keyword '{s}' -> module '{s}'\n", .{ potential_keyword, path.module_qualifier.? });
+            log.debug("  Resolved keyword '{s}' -> module '{s}'\n", .{ potential_keyword, path.module_qualifier.? });
         }
     }
 }
@@ -4808,7 +4809,7 @@ pub fn main() !void {
     defer {
         const leak_status = gpa.deinit();
         if (leak_status == .leak) {
-            std.debug.print("Memory leak detected\n", .{});
+            log.debug("Memory leak detected\n", .{});
         }
     }
     const allocator = gpa.allocator();
@@ -5029,7 +5030,7 @@ pub fn main() !void {
             ) catch |err| {
                 // If we can't read compiler.kz, just show basic help
                 if (err != error.FileNotFound) {
-                    std.debug.print("Warning: Could not read {s}: {}\n", .{ compiler_kz_path, err });
+                    log.debug("Warning: Could not read {s}: {}\n", .{ compiler_kz_path, err });
                 }
                 return;
             };
@@ -5092,6 +5093,8 @@ pub fn main() !void {
             fail_fast = true;
         } else if (std.mem.eql(u8, arg, "--install-packages")) {
             install_packages = true;
+        } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-V")) {
+            try compiler_config.addFlag("verbose");
         } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--output")) {
             i += 1;
             if (i >= args.len) {
@@ -5127,6 +5130,9 @@ pub fn main() !void {
             try compiler_config.addFlag(flag_name);
         }
     }
+
+    // Initialize logging level from CLI flags
+    log.init(compiler_config.hasFlag("verbose"), compiler_config.hasFlag("debug"));
 
     // CCP daemon mode - enter interactive command loop (only when no input file)
     if (ccp_mode and input_file == null) {
@@ -5215,7 +5221,7 @@ pub fn main() !void {
     const inject_compiler = !compiler_config.hasFlag("compiler=disable");
     const user_already_imported_compiler = std.mem.indexOf(u8, source, "$std/compiler") != null;
     const final_source = if (inject_compiler and !user_already_imported_compiler) blk: {
-        std.debug.print("DEBUG: Auto-injecting compiler import\n", .{});
+        log.debug("DEBUG: Auto-injecting compiler import\n", .{});
         const import_line = "~import \"$std/compiler\"\n";
         const injected = try parse_allocator.alloc(u8, import_line.len + source.len);
         @memcpy(injected[0..import_line.len], import_line);
@@ -5223,19 +5229,19 @@ pub fn main() !void {
         break :blk injected;
     } else blk: {
         if (user_already_imported_compiler) {
-            std.debug.print("DEBUG: User already imported compiler, skipping auto-injection\n", .{});
+            log.debug("DEBUG: User already imported compiler, skipping auto-injection\n", .{});
         }
         break :blk source;
     };
 
     // Parse the file
-    std.debug.print("DEBUG: About to parse file: {s}, ast_json_mode = {}\n", .{ input, ast_json_mode });
-    std.debug.print("DEBUG: Compiler bootstrap injection: {}\n", .{inject_compiler});
+    log.debug("DEBUG: About to parse file: {s}, ast_json_mode = {}\n", .{ input, ast_json_mode });
+    log.debug("DEBUG: Compiler bootstrap injection: {}\n", .{inject_compiler});
     var parser = try Parser.init(parse_allocator, final_source, input, compiler_config.flags.items, &resolver);
     parser.fail_fast = fail_fast;
     defer parser.deinit();
 
-    std.debug.print("DEBUG: Parser initialized, calling parse()...\n", .{});
+    log.debug("DEBUG: Parser initialized, calling parse()...\n", .{});
     const parse_result = parser.parse() catch |err| {
         if (parser.reporter.hasErrors()) {
             const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
@@ -5244,7 +5250,7 @@ pub fn main() !void {
         }
         return err;
     };
-    std.debug.print("DEBUG: Parse succeeded, ast_json_mode = {}\n", .{ast_json_mode});
+    log.debug("DEBUG: Parse succeeded, ast_json_mode = {}\n", .{ast_json_mode});
     // DON'T defer deinit - we're going to take ownership of the items
 
     var source_file = parse_result.source_file;
@@ -5254,13 +5260,13 @@ pub fn main() !void {
     // If --ast-json mode, output AST as JSON (even if there are parse errors)
     // This is crucial for IDE tooling - parse_error nodes in AST show where errors occurred
     if (ast_json_mode) {
-        std.debug.print("DEBUG: ast_json_mode is true, serializing AST...\n", .{});
+        log.debug("DEBUG: ast_json_mode is true, serializing AST...\n", .{});
         const ast_serializer = @import("ast_serializer");
         var serializer = try ast_serializer.AstSerializer.init(compile_allocator);
         defer serializer.deinit();
 
         const json_output = try serializer.serializeToJson(&source_file);
-        std.debug.print("DEBUG: JSON output length = {d}\n", .{json_output.len});
+        log.debug("DEBUG: JSON output length = {d}\n", .{json_output.len});
         // No need to free - compile_arena handles it
 
         try printStdout(allocator, "{s}", .{json_output});
@@ -5481,7 +5487,7 @@ pub fn main() !void {
                 for (zig_commands) |cmd| {
                     if (std.mem.eql(u8, cmd.name, potential_command)) {
                         // Found matching Zig command! Compile and execute it
-                        std.debug.print("🔨 Executing Zig command: {s}\n", .{cmd.name});
+                        log.debug("🔨 Executing Zig command: {s}\n", .{cmd.name});
 
                         // TODO: For MVP, we'll implement a simple approach:
                         // 1. Generate temp .zig file with command source
@@ -5490,8 +5496,8 @@ pub fn main() !void {
                         // 4. Pass AST path + argv via command line
 
                         // For now, just print that we found it
-                        std.debug.print("⚠️  Zig command execution not yet implemented\n", .{});
-                        std.debug.print("Command '{s}' found but needs compilation support\n", .{cmd.name});
+                        log.debug("⚠️  Zig command execution not yet implemented\n", .{});
+                        log.debug("Command '{s}' found but needs compilation support\n", .{cmd.name});
                         std.process.exit(1);
                     }
                 }
@@ -5500,7 +5506,7 @@ pub fn main() !void {
                 for (koru_commands) |cmd| {
                     if (std.mem.eql(u8, cmd.name, potential_command)) {
                         // Found matching Koru command! Emit and execute it
-                        std.debug.print("🌿 Executing Koru command: {s}\n", .{cmd.name});
+                        log.debug("🌿 Executing Koru command: {s}\n", .{cmd.name});
 
                         // Find the execute continuation
                         var execute_cont: ?*const ast.Continuation = null;
@@ -5512,7 +5518,7 @@ pub fn main() !void {
                         }
 
                         if (execute_cont == null) {
-                            std.debug.print("Error: No 'execute' branch found in command\n", .{});
+                            log.debug("Error: No 'execute' branch found in command\n", .{});
                             std.process.exit(1);
                         }
 
@@ -5541,12 +5547,12 @@ pub fn main() !void {
 
                         // Write to temp file
                         const tmp_file = std.fs.createFileAbsolute(tmp_path, .{}) catch |err| {
-                            std.debug.print("Error creating temp file: {}\n", .{err});
+                            log.debug("Error creating temp file: {}\n", .{err});
                             std.process.exit(1);
                         };
                         defer tmp_file.close();
                         tmp_file.writeAll(zig_source.items) catch |err| {
-                            std.debug.print("Error writing temp file: {}\n", .{err});
+                            log.debug("Error writing temp file: {}\n", .{err});
                             std.process.exit(1);
                         };
 
@@ -5556,7 +5562,7 @@ pub fn main() !void {
                             .allocator = allocator,
                             .argv = &exec_argv,
                         }) catch |err| {
-                            std.debug.print("Error running command: {}\n", .{err});
+                            log.debug("Error running command: {}\n", .{err});
                             std.process.exit(1);
                         };
                         defer {
@@ -5653,7 +5659,7 @@ pub fn main() !void {
 
         // Check if we've already imported this canonical path
         if (imported_paths.contains(module.canonical_path)) {
-            std.debug.print("DEDUPLICATION: Skipping duplicate import of '{s}' (canonical: {s})\n", .{ module.logical_name, module.canonical_path });
+            log.debug("DEDUPLICATION: Skipping duplicate import of '{s}' (canonical: {s})\n", .{ module.logical_name, module.canonical_path });
             // Clean up the duplicate module
             var mut_module = module;
             mut_module.deinit(allocator);
@@ -5663,7 +5669,7 @@ pub fn main() !void {
         // Track this import
         const path_copy = try allocator.dupe(u8, module.canonical_path);
         try imported_paths.put(path_copy, {});
-        std.debug.print("IMPORT: Added '{s}' (canonical: {s})\n", .{ module.logical_name, module.canonical_path });
+        log.debug("IMPORT: Added '{s}' (canonical: {s})\n", .{ module.logical_name, module.canonical_path });
 
         // Queue parent imports for aliased paths (e.g., $std/io/file -> also import $std/io.kz)
         // Only if the parent file actually exists
@@ -5676,7 +5682,7 @@ pub fn main() !void {
         // Scan this module's AST for transitive imports
         for (module.source_file.items) |item| {
             if (item == .import_decl) {
-                std.debug.print("TRANSITIVE: Found import in '{s}' -> '{s}'\n", .{ module.logical_name, item.import_decl.path });
+                log.debug("TRANSITIVE: Found import in '{s}' -> '{s}'\n", .{ module.logical_name, item.import_decl.path });
                 try work_queue.append(allocator, .{
                     .import_decl = item.import_decl,
                     .base_file = module.canonical_path,
@@ -5690,7 +5696,7 @@ pub fn main() !void {
         for (module.submodules) |*submod| {
             for (submod.source_file.items) |item| {
                 if (item == .import_decl) {
-                    std.debug.print("TRANSITIVE: Found import in submodule '{s}.{s}' -> '{s}'\n", .{ module.logical_name, submod.logical_name, item.import_decl.path });
+                    log.debug("TRANSITIVE: Found import in submodule '{s}.{s}' -> '{s}'\n", .{ module.logical_name, submod.logical_name, item.import_decl.path });
                     try work_queue.append(allocator, .{
                         .import_decl = item.import_decl,
                         .base_file = submod.canonical_path,
@@ -5800,7 +5806,7 @@ pub fn main() !void {
     // Don't need explicit defer - parse_arena.deinit() will free everything
     // No manual cleanup needed for AST nodes - parse_arena.deinit() will free them all
 
-    std.debug.print("AST combined with {} imported modules\n", .{imported_modules.items.len});
+    log.debug("AST combined with {} imported modules\n", .{imported_modules.items.len});
 
     // Now check for comptime commands (after imports are processed)
     if (potential_command_arg) |potential_command| {
@@ -5831,12 +5837,12 @@ pub fn main() !void {
     // Build keyword registry and resolve [keyword] events
     // This enables unqualified invocation of events marked with [keyword]
     // Must happen AFTER canonicalization so we have canonical paths for registration
-    std.debug.print("Building keyword registry...\n", .{});
+    log.debug("Building keyword registry...\n", .{});
     var kw_registry = keyword_registry.KeywordRegistry.init(parse_allocator);
     defer kw_registry.deinit();
     try buildKeywordRegistry(source_file.items, &kw_registry, parse_allocator);
     if (kw_registry.count() > 0) {
-        std.debug.print("Registered {} keywords, resolving in AST...\n", .{kw_registry.count()});
+        log.debug("Registered {} keywords, resolving in AST...\n", .{kw_registry.count()});
         try resolveKeywordsInAST(@constCast(source_file.items), &kw_registry, parse_allocator, source_file.main_module_name);
     }
 
@@ -5847,7 +5853,7 @@ pub fn main() !void {
     // Must happen BEFORE tap transformation so taps can observe these flows
     const meta_events = @import("meta_events");
     try meta_events.injectMetaEvents(parse_allocator, &source_file);
-    std.debug.print("Injected meta-events: koru:start, koru:end\n", .{});
+    log.debug("Injected meta-events: koru:start, koru:end\n", .{});
 
     // Populate invocation.source_module for visibility enforcement
     try populateInvocationSourceModules(@constCast(source_file.items), parse_allocator, source_file.main_module_name);
@@ -5863,9 +5869,9 @@ pub fn main() !void {
 
     // Build TypeRegistry from canonicalized AST
     // This must happen AFTER canonicalization so event names include module qualifiers
-    std.debug.print("Building TypeRegistry from canonicalized AST...\n", .{});
+    log.debug("Building TypeRegistry from canonicalized AST...\n", .{});
     try user_registry.populateFromAST(source_file.items);
-    std.debug.print("TypeRegistry populated with {} events\n", .{user_registry.events.count()});
+    log.debug("TypeRegistry populated with {} events\n", .{user_registry.events.count()});
 
     // Attach TypeRegistry to Program for transform access
     // Transforms can clone this for supplemental parsing
@@ -5873,15 +5879,15 @@ pub fn main() !void {
 
     // Validate abstract events and implementations
     // This must happen AFTER canonicalization so we can match canonical paths
-    std.debug.print("Validating abstract events and implementations...\n", .{});
+    log.debug("Validating abstract events and implementations...\n", .{});
     try validate_abstract_impl.AbstractImplValidator.validate(parse_allocator, source_file.items);
-    std.debug.print("Abstract/impl validation passed\n", .{});
+    log.debug("Abstract/impl validation passed\n", .{});
 
     // Resolve abstract/impl: rename defaults to .default when overrides exist
     const resolve_abstract_impl = @import("resolve_abstract_impl");
     try resolve_abstract_impl.resolve(&source_file, parse_allocator);
     try resolve_abstract_impl.createDefaultEventDecls(&source_file, parse_allocator);
-    std.debug.print("Abstract/impl resolution complete\n", .{});
+    log.debug("Abstract/impl resolution complete\n", .{});
 
     // Collect Event Taps
     var tap_collector = try TapCollector.init(compile_allocator);
@@ -5893,7 +5899,7 @@ pub fn main() !void {
         tap_collector.universal_output_taps.items.len +
         tap_collector.universal_input_taps.items.len;
     if (tap_count > 0) {
-        std.debug.print("Collected {} Event Taps\n", .{tap_count});
+        log.debug("Collected {} Event Taps\n", .{tap_count});
     }
 
     // NOTE: Tap transformation is done in the BACKEND by compiler.coordinate.transform_taps
@@ -5931,21 +5937,21 @@ pub fn main() !void {
     defer fusion_report.deinit();
 
     if (fusion_report.total_chains > 0) {
-        std.debug.print("\n🔥 FUSION OPPORTUNITIES DETECTED:\n", .{});
-        std.debug.print("   Found {} fusable chain(s) with {} total events\n", .{
+        log.debug("\n🔥 FUSION OPPORTUNITIES DETECTED:\n", .{});
+        log.debug("   Found {} fusable chain(s) with {} total events\n", .{
             fusion_report.total_chains,
             fusion_report.total_events_in_chains,
         });
 
         for (fusion_report.opportunities.items) |opp| {
-            std.debug.print("   📍 In {s}: ", .{opp.location});
+            log.debug("   📍 In {s}: ", .{opp.location});
             for (opp.chain, 0..) |event, idx| {
-                if (idx > 0) std.debug.print(" -> ", .{});
-                std.debug.print("{s}", .{event});
+                if (idx > 0) log.debug(" -> ", .{});
+                log.debug("{s}", .{event});
             }
-            std.debug.print(" ({} events)\n", .{opp.chain.len});
+            log.debug(" ({} events)\n", .{opp.chain.len});
         }
-        std.debug.print("\n", .{});
+        log.debug("\n", .{});
     }
 
     // If check-only, we're done
@@ -5960,7 +5966,7 @@ pub fn main() !void {
 
     // Write output file
     const output = output_file.?;
-    try printStdout(allocator, "DEBUG: Writing output to {s}\n", .{output});
+    log.debug("DEBUG: Writing output to {s}\n", .{output});
 
     // Pass 2: Generate the backend (code generator + compiler)
     const ast_serializer = @import("ast_serializer");
@@ -5977,11 +5983,11 @@ pub fn main() !void {
     // CRITICAL: Use source_file (original AST) not final_ast (transformed AST)
     // The comptime evaluation pass filters out ~[comptime] modules from final_ast,
     // but we NEED those modules in backend_output_emitted.zig for backend compilation!
-    std.debug.print("DEBUG: Generating comptime backend with {} items in source_file\n", .{source_file.items.len});
+    log.debug("DEBUG: Generating comptime backend with {} items in source_file\n", .{source_file.items.len});
     for (source_file.items) |item| {
         if (item == .module_decl) {
             const module = item.module_decl;
-            std.debug.print("DEBUG:   Module: {s} (has_comptime: {any})\n", .{ module.logical_name, module.annotations });
+            log.debug("DEBUG:   Module: {s} (has_comptime: {any})\n", .{ module.logical_name, module.annotations });
         }
     }
     const comptime_result = try generateComptimeBackendEmitted(compile_allocator, &source_file, &user_registry);

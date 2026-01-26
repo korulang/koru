@@ -1,4 +1,5 @@
 // Phantom Semantic Checker - Validates module-qualified phantom states
+const log = @import("log");
 const std = @import("std");
 const ast = @import("ast");
 const errors = @import("errors");
@@ -27,7 +28,7 @@ pub const PhantomSemanticChecker = struct {
 
     /// Check phantom types in the entire AST
     pub fn check(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !void {
-        std.debug.print("\n[PHANTOM-CHECK] Starting phantom semantic check for program with {d} items\n", .{source_ast.items.len});
+        log.debug("\n[PHANTOM-CHECK] Starting phantom semantic check for program with {d} items\n", .{source_ast.items.len});
         // Track if we found any errors (but continue checking to find all of them)
         var has_errors = false;
 
@@ -55,10 +56,10 @@ pub const PhantomSemanticChecker = struct {
 
         // Return error if we found any issues
         if (has_errors) {
-            std.debug.print("[PHANTOM] Returning ValidationFailed - annotations_valid={}, flows_valid={}\n", .{annotations_valid, flows_valid});
+            log.debug("[PHANTOM] Returning ValidationFailed - annotations_valid={}, flows_valid={}\n", .{annotations_valid, flows_valid});
             return error.ValidationFailed;
         }
-        std.debug.print("[PHANTOM] All validation passed!\n", .{});
+        log.debug("[PHANTOM] All validation passed!\n", .{});
     }
 
     fn buildModuleMap(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !void {
@@ -340,7 +341,7 @@ pub const PhantomSemanticChecker = struct {
                         // Track this binding as requiring cleanup
                         const obligation_key = try self.allocator.dupe(u8, name);
                         try self.cleanup_obligations.put(obligation_key, {});
-                        std.debug.print("[CLEANUP] Tracking cleanup obligation for '{s}' with state '{s}'\n", .{name, phantom_state});
+                        log.debug("[CLEANUP] Tracking cleanup obligation for '{s}' with state '{s}'\n", .{name, phantom_state});
                     }
                 },
                 .variable => {},
@@ -438,7 +439,7 @@ pub const PhantomSemanticChecker = struct {
         fn clearCleanupObligation(self: *BindingContext, name: []const u8) void {
             if (self.cleanup_obligations.fetchRemove(name)) |kv| {
                 self.allocator.free(kv.key);
-                std.debug.print("[CLEANUP] Cleared cleanup obligation for '{s}'\n", .{name});
+                log.debug("[CLEANUP] Cleared cleanup obligation for '{s}'\n", .{name});
             }
         }
 
@@ -446,7 +447,7 @@ pub const PhantomSemanticChecker = struct {
         fn markDisposed(self: *BindingContext, name: []const u8) !void {
             const disposed_key = try self.allocator.dupe(u8, name);
             try self.disposed_bindings.put(disposed_key, {});
-            std.debug.print("[CLEANUP] Marked '{s}' as disposed (poisoned)\n", .{name});
+            log.debug("[CLEANUP] Marked '{s}' as disposed (poisoned)\n", .{name});
         }
 
         /// Check if a binding has been disposed
@@ -521,7 +522,7 @@ pub const PhantomSemanticChecker = struct {
     };
 
     fn validatePhantomFlows(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !bool {
-        std.debug.print("[PHANTOM-FLOW] Pass 2: Validating phantom flows\n", .{});
+        log.debug("[PHANTOM-FLOW] Pass 2: Validating phantom flows\n", .{});
 
         // Build event map for lookup (module:event → EventInfo)
         var event_map = std.StringHashMap(EventInfo).init(self.allocator);
@@ -535,7 +536,7 @@ pub const PhantomSemanticChecker = struct {
         }
 
         try self.buildEventMap(source_ast, &event_map);
-        std.debug.print("[PHANTOM-FLOW] Built event map with {} events\n", .{event_map.count()});
+        log.debug("[PHANTOM-FLOW] Built event map with {} events\n", .{event_map.count()});
 
         // Validate all flows/procs, tracking module context
         return self.validateItems(source_ast.items, &event_map, null);
@@ -548,14 +549,14 @@ pub const PhantomSemanticChecker = struct {
             switch (item) {
                 .flow => |*flow| {
                     const module = flow.module; // Already qualified for top-level or from module_decl.items walk
-                    std.debug.print("[PHANTOM-FLOW] Validating flow in module '{s}'\n", .{module});
+                    log.debug("[PHANTOM-FLOW] Validating flow in module '{s}'\n", .{module});
                     if (!try self.validateFlow(flow, event_map, module, null)) {
                         has_errors = true;
                     }
                 },
                 .proc_decl => |*proc| {
                     const module = proc.module;
-                    std.debug.print("[PHANTOM-FLOW] Validating proc '{s}' in module '{s}'\n", .{try self.pathToString(proc.path), module});
+                    log.debug("[PHANTOM-FLOW] Validating proc '{s}' in module '{s}'\n", .{try self.pathToString(proc.path), module});
                     for (proc.inline_flows) |*flow| {
                         if (!try self.validateFlow(flow, event_map, module, null)) {
                             has_errors = true;
@@ -565,7 +566,7 @@ pub const PhantomSemanticChecker = struct {
                 .subflow_impl => |*sub| {
                     if (sub.body == .flow) {
                         const module = current_module orelse "input"; // Need to pass module context down
-                        std.debug.print("[PHANTOM-FLOW] Validating subflow in module '{s}'\n", .{module});
+                        log.debug("[PHANTOM-FLOW] Validating subflow in module '{s}'\n", .{module});
 
                         // Look up the event this subflow implements
                         const impl_event_name = try self.pathToString(sub.event_path);
@@ -581,10 +582,10 @@ pub const PhantomSemanticChecker = struct {
                         const impl_event: ?*const ast.EventDecl = if (event_map.get(impl_qualified)) |info| info.decl else null;
 
                         if (impl_event) |ev| {
-                            std.debug.print("[PHANTOM-FLOW]   Subflow implements event: '{s}'\n", .{impl_qualified});
+                            log.debug("[PHANTOM-FLOW]   Subflow implements event: '{s}'\n", .{impl_qualified});
                             _ = ev;
                         } else {
-                            std.debug.print("[PHANTOM-FLOW]   Subflow event '{s}' not found in event map\n", .{impl_qualified});
+                            log.debug("[PHANTOM-FLOW]   Subflow event '{s}' not found in event map\n", .{impl_qualified});
                         }
 
                         if (!try self.validateFlow(&sub.body.flow, event_map, module, impl_event)) {
@@ -678,16 +679,16 @@ pub const PhantomSemanticChecker = struct {
         );
         defer self.allocator.free(qualified_name);
 
-        std.debug.print("[PHANTOM-FLOW]   Flow invokes: '{s}' in module '{s}' → qualified: '{s}'\n",
+        log.debug("[PHANTOM-FLOW]   Flow invokes: '{s}' in module '{s}' → qualified: '{s}'\n",
             .{event_name, module_name, qualified_name});
 
         const event_info = event_map.get(qualified_name) orelse {
-            std.debug.print("[PHANTOM-FLOW]   Event '{s}' not found in map, skipping\n", .{qualified_name});
+            log.debug("[PHANTOM-FLOW]   Event '{s}' not found in map, skipping\n", .{qualified_name});
             // Event not found - shape_checker will catch this, we just skip
             return true;
         };
 
-        std.debug.print("[PHANTOM-FLOW]   Found event '{s}', validating continuations\n", .{qualified_name});
+        log.debug("[PHANTOM-FLOW]   Found event '{s}', validating continuations\n", .{qualified_name});
 
         // For each continuation, validate phantom state flows
         // Pass both: current_module (where flow is defined, for name resolution)
@@ -716,20 +717,20 @@ pub const PhantomSemanticChecker = struct {
     ) anyerror!bool {
         var has_errors = false;
 
-        std.debug.print("[PHANTOM-FLOW]   Continuation branch: '{s}'\n", .{cont.branch});
+        log.debug("[PHANTOM-FLOW]   Continuation branch: '{s}'\n", .{cont.branch});
 
         // Debug: print event path and branches
         const event_path = try self.pathToString(event_decl.path);
         defer self.allocator.free(event_path);
-        std.debug.print("[PHANTOM-FLOW]   Event has path: '{s}', {} branches:\n", .{event_path, event_decl.branches.len});
+        log.debug("[PHANTOM-FLOW]   Event has path: '{s}', {} branches:\n", .{event_path, event_decl.branches.len});
         for (event_decl.branches) |branch| {
-            std.debug.print("[PHANTOM-FLOW]     - '{s}'\n", .{branch.name});
+            log.debug("[PHANTOM-FLOW]     - '{s}'\n", .{branch.name});
         }
 
         // Void events (0 branches) have implicit continuations - skip branch validation
         // The continuation just chains to the next event after the void event completes
         if (event_decl.branches.len == 0) {
-            std.debug.print("[PHANTOM-FLOW]   (void event - skipping branch validation)\n", .{});
+            log.debug("[PHANTOM-FLOW]   (void event - skipping branch validation)\n", .{});
             // Create binding context for void event continuation
             var void_context = if (parent_context) |parent|
                 try BindingContext.inherit(parent, self.allocator)
@@ -780,7 +781,7 @@ pub const PhantomSemanticChecker = struct {
         // Catch-all continuations (|?) don't reference a specific branch
         // They handle all unhandled branches, so skip branch validation
         if (cont.is_catchall) {
-            std.debug.print("[PHANTOM-FLOW]   (catch-all continuation - skipping branch validation)\n", .{});
+            log.debug("[PHANTOM-FLOW]   (catch-all continuation - skipping branch validation)\n", .{});
             // Still validate nested continuations if present
             for (cont.continuations) |*nested| {
                 const nested_valid = try self.validateContinuation(nested, event_decl, event_module, flow_module, event_map, location, null, implementing_event);
@@ -795,7 +796,7 @@ pub const PhantomSemanticChecker = struct {
         // They don't reference a branch - they chain after a void event in the pipeline
         // NOTE: This is different from void EVENTS (0 branches) - this handles the continuation SYNTAX
         if (cont.branch.len == 0) {
-            std.debug.print("[PHANTOM-FLOW]   (empty-branch void chain continuation - handling step/nested)\n", .{});
+            log.debug("[PHANTOM-FLOW]   (empty-branch void chain continuation - handling step/nested)\n", .{});
             // Create binding context for void chain continuation
             var void_chain_context = if (parent_context) |parent|
                 try BindingContext.inherit(parent, self.allocator)
@@ -941,24 +942,24 @@ pub const PhantomSemanticChecker = struct {
 
         // Add branch-level phantoms (context state)
         if (branch_decl) |bd| {
-            std.debug.print("[PHANTOM-FLOW]   Branch '{s}' has {} annotations\n", .{ bd.name, bd.annotations.len });
+            log.debug("[PHANTOM-FLOW]   Branch '{s}' has {} annotations\n", .{ bd.name, bd.annotations.len });
             for (bd.annotations, 0..) |ann, i| {
-                std.debug.print("[PHANTOM-FLOW]     Branch Annotation[{}]: '{s}' (isPhantom={})\n", .{ i, ann, isPhantomAnnotation(ann) });
+                log.debug("[PHANTOM-FLOW]     Branch Annotation[{}]: '{s}' (isPhantom={})\n", .{ i, ann, isPhantomAnnotation(ann) });
                 if (isPhantomAnnotation(ann)) {
                     const module_for_canon = event_module orelse event_decl.module;
                     const canonical = try self.canonicalizePhantomState(ann, module_for_canon);
                     defer self.allocator.free(canonical);
-                    std.debug.print("[PHANTOM-FLOW]     Storing context phantom for branch '{s}': '{s}' (canonical: '{s}')\n", .{ bd.name, ann, canonical });
+                    log.debug("[PHANTOM-FLOW]     Storing context phantom for branch '{s}': '{s}' (canonical: '{s}')\n", .{ bd.name, ann, canonical });
                     try context.set("", canonical);
                 }
             }
         }
 
         const step_count: usize = if (cont.node != null) 1 else 0;
-        std.debug.print("[PHANTOM-FLOW]   Pipeline has {} steps\n", .{step_count});
+        log.debug("[PHANTOM-FLOW]   Pipeline has {} steps\n", .{step_count});
         // Debug: print what's in the pipeline
         if (cont.node) |step| {
-            std.debug.print("[PHANTOM-FLOW]     Step 0: {s}\n", .{@tagName(step)});
+            log.debug("[PHANTOM-FLOW]     Step 0: {s}\n", .{@tagName(step)});
         }
         // Validate pipeline steps with this context
         // Use flow_module for name resolution (where the flow is defined)
@@ -976,10 +977,10 @@ pub const PhantomSemanticChecker = struct {
                         defer self.allocator.free(qualified_name);
 
                         if (event_map.get(qualified_name)) |inv_info| {
-                            std.debug.print("[PHANTOM-FLOW]   Recording label '#{s}' mapping to event '{s}'\n", .{lwi.label, qualified_name});
+                            log.debug("[PHANTOM-FLOW]   Recording label '#{s}' mapping to event '{s}'\n", .{lwi.label, qualified_name});
                             try self.label_map.put(lwi.label, inv_info.decl);
                         } else {
-                            std.debug.print("[PHANTOM-FLOW]   WARNING: Label '#{s}' points to unknown event '{s}'\n", .{lwi.label, qualified_name});
+                            log.debug("[PHANTOM-FLOW]   WARNING: Label '#{s}' points to unknown event '{s}'\n", .{lwi.label, qualified_name});
                         }
                     }
                 },
@@ -1004,14 +1005,14 @@ pub const PhantomSemanticChecker = struct {
         }
         if (is_terminator) {
             const terminator_type = if (cont.node) |n| @tagName(n) else "empty";
-            std.debug.print("[CLEANUP] Terminator detected ({s}), checking for uncleaned resources\n", .{terminator_type});
+            log.debug("[CLEANUP] Terminator detected ({s}), checking for uncleaned resources\n", .{terminator_type});
             if (context.hasUncleanedResources()) {
                 const uncleaned = try context.getUncleanedResources(self.allocator);
                 defer self.allocator.free(uncleaned);
 
-                std.debug.print("[CLEANUP] Uncleaned resources found: {}\n", .{uncleaned.len});
+                log.debug("[CLEANUP] Uncleaned resources found: {}\n", .{uncleaned.len});
                 for (uncleaned) |resource| {
-                    std.debug.print("[CLEANUP]   - '{s}'\n", .{resource});
+                    log.debug("[CLEANUP]   - '{s}'\n", .{resource});
                 }
 
                 // Determine what fields to check for documented escape.
@@ -1026,22 +1027,22 @@ pub const PhantomSemanticChecker = struct {
                 if (is_branch_constructor) {
                     if (cont.node) |node| {
                         const bc = &node.branch_constructor;
-                        std.debug.print("[CLEANUP] Branch constructor returns '{s}'\n", .{bc.branch_name});
+                        log.debug("[CLEANUP] Branch constructor returns '{s}'\n", .{bc.branch_name});
 
                         if (implementing_event) |impl_ev| {
                             // Find the branch in the implementing event's declaration
                             for (impl_ev.branches) |branch| {
                                 if (std.mem.eql(u8, branch.name, bc.branch_name)) {
                                     return_branch_fields = branch.payload.fields;
-                                    std.debug.print("[CLEANUP]   Found return branch '{s}' with {} fields\n", .{bc.branch_name, branch.payload.fields.len});
+                                    log.debug("[CLEANUP]   Found return branch '{s}' with {} fields\n", .{bc.branch_name, branch.payload.fields.len});
                                     break;
                                 }
                             }
                             if (return_branch_fields == null) {
-                                std.debug.print("[CLEANUP]   WARNING: Branch '{s}' not found in implementing event\n", .{bc.branch_name});
+                                log.debug("[CLEANUP]   WARNING: Branch '{s}' not found in implementing event\n", .{bc.branch_name});
                             }
                         } else {
-                            std.debug.print("[CLEANUP]   No implementing_event - cannot check return signature\n", .{});
+                            log.debug("[CLEANUP]   No implementing_event - cannot check return signature\n", .{});
                         }
                     }
                 }
@@ -1075,7 +1076,7 @@ pub const PhantomSemanticChecker = struct {
                                                                 .concrete => |concrete| {
                                                                     if (concrete.requires_cleanup) {
                                                                         documented_escape = true;
-                                                                        std.debug.print("[CLEANUP]   '{s}' escapes through branch constructor field '{s}' with [!]\n", .{resource, bc_field.name});
+                                                                        log.debug("[CLEANUP]   '{s}' escapes through branch constructor field '{s}' with [!]\n", .{resource, bc_field.name});
                                                                     }
                                                                 },
                                                                 .variable => {},
@@ -1106,7 +1107,7 @@ pub const PhantomSemanticChecker = struct {
                                                         const resource_field = resource[dot_idx + 1..];
                                                         if (std.mem.eql(u8, resource_field, field.name)) {
                                                             documented_escape = true;
-                                                            std.debug.print("[CLEANUP]   '{s}' escapes through signature field '{s}' with [!]\n", .{resource, field.name});
+                                                            log.debug("[CLEANUP]   '{s}' escapes through signature field '{s}' with [!]\n", .{resource, field.name});
                                                             break;
                                                         }
                                                     }
@@ -1122,7 +1123,7 @@ pub const PhantomSemanticChecker = struct {
                     }
 
                     if (!documented_escape) {
-                        std.debug.print("[CLEANUP]   '{s}' NOT in signature - obligation lost\n", .{resource});
+                        log.debug("[CLEANUP]   '{s}' NOT in signature - obligation lost\n", .{resource});
                         if (first_lost == null) {
                             first_lost = resource;
                         }
@@ -1132,7 +1133,7 @@ pub const PhantomSemanticChecker = struct {
 
                 // Only error if there are truly lost obligations (not documented in signature)
                 if (lost_count > 0) {
-                    std.debug.print("[CLEANUP] Lost obligations: {} - auto_discharge_inserter should have handled this\n", .{lost_count});
+                    log.debug("[CLEANUP] Lost obligations: {} - auto_discharge_inserter should have handled this\n", .{lost_count});
 
                     // Report error for each lost obligation
                     // (This is a safety net - inserter should have handled or errored)
@@ -1207,7 +1208,7 @@ pub const PhantomSemanticChecker = struct {
 
                         // Get the phantom state for this resource
                         const phantom_state = context.get(resource) orelse {
-                            std.debug.print("[CLEANUP] No phantom state found for '{s}'\n", .{resource});
+                            log.debug("[CLEANUP] No phantom state found for '{s}'\n", .{resource});
                             continue;
                         };
 
@@ -1222,10 +1223,10 @@ pub const PhantomSemanticChecker = struct {
                         has_errors = true;
                     }
                 } else {
-                    std.debug.print("[CLEANUP] ✓ All obligations either cleaned or documented in signature\n", .{});
+                    log.debug("[CLEANUP] ✓ All obligations either cleaned or documented in signature\n", .{});
                 }
             } else {
-                std.debug.print("[CLEANUP] ✓ No uncleaned resources at terminator\n", .{});
+                log.debug("[CLEANUP] ✓ No uncleaned resources at terminator\n", .{});
             }
         }
 
@@ -1260,10 +1261,10 @@ pub const PhantomSemanticChecker = struct {
                 );
                 defer self.allocator.free(qualified_name);
 
-                std.debug.print("[PHANTOM-FLOW]   Nested continuations belong to last invocation: '{s}'\n", .{qualified_name});
+                log.debug("[PHANTOM-FLOW]   Nested continuations belong to last invocation: '{s}'\n", .{qualified_name});
 
                 const nested_event_info = event_map.get(qualified_name) orelse {
-                    std.debug.print("[PHANTOM-FLOW]   Event '{s}' not found, skipping nested continuations\n", .{qualified_name});
+                    log.debug("[PHANTOM-FLOW]   Event '{s}' not found, skipping nested continuations\n", .{qualified_name});
                     return !has_errors;
                 };
 
@@ -1291,7 +1292,7 @@ pub const PhantomSemanticChecker = struct {
                     // Nested continuations should be validated as void event chain
                     // validateContinuationAsVoidChain handles invocation steps correctly -
                     // it looks up the event and validates nested branches against it
-                    std.debug.print("[PHANTOM-FLOW]   Step is inline_code (void completion), validating nested continuations as void event chain\n", .{});
+                    log.debug("[PHANTOM-FLOW]   Step is inline_code (void completion), validating nested continuations as void event chain\n", .{});
                     for (cont.continuations) |*nested| {
                         const nested_valid = try self.validateContinuationAsVoidChain(nested, flow_module, event_map, location, &context, implementing_event);
                         if (!nested_valid) {
@@ -1300,7 +1301,7 @@ pub const PhantomSemanticChecker = struct {
                     }
                 } else {
                     // No invocations in pipeline - nested continuations still belong to parent event
-                    std.debug.print("[PHANTOM-FLOW]   No invocations in pipeline, nested continuations belong to parent event\n", .{});
+                    log.debug("[PHANTOM-FLOW]   No invocations in pipeline, nested continuations belong to parent event\n", .{});
                     for (cont.continuations) |*nested| {
                         const nested_valid = try self.validateContinuation(nested, event_decl, event_module, flow_module, event_map, location, &context, implementing_event);
                         if (!nested_valid) {
@@ -1328,7 +1329,7 @@ pub const PhantomSemanticChecker = struct {
     ) anyerror!bool {
         var has_errors = false;
 
-        std.debug.print("[PHANTOM-FLOW]   Void chain continuation, branch: '{s}'\n", .{cont.branch});
+        log.debug("[PHANTOM-FLOW]   Void chain continuation, branch: '{s}'\n", .{cont.branch});
 
         // Create context for this continuation
         var context = if (parent_context) |parent|
@@ -1416,7 +1417,7 @@ pub const PhantomSemanticChecker = struct {
         location: errors.SourceLocation
     ) !bool {
         var has_errors = false;
-        std.debug.print("[PHANTOM-FLOW] Validating step: {s}\n", .{@tagName(step.*)});
+        log.debug("[PHANTOM-FLOW] Validating step: {s}\n", .{@tagName(step.*)});
 
         switch (step.*) {
             .invocation => |inv| {
@@ -1434,7 +1435,7 @@ pub const PhantomSemanticChecker = struct {
             .label_jump => |lj| {
                 // Look up the target event for this label
                 const target_decl = self.label_map.get(lj.label) orelse {
-                    std.debug.print("[PHANTOM-FLOW]   Label '@{s}' not found in map, skipping jump validation\n", .{lj.label});
+                    log.debug("[PHANTOM-FLOW]   Label '@{s}' not found in map, skipping jump validation\n", .{lj.label});
                     return true;
                 };
 
@@ -1460,7 +1461,7 @@ pub const PhantomSemanticChecker = struct {
                 return !has_errors;
             },
             .foreach => |fe| {
-                std.debug.print("[PHANTOM-FLOW] Validating foreach with {} branches\n", .{fe.branches.len});
+                log.debug("[PHANTOM-FLOW] Validating foreach with {} branches\n", .{fe.branches.len});
                 for (fe.branches) |*branch| {
                     const branch_valid = try self.validateNamedBranchRecursive(branch, context, event_map, current_module, location);
                     if (!branch_valid) has_errors = true;
@@ -1468,7 +1469,7 @@ pub const PhantomSemanticChecker = struct {
                 return !has_errors;
             },
             .conditional => |cond| {
-                std.debug.print("[PHANTOM-FLOW] Validating conditional with {} branches\n", .{cond.branches.len});
+                log.debug("[PHANTOM-FLOW] Validating conditional with {} branches\n", .{cond.branches.len});
                 for (cond.branches) |*branch| {
                     const branch_valid = try self.validateNamedBranchRecursive(branch, context, event_map, current_module, location);
                     if (!branch_valid) has_errors = true;
@@ -1476,7 +1477,7 @@ pub const PhantomSemanticChecker = struct {
                 return !has_errors;
             },
             .switch_result => |sr| {
-                std.debug.print("[PHANTOM-FLOW] Validating switch_result with {} branches\n", .{sr.branches.len});
+                log.debug("[PHANTOM-FLOW] Validating switch_result with {} branches\n", .{sr.branches.len});
                 for (sr.branches) |*branch| {
                     const branch_valid = try self.validateNamedBranchRecursive(branch, context, event_map, current_module, location);
                     if (!branch_valid) has_errors = true;
@@ -1522,7 +1523,7 @@ pub const PhantomSemanticChecker = struct {
             break :blk false;
         };
 
-        std.debug.print("[PHANTOM-FLOW] Validating branch '{s}' (has_scope={}, {} continuations)\n", .{branch.name, has_scope, branch.body.len});
+        log.debug("[PHANTOM-FLOW] Validating branch '{s}' (has_scope={}, {} continuations)\n", .{branch.name, has_scope, branch.body.len});
 
         // Create context for this branch
         // If @scope, use inheritWithScope to mark existing obligations as outer-scope
@@ -1632,10 +1633,10 @@ pub const PhantomSemanticChecker = struct {
             try self.allocator.dupe(u8, event_name);
         defer self.allocator.free(qualified_name);
 
-        std.debug.print("[PHANTOM-FLOW]   Single invocation: '{s}' → qualified: '{s}'\n", .{event_name, qualified_name});
+        log.debug("[PHANTOM-FLOW]   Single invocation: '{s}' → qualified: '{s}'\n", .{event_name, qualified_name});
 
         const event_info = event_map.get(qualified_name) orelse {
-            std.debug.print("[PHANTOM-FLOW]   Event '{s}' not found in map, skipping step\n", .{qualified_name});
+            log.debug("[PHANTOM-FLOW]   Event '{s}' not found in map, skipping step\n", .{qualified_name});
             return true;
         };
 
@@ -1663,20 +1664,20 @@ pub const PhantomSemanticChecker = struct {
         event_name: []const u8
     ) !bool {
         var has_errors = false;
-        std.debug.print("[PHANTOM-FLOW]   Checking event context phantoms for '{s}' ({} annotations)\n", .{ event_name, event_decl.annotations.len });
+        log.debug("[PHANTOM-FLOW]   Checking event context phantoms for '{s}' ({} annotations)\n", .{ event_name, event_decl.annotations.len });
         for (event_decl.annotations, 0..) |ann, i| {
-            std.debug.print("[PHANTOM-FLOW]     Annotation[{}]: '{s}' (isPhantom={})\n", .{ i, ann, isPhantomAnnotation(ann) });
+            log.debug("[PHANTOM-FLOW]     Annotation[{}]: '{s}' (isPhantom={})\n", .{ i, ann, isPhantomAnnotation(ann) });
             if (isPhantomAnnotation(ann)) {
                 // Precondition found!
                 const provided_state = context.get("") orelse "";
-                std.debug.print("[PHANTOM-FLOW]     Precondition found: '{s}', current context: '{s}'\n", .{ ann, provided_state });
+                log.debug("[PHANTOM-FLOW]     Precondition found: '{s}', current context: '{s}'\n", .{ ann, provided_state });
 
                 const canonical_expected = try self.canonicalizePhantomState(ann, event_module orelse event_decl.module);
                 defer self.allocator.free(canonical_expected);
 
                 const provided_phantom = context.get("") orelse {
                     // Error: context-level phantom required but not provided
-                    std.debug.print("[PHANTOM-FLOW] ❌ CONTEXT MISMATCH! Expected {s} but no context state defined\n", .{canonical_expected});
+                    log.debug("[PHANTOM-FLOW] ❌ CONTEXT MISMATCH! Expected {s} but no context state defined\n", .{canonical_expected});
                     try self.reporter.addError(
                         .KORU030,
                         location.line,
@@ -1691,11 +1692,11 @@ pub const PhantomSemanticChecker = struct {
                 const canonical_provided = try self.canonicalizePhantomState(provided_phantom, event_module orelse event_decl.module);
                 defer self.allocator.free(canonical_provided);
 
-                std.debug.print("[PHANTOM-FLOW] Comparing context phantoms: expected={s}, provided={s}\n", .{canonical_expected, canonical_provided});
+                log.debug("[PHANTOM-FLOW] Comparing context phantoms: expected={s}, provided={s}\n", .{canonical_expected, canonical_provided});
 
                 const compatible = try phantom_parser.areCompatible(self.allocator, canonical_expected, canonical_provided);
                 if (!compatible) {
-                    std.debug.print("[PHANTOM-FLOW] ❌ CONTEXT MISMATCH!\n", .{});
+                    log.debug("[PHANTOM-FLOW] ❌ CONTEXT MISMATCH!\n", .{});
                     try self.reporter.addError(
                         .KORU030,
                         location.line,
@@ -1741,12 +1742,12 @@ pub const PhantomSemanticChecker = struct {
         }
 
         // Debug: print what we're looking for
-        std.debug.print("[PHANTOM-FLOW] Checking arg '{s}' with value '{s}'\n", .{arg.name, arg.value});
-        std.debug.print("[PHANTOM-FLOW]   Expected phantom: '{s}'\n", .{expected_phantom.?});
+        log.debug("[PHANTOM-FLOW] Checking arg '{s}' with value '{s}'\n", .{arg.name, arg.value});
+        log.debug("[PHANTOM-FLOW]   Expected phantom: '{s}'\n", .{expected_phantom.?});
 
         // Check if the binding has been disposed
         if (context.isDisposed(arg.value)) {
-            std.debug.print("[CLEANUP] ❌ USE AFTER DISPOSAL DETECTED!\n", .{});
+            log.debug("[CLEANUP] ❌ USE AFTER DISPOSAL DETECTED!\n", .{});
             try self.reporter.addError(
                 .KORU030,
                 location.line,
@@ -1759,12 +1760,12 @@ pub const PhantomSemanticChecker = struct {
 
         // Get the provided phantom state from context
         const provided_phantom = context.get(arg.value) orelse {
-            std.debug.print("[PHANTOM-FLOW]   No binding found for '{s}' in context\n", .{arg.value});
+            log.debug("[PHANTOM-FLOW]   No binding found for '{s}' in context\n", .{arg.value});
             // Value is not a tracked binding - might be a literal
             return true;
         };
 
-        std.debug.print("[PHANTOM-FLOW]   Provided phantom: '{s}'\n", .{provided_phantom});
+        log.debug("[PHANTOM-FLOW]   Provided phantom: '{s}'\n", .{provided_phantom});
 
         // Canonicalize both phantom states for proper comparison
         // Use event_module (qualified module name from lookup) for proper canonicalization
@@ -1783,8 +1784,8 @@ pub const PhantomSemanticChecker = struct {
         );
         defer self.allocator.free(canonical_provided);
 
-        std.debug.print("[PHANTOM-FLOW]   Canonical expected: '{s}'\n", .{canonical_expected});
-        std.debug.print("[PHANTOM-FLOW]   Canonical provided: '{s}'\n", .{canonical_provided});
+        log.debug("[PHANTOM-FLOW]   Canonical expected: '{s}'\n", .{canonical_expected});
+        log.debug("[PHANTOM-FLOW]   Canonical provided: '{s}'\n", .{canonical_provided});
 
         // Check compatibility using canonicalized phantom states
         const compatible = try phantom_parser.areCompatible(
@@ -1794,7 +1795,7 @@ pub const PhantomSemanticChecker = struct {
         );
 
         if (!compatible) {
-            std.debug.print("[PHANTOM-FLOW] ❌ MISMATCH DETECTED!\n", .{});
+            log.debug("[PHANTOM-FLOW] ❌ MISMATCH DETECTED!\n", .{});
             try self.reporter.addError(
                 .KORU030, // Shape mismatch
                 location.line,
@@ -1806,7 +1807,7 @@ pub const PhantomSemanticChecker = struct {
             return false;
         }
 
-        std.debug.print("[PHANTOM-FLOW]   ✓ Compatible\n", .{});
+        log.debug("[PHANTOM-FLOW]   ✓ Compatible\n", .{});
 
         // Check if this event consumes the obligation (marked with ! prefix)
         var expected_phantom_parsed = try phantom_parser.PhantomState.parse(self.allocator, expected_phantom.?);
@@ -1815,7 +1816,7 @@ pub const PhantomSemanticChecker = struct {
         switch (expected_phantom_parsed) {
             .concrete => |concrete| {
                 if (concrete.consumes_obligation) {
-                    std.debug.print("[CLEANUP] Event parameter has [!{s}] - consumes obligation\n", .{concrete.name});
+                    log.debug("[CLEANUP] Event parameter has [!{s}] - consumes obligation\n", .{concrete.name});
                     // This event disposes the resource - clear the cleanup obligation
                     context.clearCleanupObligation(arg.value);
                     // Mark the binding as disposed (poisoned - cannot be used anymore)
@@ -1825,7 +1826,7 @@ pub const PhantomSemanticChecker = struct {
             .variable => {},
             .state_union => |u| {
                 if (u.consumes_obligation) {
-                    std.debug.print("[CLEANUP] Event parameter has union with [!] - consumes obligation\n", .{});
+                    log.debug("[CLEANUP] Event parameter has union with [!] - consumes obligation\n", .{});
                     // Union with consume marker - clear the cleanup obligation
                     context.clearCleanupObligation(arg.value);
                     // Mark the binding as disposed

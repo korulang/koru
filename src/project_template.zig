@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 
 pub const ProjectType = enum {
     exe,
@@ -48,12 +49,12 @@ pub fn createProject(
     try writeMainFile(allocator, project_root, project_type, name);
 
     // 5. Success message
-    std.debug.print("Created {s} in ./{s}\n\n", .{ name, name });
-    std.debug.print("Get started:\n", .{});
-    std.debug.print("  cd {s}\n", .{name});
-    std.debug.print("  koruc src/main.kz\n", .{});
+    log.info("Created {s} in ./{s}\n\n", .{ name, name });
+    log.info("Get started:\n", .{});
+    log.info("  cd {s}\n", .{name});
+    log.info("  koruc src/main.kz\n", .{});
     if (project_type == .exe) {
-        std.debug.print("  ./a.out\n", .{});
+        log.info("  ./a.out\n", .{});
     }
 }
 

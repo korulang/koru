@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const ast = @import("ast");
 const errors = @import("errors");
 const branch_checker = @import("branch_checker");
@@ -385,7 +386,7 @@ pub const FlowChecker = struct {
 
             if (else_count == 0) {
                 // ERROR: Not exhaustive - missing else case
-                std.debug.print("ERROR: Branch '{s}' has {d} when-clauses but no else case (non-exhaustive)\n",
+                log.debug("ERROR: Branch '{s}' has {d} when-clauses but no else case (non-exhaustive)\n",
                     .{branch_name, branch_continuations.len});
                 try self.reporter.addError(
                     .KORU050,
@@ -396,7 +397,7 @@ pub const FlowChecker = struct {
                 );
             } else if (else_count > 1) {
                 // ERROR: Ambiguous - multiple else cases
-                std.debug.print("ERROR: Branch '{s}' has {d} else cases (ambiguous)\n",
+                log.debug("ERROR: Branch '{s}' has {d} else cases (ambiguous)\n",
                     .{branch_name, else_count});
                 try self.reporter.addError(
                     .KORU051,
@@ -470,7 +471,7 @@ pub const FlowChecker = struct {
                 "(unknown)";
 
             for (result.missing_branches) |branch_name| {
-                std.debug.print("ERROR: Required branch '{s}' not handled in flow invoking '{s}'\n",
+                log.debug("ERROR: Required branch '{s}' not handled in flow invoking '{s}'\n",
                     .{branch_name, event_name});
                 try self.reporter.addError(
                     .KORU022,
@@ -484,7 +485,7 @@ pub const FlowChecker = struct {
 
         // Report errors for unknown branches
         for (result.unknown_branches) |branch_name| {
-            std.debug.print("ERROR: Unknown branch '{s}' - event has no such branch\n", .{branch_name});
+            log.debug("ERROR: Unknown branch '{s}' - event has no such branch\n", .{branch_name});
             try self.reporter.addError(
                 .KORU021,
                 location.line,

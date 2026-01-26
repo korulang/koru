@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const ast = @import("ast");
 
 /// The TapCollector gathers all Event Taps during compilation
@@ -167,7 +168,7 @@ pub const TapCollector = struct {
                 // Wildcard source for output tap doesn't make sense
                 // Output taps observe the OUTPUT of source going TO destination
                 // So we need a specific source
-                std.debug.print("Warning: Output tap with wildcard source is unusual\n", .{});
+                log.debug("Warning: Output tap with wildcard source is unusual\n", .{});
             }
             return;
         }
@@ -180,7 +181,7 @@ pub const TapCollector = struct {
                 try self.addTapToEvent(&self.output_taps, src_path, tap);
             } else {
                 // Input tap with wildcard destination doesn't make sense
-                std.debug.print("Warning: Input tap with wildcard destination is unusual\n", .{});
+                log.debug("Warning: Input tap with wildcard destination is unusual\n", .{});
             }
             return;
         }

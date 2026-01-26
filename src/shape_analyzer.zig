@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const ast = @import("ast");
 const errors = @import("errors");
 const type_registry = @import("type_registry");
@@ -167,7 +168,7 @@ pub const ShapeAnalyzer = struct {
             // field.type contains the expression value, we need to infer its type
             const inferred_type = ctx.inferType(field.type) catch |err| {
                 // NO FALLBACKS - fail loudly!
-                std.debug.print("ERROR: Failed to infer type for field '{s}' with expression '{s}': {}\n", .{field.name, field.type, err});
+                log.debug("ERROR: Failed to infer type for field '{s}' with expression '{s}': {}\n", .{field.name, field.type, err});
                 try self.reporter.addError(
                     .TYPE003,
                     0, 0,

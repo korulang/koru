@@ -1,5 +1,5 @@
 const std = @import("std");
-const DEBUG = true;  // Set to true for verbose logging
+const log = @import("log");
 const ast = @import("ast");
 const emitter = @import("emitter_helpers");
 const visitor_mod = @import("ast_visitor");
@@ -352,17 +352,17 @@ pub const VisitorEmitter = struct {
         // TODO: Use the visitor pattern properly with context threading
         // For now, we iterate manually to avoid the context threading complexity
 
-        if (DEBUG) std.debug.print("\n==== VisitorEmitter.emit() START ====\n", .{});
-        if (DEBUG) std.debug.print("Total items in source_file: {}\n", .{source_file.items.len});
-        if (DEBUG) {
+        log.debug("\n==== VisitorEmitter.emit() START ====\n", .{});
+        log.debug("Total items in source_file: {}\n", .{source_file.items.len});
+        if (log.level == .debug) {
             for (source_file.items, 0..) |item, idx| {
-                std.debug.print("  [{}] Item type: {s}\n", .{idx, @tagName(item)});
+                log.debug("  [{}] Item type: {s}\n", .{idx, @tagName(item)});
                 if (item == .flow) {
-                    std.debug.print("       Flow invokes: {s}\n", .{item.flow.invocation.path.segments[0]});
+                    log.debug("       Flow invokes: {s}\n", .{item.flow.invocation.path.segments[0]});
                 }
                 if (item == .parse_error) {
-                    std.debug.print("       PARSE ERROR MESSAGE: {s}\n", .{item.parse_error.message});
-                    std.debug.print("       Raw text: {s}\n", .{item.parse_error.raw_text});
+                    log.debug("       PARSE ERROR MESSAGE: {s}\n", .{item.parse_error.message});
+                    log.debug("       Raw text: {s}\n", .{item.parse_error.raw_text});
                 }
             }
         }
@@ -373,7 +373,7 @@ pub const VisitorEmitter = struct {
         // PRE-SCAN: Determine if we're emitting ANY items from main module
         // This determines whether main module host_lines should be emitted
         self.emitting_from_main = self.scanEmittingFromMain(source_file);
-        if (DEBUG) std.debug.print("Emitting from main module: {}\n", .{self.emitting_from_main});
+        log.debug("Emitting from main module: {}\n", .{self.emitting_from_main});
 
         var modules = try std.ArrayList(*const ast.ModuleDecl).initCapacity(self.allocator, 0);
         defer modules.deinit(self.allocator);
@@ -1386,11 +1386,11 @@ pub const VisitorEmitter = struct {
 
         // Find implementation
         var found_impl = false;
-        if (DEBUG) std.debug.print("  [emitEventDecl] Searching for implementation of event: ", .{});
+        log.debug("  [emitEventDecl] Searching for implementation of event: ", .{});
         for (event.path.segments) |seg| {
-            if (DEBUG) std.debug.print("{s}.", .{seg});
+            log.debug("{s}.", .{seg});
         }
-        if (DEBUG) std.debug.print(" in {} items\n", .{items_to_search.len});
+        log.debug(" in {} items\n", .{items_to_search.len});
 
         // FIRST: Check top-level SubflowImpls for cross-module overrides (e.g., ~impl std.compiler:coordinate)
         // This ensures user-defined overrides take precedence over module-internal implementations
@@ -1418,7 +1418,7 @@ pub const VisitorEmitter = struct {
                                         }
                                     }
                                     if (matches) {
-                                        if (DEBUG) std.debug.print("  [emitEventDecl] Found cross-module ~impl override for {s}:{s}\n", .{event_module, event.path.segments[0]});
+                                        log.debug("  [emitEventDecl] Found cross-module ~impl override for {s}:{s}\n", .{event_module, event.path.segments[0]});
                                         switch (subflow.body) {
                                             .immediate => |bc| {
                                                 // Generate implicit input bindings for immediate subflows
@@ -1630,11 +1630,11 @@ pub const VisitorEmitter = struct {
                     }
                 },
                 .subflow_impl => |subflow| {
-                    if (DEBUG) std.debug.print("    Checking subflow: ", .{});
+                    log.debug("    Checking subflow: ", .{});
                     for (subflow.event_path.segments) |seg| {
-                        if (DEBUG) std.debug.print("{s}.", .{seg});
+                        log.debug("{s}.", .{seg});
                     }
-                    if (DEBUG) std.debug.print("\n", .{});
+                    log.debug("\n", .{});
 
                     if (subflow.event_path.segments.len == event.path.segments.len) {
                         var matches = true;
@@ -1645,7 +1645,7 @@ pub const VisitorEmitter = struct {
                             }
                         }
                         if (matches) {
-                            if (DEBUG) std.debug.print("    ✓ FOUND MATCHING SUBFLOW!\n", .{});
+                            log.debug("    ✓ FOUND MATCHING SUBFLOW!\n", .{});
                             switch (subflow.body) {
                                 .immediate => |bc| {
                                     // Generate implicit input bindings for immediate subflows
@@ -2410,18 +2410,18 @@ pub const VisitorEmitter = struct {
             switch (item.*) {
                 .event_decl => |*event| {
                     if (self.pathsEqualWithModule(&event.path, path, current_module)) {
-                        if (DEBUG) std.debug.print("DEBUG findEventDeclInItemsWithModule: FOUND EVENT! Annotations: {}\n", .{event.annotations.len});
+                        log.debug("DEBUG findEventDeclInItemsWithModule: FOUND EVENT! Annotations: {}\n", .{event.annotations.len});
                         for (event.annotations) |ann| {
-                            if (DEBUG) std.debug.print("  - '{s}'\n", .{ann});
+                            log.debug("  - '{s}'\n", .{ann});
                         }
                         return event;
                     }
                 },
                 .module_decl => |*module| {
-                    if (DEBUG) std.debug.print("DEBUG: Recursing into module '{s}'\n", .{module.logical_name});
+                    log.debug("DEBUG: Recursing into module '{s}'\n", .{module.logical_name});
                     // Pass the module's logical_name as context when recursing
                     if (self.findEventDeclInItemsWithModule(module.items, path, module.logical_name)) |found| {
-                        if (DEBUG) std.debug.print("DEBUG findEventDeclInItemsWithModule: Returning found event from module '{s}', annotations: {}\n", .{module.logical_name, found.annotations.len});
+                        log.debug("DEBUG findEventDeclInItemsWithModule: Returning found event from module '{s}', annotations: {}\n", .{module.logical_name, found.annotations.len});
                         return found;
                     }
                 },
@@ -2479,19 +2479,19 @@ pub const VisitorEmitter = struct {
         const a_has_module = a.module_qualifier != null;
         const b_has_module = b.module_qualifier != null;
 
-        if (DEBUG) std.debug.print("DEBUG pathsEqualWithModule:\n", .{});
-        if (DEBUG) std.debug.print("  a: module={s} segments=", .{if (a.module_qualifier) |m| m else "null"});
-        for (a.segments) |s| std.debug.print("{s}.", .{s});
-        if (DEBUG) std.debug.print("\n  b: module={s} segments=", .{if (b.module_qualifier) |m| m else "null"});
-        for (b.segments) |s| std.debug.print("{s}.", .{s});
-        if (DEBUG) std.debug.print("\n  current_module={s}\n", .{if (current_module) |m| m else "null"});
+        log.debug("DEBUG pathsEqualWithModule:\n", .{});
+        log.debug("  a: module={s} segments=", .{if (a.module_qualifier) |m| m else "null"});
+        for (a.segments) |s| log.debug("{s}.", .{s});
+        log.debug("\n  b: module={s} segments=", .{if (b.module_qualifier) |m| m else "null"});
+        for (b.segments) |s| log.debug("{s}.", .{s});
+        log.debug("\n  current_module={s}\n", .{if (current_module) |m| m else "null"});
 
         // Case 1: Both have module qualifiers - they must match
         if (a_has_module and b_has_module) {
             const mq_a = a.module_qualifier.?;
             const mq_b = b.module_qualifier.?;
             if (!moduleQualifiersMatch(mq_a, mq_b)) {
-                if (DEBUG) std.debug.print("  -> MISMATCH (both have modules, don't match)\n", .{});
+                log.debug("  -> MISMATCH (both have modules, don't match)\n", .{});
                 return false;
             }
         }
@@ -2507,34 +2507,34 @@ pub const VisitorEmitter = struct {
 
             // If we can't determine the module context, paths don't match
             if (effective_module == null) {
-                if (DEBUG) std.debug.print("  -> MISMATCH (one has module, can't determine context)\n", .{});
+                log.debug("  -> MISMATCH (one has module, can't determine context)\n", .{});
                 return false;
             }
 
             // Check if effective module matches the module_qualifier
             if (!moduleQualifiersMatch(effective_module.?, module_qual)) {
-                if (DEBUG) std.debug.print("  -> MISMATCH (effective_module '{s}' doesn't match module_qual '{s}')\n", .{effective_module.?, module_qual});
+                log.debug("  -> MISMATCH (effective_module '{s}' doesn't match module_qual '{s}')\n", .{effective_module.?, module_qual});
                 return false;
             }
 
             // Module context matches! Continue to check segments
-            if (DEBUG) std.debug.print("  -> Module context matches (effective='{s}', qual='{s}'), checking segments...\n", .{effective_module.?, module_qual});
+            log.debug("  -> Module context matches (effective='{s}', qual='{s}'), checking segments...\n", .{effective_module.?, module_qual});
         }
 
         // Check segments match
         if (a.segments.len != b.segments.len) {
-            if (DEBUG) std.debug.print("  -> MISMATCH (segment lengths differ: {} vs {})\n", .{a.segments.len, b.segments.len});
+            log.debug("  -> MISMATCH (segment lengths differ: {} vs {})\n", .{a.segments.len, b.segments.len});
             return false;
         }
 
         for (a.segments, 0..) |segment, idx| {
             if (!std.mem.eql(u8, segment, b.segments[idx])) {
-                if (DEBUG) std.debug.print("  -> MISMATCH (segment {} differs: '{s}' vs '{s}')\n", .{idx, segment, b.segments[idx]});
+                log.debug("  -> MISMATCH (segment {} differs: '{s}' vs '{s}')\n", .{idx, segment, b.segments[idx]});
                 return false;
             }
         }
 
-        if (DEBUG) std.debug.print("  -> MATCH! Returning TRUE\n", .{});
+        log.debug("  -> MATCH! Returning TRUE\n", .{});
         return true;
     }
 
@@ -2544,23 +2544,23 @@ pub const VisitorEmitter = struct {
     fn flowInvokesComptimeEvent(self: *VisitorEmitter, flow: *const ast.Flow, items: []const ast.Item) bool {
         _ = items; // Unused - we search in self.all_items instead
 
-        if (DEBUG) std.debug.print("=== flowInvokesComptimeEvent DEBUG ===\n", .{});
-        if (DEBUG) std.debug.print("  all_items.len = {}\n", .{self.all_items.len});
+        log.debug("=== flowInvokesComptimeEvent DEBUG ===\n", .{});
+        log.debug("  all_items.len = {}\n", .{self.all_items.len});
 
         // DEBUG: List all modules in all_items and their events
         for (self.all_items) |item| {
             if (item == .module_decl) {
-                if (DEBUG) std.debug.print("  Module in all_items: '{s}' with {} items\n", .{item.module_decl.logical_name, item.module_decl.items.len});
+                log.debug("  Module in all_items: '{s}' with {} items\n", .{item.module_decl.logical_name, item.module_decl.items.len});
                 if (std.mem.eql(u8, item.module_decl.logical_name, "std.package")) {
-                    if (DEBUG) std.debug.print("    std.package contents:\n", .{});
+                    log.debug("    std.package contents:\n", .{});
                     for (item.module_decl.items) |mod_item| {
                         switch (mod_item) {
                             .event_decl => |evt| {
-                                if (DEBUG) std.debug.print("      Event:", .{});
+                                log.debug("      Event:", .{});
                                 for (evt.path.segments) |seg| {
-                                    if (DEBUG) std.debug.print(" {s}", .{seg});
+                                    log.debug(" {s}", .{seg});
                                 }
-                                if (DEBUG) std.debug.print(" [annotations: {}]\n", .{evt.annotations.len});
+                                log.debug(" [annotations: {}]\n", .{evt.annotations.len});
                             },
                             else => {},
                         }
@@ -2591,57 +2591,57 @@ pub const VisitorEmitter = struct {
         }
 
         const event_name = event_name_buf[0..pos];
-        if (DEBUG) std.debug.print("  Looking for event: '{s}' in mode={s}\n", .{event_name, @tagName(self.emit_mode)});
+        log.debug("  Looking for event: '{s}' in mode={s}\n", .{event_name, @tagName(self.emit_mode)});
 
         // CRITICAL: Check the current AST being emitted FIRST (it may have been transformed!)
         // self.all_items contains the actual AST we're emitting (potentially transformed)
         // TypeRegistry contains the ORIGINAL frontend AST before transformations
-        if (DEBUG) std.debug.print("  Checking current AST for event: '{s}'\n", .{event_name});
+        log.debug("  Checking current AST for event: '{s}'\n", .{event_name});
         const event_decl = self.findEventDeclInItems(self.all_items, &flow.invocation.path);
-        if (DEBUG) std.debug.print("  AST event lookup result for '{s}': {}\n", .{event_name, event_decl != null});
+        log.debug("  AST event lookup result for '{s}': {}\n", .{event_name, event_decl != null});
 
         if (event_decl) |decl| {
             // Found event in current AST - check its parameters and annotations directly
-            if (DEBUG) std.debug.print("  Found event '{s}' in AST, module: '{s}'\n", .{event_name, decl.module});
-            if (DEBUG) std.debug.print("  Event path segments:", .{});
+            log.debug("  Found event '{s}' in AST, module: '{s}'\n", .{event_name, decl.module});
+            log.debug("  Event path segments:", .{});
             for (decl.path.segments) |seg| {
-                if (DEBUG) std.debug.print(" {s}", .{seg});
+                log.debug(" {s}", .{seg});
             }
-            if (DEBUG) std.debug.print("\n", .{});
+            log.debug("\n", .{});
 
             // Check if event has comptime parameters
             for (decl.input.fields) |field| {
                 if (field.is_source or field.is_expression or
                     std.mem.indexOf(u8, field.type, "Program") != null or
                     std.mem.eql(u8, field.type, "Expression")) {
-                    if (DEBUG) std.debug.print("  Event has comptime parameter: {s}\n", .{field.name});
+                    log.debug("  Event has comptime parameter: {s}\n", .{field.name});
                     return true;
                 }
             }
 
             // Check for comptime or norun annotations
-            if (DEBUG) std.debug.print("  Event '{s}' annotations array length: {}\n", .{event_name, decl.annotations.len});
+            log.debug("  Event '{s}' annotations array length: {}\n", .{event_name, decl.annotations.len});
             for (decl.annotations) |ann| {
-                if (DEBUG) std.debug.print("    annotation: '{s}'\n", .{ann});
+                log.debug("    annotation: '{s}'\n", .{ann});
             }
             const has_comptime = annotation_parser.hasPart(decl.annotations, "comptime");
             const has_norun = annotation_parser.hasPart(decl.annotations, "norun");
-            if (DEBUG) std.debug.print("  has_comptime={} has_norun={}\n", .{has_comptime, has_norun});
+            log.debug("  has_comptime={} has_norun={}\n", .{has_comptime, has_norun});
 
             if (has_comptime or has_norun) {
-                if (DEBUG) std.debug.print("  Returning TRUE from AST check\n", .{});
+                log.debug("  Returning TRUE from AST check\n", .{});
                 return true;  // Event is comptime-only (should not be emitted to runtime)
             }
 
             // Event in AST is runtime (no Source params, no comptime annotations)
-            if (DEBUG) std.debug.print("  Returning FALSE - AST event is runtime\n", .{});
+            log.debug("  Returning FALSE - AST event is runtime\n", .{});
             return false;
         }
 
         // Event not in current AST - fall back to TypeRegistry (for imported events)
-        if (DEBUG) std.debug.print("  Event not in current AST, checking TypeRegistry\n", .{});
+        log.debug("  Event not in current AST, checking TypeRegistry\n", .{});
         const event_type = self.type_registry.getEventType(event_name);
-        if (DEBUG) std.debug.print("  TypeRegistry lookup result: {}\n", .{event_type != null});
+        log.debug("  TypeRegistry lookup result: {}\n", .{event_type != null});
 
         if (event_type == null) {
             // Event not found in AST or TypeRegistry. This could be:
@@ -2651,7 +2651,7 @@ pub const VisitorEmitter = struct {
             //
             // For case 3 (derive-generated events), the backend's run_pass() will create the event
             // before final code generation. Return false to treat as a runtime event.
-            if (DEBUG) std.debug.print("  Event '{s}' not in AST/TypeRegistry - may be derive-generated\n", .{event_name});
+            log.debug("  Event '{s}' not in AST/TypeRegistry - may be derive-generated\n", .{event_name});
 
             return false;
         }
@@ -2664,7 +2664,7 @@ pub const VisitorEmitter = struct {
                 if (field.is_source or field.is_expression or
                     std.mem.indexOf(u8, field.type, "Program") != null or
                     std.mem.eql(u8, field.type, "Expression")) {
-                    if (DEBUG) std.debug.print("  TypeRegistry event has comptime parameter\n", .{});
+                    log.debug("  TypeRegistry event has comptime parameter\n", .{});
                     return true;
                 }
             }
@@ -2672,7 +2672,7 @@ pub const VisitorEmitter = struct {
 
         // TypeRegistry event doesn't have comptime parameters
         // (Note: TypeRegistry doesn't store annotations, so we can't check those)
-        if (DEBUG) std.debug.print("  Returning FALSE - TypeRegistry event is runtime\n", .{});
+        log.debug("  Returning FALSE - TypeRegistry event is runtime\n", .{});
         return false;
     }
 

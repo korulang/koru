@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const DEBUG = false;  // Set to true for verbose logging
 const ast = @import("ast");
 
@@ -16,8 +17,8 @@ const CanonicalizeError = error{OutOfMemory};
 /// - Clear architectural boundary: Parse → Import → [CANONICALIZE] → Transform → Emit
 
 pub fn canonicalize(program: *ast.Program, allocator: std.mem.Allocator) !void {
-    if (DEBUG) std.debug.print("CANONICALIZE: Starting full AST canonicalization\n", .{});
-    if (DEBUG) std.debug.print("CANONICALIZE: Main module: '{s}'\n", .{program.main_module_name});
+    if (DEBUG) log.debug("CANONICALIZE: Starting full AST canonicalization\n", .{});
+    if (DEBUG) log.debug("CANONICALIZE: Main module: '{s}'\n", .{program.main_module_name});
 
     var ctx = Context{
         .main_module = program.main_module_name,
@@ -30,7 +31,7 @@ pub fn canonicalize(program: *ast.Program, allocator: std.mem.Allocator) !void {
         try canonicalizeItem(&ctx, @constCast(item));
     }
 
-    if (DEBUG) std.debug.print("CANONICALIZE: Completed successfully\n", .{});
+    if (DEBUG) log.debug("CANONICALIZE: Completed successfully\n", .{});
 }
 
 const Context = struct {
@@ -42,7 +43,7 @@ const Context = struct {
 fn canonicalizeItem(ctx: *Context, item: *ast.Item) !void {
     switch (item.*) {
         .module_decl => |*module| {
-            if (DEBUG) std.debug.print("CANONICALIZE: Entering module '{s}' (logical: '{s}')\n", .{module.canonical_path, module.logical_name});
+            if (DEBUG) log.debug("CANONICALIZE: Entering module '{s}' (logical: '{s}')\n", .{module.canonical_path, module.logical_name});
 
             // Save previous module context
             const prev_module = ctx.current_module;
@@ -256,7 +257,7 @@ fn canonicalizePath(ctx: *Context, path: *ast.DottedPath) !void {
     // Allocate and set the qualifier
     path.module_qualifier = try ctx.allocator.dupe(u8, qualifier);
 
-    if (DEBUG) std.debug.print("CANONICALIZE: Qualified path '{s}' → '{s}:{s}'\n", .{
+    if (DEBUG) log.debug("CANONICALIZE: Qualified path '{s}' → '{s}:{s}'\n", .{
         path.segments[0],
         qualifier,
         path.segments[0],

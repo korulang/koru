@@ -1,5 +1,5 @@
 // Helper functions extracted from emitter.zig
-const DEBUG = false;  // Set to true for verbose logging
+const log = @import("log");
 // This file contains ONLY the helpers needed by visitor_emitter.zig
 // The old procedural orchestrators remain in emitter.zig as reference only
 
@@ -2674,13 +2674,13 @@ fn findProcDeclByPathInModule(items: []const ast.Item, segments: []const []const
 /// Returns the SubflowImpl if found (could have flow or immediate body)
 /// NOTE: User-defined overrides at top level take precedence over module-internal implementations
 pub fn findSubflowImplByPath(items: []const ast.Item, path: *const ast.DottedPath) ?*const ast.SubflowImpl {
-    if (DEBUG) {
-        std.debug.print("[findSubflowImplByPath] Looking for path: module_qual={s}, segments.len={d}\n", .{
+    if (log.level == .debug) {
+        log.debug("[findSubflowImplByPath] Looking for path: module_qual={s}, segments.len={d}\n", .{
             if (path.module_qualifier) |m| m else "(null)",
             path.segments.len,
         });
         for (path.segments) |seg| {
-            std.debug.print("[findSubflowImplByPath]   segment: {s}\n", .{seg});
+            log.debug("[findSubflowImplByPath]   segment: {s}\n", .{seg});
         }
     }
 
@@ -2691,7 +2691,7 @@ pub fn findSubflowImplByPath(items: []const ast.Item, path: *const ast.DottedPat
             switch (item.*) {
                 .module_decl => |*module| {
                     if (std.mem.eql(u8, module.logical_name, module_qual)) {
-                        if (DEBUG) std.debug.print("[findSubflowImplByPath] Looking in module '{s}'\n", .{module.logical_name});
+                        log.debug("[findSubflowImplByPath] Looking in module '{s}'\n", .{module.logical_name});
                         return findSubflowImplByPathInModule(module.items, path.segments);
                     }
                 },
@@ -3730,10 +3730,10 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
 
                 const event_name = event_name_buf[0..event_name_len];
 
-                if (DEBUG) std.debug.print("\n", .{});
-                if (DEBUG) std.debug.print("ERROR: Comptime event '{s}' with Expression parameter reached runtime emission\n", .{event_name});
-                if (DEBUG) std.debug.print("Expression parameter: {s}\n", .{arg.name});
-                if (DEBUG) std.debug.print("\n", .{});
+                log.debug("\n", .{});
+                log.debug("ERROR: Comptime event '{s}' with Expression parameter reached runtime emission\n", .{event_name});
+                log.debug("Expression parameter: {s}\n", .{arg.name});
+                log.debug("\n", .{});
 
                 return error.ComptimeEventNotTransformed;
             }
@@ -3787,18 +3787,18 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
                 const event_name = event_name_buf[0..event_name_len];
 
                 // Print helpful error message to stderr
-                if (DEBUG) std.debug.print("\n", .{});
-                if (DEBUG) std.debug.print("ERROR: Comptime event '{s}' with Source parameter reached runtime emission\n", .{event_name});
-                if (DEBUG) std.debug.print("\n", .{});
-                if (DEBUG) std.debug.print("This means the comptime handler didn't transform this invocation into runtime code.\n", .{});
-                if (DEBUG) std.debug.print("\n", .{});
-                if (DEBUG) std.debug.print("Check your ~proc {s} implementation:\n", .{event_name});
-                if (DEBUG) std.debug.print("  - It should execute during the evaluate_comptime pass\n", .{});
-                if (DEBUG) std.debug.print("  - It should generate runtime code to replace this invocation\n", .{});
-                if (DEBUG) std.debug.print("  - The generated code should NOT contain Source parameters\n", .{});
-                if (DEBUG) std.debug.print("\n", .{});
-                if (DEBUG) std.debug.print("Source parameter: {s}\n", .{arg.name});
-                if (DEBUG) std.debug.print("\n", .{});
+                log.debug("\n", .{});
+                log.debug("ERROR: Comptime event '{s}' with Source parameter reached runtime emission\n", .{event_name});
+                log.debug("\n", .{});
+                log.debug("This means the comptime handler didn't transform this invocation into runtime code.\n", .{});
+                log.debug("\n", .{});
+                log.debug("Check your ~proc {s} implementation:\n", .{event_name});
+                log.debug("  - It should execute during the evaluate_comptime pass\n", .{});
+                log.debug("  - It should generate runtime code to replace this invocation\n", .{});
+                log.debug("  - The generated code should NOT contain Source parameters\n", .{});
+                log.debug("\n", .{});
+                log.debug("Source parameter: {s}\n", .{arg.name});
+                log.debug("\n", .{});
 
                 return error.ComptimeEventNotTransformed;
             }
@@ -6741,10 +6741,10 @@ fn emitEventDeclForModule(
         switch (subflow.body) {
             .immediate => |bc| {
                 // Mock with immediate value - emit return statement
-                if (DEBUG) {
-                    std.debug.print("[DEBUG emitEventDeclForModule] Found immediate mock for event, branch={s}, fields.len={d}\n", .{ bc.branch_name, bc.fields.len });
+                if (log.level == .debug) {
+                    log.debug("[DEBUG emitEventDeclForModule] Found immediate mock for event, branch={s}, fields.len={d}\n", .{ bc.branch_name, bc.fields.len });
                     for (bc.fields, 0..) |field, i| {
-                        std.debug.print("[DEBUG emitEventDeclForModule]   field[{d}]: name={s}, expr_str={s}\n", .{ i, field.name, if (field.expression_str) |e| e else "(null)" });
+                        log.debug("[DEBUG emitEventDeclForModule]   field[{d}]: name={s}, expr_str={s}\n", .{ i, field.name, if (field.expression_str) |e| e else "(null)" });
                     }
                 }
                 try code_emitter.writeIndent();
@@ -6774,12 +6774,12 @@ fn emitEventDeclForModule(
 
     // If no implementation found, emit a placeholder return
     if (!found_impl) {
-        if (DEBUG) {
-            std.debug.print("[DEBUG emitEventDeclForModule] No impl found for event path: ", .{});
+        if (log.level == .debug) {
+            log.debug("[DEBUG emitEventDeclForModule] No impl found for event path: ", .{});
             for (event.path.segments) |seg| {
-                std.debug.print("{s}.", .{seg});
+                log.debug("{s}.", .{seg});
             }
-            std.debug.print("\n", .{});
+            log.debug("\n", .{});
         }
         try code_emitter.writeIndent();
         if (event.branches.len > 0) {

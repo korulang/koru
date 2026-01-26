@@ -1,4 +1,5 @@
 /// Build.zig Generation Library
+const log = @import("log");
 ///
 /// A reusable library for generating Zig build files from collected requirements.
 /// This can be used by the compiler itself, userspace tools, or even metacircularly
@@ -32,7 +33,7 @@ pub fn emitBuildZig(
     output_path: []const u8,
     rel_to_root: []const u8,
 ) !void {
-    std.debug.print("📦 Generating build.zig with {d} requirements\n", .{requires.len});
+    log.debug("📦 Generating build.zig with {d} requirements\n", .{requires.len});
 
     // Use stack-allocated buffer for build.zig generation (64KB should be enough)
     var buffer: [64 * 1024]u8 = undefined;
@@ -155,8 +156,8 @@ pub fn emitBuildZig(
 
     const final_content = buffer[0..pos];
 
-    std.debug.print("📦 Generated {d} bytes of build.zig\n", .{final_content.len});
-    std.debug.print("📦 Writing to: {s}\n", .{output_path});
+    log.debug("📦 Generated {d} bytes of build.zig\n", .{final_content.len});
+    log.debug("📦 Writing to: {s}\n", .{output_path});
 
     // Write to file
     const file = try std.fs.cwd().createFile(output_path, .{});
@@ -164,7 +165,7 @@ pub fn emitBuildZig(
 
     try file.writeAll(final_content);
 
-    std.debug.print("✅ Successfully wrote build.zig\n", .{});
+    log.debug("✅ Successfully wrote build.zig\n", .{});
 }
 
 /// Generate a build.zig file for the OUTPUT binary (compiled from output_emitted.zig)
@@ -175,7 +176,7 @@ pub fn emitOutputBuildZig(
     output_path: []const u8,
     rel_to_root: []const u8,
 ) !void {
-    std.debug.print("📦 Generating output build.zig with {d} requirements\n", .{requires.len});
+    log.debug("📦 Generating output build.zig with {d} requirements\n", .{requires.len});
 
     var buffer: [64 * 1024]u8 = undefined;
     var pos: usize = 0;
@@ -272,14 +273,14 @@ pub fn emitOutputBuildZig(
 
     const final_content = buffer[0..pos];
 
-    std.debug.print("📦 Generated {d} bytes of output build.zig\n", .{final_content.len});
-    std.debug.print("📦 Writing to: {s}\n", .{output_path});
+    log.debug("📦 Generated {d} bytes of output build.zig\n", .{final_content.len});
+    log.debug("📦 Writing to: {s}\n", .{output_path});
 
     const file = try std.fs.cwd().createFile(output_path, .{});
     defer file.close();
     try file.writeAll(final_content);
 
-    std.debug.print("✅ Successfully wrote output build.zig\n", .{});
+    log.debug("✅ Successfully wrote output build.zig\n", .{});
 }
 
 test "sanitizeModuleName basic" {

@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 
 /// JSON file structure for koru.json
 /// Note: paths can be either string or array of strings, handled in parsePathsFromJson
@@ -100,8 +101,8 @@ pub const Config = struct {
 
                     // Validate: 'main' is reserved
                     if (std.mem.eql(u8, key, "main")) {
-                        std.debug.print("ERROR: Reserved namespace in koru.json:\n", .{});
-                        std.debug.print("  Path alias 'main' is reserved for the entry module\n", .{});
+                        log.debug("ERROR: Reserved namespace in koru.json:\n", .{});
+                        log.debug("  Path alias 'main' is reserved for the entry module\n", .{});
                         allocator.free(key);
                         return error.ReservedNamespace;
                     }

@@ -1,4 +1,5 @@
 // Transform Pass Runner - Generic AST Walker for Transform Handlers
+const log = @import("log");
 //
 // This module provides a clean, reusable way to walk the entire AST and
 // apply transform handlers to matching invocations, no matter where they appear.
@@ -225,7 +226,7 @@ pub fn walkAndTransform(
 
         // Circuit breaker: prevent infinite loops
         if (iteration > MAX_ITERATIONS) {
-            std.debug.print("ERROR: Transform infinite loop after {d} iterations\n", .{MAX_ITERATIONS});
+            log.debug("ERROR: Transform infinite loop after {d} iterations\n", .{MAX_ITERATIONS});
             return error.TransformInfiniteLoop;
         }
 
@@ -294,26 +295,26 @@ fn walkNode(
             @memcpy(debug_path[debug_len..][0..seg.len], seg);
             debug_len += seg.len;
         }
-        // std.debug.print("[WALK] Checking invocation: {s} (module: {s})\n", .{ debug_path[0..debug_len], inv.path.module_qualifier orelse "<none>" });
+        // log.debug("[WALK] Checking invocation: {s} (module: {s})\n", .{ debug_path[0..debug_len], inv.path.module_qualifier orelse "<none>" });
 
         // Skip if already transformed
         if (node.isAlreadyTransformed()) {
-            // std.debug.print("[WALK] -> Skipping (already transformed)\n", .{});
+            // log.debug("[WALK] -> Skipping (already transformed)\n", .{});
             return WalkResult{ .found = false, .program = program };
         }
 
         // Check if this invocation matches any transform
         for (transforms) |transform| {
             if (node.matchesTransform(transform.name)) {
-                // std.debug.print("[WALK] -> Matched transform: {s}\n", .{transform.name});
+                // log.debug("[WALK] -> Matched transform: {s}\n", .{transform.name});
                 const transformed = try transform.handler_fn(node, program, allocator);
 
                 // CRITICAL: A transform MUST change the AST. If it returns the same pointer,
                 // the flow wasn't replaced and we'll infinite loop trying to transform it again.
                 if (transformed == program) {
-                    std.debug.print("ERROR: Transform '{s}' returned same program pointer!\n", .{transform.name});
-                    std.debug.print("ERROR: Transforms MUST replace their flow with different AST.\n", .{});
-                    std.debug.print("ERROR: If this is a [norun] event, remove the [transform] annotation.\n", .{});
+                    log.debug("ERROR: Transform '{s}' returned same program pointer!\n", .{transform.name});
+                    log.debug("ERROR: Transforms MUST replace their flow with different AST.\n", .{});
+                    log.debug("ERROR: If this is a [norun] event, remove the [transform] annotation.\n", .{});
                     return error.TransformReturnedSamePointer;
                 }
 
@@ -324,18 +325,18 @@ fn walkNode(
                 const count_after = countMatchingFlowsInProgram(transform.name, transformed);
 
                 if (count_after >= count_before and count_before > 0) {
-                    std.debug.print("\n", .{});
-                    std.debug.print("╔══════════════════════════════════════════════════════════════════╗\n", .{});
-                    std.debug.print("║  TRANSFORM ERROR: Invocation not replaced!                       ║\n", .{});
-                    std.debug.print("╚══════════════════════════════════════════════════════════════════╝\n", .{});
-                    std.debug.print("\n", .{});
-                    std.debug.print("Transform '{s}' returned a new program, but matching invocations\n", .{transform.name});
-                    std.debug.print("didn't decrease ({d} before, {d} after) - infinite loop detected.\n", .{count_before, count_after});
-                    std.debug.print("\n", .{});
-                    std.debug.print("FIX: Your transform must either:\n", .{});
-                    std.debug.print("  1. Change the invocation path (e.g., 'query.src' -> 'query.src.impl')\n", .{});
-                    std.debug.print("  2. Add @pass_ran(\"transform\") annotation to the new invocation\n", .{});
-                    std.debug.print("\n", .{});
+                    log.debug("\n", .{});
+                    log.debug("╔══════════════════════════════════════════════════════════════════╗\n", .{});
+                    log.debug("║  TRANSFORM ERROR: Invocation not replaced!                       ║\n", .{});
+                    log.debug("╚══════════════════════════════════════════════════════════════════╝\n", .{});
+                    log.debug("\n", .{});
+                    log.debug("Transform '{s}' returned a new program, but matching invocations\n", .{transform.name});
+                    log.debug("didn't decrease ({d} before, {d} after) - infinite loop detected.\n", .{count_before, count_after});
+                    log.debug("\n", .{});
+                    log.debug("FIX: Your transform must either:\n", .{});
+                    log.debug("  1. Change the invocation path (e.g., 'query.src' -> 'query.src.impl')\n", .{});
+                    log.debug("  2. Add @pass_ran(\"transform\") annotation to the new invocation\n", .{});
+                    log.debug("\n", .{});
                     return error.TransformDidNotReplace;
                 }
 
@@ -344,13 +345,13 @@ fn walkNode(
         }
 
         // Check if this invocation matches an [expand] event
-        // std.debug.print("[WALK] -> Checking for [expand] match\n", .{});
+        // log.debug("[WALK] -> Checking for [expand] match\n", .{});
         const expand_result = try handleExpandIfMatches(node, program, allocator);
         if (expand_result.found) {
-            // std.debug.print("[WALK] -> Found [expand] match!\n", .{});
+            // log.debug("[WALK] -> Found [expand] match!\n", .{});
             return expand_result;
         }
-        // std.debug.print("[WALK] -> No transform/expand match\n", .{});
+        // log.debug("[WALK] -> No transform/expand match\n", .{});
     }
 
     // Check for [derive(X)] annotations on event declarations
@@ -370,24 +371,24 @@ fn walkNode(
                 // Get the derive handler name from first arg
                 if (call.args.len > 0) {
                     const handler_name = call.args[0];
-                    // std.debug.print("[WALK] Derive: {s} on event declaration\n", .{handler_name});
+                    // log.debug("[WALK] Derive: {s} on event declaration\n", .{handler_name});
 
                     // Find matching derive handler in transforms array
                     // Derive handlers are registered alongside transform handlers
                     for (transforms) |transform| {
                         if (std.mem.eql(u8, transform.name, handler_name)) {
-                            // std.debug.print("[WALK] -> Matched derive handler: {s}\n", .{handler_name});
+                            // log.debug("[WALK] -> Matched derive handler: {s}\n", .{handler_name});
                             const derived = try transform.handler_fn(node, program, allocator);
 
                             if (derived == program) {
-                                std.debug.print("ERROR: Derive handler '{s}' returned same program pointer!\n", .{handler_name});
+                                log.debug("ERROR: Derive handler '{s}' returned same program pointer!\n", .{handler_name});
                                 return error.TransformReturnedSamePointer;
                             }
 
                             return WalkResult{ .found = true, .program = derived };
                         }
                     }
-                    // std.debug.print("[WALK] -> No handler found for derive: {s}\n", .{handler_name});
+                    // log.debug("[WALK] -> No handler found for derive: {s}\n", .{handler_name});
                 }
             }
         }
@@ -483,11 +484,11 @@ fn applyExpandTemplate(
 ) !WalkResult {
     const invocation = node.invocation;
 
-    // std.debug.print("[EXPAND] Processing: {s}\n", .{event_name});
+    // log.debug("[EXPAND] Processing: {s}\n", .{event_name});
 
     // Look up template by event name
     const template_source = template_utils.lookupTemplate(program, event_name) orelse {
-        std.debug.print("[EXPAND] WARNING: No template found for '{s}'\n", .{event_name});
+        log.debug("[EXPAND] WARNING: No template found for '{s}'\n", .{event_name});
         return WalkResult{ .found = false, .program = program };
     };
 
@@ -498,7 +499,7 @@ fn applyExpandTemplate(
     for (invocation.args) |arg| {
         if (arg.expression_value) |expr_val| {
             ctx.put(arg.name, .{ .string = expr_val.text }) catch {
-                std.debug.print("[EXPAND] ERROR: Failed to add arg to context\n", .{});
+                log.debug("[EXPAND] ERROR: Failed to add arg to context\n", .{});
                 return WalkResult{ .found = false, .program = program };
             };
         }
@@ -506,20 +507,20 @@ fn applyExpandTemplate(
 
     // Render template with Liquid engine
     const inline_body = liquid.render(allocator, template_source, &ctx) catch |err| {
-        std.debug.print("[EXPAND] ERROR: Liquid render failed: {}\n", .{err});
+        log.debug("[EXPAND] ERROR: Liquid render failed: {}\n", .{err});
         return WalkResult{ .found = false, .program = program };
     };
 
-    // std.debug.print("[EXPAND] Generated: {s}\n", .{inline_body});
+    // log.debug("[EXPAND] Generated: {s}\n", .{inline_body});
 
     // Find the containing flow and update it with inline_body
     const containing_item = ASTNode.findContainingItem(program, invocation) orelse {
-        std.debug.print("[EXPAND] ERROR: Could not find containing item\n", .{});
+        log.debug("[EXPAND] ERROR: Could not find containing item\n", .{});
         return WalkResult{ .found = false, .program = program };
     };
 
     if (containing_item.* != .flow) {
-        std.debug.print("[EXPAND] ERROR: Containing item is not a flow\n", .{});
+        log.debug("[EXPAND] ERROR: Containing item is not a flow\n", .{});
         return WalkResult{ .found = false, .program = program };
     }
 
@@ -527,14 +528,14 @@ fn applyExpandTemplate(
 
     // Create new invocation with @pass_ran("transform") annotation to prevent re-expansion
     const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch {
-        std.debug.print("[EXPAND] ERROR: Failed to allocate annotations\n", .{});
+        log.debug("[EXPAND] ERROR: Failed to allocate annotations\n", .{});
         return WalkResult{ .found = false, .program = program };
     };
     for (flow.invocation.annotations, 0..) |ann, i| {
         new_inv_annotations[i] = ann;
     }
     new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch {
-        std.debug.print("[EXPAND] ERROR: Failed to dupe annotation\n", .{});
+        log.debug("[EXPAND] ERROR: Failed to dupe annotation\n", .{});
         return WalkResult{ .found = false, .program = program };
     };
 
@@ -579,7 +580,7 @@ fn applyExpandTemplate(
         flow,
         new_item,
     ) catch {
-        std.debug.print("[EXPAND] ERROR: Failed to replace flow in program\n", .{});
+        log.debug("[EXPAND] ERROR: Failed to replace flow in program\n", .{});
         return WalkResult{ .found = false, .program = program };
     };
 

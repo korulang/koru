@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const ast = @import("ast");
 
 pub const ValidationError = error{
@@ -97,13 +98,13 @@ pub const AbstractImplValidator = struct {
                             .subflow => |s| s.location,
                             .proc => |p| p.location,
                         };
-                        std.debug.print("ERROR: Duplicate implementation for '{s}'\n", .{impl_name});
-                        std.debug.print("  First impl at: {s}:{}:{}\n", .{
+                        log.debug("ERROR: Duplicate implementation for '{s}'\n", .{impl_name});
+                        log.debug("  First impl at: {s}:{}:{}\n", .{
                             existing_location.file,
                             existing_location.line,
                             existing_location.column,
                         });
-                        std.debug.print("  Second impl at: {s}:{}:{}\n", .{
+                        log.debug("  Second impl at: {s}:{}:{}\n", .{
                             proc.location.file,
                             proc.location.line,
                             proc.location.column,
@@ -127,13 +128,13 @@ pub const AbstractImplValidator = struct {
                             .subflow => |s| s.location,
                             .proc => |p| p.location,
                         };
-                        std.debug.print("ERROR: Duplicate implementation for '{s}'\n", .{canonical_name});
-                        std.debug.print("  First impl at: {s}:{}:{}\n", .{
+                        log.debug("ERROR: Duplicate implementation for '{s}'\n", .{canonical_name});
+                        log.debug("  First impl at: {s}:{}:{}\n", .{
                             existing_location.file,
                             existing_location.line,
                             existing_location.column,
                         });
-                        std.debug.print("  Second impl at: {s}:{}:{}\n", .{
+                        log.debug("  Second impl at: {s}:{}:{}\n", .{
                             subflow.location.file,
                             subflow.location.line,
                             subflow.location.column,
@@ -172,8 +173,8 @@ pub const AbstractImplValidator = struct {
             // Check if target exists and is abstract
             const target_event = self.abstract_events.get(target_path);
             if (target_event == null) {
-                std.debug.print("ERROR: Implementation targets non-existent or non-abstract event '{s}'\n", .{target_path});
-                std.debug.print("  Impl at: {s}:{}:{}\n", .{
+                log.debug("ERROR: Implementation targets non-existent or non-abstract event '{s}'\n", .{target_path});
+                log.debug("  Impl at: {s}:{}:{}\n", .{
                     impl_location.file,
                     impl_location.line,
                     impl_location.column,

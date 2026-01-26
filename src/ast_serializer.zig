@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const ast = @import("ast");
 const Parser = @import("parser").Parser;  // Needed for tests
 
@@ -2787,7 +2788,7 @@ test "serialize simple Koru program" {
         \\const x = 42;
         \\
         \\~proc hello {
-        \\    std.debug.print("Hello!\n", .{});
+        \\    log.debug("Hello!\n", .{});
         \\    return .{ .done = .{} };
         \\}
     ;
@@ -2814,9 +2815,9 @@ test "serialize simple Koru program" {
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".host_line = \"const x = 42;\"") != null);
     
     // Print a sample for visual inspection
-    std.debug.print("\n=== Sample of serialized AST ===\n", .{});
+    log.debug("\n=== Sample of serialized AST ===\n", .{});
     const sample_end = @min(serialized.len, 1000);
-    std.debug.print("{s}\n", .{serialized[0..sample_end]});
+    log.debug("{s}\n", .{serialized[0..sample_end]});
 }
 
 test "serialize Zig lines are preserved" {
@@ -2887,7 +2888,7 @@ test "serialize complete mixed program" {
         \\const std = @import("std");
         \\
         \\pub fn utility() void {
-        \\    std.debug.print("Utility function\n", .{});
+        \\    log.debug("Utility function\n", .{});
         \\}
         \\
         \\~import math = "lib/math.kz"
@@ -2902,7 +2903,7 @@ test "serialize complete mixed program" {
         \\
         \\~proc process {
         \\    if (config.debug) {
-        \\        std.debug.print("Processing: {s}\n", .{e.input});
+        \\        log.debug("Processing: {s}\n", .{e.input});
         \\    }
         \\    return .{ .success = .{ .output = e.input } };
         \\}
@@ -2934,13 +2935,13 @@ test "serialize complete mixed program" {
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".flow") != null);
     
     // Print for inspection
-    std.debug.print("\n=== Complete mixed program serialized ===\n", .{});
+    log.debug("\n=== Complete mixed program serialized ===\n", .{});
     const lines = std.mem.splitScalar(u8, serialized, '\n');
     var line_count: usize = 0;
     var iter = lines;
     while (iter.next()) |line| : (line_count += 1) {
         if (line_count >= 30) break;  // Just show first 30 lines
-        std.debug.print("{s}\n", .{line});
+        log.debug("{s}\n", .{line});
     }
-    std.debug.print("... (truncated, total length: {} bytes)\n", .{serialized.len});
+    log.debug("... (truncated, total length: {} bytes)\n", .{serialized.len});
 }

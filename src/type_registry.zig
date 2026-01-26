@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const ast = @import("ast");
 
 /// Central registry for all type information in a Koru program
@@ -310,13 +311,13 @@ pub const TypeRegistry = struct {
     fn buildCanonicalName(self: *TypeRegistry, path: *const ast.DottedPath) ![]const u8 {
         // After canonicalization, ALL paths must have module_qualifier set
         const module = path.module_qualifier orelse {
-            std.debug.print("FATAL: buildCanonicalName called on non-canonicalized path!\n", .{});
-            std.debug.print("  Path segments: ", .{});
+            log.debug("FATAL: buildCanonicalName called on non-canonicalized path!\n", .{});
+            log.debug("  Path segments: ", .{});
             for (path.segments, 0..) |seg, i| {
-                if (i > 0) std.debug.print(".", .{});
-                std.debug.print("{s}", .{seg});
+                if (i > 0) log.debug(".", .{});
+                log.debug("{s}", .{seg});
             }
-            std.debug.print("\n", .{});
+            log.debug("\n", .{});
             @panic("TypeRegistry.populateFromAST must be called AFTER canonicalization!");
         };
 

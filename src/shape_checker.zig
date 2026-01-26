@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const ast = @import("ast");
 const errors = @import("errors");
 const type_inference = @import("type_inference");
@@ -465,7 +466,7 @@ pub const ShapeChecker = struct {
         if (flow.post_label) |label_name| {
             // Check if label was already declared
             if (self.labels.get(label_name)) |_| {
-                std.debug.print("ERROR: Duplicate label '{s}' defined\n", .{label_name});
+                log.debug("ERROR: Duplicate label '{s}' defined\n", .{label_name});
                 return error.DuplicateLabel;
             }
             // Register post-invocation label
@@ -482,7 +483,7 @@ pub const ShapeChecker = struct {
         if (flow.pre_label) |label_name| {
             // Check if label was already declared
             if (self.labels.get(label_name)) |_| {
-                std.debug.print("ERROR: Duplicate label '{s}' defined\n", .{label_name});
+                log.debug("ERROR: Duplicate label '{s}' defined\n", .{label_name});
                 return error.DuplicateLabel;
             }
             // Register pre-invocation label
@@ -524,7 +525,7 @@ pub const ShapeChecker = struct {
         }
 
         const final_event_info = event_info orelse {
-            std.debug.print("ERROR: Unknown event '{s}'\n", .{event_name});
+            log.debug("ERROR: Unknown event '{s}'\n", .{event_name});
             // Check if it's a subflow implementation
             if (self.subflow_impls.get(event_name)) |subflow_impl| {
                 // Subflow implementation exists - it implements this event
@@ -588,7 +589,7 @@ pub const ShapeChecker = struct {
                 if (!found_match) {
                     const source_path = try self.pathToString(source);
                     defer self.allocator.free(source_path);
-                    std.debug.print("WARNING: Namespace wildcard '{s}' matches no events\n", .{source_path});
+                    log.debug("WARNING: Namespace wildcard '{s}' matches no events\n", .{source_path});
                     // Don't fail - it might be intentional (observing optional modules)
                 }
             } else {
@@ -605,7 +606,7 @@ pub const ShapeChecker = struct {
                                        std.mem.eql(u8, source.segments[0], "end")));
 
                 if (!is_meta_event and self.events.get(source_path) == null) {
-                    std.debug.print("ERROR: Unknown source event '{s}' in tap\n", .{source_path});
+                    log.debug("ERROR: Unknown source event '{s}' in tap\n", .{source_path});
                     try self.reporter.addError(.KORU040, location.line, location.column, "unknown source event '{s}' in tap", .{source_path});
                     // Continue checking for more errors
                 }
@@ -634,7 +635,7 @@ pub const ShapeChecker = struct {
                 if (!found_match) {
                     const dest_path = try self.pathToString(dest);
                     defer self.allocator.free(dest_path);
-                    std.debug.print("WARNING: Namespace wildcard '{s}' matches no events\n", .{dest_path});
+                    log.debug("WARNING: Namespace wildcard '{s}' matches no events\n", .{dest_path});
                     // Don't fail - it might be intentional
                 }
             } else {
@@ -643,7 +644,7 @@ pub const ShapeChecker = struct {
                 defer self.allocator.free(dest_path);
 
                 if (self.events.get(dest_path) == null) {
-                    std.debug.print("ERROR: Unknown destination event '{s}' in tap\n", .{dest_path});
+                    log.debug("ERROR: Unknown destination event '{s}' in tap\n", .{dest_path});
                     try self.reporter.addError(.KORU040, location.line, location.column, "unknown destination event '{s}' in tap", .{dest_path});
                     // Continue checking for more errors
                 }
@@ -675,7 +676,7 @@ pub const ShapeChecker = struct {
             // For now, just ensure continuations are well-formed
             for (tap.continuations) |cont| {
                 if (cont.branch.len == 0 and !std.mem.eql(u8, cont.branch, "transition")) {
-                    std.debug.print("ERROR: Invalid branch name in wildcard tap\n", .{});
+                    log.debug("ERROR: Invalid branch name in wildcard tap\n", .{});
                     try self.reporter.addError(.KORU021, location.line, location.column, "invalid branch name in wildcard tap", .{});
                     // Continue checking for more errors
                 }
@@ -718,7 +719,7 @@ pub const ShapeChecker = struct {
             }
 
             if (!found) {
-                std.debug.print("ERROR: Event '{s}.{s}' has no branch '{s}'\n",
+                log.debug("ERROR: Event '{s}.{s}' has no branch '{s}'\n",
                     .{event_decl.path.segments[0], event_decl.path.segments[event_decl.path.segments.len - 1], cont.branch});
                 try self.reporter.addError(.KORU021, location.line, location.column, "event '{s}.{s}' has no branch '{s}'",
                     .{event_decl.path.segments[0], event_decl.path.segments[event_decl.path.segments.len - 1], cont.branch});
@@ -802,14 +803,14 @@ pub const ShapeChecker = struct {
 
         // Report errors
         for (result.missing_branches) |branch_name| {
-            std.debug.print("ERROR: Branch '{s}' must be handled but no continuation found\n", .{branch_name});
+            log.debug("ERROR: Branch '{s}' must be handled but no continuation found\n", .{branch_name});
             try self.reporter.addError(.KORU022, location.line, location.column,
                 "branch '{s}' must be handled but no continuation found", .{branch_name});
             has_errors = true;
         }
 
         for (result.unknown_branches) |branch_name| {
-            std.debug.print("ERROR: Continuation references unknown branch '{s}'\n", .{branch_name});
+            log.debug("ERROR: Continuation references unknown branch '{s}'\n", .{branch_name});
             try self.reporter.addError(.KORU021, location.line, location.column,
                 "continuation references unknown branch '{s}'", .{branch_name});
             has_errors = true;
@@ -896,7 +897,7 @@ pub const ShapeChecker = struct {
                     // Look up the label to get the event it refers to
                     const label_info = self.labels.get(step.label_jump.label);
                     if (label_info == null) {
-                        std.debug.print("ERROR: Unknown label '{s}'\n", .{step.label_jump.label});
+                        log.debug("ERROR: Unknown label '{s}'\n", .{step.label_jump.label});
                         return error.UnknownLabel;
                     }
                     // For now, just validate that the label exists
@@ -918,7 +919,7 @@ pub const ShapeChecker = struct {
 
                     const nested_event_info = self.events.get(nested_event_name) orelse {
                         // Unknown event in pipeline - must fail!
-                        std.debug.print("ERROR: Unknown event '{s}' in pipeline\n", .{nested_event_name});
+                        log.debug("ERROR: Unknown event '{s}' in pipeline\n", .{nested_event_name});
                         return error.UnknownEvent;
                     };
 
@@ -1211,7 +1212,7 @@ pub const ShapeChecker = struct {
         // Look up the label
         const label_info = self.labels.getPtr(label_name) orelse {
             // Label doesn't exist!
-            std.debug.print("ERROR: Jump to unknown label '{s}'\n", .{label_name});
+            log.debug("ERROR: Jump to unknown label '{s}'\n", .{label_name});
             return error.UnknownLabel;
         };
         
@@ -1221,7 +1222,7 @@ pub const ShapeChecker = struct {
         // For pre-invocation labels (~#label pattern), we expect parameters
         if (label_info.is_pre_invocation) {
             if (!is_parameterized) {
-                std.debug.print("ERROR: Pre-invocation label '{s}' requires parameters\n", .{label_name});
+                log.debug("ERROR: Pre-invocation label '{s}' requires parameters\n", .{label_name});
                 return error.LabelRequiresParameters;
             }
             
@@ -1233,7 +1234,7 @@ pub const ShapeChecker = struct {
         } else {
             // Post-invocation label (#label pattern) - no parameters expected
             if (is_parameterized) {
-                std.debug.print("ERROR: Post-invocation label '{s}' does not accept parameters\n", .{label_name});
+                log.debug("ERROR: Post-invocation label '{s}' does not accept parameters\n", .{label_name});
                 return error.LabelDoesNotAcceptParameters;
             }
         }
@@ -1280,7 +1281,7 @@ pub const ShapeChecker = struct {
                 // Old style label jump - validate it references a declared label
                 const label_name = step.label_with_invocation.label;
                 if (self.labels.get(label_name) == null) {
-                    std.debug.print("ERROR: Unknown label '{s}'\n", .{label_name});
+                    log.debug("ERROR: Unknown label '{s}'\n", .{label_name});
                     return error.UnknownLabel;
                 }
             }
@@ -1288,7 +1289,7 @@ pub const ShapeChecker = struct {
                 // New style label jump - validate it references a declared label
                 const label_name = step.label_jump.label;
                 if (self.labels.get(label_name) == null) {
-                    std.debug.print("ERROR: Unknown label '{s}'\n", .{label_name});
+                    log.debug("ERROR: Unknown label '{s}'\n", .{label_name});
                     return error.UnknownLabel;
                 }
             }
