@@ -32,7 +32,7 @@ const ast_functional = @import("ast_functional");
 
 // Invoke the augmentation
 ~augment_program()
-| done d |> _
+| done _ |> _
 
 // A simple runtime event to verify compilation works
 ~event hello {}
