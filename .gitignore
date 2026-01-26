@@ -187,7 +187,6 @@ tests/benchmarks/**/actual.txt
 .env
 .claude/
 package.json
-test-results/
 zig-out/
 .agent/
 temp_build.zig
