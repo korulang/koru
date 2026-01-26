@@ -1,11 +1,11 @@
 // Logger with module wildcard + metatype tap
-// Metatype taps with wildcard sources can ONLY use metatype branches
-// They cannot call events that return concrete branches!
+// BUG: String interpolation doesn't substitute metatype bindings
+// {{a.source}} should become _profile_0.source but doesn't
 
-const std = @import("std");
+~import "$std/taps"
+~import "$std/io"
 
 // VALID: Module wildcard (input:*) + metatype (Audit)
 // Audit metatype works on ANY event in the main module
-// Note: Inline Zig code - no event calls that would create concrete branch continuations
-~input:* -> *
-| Audit a |> std.debug.print("[TAP] Audit: {s}.{s}\n", .{a.source, a.branch})
+~tap(input:* -> *)
+| Audit a |> std.io:print.ln("[TAP] Audit: {{a.source}}.{{a.branch}}")

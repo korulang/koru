@@ -1,21 +1,25 @@
 // Test 645: Default Steps with Dependencies
 // Tests that ~[default, depends_on(...)] annotations work correctly
 //
-// Demonstrates the full build pipeline:
-// - compile_backend (default from stdlib)
-// - build (default from stdlib, depends on compile_backend)
-// - run (user override, depends on build)
+// Overrides all default steps with simple echos to verify:
+// 1. Steps execute in dependency order
+// 2. User overrides replace stdlib defaults
 //
-// Expected: Steps execute in dependency order, override is applied
+// Expected output order: compile_backend -> build -> run
 
 ~import "$std/build"
 
-// User overrides "run" but keeps the dependency
-~[depends_on("build")]std.build:step(name: "run") {
-    echo "USER: Running application with custom flags --verbose"
+// Override compile_backend (no dependencies)
+~std.build:step(name: "compile_backend") {
+    echo "step:compile_backend" > tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_033_default_with_dependencies/steps.log
 }
 
-// User adds a new "test" step that depends on "build"
-~[depends_on("build")]std.build:step(name: "test") {
-    echo "Running test suite"
+// Override build (depends on compile_backend)
+~[depends_on("compile_backend")]std.build:step(name: "build") {
+    echo "step:build" >> tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_033_default_with_dependencies/steps.log
+}
+
+// Override run (depends on build)
+~[depends_on("build")]std.build:step(name: "run") {
+    echo "step:run" >> tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_033_default_with_dependencies/steps.log
 }

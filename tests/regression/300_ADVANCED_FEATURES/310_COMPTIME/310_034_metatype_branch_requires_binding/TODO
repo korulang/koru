@@ -1,0 +1,1 @@
+Emitter should reject metatype branches without bindings (| Transition |> should require | Transition t |> or | Transition _ |>)

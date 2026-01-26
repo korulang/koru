@@ -1,0 +1,27 @@
+// Test: Metatype branches require bindings
+// The Transition metatype branch must have a binding (t or _)
+// | Transition |> is invalid - should be | Transition t |> or | Transition _ |>
+
+const std = @import("std");
+
+~import "$std/taps"
+
+~event work {}
+| done {}
+
+~event logger {}
+
+~proc work {
+    return .{ .done = .{} };
+}
+
+~proc logger {
+    std.debug.print("observed\n", .{});
+}
+
+// This should fail - Transition branch is missing binding
+~tap(work -> *)
+| Transition |> logger()
+
+~work()
+| done |> _

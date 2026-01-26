@@ -1,0 +1,20 @@
+// Test: Metatype bindings must be in scope
+// BUG: Metatype bindings (Profile p, Audit a, Transition t) aren't added to scope
+// so string interpolation {{p.source}} fails with "undeclared identifier 'p'"
+
+~import "$std/taps"
+~import "$std/io"
+
+~event work {}
+| done {}
+
+~proc work {
+    return .{ .done = .{} };
+}
+
+// This should work - 'p' binding should be in scope for string interpolation
+~tap(work -> *)
+| Profile p |> std.io:print.ln("Profile: {{p.source}}.{{p.branch}}")
+
+~work()
+| done |> _
