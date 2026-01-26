@@ -1,28 +1,13 @@
-Cross-module tap matching (e.g., tap in logger.kz tapping events in input.kz)
+Module-level tap wildcards (e.g., ~tap(mymodule:* -> *))
 
-DIAGNOSIS (2026-01-26):
-The [keyword|transform] tap handler only receives items from the module where
-the tap is defined. When logger.kz defines ~tap(input:* -> *), the transform
-only sees logger.kz's items, not input.kz's flows.
+Currently we support:
+- Universal wildcards: ~tap(* -> *)
+- Meta event wildcards: ~tap(koru:* -> *)
 
-Same-module taps work fine (test 507). Cross-module taps don't.
+Need to add:
+- Module-specific wildcards: ~tap(mymodule:* -> *)
 
-ROOT CAUSE:
-Transform pass runner scopes the `program` parameter to the containing module
-when invoking transforms. This is intentional for most transforms but breaks
-cross-module tap observation.
+This enables targeted profiling/logging of all events in a specific module
+without intercepting the entire program.
 
-POTENTIAL FIXES:
-1. Add `all_items` or `full_program` parameter to [transform] events
-2. Run tap transforms at global scope after module parsing
-3. Two-phase tap processing: register during transform, inject during global pass
-4. Revive minimal transform_taps pass for cross-module cases only
-
-WORKAROUND:
-Define taps in the same module as events being tapped.
-
-TEST SETUP:
-- logger.kz: defines ~tap(input:* -> *) with Profile metatype
-- input.kz: defines compute, format, display events
-- Expected: logger's tap fires for all three events
-- Actual: tap transform sees no matching transitions (wrong scope)
+Implementation likely in taps.kz pattern matching logic.

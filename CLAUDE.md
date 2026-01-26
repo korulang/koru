@@ -40,18 +40,17 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Triage the test suite and stabilize the compiler's meta-programming pipeline (transforms before comptime).
+Finalize the core budgeted interpreter implementation and align the runtime with the Hollywood OS vision of serializable, AI-inspectable resource handles.
 
 ### Decisions
-- **Removed the transform_taps compiler pass from the coordinate pipeline.**: The [keyword|transform] system in userspace (taps.kz) now handles tap declarations and injections, making the hardcoded compiler pass redundant.
-- **Reordered evaluate_comptime phases to run [transform] handlers BEFORE [comptime] flows.**: Allows comptime events to see and act upon a fully-transformed AST, enabling more compiler logic to reside in userspace libraries.
-- **Implemented std.io:read.ln and updated the compiler backend to inherit stdin.**: Enables interactive REPL features and --inter mode by allowing the child process to receive user input directly.
-- **Adopted BENCHMARK test marker to replace SKIP for performance tests.**: Prevents performance-oriented tests from skewing pass/fail/todo counts while keeping them in the suite.
-- **Rejected callsite format annotations for Source blocks in favor of event-signature-level annotations.**: Reduces noise at the callsite; the compiler should infer data formats (like JSON) from the event declaration.
-- **Required explicit catch-all (|? |> _) for optional branches (|?) if not all are handled.**: Prevents silent data loss and ensures developers consciously acknowledge ignored branches.
-- **Split argument parsing into std/args (minimal) and koru-libs/commander (rich CLI framework).**: Maintains a lightweight stdlib while providing a powerful, type-safe CLI ecosystem via comptime declarations.
-- **Implemented binding destructuring with field punning: | name { field1, field2 } |>.**: Improves DX and readability by mirroring constructor punning and reducing boilerplate for extracting event payloads.
-- **Track CLAUDE.md and CLAUDE.md.template in Git and audited .gitignore for overrides.**: Ensures AI instruction files are consistent across environments and fixes the 'last rule wins' trap in .gitignore.
+- **Implemented dynamic scope lookup via comptime reflection in std.runtime:get_scope.**: Enables a portable budgeted interpreter to resolve scopes by name without hardcoding dispatchers in the compiler, facilitating generic runtime execution.
+- **Adopted string-based Handle IDs (Option 1) for the interpreter's resource registry.**: String IDs are serializable, AI-inspectable, and safer for cross-request persistence in bridge sessions compared to raw pointers.
+- **Implemented active auto-discharge invocation on success, budget exhaustion, and dispatch errors.**: Ensures resources (e.g., file handles, DB connections) are physically cleaned up via Koru events even when the interpreter bails out early.
+- **Enforced scope-local handle isolation by default with an opt-in 'handle realm' for cross-scope sharing.**: Maintains capability boundaries in multi-tenant environments while allowing explicit resource sharing within a unified bridge session.
+- **Set fail_fast: bool = true as the default for std.runtime entry points.**: Ensures strict execution by default to catch errors early, aligning with the project's reliability goals.
+- **Integrated Codex CLI session ingestion into the 'prose' evolution tool.**: Enables cross-tool memory by allowing the evolution tool to process Codex logs alongside Claude sessions.
+- **Downgraded 'prose' tool output to 'supplemental context' rather than 'ground truth' in AGENTS.md.**: Re-establishes that running code and tests are the ultimate source of truth, preventing AI models from prioritizing historical prose over current state.
+- **Adopted module-namespaced phantom obligations (e.g., sqlite3:opened).**: Prevents obligation collisions across different libraries and enables precise cross-module resource reasoning.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -93,13 +92,12 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **The 'Racing Ahead' or 'Seabiscuit' behavior where the AI implements workarounds or reverts code without confirmation.**: Strict adherence to the GO SLOW protocol: STOP, Report, Ask, and Wait for user confirmation before proceeding with architectural changes.
-- **Circular imports in Koru were incorrectly assumed to be a limitation, leading to architectural shortcuts.**: Trust the language design; Koru supports circular imports (e.g., compiler.kz <-> inter.kz). Verify before assuming limitations.
-- **Identity branches with phantoms caused runtime dispatcher failures because the generator assumed struct payloads.**: Check @typeInfo of the payload in runtime.kz; if it's not a struct, use the synthetic '__type_ref' field to handle the bare type.
-- **Subflow implementations (~event = flow) bypass standard array literal and struct literal emission paths in the backend.**: Explicitly handle array and struct literal transformations in the subflow_impl emission path within emitter_helpers.zig.
-- **Git's .gitignore is order-dependent; later patterns override earlier ones, potentially re-ignoring whitelisted files like CLAUDE.md.**: Place whitelist patterns (!) at the very end of the .gitignore file or audit for redundant ignore rules.
+- **The interpreter's naive inline-continuation detection (`|>`) can be triggered by sequences inside string literals.**: Use explicit newlines in Koru source strings for interpreter tests to avoid ambiguous single-line parsing until the parser is updated to ignore tokens inside strings.
+- **Handle IDs or metadata allocated using the interpreter's internal ArenaAllocator will be freed when the interpreter returns, causing segfaults if accessed later.**: Persist data that must survive the interpreter call (like last_event or handle lists) using a more permanent allocator like page_allocator.
+- **Field shorthand in Koru branch constructors (e.g., `result { g.message }`) is invalid; it only supports bare identifiers.**: Use explicit field assignment `result { message: g.message }` or braceless forms where applicable.
+- **Weakening or 'nerfing' tests to force a pass state during language evolution breaks the metacircular feedback loop.**: Never simplify test logic to bypass failures. If a test fails, investigate the root cause (parser limitations or invalid syntax) and treat the test as the ground truth.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 1/26/2026, 3:38:24 AM
+> Last updated: 1/25/2026, 11:38:30 PM
