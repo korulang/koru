@@ -1,0 +1,37 @@
+// Test 310_043: Audit Metatype Variable Binding
+//
+// Tests that Audit metatype variables are properly accessible in tap handlers.
+// Audit provides: source (event name), branch (branch taken)
+//
+// This isolates the metatype binding issue from wildcard pattern matching.
+// The tap pattern is simple (concrete: hello -> *) so we're ONLY testing
+// that the metatype variable 'a' is accessible in the handler invocation.
+
+const std = @import("std");
+~import "$std/taps"
+
+~event hello {}
+| done {}
+
+~event logger { msg: []const u8 }
+| done {}
+
+~proc hello {
+    std.debug.print("Hello\n", .{});
+    return .{ .done = .{} };
+}
+
+~proc logger {
+    std.debug.print("[AUDIT] {s}\n", .{msg});
+    return .{ .done = .{} };
+}
+
+// Simple tap on concrete event with Audit metatype
+// If this works, metatype binding is OK
+// If this fails with "undeclared identifier 'a'", metatype binding is broken
+~tap(hello -> *)
+| Audit a |> logger(msg: a.source)
+    | done |> _
+
+~hello()
+| done |> _

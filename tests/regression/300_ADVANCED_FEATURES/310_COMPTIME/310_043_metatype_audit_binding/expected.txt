@@ -1,0 +1,2 @@
+[AUDIT] input:hello
+Hello

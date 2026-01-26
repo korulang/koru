@@ -1,0 +1,27 @@
+Implement Audit metatype variable binding in tap handlers
+
+DESCRIPTION:
+Audit metatype variables (e.g., `a` in `| Audit a |>`) are not accessible
+in tap handler invocations. Generated code fails with "use of undeclared identifier 'a'".
+
+ACCEPTANCE CRITERIA:
+1. Audit variable 'a' accessible in handler: `logger(msg: a.source)`
+2. Test passes with output: "[AUDIT] input:hello\n"
+3. Audit provides: source, branch (minimal metadata for audit logging)
+
+TEST DESIGN:
+- Uses concrete source pattern (hello -> *) to isolate from wildcard issues
+- Tests metatype that provides minimal event audit information
+- Confirms that all metatype types work consistently
+
+ROOT CAUSE:
+Same as 310_041 and 310_042 - metatype_binding transformation doesn't properly
+inject variable scope into generated invocation context.
+
+SOLUTION APPROACH:
+See 310_041 - solution applies to all metatype binding (Profile, Transition, Audit)
+
+RELATED:
+- 310_041_metatype_profile_binding - Profile metatype binding
+- 310_042_metatype_transition_binding - Transition metatype binding
+- These three tests together verify all metatype binding paths

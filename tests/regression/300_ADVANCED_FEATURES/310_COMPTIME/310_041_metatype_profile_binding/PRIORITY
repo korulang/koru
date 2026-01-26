@@ -1,0 +1,26 @@
+Implement Profile metatype variable binding in tap handlers
+
+DESCRIPTION:
+Profile metatype variables (e.g., `p` in `| Profile p |>`) are not accessible
+in tap handler invocations. Generated code fails with "use of undeclared identifier 'p'".
+
+ACCEPTANCE CRITERIA:
+1. Profile variable 'p' accessible in handler: `logger(msg: p.source)`
+2. Test passes with output: "[PROFILE] input:hello\n"
+3. Profile provides: source, branch, destination, timestamp_ns
+
+TEST DESIGN:
+- Uses concrete source pattern (hello -> *) to isolate from wildcard issues
+- Single metatype variable binding in simple handler invocation
+- No wildcard patterns to avoid confusing root causes
+
+ROOT CAUSE:
+The metatype_binding transformation in koru_std/taps.kz (around line 441-487)
+creates variable bindings but doesn't properly inject them into the generated
+invocation context. The variable scope is lost during code generation.
+
+SOLUTION APPROACH:
+The metatype binding needs to:
+1. Create the metatype struct from compiled metadata
+2. Make it available in scope for the handler invocation
+3. Ensure it survives through backend code generation

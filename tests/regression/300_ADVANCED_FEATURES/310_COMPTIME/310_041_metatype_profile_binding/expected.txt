@@ -1,0 +1,2 @@
+[PROFILE] input:hello
+Hello

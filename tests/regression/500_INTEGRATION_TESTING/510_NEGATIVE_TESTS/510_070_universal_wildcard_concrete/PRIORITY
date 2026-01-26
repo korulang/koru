@@ -1,20 +1,25 @@
-Fix metatype binding codegen in tap transform
+Fix metatype binding codegen in tap transform - WILDCARD PATTERN TEST
 
 DESCRIPTION:
-When universal wildcard taps (* -> *) use metatype branches (Profile),
-the generated code fails to properly bind the metatype variable (e.g., 'p').
+When wildcard taps use metatype branches (Profile), the generated code fails
+to properly bind the metatype variable (e.g., 'p').
 Error: "use of undeclared identifier 'p'" when accessing p.source.
 
+This test CONFIRMS wildcard pattern matching is working (wildcards ARE matching),
+but metatype binding is broken (variable scope is lost).
+
 ACCEPTANCE CRITERIA:
-1. Metatype binding creates proper scope for metatype struct access
+1. Wildcard patterns match (taps ARE inserted - VERIFIED ✓)
 2. Profile variable 'p' accessible in tap handler invocation
 3. Test passes with output: "[TAP] input:hello\nHello\n[TAP] input:goodbye\nGoodbye\n"
 
-ROOT CAUSE:
-The metatype_binding transformation in taps.kz (around line 441-487) needs
-to properly set up variable scope or inject the metatype struct into the
-generated invocation context.
+RELATED / DEPENDS ON:
+- 310_041_metatype_profile_binding (PRIORITY) - Profile metatype binding
+- 310_042_metatype_transition_binding (PRIORITY) - Transition metatype binding
+- 310_043_metatype_audit_binding (PRIORITY) - Audit metatype binding
 
-RELATED:
-- This also blocks 310_018 (CCP opt-in) and 310_019 (CCP flag injection)
-- See also: 510_071, 510_072 (other wildcard pattern issues)
+These three metatype tests are SIMPLER and isolate the root cause.
+Fix those first, then this wildcard test will pass.
+
+ALSO BLOCKS:
+- 310_018 (CCP opt-in) and 310_019 (CCP flag injection)
