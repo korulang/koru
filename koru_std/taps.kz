@@ -81,9 +81,10 @@ const std = @import("std");
     const all_tap_branches = tap_flow.continuations;
 
     // Pattern matching config
-    // Both "*" and "*:*" (module:event both wildcards) are universal wildcards
-    const source_is_wildcard = std.mem.eql(u8, source, "*") or std.mem.eql(u8, source, "*:*");
-    const dest_is_wildcard = std.mem.eql(u8, destination, "*") or std.mem.eql(u8, destination, "*:*");
+    // Any pattern with a glob wildcard (*) should be treated as wildcard
+    // (affects inserted invocation marking to prevent infinite recursion)
+    const source_is_wildcard = (std.mem.indexOfScalar(u8, source, '*') != null) or std.mem.eql(u8, source, "*:*");
+    const dest_is_wildcard = (std.mem.indexOfScalar(u8, destination, '*') != null) or std.mem.eql(u8, destination, "*:*");
 
     // Check if any tap branch is a metatype (matches all source branches)
     var is_metatype = false;
@@ -108,6 +109,37 @@ const std = @import("std");
     // ========================================================================
 
     const Helper = struct {
+        // Match a segment with glob wildcard support
+        // Supports: exact match, full wildcard (*), prefix wildcard (*.foo), suffix wildcard (foo.*, foo*)
+        fn matchSegment(pattern: []const u8, value: []const u8) bool {
+            // Full wildcard matches anything
+            if (std.mem.eql(u8, pattern, "*")) return true;
+
+            // Exact match
+            if (std.mem.eql(u8, pattern, value)) return true;
+
+            // Prefix wildcard: *.io matches std.io, test.io
+            if (pattern.len > 2 and pattern[0] == '*' and pattern[1] == '.') {
+                const suffix = pattern[1..]; // includes the dot
+                return std.mem.endsWith(u8, value, suffix);
+            }
+
+            // Suffix wildcard with dot: file.* matches file.read, file.write
+            if (pattern.len > 2 and pattern[pattern.len - 2] == '.' and pattern[pattern.len - 1] == '*') {
+                const prefix = pattern[0 .. pattern.len - 2]; // excludes the .*
+                return std.mem.startsWith(u8, value, prefix) and
+                       value.len > prefix.len and value[prefix.len] == '.';
+            }
+
+            // Bare suffix wildcard: print* matches println, print, printf
+            if (pattern.len > 1 and pattern[pattern.len - 1] == '*') {
+                const prefix = pattern[0 .. pattern.len - 1]; // everything before *
+                return std.mem.startsWith(u8, value, prefix);
+            }
+
+            return false;
+        }
+
         // Check if an event path matches a pattern
         // Pattern can be: "event", "module:event", or "module:path.to.event"
         // fallback_module: Used when path.module_qualifier is null (e.g., for flows declared in a module)
@@ -119,12 +151,12 @@ const std = @import("std");
             const pattern_module = if (pattern_colon) |idx| pattern[0..idx] else null;
             const pattern_path = if (pattern_colon) |idx| pattern[idx + 1..] else pattern;
 
-            // Check module qualifier match
+            // Check module qualifier match (with glob support)
             if (pattern_module) |pm| {
                 // Use explicit module_qualifier if present, otherwise fall back to containing module
                 const path_module = path.module_qualifier orelse fallback_module;
                 if (path_module) |mq| {
-                    if (!std.mem.eql(u8, pm, mq)) return false;
+                    if (!matchSegment(pm, mq)) return false;
                 } else {
                     return false; // Pattern has module but path doesn't (and no fallback)
                 }
@@ -145,19 +177,8 @@ const std = @import("std");
                 pos += seg.len;
             }
 
-            // Check for namespace wildcard pattern: "namespace.*" matches "namespace.anything"
-            if (std.mem.endsWith(u8, pattern_path, ".*")) {
-                const prefix = pattern_path[0..pattern_path.len - 2]; // Remove ".*"
-                // Path must start with prefix followed by a dot
-                if (path_str.len > prefix.len and
-                    std.mem.startsWith(u8, path_str, prefix) and
-                    path_str[prefix.len] == '.') {
-                    return true;
-                }
-                return false;
-            }
-
-            return std.mem.eql(u8, pattern_path, path_str);
+            // Use glob matching for path pattern (handles *, prefix.*, *.suffix, etc.)
+            return matchSegment(pattern_path, path_str);
         }
 
         // Rewrite binding references in a string value
