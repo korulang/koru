@@ -1,0 +1,150 @@
+// Resource Bridge Standard Library
+// Persistent handle storage for long-running interactive sessions (Hollywood OS mode)
+//
+// DESIGN:
+// - Bridge holds a HandlePool with persistent allocation
+// - Multiple interpreter runs share the same bridge
+// - Per-handle locking for concurrent access
+// - No return values from runs - side effects accumulate on bridge
+// - Session end triggers discharge_all
+
+~[comptime|runtime]
+
+~import "$std/interpreter"
+
+const std = @import("std");
+
+// Re-export interpreter types
+pub const HandlePool = @import("root").koru_std.interpreter.HandlePool;
+pub const Handle = @import("root").koru_std.interpreter.Handle;
+
+// Bridge: persistent session state
+pub const Bridge = struct {
+    pool: HandlePool,
+    allocator: std.mem.Allocator,
+    session_id: []const u8,
+    created_at: i64,
+    last_active: i64,
+
+    pub fn init(allocator: std.mem.Allocator, session_id: []const u8) Bridge {
+        return .{
+            .pool = HandlePool.init(allocator),
+            .allocator = allocator,
+            .session_id = allocator.dupe(u8, session_id) catch session_id,
+            .created_at = std.time.milliTimestamp(),
+            .last_active = std.time.milliTimestamp(),
+        };
+    }
+
+    pub fn touch(self: *Bridge) void {
+        self.last_active = std.time.milliTimestamp();
+    }
+
+    pub fn getHandleCount(self: *Bridge) u32 {
+        var count: u32 = 0;
+        for (self.pool.handles.items) |h| {
+            if (!h.discharged) count += 1;
+        }
+        return count;
+    }
+
+    pub fn dischargeAll(self: *Bridge, _: anytype) void {
+        // TODO: Call discharge events for all undischarged handles
+        for (self.pool.handles.items) |*h| {
+            if (!h.discharged) {
+                std.debug.print("[BRIDGE] Auto-discharging handle: {s}\n", .{h.handle_id});
+                // Would call dispatcher here with discharge event
+                h.discharged = true;
+            }
+        }
+    }
+
+    pub fn deinit(self: *Bridge) void {
+        self.allocator.free(self.session_id);
+        self.pool.deinit();
+    }
+};
+
+// ============================================================================
+// CREATE - Create a new bridge session
+// ============================================================================
+
+~pub event create { id: []const u8 }
+| session { bridge: *Bridge[session!] }
+
+~proc create {
+    const allocator = std.heap.page_allocator;
+    const br = allocator.create(Bridge) catch unreachable;
+    br.* = Bridge.init(allocator, id);
+    return .{ .session = .{ .bridge = br } };
+}
+
+// ============================================================================
+// GET_HANDLES - Query handles currently on the bridge
+// ============================================================================
+
+~pub event get_handles { br: *Bridge }
+| handles { count: u32 }
+
+~proc get_handles {
+    return .{ .handles = .{ .count = br.getHandleCount() } };
+}
+
+// ============================================================================
+// CLOSE - End a bridge session, discharge all handles
+// ============================================================================
+
+~pub event close { br: *Bridge[!session] }
+| closed { discharged: u32 }
+
+~proc close {
+    const count = br.getHandleCount();
+    br.dischargeAll(null); // TODO: pass dispatcher
+    br.deinit();
+    std.heap.page_allocator.destroy(br);
+    return .{ .closed = .{ .discharged = count } };
+}
+
+// ============================================================================
+// TEST_RUN - Test helper: create bridge, run source, report handle count
+// ============================================================================
+
+~pub event test_run {
+    source: []const u8,
+    scope: []const u8,
+    budget: u64
+}
+| pass { handles: u32 }
+| fail { reason: []const u8 }
+
+~proc test_run {
+    const rt = @import("root").koru_std.runtime;
+
+    // Create bridge instance
+    const allocator = std.heap.page_allocator;
+    var br = Bridge.init(allocator, "test");
+    defer br.deinit();
+
+    // Run with bridge's pool (auto_discharge disabled)
+    const result = rt.run_event.handler(.{
+        .source = source,
+        .scope = scope,
+        .budget = budget,
+        .handle_pool = &br.pool,
+        .auto_discharge = false,
+        .fail_fast = true,
+    });
+
+    switch (result) {
+        .result => {
+            const handle_count = br.getHandleCount();
+            return .{ .pass = .{ .handles = handle_count } };
+        },
+        .exhausted => return .{ .fail = .{ .reason = "exhausted" } },
+        .parse_error => return .{ .fail = .{ .reason = "parse_error" } },
+        .validation_error => return .{ .fail = .{ .reason = "validation_error" } },
+        .event_denied => return .{ .fail = .{ .reason = "event_denied" } },
+        .dispatch_error => return .{ .fail = .{ .reason = "dispatch_error" } },
+        .scope_not_found => return .{ .fail = .{ .reason = "scope_not_found" } },
+    }
+}

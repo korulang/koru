@@ -1,0 +1,276 @@
+// $std/json - JSON encoding and decoding
+//
+// Minimal JSON library for building and parsing JSON.
+// Uses Zig's std.json under the hood.
+//
+// Design: Start simple, extend as needed.
+// - Object builder pattern for encoding
+// - Key-based extraction for decoding
+
+const std = @import("std");
+
+// ============================================================================
+// Types
+// ============================================================================
+
+pub const JsonObject = struct {
+    buffer: std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    field_count: usize,
+};
+
+pub const JsonValue = union(enum) {
+    string: []const u8,
+    int: i64,
+    float: f64,
+    bool_val: bool,
+    null_val: void,
+    raw: []const u8,  // For nested objects/arrays as raw JSON
+};
+
+// ============================================================================
+// Object Builder - Create JSON objects
+// ============================================================================
+
+~pub event object.new { allocator: ?std.mem.Allocator }
+| ok *JsonObject[building!]
+
+~proc object.new {
+    const alloc = allocator orelse std.heap.page_allocator;
+    
+    const obj = alloc.create(JsonObject) catch {
+        return .{ .ok = undefined }; // Should have error branch
+    };
+    
+    obj.* = .{
+        .buffer = std.ArrayList(u8).init(alloc),
+        .allocator = alloc,
+        .field_count = 0,
+    };
+    
+    obj.buffer.append('{') catch {};
+    
+    return .{ .ok = obj };
+}
+
+~pub event object.set { obj: *JsonObject[building!], key: []const u8, value: JsonValue }
+| ok *JsonObject[building!]
+
+~proc object.set {
+    const writer = obj.buffer.writer();
+    
+    // Add comma if not first field
+    if (obj.field_count > 0) {
+        writer.writeByte(',') catch {};
+    }
+    
+    // Write key
+    writer.writeByte('"') catch {};
+    writeJsonEscaped(writer, key);
+    writer.writeAll("\":") catch {};
+    
+    // Write value
+    switch (value) {
+        .string => |s| {
+            writer.writeByte('"') catch {};
+            writeJsonEscaped(writer, s);
+            writer.writeByte('"') catch {};
+        },
+        .int => |i| {
+            writer.print("{d}", .{i}) catch {};
+        },
+        .float => |f| {
+            writer.print("{d}", .{f}) catch {};
+        },
+        .bool_val => |b| {
+            writer.writeAll(if (b) "true" else "false") catch {};
+        },
+        .null_val => {
+            writer.writeAll("null") catch {};
+        },
+        .raw => |r| {
+            writer.writeAll(r) catch {};
+        },
+    }
+    
+    obj.field_count += 1;
+    return .{ .ok = obj };
+}
+
+~pub event object.finish { obj: *JsonObject[!building] }
+| json []const u8
+
+~proc object.finish {
+    obj.buffer.append('}') catch {};
+    const result = obj.buffer.toOwnedSlice() catch "";
+    // Note: caller owns the slice, should free with obj.allocator
+    return .{ .json = result };
+}
+
+// ============================================================================
+// Array Builder - Create JSON arrays
+// ============================================================================
+
+~pub event array.new { allocator: ?std.mem.Allocator }
+| ok *JsonObject[building!]  // Reuse JsonObject for simplicity
+
+~proc array.new {
+    const alloc = allocator orelse std.heap.page_allocator;
+    
+    const obj = alloc.create(JsonObject) catch {
+        return .{ .ok = undefined };
+    };
+    
+    obj.* = .{
+        .buffer = std.ArrayList(u8).init(alloc),
+        .allocator = alloc,
+        .field_count = 0,
+    };
+    
+    obj.buffer.append('[') catch {};
+    
+    return .{ .ok = obj };
+}
+
+~pub event array.push { arr: *JsonObject[building!], value: JsonValue }
+| ok *JsonObject[building!]
+
+~proc array.push {
+    const writer = arr.buffer.writer();
+    
+    if (arr.field_count > 0) {
+        writer.writeByte(',') catch {};
+    }
+    
+    switch (value) {
+        .string => |s| {
+            writer.writeByte('"') catch {};
+            writeJsonEscaped(writer, s);
+            writer.writeByte('"') catch {};
+        },
+        .int => |i| {
+            writer.print("{d}", .{i}) catch {};
+        },
+        .float => |f| {
+            writer.print("{d}", .{f}) catch {};
+        },
+        .bool_val => |b| {
+            writer.writeAll(if (b) "true" else "false") catch {};
+        },
+        .null_val => {
+            writer.writeAll("null") catch {};
+        },
+        .raw => |r| {
+            writer.writeAll(r) catch {};
+        },
+    }
+    
+    arr.field_count += 1;
+    return .{ .ok = arr };
+}
+
+~pub event array.finish { arr: *JsonObject[!building] }
+| json []const u8
+
+~proc array.finish {
+    arr.buffer.append(']') catch {};
+    const result = arr.buffer.toOwnedSlice() catch "";
+    return .{ .json = result };
+}
+
+// ============================================================================
+// Decoding - Extract values from JSON strings
+// ============================================================================
+
+~pub event get.string { json: []const u8, key: []const u8 }
+| ok []const u8
+| not_found
+
+~proc get.string {
+    // Find "key":"value"
+    var search_buf: [256]u8 = undefined;
+    const search_key = std.fmt.bufPrint(&search_buf, "\"{s}\":\"", .{key}) catch {
+        return .{ .not_found = .{} };
+    };
+    
+    const key_pos = std.mem.indexOf(u8, json, search_key) orelse {
+        return .{ .not_found = .{} };
+    };
+    
+    const value_start = key_pos + search_key.len;
+    
+    // Find end of string value (handle escapes)
+    var value_end = value_start;
+    var in_escape = false;
+    while (value_end < json.len) : (value_end += 1) {
+        if (in_escape) {
+            in_escape = false;
+            continue;
+        }
+        if (json[value_end] == '\\') {
+            in_escape = true;
+            continue;
+        }
+        if (json[value_end] == '"') {
+            break;
+        }
+    }
+    
+    return .{ .ok = json[value_start..value_end] };
+}
+
+~pub event get.int { json: []const u8, key: []const u8 }
+| ok i64
+| not_found
+
+~proc get.int {
+    // Find "key":number
+    var search_buf: [256]u8 = undefined;
+    const search_key = std.fmt.bufPrint(&search_buf, "\"{s}\":", .{key}) catch {
+        return .{ .not_found = .{} };
+    };
+    
+    const key_pos = std.mem.indexOf(u8, json, search_key) orelse {
+        return .{ .not_found = .{} };
+    };
+    
+    const value_start = key_pos + search_key.len;
+    
+    // Skip whitespace
+    var start = value_start;
+    while (start < json.len and (json[start] == ' ' or json[start] == '\t')) : (start += 1) {}
+    
+    // Find end of number
+    var end = start;
+    if (end < json.len and json[end] == '-') end += 1;
+    while (end < json.len and json[end] >= '0' and json[end] <= '9') : (end += 1) {}
+    
+    const num = std.fmt.parseInt(i64, json[start..end], 10) catch {
+        return .{ .not_found = .{} };
+    };
+    
+    return .{ .ok = num };
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+fn writeJsonEscaped(writer: anytype, s: []const u8) void {
+    for (s) |ch| {
+        switch (ch) {
+            '"' => writer.writeAll("\\\"") catch {},
+            '\\' => writer.writeAll("\\\\") catch {},
+            '\n' => writer.writeAll("\\n") catch {},
+            '\r' => writer.writeAll("\\r") catch {},
+            '\t' => writer.writeAll("\\t") catch {},
+            else => {
+                if (ch < 0x20) {
+                    writer.print("\\u{x:0>4}", .{ch}) catch {};
+                } else {
+                    writer.writeByte(ch) catch {};
+                }
+            },
+        }
+    }
+}
