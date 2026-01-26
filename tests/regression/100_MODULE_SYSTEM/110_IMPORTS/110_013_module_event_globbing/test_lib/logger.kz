@@ -1,6 +1,8 @@
 // Universal logger using module-level event globbing
 // Demonstrates the power of wildcard patterns in taps
 
+~import "$std/taps"
+
 const std = @import("std");
 
 // Define a logging event
@@ -12,22 +14,9 @@ const std = @import("std");
     return .{ .done = .{} };
 }
 
-// Module-level glob: Intercept ALL events from main module
-// This single pattern matches input:compute, input:format, input:display, etc.
-// Perfect for module-wide profiling or logging!
-
-// Tap for compute event (.result branch)
-// Note: Tap flows must end with void - they're observers, not transformers
-~input:* -> *
-| result |> log(event_name: "compute")
-    | done |> _
-
-// Tap for format event (.formatted branch)
-~input:* -> *
-| formatted |> log(event_name: "format")
-    | done |> _
-
-// Tap for display event (.done branch)
-~input:* -> *
-| done |> log(event_name: "display")
+// Module-level glob: Intercept ALL events from main module (input:*)
+// Using Profile metatype since we're matching wildcard source
+// Profile.source contains the event name being observed
+~tap(input:* -> *)
+| Profile p |> log(event_name: p.source)
     | done |> _
