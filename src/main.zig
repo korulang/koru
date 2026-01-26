@@ -30,6 +30,7 @@ const flow_checker = @import("flow_checker");
 const FlowChecker = flow_checker.FlowChecker;
 const codegen_utils = @import("codegen_utils");
 const emitter_helpers = @import("emitter_helpers");
+const ccp = @import("ccp.zig");
 
 const version = "0.1.0";
 
@@ -5007,6 +5008,7 @@ pub fn main() !void {
     var use_visitor = false; // Visitor pattern needs more work before becoming default
     var ast_json_mode = false; // Output AST as JSON
     var registry_json_mode = false; // Output TypeRegistry as JSON
+    var ccp_mode = false; // CCP daemon mode for Studio integration
     var fail_fast = false; // Stop at first parse error (default: lenient mode)
     var install_packages = false; // Run package managers (npm install, cargo fetch, etc.)
 
@@ -5084,6 +5086,9 @@ pub fn main() !void {
         } else if (std.mem.eql(u8, arg, "-c") or std.mem.eql(u8, arg, "--check")) {
             check_only = true;
             build_executable = false;
+        } else if (std.mem.eql(u8, arg, "--ccp")) {
+            ccp_mode = true;
+            try compiler_config.addFlag("ccp");
         } else if (std.mem.eql(u8, arg, "--ast-json")) {
             ast_json_mode = true;
         } else if (std.mem.eql(u8, arg, "--registry-json")) {
@@ -5130,6 +5135,12 @@ pub fn main() !void {
 
             try compiler_config.addFlag(flag_name);
         }
+    }
+
+    // CCP daemon mode - enter interactive command loop (only when no input file)
+    if (ccp_mode and input_file == null) {
+        try ccp.ccpMain(allocator);
+        return;
     }
 
     if (input_file == null) {
