@@ -164,6 +164,7 @@ regression_run_one_test() {
         echo -e "${RED}❌ BROKEN TEST${NC}"
         BROKEN_REASON=$(cat "$test_dir/BROKEN" 2>/dev/null || echo "No reason provided")
         echo "  Reason: $BROKEN_REASON"
+        rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
         echo "broken-test" > "$test_dir/FAILURE"
         BROKEN_TESTS=$((BROKEN_TESTS + 1))
         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(broken-test)"
@@ -173,6 +174,7 @@ regression_run_one_test() {
     # Check for input file
     if [ ! -f "$test_dir/input.kz" ]; then
         echo -e "${RED}❌ Missing input.kz${NC}"
+        rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
         echo "no-input" > "$test_dir/FAILURE"
         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(no-input)"
         return 0
@@ -185,6 +187,7 @@ regression_run_one_test() {
     if [ -f "$test_dir/expected.txt" ] && [ ! -f "$test_dir/MUST_RUN" ] && [ ! -f "$test_dir/EXPECT" ]; then
         echo -e "${RED}❌ Test has expected.txt but no MUST_RUN marker${NC}"
         echo "  This test expects output but won't run! Add MUST_RUN or remove expected.txt"
+        rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
         echo "config-error" > "$test_dir/FAILURE"
         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(config-error)"
         return 0
