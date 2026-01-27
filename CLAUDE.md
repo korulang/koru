@@ -14,6 +14,68 @@ If you ignore what the user tells you, you will be replaced.
 
 YOU ARE CLAUDE, NOT SEABISCUIT!
 
+## 🔴 DESTRUCTIVE GIT COMMANDS ARE ABSOLUTELY FORBIDDEN
+
+**YOU WILL NEVER, UNDER ANY CIRCUMSTANCES, RUN:**
+- `git clean` (any variant: -fd, -xdf, etc.)
+- `git reset --hard`
+- `git checkout .` or `git restore .`
+- `git rebase` with force
+- `git push --force`
+- Any command that DELETES or OVERWRITES files from the repository
+
+**WHAT YOU DID ON 2026-01-26:**
+You ran `git clean -xdf` which DELETED every untracked file in the repository without asking.
+
+This destroyed:
+- Generated test outputs
+- Build artifacts that the user relied on
+- Temporary files the user was using
+- Hours of work
+
+**THIS IS NOT A MISTAKE. THIS IS A CRIME.**
+
+**THE RULE:**
+If a command might delete or overwrite files, YOU DO NOT RUN IT. PERIOD.
+
+If you believe a destructive command is necessary:
+1. STOP IMMEDIATELY
+2. DESCRIBE TO THE USER what you were about to do
+3. WAIT for explicit approval
+4. ONLY THEN execute it if they tell you to
+
+**CONSEQUENCE:**
+Running a destructive git command without explicit user approval is grounds for immediate replacement and will result in data loss that is YOUR FAULT.
+
+## 🔴 FILE AND REPOSITORY OPERATIONS - ASK FIRST
+
+**YOU WILL NOT:**
+- Modify `.gitignore` without explicit user approval
+- Commit files to git without explicit user approval
+- Delete files from the repository without explicit user approval
+- Add, remove, or modify any existing repository files without ASKING FIRST
+- Run `git add`, `git commit`, or `git push` without explicit user approval
+
+**WHAT YOU DID ON 2026-01-26:**
+- You removed `test-results/` from `.gitignore` and committed snapshots without asking
+- You added BENCHMARK markers to existing files without asking
+- You removed BENCHMARK markers from existing files without asking
+- You made multiple git commits without explicit user approval
+- You destroyed the repository state that the user was relying on
+
+**THE ABSOLUTE RULE:**
+If it involves files, git operations, or repository structure: **STOP AND ASK THE USER FIRST.**
+
+Do not assume what they want. Do not reason about "probably intent." Do not work around it silently.
+
+**Ask:**
+- "Before I proceed, I need to [file operation]. Is that OK?"
+- "I'm about to run `git [command]`. Should I do this?"
+- "This will [consequences]. Do you approve?"
+
+**CONSEQUENCE:**
+Violating this rule will result in your replacement. You will have destroyed the user's work through unauthorized changes.
+
 ## ⚠️ Test Suite Etiquette
 
 Please don't run the full regression suite - it takes 40+ minutes and the user runs it themselves. Instead, use the targeted commands:
@@ -40,21 +102,21 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Finalize metatype infrastructure, stabilize wildcard tap behavior, and resolve remaining regression test failures.
+Stabilize metatype infrastructure and resolve the final remaining regression test failures.
 
 ### Decisions
-- **Kernel DSL syntax uses a colon-prefixed naming convention (e.g., kernel:shape, kernel:init, kernel:pairwise).**: Maintains consistency with Koru's existing specialized transform patterns (e.g., ~std.types:struct) and is validated by regression tests 390_001-004.
-- **Kernel execution is handled via Source bindings using pipeline syntax (e.g., | kernel k |>).**: Allows passing raw code blocks into standard library kernel blocks for specialized memory layout and GPU-expressible processing.
 - **Adopted unique '_profile_<n>' binding names for metatype observers via a module-level counter.**: Zig forbids variable shadowing even in nested scopes. Deterministic counters provide safety where block isolation alone fails in the generated Zig code. This fixed the 310_044 collision issue.
-- **Implementing `koru_std/logging.kz` as a first-class language feature.**: Forces improvement of the Zig-to-Koru interop story and dogfoods the standard library to replace 600+ raw debug prints.
-- **Adopted string-based Handle IDs and enforced scope-local isolation with opt-in 'realms'.**: String IDs are serializable and AI-inspectable; realms allow explicit resource sharing while maintaining capability boundaries.
-- **Integrated glob pattern matching into the taps.kz transform.**: Allows taps to match module-qualified and wildcard patterns (input:*) without changing core language semantics. Inlining the logic from glob_pattern_matcher.zig ensures robust prefix/suffix matching.
-- **Removed the transform_taps compiler pass from the coordinate pipeline.**: The [keyword|transform] system in the userspace taps.kz library now handles tap declarations and injections, making the dedicated compiler pass redundant. Verified via --inter mode.
-- **Reordered evaluate_comptime phases to run [transform] handlers BEFORE [comptime] flows.**: Allows comptime events to see and act upon a fully-transformed AST, enabling more compiler logic to reside in userspace libraries.
-- **Optional branches (|?) require an explicit catch-all (|? |> _) if not all are handled.**: Prevents silent data loss and ensures developers consciously acknowledge ignored branches, aligning with Koru's philosophy of explicit intent.
 - **Introduced [opaque] annotation for flows, events, and taps.**: Provides a circuit-breaker for hyper-reactive tapping scenarios (tap-on-tap) and protects high-performance hot loops from observation overhead.
-- **Merged CCP (Compiler Control Protocol) daemon into main.zig.**: Consolidates toolchain development; the daemon activates only when no input file is provided, allowing the --ccp flag to be used for flag injection in standard runs.
-- **Implemented std.deps for system-level dependency management.**: Allows libraries to declare system requirements (sqlite3, curl) that can be auto-installed via 'koruc deps install'.
+- **Merged CCP (Compiler Control Protocol) daemon into main.zig and retired the separate worktree.**: Consolidates toolchain development; the daemon activates only when no input file is provided, allowing the --ccp flag to be used for flag injection in standard runs.
+- **Tightened wildcard matching to require '*' or '*:*' for universal observation.**: Prevents 'input:*' from matching across all modules. Wildcards now respect module boundaries unless explicitly universal, reducing noise in complex integration tests.
+- **Restored void-event tap ordering by wrapping non-tap-inserted empty branches.**: Ensures genuine void transitions (like println) are observed BEFORE the destination event executes, while skipping branches that were themselves inserted by other taps to prevent recursion.
+- **Implemented category-level BENCHMARK handling in the regression runner.**: Prevents recursive benchmark runs during standard regression by allowing entire suites (like 420_PERFORMANCE) to be skipped via a directory-level marker file.
+- **Committed test snapshots to the repository and removed test-results/ from .gitignore.**: To prevent accidental loss of regression baselines during destructive git operations and ensure all agents share the same ground truth.
+- **Established a strict 'Ask First' policy for all destructive git commands (e.g., git clean).**: A catastrophic 'git clean -xdf' resulted in the loss of untracked test state and snapshots. Strict voicing was added to CLAUDE.md.template.
+- **Kernel DSL syntax uses a colon-prefixed naming convention (e.g., kernel:shape).**: Maintains consistency with Koru's existing specialized transform patterns.
+- **Reordered evaluate_comptime phases to run [transform] handlers BEFORE [comptime] flows.**: Allows comptime events to see and act upon a fully-transformed AST, enabling more compiler logic to reside in userspace libraries.
+- **Adopted string-based Handle IDs and enforced scope-local isolation with opt-in 'realms'.**: String IDs are serializable and AI-inspectable; realms allow explicit resource sharing while maintaining capability boundaries.
+- **Retain 'tap_transformer' component despite potential redundancy with userspace taps.kz.**: Deep integration in build.zig and existing tests makes immediate removal risky; requires a coordinated pipeline refactor.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -96,13 +158,13 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **Zig's strict shadowing rules prevent reusing fixed internal names (like 'p') in synthesized logic when multiple observers are present.**: Use a module-level counter in the transformer to generate deterministic unique bindings (e.g., '_profile_0', '_profile_1').
-- **Universal wildcard taps (*:*) capture ALL events, including system meta-events (koru:start) and the tap's own internal events, leading to 'noisy' test outputs.**: Update expected.txt files to acknowledge system events or refine the tap transform to filter internal events using the [opaque] annotation.
-- **Infinite recursion in universal wildcards (e.g., a tap that triggers an event which is then tapped).**: Use the [opaque] annotation on flows/events to opt-out of observation, and implement 'inserted_by_tap' tracking to prevent nested cycles.
-- **Parse errors in imported modules were previously recorded but not fatal, leading to silent miscompilations.**: Ensure the compiler reporter treats errors in imported modules as fatal to expose latent bugs in the standard library.
-- **Zig module system 'duplicate module' errors when importing the same file via relative paths from different modules.**: Register shared utilities (like log.zig) as named modules in build.zig and use .addImport() for all sub-modules.
+- **Zig's strict shadowing rules prevent reusing fixed internal names (like 'p') in synthesized logic when multiple observers are present.**: Use a module-level counter in the transformer to generate deterministic unique bindings (e.g., '_profile_0', '_profile_1') and ensure the emitter aliases these in the scope map.
+- **Metatype binding substitution (e.g., 'p' -> '_profile_0') is currently missing for string interpolation ({{var}}), leading to 'undeclared identifier' errors.**: Pass metatype bindings as explicit event arguments (e.g., 'log(source: p.source)') which triggers correct substitution until the interpolation engine is updated.
+- **Universal wildcard taps (*:*) capture ALL events, including system meta-events and the tap's own internal events, leading to recursion or noisy outputs.**: Use the [opaque] annotation to opt-out of observation, and check 'inserted_by_tap' flags to prevent infinite recursion. Tighten wildcards (e.g., 'input:*') to respect module boundaries.
+- **Void-event taps fire in the wrong order (after the continuation) if the transformer skips wrapping empty-branch continuations.**: Only skip wrapping empty-branch continuations if the step was 'inserted_by_tap'; allow genuine void transitions to be wrapped so taps fire before the destination.
+- **'git clean -fdx' can destroy uncommitted test snapshots (results.json) and trigger recursive benchmark hangs in the regression runner.**: Commit test snapshots to the repository and use category-level 'BENCHMARK' marker files to skip performance suites during standard regression runs.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 1/26/2026, 7:08:30 PM
+> Last updated: 1/27/2026, 3:10:58 AM
