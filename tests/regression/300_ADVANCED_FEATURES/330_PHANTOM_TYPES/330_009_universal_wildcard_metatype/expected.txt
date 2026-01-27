@@ -2,4 +2,5 @@
 compute(42)
 [TAP] Profile: input:compute.result
 format(84)
+[TAP] Profile: input:format.formatted
 [TAP] Profile: koru:end.done

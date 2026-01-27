@@ -2467,7 +2467,6 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
         try writer.writeAll("const emitter_helpers = @import(\"emitter_helpers\");\n");
         try writer.writeAll("const visitor_emitter_lib = @import(\"visitor_emitter\");\n");
         try writer.writeAll("const tap_registry_module = @import(\"tap_registry\");\n");
-        try writer.writeAll("const tap_transformer = @import(\"tap_transformer\");\n");
         try writer.writeAll("const compiler_config = @import(\"compiler_config\");\n");
         try writer.writeAll("const type_registry_module = @import(\"type_registry\");\n\n");
 
@@ -2500,16 +2499,8 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
             \\        };
             \\        defer tap_registry.deinit();
             \\
-            \\        // Transform AST - insert taps before emission
-            \\        // Taps are inserted into AST as regular flow code (zero-cost abstraction!)
-            \\        const ast_to_emit = tap_transformer.transformAst(
-            \\            __koru_event_input.ast,
-            \\            &tap_registry,
-            \\            .runtime_only,
-            \\            allocator
-            \\        ) catch {
-            \\            return .{ .emitted = .{ .code = "" } };
-            \\        };
+            \\        // Taps are already inserted by the transform pipeline
+            \\        const ast_to_emit = __koru_event_input.ast;
             \\
             \\        // Build TypeRegistry from canonicalized AST - needed for event metadata lookup
             \\        // The AST received from the frontend has already been canonicalized

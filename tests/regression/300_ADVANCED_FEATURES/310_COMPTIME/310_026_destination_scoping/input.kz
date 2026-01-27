@@ -8,26 +8,26 @@ const std = @import("std");
 ~event file.read {}
 | done {}
 
-~event file.write {}
-| done {}
-
-~event network.fetch {}
-| done {}
-
-~event logger { caller: []const u8 }
-
 ~proc file.read {
     return .{ .done = .{} };
 }
+
+~event file.write {}
+| done {}
 
 ~proc file.write {
     std.debug.print("Writing\n", .{});
     return .{ .done = .{} };
 }
 
+~event network.fetch {}
+| done {}
+
 ~proc network.fetch {
     return .{ .done = .{} };
 }
+
+~event logger { caller: []const u8 }
 
 ~proc logger {
     std.debug.print("write called from: {s}\n", .{caller});
@@ -35,8 +35,7 @@ const std = @import("std");
 
 // Observe ALL sources calling file.write
 ~tap(* -> file.write)
-| Transition t |> logger(caller: t.source)
-    | done |> _
+| Profile p |> logger(caller: p.source)
 
 ~file.read()
 | done |> file.write()

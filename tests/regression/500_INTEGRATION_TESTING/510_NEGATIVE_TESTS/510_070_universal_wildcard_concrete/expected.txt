@@ -1,11 +1,21 @@
+[TAP] koru:start
 [TAP] std.taps:tap
 [TAP] koru:start
-[TAP] koru:start
+[TAP] app.test_lib.logger:log
 Hello
+[TAP] input:hello
 [TAP] std.taps:tap
 [TAP] input:hello
-[TAP] input:hello
+[TAP] app.test_lib.logger:log
 Goodbye
 [TAP] std.taps:tap
+[TAP] input:goodbye
+[TAP] app.test_lib.logger:log
+[TAP] input:goodbye
+[TAP] std.taps:tap
+[TAP] input:goodbye
+[TAP] app.test_lib.logger:log
 [TAP] koru:end
+[TAP] std.taps:tap
 [TAP] koru:end
+[TAP] app.test_lib.logger:log

@@ -1,4 +1,8 @@
 Hello
 [TAP] input:hello
 [TAP] input:hello
+[TAP] input:hello
 Goodbye
+[TAP] input:goodbye
+[TAP] input:goodbye
+[TAP] input:goodbye

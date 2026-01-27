@@ -1,4 +1,4 @@
+write called from: input:file.read
 Writing
-write called from: file.read
+write called from: input:network.fetch
 Writing
-write called from: network.fetch
