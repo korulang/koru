@@ -206,7 +206,7 @@ var metatype_binding_counter: usize = 0;
         // Pattern can be: "event", "module:event", or "module:path.to.event"
         // fallback_module: Used when path.module_qualifier is null (e.g., for flows declared in a module)
         fn pathMatches(pattern: []const u8, is_wildcard: bool, path: *const ast.DottedPath, fallback_module: ?[]const u8, alloc: std.mem.Allocator) bool {
-            if (is_wildcard) return true;
+            if (is_wildcard and (std.mem.eql(u8, pattern, "*") or std.mem.eql(u8, pattern, "*:*"))) return true;
 
             // Check if pattern has module qualifier (contains :)
             const pattern_colon = std.mem.indexOfScalar(u8, pattern, ':');
@@ -355,6 +355,10 @@ var metatype_binding_counter: usize = 0;
                     lj.args = rewritten_args;
                     return ast.Step{ .label_jump = lj };
                 },
+                .inline_code => {
+                    const rewritten = try rewriteBindingInValue(alloc, step.inline_code, old_binding, new_binding);
+                    return ast.Step{ .inline_code = rewritten };
+                },
                 else => return step,
             }
         }
@@ -472,7 +476,7 @@ var metatype_binding_counter: usize = 0;
                 const synth_binding = std.fmt.bufPrint(&buf, "_profile_{d}", .{binding_id}) catch "_profile_0";
                 metatype_unique_binding = alloc.dupe(u8, synth_binding) catch null;
                 if (metatype_unique_binding) |ub| {
-                    rewritten_step = try rewriteStepBinding(alloc, tap_stp, tb, ub);
+                    rewritten_step = try rewriteStepBindingDeep(alloc, tap_stp, tb, ub);
                     tap_conts_to_use = try rewriteBindingInContinuations(alloc, tap_conts, tb, ub);
                     if (tap_condition) |cond| {
                         rewritten_condition = try rewriteBindingInValue(alloc, cond, tb, ub);
@@ -497,7 +501,7 @@ var metatype_binding_counter: usize = 0;
                         var buf: [32]u8 = undefined;
                         const synth_binding = std.fmt.bufPrint(&buf, "_tap_{d}", .{hash % 100000}) catch "_tap_0";
                         effective_binding = alloc.dupe(u8, synth_binding) catch ob;
-                        rewritten_step = try rewriteStepBinding(alloc, tap_stp, tb, effective_binding.?);
+                        rewritten_step = try rewriteStepBindingDeep(alloc, tap_stp, tb, effective_binding.?);
                         tap_conts_to_use = try rewriteBindingInContinuations(alloc, tap_conts, tb, effective_binding.?);
                         // Also rewrite the condition string
                         if (tap_condition) |cond| {
@@ -505,7 +509,7 @@ var metatype_binding_counter: usize = 0;
                         }
                         std.debug.print("[tap] Synthesized binding '_' → '{s}', rewrote '{s}' → '{s}'\n", .{effective_binding.?, tb, effective_binding.?});
                     } else {
-                        rewritten_step = try rewriteStepBinding(alloc, tap_stp, tb, ob);
+                        rewritten_step = try rewriteStepBindingDeep(alloc, tap_stp, tb, ob);
                         tap_conts_to_use = try rewriteBindingInContinuations(alloc, tap_conts, tb, ob);
                         // Also rewrite the condition string
                         if (tap_condition) |cond| {
@@ -530,7 +534,7 @@ var metatype_binding_counter: usize = 0;
                     const synth_binding = std.fmt.bufPrint(&buf, "_tap_{d}", .{hash % 100000}) catch "_tap_0";
                     effective_binding = alloc.dupe(u8, synth_binding) catch null;
                     if (effective_binding) |eb| {
-                        rewritten_step = try rewriteStepBinding(alloc, tap_stp, tb, eb);
+                        rewritten_step = try rewriteStepBindingDeep(alloc, tap_stp, tb, eb);
                         tap_conts_to_use = try rewriteBindingInContinuations(alloc, tap_conts, tb, eb);
                         // Also rewrite the condition string
                         if (tap_condition) |cond| {

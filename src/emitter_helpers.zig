@@ -2027,17 +2027,12 @@ fn emitSubflowContinuationsWithDepth(
                             .metatype_binding => |mb| {
                                 // Emit metatype construction (Profile/Transition/Audit)
                                 // Transition uses enum literals (fast), Profile uses strings (heavier with timing)
-                                // Wrap in scope block with fixed synthesized name so multiple bindings don't collide
+                                // Scope block uses the AST-provided binding (already made unique by tap transform).
                                 try emitter.write(indent);
                                 try emitter.write("        {\n");
                                 try emitter.write(indent);
-                                try emitter.write("            const __koru_metatype_");
-                                // Use synthesized name: __koru_metatype_profile, __koru_metatype_transition, __koru_metatype_audit
-                                var metatype_lower: [16]u8 = undefined;
-                                for (mb.metatype, 0..) |c, i| {
-                                    metatype_lower[i] = std.ascii.toLower(c);
-                                }
-                                try emitter.write(metatype_lower[0..mb.metatype.len]);
+                                try emitter.write("            const ");
+                                try emitter.write(mb.binding);
                                 try emitter.write(" = taps.");
                                 try emitter.write(mb.metatype);
                                 try emitter.write("{\n");
