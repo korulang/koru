@@ -48,8 +48,8 @@ const std = @import("std");
 | validated |> _
 
 ~[comptime] bundleAssets(dir: "assets/textures")
-| bundled |> _
+| bundled _ |> _
 
 ~[comptime] preprocessMipmaps(inputDir: "assets/images")
-| ok |> _
-| err |> _
+| ok _ |> _
+| err _ |> _

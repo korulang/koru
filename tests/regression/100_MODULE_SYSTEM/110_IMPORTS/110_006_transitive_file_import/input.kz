@@ -15,7 +15,7 @@ const std = @import("std");
 
 // Use helper's quadruple event (which uses base's double event internally)
 ~app.helper:quadruple(x: 5)
-| done |> _
+| done _ |> _
 
 // Expected: 5 * 4 = 20
 // (quadruple calls double twice: 5 -> 10 -> 20)

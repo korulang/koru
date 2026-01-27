@@ -61,7 +61,7 @@ const std = @import("std");
 
 // Use the implemented events
 ~coordinate(ctx: 10)
-| finished |> _
+| finished _ |> _
 
 ~process(data: 5)
-| done |> _
+| done _ |> _

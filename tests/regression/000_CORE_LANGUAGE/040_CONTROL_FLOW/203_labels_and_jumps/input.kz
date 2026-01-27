@@ -25,4 +25,4 @@ const std = @import("std");
 // Flow using labels and jumps to loop
 ~#loop count(current: 1, target: 5)
 | next n |> @loop(current: n.value, target: n.target)
-| done |> _
+| done _ |> _

@@ -23,7 +23,7 @@ const SOURCE = "~greet(id: 7)";
 
 ~std.runtime:parse.source(source: SOURCE, file_name: "dotted.kz", allocator: std.heap.page_allocator)
 | parsed p |> std.runtime:eval(ast: p.ast, scope: "api.v1")
-    | result |> std.io:print.ln("OK")
+    | result _ |> std.io:print.ln("OK")
     | event_denied e |> std.io:print.ln("DENIED: {{e.name}}")
     | exhausted _ |> std.io:print.ln("EXHAUSTED")
     | validation_error _ |> std.io:print.ln("VALIDATION ERROR")

@@ -45,7 +45,7 @@
 | found u |> validate.amount(amount: amount, balance: u.balance)
     | valid |> payment.charge(user_id: u.id, amount: amount)
         | success tx |> success { transaction_id: tx.transaction_id }
-        | failed |> insufficient_funds
+        | failed _ |> insufficient_funds
     | insufficient |> insufficient_funds
 | not_found |> user_not_found
 

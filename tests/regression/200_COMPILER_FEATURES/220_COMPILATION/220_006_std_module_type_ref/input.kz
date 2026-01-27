@@ -40,4 +40,4 @@ const SAMPLE =
 ~std.parser:parse.source(source: SAMPLE, file_name: "test.kz", allocator: std.heap.page_allocator)
 | parsed p |> process_ast(result: p.ast)
     | processed r |> report(count: r.item_count)
-| parse_error |> report(count: 0)
+| parse_error _ |> report(count: 0)

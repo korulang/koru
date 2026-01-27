@@ -17,4 +17,4 @@ const std = @import("std");
 
 // Subflow that calls pure event - result unused
 ~double(x: 21)
-| done |> _
+| done _ |> _

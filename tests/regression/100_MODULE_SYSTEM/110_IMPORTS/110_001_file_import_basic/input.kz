@@ -11,4 +11,4 @@ const std = @import("std");
 
 // Use event from helper module (now fully qualified with src namespace)
 ~app.helper:greet(name: "World")
-| greeted |> _
+| greeted _ |> _

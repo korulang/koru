@@ -13,4 +13,4 @@ const std = @import("std");
 }
 
 ~greet(name: "NoImport")
-| greeting |> _
+| greeting _ |> _

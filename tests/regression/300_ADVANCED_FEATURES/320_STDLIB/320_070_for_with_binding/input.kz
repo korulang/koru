@@ -50,4 +50,4 @@ var sum: i32 = 0;
         | done |> _
     | done |> show_sum()
         | done |> _
-| failed |> _
+| failed _ |> _

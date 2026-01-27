@@ -27,7 +27,7 @@ const std = @import("std");
 // Flow that ONLY handles required branch - optional branches are ignored!
 // This should compile and run - warning/debug branches are silently ignored
 ~process(value: 10)
-| success |> _
+| success _ |> _
 // NO |? catch-all needed!
 // NO | warning w |> needed!
 // NO | debug d |> needed!

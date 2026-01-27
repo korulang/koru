@@ -17,4 +17,4 @@ const std = @import("std");
 // - NOT \t (tab escape sequence)
 // Previously failed with "Zig code not allowed in flows"
 ~process_path(path: "path\\to\\file")
-| done |> _
+| done _ |> _

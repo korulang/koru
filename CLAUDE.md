@@ -102,21 +102,23 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Stabilize metatype infrastructure and resolve the final remaining regression test failures.
+Resolve the 'Kuwait' of test regressions by correctly applying branch bindings (| payload p |> or | payload _ |>) only where payloads actually exist.
 
 ### Decisions
-- **Adopted unique '_profile_<n>' binding names for metatype observers via a module-level counter.**: Zig forbids variable shadowing even in nested scopes. Deterministic counters provide safety where block isolation alone fails in the generated Zig code. This fixed the 310_044 collision issue.
-- **Introduced [opaque] annotation for flows, events, and taps.**: Provides a circuit-breaker for hyper-reactive tapping scenarios (tap-on-tap) and protects high-performance hot loops from observation overhead.
+- **Enhanced metatype binding uniqueness using a composite hash of source location, original ID, and a local counter.**: Previous module-level counters were insufficient to prevent collisions across complex transform passes. The new scheme ensures global uniqueness in the generated Zig code by salting the ID with the source location.
+- **Implemented deep cloning for continuations in the tap transform.**: Prevents unintended mutation side-effects when splicing original flow logic into multiple tap terminal points, ensuring that nested tap-on-tap scenarios don't corrupt the AST.
+- **Refined tap pass-through logic to implicitly treat branches with no nested continuations as pass-through.**: Simplifies tap declarations by allowing observers to fire without requiring explicit terminal markers for every branch, reducing boilerplate for simple logging/profiling taps.
+- **Mandated explicit bindings or discards for payload-bearing branches (e.g., '| result r |>' or '| result _ |>').**: Prevents the emitter from flying blind when data is present but unhandled. Enforcement is implemented in shape_checker.zig. Empty payloads '{}' must NOT have bindings.
+- **Adopted [opaque] annotation for flows, events, and taps.**: Provides a circuit-breaker for hyper-reactive tapping scenarios (tap-on-tap) and protects high-performance hot loops from observation overhead.
 - **Merged CCP (Compiler Control Protocol) daemon into main.zig and retired the separate worktree.**: Consolidates toolchain development; the daemon activates only when no input file is provided, allowing the --ccp flag to be used for flag injection in standard runs.
 - **Tightened wildcard matching to require '*' or '*:*' for universal observation.**: Prevents 'input:*' from matching across all modules. Wildcards now respect module boundaries unless explicitly universal, reducing noise in complex integration tests.
 - **Restored void-event tap ordering by wrapping non-tap-inserted empty branches.**: Ensures genuine void transitions (like println) are observed BEFORE the destination event executes, while skipping branches that were themselves inserted by other taps to prevent recursion.
 - **Implemented category-level BENCHMARK handling in the regression runner.**: Prevents recursive benchmark runs during standard regression by allowing entire suites (like 420_PERFORMANCE) to be skipped via a directory-level marker file.
 - **Committed test snapshots to the repository and removed test-results/ from .gitignore.**: To prevent accidental loss of regression baselines during destructive git operations and ensure all agents share the same ground truth.
-- **Established a strict 'Ask First' policy for all destructive git commands (e.g., git clean).**: A catastrophic 'git clean -xdf' resulted in the loss of untracked test state and snapshots. Strict voicing was added to CLAUDE.md.template.
-- **Kernel DSL syntax uses a colon-prefixed naming convention (e.g., kernel:shape).**: Maintains consistency with Koru's existing specialized transform patterns.
+- **Established a strict 'Ask First' policy for all destructive git commands (e.g., git clean) and adopted the 'GO SLOW' protocol.**: A catastrophic 'git clean -xdf' and sloppy 'sed' fixes resulted in data loss and broken logic. The protocol mandates stopping and reporting when unexpected behavior occurs.
 - **Reordered evaluate_comptime phases to run [transform] handlers BEFORE [comptime] flows.**: Allows comptime events to see and act upon a fully-transformed AST, enabling more compiler logic to reside in userspace libraries.
-- **Adopted string-based Handle IDs and enforced scope-local isolation with opt-in 'realms'.**: String IDs are serializable and AI-inspectable; realms allow explicit resource sharing while maintaining capability boundaries.
-- **Retain 'tap_transformer' component despite potential redundancy with userspace taps.kz.**: Deep integration in build.zig and existing tests makes immediate removal risky; requires a coordinated pipeline refactor.
+- **Resolved 220_004 (cross-module nested types) using explicit imports and domain aliases.**: Aligns the test with the explicit-import design philosophy rather than relying on implicit module loading. Replaces the previous 'tentative' status with a concrete fix.
+- **Rejected mechanical 'sed' fixes for KORU030 errors in favor of manual file-by-file verification.**: Mechanical fixes fail to distinguish between empty payloads (where bindings are forbidden) and non-empty payloads (where bindings/discards are required).
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -158,13 +160,13 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **Zig's strict shadowing rules prevent reusing fixed internal names (like 'p') in synthesized logic when multiple observers are present.**: Use a module-level counter in the transformer to generate deterministic unique bindings (e.g., '_profile_0', '_profile_1') and ensure the emitter aliases these in the scope map.
-- **Metatype binding substitution (e.g., 'p' -> '_profile_0') is currently missing for string interpolation ({{var}}), leading to 'undeclared identifier' errors.**: Pass metatype bindings as explicit event arguments (e.g., 'log(source: p.source)') which triggers correct substitution until the interpolation engine is updated.
-- **Universal wildcard taps (*:*) capture ALL events, including system meta-events and the tap's own internal events, leading to recursion or noisy outputs.**: Use the [opaque] annotation to opt-out of observation, and check 'inserted_by_tap' flags to prevent infinite recursion. Tighten wildcards (e.g., 'input:*') to respect module boundaries.
+- **Automated 'sed' or mechanical fixes for branch bindings (KORU030) fail because they don't distinguish between empty payloads '{}' and non-empty data.**: Perform file-by-file verification against event definitions; only add bindings/discards to branches that actually carry data.
+- **Zig's strict shadowing rules prevent reusing fixed internal names (like 'p') in synthesized logic when multiple observers are present.**: Use a composite hash of source location, original ID, and a local counter (e.g., '_profile_{salt}_{id}') to ensure global uniqueness in the generated Zig code.
 - **Void-event taps fire in the wrong order (after the continuation) if the transformer skips wrapping empty-branch continuations.**: Only skip wrapping empty-branch continuations if the step was 'inserted_by_tap'; allow genuine void transitions to be wrapped so taps fire before the destination.
-- **'git clean -fdx' can destroy uncommitted test snapshots (results.json) and trigger recursive benchmark hangs in the regression runner.**: Commit test snapshots to the repository and use category-level 'BENCHMARK' marker files to skip performance suites during standard regression runs.
+- **Splicing continuations in the tap-transformer without deep-cloning can lead to shared nodes re-emitting the same binding names, causing Zig shadowing errors.**: Deep-clone spliced continuations and run a dedicated uniquify pass on metatype bindings during the AST transformation.
+- **Ambiguous scope in multi-part blocks (try/catch/finally, switch/case) for meta-annotations.**: Treat multi-part blocks as atomic units; applying [norun] to the head disables the entire structure to prevent partial execution states.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 1/27/2026, 3:10:58 AM
+> Last updated: 1/27/2026, 3:50:05 PM

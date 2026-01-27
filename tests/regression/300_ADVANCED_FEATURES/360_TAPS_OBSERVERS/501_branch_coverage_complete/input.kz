@@ -21,10 +21,10 @@
 
 // Test: Valid division - should take ok branch
 ~divide(a: 10, b: 2)
-| ok |> std.io:println(text: "Success: divided")
-| err |> std.io:println(text: "Error")
+| ok _ |> std.io:println(text: "Success: divided")
+| err _ |> std.io:println(text: "Error")
 
 // Test: Division by zero - should take err branch
 ~divide(a: 10, b: 0)
-| ok |> std.io:println(text: "Success")
-| err |> std.io:println(text: "Error: division by zero")
+| ok _ |> std.io:println(text: "Success")
+| err _ |> std.io:println(text: "Error: division by zero")

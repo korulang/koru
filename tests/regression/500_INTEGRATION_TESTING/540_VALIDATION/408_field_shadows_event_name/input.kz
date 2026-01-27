@@ -16,4 +16,4 @@ const std = @import("std");
 
 // Invoke the event
 ~window(window: 42)
-| success |>
+| success _ |>

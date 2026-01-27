@@ -45,7 +45,7 @@ const std = @import("std");
 
 // Main flow - matches nbody structure
 ~setup()
-| ready |> get_result()
+| ready _ |> get_result()
     | value v1 |> print_value(v: v1)
         |> for(0..3)
             | each |> step_one()

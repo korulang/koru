@@ -83,4 +83,4 @@ const std = @import("std");
             | logged l |> cleanup(conn: l.conn)
                 | cleaned |> @accept_loop(server: c.server)
     | failed f |> @accept_loop(server: f.server)
-| failed |> _
+| failed _ |> _

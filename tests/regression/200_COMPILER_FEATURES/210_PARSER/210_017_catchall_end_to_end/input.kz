@@ -12,5 +12,5 @@
 
 // Test: Handle only required branch, catch-all for optional branches
 ~process(value: 42)
-| success |> _
+| success _ |> _
 |? |> _

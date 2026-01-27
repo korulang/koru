@@ -47,4 +47,4 @@
 | done_outer done_o |> done { result: done_o.i }
 
 ~nested_loop(start: 0)
-| done |> _
+| done _ |> _

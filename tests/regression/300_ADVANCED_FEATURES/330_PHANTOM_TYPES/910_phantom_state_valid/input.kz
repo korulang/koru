@@ -30,4 +30,4 @@ const std = @import("std");
 // This flow should SUCCEED: [open] → close_file accepts [open] → returns [closed]
 ~open_file()
 | opened o |> close_file(file: o.file)
-    | closed |> _
+    | closed _ |> _
