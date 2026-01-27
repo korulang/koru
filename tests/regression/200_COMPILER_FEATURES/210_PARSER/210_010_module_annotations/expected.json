@@ -33,7 +33,9 @@
                         "type": "u32",
                         "is_source": false,
                         "is_file": false,
-                        "is_embed_file": false
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
                     }
                 ]
             },
@@ -47,7 +49,9 @@
                                 "type": "u32",
                                 "is_source": false,
                                 "is_file": false,
-                                "is_embed_file": false
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false
                             }
                         ]
                     }

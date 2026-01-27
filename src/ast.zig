@@ -374,6 +374,27 @@ pub const Source = struct {
     }
 };
 
+/// InvocationMeta provides metadata about an invocation for comptime introspection
+/// This allows comptime procs to inspect their call site (annotations, location, etc.)
+/// Used for conditional compilation, build configurations, and meta-programming
+pub const InvocationMeta = struct {
+    path: []const u8,                    // Full path like "std.build:variants"
+    module: ?[]const u8,                 // Module qualifier "std.build" or null
+    event_name: []const u8,              // Just the event name "variants"
+    annotations: []const []const u8,     // Flow annotations like ["release"], ["debug"]
+    location: errors.SourceLocation,     // Where it was invoked
+
+    pub fn deinit(self: *InvocationMeta, allocator: std.mem.Allocator) void {
+        allocator.free(self.path);
+        if (self.module) |m| allocator.free(m);
+        allocator.free(self.event_name);
+        for (self.annotations) |ann| {
+            allocator.free(ann);
+        }
+        allocator.free(@constCast(self.annotations));
+    }
+};
+
 /// CapturedExpression represents a captured Zig expression with its scope
 /// Used for Expression parameters that need access to bindings at the call site
 pub const CapturedExpression = struct {
@@ -639,6 +660,7 @@ pub const Field = struct {
     is_file: bool = false, // For File type - compile-time file read (not embedded)
     is_embed_file: bool = false, // For EmbedFile type - embeds file contents in binary
     is_expression: bool = false, // For Expression type - captures Zig expressions verbatim
+    is_invocation_meta: bool = false, // For InvocationMeta type - provides call site metadata
     expression: ?*Expression = null, // For branch constructors in procs - parsed expression value
     expression_str: ?[]const u8 = null, // Raw expression string (before parsing)
     owns_expression: bool = false, // Whether this field owns and should free the expression

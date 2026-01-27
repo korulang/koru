@@ -1,0 +1,46 @@
+// Test: CompilerEnv.hasFlag() with InvocationMeta for build configuration
+// When --build=release is passed, only [release] annotated configs should activate
+
+~import "$std/io"
+
+const std = @import("std");
+const Root = @import("root");
+
+// A comptime event that checks build configuration (no Source, just meta)
+~[comptime]pub event check_build { meta: InvocationMeta }
+| activated { name: []const u8 }
+| skipped { reason: []const u8 }
+
+~proc check_build {
+    // If no annotations, skip
+    if (meta.annotations.len == 0) {
+        return .{ .skipped = .{ .reason = "no annotation" } };
+    }
+
+    // Check known build configs with comptime strings
+    for (meta.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "release")) {
+            if (Root.CompilerEnv.hasFlag("build=release")) {
+                return .{ .activated = .{ .name = "release" } };
+            }
+        }
+        if (std.mem.eql(u8, ann, "debug")) {
+            if (Root.CompilerEnv.hasFlag("build=debug")) {
+                return .{ .activated = .{ .name = "debug" } };
+            }
+        }
+    }
+
+    // No matching build flag - skip this config
+    return .{ .skipped = .{ .reason = "no matching flag" } };
+}
+
+// Test with [release] annotation - should activate when --build=release
+~[release]check_build()
+| activated _ |> std.io:println(text: "release: ACTIVATED")
+| skipped _ |> std.io:println(text: "release: skipped")
+
+// Test with [debug] annotation - should activate when --build=debug
+~[debug]check_build()
+| activated _ |> std.io:println(text: "debug: ACTIVATED")
+| skipped _ |> std.io:println(text: "debug: skipped")

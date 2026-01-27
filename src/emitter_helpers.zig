@@ -5,11 +5,53 @@ const DEBUG = false;  // Set to true for verbose logging
 
 const std = @import("std");
 const ast = @import("ast");
+const errors = @import("errors");
 const tap_registry_module = @import("tap_registry");
 const type_registry_module = @import("type_registry");
 const purity_helpers = @import("compiler_passes/purity_helpers");
 const compiler_config = @import("compiler_config");
 const codegen_utils = @import("codegen_utils");
+
+// ============================================================================
+// VARIANT REGISTRY - Core language feature for proc variant selection
+// ============================================================================
+// This registry maps canonical event names to their selected variant.
+// It's populated by userland code (e.g., build:variants) and read by the emitter.
+// The emitter checks this when generating handler calls for invocations
+// that don't have an explicit |variant suffix.
+
+pub const VariantMapping = struct {
+    event_name: []const u8,
+    variant_name: []const u8,
+};
+
+/// Global variant registry - populated at comptime, read by emitter
+pub var variant_mappings: [64]VariantMapping = undefined;
+pub var variant_count: usize = 0;
+
+/// Register a variant mapping (called by build:variants or other mechanisms)
+pub fn registerVariant(event_name: []const u8, variant_name: []const u8) bool {
+    if (variant_count >= variant_mappings.len) {
+        return false; // Registry full
+    }
+    variant_mappings[variant_count] = .{
+        .event_name = event_name,
+        .variant_name = variant_name,
+    };
+    variant_count += 1;
+    return true;
+}
+
+/// Look up the default variant for an event by canonical name
+/// Returns null if no variant is registered (use default handler)
+pub fn getVariant(event_name: []const u8) ?[]const u8 {
+    for (variant_mappings[0..variant_count]) |mapping| {
+        if (std.mem.eql(u8, mapping.event_name, event_name)) {
+            return mapping.variant_name;
+        }
+    }
+    return null;
+}
 
 /// Controls which modules/taps to emit based on annotations
 /// Duplicated from visitor_emitter.zig to avoid circular dependency
@@ -86,6 +128,9 @@ pub const EmissionContext = struct {
     capture_counter: usize = 0, // Counter for unique capture type names (nested captures)
     for_counter: usize = 0, // Counter for unique for loop binding names (nested loops)
     result_prefix: []const u8 = "result_", // Prefix for result variable names (changes to "loop_result_" inside loops)
+    // InvocationMeta support - set when emitting a flow
+    current_flow_annotations: ?[]const []const u8 = null, // Flow annotations like ["release", "debug"]
+    current_flow_location: ?errors.SourceLocation = null, // Location of the flow invocation
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -2812,6 +2857,17 @@ pub fn emitFlow(
     ctx: *EmissionContext,
     flow: *const ast.Flow,
 ) !void {
+    // Set flow metadata for InvocationMeta injection
+    // Save previous values to restore after (for nested flows)
+    const prev_flow_annotations = ctx.current_flow_annotations;
+    const prev_flow_location = ctx.current_flow_location;
+    ctx.current_flow_annotations = if (flow.annotations.len > 0) flow.annotations else null;
+    ctx.current_flow_location = flow.location;
+    defer {
+        ctx.current_flow_annotations = prev_flow_annotations;
+        ctx.current_flow_location = prev_flow_location;
+    }
+
     // Preamble code: emitted BEFORE continuations, SKIPS the invocation
     // Used by ~const to emit declaration while preserving AST structure for analysis
     // After the preamble, we emit continuation bodies directly (no handler call)
@@ -3455,11 +3511,44 @@ fn emitInvocation(
     }
     try emitInvocationTarget(emitter, ctx, &invocation.path);
     try emitter.write(".");
-    try writeHandlerName(emitter, ctx.allocator, invocation.variant);
+
+    // Determine which variant to use:
+    // 1. If explicit variant on invocation, use that
+    // 2. Else check the variant registry for a default
+    // 3. Else use the default handler
+    var effective_variant: ?[]const u8 = invocation.variant;
+
+    if (effective_variant == null) {
+        // Build canonical name from path: "module:event.path"
+        // e.g., "std.io:print.ln" or "input:compute"
+        var canonical_buf: [256]u8 = undefined;
+        var canonical_len: usize = 0;
+
+        if (invocation.path.module_qualifier) |mq| {
+            @memcpy(canonical_buf[canonical_len .. canonical_len + mq.len], mq);
+            canonical_len += mq.len;
+            canonical_buf[canonical_len] = ':';
+            canonical_len += 1;
+        }
+
+        for (invocation.path.segments, 0..) |segment, i| {
+            if (i > 0) {
+                canonical_buf[canonical_len] = '.';
+                canonical_len += 1;
+            }
+            @memcpy(canonical_buf[canonical_len .. canonical_len + segment.len], segment);
+            canonical_len += segment.len;
+        }
+
+        // Check variant registry (populated by build:variants at comptime)
+        effective_variant = getVariant(canonical_buf[0..canonical_len]);
+    }
+
+    try writeHandlerName(emitter, ctx.allocator, effective_variant);
     try emitter.write("(.{ ");
     try emitArgs(emitter, ctx, invocation.args, &invocation.path);
     try emitter.write(" });");
-    try writeVariantComment(emitter, invocation.variant);
+    try writeVariantComment(emitter, effective_variant);
     try emitter.write("\n");
 }
 
@@ -3591,9 +3680,10 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
         try emitter.write(param_name);
         try emitter.write(" = ");
 
-        // Check if this argument should be emitted as a source or expression string literal
+        // Check if this argument should be emitted as a source, expression, or invocation_meta
         var is_source_arg = false;
         var is_expression_arg = false;
+        var is_invocation_meta_arg = false;
         if (event_decl) |event| {
             for (event.input.fields) |field| {
                 if (std.mem.eql(u8, field.name, param_name)) {
@@ -3603,6 +3693,10 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
                     }
                     if (field.is_expression) {
                         is_expression_arg = true;
+                        break;
+                    }
+                    if (field.is_invocation_meta) {
+                        is_invocation_meta_arg = true;
                         break;
                     }
                 }
@@ -3709,9 +3803,120 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
                 return error.ComptimeEventNotTransformed;
             }
 
-            // In comptime_only mode: emit the source argument normally
-            // This will be a Source struct with .text, .scope.bindings, etc.
-            try emitValue(emitter, ctx, arg.value);
+            // In comptime_only mode: emit the Source value
+            // The AST already has the properly serialized Source in arg.source_value
+            // We emit a reference to it (the AST is available as PROGRAM_AST)
+            // For now, construct inline - the text is in arg.value
+            try emitter.write("__koru_ast.Source{ .text = \n");
+            emitter.indent();
+            try emitter.writeIndent();
+            // Use Zig multiline string syntax - split on newlines manually
+            var line_start: usize = 0;
+            for (arg.value, 0..) |c, i| {
+                if (c == '\n') {
+                    try emitter.write("\\\\");
+                    try emitter.write(arg.value[line_start..i]);
+                    try emitter.write("\n");
+                    try emitter.writeIndent();
+                    line_start = i + 1;
+                }
+            }
+            // Handle last line (no trailing newline)
+            if (line_start < arg.value.len) {
+                try emitter.write("\\\\");
+                try emitter.write(arg.value[line_start..]);
+                try emitter.write("\n");
+                try emitter.writeIndent();
+            }
+            emitter.dedent();
+            try emitter.write(", .scope = .{ .bindings = &.{} }, .phantom_type = null }");
+        } else if (is_invocation_meta_arg) {
+            // InvocationMeta: synthesize from context (NOT from arg.value)
+            // This provides call site metadata for comptime introspection
+            const is_comptime_emission = if (ctx.emit_mode) |mode| mode == .comptime_only else false;
+
+            if (!is_comptime_emission) {
+                // InvocationMeta is comptime-only
+                return error.ComptimeEventNotTransformed;
+            }
+
+            // Build the full path string
+            try emitter.write("__koru_ast.InvocationMeta{\n");
+            emitter.indent();
+
+            // .path - full path like "std.build:variants"
+            try emitter.writeIndent();
+            try emitter.write(".path = \"");
+            if (invocation_path.module_qualifier) |mq| {
+                try emitter.write(mq);
+                try emitter.write(":");
+            }
+            for (invocation_path.segments, 0..) |seg, i| {
+                if (i > 0) try emitter.write(".");
+                try emitter.write(seg);
+            }
+            try emitter.write("\",\n");
+
+            // .module - module qualifier or null
+            try emitter.writeIndent();
+            try emitter.write(".module = ");
+            if (invocation_path.module_qualifier) |mq| {
+                try emitter.write("\"");
+                try emitter.write(mq);
+                try emitter.write("\"");
+            } else {
+                try emitter.write("null");
+            }
+            try emitter.write(",\n");
+
+            // .event_name - just the event name (last segment)
+            try emitter.writeIndent();
+            try emitter.write(".event_name = \"");
+            if (invocation_path.segments.len > 0) {
+                try emitter.write(invocation_path.segments[invocation_path.segments.len - 1]);
+            }
+            try emitter.write("\",\n");
+
+            // .annotations - from the flow
+            try emitter.writeIndent();
+            try emitter.write(".annotations = ");
+            if (ctx.current_flow_annotations) |anns| {
+                try emitter.write("&[_][]const u8{");
+                for (anns, 0..) |ann, i| {
+                    if (i > 0) try emitter.write(", ");
+                    try emitter.write("\"");
+                    try emitter.write(ann);
+                    try emitter.write("\"");
+                }
+                try emitter.write("}");
+            } else {
+                try emitter.write("&[_][]const u8{}");
+            }
+            try emitter.write(",\n");
+
+            // .location - from the flow
+            try emitter.writeIndent();
+            try emitter.write(".location = ");
+            if (ctx.current_flow_location) |loc| {
+                try emitter.write(".{ .file = \"");
+                try emitter.write(loc.file);
+                try emitter.write("\", .line = ");
+                var line_buf: [16]u8 = undefined;
+                const line_str = std.fmt.bufPrint(&line_buf, "{d}", .{loc.line}) catch "0";
+                try emitter.write(line_str);
+                try emitter.write(", .column = ");
+                var col_buf: [16]u8 = undefined;
+                const col_str = std.fmt.bufPrint(&col_buf, "{d}", .{loc.column}) catch "0";
+                try emitter.write(col_str);
+                try emitter.write(" }");
+            } else {
+                try emitter.write(".{ .file = \"unknown\", .line = 0, .column = 0 }");
+            }
+            try emitter.write(",\n");
+
+            emitter.dedent();
+            try emitter.writeIndent();
+            try emitter.write("}");
         } else {
             // Check for Koru array literal syntax: [a, b, c]
             // Transform to Zig: &[_]ElementType{ a, b, c }
@@ -3816,6 +4021,98 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
                     if (!already_provided) {
                         if (args.len > 0 or injected_count > 0) try emitter.write(", ");
                         try emitter.write(".allocator = allocator");
+                        injected_count += 1;
+                    }
+                }
+                // Check for InvocationMeta parameter (not already provided)
+                if (field.is_invocation_meta) {
+                    var already_provided = false;
+                    for (args) |arg| {
+                        if (std.mem.eql(u8, arg.name, field.name)) {
+                            already_provided = true;
+                            break;
+                        }
+                    }
+                    if (!already_provided) {
+                        if (args.len > 0 or injected_count > 0) try emitter.write(", ");
+                        try emitter.write(".");
+                        try emitter.write(field.name);
+                        try emitter.write(" = __koru_ast.InvocationMeta{\n");
+                        emitter.indent();
+
+                        // .path
+                        try emitter.writeIndent();
+                        try emitter.write(".path = \"");
+                        if (invocation_path.module_qualifier) |mq| {
+                            try emitter.write(mq);
+                            try emitter.write(":");
+                        }
+                        for (invocation_path.segments, 0..) |seg, i| {
+                            if (i > 0) try emitter.write(".");
+                            try emitter.write(seg);
+                        }
+                        try emitter.write("\",\n");
+
+                        // .module
+                        try emitter.writeIndent();
+                        try emitter.write(".module = ");
+                        if (invocation_path.module_qualifier) |mq| {
+                            try emitter.write("\"");
+                            try emitter.write(mq);
+                            try emitter.write("\"");
+                        } else {
+                            try emitter.write("null");
+                        }
+                        try emitter.write(",\n");
+
+                        // .event_name
+                        try emitter.writeIndent();
+                        try emitter.write(".event_name = \"");
+                        if (invocation_path.segments.len > 0) {
+                            try emitter.write(invocation_path.segments[invocation_path.segments.len - 1]);
+                        }
+                        try emitter.write("\",\n");
+
+                        // .annotations
+                        try emitter.writeIndent();
+                        try emitter.write(".annotations = ");
+                        if (ctx.current_flow_annotations) |anns| {
+                            try emitter.write("&[_][]const u8{");
+                            for (anns, 0..) |ann, i| {
+                                if (i > 0) try emitter.write(", ");
+                                try emitter.write("\"");
+                                try emitter.write(ann);
+                                try emitter.write("\"");
+                            }
+                            try emitter.write("}");
+                        } else {
+                            try emitter.write("&[_][]const u8{}");
+                        }
+                        try emitter.write(",\n");
+
+                        // .location
+                        try emitter.writeIndent();
+                        try emitter.write(".location = ");
+                        if (ctx.current_flow_location) |loc| {
+                            try emitter.write(".{ .file = \"");
+                            try emitter.write(loc.file);
+                            try emitter.write("\", .line = ");
+                            var line_buf: [16]u8 = undefined;
+                            const line_str = std.fmt.bufPrint(&line_buf, "{d}", .{loc.line}) catch "0";
+                            try emitter.write(line_str);
+                            try emitter.write(", .column = ");
+                            var col_buf: [16]u8 = undefined;
+                            const col_str = std.fmt.bufPrint(&col_buf, "{d}", .{loc.column}) catch "0";
+                            try emitter.write(col_str);
+                            try emitter.write(" }");
+                        } else {
+                            try emitter.write(".{ .file = \"unknown\", .line = 0, .column = 0 }");
+                        }
+                        try emitter.write(",\n");
+
+                        emitter.dedent();
+                        try emitter.writeIndent();
+                        try emitter.write("}");
                         injected_count += 1;
                     }
                 }

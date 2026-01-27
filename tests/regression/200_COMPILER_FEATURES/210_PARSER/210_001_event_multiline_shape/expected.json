@@ -60,14 +60,18 @@
                         "type": "i32",
                         "is_source": false,
                         "is_file": false,
-                        "is_embed_file": false
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
                     },
                     {
                         "name": "note",
                         "type": "[]const u8",
                         "is_source": false,
                         "is_file": false,
-                        "is_embed_file": false
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
                     }
                 ]
             },
@@ -81,7 +85,9 @@
                                 "type": "usize",
                                 "is_source": false,
                                 "is_file": false,
-                                "is_embed_file": false
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false
                             }
                         ]
                     }
@@ -95,7 +101,9 @@
                                 "type": "[]const u8",
                                 "is_source": false,
                                 "is_file": false,
-                                "is_embed_file": false
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false
                             }
                         ]
                     }

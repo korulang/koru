@@ -9,6 +9,14 @@
 
 const emit_build_zig = @import("emit_build_zig");
 const std = @import("std");
+const Root = @import("root");
+const ast_functional = @import("ast_functional");
+const emitter_helpers = @import("emitter_helpers");
+
+// Re-export variant registry functions from the core
+// This allows userland code to query variants via std.build.getVariant()
+pub const getVariant = emitter_helpers.getVariant;
+pub const registerVariant = emitter_helpers.registerVariant;
 
 // Import shared compiler types (to avoid circular dependency with compiler.kz)
 ~import "$std/compiler_types"
@@ -27,6 +35,126 @@ const std = @import("std");
     // Can be called programmatically by collect() to validate each requirement
     // TODO: Actually validate Zig syntax
     return .{ .added = .{} };
+}
+
+// ============================================================================
+// VARIANT SELECTION - Conditional proc selection based on build flags
+// ============================================================================
+// Allows selecting different proc variants based on --build flag.
+// Usage:
+//   ~[release]std.build:variants {
+//       "compute": "fast",
+//       "blur": "gpu"
+//   }
+//   ~[debug]std.build:variants {
+//       "compute": "naive",
+//       "blur": "cpu"
+//   }
+//
+// When compiled with --build=release, the emitter will use "fast" for compute.
+// When compiled with --build=debug, the emitter will use "naive" for compute.
+//
+// The Source block contains JSON-like mappings: event_name → variant_name
+// The program AST is used to validate that referenced events exist
+
+~[comptime]pub event variants { meta: InvocationMeta, source: Source, program: Program }
+| configured { count: usize }
+| skipped { reason: []const u8 }
+| invalid_event { name: []const u8 }
+
+~proc variants {
+    // Check if this config's annotation matches the --build flag
+    var matched = false;
+
+    // If no annotations, this is the default config (always applies if no flag set)
+    if (meta.annotations.len == 0) {
+        matched = true;
+    } else {
+        // Check each annotation against the build flag
+        for (meta.annotations) |ann| {
+            // Known build configs - check with comptime strings
+            if (std.mem.eql(u8, ann, "release")) {
+                if (Root.CompilerEnv.hasFlag("build=release")) {
+                    matched = true;
+                    break;
+                }
+            } else if (std.mem.eql(u8, ann, "debug")) {
+                if (Root.CompilerEnv.hasFlag("build=debug")) {
+                    matched = true;
+                    break;
+                }
+            } else if (std.mem.eql(u8, ann, "test")) {
+                if (Root.CompilerEnv.hasFlag("build=test")) {
+                    matched = true;
+                    break;
+                }
+            }
+            // Add more build configs as needed
+        }
+    }
+
+    if (!matched) {
+        return .{ .skipped = .{ .reason = "no matching build flag" } };
+    }
+
+    // Parse the source as simple JSON-like key:value pairs
+    // Format: "event_name": "variant_name"
+    var count: usize = 0;
+    var pos: usize = 0;
+    const text = source.text;
+
+    while (pos < text.len) {
+        // Skip whitespace and braces
+        while (pos < text.len and (text[pos] == ' ' or text[pos] == '\n' or text[pos] == '\r' or text[pos] == '\t' or text[pos] == '{' or text[pos] == '}' or text[pos] == ',')) {
+            pos += 1;
+        }
+        if (pos >= text.len) break;
+
+        // Expect opening quote for key
+        if (text[pos] != '"') {
+            pos += 1;
+            continue;
+        }
+        pos += 1;
+
+        // Read key
+        const key_start = pos;
+        while (pos < text.len and text[pos] != '"') {
+            pos += 1;
+        }
+        const key = text[key_start..pos];
+        pos += 1; // skip closing quote
+
+        // Skip colon and whitespace
+        while (pos < text.len and (text[pos] == ':' or text[pos] == ' ')) {
+            pos += 1;
+        }
+
+        // Expect opening quote for value
+        if (pos >= text.len or text[pos] != '"') continue;
+        pos += 1;
+
+        // Read value
+        const value_start = pos;
+        while (pos < text.len and text[pos] != '"') {
+            pos += 1;
+        }
+        const value = text[value_start..pos];
+        pos += 1; // skip closing quote
+
+        // Validate that the event exists in the AST
+        if (ast_functional.findEventByCanonicalName(program, key) == null) {
+            // Event not found - report error
+            return .{ .invalid_event = .{ .name = key } };
+        }
+
+        // Register in the core variant registry
+        if (emitter_helpers.registerVariant(key, value)) {
+            count += 1;
+        }
+    }
+
+    return .{ .configured = .{ .count = count } };
 }
 
 // ============================================================================

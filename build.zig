@@ -291,6 +291,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     emitter_helpers_module.addImport("ast", ast_module);
+    emitter_helpers_module.addImport("errors", errors_module);
     emitter_helpers_module.addImport("compiler_config", compiler_config_module);
     emitter_helpers_module.addImport("type_registry", type_registry_module);
     emitter_helpers_module.addImport("codegen_utils", codegen_utils_module);

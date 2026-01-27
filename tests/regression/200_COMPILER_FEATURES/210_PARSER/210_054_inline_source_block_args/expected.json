@@ -51,35 +51,45 @@
                         "type": "Expression",
                         "is_source": false,
                         "is_file": false,
-                        "is_embed_file": false
+                        "is_embed_file": false,
+                        "is_expression": true,
+                        "is_invocation_meta": false
                     },
                     {
                         "name": "source",
                         "type": "Source",
                         "is_source": true,
                         "is_file": false,
-                        "is_embed_file": false
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
                     },
                     {
                         "name": "invocation",
                         "type": "*const Invocation",
                         "is_source": false,
                         "is_file": false,
-                        "is_embed_file": false
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
                     },
                     {
                         "name": "program",
                         "type": "*const Program",
                         "is_source": false,
                         "is_file": false,
-                        "is_embed_file": false
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
                     },
                     {
                         "name": "allocator",
                         "type": "std.mem.Allocator",
                         "is_source": false,
                         "is_file": false,
-                        "is_embed_file": false
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
                     }
                 ]
             },
@@ -93,7 +103,9 @@
                                 "type": "*const Program",
                                 "is_source": false,
                                 "is_file": false,
-                                "is_embed_file": false
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false
                             }
                         ]
                     }

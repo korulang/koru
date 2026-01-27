@@ -1590,6 +1590,88 @@ pub fn findEventByPath(
     return null;
 }
 
+/// Find an event declaration by its canonical name string
+/// Canonical format: "module.path:event.name" or just "event.name"
+/// Examples: "std.graphics:blur", "std.io:print.ln", "my_event"
+pub fn findEventByCanonicalName(
+    source: *const ast.Program,
+    canonical_name: []const u8,
+) ?*const ast.EventDecl {
+    // Parse canonical name into module qualifier and event path
+    // Format: "module.path:event.name" or just "event.name"
+    var module_qualifier: ?[]const u8 = null;
+    var event_path: []const u8 = canonical_name;
+
+    if (std.mem.indexOfScalar(u8, canonical_name, ':')) |colon_idx| {
+        module_qualifier = canonical_name[0..colon_idx];
+        event_path = canonical_name[colon_idx + 1 ..];
+    }
+
+    // Search through all items
+    for (source.items) |*item| {
+        switch (item.*) {
+            .event_decl => |*event| {
+                if (eventMatchesCanonical(event, module_qualifier, event_path)) {
+                    return event;
+                }
+            },
+            .module_decl => |*module| {
+                // Check if module matches the qualifier
+                const module_matches = if (module_qualifier) |mq|
+                    std.mem.eql(u8, module.logical_name, mq)
+                else
+                    true; // No qualifier means search all modules
+
+                if (module_matches) {
+                    for (module.items) |*module_item| {
+                        if (module_item.* == .event_decl) {
+                            const event = &module_item.event_decl;
+                            // For module items, check without module qualifier
+                            if (eventMatchesCanonical(event, null, event_path)) {
+                                return event;
+                            }
+                        }
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// Check if an event matches a canonical path
+fn eventMatchesCanonical(
+    event: *const ast.EventDecl,
+    module_qualifier: ?[]const u8,
+    event_path: []const u8,
+) bool {
+    // Check module qualifier if specified
+    if (module_qualifier) |mq| {
+        if (event.path.module_qualifier) |eq| {
+            if (!std.mem.eql(u8, mq, eq)) return false;
+        } else {
+            return false; // Event has no module qualifier but one was expected
+        }
+    }
+
+    // Build event path string from segments
+    // event_path could be "blur" or "print.ln"
+    var path_buf: [256]u8 = undefined;
+    var path_len: usize = 0;
+
+    for (event.path.segments, 0..) |segment, i| {
+        if (i > 0) {
+            path_buf[path_len] = '.';
+            path_len += 1;
+        }
+        @memcpy(path_buf[path_len .. path_len + segment.len], segment);
+        path_len += segment.len;
+    }
+
+    return std.mem.eql(u8, path_buf[0..path_len], event_path);
+}
+
 /// Prune all items marked with [backend] annotation
 /// Returns a new Program without backend-only items
 /// This is used by compiler.emit.zig to remove comptime-only constructs before generating runtime code

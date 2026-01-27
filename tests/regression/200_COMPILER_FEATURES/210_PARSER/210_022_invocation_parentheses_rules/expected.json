@@ -90,7 +90,9 @@
                         "type": "Source[HTML]",
                         "is_source": true,
                         "is_file": false,
-                        "is_embed_file": false
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
                     }
                 ]
             },
@@ -161,14 +163,18 @@
                         "type": "[]const u8",
                         "is_source": false,
                         "is_file": false,
-                        "is_embed_file": false
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
                     },
                     {
                         "name": "source",
                         "type": "Source[HTML]",
                         "is_source": true,
                         "is_file": false,
-                        "is_embed_file": false
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
                     }
                 ]
             },

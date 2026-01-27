@@ -1446,6 +1446,8 @@ pub const AstSerializer = struct {
         try self.write(if (field.is_embed_file) "true" else "false");
         try self.write(", .is_expression = ");
         try self.write(if (field.is_expression) "true" else "false");
+        try self.write(", .is_invocation_meta = ");
+        try self.write(if (field.is_invocation_meta) "true" else "false");
 
         // Serialize phantom state (now just an opaque string)
         try self.write(", .phantom = ");
@@ -2520,6 +2522,16 @@ pub const AstSerializer = struct {
             try self.writeIndent();
             try self.write("\"is_embed_file\": ");
             try self.write(if (field.is_embed_file) "true" else "false");
+            try self.write(",\n");
+
+            try self.writeIndent();
+            try self.write("\"is_expression\": ");
+            try self.write(if (field.is_expression) "true" else "false");
+            try self.write(",\n");
+
+            try self.writeIndent();
+            try self.write("\"is_invocation_meta\": ");
+            try self.write(if (field.is_invocation_meta) "true" else "false");
 
             try self.write("\n");
             self.dedent();

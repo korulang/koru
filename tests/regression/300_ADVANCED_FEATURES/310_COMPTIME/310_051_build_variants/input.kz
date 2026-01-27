@@ -1,0 +1,64 @@
+// Test: build:variants populates variant registry based on --build flag
+// When --build=release, the release config should be used
+// When --build=debug, the debug config should be used
+
+~import "$std/io"
+~import "$std/build"
+
+// Define events that we'll configure variants for
+~event compute { x: i32 }
+| done { result: i32 }
+
+~proc compute {
+    return .{ .done = .{ .result = x } };
+}
+
+~proc compute|fast {
+    return .{ .done = .{ .result = x * 2 } };
+}
+
+~proc compute|naive {
+    return .{ .done = .{ .result = x } };
+}
+
+~event blur { intensity: i32 }
+| done {}
+
+~proc blur {
+    return .{ .done = .{} };
+}
+
+~proc blur|gpu {
+    return .{ .done = .{} };
+}
+
+~proc blur|cpu {
+    return .{ .done = .{} };
+}
+
+// Define variant configurations for different build modes
+// Use full canonical names: module:event
+~[release]std.build:variants {
+    "input:compute": "fast",
+    "input:blur": "gpu"
+}
+| configured _ |> std.io:println(text: "Release config loaded")
+| skipped _ |> _
+| invalid_event _ |> std.io:println(text: "Invalid event in release config")
+
+~[debug]std.build:variants {
+    "input:compute": "naive",
+    "input:blur": "cpu"
+}
+| configured _ |> std.io:println(text: "Debug config loaded")
+| skipped _ |> _
+| invalid_event _ |> std.io:println(text: "Invalid event in debug config")
+
+// Default config (when no --build flag is passed)
+~std.build:variants {
+    "input:compute": "default",
+    "input:blur": "default"
+}
+| configured _ |> std.io:println(text: "Default config loaded")
+| skipped _ |> _
+| invalid_event _ |> std.io:println(text: "Invalid event in default config")

@@ -6262,13 +6262,15 @@ pub const Parser = struct {
             const field_name = lexer.trim(trimmed_field[0..colon_idx]);
             var field_type = lexer.trim(trimmed_field[colon_idx + 1..]);
 
-            // Check for special types: Source, File, EmbedFile, and Expression
+            // Check for special types: Source, File, EmbedFile, Expression, and InvocationMeta
             // Source can have phantom type: Source[HTML], Source[SQL], etc.
             // Expression captures Zig expressions verbatim as strings
+            // InvocationMeta provides call site metadata for comptime introspection
             var is_source = false;
             var is_file = false;
             var is_embed_file = false;
             var is_expression = false;
+            var is_invocation_meta = false;
             if (std.mem.eql(u8, field_type, "Source") or std.mem.startsWith(u8, field_type, "Source[")) {
                 is_source = true;
             } else if (std.mem.eql(u8, field_type, "Expression") or std.mem.startsWith(u8, field_type, "Expression[")) {
@@ -6277,6 +6279,8 @@ pub const Parser = struct {
                 is_file = true;
             } else if (std.mem.eql(u8, field_type, "EmbedFile")) {
                 is_embed_file = true;
+            } else if (std.mem.eql(u8, field_type, "InvocationMeta")) {
+                is_invocation_meta = true;
             }
 
             // Check for phantom tags/states: Type[tag] or *Type[state]
@@ -6391,6 +6395,7 @@ pub const Parser = struct {
                 .is_file = is_file,
                 .is_embed_file = is_embed_file,
                 .is_expression = is_expression,
+                .is_invocation_meta = is_invocation_meta,
             };
 
             try fields.append(self.allocator, field);
