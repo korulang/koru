@@ -4,6 +4,7 @@
 
 const std = @import("std");
 
+~import "$std/taps"
 ~import "$std/io"
 
 // Local event to transition to (so tap can fire)
@@ -23,7 +24,7 @@ const std = @import("std");
 
 // Fully qualified - matches std.io:println via print* wildcard
 // Using Profile metatype for string-based source field
-~std.io:print* -> *
+~tap(std.io:print* -> *)
 | Profile p |> logger(source: p.source)
 
 // Flow: println (void) transitions to finish

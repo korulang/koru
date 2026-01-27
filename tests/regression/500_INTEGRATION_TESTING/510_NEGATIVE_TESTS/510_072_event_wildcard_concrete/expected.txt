@@ -1,9 +1,2 @@
-[TAP] std.taps:tap
-[TAP] koru:start
-[TAP] koru:start
-[TAP] std.taps:tap
 [TAP] input:compute
-[TAP] input:compute
-[TAP] std.taps:tap
-[TAP] koru:end
-[TAP] koru:end
+[TAP] app.test_lib.logger:log

@@ -8,4 +8,4 @@
 // VALID: Module wildcard (input:*) + metatype (Audit)
 // Audit metatype works on ANY event in the main module
 ~tap(input:* -> *)
-| Audit a |> std.io:print.ln("[TAP] Audit: {{a.source}}.{{a.branch}}")
+| Audit a |> std.io:print.ln("[TAP] Audit: {{a.source:s}}.{{a.branch:s}}")

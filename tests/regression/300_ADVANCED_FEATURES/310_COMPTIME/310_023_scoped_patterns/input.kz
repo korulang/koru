@@ -4,6 +4,8 @@
 
 const std = @import("std");
 
+~import "$std/taps"
+
 ~event file.read {}
 | done {}
 
@@ -27,7 +29,7 @@ const std = @import("std");
 }
 
 // Scoped pattern - matches BOTH local file.* events
-~file.* -> *
+~tap(file.* -> *)
 | Transition |> logger()
 
 ~file.read()

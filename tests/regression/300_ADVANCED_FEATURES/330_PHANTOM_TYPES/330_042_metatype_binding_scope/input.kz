@@ -14,7 +14,7 @@
 
 // This should work - 'p' binding should be in scope for string interpolation
 ~tap(work -> *)
-| Profile p |> std.io:print.ln("Profile: {{p.source}}.{{p.branch}}")
+| Profile p |> std.io:print.ln("Profile: {{p.source:s}}.{{p.branch:s}}")
 
 ~work()
 | done |> _

@@ -1,1 +1,0 @@
-String interpolation doesn't substitute metatype bindings - {{a.source}} should become _profile_0.source but binding 'a' is left as-is
