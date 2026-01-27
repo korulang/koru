@@ -161,7 +161,8 @@
                                 "name": "val",
                                 "value": "value"
                             }
-                        ]
+                        ],
+                        "variant": null
                     },
                     "continuations": [
                         {

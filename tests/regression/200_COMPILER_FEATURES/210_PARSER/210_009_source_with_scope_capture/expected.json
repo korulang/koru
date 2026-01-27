@@ -279,7 +279,8 @@
                             "phantom_type": "HTML"
                         }
                     }
-                ]
+                ],
+                "variant": null
             },
             "continuations": [
                 {
@@ -295,7 +296,8 @@
                                     "name": "text",
                                     "value": "h.html"
                                 }
-                            ]
+                            ],
+                            "variant": null
                         }
                     },
                     "continuations": [

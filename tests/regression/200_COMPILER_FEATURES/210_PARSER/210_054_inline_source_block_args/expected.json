@@ -208,7 +208,8 @@
                             "phantom_type": null
                         }
                     }
-                ]
+                ],
+                "variant": null
             },
             "continuations": [
                 {
@@ -246,7 +247,8 @@
                 "event": ["setup"],
                 "args": [
 
-                ]
+                ],
+                "variant": null
             },
             "continuations": [
                 {
@@ -280,7 +282,8 @@
                                         "phantom_type": null
                                     }
                                 }
-                            ]
+                            ],
+                            "variant": null
                         }
                     },
                     "continuations": [

@@ -258,7 +258,8 @@
                         "name": "* -> *",
                         "value": "* -> *"
                     }
-                ]
+                ],
+                "variant": null
             },
             "continuations": [
                 {
@@ -274,7 +275,8 @@
                                     "name": "data",
                                     "value": "p.destination"
                                 }
-                            ]
+                            ],
+                            "variant": null
                         }
                     },
                     "continuations": [

@@ -55,7 +55,8 @@
                 "event": ["voidCall"],
                 "args": [
 
-                ]
+                ],
+                "variant": null
             },
             "continuations": [
 
@@ -125,7 +126,8 @@
                             "phantom_type": "HTML"
                         }
                     }
-                ]
+                ],
+                "variant": null
             },
             "continuations": [
 
@@ -206,7 +208,8 @@
                             "phantom_type": "HTML"
                         }
                     }
-                ]
+                ],
+                "variant": null
             },
             "continuations": [
 
@@ -272,7 +275,8 @@
                 "event": ["stepOne"],
                 "args": [
 
-                ]
+                ],
+                "variant": null
             },
             "continuations": [
                 {
@@ -285,7 +289,8 @@
                             "event": ["stepTwo"],
                             "args": [
 
-                            ]
+                            ],
+                            "variant": null
                         }
                     },
                     "continuations": [
