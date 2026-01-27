@@ -1,1 +1,0 @@
-TAP EXECUTION ORDER BUG: Tap fires AFTER continuation instead of BEFORE. The tap should observe the transition from println->finish BEFORE finish runs, not after.
