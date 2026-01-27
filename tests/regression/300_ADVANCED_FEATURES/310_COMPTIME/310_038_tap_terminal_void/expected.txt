@@ -1,0 +1,2 @@
+Hello from terminal void
+TAP observed: std.io:println

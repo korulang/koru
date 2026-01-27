@@ -1,0 +1,27 @@
+// Test 310_038: Tap Terminal Void Event
+// Validates that void events with NO continuation can be tapped
+//
+// This is critical for full program profiling - we must be able to observe
+// ALL events, including terminal void events that don't continue anywhere.
+//
+// Pattern: ~std.io:println(text: "Hello")  <-- nothing after this
+// The tap should still fire on the transition from println to nowhere.
+
+const std = @import("std");
+
+~import "$std/io"
+~import "$std/taps"
+
+// Logger to observe taps
+~event log { msg: []const u8 }
+
+~proc log {
+    std.debug.print("TAP observed: {s}\n", .{msg});
+}
+
+// Tap all std.io:print* events, even terminal ones
+~tap(std.io:print* -> *)
+| Profile p |> log(msg: p.source)
+
+// Terminal void event - NO continuation after this
+~std.io:println(text: "Hello from terminal void")
