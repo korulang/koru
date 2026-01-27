@@ -3540,7 +3540,8 @@ pub const Parser = struct {
         else
             lexer.trim(invocation_part);
 
-        // Check for |variant suffix (e.g., "blur|gpu" or "compute|naive")
+        // Check for |variant suffix (e.g., "blur|gpu" or "compute|zig[optimized]")
+        // Note: variants use [] not () for parameterization to avoid ambiguity with args
         var variant: ?[]const u8 = null;
         var path_str = raw_path_str;
 

@@ -403,6 +403,65 @@ fn writeEscapedSegment(emitter: *CodeEmitter, name: []const u8) !void {
     }
 }
 
+/// Mangle a variant name into a valid Zig identifier suffix.
+/// Alphanumeric and underscore pass through; everything else becomes _XX_ (hex code).
+/// Example: "zig(optimized)" -> "zig_28_optimized_29_"
+pub fn mangleVariant(allocator: std.mem.Allocator, variant: []const u8) ![]const u8 {
+    // Count how much space we need
+    var len: usize = 0;
+    for (variant) |c| {
+        if (std.ascii.isAlphanumeric(c) or c == '_') {
+            len += 1;
+        } else {
+            len += 4; // _XX_
+        }
+    }
+
+    var result = try allocator.alloc(u8, len);
+    var pos: usize = 0;
+
+    for (variant) |c| {
+        if (std.ascii.isAlphanumeric(c) or c == '_') {
+            result[pos] = c;
+            pos += 1;
+        } else {
+            // Encode as _XX_
+            result[pos] = '_';
+            pos += 1;
+            const hex = "0123456789abcdef";
+            result[pos] = hex[c >> 4];
+            pos += 1;
+            result[pos] = hex[c & 0x0f];
+            pos += 1;
+            result[pos] = '_';
+            pos += 1;
+        }
+    }
+
+    return result;
+}
+
+/// Write a handler name with optional variant suffix.
+/// If variant is null, writes "handler". Otherwise writes "handler__<mangled_variant>".
+pub fn writeHandlerName(emitter: *CodeEmitter, allocator: std.mem.Allocator, variant: ?[]const u8) !void {
+    try emitter.write("handler");
+    if (variant) |v| {
+        try emitter.write("__");
+        const mangled = try mangleVariant(allocator, v);
+        defer allocator.free(mangled);
+        try emitter.write(mangled);
+    }
+}
+
+/// Write a variant comment for readability.
+/// Example: " // |zig(optimized)"
+pub fn writeVariantComment(emitter: *CodeEmitter, variant: ?[]const u8) !void {
+    if (variant) |v| {
+        try emitter.write(" // |");
+        try emitter.write(v);
+    }
+}
+
 /// Helper: Write field type with proper module path handling
 pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name: ?[]const u8) !void {
     if (field.module_path) |module_path| {
@@ -3395,9 +3454,13 @@ fn emitInvocation(
         try emitter.write("try ");
     }
     try emitInvocationTarget(emitter, ctx, &invocation.path);
-    try emitter.write(".handler(.{ ");
+    try emitter.write(".");
+    try writeHandlerName(emitter, ctx.allocator, invocation.variant);
+    try emitter.write("(.{ ");
     try emitArgs(emitter, ctx, invocation.args, &invocation.path);
-    try emitter.write(" });\n");
+    try emitter.write(" });");
+    try writeVariantComment(emitter, invocation.variant);
+    try emitter.write("\n");
 }
 
 /// Emit the target of an invocation (e.g., "koru_std.io.print_event" or "main_module.hello_event")

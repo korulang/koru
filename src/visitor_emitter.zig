@@ -2026,6 +2026,75 @@ pub const VisitorEmitter = struct {
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("}\n");
 
+        // Emit variant handlers for procs with non-null, non-zig targets
+        for (items_to_search) |impl_item| {
+            switch (impl_item) {
+                .proc_decl => |proc| {
+                    // Only emit handlers for variant procs (target != null and target != "zig")
+                    if (proc.target) |target| {
+                        if (eql(u8, target, "zig")) continue;
+
+                        // Check if this proc matches the event
+                        if (proc.path.segments.len != event.path.segments.len) continue;
+                        var matches = true;
+                        for (proc.path.segments, 0..) |seg, j| {
+                            if (!eql(u8, seg, event.path.segments[j])) {
+                                matches = false;
+                                break;
+                            }
+                        }
+                        if (!matches) continue;
+
+                        // Emit variant handler
+                        try self.code_emitter.writeIndent();
+                        try self.code_emitter.write("pub fn ");
+                        try emitter.writeHandlerName(self.code_emitter, self.allocator, target);
+                        try self.code_emitter.write("(__koru_event_input: Input) Output {");
+                        try emitter.writeVariantComment(self.code_emitter, target);
+                        try self.code_emitter.write("\n");
+                        self.code_emitter.indent_level += 1;
+
+                        // Generate implicit input bindings
+                        for (event.input.fields) |field| {
+                            try self.code_emitter.writeIndent();
+                            try self.code_emitter.write("const ");
+                            try self.code_emitter.write(field.name);
+                            try self.code_emitter.write(" = __koru_event_input.");
+                            try self.code_emitter.write(field.name);
+                            try self.code_emitter.write(";\n");
+                        }
+                        // Suppress unused variable warnings
+                        for (event.input.fields) |field| {
+                            try self.code_emitter.writeIndent();
+                            try self.code_emitter.write("_ = &");
+                            try self.code_emitter.write(field.name);
+                            try self.code_emitter.write(";\n");
+                        }
+                        try self.code_emitter.writeIndent();
+                        try self.code_emitter.write("_ = &__koru_event_input;\n");
+
+                        // Emit proc body
+                        var indent_buf: [64]u8 = undefined;
+                        var indent_pos: usize = 0;
+                        var k: usize = 0;
+                        while (k < self.code_emitter.indent_level) : (k += 1) {
+                            @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
+                            indent_pos += 4;
+                        }
+                        const indent_str = indent_buf[0..indent_pos];
+                        try self.code_emitter.emitReindentedText(proc.body, indent_str);
+                        try self.code_emitter.write("\n");
+
+                        // Close variant handler
+                        self.code_emitter.indent_level -= 1;
+                        try self.code_emitter.writeIndent();
+                        try self.code_emitter.write("}\n");
+                    }
+                },
+                else => {},
+            }
+        }
+
         // Close the event struct
         self.code_emitter.indent_level -= 1;
         try self.code_emitter.writeIndent();
