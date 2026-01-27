@@ -836,6 +836,16 @@ pub const AstSerializer = struct {
         try self.write(if (invoc.from_opaque_tap) "true" else "false");
         try self.write(",\n");
 
+        // variant selector (for ~event|variant() calls)
+        try self.writeIndent();
+        try self.write(".variant = ");
+        if (invoc.variant) |v| {
+            try self.writeString(v);
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+
         self.dedent();
         try self.writeIndent();
         try self.write("}");
@@ -1920,7 +1930,17 @@ pub const AstSerializer = struct {
         try self.write("\n");
         self.dedent();
         try self.writeIndent();
-        try self.write("]\n");
+        try self.write("],\n");
+
+        // Variant selector
+        try self.writeIndent();
+        try self.write("\"variant\": ");
+        if (inv.variant) |v| {
+            try self.writeString(v);
+        } else {
+            try self.write("null");
+        }
+        try self.write("\n");
 
         self.dedent();
         try self.writeIndent();

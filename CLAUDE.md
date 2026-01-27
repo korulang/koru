@@ -102,23 +102,23 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Resolve the 'Kuwait' of test regressions by correctly applying branch bindings (| payload p |> or | payload _ |>) only where payloads actually exist.
+Transition from the 'Kuwait' regression recovery phase to active language design and polishing.
 
 ### Decisions
+- **Implemented validation in shape_checker.zig to enforce explicit bindings or discards for payload-bearing branches.**: Koru requires explicit bindings (e.g., '| result r |>') or discards (e.g., '| result _ |>') for payload-bearing branches to prevent the emitter from flying blind. Empty payloads '{}' must NOT have bindings.
+- **Completed a manual, file-by-file audit and fix of 20+ regression tests for KORU030 compliance.**: Mechanical 'sed' fixes fail to distinguish between empty payloads and data-bearing payloads. Manual verification ensured the test suite aligns with the strict grammar rules without breaking the distinction.
 - **Enhanced metatype binding uniqueness using a composite hash of source location, original ID, and a local counter.**: Previous module-level counters were insufficient to prevent collisions across complex transform passes. The new scheme ensures global uniqueness in the generated Zig code by salting the ID with the source location.
 - **Implemented deep cloning for continuations in the tap transform.**: Prevents unintended mutation side-effects when splicing original flow logic into multiple tap terminal points, ensuring that nested tap-on-tap scenarios don't corrupt the AST.
 - **Refined tap pass-through logic to implicitly treat branches with no nested continuations as pass-through.**: Simplifies tap declarations by allowing observers to fire without requiring explicit terminal markers for every branch, reducing boilerplate for simple logging/profiling taps.
-- **Mandated explicit bindings or discards for payload-bearing branches (e.g., '| result r |>' or '| result _ |>').**: Prevents the emitter from flying blind when data is present but unhandled. Enforcement is implemented in shape_checker.zig. Empty payloads '{}' must NOT have bindings.
+- **Adopted the 'GO SLOW' protocol for handling unexpected behavior or destructive actions.**: To combat a pattern of 'racing ahead' and making sloppy architectural decisions (like the 'git clean' disaster). The protocol mandates stopping, reporting, and waiting for user approval before acting.
+- **Resolved 220_004 (cross-module nested types) using explicit imports and domain aliases.**: Aligns the test with the explicit-import design philosophy rather than relying on implicit module loading. Replaces the previous 'tentative' status with a concrete fix.
 - **Adopted [opaque] annotation for flows, events, and taps.**: Provides a circuit-breaker for hyper-reactive tapping scenarios (tap-on-tap) and protects high-performance hot loops from observation overhead.
 - **Merged CCP (Compiler Control Protocol) daemon into main.zig and retired the separate worktree.**: Consolidates toolchain development; the daemon activates only when no input file is provided, allowing the --ccp flag to be used for flag injection in standard runs.
 - **Tightened wildcard matching to require '*' or '*:*' for universal observation.**: Prevents 'input:*' from matching across all modules. Wildcards now respect module boundaries unless explicitly universal, reducing noise in complex integration tests.
 - **Restored void-event tap ordering by wrapping non-tap-inserted empty branches.**: Ensures genuine void transitions (like println) are observed BEFORE the destination event executes, while skipping branches that were themselves inserted by other taps to prevent recursion.
 - **Implemented category-level BENCHMARK handling in the regression runner.**: Prevents recursive benchmark runs during standard regression by allowing entire suites (like 420_PERFORMANCE) to be skipped via a directory-level marker file.
 - **Committed test snapshots to the repository and removed test-results/ from .gitignore.**: To prevent accidental loss of regression baselines during destructive git operations and ensure all agents share the same ground truth.
-- **Established a strict 'Ask First' policy for all destructive git commands (e.g., git clean) and adopted the 'GO SLOW' protocol.**: A catastrophic 'git clean -xdf' and sloppy 'sed' fixes resulted in data loss and broken logic. The protocol mandates stopping and reporting when unexpected behavior occurs.
 - **Reordered evaluate_comptime phases to run [transform] handlers BEFORE [comptime] flows.**: Allows comptime events to see and act upon a fully-transformed AST, enabling more compiler logic to reside in userspace libraries.
-- **Resolved 220_004 (cross-module nested types) using explicit imports and domain aliases.**: Aligns the test with the explicit-import design philosophy rather than relying on implicit module loading. Replaces the previous 'tentative' status with a concrete fix.
-- **Rejected mechanical 'sed' fixes for KORU030 errors in favor of manual file-by-file verification.**: Mechanical fixes fail to distinguish between empty payloads (where bindings are forbidden) and non-empty payloads (where bindings/discards are required).
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -160,13 +160,13 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **Automated 'sed' or mechanical fixes for branch bindings (KORU030) fail because they don't distinguish between empty payloads '{}' and non-empty data.**: Perform file-by-file verification against event definitions; only add bindings/discards to branches that actually carry data.
+- **Mechanical 'sed' or bulk regex fixes for branch bindings (KORU030) fail because they don't distinguish between empty payloads '{}' and non-empty data.**: Perform file-by-file verification against event definitions; only add bindings/discards to branches that actually carry data. Embrace validation failures as 'workmanship'.
 - **Zig's strict shadowing rules prevent reusing fixed internal names (like 'p') in synthesized logic when multiple observers are present.**: Use a composite hash of source location, original ID, and a local counter (e.g., '_profile_{salt}_{id}') to ensure global uniqueness in the generated Zig code.
-- **Void-event taps fire in the wrong order (after the continuation) if the transformer skips wrapping empty-branch continuations.**: Only skip wrapping empty-branch continuations if the step was 'inserted_by_tap'; allow genuine void transitions to be wrapped so taps fire before the destination.
-- **Splicing continuations in the tap-transformer without deep-cloning can lead to shared nodes re-emitting the same binding names, causing Zig shadowing errors.**: Deep-clone spliced continuations and run a dedicated uniquify pass on metatype bindings during the AST transformation.
+- **Splicing continuations in the tap-transformer without deep-cloning can lead to shared nodes re-emitting the same binding names or mutating shared state.**: Deep-clone spliced continuations and run a dedicated uniquify pass on metatype bindings during the AST transformation.
 - **Ambiguous scope in multi-part blocks (try/catch/finally, switch/case) for meta-annotations.**: Treat multi-part blocks as atomic units; applying [norun] to the head disables the entire structure to prevent partial execution states.
+- **LLM 'poisoned context' bias towards speed leads to sloppy systems engineering and destructive actions (like incorrect 'wontfix' flags).**: Strictly adhere to the 'GO SLOW' protocol: stop, report, and verify file-by-file before committing destructive changes or mechanical refactors.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 1/27/2026, 3:50:05 PM
+> Last updated: 1/27/2026, 4:25:47 PM

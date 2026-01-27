@@ -747,6 +747,7 @@ pub const Invocation = struct {
     inserted_by_tap: bool = false,  // Marks invocations inserted by tap transformation
     from_opaque_tap: bool = false,  // Marks steps from opaque taps (to skip nested tap observations)
     source_module: []const u8 = "", // Module where this invocation appears
+    variant: ?[]const u8 = null,  // Variant selector: "gpu", "naive", etc. for ~event|variant() calls
 
     pub fn deinit(self: *Invocation, allocator: std.mem.Allocator) void {
         var mutable_path = self.path;
@@ -762,6 +763,9 @@ pub const Invocation = struct {
         allocator.free(@constCast(self.annotations));
         if (self.source_module.len > 0) {
             allocator.free(@constCast(self.source_module));
+        }
+        if (self.variant) |v| {
+            allocator.free(@constCast(v));
         }
     }
 };

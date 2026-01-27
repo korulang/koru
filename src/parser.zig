@@ -3535,10 +3535,23 @@ pub const Parser = struct {
         // Find arguments in just the invocation part
         const paren_idx = std.mem.indexOf(u8, invocation_part, "(");
 
-        const path_str = if (paren_idx) |idx|
+        const raw_path_str = if (paren_idx) |idx|
             lexer.trim(invocation_part[0..idx])
         else
             lexer.trim(invocation_part);
+
+        // Check for |variant suffix (e.g., "blur|gpu" or "compute|naive")
+        var variant: ?[]const u8 = null;
+        var path_str = raw_path_str;
+
+        if (std.mem.indexOfScalar(u8, raw_path_str, '|')) |variant_pipe_idx| {
+            // Split at pipe: path before, variant after
+            path_str = lexer.trim(raw_path_str[0..variant_pipe_idx]);
+            const variant_str = lexer.trim(raw_path_str[variant_pipe_idx + 1..]);
+            if (variant_str.len > 0) {
+                variant = try self.allocator.dupe(u8, variant_str);
+            }
+        }
 
         const parsed_path = try lexer.parseQualifiedPath(self.allocator, path_str, ast);
 
@@ -3664,9 +3677,10 @@ pub const Parser = struct {
         return ast.Invocation{
             .path = parsed_path,
             .args = try args.toOwnedSlice(self.allocator),
+            .variant = variant,
         };
     }
-    
+
     fn parseSubflowImpl(self: *Parser) !ast.SubflowImpl {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
