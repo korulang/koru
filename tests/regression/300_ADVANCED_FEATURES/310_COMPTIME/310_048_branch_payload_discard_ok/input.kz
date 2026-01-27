@@ -1,0 +1,25 @@
+// Test: Branch payload can be discarded with '_'
+//
+// When a branch has a payload, the handler must bind it or explicitly discard it.
+// This test verifies the discard case is accepted.
+
+const std = @import("std");
+
+~event compute { x: i32 }
+| result { value: i32 }
+
+~event finish {}
+| done {}
+
+~proc compute {
+    return .{ .result = .{ .value = x * 2 } };
+}
+
+~proc finish {
+    std.debug.print("done\n", .{});
+    return .{ .done = .{} };
+}
+
+~compute(x: 42)
+| result _ |> finish()
+    | done |> _
