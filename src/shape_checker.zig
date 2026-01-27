@@ -815,6 +815,26 @@ pub const ShapeChecker = struct {
             has_errors = true;
         }
 
+        // Enforce payload branches to bind or explicitly discard
+        for (continuations) |cont| {
+            if (cont.branch.len == 0) continue;
+            const is_metatype = std.mem.eql(u8, cont.branch, "Transition") or
+                std.mem.eql(u8, cont.branch, "Profile") or
+                std.mem.eql(u8, cont.branch, "Audit");
+            if (is_metatype) continue;
+
+            for (event_branches) |branch| {
+                if (!std.mem.eql(u8, branch.name, cont.branch)) continue;
+                const has_payload = branch.payload.is_wildcard or branch.payload.fields.len > 0;
+                if (has_payload and cont.binding == null) {
+                    try self.reporter.addError(.KORU030, location.line, location.column,
+                        "branch '{s}' has payload but no binding", .{branch.name});
+                    has_errors = true;
+                }
+                break;
+            }
+        }
+
         // Pre-pass: Register all label declarations from continuation pipelines
         for (continuations) |cont| {
             try self.registerContinuationLabels(&cont);

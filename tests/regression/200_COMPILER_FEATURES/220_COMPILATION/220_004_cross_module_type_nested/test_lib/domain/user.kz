@@ -17,10 +17,10 @@ pub const DomainUser = struct {
 | created { user: DomainUser }
 
 ~proc create {
-    const user = DomainUser{
-        .email = e.email,
-        .role = e.role,
-        .permissions = e.permissions,
+    const new_user = DomainUser{
+        .email = email,
+        .role = role,
+        .permissions = permissions,
     };
-    return .{ .created = .{ .user = user }};
+    return .{ .created = .{ .user = new_user }};
 }

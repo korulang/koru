@@ -1,0 +1,9 @@
+{
+  "name": "cross-module-nested-test",
+  "version": "0.1.0",
+  "paths": {
+    "std": "../../../../../koru_std",
+    "app": "{ENTRY}",
+    "domain": "{ENTRY}/test_lib/domain"
+  }
+}
