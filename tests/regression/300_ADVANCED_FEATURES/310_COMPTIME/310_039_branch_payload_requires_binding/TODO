@@ -1,0 +1,9 @@
+BUG: Compiler doesn't validate that branches with payloads require bindings.
+
+Currently `| result |>` is accepted when `result { value: i32 }` has a payload.
+The shape checker should require either:
+  - `| result r |>` (bind to r)
+  - `| result _ |>` (explicit discard)
+
+This is the same class of bug as metatype branches requiring bindings.
+See: shape_checker.zig or flow_checker.zig

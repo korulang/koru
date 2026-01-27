@@ -1,0 +1,25 @@
+// Test: Branch with payload requires binding or explicit discard
+//
+// When a branch has a payload (e.g., `result { value: i32 }`), the branch
+// handler MUST either bind it or explicitly discard with `_`:
+//
+//   | result r |>    // LEGAL - binds payload to 'r'
+//   | result _ |>    // LEGAL - explicitly discards payload
+//   | result |>      // ILLEGAL - payload exists but no binding
+//
+// This test verifies the compiler catches the illegal case.
+
+const std = @import("std");
+
+~event compute { x: i32 }
+| result { value: i32 }
+
+~proc compute {
+    return .{ .result = .{ .value = x * 2 } };
+}
+
+// BUG: This should be a compile error!
+// The `result` branch has payload `{ value: i32 }` but no binding.
+// Correct syntax would be: `| result _ |>` or `| result r |>` (if `r` is used)
+~compute(x: 42)
+| result |> std.io:println(text: "done")

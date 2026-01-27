@@ -2,6 +2,7 @@
 // When imported, these taps automatically register and intercept matching events
 
 const std = @import("std");
+~import "$std/taps"
 
 // Define a logging event
 ~pub event log { event_name: []const u8 }
@@ -12,16 +13,16 @@ const std = @import("std");
     return .{ .done = .{} };
 }
 
-// Tap: Intercept transitions from compute (any destination)
+// Tap: Observe transitions from compute (any destination)
 // When main.kz calls compute(), this tap fires automatically!
 // Note: 'input:' is the canonical namespace for entry module events
-~input:compute -> *
-| result r |> log(event_name: "compute")
-    | done |> result { result: r }
+~tap(input:compute -> *)
+| result _ |> log(event_name: "compute")
+    | done |> _
 
-// Tap: Intercept transitions from format (any destination)
+// Tap: Observe transitions from format (any destination)
 // When main.kz calls format(), this tap fires automatically!
 // Note: 'input:' is the canonical namespace for entry module events
-~input:format -> *
-| formatted f |> log(event_name: "format")
-    | done |> formatted { formatted: f }
+~tap(input:format -> *)
+| formatted _ |> log(event_name: "format")
+    | done |> _
