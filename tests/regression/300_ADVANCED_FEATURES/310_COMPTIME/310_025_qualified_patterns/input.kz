@@ -29,4 +29,5 @@ const std = @import("std");
 
 // Flow: println (void) transitions to finish
 // Tap fires because println matches print* and transitions to finish
-~std.io:println(text: "From std.io") |> finish() | done |> _
+~std.io:println(text: "From std.io") |> finish()
+    | done |> _
