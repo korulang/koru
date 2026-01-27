@@ -791,18 +791,30 @@ var metatype_binding_counter: usize = 0;
                     continue;
                 }
 
-                // Skip void branches ("") - these are internal plumbing from tap wrappers
-                // Metatype taps should only wrap actual event transitions, not intermediate connectors
+                // Void branches ("") are often internal plumbing from tap wrappers.
+                // Only skip when the step itself was inserted by a tap; otherwise this is a real
+                // void transition and should be observable.
                 if (cont.branch.len == 0) {
-                    // Don't wrap void branches, just recurse into nested continuations
-                    const nested = try transformContinuations(
-                        alloc, cont.continuations, tap_branches, is_meta, mark_inserted, tap_is_opaque,
-                        source_event, dest_pattern, is_dest_wildcard, containing_module
-                    );
-                    new_conts[i] = cont.*;
-                    new_conts[i].continuations = nested.conts;
-                    if (nested.modified) any_modified = true;
-                    continue;
+                    const step_inserted = if (cont.node) |step| blk: {
+                        break :blk switch (step) {
+                            .invocation => |inv| inv.inserted_by_tap,
+                            .label_with_invocation => |lwi| lwi.invocation.inserted_by_tap,
+                            .metatype_binding => |mb| mb.inserted_by_tap,
+                            .conditional_block => |cb| cb.inserted_by_tap,
+                            else => false,
+                        };
+                    } else false;
+
+                    if (step_inserted) {
+                        const nested = try transformContinuations(
+                            alloc, cont.continuations, tap_branches, is_meta, mark_inserted, tap_is_opaque,
+                            source_event, dest_pattern, is_dest_wildcard, containing_module
+                        );
+                        new_conts[i] = cont.*;
+                        new_conts[i].continuations = nested.conts;
+                        if (nested.modified) any_modified = true;
+                        continue;
+                    }
                 }
 
                 // Handle TERMINAL continuations (node == null)
