@@ -2633,19 +2633,19 @@ fn runBuiltinDeps(allocator: std.mem.Allocator, args: []const []const u8) !void 
         }
     }
 
-    std.debug.print("\nKoru compiler dependencies:\n\n", .{});
+    std.debug.print("\nDependencies:\n\n", .{});
 
     // Check Zig installation
     const zig_result = std.process.Child.run(.{
         .allocator = allocator,
         .argv = &[_][]const u8{ "zig", "version" },
-    }) catch |err| {
-        std.debug.print("  zig \x1b[31m✗\x1b[0m (not found: {s})\n", .{@errorName(err)});
-        std.debug.print("       brew: zig | apt: zig | pacman: zig\n", .{});
+    }) catch {
+        std.debug.print("  zig \x1b[31m✗\x1b[0m not installed\n", .{});
         if (do_install) {
+            std.debug.print("\n", .{});
             try installZig(allocator);
         } else {
-            std.debug.print("\nTo install: koruc deps install\n", .{});
+            std.debug.print("\nRun `koruc deps install` to install.\n", .{});
         }
         return;
     };
@@ -2662,27 +2662,26 @@ fn runBuiltinDeps(allocator: std.mem.Allocator, args: []const []const u8) !void 
             (ver.major == min_zig_version.major and ver.minor == min_zig_version.minor and ver.patch >= min_zig_version.patch);
 
         if (version_ok) {
-            std.debug.print("  zig \x1b[32m✓\x1b[0m ({s})\n", .{version_str});
+            std.debug.print("  zig \x1b[32m✓\x1b[0m {s}\n", .{version_str});
         } else {
-            std.debug.print("  zig \x1b[33m⚠\x1b[0m ({s}) - needs >= {d}.{d}.{d}\n", .{
+            std.debug.print("  zig \x1b[33m⚠\x1b[0m {s} (need {d}.{d}+)\n", .{
                 version_str,
                 min_zig_version.major,
                 min_zig_version.minor,
-                min_zig_version.patch,
             });
             if (do_install) {
-                std.debug.print("\nUpgrading Zig...\n", .{});
+                std.debug.print("\n", .{});
                 try installZig(allocator);
             } else {
-                std.debug.print("\nTo upgrade: koruc deps install\n", .{});
+                std.debug.print("\nRun `koruc deps install` to upgrade.\n", .{});
             }
             return;
         }
     } else {
-        std.debug.print("  zig \x1b[33m?\x1b[0m ({s}) - could not parse version\n", .{version_str});
+        std.debug.print("  zig \x1b[33m?\x1b[0m {s}\n", .{version_str});
     }
 
-    std.debug.print("\n\x1b[32mAll dependencies satisfied!\x1b[0m\n", .{});
+    std.debug.print("\n\x1b[32mReady!\x1b[0m\n", .{});
 }
 
 fn parseVersion(s: []const u8) ?struct { major: u32, minor: u32, patch: u32 } {
@@ -2716,49 +2715,192 @@ fn parseVersion(s: []const u8) ?struct { major: u32, minor: u32, patch: u32 } {
 }
 
 fn installZig(allocator: std.mem.Allocator) !void {
-    // Detect package manager
-    const pms = [_]struct { name: []const u8, check: []const u8, install: []const u8 }{
-        .{ .name = "brew", .check = "brew --version", .install = "brew install zig" },
-        .{ .name = "apt", .check = "apt --version", .install = "sudo apt update && sudo apt install -y zig" },
-        .{ .name = "pacman", .check = "pacman --version", .install = "sudo pacman -S zig" },
-        .{ .name = "dnf", .check = "dnf --version", .install = "sudo dnf install -y zig" },
-    };
+    const builtin = @import("builtin");
 
-    for (pms) |pm| {
+    // On macOS, try brew first (it works well)
+    if (builtin.os.tag == .macos) {
         const check_result = std.process.Child.run(.{
             .allocator = allocator,
-            .argv = &[_][]const u8{ "sh", "-c", pm.check },
-        }) catch continue;
+            .argv = &[_][]const u8{ "sh", "-c", "brew --version" },
+        }) catch {
+            std.debug.print("  brew not found, trying direct download...\n", .{});
+            return installZigDirect(allocator);
+        };
         defer allocator.free(check_result.stdout);
         defer allocator.free(check_result.stderr);
 
         if (check_result.term.Exited == 0) {
-            std.debug.print("  Detected {s}, running: {s}\n", .{ pm.name, pm.install });
-
+            std.debug.print("  Detected brew, running: brew install zig\n", .{});
             const install_result = std.process.Child.run(.{
                 .allocator = allocator,
-                .argv = &[_][]const u8{ "sh", "-c", pm.install },
+                .argv = &[_][]const u8{ "sh", "-c", "brew install zig" },
             }) catch |err| {
-                std.debug.print("  \x1b[31m✗\x1b[0m Install failed: {s}\n", .{@errorName(err)});
-                return;
+                std.debug.print("  \x1b[31m✗\x1b[0m brew install failed: {s}, trying direct download...\n", .{@errorName(err)});
+                return installZigDirect(allocator);
             };
             defer allocator.free(install_result.stdout);
             defer allocator.free(install_result.stderr);
 
             if (install_result.term.Exited == 0) {
                 std.debug.print("  \x1b[32m✓\x1b[0m Zig installed successfully!\n", .{});
-            } else {
-                std.debug.print("  \x1b[31m✗\x1b[0m Install failed (exit code {d})\n", .{install_result.term.Exited});
-                if (install_result.stderr.len > 0) {
-                    std.debug.print("  {s}\n", .{install_result.stderr});
-                }
+                return;
             }
-            return;
         }
+        return installZigDirect(allocator);
     }
 
-    std.debug.print("  Could not detect package manager.\n", .{});
-    std.debug.print("  Please install Zig manually from: https://ziglang.org/download/\n", .{});
+    // On Linux, try pacman first (Arch has Zig), then fall back to direct download
+    if (builtin.os.tag == .linux) {
+        const check_result = std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &[_][]const u8{ "sh", "-c", "pacman --version" },
+        }) catch {
+            return installZigDirect(allocator);
+        };
+        defer allocator.free(check_result.stdout);
+        defer allocator.free(check_result.stderr);
+
+        if (check_result.term.Exited == 0) {
+            std.debug.print("  Detected pacman, running: sudo pacman -S zig\n", .{});
+            const install_result = std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &[_][]const u8{ "sh", "-c", "sudo pacman -S --noconfirm zig" },
+            }) catch |err| {
+                std.debug.print("  \x1b[31m✗\x1b[0m pacman install failed: {s}, trying direct download...\n", .{@errorName(err)});
+                return installZigDirect(allocator);
+            };
+            defer allocator.free(install_result.stdout);
+            defer allocator.free(install_result.stderr);
+
+            if (install_result.term.Exited == 0) {
+                std.debug.print("  \x1b[32m✓\x1b[0m Zig installed successfully!\n", .{});
+                return;
+            }
+        }
+        return installZigDirect(allocator);
+    }
+
+    // Windows or other - direct download
+    return installZigDirect(allocator);
+}
+
+fn printManualInstallHelp() void {
+    std.debug.print("\n", .{});
+    std.debug.print("  We tried! But you can install Zig yourself:\n", .{});
+    std.debug.print("\n", .{});
+    std.debug.print("    Download:  https://ziglang.org/download/\n", .{});
+    std.debug.print("    macOS:     brew install zig\n", .{});
+    std.debug.print("    Arch:      pacman -S zig\n", .{});
+    std.debug.print("\n", .{});
+    std.debug.print("  Koru needs Zig 0.15 or later.\n", .{});
+}
+
+fn installZigDirect(allocator: std.mem.Allocator) !void {
+    const builtin = @import("builtin");
+
+    // Determine OS and arch for download URL
+    const os_str = switch (builtin.os.tag) {
+        .linux => "linux",
+        .macos => "macos",
+        .windows => "windows",
+        else => {
+            std.debug.print("  \x1b[31m✗\x1b[0m Unsupported OS for direct download\n", .{});
+            printManualInstallHelp();
+            return;
+        },
+    };
+
+    const arch_str = switch (builtin.cpu.arch) {
+        .x86_64 => "x86_64",
+        .aarch64 => "aarch64",
+        else => {
+            std.debug.print("  \x1b[31m✗\x1b[0m Unsupported architecture for direct download\n", .{});
+            printManualInstallHelp();
+            return;
+        },
+    };
+
+    const ext = if (builtin.os.tag == .windows) "zip" else "tar.xz";
+    const zig_version = "0.15.1";
+
+    // Build download URL (format: zig-{arch}-{os}-{version}.tar.xz)
+    const url = std.fmt.allocPrint(allocator,
+        "https://ziglang.org/download/{s}/zig-{s}-{s}-{s}.{s}",
+        .{ zig_version, arch_str, os_str, zig_version, ext }
+    ) catch {
+        std.debug.print("  \x1b[31m✗\x1b[0m Failed to build download URL\n", .{});
+        return;
+    };
+    defer allocator.free(url);
+
+    // Get home directory
+    const home = std.process.getEnvVarOwned(allocator, "HOME") catch {
+        std.debug.print("  \x1b[31m✗\x1b[0m Could not determine home directory\n", .{});
+        return;
+    };
+    defer allocator.free(home);
+
+    const install_dir = std.fmt.allocPrint(allocator, "{s}/.koru", .{home}) catch {
+        std.debug.print("  \x1b[31m✗\x1b[0m Failed to build install path\n", .{});
+        return;
+    };
+    defer allocator.free(install_dir);
+
+    const zig_dir = std.fmt.allocPrint(allocator, "zig-{s}-{s}-{s}", .{arch_str, os_str, zig_version}) catch {
+        std.debug.print("  \x1b[31m✗\x1b[0m Failed to build zig dir name\n", .{});
+        return;
+    };
+    defer allocator.free(zig_dir);
+
+    std.debug.print("  Downloading Zig {s} from ziglang.org...\n", .{zig_version});
+
+    // Create install directory
+    const mkdir_cmd = std.fmt.allocPrint(allocator, "mkdir -p {s}", .{install_dir}) catch return;
+    defer allocator.free(mkdir_cmd);
+
+    _ = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &[_][]const u8{ "sh", "-c", mkdir_cmd },
+    }) catch {};
+
+    // Download and extract
+    const download_cmd = if (builtin.os.tag == .windows)
+        std.fmt.allocPrint(allocator,
+            "cd {s} && curl -LSso zig.zip {s} && unzip -o zig.zip && del zig.zip",
+            .{ install_dir, url }
+        ) catch return
+    else
+        std.fmt.allocPrint(allocator,
+            "cd {s} && curl -LSs {s} | tar -xJ",
+            .{ install_dir, url }
+        ) catch return;
+    defer allocator.free(download_cmd);
+
+    const result = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &[_][]const u8{ "sh", "-c", download_cmd },
+    }) catch |err| {
+        std.debug.print("  \x1b[31m✗\x1b[0m Download failed: {s}\n", .{@errorName(err)});
+        printManualInstallHelp();
+        return;
+    };
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
+
+    if (result.term.Exited != 0) {
+        std.debug.print("  \x1b[31m✗\x1b[0m Download/extract failed\n", .{});
+        if (result.stderr.len > 0) {
+            std.debug.print("  {s}\n", .{result.stderr});
+        }
+        printManualInstallHelp();
+        return;
+    }
+
+    const zig_path = std.fmt.allocPrint(allocator, "{s}/{s}", .{install_dir, zig_dir}) catch return;
+    defer allocator.free(zig_path);
+
+    std.debug.print("  \x1b[32m✓\x1b[0m Installed to {s}\n", .{zig_path});
+    std.debug.print("\n  Add to PATH: export PATH=\"{s}:$PATH\"\n", .{zig_path});
 }
 
 // A simple writer that wraps a File
