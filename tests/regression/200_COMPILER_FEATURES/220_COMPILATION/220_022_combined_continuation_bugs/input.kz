@@ -8,6 +8,10 @@
 // When all three are fixed, this test passes and Koru gets its signature syntax.
 
 ~import "$std/control"
+~import "$std/build"
+
+// Link libc for c_allocator
+~std.build:requires { exe.linkLibC(); }
 
 const std = @import("std");
 
