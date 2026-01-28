@@ -1218,7 +1218,8 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
 
     // Import AST types as an alias to avoid shadowing/ambiguity
     try code_emitter.write("const __koru_std = @import(\"std\");\n");
-    try code_emitter.write("const __koru_ast = @import(\"ast\");\n\n");
+    try code_emitter.write("const __koru_ast = @import(\"ast\");\n");
+    try code_emitter.write("const log = @import(\"log\");\n\n");
 
     // Add dumpAST helper for observability (backend_output_emitted.zig version)
     try code_emitter.write(
@@ -2053,7 +2054,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             // Derive handler: extract event_decl from the item
             try code_emitter.write("    // Extract event declaration from node\n");
             try code_emitter.write("    const event_decl = if (node == .item and node.item.* == .event_decl) &node.item.event_decl else {\n");
-            try code_emitter.write("        transform_log.debug(\"ERROR: Derive handler called with non-event_decl node\\n\", .{});\n");
+            try code_emitter.write("        log.debug(\"ERROR: Derive handler called with non-event_decl node\\n\", .{});\n");
             try code_emitter.write("        @panic(\"derive: expected event_decl node\");\n");
             try code_emitter.write("    };\n");
         } else if (event.has_invocation or event.has_item) {
@@ -2063,7 +2064,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             // If handler needs item, find it using ASTNode helper
             if (event.has_item) {
                 try code_emitter.write("    const item = __koru_ast.ASTNode.findContainingItem(program, invocation) orelse {\n");
-                try code_emitter.write("        transform_log.debug(\"ERROR: Could not find containing item for invocation\\n\", .{});\n");
+                try code_emitter.write("        log.debug(\"ERROR: Could not find containing item for invocation\\n\", .{});\n");
                 try code_emitter.write("        @panic(\"transform: invocation not found in program\");\n");
                 try code_emitter.write("    };\n");
             }
@@ -2079,13 +2080,13 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
         // DEBUG: Show what we're processing
         if (event.has_event_decl) {
-            const debug_derive = try std.fmt.bufPrint(&buf, "    transform_log.debug(\"[DERIVE] {s}: processing event declaration\\n\", .{{}});\n", .{event.stub_name});
+            const debug_derive = try std.fmt.bufPrint(&buf, "    log.debug(\"[DERIVE] {s}: processing event declaration\\n\", .{{}});\n", .{event.stub_name});
             try code_emitter.write(debug_derive);
         } else if (event.has_invocation or event.has_item) {
-            const debug_count = try std.fmt.bufPrint(&buf, "    transform_log.debug(\"[TRANSFORM] {s}: {{d}} args\\n\", .{{invocation.args.len}});\n", .{event.stub_name});
+            const debug_count = try std.fmt.bufPrint(&buf, "    log.debug(\"[TRANSFORM] {s}: {{d}} args\\n\", .{{invocation.args.len}});\n", .{event.stub_name});
             try code_emitter.write(debug_count);
             try code_emitter.write("    for (invocation.args, 0..) |arg, i| {\n");
-            try code_emitter.write("        transform_log.debug(\"  Arg[{d}]: name='{s}' has_source={} has_expr={}\\n\", .{i, arg.name, arg.source_value != null, arg.expression_value != null});\n");
+            try code_emitter.write("        log.debug(\"  Arg[{d}]: name='{s}' has_source={} has_expr={}\\n\", .{i, arg.name, arg.source_value != null, arg.expression_value != null});\n");
             try code_emitter.write("    }\n");
         }
 
@@ -2119,7 +2120,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 try code_emitter.write("        .transformed => |t| t.program,\n");
                 if (event.has_failed) {
                     try code_emitter.write("        .failed => |f| {\n");
-                    try code_emitter.write("            transform_log.debug(\"Derive failed: {s}\\n\", .{f.@\"error\"});\n");
+                    try code_emitter.write("            log.debug(\"Derive failed: {s}\\n\", .{f.@\"error\"});\n");
                     try code_emitter.write("            return error.DeriveFailed;\n");
                     try code_emitter.write("        },\n");
                 }
@@ -2197,13 +2198,13 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 try code_emitter.write("            .transformed => |t| t.program,\n");
                 if (event.has_failed) {
                     try code_emitter.write("            .failed => |f| {\n");
-                    try code_emitter.write("                transform_log.debug(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");
+                    try code_emitter.write("                log.debug(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");
                     try code_emitter.write("                return error.TransformFailed;\n");
                     try code_emitter.write("            },\n");
                 }
                 if (event.has_compile_error) {
                     try code_emitter.write("            .compile_error => |ce| {\n");
-                    try code_emitter.write("                transform_log.debug(\"Compile error: {s}\\n\", .{ce.message});\n");
+                    try code_emitter.write("                log.debug(\"Compile error: {s}\\n\", .{ce.message});\n");
                     try code_emitter.write("                return error.CompileError;\n");
                     try code_emitter.write("            },\n");
                 }
@@ -5171,8 +5172,8 @@ pub fn main() !void {
     // Find project root by searching upwards for koru.json (before parsing, so resolver is available)
     const input_dir = std.fs.path.dirname(input) orelse ".";
 
-    // Convert input_dir to absolute path for {ENTRY} interpolation
-    // This prevents path doubling when resolving $app/{ENTRY} relative to project_root
+    // Convert input_dir to absolute path for {{ ENTRY }} interpolation
+    // This prevents path doubling when resolving $app/{{ ENTRY }} relative to project_root
     const input_dir_absolute = try std.fs.cwd().realpathAlloc(allocator, input_dir);
     defer allocator.free(input_dir_absolute);
 
@@ -5212,7 +5213,7 @@ pub fn main() !void {
     defer project_config.deinit();
 
     // Create module resolver for import resolution
-    // Pass project_root for resolving alias paths and entry_dir for {ENTRY} interpolation
+    // Pass project_root for resolving alias paths and entry_dir for {{ ENTRY }} interpolation
     var resolver = try ModuleResolver.init(allocator, &project_config, project_root, input_dir_absolute);
     defer resolver.deinit();
 

@@ -31,10 +31,19 @@ pub const ModuleResolver = struct {
     stdlib_path: ?[]const u8,
     config: *const Config,
     project_root: []const u8,  // Directory containing koru.json (for resolving alias paths)
-    entry_dir: []const u8,     // Directory of the entry file being compiled (for {ENTRY} interpolation)
+    entry_dir: []const u8,     // Directory of the entry file being compiled (for {{ ENTRY }} interpolation)
+    koru_home: []const u8,     // Directory where koruc is installed (for {{ KORU_HOME }} interpolation)
     parsing_files: std.StringHashMap(void),  // Track files currently being parsed (for cycle detection)
 
     pub fn init(allocator: std.mem.Allocator, config: *const Config, project_root: []const u8, entry_dir: []const u8) !ModuleResolver {
+        // Get KORU_HOME from executable path
+        var exe_path_buf: [4096]u8 = undefined;
+        const exe_path = std.fs.selfExePath(&exe_path_buf) catch "/usr/local/bin/koruc";
+        const exe_dir = std.fs.path.dirname(exe_path) orelse "/usr/local/bin";
+        // KORU_HOME is parent of bin/ directory (e.g., /usr/local/lib/koru from /usr/local/lib/koru/bin/koruc)
+        // Or just the exe_dir if structure is flat
+        const koru_home = std.fs.path.dirname(exe_dir) orelse exe_dir;
+
         var resolver = ModuleResolver{
             .allocator = allocator,
             .search_paths = std.ArrayList([]const u8){
@@ -45,6 +54,7 @@ pub const ModuleResolver = struct {
             .config = config,
             .project_root = project_root,
             .entry_dir = entry_dir,
+            .koru_home = koru_home,
             .parsing_files = std.StringHashMap(void).init(allocator),
         };
 
@@ -90,21 +100,47 @@ pub const ModuleResolver = struct {
         }
     }
 
-    /// Interpolate {ENTRY} placeholder with entry_dir
+    /// Interpolate {{ variable }} placeholders in a path string
+    /// Supported variables: ENTRY, KORU_HOME
     /// Returns new string if interpolation happened, null otherwise
-    fn interpolateEntry(self: *ModuleResolver, path: []const u8) !?[]u8 {
-        if (std.mem.indexOf(u8, path, "{ENTRY}")) |pos| {
-            // Build new string: prefix + entry_dir + suffix
-            const prefix = path[0..pos];
-            const suffix = path[pos + 7..]; // Skip "{ENTRY}"
+    fn interpolate(self: *ModuleResolver, path: []const u8) !?[]u8 {
+        var result = try self.allocator.dupe(u8, path);
+        var changed = false;
 
-            return try std.fmt.allocPrint(
+        // Process {{ ENTRY }}
+        if (std.mem.indexOf(u8, result, "{{ ENTRY }}")) |pos| {
+            const prefix = result[0..pos];
+            const suffix = result[pos + 11..]; // Skip "{{ ENTRY }}"
+            const new_result = try std.fmt.allocPrint(
                 self.allocator,
                 "{s}{s}{s}",
                 .{ prefix, self.entry_dir, suffix }
             );
+            self.allocator.free(result);
+            result = new_result;
+            changed = true;
         }
-        return null;
+
+        // Process {{ KORU_HOME }}
+        if (std.mem.indexOf(u8, result, "{{ KORU_HOME }}")) |pos| {
+            const prefix = result[0..pos];
+            const suffix = result[pos + 15..]; // Skip "{{ KORU_HOME }}"
+            const new_result = try std.fmt.allocPrint(
+                self.allocator,
+                "{s}{s}{s}",
+                .{ prefix, self.koru_home, suffix }
+            );
+            self.allocator.free(result);
+            result = new_result;
+            changed = true;
+        }
+
+        if (changed) {
+            return result;
+        } else {
+            self.allocator.free(result);
+            return null;
+        }
     }
 
     fn initializeSearchPaths(self: *ModuleResolver) !void {
@@ -137,7 +173,7 @@ pub const ModuleResolver = struct {
         // Try: /usr/local/lib/koru_std (global installation)
         const global_path = "/usr/local/lib/koru_std";
         log.debug("  Trying: {s}\n", .{global_path});
-        if (std.fs.cwd().access(global_path, .{})) |_| {
+        if (std.fs.accessAbsolute(global_path, .{})) |_| {
             log.debug("  ✓ FOUND stdlib at: {s}\n", .{global_path});
             return try self.allocator.dupe(u8, global_path);
         } else |err| {
@@ -267,8 +303,8 @@ pub const ModuleResolver = struct {
             if (self.config.paths.get(alias)) |alias_paths| {
                 // Iterate through fallback chain - try each path until one exists
                 for (alias_paths, 0..) |alias_path_raw, path_idx| {
-                    // Interpolate {ENTRY} if present
-                    const alias_path = if (try self.interpolateEntry(alias_path_raw)) |interpolated|
+                    // Interpolate {{ ENTRY }}, {{ KORU_HOME }} if present
+                    const alias_path = if (try self.interpolate(alias_path_raw)) |interpolated|
                         interpolated
                     else
                         alias_path_raw;
@@ -465,8 +501,8 @@ pub const ModuleResolver = struct {
             if (self.config.paths.get(alias)) |alias_paths| {
                 // Iterate through fallback chain - try each path until one exists
                 for (alias_paths) |alias_path_raw| {
-                    // Interpolate {ENTRY} if present
-                    const alias_path = if (try self.interpolateEntry(alias_path_raw)) |interpolated|
+                    // Interpolate {{ ENTRY }}, {{ KORU_HOME }} if present
+                    const alias_path = if (try self.interpolate(alias_path_raw)) |interpolated|
                         interpolated
                     else
                         alias_path_raw;

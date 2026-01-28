@@ -183,7 +183,7 @@ pub const Config = struct {
         try paths.put(try allocator.dupe(u8, "std"), try makePath(allocator, "/usr/local/lib/koru_std"));
         try paths.put(try allocator.dupe(u8, "lib"), try makePath(allocator, "./lib"));
         try paths.put(try allocator.dupe(u8, "root"), try makePath(allocator, "."));
-        try paths.put(try allocator.dupe(u8, "app"), try makePath(allocator, "{ENTRY}"));
+        try paths.put(try allocator.dupe(u8, "app"), try makePath(allocator, "{{ ENTRY }}"));
 
         return Config{
             .name = try allocator.dupe(u8, "unnamed"),

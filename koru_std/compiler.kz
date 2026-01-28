@@ -82,6 +82,13 @@ pub const CompilerContext = struct {
         .optimize = optimize,
     });
 
+    // Log module - logging utilities
+    const log_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/log.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
     // AST module - core AST data structures
     const ast_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
@@ -111,6 +118,7 @@ pub const CompilerContext = struct {
         .optimize = optimize,
     });
     type_registry_module.addImport("ast", ast_module);
+    type_registry_module.addImport("log", log_module);
 
     // Expression parser
     const expression_parser_module = b.createModule(.{
@@ -143,6 +151,7 @@ pub const CompilerContext = struct {
         .optimize = optimize,
     });
     module_resolver_module.addImport("config", config_module);
+    module_resolver_module.addImport("log", log_module);
 
     // Parser module - source parsing
     const parser_module = b.createModule(.{
@@ -153,6 +162,7 @@ pub const CompilerContext = struct {
     parser_module.addImport("ast", ast_module);
     parser_module.addImport("lexer", lexer_module);
     parser_module.addImport("errors", errors_module);
+    parser_module.addImport("log", log_module);
     parser_module.addImport("type_registry", type_registry_module);
     parser_module.addImport("expression_parser", expression_parser_module);
     parser_module.addImport("union_collector", union_collector_module);
@@ -189,6 +199,7 @@ pub const CompilerContext = struct {
     });
     shape_checker_module.addImport("ast", ast_module);
     shape_checker_module.addImport("errors", errors_module);
+    shape_checker_module.addImport("log", log_module);
     shape_checker_module.addImport("phantom_parser", phantom_parser_module);
     shape_checker_module.addImport("type_inference", type_inference_module);
     shape_checker_module.addImport("branch_checker", branch_checker_module);
@@ -201,6 +212,7 @@ pub const CompilerContext = struct {
     });
     flow_checker_module.addImport("ast", ast_module);
     flow_checker_module.addImport("errors", errors_module);
+    flow_checker_module.addImport("log", log_module);
     flow_checker_module.addImport("branch_checker", branch_checker_module);
     flow_checker_module.addImport("annotation_parser", annotation_parser_module);
 
@@ -212,6 +224,7 @@ pub const CompilerContext = struct {
     });
     phantom_semantic_checker_module.addImport("ast", ast_module);
     phantom_semantic_checker_module.addImport("errors", errors_module);
+    phantom_semantic_checker_module.addImport("log", log_module);
     phantom_semantic_checker_module.addImport("phantom_parser", phantom_parser_module);
 
     // Purity analyzer - tracks [pure] annotations
@@ -239,6 +252,7 @@ pub const CompilerContext = struct {
     auto_discharge_inserter_module.addImport("ast", ast_module);
     auto_discharge_inserter_module.addImport("ast_functional", ast_functional_module);
     auto_discharge_inserter_module.addImport("errors", errors_module);
+    auto_discharge_inserter_module.addImport("log", log_module);
     auto_discharge_inserter_module.addImport("phantom_parser", phantom_parser_module);
 
     // Codegen utilities - keyword escaping, identifier helpers
@@ -287,6 +301,7 @@ pub const CompilerContext = struct {
     });
     emitter_helpers_module.addImport("ast", ast_module);
     emitter_helpers_module.addImport("errors", errors_module);
+    emitter_helpers_module.addImport("log", log_module);
     emitter_helpers_module.addImport("compiler_config", compiler_config_module);
     emitter_helpers_module.addImport("type_registry", type_registry_module);
     emitter_helpers_module.addImport("codegen_utils", codegen_utils_module);
@@ -306,6 +321,7 @@ pub const CompilerContext = struct {
     });
     tap_registry_module.addImport("ast", ast_module);
     tap_registry_module.addImport("errors", errors_module);
+    tap_registry_module.addImport("log", log_module);
     tap_registry_module.addImport("glob_pattern_matcher", glob_pattern_matcher_module);
 
     // Runtime registry - runtime scope collection
@@ -322,6 +338,7 @@ pub const CompilerContext = struct {
         .optimize = optimize,
     });
     tap_transformer_module.addImport("ast", ast_module);
+    tap_transformer_module.addImport("log", log_module);
     tap_transformer_module.addImport("tap_registry", tap_registry_module);
     tap_transformer_module.addImport("emitter_helpers", emitter_helpers_module);
 
@@ -344,6 +361,7 @@ pub const CompilerContext = struct {
         .optimize = optimize,
     });
     visitor_emitter_module.addImport("ast", ast_module);
+    visitor_emitter_module.addImport("log", log_module);
     visitor_emitter_module.addImport("emitter_helpers", emitter_helpers_module);
     visitor_emitter_module.addImport("tap_registry", tap_registry_module);
     visitor_emitter_module.addImport("type_registry", type_registry_module);
@@ -390,6 +408,7 @@ pub const CompilerContext = struct {
         .optimize = optimize,
     });
     transform_pass_runner_module.addImport("ast", ast_module);
+    transform_pass_runner_module.addImport("log", log_module);
     transform_pass_runner_module.addImport("annotation_parser", annotation_parser_module);
     transform_pass_runner_module.addImport("template_utils", template_utils_module);
     transform_pass_runner_module.addImport("ast_functional", ast_functional_module);
@@ -399,6 +418,7 @@ pub const CompilerContext = struct {
     exe.root_module.addImport("ast", ast_module);
     exe.root_module.addImport("ast_functional", ast_functional_module);
     exe.root_module.addImport("ast_serializer", ast_serializer_module);
+    exe.root_module.addImport("log", log_module);
     exe.root_module.addImport("emitter_helpers", emitter_helpers_module);
     exe.root_module.addImport("tap_registry", tap_registry_module);
     exe.root_module.addImport("runtime_registry", runtime_registry_module);
