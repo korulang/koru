@@ -2,6 +2,18 @@
 
 ~import "$std/testing"
 ~import "$std/inter"
+~import "$std/deps"
+
+// Compiler system dependencies
+~std.deps:requires.system {
+    "name": "zig",
+    "check": "zig version",
+    "min_version": "0.15.0",
+    "brew": "zig",
+    "apt": "zig",
+    "pacman": "zig",
+    "apk": "zig"
+}
 
 const std = @import("std");
 const ast = @import("ast");

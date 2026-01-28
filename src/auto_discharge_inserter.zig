@@ -1197,7 +1197,7 @@ pub const AutoDischargeInserter = struct {
 
                 // Emit warning about auto-discharge insertion (only in warn mode)
                 if (self.warn_mode) {
-                    log.debug("warning[AUTO-DISCHARGE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
+                    std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
                         disposal.qualified_name,
                         binding_path,
                         info.phantom_state,
@@ -1357,7 +1357,7 @@ pub const AutoDischargeInserter = struct {
 
             // Emit warning about auto-discharge insertion (only in warn mode)
             if (self.warn_mode) {
-                log.debug("warning[AUTO-DISCHARGE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
+                std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
                     disposal.qualified_name,
                     binding_path,
                     info.phantom_state,
@@ -1789,7 +1789,7 @@ pub const AutoDischargeInserter = struct {
         result_ptr.* = new_program;
 
         if (self.warn_mode) {
-            log.debug("warning[AUTO-DISCHARGE]: Inserting '{s}' at scope exit for '{s}'\n", .{
+            std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' at scope exit for '{s}'\n", .{
                 disposal.qualified_name,
                 binding_name,
             });
@@ -1909,7 +1909,7 @@ pub const AutoDischargeInserter = struct {
         result_ptr.* = new_program;
 
         if (self.warn_mode) {
-            log.debug("warning[AUTO-DISCHARGE]: Inserting '{s}' at scope exit for '{s}'\n", .{
+            std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' at scope exit for '{s}'\n", .{
                 disposal.qualified_name,
                 binding_name,
             });

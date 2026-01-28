@@ -1,5 +1,5 @@
 const std = @import("std");
-const log = @import("log");
+const log = std.log.scoped(.config);
 
 /// JSON file structure for koru.json
 /// Note: paths can be either string or array of strings, handled in parsePathsFromJson
@@ -179,8 +179,9 @@ pub const Config = struct {
             }
         }.make;
 
-        // Default: $std points to global koru_std installation
-        try paths.put(try allocator.dupe(u8, "std"), try makePath(allocator, "/usr/local/lib/koru_std"));
+        // Default: $std points to koru_std relative to koruc installation
+        // {{ KORU_HOME }} is interpolated by ModuleResolver at resolution time
+        try paths.put(try allocator.dupe(u8, "std"), try makePath(allocator, "{{ KORU_HOME }}/koru_std"));
         try paths.put(try allocator.dupe(u8, "lib"), try makePath(allocator, "./lib"));
         try paths.put(try allocator.dupe(u8, "root"), try makePath(allocator, "."));
         try paths.put(try allocator.dupe(u8, "app"), try makePath(allocator, "{{ ENTRY }}"));

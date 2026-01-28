@@ -1,5 +1,5 @@
 const std = @import("std");
-const log = @import("log");
+const log = std.log.scoped(.module_resolver);
 const Config = @import("config").Config;
 
 
@@ -37,12 +37,21 @@ pub const ModuleResolver = struct {
 
     pub fn init(allocator: std.mem.Allocator, config: *const Config, project_root: []const u8, entry_dir: []const u8) !ModuleResolver {
         // Get KORU_HOME from executable path
+        // Development: <project>/zig-out/bin/koruc → koru_home = <project>
+        // npm package: <package>/bin/koruc → koru_home = <package>
         var exe_path_buf: [4096]u8 = undefined;
         const exe_path = std.fs.selfExePath(&exe_path_buf) catch "/usr/local/bin/koruc";
         const exe_dir = std.fs.path.dirname(exe_path) orelse "/usr/local/bin";
-        // KORU_HOME is parent of bin/ directory (e.g., /usr/local/lib/koru from /usr/local/lib/koru/bin/koruc)
-        // Or just the exe_dir if structure is flat
-        const koru_home = std.fs.path.dirname(exe_dir) orelse exe_dir;
+        // Parent of bin/ directory
+        var koru_home_temp = std.fs.path.dirname(exe_dir) orelse exe_dir;
+        // If parent is "zig-out" (development build), go up one more level
+        if (std.fs.path.basename(koru_home_temp).len >= 7 and
+            std.mem.eql(u8, std.fs.path.basename(koru_home_temp)[0..7], "zig-out"))
+        {
+            koru_home_temp = std.fs.path.dirname(koru_home_temp) orelse koru_home_temp;
+        }
+        // Dupe to heap so it survives beyond this function
+        const koru_home = try allocator.dupe(u8, koru_home_temp);
 
         var resolver = ModuleResolver{
             .allocator = allocator,
@@ -73,6 +82,9 @@ pub const ModuleResolver = struct {
         if (self.stdlib_path) |path| {
             self.allocator.free(path);
         }
+
+        // Free koru_home
+        self.allocator.free(self.koru_home);
 
         // Clean up parsing_files keys
         var it = self.parsing_files.keyIterator();
@@ -185,14 +197,14 @@ pub const ModuleResolver = struct {
         const exe_path = try std.fs.selfExePath(&exe_path_buf);
         const exe_dir = std.fs.path.dirname(exe_path) orelse return null;
 
-        // Try: executable_dir/../koru_std
+        // Try: executable_dir/../koru_std (for npm package: binaries/../koru_std)
         const candidate1 = try std.fs.path.join(self.allocator, &[_][]const u8{
             exe_dir, "..", "koru_std"
         });
         defer self.allocator.free(candidate1);
 
         log.debug("  Trying: {s}\n", .{candidate1});
-        if (std.fs.cwd().access(candidate1, .{})) |_| {
+        if (std.fs.accessAbsolute(candidate1, .{})) |_| {
             log.debug("  ✓ FOUND stdlib at: {s}\n", .{candidate1});
             return try self.allocator.dupe(u8, candidate1);
         } else |err| {
@@ -206,7 +218,7 @@ pub const ModuleResolver = struct {
         defer self.allocator.free(candidate2);
 
         log.debug("  Trying: {s}\n", .{candidate2});
-        if (std.fs.cwd().access(candidate2, .{})) |_| {
+        if (std.fs.accessAbsolute(candidate2, .{})) |_| {
             log.debug("  ✓ FOUND stdlib at: {s}\n", .{candidate2});
             return try self.allocator.dupe(u8, candidate2);
         } else |err| {

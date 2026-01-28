@@ -2621,6 +2621,146 @@ fn printStdout(allocator: std.mem.Allocator, comptime fmt: []const u8, args: any
     try stdout.writeAll(msg);
 }
 
+/// Built-in deps command - runs in frontend, no compilation needed
+fn runBuiltinDeps(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    const min_zig_version = .{ .major = 0, .minor = 15, .patch = 0 };
+
+    // Check for "install" subcommand
+    var do_install = false;
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "install")) {
+            do_install = true;
+        }
+    }
+
+    std.debug.print("\nKoru compiler dependencies:\n\n", .{});
+
+    // Check Zig installation
+    const zig_result = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &[_][]const u8{ "zig", "version" },
+    }) catch |err| {
+        std.debug.print("  zig \x1b[31m✗\x1b[0m (not found: {s})\n", .{@errorName(err)});
+        std.debug.print("       brew: zig | apt: zig | pacman: zig\n", .{});
+        if (do_install) {
+            try installZig(allocator);
+        } else {
+            std.debug.print("\nTo install: koruc deps install\n", .{});
+        }
+        return;
+    };
+    defer allocator.free(zig_result.stdout);
+    defer allocator.free(zig_result.stderr);
+
+    // Parse version from output (e.g., "0.15.1\n")
+    const version_str = std.mem.trim(u8, zig_result.stdout, " \t\n\r");
+    const parsed = parseVersion(version_str);
+
+    if (parsed) |ver| {
+        const version_ok = ver.major > min_zig_version.major or
+            (ver.major == min_zig_version.major and ver.minor > min_zig_version.minor) or
+            (ver.major == min_zig_version.major and ver.minor == min_zig_version.minor and ver.patch >= min_zig_version.patch);
+
+        if (version_ok) {
+            std.debug.print("  zig \x1b[32m✓\x1b[0m ({s})\n", .{version_str});
+        } else {
+            std.debug.print("  zig \x1b[33m⚠\x1b[0m ({s}) - needs >= {d}.{d}.{d}\n", .{
+                version_str,
+                min_zig_version.major,
+                min_zig_version.minor,
+                min_zig_version.patch,
+            });
+            if (do_install) {
+                std.debug.print("\nUpgrading Zig...\n", .{});
+                try installZig(allocator);
+            } else {
+                std.debug.print("\nTo upgrade: koruc deps install\n", .{});
+            }
+            return;
+        }
+    } else {
+        std.debug.print("  zig \x1b[33m?\x1b[0m ({s}) - could not parse version\n", .{version_str});
+    }
+
+    std.debug.print("\n\x1b[32mAll dependencies satisfied!\x1b[0m\n", .{});
+}
+
+fn parseVersion(s: []const u8) ?struct { major: u32, minor: u32, patch: u32 } {
+    var i: usize = 0;
+    // Skip non-digit prefix
+    while (i < s.len and !std.ascii.isDigit(s[i])) : (i += 1) {}
+    if (i >= s.len) return null;
+
+    const start = i;
+    var dots: [2]usize = .{ 0, 0 };
+    var dot_count: usize = 0;
+
+    while (i < s.len and (std.ascii.isDigit(s[i]) or s[i] == '.')) : (i += 1) {
+        if (s[i] == '.' and dot_count < 2) {
+            dots[dot_count] = i;
+            dot_count += 1;
+        }
+    }
+
+    if (dot_count < 1) return null;
+
+    const major = std.fmt.parseInt(u32, s[start..dots[0]], 10) catch return null;
+    const minor_end = if (dot_count >= 2) dots[1] else i;
+    const minor = std.fmt.parseInt(u32, s[dots[0] + 1 .. minor_end], 10) catch return null;
+    const patch = if (dot_count >= 2)
+        std.fmt.parseInt(u32, s[dots[1] + 1 .. i], 10) catch 0
+    else
+        0;
+
+    return .{ .major = major, .minor = minor, .patch = patch };
+}
+
+fn installZig(allocator: std.mem.Allocator) !void {
+    // Detect package manager
+    const pms = [_]struct { name: []const u8, check: []const u8, install: []const u8 }{
+        .{ .name = "brew", .check = "brew --version", .install = "brew install zig" },
+        .{ .name = "apt", .check = "apt --version", .install = "sudo apt update && sudo apt install -y zig" },
+        .{ .name = "pacman", .check = "pacman --version", .install = "sudo pacman -S zig" },
+        .{ .name = "dnf", .check = "dnf --version", .install = "sudo dnf install -y zig" },
+    };
+
+    for (pms) |pm| {
+        const check_result = std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &[_][]const u8{ "sh", "-c", pm.check },
+        }) catch continue;
+        defer allocator.free(check_result.stdout);
+        defer allocator.free(check_result.stderr);
+
+        if (check_result.term.Exited == 0) {
+            std.debug.print("  Detected {s}, running: {s}\n", .{ pm.name, pm.install });
+
+            const install_result = std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &[_][]const u8{ "sh", "-c", pm.install },
+            }) catch |err| {
+                std.debug.print("  \x1b[31m✗\x1b[0m Install failed: {s}\n", .{@errorName(err)});
+                return;
+            };
+            defer allocator.free(install_result.stdout);
+            defer allocator.free(install_result.stderr);
+
+            if (install_result.term.Exited == 0) {
+                std.debug.print("  \x1b[32m✓\x1b[0m Zig installed successfully!\n", .{});
+            } else {
+                std.debug.print("  \x1b[31m✗\x1b[0m Install failed (exit code {d})\n", .{install_result.term.Exited});
+                if (install_result.stderr.len > 0) {
+                    std.debug.print("  {s}\n", .{install_result.stderr});
+                }
+            }
+            return;
+        }
+    }
+
+    std.debug.print("  Could not detect package manager.\n", .{});
+    std.debug.print("  Please install Zig manually from: https://ziglang.org/download/\n", .{});
+}
+
 // A simple writer that wraps a File
 const FileWriter = struct {
     file: std.fs.File,
@@ -5141,6 +5281,15 @@ pub fn main() !void {
         return;
     }
 
+    // Handle built-in frontend commands that don't require compilation
+    if (input_file) |maybe_cmd| {
+        if (std.mem.eql(u8, maybe_cmd, "deps")) {
+            // deps runs directly in frontend - no compilation needed
+            try runBuiltinDeps(allocator, args);
+            return;
+        }
+    }
+
     if (input_file == null) {
         try printStderr(allocator, "Error: no input file specified\n\n{s}", .{usage});
         return;
@@ -5162,12 +5311,10 @@ pub fn main() !void {
     // Read input file
     const file = try std.fs.cwd().openFile(input, .{});
     defer file.close();
-
     const file_size = try file.getEndPos();
     const source = try parse_allocator.alloc(u8, file_size);
-    // No defer needed - parse_arena will free everything
-
     _ = try file.read(source);
+    // No defer needed - parse_arena will free everything
 
     // Find project root by searching upwards for koru.json (before parsing, so resolver is available)
     const input_dir = std.fs.path.dirname(input) orelse ".";
@@ -6027,8 +6174,8 @@ pub fn main() !void {
     const compiler_requirements_raw = requires_collector.getCompilerRequirements();
     const build_requirements_raw = requires_collector.getBuildRequirements();
 
-    // Use absolute path to koru library (symlinked at /usr/local/lib/koru)
-    const koru_lib_path = "/usr/local/lib/koru";
+    // Use koru_home from resolver (computed from executable path)
+    const koru_lib_path = resolver.koru_home;
 
     // Generate build.zig for BACKEND (compiler:requires)
     if (compiler_requirements_raw.len > 0) {

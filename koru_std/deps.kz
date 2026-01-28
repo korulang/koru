@@ -46,6 +46,7 @@
     const SystemDep = struct {
         name: []const u8 = "",
         check: []const u8 = "",
+        min_version: []const u8 = "",
         brew: []const u8 = "",
         apt: []const u8 = "",
         dnf: []const u8 = "",
@@ -56,6 +57,56 @@
     const CheckResult = struct {
         success: bool,
         output: []const u8,
+        version: ?[3]u32 = null,  // parsed semver: major, minor, patch
+    };
+
+    const Version = struct {
+        major: u32,
+        minor: u32,
+        patch: u32,
+
+        const Self = @This();
+
+        fn parse(s: []const u8) ?Self {
+            // Find version-like pattern: digits.digits.digits
+            var i: usize = 0;
+            // Skip non-digit prefix (e.g., "zig " or "v")
+            while (i < s.len and !std.ascii.isDigit(s[i])) : (i += 1) {}
+            if (i >= s.len) return null;
+
+            const start = i;
+            var dots: [2]usize = .{ 0, 0 };
+            var dot_count: usize = 0;
+
+            while (i < s.len and (std.ascii.isDigit(s[i]) or s[i] == '.')) : (i += 1) {
+                if (s[i] == '.' and dot_count < 2) {
+                    dots[dot_count] = i;
+                    dot_count += 1;
+                }
+            }
+
+            if (dot_count < 1) return null;  // Need at least major.minor
+
+            const major = std.fmt.parseInt(u32, s[start..dots[0]], 10) catch return null;
+            const minor_end = if (dot_count >= 2) dots[1] else i;
+            const minor = std.fmt.parseInt(u32, s[dots[0] + 1 .. minor_end], 10) catch return null;
+            const patch = if (dot_count >= 2)
+                std.fmt.parseInt(u32, s[dots[1] + 1 .. i], 10) catch 0
+            else
+                0;
+
+            return Self{ .major = major, .minor = minor, .patch = patch };
+        }
+
+        fn gte(self: Self, other: Self) bool {
+            if (self.major != other.major) return self.major > other.major;
+            if (self.minor != other.minor) return self.minor > other.minor;
+            return self.patch >= other.patch;
+        }
+
+        fn format(self: Self, buf: []u8) []const u8 {
+            return std.fmt.bufPrint(buf, "{d}.{d}.{d}", .{ self.major, self.minor, self.patch }) catch "?.?.?";
+        }
     };
 
     // Helper functions
@@ -181,6 +232,18 @@
     var deps_list = std.ArrayListUnmanaged(SystemDep){};
     defer deps_list.deinit(allocator);
 
+    // Always include Zig as a compiler requirement
+    deps_list.append(allocator, SystemDep{
+        .name = "zig",
+        .check = "zig version",
+        .min_version = "0.15.0",
+        .brew = "zig",
+        .apt = "zig",
+        .pacman = "zig",
+        .apk = "zig",
+    }) catch {};
+
+    // Scan program items for additional project dependencies
     for (program.items) |item| {
         if (item == .flow) {
             const flow = item.flow;
@@ -196,6 +259,7 @@
                             var dep = SystemDep{};
                             dep.name = helpers.parseJsonField(arg.value, "name");
                             dep.check = helpers.parseJsonField(arg.value, "check");
+                            dep.min_version = helpers.parseJsonField(arg.value, "min_version");
                             dep.brew = helpers.parseJsonField(arg.value, "brew");
                             dep.apt = helpers.parseJsonField(arg.value, "apt");
                             dep.dnf = helpers.parseJsonField(arg.value, "dnf");
@@ -230,14 +294,37 @@
         if (dep.check.len > 0) {
             const result = helpers.runCheck(allocator, dep.check);
             if (result.success) {
-                std.debug.print("  {s} \x1b[32m✓\x1b[0m", .{dep.name});
-                if (result.output.len > 0) {
-                    const first_line = helpers.firstLine(result.output);
-                    std.debug.print(" ({s})\n", .{first_line});
-                    allocator.free(result.output);
-                } else {
-                    std.debug.print("\n", .{});
+                const first_line = helpers.firstLine(result.output);
+                const installed_version = Version.parse(first_line);
+
+                // Check version constraint if specified
+                var version_ok = true;
+                if (dep.min_version.len > 0) {
+                    if (Version.parse(dep.min_version)) |min_ver| {
+                        if (installed_version) |inst_ver| {
+                            version_ok = inst_ver.gte(min_ver);
+                        } else {
+                            version_ok = false;  // Can't parse installed version
+                        }
+                    }
                 }
+
+                if (version_ok) {
+                    std.debug.print("  {s} \x1b[32m✓\x1b[0m", .{dep.name});
+                } else {
+                    std.debug.print("  {s} \x1b[33m⚠\x1b[0m", .{dep.name});
+                }
+
+                if (result.output.len > 0) {
+                    std.debug.print(" ({s})", .{first_line});
+                    allocator.free(result.output);
+                }
+
+                if (!version_ok) {
+                    std.debug.print(" \x1b[33m- needs >= {s}\x1b[0m", .{dep.min_version});
+                    missing.append(allocator, dep) catch {};
+                }
+                std.debug.print("\n", .{});
             } else {
                 std.debug.print("  {s} \x1b[31m✗\x1b[0m (not found)\n", .{dep.name});
                 missing.append(allocator, dep) catch {};

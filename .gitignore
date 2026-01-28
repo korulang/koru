@@ -52,6 +52,9 @@
 # Build Artifacts (Anywhere in Project)
 # ============================================================================
 
+# Distribution (npm package build artifacts)
+dist/
+
 .zig-cache/
 zig-out/
 *.o
