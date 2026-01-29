@@ -44,6 +44,7 @@ const TEST_SOURCE = "~open(path: \"x.txt\")\n| opened f |> expensive_read(handle
 | exhausted e |> std.io:print.ln("PASS: exhausted with {{ e.used:d }} used, last event: {{ e.last_event:s }}")
 | parse_error _ |> std.io:println(text: "PARSE ERROR")
 | validation_error _ |> std.io:println(text: "VALIDATION ERROR")
+| shape_error _ |> std.io:println(text: "SHAPE ERROR")
 | event_denied _ |> std.io:println(text: "EVENT DENIED")
 | dispatch_error _ |> std.io:println(text: "DISPATCH ERROR")
 | scope_not_found _ |> std.io:println(text: "SCOPE NOT FOUND")

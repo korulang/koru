@@ -1,0 +1,41 @@
+// Test: Pattern branch dispatch
+//
+// Pattern branches should dispatch based on matching the pattern against
+// the event's return value. This test uses actual pattern branch syntax.
+//
+// The transform should:
+// 1. Detect pattern branches (branch name starts with '[')
+// 2. Parse the pattern to extract method + path template
+// 3. Generate dispatch code that matches against the payload
+// 4. Extract path params into the binding
+
+~import "$std/io"
+
+const std = @import("std");
+
+// Request type - the payload we're matching against
+pub const Request = struct {
+    method: []const u8,
+    path: []const u8,
+};
+
+// Params extracted from path
+pub const Params = struct {
+    id: ?[]const u8 = null,
+};
+
+// Event that returns a request
+~pub event incoming {}
+| request Request
+
+~proc incoming {
+    return .{ .request = .{ .method = "GET", .path = "/users/42" } };
+}
+
+// This is what we WANT to work:
+// Pattern branches dispatch based on matching method + path
+~incoming()
+| [GET /users/:id] p |> std.io:print.ln("user id: {{ p.id:s }}")
+| [GET /health] _ |> std.io:print.ln("health check")
+| [POST /users] _ |> std.io:print.ln("create user")
+| [*] _ |> std.io:print.ln("not found")

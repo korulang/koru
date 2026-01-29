@@ -46,6 +46,7 @@ const SESSION_2 = "~close(handle: \"file_1\")\n| closed |> result {}";
 | exhausted _ |> std.io:println(text: "FAIL: session 1 exhausted")
 | parse_error _ |> std.io:println(text: "FAIL: session 1 parse_error")
 | validation_error _ |> std.io:println(text: "FAIL: session 1 validation_error")
+| shape_error _ |> std.io:println(text: "FAIL: session 1 shape_error")
 | event_denied _ |> std.io:println(text: "FAIL: session 1 event_denied")
 | dispatch_error _ |> std.io:println(text: "FAIL: session 1 dispatch_error")
 | scope_not_found _ |> std.io:println(text: "FAIL: session 1 scope_not_found")
@@ -75,6 +76,7 @@ const SESSION_2 = "~close(handle: \"file_1\")\n| closed |> result {}";
         .exhausted => return .{ .fail = .{ .reason = "session 2 exhausted" } },
         .parse_error => return .{ .fail = .{ .reason = "session 2 parse error" } },
         .validation_error => return .{ .fail = .{ .reason = "session 2 validation error" } },
+        .shape_error => return .{ .fail = .{ .reason = "session 2 shape error" } },
         .event_denied => return .{ .fail = .{ .reason = "session 2 event denied" } },
         .dispatch_error => return .{ .fail = .{ .reason = "session 2 dispatch error" } },
         .scope_not_found => return .{ .fail = .{ .reason = "session 2 scope not found" } },

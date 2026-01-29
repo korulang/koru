@@ -1,0 +1,25 @@
+// Test: Pattern branch syntax baseline
+// Just verify we can define and call an event that returns a struct payload
+
+~import "$std/io"
+
+const std = @import("std");
+
+// Request type
+pub const Request = struct {
+    method: []const u8,
+    path: []const u8,
+};
+
+// Event returns a request
+~pub event incoming {}
+| request Request
+
+~proc incoming {
+    return .{ .request = .{ .method = "GET", .path = "/users/42" } };
+}
+
+// Call it
+~incoming()
+| request _ |>
+    std.io:print.ln("got request")

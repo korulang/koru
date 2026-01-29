@@ -1,0 +1,3 @@
+arg count: 1
+has program name: yes
+rest count: 0

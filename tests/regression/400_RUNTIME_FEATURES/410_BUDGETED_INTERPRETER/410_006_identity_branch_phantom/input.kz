@@ -31,6 +31,7 @@ const TEST_SOURCE = "~create()\n| handle h |> result { id: h }";
 | exhausted _ |> std.io:println(text: "FAIL: exhausted")
 | parse_error _ |> std.io:println(text: "FAIL: parse_error")
 | validation_error _ |> std.io:println(text: "FAIL: validation_error")
+| shape_error _ |> std.io:println(text: "FAIL: shape_error")
 | event_denied _ |> std.io:println(text: "FAIL: event_denied")
 | dispatch_error _ |> std.io:println(text: "FAIL: dispatch_error")
 | scope_not_found _ |> std.io:println(text: "FAIL: scope_not_found")

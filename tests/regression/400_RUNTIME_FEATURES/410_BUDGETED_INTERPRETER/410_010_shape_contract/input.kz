@@ -1,0 +1,117 @@
+// Test: Shape contract validation for interpreted code
+// Interpreted code can optionally be validated against an event signature
+// This ensures responses conform to a known shape
+
+~import "$std/runtime"
+~import "$std/io"
+
+const std = @import("std");
+
+// =============================================================================
+// The Handler Contract
+// =============================================================================
+// This defines what shape interpreted "handlers" must return.
+// Think of it as a response schema for code sent over the wire.
+
+~pub event handler { req: []const u8 }
+| ok { status: i32, body: []const u8 }
+| not_found {}
+| error { message: []const u8 }
+
+// =============================================================================
+// Backend events the handler can call
+// =============================================================================
+
+~pub event db.user.get { id: i32 }
+| found { name: []const u8 }
+| unknown {}
+
+~proc db.user.get {
+    if (id == 1) {
+        return .{ .found = .{ .name = "Alice" } };
+    }
+    return .{ .unknown = .{} };
+}
+
+// Register events with costs
+~std.runtime:register(scope: "api") {
+    handler(0)      // handler itself has no cost (it's the shape)
+    db.user.get(5)  // database lookup costs 5 tokens
+}
+
+// =============================================================================
+// TEST 1: Valid handler - should pass shape validation
+// =============================================================================
+
+const VALID_HANDLER =
+\\~db.user.get(id: 1)
+\\| found u |> ok { status: 200, body: u.name }
+\\| unknown |> not_found {}
+;
+
+~std.runtime:run(source: VALID_HANDLER, scope: "api", budget: 100, shape: "handler")
+| result _ |> std.io:println(text: "TEST 1 PASS: valid handler accepted")
+| shape_error e |> std.io:print.ln("TEST 1 FAIL: unexpected shape error: {{ e.branch:s }}")
+| exhausted _ |> std.io:println(text: "TEST 1 FAIL: exhausted")
+| parse_error _ |> std.io:println(text: "TEST 1 FAIL: parse error")
+| validation_error _ |> std.io:println(text: "TEST 1 FAIL: validation error")
+| event_denied _ |> std.io:println(text: "TEST 1 FAIL: event denied")
+| dispatch_error _ |> std.io:println(text: "TEST 1 FAIL: dispatch error")
+| scope_not_found _ |> std.io:println(text: "TEST 1 FAIL: scope not found")
+
+// =============================================================================
+// TEST 2: Invalid branch name - should fail shape validation
+// =============================================================================
+
+const TYPO_HANDLER =
+\\~db.user.get(id: 999)
+\\| found u |> ok { status: 200, body: u.name }
+\\| unknown |> not_foundy {}
+;
+// Note: "not_foundy" is a typo - should be "not_found"
+// Using id: 999 which returns 'unknown' so the typo branch is executed
+
+~std.runtime:run(source: TYPO_HANDLER, scope: "api", budget: 100, shape: "handler")
+| result _ |> std.io:println(text: "TEST 2 FAIL: should have caught typo")
+| shape_error e |> std.io:print.ln("TEST 2 PASS: caught invalid branch '{{ e.branch:s }}'")
+| exhausted _ |> std.io:println(text: "TEST 2 FAIL: exhausted")
+| parse_error _ |> std.io:println(text: "TEST 2 FAIL: parse error")
+| validation_error _ |> std.io:println(text: "TEST 2 FAIL: validation error")
+| event_denied _ |> std.io:println(text: "TEST 2 FAIL: event denied")
+| dispatch_error _ |> std.io:println(text: "TEST 2 FAIL: dispatch error")
+| scope_not_found _ |> std.io:println(text: "TEST 2 FAIL: scope not found")
+
+// =============================================================================
+// TEST 3: Missing required field - should fail shape validation
+// =============================================================================
+
+const MISSING_FIELD_HANDLER =
+\\~db.user.get(id: 1)
+\\| found u |> ok { status: 200 }
+\\| unknown |> not_found {}
+;
+// Note: ok branch is missing required 'body' field
+
+~std.runtime:run(source: MISSING_FIELD_HANDLER, scope: "api", budget: 100, shape: "handler")
+| result _ |> std.io:println(text: "TEST 3 FAIL: should have caught missing field")
+| shape_error e |> std.io:print.ln("TEST 3 PASS: caught missing field in '{{ e.branch:s }}'")
+| exhausted _ |> std.io:println(text: "TEST 3 FAIL: exhausted")
+| parse_error _ |> std.io:println(text: "TEST 3 FAIL: parse error")
+| validation_error _ |> std.io:println(text: "TEST 3 FAIL: validation error")
+| event_denied _ |> std.io:println(text: "TEST 3 FAIL: event denied")
+| dispatch_error _ |> std.io:println(text: "TEST 3 FAIL: dispatch error")
+| scope_not_found _ |> std.io:println(text: "TEST 3 FAIL: scope not found")
+
+// =============================================================================
+// TEST 4: Free-running mode (no shape) - typo allowed
+// =============================================================================
+
+~std.runtime:run(source: TYPO_HANDLER, scope: "api", budget: 100)
+| result r |> std.io:print.ln("TEST 4 PASS: free-running mode allows any shape, got branch '{{ r.value.branch:s }}'")
+| exhausted _ |> std.io:println(text: "TEST 4 FAIL: exhausted")
+| parse_error _ |> std.io:println(text: "TEST 4 FAIL: parse error")
+| validation_error _ |> std.io:println(text: "TEST 4 FAIL: validation error")
+| shape_error _ |> std.io:println(text: "TEST 4 FAIL: shape error")
+| event_denied _ |> std.io:println(text: "TEST 4 FAIL: event denied")
+| dispatch_error _ |> std.io:println(text: "TEST 4 FAIL: dispatch error")
+| scope_not_found _ |> std.io:println(text: "TEST 4 FAIL: scope not found")

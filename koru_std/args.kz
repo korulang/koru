@@ -1,0 +1,73 @@
+// $std/args - Command-line argument access
+//
+// Simple, safe access to CLI arguments.
+// For flag parsing and CLI frameworks, see $std/cli (future).
+
+const std = @import("std");
+
+// ============================================================================
+// Cached args - loaded once on first access
+// ============================================================================
+
+var _cached_argv: ?[][:0]u8 = null;
+
+fn _get_argv() [][:0]u8 {
+    if (_cached_argv) |argv| {
+        return argv;
+    }
+    _cached_argv = std.process.argsAlloc(std.heap.page_allocator) catch &.{};
+    return _cached_argv.?;
+}
+
+// ============================================================================
+// Get all arguments
+// ============================================================================
+
+~pub event all {}
+| args [][:0]u8
+
+~proc all {
+    return .{ .args = _get_argv() };
+}
+
+// ============================================================================
+// Get argument count
+// ============================================================================
+
+~pub event count {}
+| count usize
+
+~proc count {
+    return .{ .count = _get_argv().len };
+}
+
+// ============================================================================
+// Get argument at index
+// ============================================================================
+
+~pub event get { index: usize }
+| arg [:0]u8
+| out_of_bounds
+
+~proc get {
+    const argv = _get_argv();
+    if (index >= argv.len) {
+        return .{ .out_of_bounds = .{} };
+    }
+    return .{ .arg = argv[index] };
+}
+
+// ============================================================================
+// Skip program name and get remaining args
+// ============================================================================
+
+~pub event rest {}
+| args [][:0]u8
+
+~proc rest {
+    const argv = _get_argv();
+    if (argv.len <= 1) {
+        return .{ .args = &.{} };
+    }
+    return .{ .args = argv[1..] };
+}

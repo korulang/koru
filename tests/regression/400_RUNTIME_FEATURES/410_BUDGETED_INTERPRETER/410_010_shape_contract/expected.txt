@@ -1,0 +1,4 @@
+TEST 1 PASS: valid handler accepted
+TEST 2 PASS: caught invalid branch 'not_foundy'
+TEST 3 PASS: caught missing field in 'ok'
+TEST 4 PASS: free-running mode allows any shape, got branch 'not_foundy'

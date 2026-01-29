@@ -28,6 +28,7 @@ const TEST_SOURCE = "~denied()";
 | exhausted _ |> std.io:print.ln("EXHAUSTED")
 | parse_error _ |> std.io:print.ln("PARSE ERROR")
 | validation_error _ |> std.io:print.ln("VALIDATION ERROR")
+| shape_error _ |> std.io:print.ln("SHAPE ERROR")
 | event_denied _ |> std.io:print.ln("EVENT DENIED")
 | dispatch_error _ |> std.io:print.ln("DISPATCH ERROR")
 | scope_not_found _ |> std.io:print.ln("SCOPE NOT FOUND")

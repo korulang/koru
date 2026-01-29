@@ -1,0 +1,4 @@
+GET /users/42 -> 200: 42
+GET /health -> 200: ok
+POST /users -> 201: created
+DELETE /users/1 -> 404: not found

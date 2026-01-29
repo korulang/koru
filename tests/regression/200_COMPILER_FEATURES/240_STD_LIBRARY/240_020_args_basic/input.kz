@@ -1,0 +1,18 @@
+// Test: Basic args access
+~import "$std/args"
+~import "$std/io"
+
+// Get argument count
+~std.args:count()
+| count n |>
+    std.io:print.ln("arg count: {{ n:d }}")
+
+// Get program name (index 0) - just verify we can access it
+~std.args:get(index: 0)
+| arg _ |> std.io:print.ln("has program name: yes")
+| out_of_bounds |> std.io:print.ln("no args?!")
+
+// Get rest (skipping program name)
+~std.args:rest()
+| args r |>
+    std.io:print.ln("rest count: {{ r.len:d }}")
