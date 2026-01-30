@@ -831,13 +831,6 @@ pub const Parser = struct {
             remaining = lexer.trim(result.remaining);
         }
 
-        // Check for ~impl prefix (marks abstract event implementation)
-        var is_impl = false;
-        if (lexer.startsWith(remaining, "impl ")) {
-            is_impl = true;
-            remaining = lexer.trim(remaining[5..]); // Skip "impl "
-        }
-
         // Now check for constructs
         if (lexer.startsWith(remaining, "pub event")) {
             // Public event declaration with annotations
@@ -852,13 +845,10 @@ pub const Parser = struct {
         } else if (lexer.startsWith(remaining, "pub proc ")) {
             // Public proc declaration with annotations
             var proc = try self.parseProcDeclWithAnnotations(annotations.items);
-            proc.is_impl = is_impl;
             proc.is_public = true;
             return .{ .proc_decl = proc };
         } else if (lexer.startsWith(remaining, "proc ")) {
-            var proc = try self.parseProcDeclWithAnnotations(annotations.items);
-            proc.is_impl = is_impl;
-            return .{ .proc_decl = proc };
+            return .{ .proc_decl = try self.parseProcDeclWithAnnotations(annotations.items) };
         } else if (lexer.startsWith(after_tilde, "#")) {
             // New label anchor syntax or pre-invocation label
             return try self.parseLabelAnchor();
@@ -873,9 +863,7 @@ pub const Parser = struct {
         } else if (findTopLevelEquals(remaining) != null) {
             // Event implementation via subflow: ~event.name = ...
             // NOTE: This only matches = outside of source blocks (checked above)
-            var subflow = try self.parseSubflowImpl();
-            subflow.is_impl = is_impl;
-            return .{ .subflow_impl = subflow };
+            return .{ .subflow_impl = try self.parseSubflowImpl() };
         } else if (std.mem.indexOfScalar(u8, remaining, '(') != null) {
             // It's an invocation with args
             return .{ .flow = try self.parseFlow(annotations.items) };
@@ -3702,18 +3690,17 @@ pub const Parser = struct {
         const line = self.lines[self.current];
         self.current += 1;
         
-        // Parse: ~event.name = ...
-        // OR: ~impl event.name = ... (impl keyword will be handled by caller via is_impl flag)
+        // Parse: ~event.name = ... or ~module:event = ...
         const after_tilde = lexer.trim(line[1..]);
         const eq_idx = findTopLevelEquals(after_tilde) orelse return error.InvalidSyntax;
 
-        var event_path_str = lexer.trim(after_tilde[0..eq_idx]);
-        // Strip "impl " prefix if present (caller will set is_impl flag on returned struct)
-        if (lexer.startsWith(event_path_str, "impl ")) {
-            event_path_str = lexer.trim(event_path_str[5..]);
-        }
+        const event_path_str = lexer.trim(after_tilde[0..eq_idx]);
         const event_path = try lexer.parseQualifiedPath(self.allocator, event_path_str, ast);
-        
+
+        // If there's a module qualifier (e.g., ~module:event = ...), this is an impl override
+        // The colon syntax indicates explicit implementation of an abstract event
+        const is_impl = event_path.module_qualifier != null;
+
         // The flow body follows the = sign
         const body_str = lexer.trim(after_tilde[eq_idx + 1..]);
         
@@ -3738,6 +3725,7 @@ pub const Parser = struct {
                             .body = ast.SubflowBody{ .immediate = branch_constructor },
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
+                            .is_impl = is_impl,
                         };
                     } else {
                         // Multi-line branch constructor starting on this line
@@ -3780,6 +3768,7 @@ pub const Parser = struct {
                             .body = ast.SubflowBody{ .immediate = branch_constructor },
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
+                            .is_impl = is_impl,
                         };
                     }
                 }
@@ -3810,6 +3799,7 @@ pub const Parser = struct {
                             } },
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
+                            .is_impl = is_impl,
                         };
                     } else {
                         // Just branch name: "ok"
@@ -3823,6 +3813,7 @@ pub const Parser = struct {
                             } },
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
+                            .is_impl = is_impl,
                         };
                     }
                 }
@@ -3851,9 +3842,10 @@ pub const Parser = struct {
                 },
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
+                .is_impl = is_impl,
             };
         }
-        
+
         // Flow body on next line(s) - handle multi-line flows
         if (self.current >= self.lines.len) return error.UnexpectedEof;
         
@@ -3889,6 +3881,7 @@ pub const Parser = struct {
                         .body = ast.SubflowBody{ .immediate = branch_constructor },
                         .location = self.getCurrentLocation(),
                         .module = try self.allocator.dupe(u8, self.module_name),
+                        .is_impl = is_impl,
                     };
                 } else {
                     // Multi-line branch constructor - collect all lines
@@ -3930,11 +3923,12 @@ pub const Parser = struct {
                         .body = ast.SubflowBody{ .immediate = branch_constructor },
                         .location = self.getCurrentLocation(),
                         .module = try self.allocator.dupe(u8, self.module_name),
+                        .is_impl = is_impl,
                     };
                 }
             }
         }
-        
+
         // Check if the line is an invocation or a continuation
         if (lexer.startsWith(trimmed_body, "|")) {
             // This is a continuation line, but we haven't parsed an invocation yet!
@@ -3978,9 +3972,10 @@ pub const Parser = struct {
                 },
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
+                .is_impl = is_impl,
             };
         }
-        
+
         // Otherwise parse as normal flow starting with an invocation
         // Push in_subflow_impl context to allow full expressions in branch constructors
         try self.context_stack.append(self.allocator, .in_subflow_impl);
@@ -4004,6 +3999,7 @@ pub const Parser = struct {
             },
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
+            .is_impl = is_impl,
         };
     }
 

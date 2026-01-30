@@ -10,13 +10,13 @@
 // Key properties:
 // - ~[abstract] event declares the signature
 // - ~proc in same file provides optional default implementation
-// - ~impl elsewhere provides THE implementation (exactly one)
-// - Within ~impl, event name delegates to default
+// - ~module:event = ... provides THE implementation (module qualifier required)
+// - Within implementation, event name delegates to default
 // - Compile-time resolution, no runtime dispatch
 //
 // Design rationale:
 // - Removes special-case hack for compiler.coordinate
-// - Explicit and searchable (~impl is greppable)
+// - Explicit via module qualifier (: indicates impl)
 // - No inheritance hierarchies or virtual dispatch
 // - Single implementation enforced at compile time
 // - Delegation is explicit (not hidden like OOP super())
@@ -25,7 +25,7 @@
 const std = @import("std");
 
 // Example 1: Abstract event WITH default implementation
-// The default can be called from within ~impl via delegation
+// The default can be called from within implementation via delegation
 ~[abstract] event coordinate { ctx: i32 }
 | finished { result: i32 }
 
@@ -35,7 +35,7 @@ const std = @import("std");
 }
 
 // Example 2: Abstract event WITHOUT default implementation
-// User MUST provide ~impl or compile error
+// User MUST provide implementation or compile error
 ~[abstract] event process { data: i32 }
 | done { output: i32 }
 
@@ -48,14 +48,15 @@ const std = @import("std");
 }
 
 // Example 3: Implementation that delegates to default and extends
-// The event name within ~impl refers to the default implementation
-~impl coordinate =
+// The module qualifier (input:) marks this as an impl override
+// Module name is derived from filename: input.kz -> "input"
+~input:coordinate =
     coordinate(ctx: 42)  // Delegates to default
     | finished f |> .{ .finished = .{ .result = f.result + 1 } }
 
 // Example 4: Implementation that provides complete logic
 // No delegation to default (there isn't one for 'process')
-~impl process =
+~input:process =
     double(value: data)
     | result r |> .{ .done = .{ .output = r.doubled } }
 

@@ -36,7 +36,8 @@ pub fn resolve(program: *ast.Program, allocator: std.mem.Allocator) Error!void {
     };
 
     // Process all items, recursing into modules
-    try resolveItems(program.items, &ctx, null);
+    // Use main_module_name for top-level events (allows ~main:event = ... syntax)
+    try resolveItems(program.items, &ctx, program.main_module_name);
 
     // TODO: Report errors if any abstract events are invoked but not implemented
     _ = &ctx;
