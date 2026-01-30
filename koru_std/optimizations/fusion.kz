@@ -11,33 +11,19 @@
 // Status: Phase 2 - Transformation with Provenance
 // Related: tests/regression/1100_FUSION/FUSION.md
 
-const std = @import("std");
+~[comptime]
+
+~import "$std/compiler"
 
 // Event: Run fusion optimization on AST
 // Self-governing: checks enable_fusion flag to decide whether to run
-~event optimize.fusion {
-    ast: Program,
-    enable_fusion: bool
+~pub event optimize {
+    ctx: std.compiler:CompilerContext
 }
-| optimized { opportunities_count: u32 }
-| unchanged {}
+| ctx std.compiler:CompilerContext
 
-~proc optimize.fusion {
-    // Self-governing: Check if fusion is enabled
-    if (!enable_fusion) {
-        return .{ .unchanged = .{} };
-    }
-
-    // Phase 2: For now, just pass through unchanged
-    // TODO: Implement fusion transformation
-    // - Detect fusion opportunities (reuse existing detector logic)
-    // - Generate |fused variant procs
-    // - Set derived_from pointers
-    // - Set optimization_applied = "fusion"
-    // - Add new procs to AST
-    // Note: 'ast' is automatically available in proc scope (modern Koru)
-
-    std.debug.print("\n🔥 FUSION OPTIMIZATION: Enabled but not yet implemented\n", .{});
-
-    return .{ .unchanged = .{} };
+~proc optimize {
+    var updated_ctx = ctx;
+    updated_ctx.passes_completed += 1;
+    return .{ .ctx = updated_ctx };
 }

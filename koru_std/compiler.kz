@@ -3,6 +3,7 @@
 ~import "$std/testing"
 ~import "$std/inter"
 ~import "$std/deps"
+~import "$std/optimizer"
 
 // Compiler system dependencies
 ~std.deps:requires.system {
@@ -545,7 +546,7 @@ pub const CompilerContext = struct {
 | created c0 |> frontend(ctx: c0.ctx)
   | ctx c1 |> analysis(ctx: c1)
     | ctx c2 |> test_generation(ctx: c2)
-      | ctx c3 |> optimize(ctx: c3)
+      | ctx c3 |> std.optimizer:optimize(ctx: c3)
         | ctx c4 |> emission(ctx: c4)
           | ctx c5 |> metrics_format(passes_completed: c5.ctx.passes_completed, allocator: allocator)
             | formatted m |> std.inter:start(contexts: [
@@ -1146,20 +1147,6 @@ const emitFlowWithMocks = struct {
         }
     }
 }.call;
-
-// Optimization segment: AST transformations for performance (abstract, can be overridden)
-// This is where we create IR nodes (NativeLoop, FusedEvent, etc.)
-~[comptime|abstract] pub event optimize { ctx: CompilerContext }
-| ctx CompilerContext
-
-// TODO: Loop optimization removed (broken hardcoded implementation)
-// Will be reimplemented properly with actual proc body parsing
-~proc optimize {
-    var updated_ctx = ctx;
-    updated_ctx.passes_completed += 1;
-    updated_ctx.current_pass = "optimize";
-    return .{ .ctx = updated_ctx };
-}
 
 // Emission segment: Final code generation (abstract, can be overridden)
 ~[comptime|abstract] pub event emission { ctx: CompilerContext }

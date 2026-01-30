@@ -1,0 +1,14 @@
+// Test: Qualified type references in branch outputs
+// Bug: Emitter outputs "mod:Type" literally instead of translating to valid Zig
+//
+// Input types work correctly, branch types don't.
+
+~import "$std/compiler"
+
+// Event using qualified type in branch output
+~pub event passthrough { ctx: std.compiler:CompilerContext }
+| ctx std.compiler:CompilerContext
+
+~proc passthrough {
+    return .{ .ctx = ctx };
+}

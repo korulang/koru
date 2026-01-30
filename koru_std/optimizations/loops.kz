@@ -27,13 +27,15 @@
 // Status: Phase 1 - Infrastructure (pass-through)
 // Next: Detect loop patterns and create NativeLoop nodes
 
-const std = @import("std");
+~[comptime]
+
+~import "$std/compiler"
 
 // Event: Run loop optimization on AST
-~pub event compiler.optimize.loops { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+~pub event optimize { ctx: std.compiler:CompilerContext }
+| ctx std.compiler:CompilerContext
 
-~proc compiler.optimize.loops {
+~proc optimize {
     // Phase 1: Detect checker events
     // A checker event has:
     // - Event with two branches: continue_X and done_X
@@ -51,14 +53,7 @@ const std = @import("std");
     // For now: pass through (infrastructure already working!)
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
-
-    std.debug.print("🔄 Loop optimization pass (pattern detection not yet implemented)\n", .{});
-    std.debug.print("   Hint: Looking for checker events like:\n", .{});
-    std.debug.print("   ~event loop_step {{ i: usize, limit: usize }}\n", .{});
-    std.debug.print("   | continue {{ i: usize }}\n", .{});
-    std.debug.print("   | done {{}}\n", .{});
-
-    return .{ .continued = .{ .ctx = updated_ctx } };
+    return .{ .ctx = updated_ctx };
 }
 
 // TODO: Helper functions for detection (to be implemented):

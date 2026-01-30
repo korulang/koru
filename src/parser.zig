@@ -6051,11 +6051,44 @@ pub const Parser = struct {
                 }
             }
 
+            // Parse cross-module type reference: module.path:TypeName
+            // Handle type prefixes like ?*, *, [], []const that come before the module path
+            var module_path: ?[]const u8 = null;
+            var actual_type = type_str;
+            var type_prefix: []const u8 = "";
+
+            // Strip type prefix before looking for module colon
+            const prefixes = [_][]const u8{ "[]const ", "?*const ", "*const ", "[]", "?*", "?", "*" };
+            for (prefixes) |prefix| {
+                if (std.mem.startsWith(u8, type_str, prefix)) {
+                    type_prefix = prefix;
+                    type_str = type_str[prefix.len..];
+                    break;
+                }
+            }
+
+            // Parse cross-module type reference
+            if (std.mem.indexOfScalar(u8, type_str, ':')) |module_colon_idx| {
+                // Extract module path before the colon
+                module_path = try self.allocator.dupe(u8, type_str[0..module_colon_idx]);
+                // Everything after colon is the type name, with prefix restored
+                const base_type = type_str[module_colon_idx + 1..];
+                if (type_prefix.len > 0) {
+                    actual_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, base_type });
+                } else {
+                    actual_type = base_type;
+                }
+            } else if (type_prefix.len > 0) {
+                // No colon but had a prefix - restore it
+                actual_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, type_str });
+            }
+
             // Create identity field with __type_ref convention
             var fields = try self.allocator.alloc(ast.Field, 1);
             fields[0] = ast.Field{
                 .name = try self.allocator.dupe(u8, "__type_ref"),
-                .type = try self.allocator.dupe(u8, type_str),
+                .type = try self.allocator.dupe(u8, actual_type),
+                .module_path = module_path,
                 .phantom = phantom,
             };
 

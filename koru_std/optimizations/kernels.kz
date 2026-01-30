@@ -1,0 +1,63 @@
+// Kernel Optimization Pass - Fuses kernel operations for performance
+// ==============================================================
+// Detects patterns like:
+//   kernel:pairwise { ... } |> advance_positions(...)
+//
+// And fuses them into a single inlined loop, eliminating:
+//   - Function call overhead between kernel ops
+//   - Redundant array traversals
+//
+// Status: Phase 1 - Infrastructure (pass-through)
+// Next: Detect kernel operation sequences and fuse them
+
+~[comptime]
+
+~import "$std/compiler"
+
+// ============================================================
+// KERNEL OPTIMIZATION EVENT
+// ============================================================
+
+~pub event optimize { ctx: std.compiler:CompilerContext }
+| ctx std.compiler:CompilerContext
+
+~proc optimize {
+    // Phase 1: Infrastructure - pass through unchanged
+    // This establishes the pass in the pipeline
+
+    var updated_ctx = ctx;
+    updated_ctx.passes_completed += 1;
+
+    // Future phases:
+    // Phase 2: Detect kernel operation sequences
+    //   - Find kernel:pairwise followed by position/velocity updates
+    //   - Track which kernel binding is being operated on
+    //
+    // Phase 3: Analyze fusion candidates
+    //   - Check that operations are on the same kernel
+    //   - Verify no side effects between operations
+    //   - Ensure iteration patterns are compatible
+    //
+    // Phase 4: Transform AST
+    //   - Merge pairwise body with following operations
+    //   - Eliminate intermediate function calls
+    //   - Generate single fused loop
+
+    return .{ .ctx = updated_ctx };
+}
+
+// ============================================================
+// DETECTION HELPERS (to be implemented)
+// ============================================================
+
+// TODO: Detect kernel:pairwise invocations in flow
+// fn isKernelPairwise(inv: *const ast.Invocation) bool
+
+// TODO: Detect position/velocity update patterns
+// fn isKernelUpdate(inv: *const ast.Invocation, kernel_binding: []const u8) bool
+
+// TODO: Check if two operations can be fused
+// fn canFuse(op1: *const ast.Node, op2: *const ast.Node) bool
+
+// TODO: Perform the fusion transformation
+// fn fuseKernelOps(allocator: std.mem.Allocator, ops: []const *ast.Node) *ast.Node
