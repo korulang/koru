@@ -1,15 +1,9 @@
-// Hand-optimized Zig baseline for N-body simulation
-// This is what Koru SHOULD compile to
+// Idiomatic Zig baseline for N-body simulation
+// This is what a competent Zig developer would write
+// Clean, readable, using standard Zig patterns
 //
 // Based on: https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/nbody-gcc-1.html
 // License: Revised BSD
-// Ported to Zig: 2024-10-25
-//
-// Algorithm: Symplectic integration of planetary orbits
-// - Calculate gravitational interactions between all pairs
-// - Update velocities based on forces
-// - Update positions based on velocities
-// - Repeat N times
 
 const std = @import("std");
 
@@ -29,23 +23,21 @@ const Body = struct {
 
 fn advance(bodies: []Body, dt: f64) void {
     // Update velocities based on gravitational interactions
-    var i: usize = 0;
-    while (i < bodies.len) : (i += 1) {
-        var j: usize = i + 1;
-        while (j < bodies.len) : (j += 1) {
-            const dx = bodies[i].x - bodies[j].x;
-            const dy = bodies[i].y - bodies[j].y;
-            const dz = bodies[i].z - bodies[j].z;
+    for (bodies, 0..) |*bi, i| {
+        for (bodies[i + 1 ..]) |*bj| {
+            const dx = bi.x - bj.x;
+            const dy = bi.y - bj.y;
+            const dz = bi.z - bj.z;
             const distance = @sqrt(dx * dx + dy * dy + dz * dz);
             const mag = dt / (distance * distance * distance);
 
-            bodies[i].vx -= dx * bodies[j].mass * mag;
-            bodies[i].vy -= dy * bodies[j].mass * mag;
-            bodies[i].vz -= dz * bodies[j].mass * mag;
+            bi.vx -= dx * bj.mass * mag;
+            bi.vy -= dy * bj.mass * mag;
+            bi.vz -= dz * bj.mass * mag;
 
-            bodies[j].vx += dx * bodies[i].mass * mag;
-            bodies[j].vy += dy * bodies[i].mass * mag;
-            bodies[j].vz += dz * bodies[i].mass * mag;
+            bj.vx += dx * bi.mass * mag;
+            bj.vy += dy * bi.mass * mag;
+            bj.vz += dz * bi.mass * mag;
         }
     }
 
@@ -65,13 +57,12 @@ fn energy(bodies: []const Body) f64 {
         e += 0.5 * body.mass * (body.vx * body.vx + body.vy * body.vy + body.vz * body.vz);
 
         // Potential energy (pairwise)
-        var j = i + 1;
-        while (j < bodies.len) : (j += 1) {
-            const dx = body.x - bodies[j].x;
-            const dy = body.y - bodies[j].y;
-            const dz = body.z - bodies[j].z;
+        for (bodies[i + 1 ..]) |other| {
+            const dx = body.x - other.x;
+            const dy = body.y - other.y;
+            const dz = body.z - other.z;
             const distance = @sqrt(dx * dx + dy * dy + dz * dz);
-            e -= (body.mass * bodies[j].mass) / distance;
+            e -= (body.mass * other.mass) / distance;
         }
     }
 
@@ -158,8 +149,7 @@ pub fn main() !void {
     std.debug.print("{d:.9}\n", .{energy(&bodies)});
 
     // Run simulation
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |_| {
         advance(&bodies, 0.01);
     }
 
