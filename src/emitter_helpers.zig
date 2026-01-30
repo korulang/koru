@@ -1508,10 +1508,6 @@ fn groupContinuationsByBranch(
 
     // Group continuations by branch
     for (continuations) |*cont| {
-        // Skip pattern branches - they're handled by transforms, not switch emission
-        // Pattern branches start with '[' and are opaque to the compiler
-        if (cont.branch.len > 0 and cont.branch[0] == '[') continue;
-
         const entry = try branch_map.getOrPut(cont.branch);
         if (!entry.found_existing) {
             entry.value_ptr.* = std.ArrayList(*const ast.Continuation){ .items = &.{}, .capacity = 0 };

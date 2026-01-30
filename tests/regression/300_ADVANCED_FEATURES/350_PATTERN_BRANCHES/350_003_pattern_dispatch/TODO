@@ -1,1 +1,11 @@
-Pattern branch transform not yet implemented
+Requires a transform to handle pattern branches.
+
+Pattern branches like [GET /users/:id] are now treated as normal branches.
+Without a transform to rewrite them, you get clear errors:
+  - KORU022: branch 'request' must be handled
+  - KORU021: unknown branch '[GET /users/:id]'
+
+The router transform in orisha should:
+1. Detect pattern branches on a flow
+2. Generate dispatch code that matches the payload against patterns
+3. Replace pattern branches with proper branch handling

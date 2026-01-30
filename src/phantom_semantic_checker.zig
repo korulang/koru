@@ -871,14 +871,6 @@ pub const PhantomSemanticChecker = struct {
         }
 
         if (branch_payload == null) {
-            // Pattern branches ([...]) are opaque - skip validation
-            // They're meant for comptime transforms to interpret
-            if (cont.branch.len > 0 and cont.branch[0] == '[') {
-                // Pattern branches are handled by transforms, not semantic checker
-                // Just return true - the transform will handle any nested content
-                return true;
-            }
-
             // Unknown branch - this is an error!
 
             // Build list of available branches for error message

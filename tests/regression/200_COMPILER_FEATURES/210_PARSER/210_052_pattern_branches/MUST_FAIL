@@ -1,0 +1,10 @@
+Pattern branches without a transform produce KORU021 errors.
+
+This test verifies that pattern branch SYNTAX parses correctly.
+The validation correctly rejects unknown branches like [GET /users/:id]
+when the event only declares 'ok'.
+
+Expected errors:
+  - KORU021: unknown branch '[GET /users/:id]'
+  - KORU021: unknown branch '[POST /users]'
+  - etc.
