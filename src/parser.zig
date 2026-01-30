@@ -6068,11 +6068,21 @@ pub const Parser = struct {
             }
 
             // Parse cross-module type reference
-            if (std.mem.indexOfScalar(u8, type_str, ':')) |module_colon_idx| {
+            // Find colon that's NOT inside brackets (to avoid [:0] sentinel syntax)
+            const module_colon_idx: ?usize = blk: {
+                var bracket_depth: i32 = 0;
+                for (type_str, 0..) |c, idx| {
+                    if (c == '[') bracket_depth += 1
+                    else if (c == ']') bracket_depth -= 1
+                    else if (c == ':' and bracket_depth == 0) break :blk idx;
+                }
+                break :blk null;
+            };
+            if (module_colon_idx) |colon_idx| {
                 // Extract module path before the colon
-                module_path = try self.allocator.dupe(u8, type_str[0..module_colon_idx]);
+                module_path = try self.allocator.dupe(u8, type_str[0..colon_idx]);
                 // Everything after colon is the type name, with prefix restored
-                const base_type = type_str[module_colon_idx + 1..];
+                const base_type = type_str[colon_idx + 1..];
                 if (type_prefix.len > 0) {
                     actual_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, base_type });
                 } else {

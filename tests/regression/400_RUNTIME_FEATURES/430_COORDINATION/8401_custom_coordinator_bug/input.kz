@@ -6,6 +6,7 @@
 // The custom coordinator prints a marker, then delegates to standard pipeline.
 
 ~import "$std/compiler"
+~import "$std/optimizer"
 
 const std = @import("std");
 const ast = @import("ast");
@@ -13,14 +14,14 @@ const Program = ast.Program;
 
 // Custom coordinator that wraps the default pipeline
 // All compiler events must be module-qualified
-~impl std.compiler:coordinate =
+~std.compiler:coordinate =
     custom_marker()
 | done |> std.compiler:context_create(program_ast: program_ast, allocator: allocator)
   | created c0 |> std.compiler:frontend(ctx: c0.ctx)
     | ctx c1 |> std.compiler:transform_taps(ctx: c1)
       | ctx c2 |> std.compiler:analysis(ctx: c2)
         | ctx c3 |> std.compiler:test_generation(ctx: c3)
-          | ctx c4 |> std.compiler:optimize(ctx: c4)
+          | ctx c4 |> std.optimizer:optimize(ctx: c4)
             | ctx c5 |> std.compiler:emission(ctx: c5)
               | ctx c6 |> coordinated {
                   ast: c6.ctx.ast,
