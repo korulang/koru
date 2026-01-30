@@ -843,10 +843,15 @@ pub const Parser = struct {
             // Private event declaration with annotations
             return .{ .event_decl = try self.parseEventDeclWithAnnotations(false, annotations.items) };
         } else if (lexer.startsWith(remaining, "pub proc ")) {
-            // Public proc declaration with annotations
-            var proc = try self.parseProcDeclWithAnnotations(annotations.items);
-            proc.is_public = true;
-            return .{ .proc_decl = proc };
+            // pub proc is not valid - only events can be public
+            try self.reporter.addError(
+                .PARSE003,
+                self.current + 1,
+                1,
+                "'pub' is not valid on proc declarations - only events can be public",
+                .{},
+            );
+            return error.ParseError;
         } else if (lexer.startsWith(remaining, "proc ")) {
             return .{ .proc_decl = try self.parseProcDeclWithAnnotations(annotations.items) };
         } else if (lexer.startsWith(after_tilde, "#")) {
@@ -1519,10 +1524,20 @@ pub const Parser = struct {
             remaining = lexer.trim(result.remaining);
         }
 
-        // Handle both "proc" and "pub proc" prefixes
-        const after_proc = if (lexer.afterPrefix(remaining, "pub proc")) |ap|
-            ap
-        else if (lexer.afterPrefix(remaining, "proc")) |ap|
+        // Reject "pub proc" - only events can be public
+        if (lexer.afterPrefix(remaining, "pub proc")) |_| {
+            try self.reporter.addError(
+                .PARSE003,
+                self.current - 1,
+                1,
+                "'pub' is not valid on proc declarations - only events can be public",
+                .{},
+            );
+            return error.ParseError;
+        }
+
+        // Handle "proc" prefix
+        const after_proc = if (lexer.afterPrefix(remaining, "proc")) |ap|
             ap
         else {
             try self.reporter.addError(

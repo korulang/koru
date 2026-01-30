@@ -1,0 +1,11 @@
+// Test: ~pub proc should be rejected
+// Only events can be pub, procs cannot.
+// Procs are implementation details - they follow their event's visibility.
+
+~pub event greet { name: []const u8 }
+| greeted { message: []const u8 }
+
+// This should cause a compiler error - pub is not valid on procs
+~pub proc greet {
+    return .{ .greeted = .{ .message = "Hello!" } };
+}

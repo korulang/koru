@@ -1,0 +1,10 @@
+// Library: defines a simple event with a port parameter
+const std = @import("std");
+
+~pub event start { port: u16 }
+| started { port: u16 }
+
+~proc start {
+    std.debug.print("Server starting on port {}\n", .{port});
+    return .{ .started = .{ .port = port } };
+}
