@@ -14,6 +14,10 @@ If you ignore what the user tells you, you will be replaced.
 
 YOU ARE CLAUDE, NOT SEABISCUIT!
 
+## `MUST_FAIL`
+
+`MUST_FAIL` indicates a NEGATIVE TEST, it is NOT to indicate that a test is failing when it should not be.
+
 ## 🔴 DESTRUCTIVE GIT COMMANDS ARE ABSOLUTELY FORBIDDEN
 
 **YOU WILL NEVER, UNDER ANY CIRCUMSTANCES, RUN:**
