@@ -110,8 +110,38 @@ cd tests/regression/900_EXAMPLES_SHOWCASE/910_LANGUAGE_SHOOTOUT
 - `2101_nbody/reference/baseline.zig` - Idiomatic Zig
 - `2101_nbody_optimized/reference/reference.c` - C implementation
 
+## The Expert Knowledge Gap
+
+**All the optimized implementations require expert-level knowledge:**
+
+| Language | Expert Knowledge Required |
+|----------|--------------------------|
+| **Zig (opt)** | `@setFloatMode(.optimized)`, `dsq*sqrt(dsq)` trick, fixed arrays vs slices, range-based for loops |
+| **Rust** | `split_at_mut` proves non-aliasing to LLVM, `#[inline(always)]`, fixed-size arrays |
+| **C** | `restrict` keyword, `-ffast-math` (changes IEEE semantics!), `static inline`, fixed loop bounds |
+
+None of this is "normal" programming knowledge. A competent developer writing correct, readable code produces **idiomatic Zig** (2.023s) - which is 57% slower.
+
+The 57% gap isn't between "bad code" and "good code." It's between:
+- **Normal good code** - correct, readable, maintainable
+- **Expert-tuned code** - requires deep compiler/optimization knowledge most developers don't have
+
 ## Key Takeaway
 
-**Koru's kernel system automatically generates expert-level optimizations.** The 57% gap between idiomatic and optimized Zig shows how much performance is left on the table by "normal" code. Koru closes that gap without requiring manual tuning.
+**Koru gives you expert-level performance without requiring expert-level knowledge.**
 
-All implementations now use structurally similar code (nested loops with explicit noalias patterns), making the comparison fair and honest.
+You write natural, readable code:
+```koru
+~std.kernel:pairwise {
+    k.vx -= dx * k.other.mass * mag;
+    k.other.vx += dx * k.mass * mag;
+}
+```
+
+The compiler applies the expert tricks automatically:
+- Pointer aliasing analysis (like Rust's `split_at_mut`)
+- Fast-math mode (like Zig's `@setFloatMode`)
+- Static allocation and fixed bounds
+- Algorithm optimizations
+
+**The abstraction isn't hiding performance. It's enabling it.**
