@@ -22,35 +22,33 @@ struct planet {
   double mass;
 };
 
-void advance(int nbodies, struct planet * bodies, double dt)
+/* Use static inline with fixed bounds for loop unrolling */
+static inline void advance(struct planet * restrict bodies, double dt)
 {
   int i, j;
 
   /* Update velocities based on gravitational interactions */
-  for (i = 0; i < nbodies; i++) {
-    struct planet * b = &(bodies[i]);
-    for (j = i + 1; j < nbodies; j++) {
-      struct planet * b2 = &(bodies[j]);
-      double dx = b->x - b2->x;
-      double dy = b->y - b2->y;
-      double dz = b->z - b2->z;
-      double distance = sqrt(dx * dx + dy * dy + dz * dz);
-      double mag = dt / (distance * distance * distance);
-      b->vx -= dx * b2->mass * mag;
-      b->vy -= dy * b2->mass * mag;
-      b->vz -= dz * b2->mass * mag;
-      b2->vx += dx * b->mass * mag;
-      b2->vy += dy * b->mass * mag;
-      b2->vz += dz * b->mass * mag;
+  for (i = 0; i < 5; i++) {
+    for (j = i + 1; j < 5; j++) {
+      double dx = bodies[i].x - bodies[j].x;
+      double dy = bodies[i].y - bodies[j].y;
+      double dz = bodies[i].z - bodies[j].z;
+      double dsq = dx * dx + dy * dy + dz * dz;
+      double mag = dt / (dsq * sqrt(dsq));  /* Optimized: dsq * sqrt(dsq) = distance^3 */
+      bodies[i].vx -= dx * bodies[j].mass * mag;
+      bodies[i].vy -= dy * bodies[j].mass * mag;
+      bodies[i].vz -= dz * bodies[j].mass * mag;
+      bodies[j].vx += dx * bodies[i].mass * mag;
+      bodies[j].vy += dy * bodies[i].mass * mag;
+      bodies[j].vz += dz * bodies[i].mass * mag;
     }
   }
 
   /* Update positions based on velocities */
-  for (i = 0; i < nbodies; i++) {
-    struct planet * b = &(bodies[i]);
-    b->x += dt * b->vx;
-    b->y += dt * b->vy;
-    b->z += dt * b->vz;
+  for (i = 0; i < 5; i++) {
+    bodies[i].x += dt * bodies[i].vx;
+    bodies[i].y += dt * bodies[i].vy;
+    bodies[i].z += dt * bodies[i].vz;
   }
 }
 
@@ -140,7 +138,7 @@ int main(int argc, char ** argv)
   offset_momentum(NBODIES, bodies);
   printf ("%.9f\n", energy(NBODIES, bodies));
   for (i = 1; i <= n; i++)
-    advance(NBODIES, bodies, 0.01);
+    advance(bodies, 0.01);
   printf ("%.9f\n", energy(NBODIES, bodies));
   return 0;
 }

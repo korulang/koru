@@ -41,8 +41,8 @@ fn advance(bodies: *[5]Body, dt: f64) void {
             const dx = bodies[i].x - bodies[j].x;
             const dy = bodies[i].y - bodies[j].y;
             const dz = bodies[i].z - bodies[j].z;
-            const distance = @sqrt(dx * dx + dy * dy + dz * dz);
-            const mag = dt / (distance * distance * distance);
+            const dsq = dx * dx + dy * dy + dz * dz;
+            const mag = dt / (dsq * @sqrt(dsq));
 
             bodies[i].vx -= dx * bodies[j].mass * mag;
             bodies[i].vy -= dy * bodies[j].mass * mag;
