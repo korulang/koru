@@ -842,8 +842,9 @@ pub const Parser = struct {
         } else if (lexer.startsWith(remaining, "event ")) {
             // Private event declaration with annotations
             return .{ .event_decl = try self.parseEventDeclWithAnnotations(false, annotations.items) };
-        } else if (lexer.startsWith(remaining, "pub proc ")) {
+        } else if (lexer.startsWith(remaining, "pub proc ") or lexer.startsWith(remaining, "pub ~proc")) {
             // pub proc is not valid - only events can be public
+            // Also catch "pub ~proc" variant
             try self.reporter.addError(
                 .PARSE003,
                 self.current + 1,
@@ -1223,6 +1224,20 @@ pub const Parser = struct {
                     const payload_str = branch_content[branch_brace_idx..payload_end];
                     const payload = try self.parseBranchPayloadShape(payload_str);
 
+                    // Check for duplicate branch names
+                    for (branches.items) |existing| {
+                        if (std.mem.eql(u8, existing.name, branch_name)) {
+                            try self.reporter.addError(
+                                .PARSE003,
+                                event_line_index + 1,
+                                1,
+                                "duplicate branch name '{s}'",
+                                .{branch_name},
+                            );
+                            return error.ParseError;
+                        }
+                    }
+
                     const branch = ast.Branch{
                         .name = try self.allocator.dupe(u8, branch_name),
                         .payload = payload,
@@ -1287,6 +1302,21 @@ pub const Parser = struct {
             if (!lexer.isBranchContinuation(next_line)) break;
 
             const branch = try self.parseBranch();
+
+            // Check for duplicate branch names
+            for (branches.items) |existing| {
+                if (std.mem.eql(u8, existing.name, branch.name)) {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current,
+                        1,
+                        "duplicate branch name '{s}'",
+                        .{branch.name},
+                    );
+                    return error.ParseError;
+                }
+            }
+
             try branches.append(self.allocator, branch);
         }
 
@@ -1463,8 +1493,23 @@ pub const Parser = struct {
         while (self.current < self.lines.len) {
             const next_line = self.lines[self.current];
             if (!lexer.isBranchContinuation(next_line)) break;
-            
+
             const branch = try self.parseBranch();
+
+            // Check for duplicate branch names
+            for (branches.items) |existing| {
+                if (std.mem.eql(u8, existing.name, branch.name)) {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current,
+                        1,
+                        "duplicate branch name '{s}'",
+                        .{branch.name},
+                    );
+                    return error.ParseError;
+                }
+            }
+
             try branches.append(self.allocator, branch);
             // parseBranch handles line advancement including multi-line payloads
         }
@@ -5384,6 +5429,22 @@ pub const Parser = struct {
             return ast.Step{ .terminal = {} };
         }
 
+        // Check for common mistakes from other languages
+        const trimmed_step = lexer.trim(clean_content);
+        if (std.mem.eql(u8, trimmed_step, "return") or
+            std.mem.eql(u8, trimmed_step, "break") or
+            std.mem.eql(u8, trimmed_step, "continue"))
+        {
+            try self.reporter.addError(
+                .PARSE003,
+                self.current,
+                1,
+                "Flows terminate with '_', not '{s}'",
+                .{trimmed_step},
+            );
+            return error.ParseError;
+        }
+
         // Check for label anchor declaration (#name event(...))
         if (lexer.startsWith(clean_content, "#")) {
             const after_hash = lexer.trim(clean_content[1..]);
@@ -6319,6 +6380,22 @@ pub const Parser = struct {
             };
             
             const field_name = lexer.trim(trimmed_field[0..colon_idx]);
+
+            // Validate field name is a valid identifier (starts with letter/underscore)
+            if (field_name.len > 0) {
+                const first_char = field_name[0];
+                if (first_char >= '0' and first_char <= '9') {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current + 1,
+                        1,
+                        "field name cannot start with a digit",
+                        .{},
+                    );
+                    continue;
+                }
+            }
+
             var field_type = lexer.trim(trimmed_field[colon_idx + 1..]);
 
             // Check for special types: Source, File, EmbedFile, Expression, and InvocationMeta
@@ -6340,6 +6417,16 @@ pub const Parser = struct {
                 is_embed_file = true;
             } else if (std.mem.eql(u8, field_type, "InvocationMeta")) {
                 is_invocation_meta = true;
+            } else if (std.mem.eql(u8, field_type, "string") or std.mem.eql(u8, field_type, "String")) {
+                // Common mistake from other languages
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current + 1,
+                    1,
+                    "Unknown type '{s}'. In Zig/Koru, use '[]const u8' for strings",
+                    .{field_type},
+                );
+                return error.ParseError;
             }
 
             // Check for phantom tags/states: Type[tag] or *Type[state]

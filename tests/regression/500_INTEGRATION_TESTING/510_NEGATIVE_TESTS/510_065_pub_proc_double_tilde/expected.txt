@@ -1,0 +1,6 @@
+error[PARSE003]: 'pub' is not valid on proc declarations - only events can be public
+  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_065_pub_proc_double_tilde/input.kz:8:1
+  |
+  8 | ~pub ~proc foo = done {}
+  |  ^
+

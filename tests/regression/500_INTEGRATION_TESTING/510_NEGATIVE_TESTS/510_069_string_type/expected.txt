@@ -1,0 +1,6 @@
+error[PARSE003]: Unknown type 'string'. In Zig/Koru, use '[]const u8' for strings
+  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_069_string_type/input.kz:6:1
+  |
+  6 | | done {}
+  |  ^
+

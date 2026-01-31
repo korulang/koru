@@ -1,6 +1,5 @@
 // Test: Duplicate branch names in event declaration
-// BUG: This slips to backend with Zig "duplicate union member name"
-// Should be caught by frontend: "Duplicate branch name 'done'"
+// Parser catches duplicate branch names
 
 ~event foo { x: i32 }
 | done {}

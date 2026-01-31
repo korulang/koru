@@ -1,6 +1,5 @@
 // Test: Field name starting with a number
-// BUG: This currently COMPILES when it should fail
-// Should reject: "Invalid field name '123' - identifiers cannot start with digits"
+// Parser rejects field names that start with digits
 
 ~event foo { 123: i32 }
 | done {}

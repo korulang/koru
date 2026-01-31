@@ -1,6 +1,5 @@
 // Test: Using 'return' in flow (habit from other languages)
-// Users might try: | done |> return
-// Should catch: "Flows terminate with '_', not 'return'"
+// Parser catches return/break/continue and suggests '_' instead
 
 ~event foo { x: i32 }
 | done {}

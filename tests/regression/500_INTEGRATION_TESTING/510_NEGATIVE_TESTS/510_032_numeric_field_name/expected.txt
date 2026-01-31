@@ -1,0 +1,6 @@
+error[PARSE003]: field name cannot start with a digit
+  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_032_numeric_field_name/input.kz:6:1
+  |
+  6 | | done {}
+  |  ^
+

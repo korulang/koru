@@ -1,0 +1,6 @@
+error[PARSE003]: duplicate branch name 'done'
+  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_021_duplicate_branch_names/input.kz:7:1
+  |
+  7 | | done {}
+  |  ^
+

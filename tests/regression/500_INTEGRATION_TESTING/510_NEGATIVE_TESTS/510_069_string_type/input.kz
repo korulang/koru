@@ -1,6 +1,5 @@
 // Test: Using 'string' type (habit from other languages)
-// Users will try: { name: string }
-// Should suggest: "Unknown type 'string'. Did you mean '[]const u8'?"
+// Parser catches 'string' and suggests '[]const u8'
 
 ~event greet { name: string }
 | done {}
