@@ -1,0 +1,8 @@
+// Test: ~pub ~proc bypasses the pub proc rejection
+// BUG: ~pub proc is correctly rejected, but ~pub ~proc compiles
+// The extra tilde allows the invalid syntax through
+
+~event foo { x: i32 }
+| done {}
+
+~pub ~proc foo = done {}

@@ -1,0 +1,9 @@
+// Test: Using 'return' in flow (habit from other languages)
+// Users might try: | done |> return
+// Should catch: "Flows terminate with '_', not 'return'"
+
+~event foo { x: i32 }
+| done {}
+
+~foo(x: 1)
+| done |> return

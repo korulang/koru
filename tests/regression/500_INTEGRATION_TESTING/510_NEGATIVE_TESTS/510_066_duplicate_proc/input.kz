@@ -1,0 +1,8 @@
+// Test: Two procs for same event
+// Question: Should this be rejected or is last-wins intentional?
+
+~event foo { x: i32 }
+| done {}
+
+~proc foo = done {}
+~proc foo = done {}
