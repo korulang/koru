@@ -1,0 +1,5 @@
+// Test: Shape field missing colon between name and type
+// Expected: Parser rejects with "field missing type annotation"
+
+~event foo { x i32 }
+| done {}

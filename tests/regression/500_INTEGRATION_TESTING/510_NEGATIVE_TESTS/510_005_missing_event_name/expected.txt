@@ -1,0 +1,6 @@
+error[PARSE003]: event declaration missing name
+  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_005_missing_event_name/input.kz:5:1
+  |
+  5 | ~event { value: i32 }
+  |  ^
+

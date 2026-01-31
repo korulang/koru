@@ -1,0 +1,6 @@
+error[PARSE003]: field missing type annotation
+  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_030_missing_colon_in_field/input.kz:6:1
+  |
+  6 | | done {}
+  |  ^
+

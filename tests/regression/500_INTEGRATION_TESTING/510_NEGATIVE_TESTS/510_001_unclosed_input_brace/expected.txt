@@ -1,0 +1,6 @@
+error[PARSE004]: unmatched '{' in event shape
+  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_001_unclosed_input_brace/input.kz:5:0
+  |
+  5 | ~event write {
+  | ^
+

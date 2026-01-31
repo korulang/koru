@@ -1,0 +1,5 @@
+// Test: Double pipe before branch name
+// Expected: Parser rejects with "invalid branch name"
+
+~event foo { x: i32 }
+|| done {}

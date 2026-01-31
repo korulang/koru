@@ -1,5 +1,5 @@
 const std = @import("std");
-const log = std.log.scoped(.config);
+const log = @import("log");
 
 /// JSON file structure for koru.json
 /// Note: paths can be either string or array of strings, handled in parsePathsFromJson

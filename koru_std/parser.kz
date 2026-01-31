@@ -41,6 +41,13 @@ pub const ParseResult = parser_impl.ParseResult;
         .optimize = optimize,
     });
 
+    // Log module - compiler logging (controlled by --debug/--verbose)
+    const log_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/log.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
     // AST module - core AST data structures
     const ast_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
@@ -63,6 +70,7 @@ pub const ParseResult = parser_impl.ParseResult;
         .optimize = optimize,
     });
     type_registry_module.addImport("ast", ast_module);
+    type_registry_module.addImport("log", log_module);
 
     // Expression parser
     const expression_parser_module = b.createModule(.{
@@ -87,6 +95,7 @@ pub const ParseResult = parser_impl.ParseResult;
         .target = target,
         .optimize = optimize,
     });
+    config_module.addImport("log", log_module);
 
     // Module resolver - resolves import paths
     const module_resolver_module = b.createModule(.{
@@ -95,6 +104,7 @@ pub const ParseResult = parser_impl.ParseResult;
         .optimize = optimize,
     });
     module_resolver_module.addImport("config", config_module);
+    module_resolver_module.addImport("log", log_module);
 
     // Parser module - the main parser with all its dependencies
     const parser_module = b.createModule(.{
@@ -118,6 +128,7 @@ pub const ParseResult = parser_impl.ParseResult;
     });
     ast_serializer_module.addImport("ast", ast_module);
     ast_serializer_module.addImport("parser", parser_module);
+    ast_serializer_module.addImport("log", log_module);
 
     // Add modules to the executable
     exe.root_module.addImport("parser", parser_module);

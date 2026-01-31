@@ -1,0 +1,6 @@
+// Test: Missing comma between shape fields
+// BUG: This slips to backend with Zig "expected ',' after field"
+// Should be caught by frontend: "Expected ',' between shape fields"
+
+~event foo { x: i32 y: i32 }
+| done {}

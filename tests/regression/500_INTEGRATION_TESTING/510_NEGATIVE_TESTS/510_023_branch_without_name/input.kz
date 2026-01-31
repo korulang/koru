@@ -1,0 +1,5 @@
+// Test: Branch without a name (empty identifier)
+// Expected: Parser rejects with "invalid branch name"
+
+~event foo { x: i32 }
+| {}

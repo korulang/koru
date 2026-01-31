@@ -1,5 +1,5 @@
 const std = @import("std");
-const log = std.log.scoped(.type_registry);
+const log = @import("log");
 const ast = @import("ast");
 
 /// Central registry for all type information in a Koru program

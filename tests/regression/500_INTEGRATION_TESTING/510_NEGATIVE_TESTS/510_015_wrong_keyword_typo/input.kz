@@ -1,0 +1,6 @@
+// Test: Typo in keyword (evnet instead of event)
+// BUG: Frontend catches it but gives wrong error: "Invalid binding '{}'"
+// Should say: "Unknown keyword 'evnet'. Did you mean 'event'?"
+
+~evnet foo { x: i32 }
+| done {}

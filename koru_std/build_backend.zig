@@ -28,6 +28,13 @@ const errors_module = b.createModule(.{
     .optimize = optimize,
 });
 
+// Log module - compiler logging
+const log_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/log.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+
 // AST module - core AST data structures
 const ast_module = b.createModule(.{
     .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
@@ -57,6 +64,7 @@ const type_registry_module = b.createModule(.{
     .optimize = optimize,
 });
 type_registry_module.addImport("ast", ast_module);
+type_registry_module.addImport("log", log_module);
 
 // Expression parser
 const expression_parser_module = b.createModule(.{
@@ -81,6 +89,7 @@ const config_module = b.createModule(.{
     .target = target,
     .optimize = optimize,
 });
+config_module.addImport("log", log_module);
 
 // Module resolver - resolves import paths
 const module_resolver_module = b.createModule(.{
@@ -89,6 +98,7 @@ const module_resolver_module = b.createModule(.{
     .optimize = optimize,
 });
 module_resolver_module.addImport("config", config_module);
+module_resolver_module.addImport("log", log_module);
 
 // Parser module - source parsing
 const parser_module = b.createModule(.{

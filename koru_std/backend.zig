@@ -134,6 +134,13 @@ pub const PROGRAM_AST = Program{
                                 \\    .optimize = optimize,
                                 \\});
                                 \\
+                                \\// Log module - compiler logging
+                                \\const log_module = b.createModule(.{
+                                \\    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/log.zig" },
+                                \\    .target = target,
+                                \\    .optimize = optimize,
+                                \\});
+                                \\
                                 \\// AST module - core AST data structures
                                 \\const ast_module = b.createModule(.{
                                 \\    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/ast.zig" },
@@ -163,6 +170,7 @@ pub const PROGRAM_AST = Program{
                                 \\    .optimize = optimize,
                                 \\});
                                 \\type_registry_module.addImport("ast", ast_module);
+                                \\type_registry_module.addImport("log", log_module);
                                 \\
                                 \\// Expression parser
                                 \\const expression_parser_module = b.createModule(.{
@@ -187,6 +195,7 @@ pub const PROGRAM_AST = Program{
                                 \\    .target = target,
                                 \\    .optimize = optimize,
                                 \\});
+                                \\config_module.addImport("log", log_module);
                                 \\
                                 \\// Module resolver - resolves import paths
                                 \\const module_resolver_module = b.createModule(.{
@@ -195,6 +204,7 @@ pub const PROGRAM_AST = Program{
                                 \\    .optimize = optimize,
                                 \\});
                                 \\module_resolver_module.addImport("config", config_module);
+                                \\module_resolver_module.addImport("log", log_module);
                                 \\
                                 \\// Parser module - source parsing
                                 \\const parser_module = b.createModule(.{
@@ -432,6 +442,7 @@ pub const PROGRAM_AST = Program{
                                 \\    .optimize = optimize,
                                 \\});
                                 \\ast_serializer_module.addImport("ast", ast_module);
+                                \\ast_serializer_module.addImport("log", log_module);
                                 \\
                                 \\// Transform pass runner - recursive AST walker for transform handlers
                                 \\// Also handles [expand] events via template lookup and interpolation

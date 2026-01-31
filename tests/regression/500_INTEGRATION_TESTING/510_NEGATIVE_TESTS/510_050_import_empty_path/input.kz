@@ -1,0 +1,4 @@
+// Test: Import with empty path
+// GOOD: Frontend catches with clear error about $ alias
+
+~import ""

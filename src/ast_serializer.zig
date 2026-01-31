@@ -1,5 +1,5 @@
 const std = @import("std");
-const log = std.log.scoped(.ast_serializer);
+const log = @import("log");
 const ast = @import("ast");
 const Parser = @import("parser").Parser;  // Needed for tests
 

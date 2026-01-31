@@ -1,0 +1,9 @@
+// Test: Event call with parameter not in event shape
+// ACCEPTABLE: Backend Zig error "no field named 'y'"
+// (We don't re-implement Zig's type system)
+
+~event foo { x: i32 }
+| done {}
+
+~foo(x: 1, y: 2)
+| done |> _

@@ -156,6 +156,7 @@ pub const CompilerContext = struct {
         .target = target,
         .optimize = optimize,
     });
+    config_module.addImport("log", log_module);
 
     // Module resolver - resolves import paths
     const module_resolver_module = b.createModule(.{

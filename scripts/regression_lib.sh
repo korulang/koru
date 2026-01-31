@@ -295,8 +295,38 @@ regression_run_one_test() {
             if grep -q "^FRONTEND_COMPILE_ERROR$" "$test_dir/EXPECT"; then
                 FRONTEND_ERROR_EXPECTED=true
                 # If this is a PARSER_TEST, we still need to validate AST
-                # Otherwise, we're done - the error was expected
+                # Otherwise, check expected.txt for exact error output match
                 if [ ! -f "$test_dir/PARSER_TEST" ]; then
+                    # Check for expected.txt - if present, verify exact error output
+                    if [ -f "$test_dir/expected.txt" ]; then
+                        # Compare outputs after trimming trailing whitespace
+                        EXPECTED_TRIMMED=$(sed 's/[[:space:]]*$//' "$test_dir/expected.txt")
+                        ACTUAL_TRIMMED=$(sed 's/[[:space:]]*$//' "$test_dir/compile_kz.err")
+                        if [ "$EXPECTED_TRIMMED" = "$ACTUAL_TRIMMED" ]; then
+                            if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
+                                echo -e "${RED}❌ Expected frontend error but memory leak detected ($LEAK_PHASE)${NC}"
+                                echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
+                                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
+                                LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                            else
+                                echo -e "${GREEN}✅ PASS (error output matches expected.txt)${NC}"
+                                mark_test_passed "$test_dir"
+                                PASSED_TESTS=$((PASSED_TESTS + 1))
+                                if [ "$HAS_MEMORY_LEAK" = true ]; then
+                                    LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                                fi
+                            fi
+                        else
+                            echo -e "${RED}❌ Error output mismatch${NC}"
+                            echo "  Diff (expected vs actual):"
+                            diff -u "$test_dir/expected.txt" "$test_dir/compile_kz.err" | head -20 | sed 's/^/    /'
+                            echo "  Full files: $test_dir/expected.txt vs $test_dir/compile_kz.err"
+                            echo "error-output" > "$test_dir/FAILURE"
+                            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(error-output)"
+                        fi
+                        return 0
+                    fi
+                    # No expected.txt - just check the error was expected (legacy behavior)
                     if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
                         echo -e "${RED}❌ Expected frontend error but memory leak detected ($LEAK_PHASE)${NC}"
                         echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"

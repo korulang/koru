@@ -1,0 +1,6 @@
+// Test: Field with missing type after colon
+// BUG: Slips to backend with Zig error "expected type expression"
+// Should be caught by frontend: "Expected type after ':'"
+
+~event foo { x: }
+| done {}

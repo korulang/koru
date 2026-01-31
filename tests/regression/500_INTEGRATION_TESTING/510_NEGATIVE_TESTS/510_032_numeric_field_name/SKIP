@@ -1,0 +1,1 @@
+COMPILER_BUG: Parser accepts numeric field names but shouldn't

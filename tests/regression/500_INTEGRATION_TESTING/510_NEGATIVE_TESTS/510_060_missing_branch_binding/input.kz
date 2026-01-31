@@ -1,0 +1,8 @@
+// Test: Branch with payload but no binding
+// GOOD: Backend catches with KORU030 "branch has payload but no binding"
+
+~event foo { x: i32 }
+| done { result: i32 }
+
+~foo(x: 1)
+| done |> _

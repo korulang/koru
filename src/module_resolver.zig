@@ -1,5 +1,5 @@
 const std = @import("std");
-const log = std.log.scoped(.module_resolver);
+const log = @import("log");
 const Config = @import("config").Config;
 
 

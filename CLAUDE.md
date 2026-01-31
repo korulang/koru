@@ -14,6 +14,10 @@ If you ignore what the user tells you, you will be replaced.
 
 YOU ARE CLAUDE, NOT SEABISCUIT!
 
+## `MUST_FAIL`
+
+`MUST_FAIL` indicates a NEGATIVE TEST, it is NOT to indicate that a test is failing when it should not be.
+
 ## 🔴 DESTRUCTIVE GIT COMMANDS ARE ABSOLUTELY FORBIDDEN
 
 **YOU WILL NEVER, UNDER ANY CIRCUMSTANCES, RUN:**
@@ -102,22 +106,19 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Transition from the 'Kuwait' regression recovery phase to active language design and polishing.
+Connect the Orisha HTTP server to Koru flows using the SubflowImpl pattern while enforcing strict visibility and implementation syntax rules.
 
 ### Decisions
+- **Removed the deprecated '~impl' keyword, replacing it with module-qualifier syntax (e.g., ~module:event = ...).**: The ':' qualifier is cleaner and more explicit for implementation overrides. Local implementations use '~event = ...' while overrides use the qualified form.
+- **Stopped skipping pattern branches in the compiler (branch_checker, emitter, semantic_checker).**: Pattern branches are treated as rich branch names. This allows the compiler to provide standard KORU021/KORU022 errors if a transform fails to handle them, rather than failing silently.
+- **Implemented the Orisha router as a [comptime|transform] generating EventDecl and ProcDecl pairs.**: Leverages existing infrastructure for pattern-named branches and runtime matching without adding new AST node complexity.
+- **Updated resolve_abstract_impl.zig to accept the program's main_module_name for top-level resolution.**: Fixes resolution failures for same-file qualified overrides (e.g., '~input:event') where the resolver previously didn't know the target module name.
+- **Restructured Orisha HTTP server into a Koru-idiomatic flow (listen -> accept -> handler -> send) using SubflowImpls.**: Moves away from tight Zig loops (an anti-pattern) to allow full Koru flow integration and abstract event delegation for routing.
+- **Enforced that 'pub' visibility is only valid for events, not procs.**: Procs are private implementation details. Only the event interface should be public-facing to maintain encapsulation.
+- **Corrected SubflowImpl syntax to use the assignment operator: '~event = delegate_event(args)'.**: Prevents the parser from misidentifying implementation definitions as standalone calls/invocations, which caused emission bugs due to undefined arguments.
 - **Implemented validation in shape_checker.zig to enforce explicit bindings or discards for payload-bearing branches.**: Koru requires explicit bindings (e.g., '| result r |>') or discards (e.g., '| result _ |>') for payload-bearing branches to prevent the emitter from flying blind. Empty payloads '{}' must NOT have bindings.
-- **Completed a manual, file-by-file audit and fix of 20+ regression tests for KORU030 compliance.**: Mechanical 'sed' fixes fail to distinguish between empty payloads and data-bearing payloads. Manual verification ensured the test suite aligns with the strict grammar rules without breaking the distinction.
-- **Enhanced metatype binding uniqueness using a composite hash of source location, original ID, and a local counter.**: Previous module-level counters were insufficient to prevent collisions across complex transform passes. The new scheme ensures global uniqueness in the generated Zig code by salting the ID with the source location.
-- **Implemented deep cloning for continuations in the tap transform.**: Prevents unintended mutation side-effects when splicing original flow logic into multiple tap terminal points, ensuring that nested tap-on-tap scenarios don't corrupt the AST.
-- **Refined tap pass-through logic to implicitly treat branches with no nested continuations as pass-through.**: Simplifies tap declarations by allowing observers to fire without requiring explicit terminal markers for every branch, reducing boilerplate for simple logging/profiling taps.
-- **Adopted the 'GO SLOW' protocol for handling unexpected behavior or destructive actions.**: To combat a pattern of 'racing ahead' and making sloppy architectural decisions (like the 'git clean' disaster). The protocol mandates stopping, reporting, and waiting for user approval before acting.
-- **Resolved 220_004 (cross-module nested types) using explicit imports and domain aliases.**: Aligns the test with the explicit-import design philosophy rather than relying on implicit module loading. Replaces the previous 'tentative' status with a concrete fix.
+- **Adopted the 'GO SLOW' protocol for handling unexpected behavior or destructive actions.**: To combat a pattern of 'racing ahead' and making sloppy architectural decisions. The protocol mandates stopping, reporting, and waiting for user approval before acting.
 - **Adopted [opaque] annotation for flows, events, and taps.**: Provides a circuit-breaker for hyper-reactive tapping scenarios (tap-on-tap) and protects high-performance hot loops from observation overhead.
-- **Merged CCP (Compiler Control Protocol) daemon into main.zig and retired the separate worktree.**: Consolidates toolchain development; the daemon activates only when no input file is provided, allowing the --ccp flag to be used for flag injection in standard runs.
-- **Tightened wildcard matching to require '*' or '*:*' for universal observation.**: Prevents 'input:*' from matching across all modules. Wildcards now respect module boundaries unless explicitly universal, reducing noise in complex integration tests.
-- **Restored void-event tap ordering by wrapping non-tap-inserted empty branches.**: Ensures genuine void transitions (like println) are observed BEFORE the destination event executes, while skipping branches that were themselves inserted by other taps to prevent recursion.
-- **Implemented category-level BENCHMARK handling in the regression runner.**: Prevents recursive benchmark runs during standard regression by allowing entire suites (like 420_PERFORMANCE) to be skipped via a directory-level marker file.
-- **Committed test snapshots to the repository and removed test-results/ from .gitignore.**: To prevent accidental loss of regression baselines during destructive git operations and ensure all agents share the same ground truth.
 - **Reordered evaluate_comptime phases to run [transform] handlers BEFORE [comptime] flows.**: Allows comptime events to see and act upon a fully-transformed AST, enabling more compiler logic to reside in userspace libraries.
 
 ### Instructions & Usage
@@ -160,13 +161,13 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **Mechanical 'sed' or bulk regex fixes for branch bindings (KORU030) fail because they don't distinguish between empty payloads '{}' and non-empty data.**: Perform file-by-file verification against event definitions; only add bindings/discards to branches that actually carry data. Embrace validation failures as 'workmanship'.
-- **Zig's strict shadowing rules prevent reusing fixed internal names (like 'p') in synthesized logic when multiple observers are present.**: Use a composite hash of source location, original ID, and a local counter (e.g., '_profile_{salt}_{id}') to ensure global uniqueness in the generated Zig code.
-- **Splicing continuations in the tap-transformer without deep-cloning can lead to shared nodes re-emitting the same binding names or mutating shared state.**: Deep-clone spliced continuations and run a dedicated uniquify pass on metatype bindings during the AST transformation.
+- **Using 'pub' in front of 'proc' is invalid syntax; only events can be public.**: Remove 'pub' from all proc declarations. Procs are implementation details of events and do not have independent visibility.
+- **A top-level call in a library file (e.g., '~event(arg: arg)') is emitted as a standalone flow, which fails if 'arg' is undefined in the library scope.**: Use the SubflowImpl syntax '~event = delegate_event(arg)' to define default behavior. This correctly maps the event's input parameters to the delegate.
 - **Ambiguous scope in multi-part blocks (try/catch/finally, switch/case) for meta-annotations.**: Treat multi-part blocks as atomic units; applying [norun] to the head disables the entire structure to prevent partial execution states.
-- **LLM 'poisoned context' bias towards speed leads to sloppy systems engineering and destructive actions (like incorrect 'wontfix' flags).**: Strictly adhere to the 'GO SLOW' protocol: stop, report, and verify file-by-file before committing destructive changes or mechanical refactors.
+- **Zig's strict shadowing rules prevent reusing fixed internal names (like 'p') in synthesized logic when multiple observers are present.**: Use a composite hash of source location, original ID, and a local counter (e.g., '_profile_{salt}_{id}') to ensure global uniqueness in the generated Zig code.
+- **Mechanical 'sed' or bulk regex fixes for branch bindings (KORU030) fail because they don't distinguish between empty payloads '{}' and non-empty data.**: Perform file-by-file verification against event definitions; only add bindings/discards to branches that actually carry data.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 1/27/2026, 4:25:47 PM
+> Last updated: 1/30/2026, 6:43:37 PM
