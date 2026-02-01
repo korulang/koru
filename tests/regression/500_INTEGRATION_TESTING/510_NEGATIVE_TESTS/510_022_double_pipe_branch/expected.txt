@@ -1,6 +1,6 @@
 error[PARSE003]: invalid branch name '| done' - must be a valid identifier
   --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_022_double_pipe_branch/input.kz:5:1
-  |
+    |
   5 | ~event foo { x: i32 }
-  |  ^
+    | ^
 

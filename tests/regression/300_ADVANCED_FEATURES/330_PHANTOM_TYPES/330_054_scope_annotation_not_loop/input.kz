@@ -1,0 +1,31 @@
+// TEST: @scope annotation blocks discharge even for non-loop events
+// STATUS: IMPLEMENTED
+// MUST_FAIL: KORU032 - Cannot dispose outer-scope resource inside @scope boundary
+//
+// The @scope annotation is the source of truth for scope boundaries, not the event name.
+// This test verifies that @scope works correctly on ANY event, not just for/while/loop.
+//
+// Here: Open file, call custom event with @scope branch, try to close inside - ERROR!
+//
+// Expected: KORU032 error about disposing in wrong scope
+
+~import "$app/fs"
+
+// Custom event that is NOT a loop but has @scope semantics
+// (simulating a transaction, callback, or other scoped context)
+~pub event with_context {}
+| scoped {}
+| done {}
+
+~proc with_context {
+    return .{ .scoped = .{} };
+}
+
+// Open file BEFORE the scoped context
+~app.fs:open(path: "test.txt")
+| opened f |> with_context()
+  | scoped _[@scope] |> app.fs:close(file: f.file)
+    | closed |> _
+  | done |> _
+
+pub fn main() void {}

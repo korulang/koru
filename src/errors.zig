@@ -162,13 +162,16 @@ pub const ErrorReporter = struct {
             // Show the source line
             if (err.location.line > 0 and err.location.line <= self.source_lines.len) {
                 const line = self.source_lines[err.location.line - 1];
-                try writer.print("  |\n", .{});
+                try writer.print("    |\n", .{});  // Match line number width
                 try writer.print("{d: >3} | {s}\n", .{ err.location.line, line });
-                try writer.print("  | ", .{});
+                try writer.print("    | ", .{});  // 4 spaces + " | " = 6 chars to match line prefix
                 
                 // Print caret pointing to error location
-                for (0..err.location.column) |_| {
-                    try writer.writeAll(" ");
+                // Column is 1-based, so we need column-1 spaces to point at column N
+                if (err.location.column > 0) {
+                    for (0..err.location.column - 1) |_| {
+                        try writer.writeAll(" ");
+                    }
                 }
                 try writer.writeAll("^\n");
             }

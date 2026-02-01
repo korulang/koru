@@ -1,6 +1,6 @@
 error[PARSE003]: invalid branch name '' - must be a valid identifier
   --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_023_branch_without_name/input.kz:5:1
-  |
+    |
   5 | ~event foo { x: i32 }
-  |  ^
+    | ^
 

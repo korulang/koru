@@ -1,6 +1,6 @@
 error[PARSE003]: import paths must start with $ alias (e.g., '$std/io', '$src/helper') - define aliases in koru.json
   --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_051_import_without_quotes/input.kz:5:1
-  |
+    |
   5 | ~import foo
-  |  ^
+    | ^
 

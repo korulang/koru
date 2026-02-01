@@ -1,6 +1,6 @@
 error[PARSE004]: unmatched '{' in branch payload shape
   --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_002_unclosed_branch_brace/input.kz:6:8
-  |
+    |
   6 | | success {
-  |         ^
+    |        ^
 

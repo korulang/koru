@@ -83,7 +83,7 @@ pub const AutoDischargeInserter = struct {
         allocator: std.mem.Allocator,
         scope_depth: u32, // Current scope depth (increments when entering loop body)
         is_repeating: bool, // True if we're inside a loop's `each` branch
-        loop_entry_scope: ?u32, // Scope depth when we entered the current loop (null if not in loop)
+        loop_entry_scope: ?u32, // Scope depth when we entered current @scope boundary (null if not in scope)
 
         const BindingInfo = struct {
             phantom_state: []const u8,
@@ -191,10 +191,15 @@ pub const AutoDischargeInserter = struct {
             }
         }
 
-        /// Enter a new scope (for loop bodies)
-        fn enterScope(self: *BindingContext, is_repeating: bool) void {
+        /// Enter a new scope (for @scope boundaries - loops, taps, custom constructs)
+        fn enterScope(self: *BindingContext, is_scoped: bool) void {
             self.scope_depth += 1;
-            self.is_repeating = is_repeating;
+            // is_scoped means we're inside a @scope boundary - outer resources cannot be discharged here
+            self.is_repeating = is_scoped;
+            // Record scope entry point when entering a @scope boundary
+            if (is_scoped and self.loop_entry_scope == null) {
+                self.loop_entry_scope = self.scope_depth;
+            }
         }
 
         /// Check if there are obligations from before we entered the current loop
@@ -473,22 +478,17 @@ pub const AutoDischargeInserter = struct {
             }
         }
 
-        // Check if this is a loop-like flow (for, while, loop)
-        const is_loop_flow = std.mem.eql(u8, event_name, "for") or
-            std.mem.eql(u8, event_name, "while") or
-            std.mem.eql(u8, event_name, "loop");
-
         // Walk continuations looking for terminators with obligations
         var context = BindingContext.init(self.allocator);
         defer context.deinit();
 
         for (flow.continuations) |*cont| {
             // If this continuation has @scope annotation, enter a new scope
-            // (replaces old "each" branch name check - now uses annotation)
+            // The @scope annotation is the source of truth - not the event name
             if (hasScope(cont)) {
                 var scoped_context = try context.clone(self.allocator);
                 defer scoped_context.deinit();
-                scoped_context.enterScope(is_loop_flow); // Repeating if it's a loop
+                scoped_context.enterScope(true); // @scope means we're in a scoped boundary
 
                 const result = try self.checkContinuation(cont, event_info.decl, module_name, &scoped_context, program, flow, mode);
                 if (result.transformed) return result;
@@ -721,7 +721,6 @@ pub const AutoDischargeInserter = struct {
             // This requires looking at the node in cont (if it's an invocation)
             var nested_event = event_decl;
             var nested_module = module_name;
-            var is_loop_invocation = false;
 
             if (cont.node) |node| {
                 if (node == .invocation) {
@@ -735,21 +734,15 @@ pub const AutoDischargeInserter = struct {
                         nested_event = info.decl;
                         nested_module = info.module_name;
                     }
-
-                    // Check if this is a loop-like invocation (for, while, etc.)
-                    // by looking at the event name
-                    is_loop_invocation = std.mem.eql(u8, inv_event_name, "for") or
-                        std.mem.eql(u8, inv_event_name, "while") or
-                        std.mem.eql(u8, inv_event_name, "loop");
                 }
             }
 
             // If this continuation has @scope annotation, treat it as a scope boundary
-            // (replaces old "each" branch name check - now uses annotation)
+            // The @scope annotation is the source of truth - not the event name
             if (hasScope(nested)) {
                 var scoped_context = try context.clone(self.allocator);
                 defer scoped_context.deinit();
-                scoped_context.enterScope(is_loop_invocation); // Repeating if it's a loop
+                scoped_context.enterScope(true); // @scope means we're in a scoped boundary
 
                 const result = try self.checkContinuation(nested, nested_event, nested_module, &scoped_context, program, flow, mode);
                 if (result.transformed) return result;
@@ -1269,20 +1262,22 @@ pub const AutoDischargeInserter = struct {
                         };
 
                         if (consumes) {
-                            // ERROR: Cannot manually dispose pre-loop obligation in repeating context
+                            // ERROR: Cannot manually dispose outer-scope obligation inside @scope boundary
+                            // This applies to ANY @scope (loops, taps, custom constructs) - not just loops
+                            // is_repeating is true when we're inside a @scope boundary
                             if (context.is_repeating) {
-                                // Check if this is a pre-loop obligation
-                                const loop_entry = context.loop_entry_scope orelse 0;
-                                if (context.cleanup_obligations.get(arg.value)) |obl_info| {
-                                    if (obl_info.scope_depth < loop_entry) {
-                                        try self.reporter.addError(
-                                            .KORU032,
-                                            flow.location.line,
-                                            flow.location.column,
-                                            "Cannot dispose outer-scope resource '{s}' inside repeating loop body. Handle at '| done |>' or escape via branch constructor.",
-                                            .{arg.value},
-                                        );
-                                        return error.ValidationFailed;
+                                if (context.loop_entry_scope) |scope_entry| {
+                                    if (context.cleanup_obligations.get(arg.value)) |obl_info| {
+                                        if (obl_info.scope_depth < scope_entry) {
+                                            try self.reporter.addError(
+                                                .KORU032,
+                                                flow.location.line,
+                                                flow.location.column,
+                                                "Cannot dispose outer-scope resource '{s}' inside @scope boundary. Handle outside the scope or escape via branch constructor.",
+                                                .{arg.value},
+                                            );
+                                            return error.ValidationFailed;
+                                        }
                                     }
                                 }
                             }

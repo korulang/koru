@@ -955,7 +955,7 @@ pub const Parser = struct {
             try self.reporter.addError(
                 .PARSE004,
                 start_line,
-                @intCast(brace_start),
+                @intCast(brace_start + 1),  // Convert to 1-based column
                 "unmatched '{{' in event shape",
                 .{},
             );
@@ -3160,8 +3160,11 @@ pub const Parser = struct {
         }
         
         // Check for print patterns with format strings and tuple args
-        if (std.mem.indexOf(u8, content, "log_debug") != null or
-            std.mem.indexOf(u8, content, "std.log") != null) {
+        // Only flag these at TOP LEVEL (before first paren), not inside args
+        // This allows valid event names like ~std.log() while blocking actual Zig logging
+        if (std.mem.indexOf(u8, check_range, "log_debug(") != null or
+            std.mem.indexOf(u8, check_range, "std.log.") != null or
+            std.mem.indexOf(u8, check_range, "std.debug.") != null) {
             return true;
         }
         
@@ -3752,7 +3755,16 @@ pub const Parser = struct {
         
         // Parse: ~event.name = ... or ~module:event = ...
         const after_tilde = lexer.trim(line[1..]);
-        const eq_idx = findTopLevelEquals(after_tilde) orelse return error.InvalidSyntax;
+        const eq_idx = findTopLevelEquals(after_tilde) orelse {
+            try self.reporter.addError(
+                .PARSE003,
+                self.current,
+                1,
+                "subflow implementation requires '=' (e.g., ~event = delegate())",
+                .{},
+            );
+            return error.InvalidSyntax;
+        };
 
         const event_path_str = lexer.trim(after_tilde[0..eq_idx]);
         const event_path = try lexer.parseQualifiedPath(self.allocator, event_path_str, ast);
@@ -3907,7 +3919,16 @@ pub const Parser = struct {
         }
 
         // Flow body on next line(s) - handle multi-line flows
-        if (self.current >= self.lines.len) return error.UnexpectedEof;
+        if (self.current >= self.lines.len) {
+            try self.reporter.addError(
+                .PARSE003,
+                self.current,
+                1,
+                "expected subflow body after '='",
+                .{},
+            );
+            return error.UnexpectedEof;
+        }
         
         // Skip blank lines
         while (self.current < self.lines.len) {
@@ -3917,7 +3938,16 @@ pub const Parser = struct {
             self.current += 1;
         }
         
-        if (self.current >= self.lines.len) return error.UnexpectedEof;
+        if (self.current >= self.lines.len) {
+            try self.reporter.addError(
+                .PARSE003,
+                self.current,
+                1,
+                "expected subflow body after '='",
+                .{},
+            );
+            return error.UnexpectedEof;
+        }
         const body_line = self.lines[self.current];
         const trimmed_body = lexer.trim(body_line);
         
@@ -6510,7 +6540,7 @@ pub const Parser = struct {
             const colon_count = std.mem.count(u8, field_type, ":");
             if (colon_count > 1) {
                 // Multiple colons are ambiguous - which is the module boundary?
-                try self.reporter.addError(.PARSE003, self.current, 1,
+                try self.reporter.addError(.PARSE003, self.current + 1, 1,
                     "Multiple colons in type reference '{s}' - expected format 'module.path:Type' or just 'Type'",
                     .{field_type});
                 return error.ParseError;

@@ -1,6 +1,6 @@
 error[PARSE003]: Flows terminate with '_', not 'return'
   --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_068_return_in_flow/input.kz:9:1
-  |
+    |
   9 | | done |> return
-  |  ^
+    | ^
 

@@ -1,0 +1,30 @@
+// Library module: fs
+// Defines filesystem operations with cleanup obligations
+
+const std = @import("std");
+
+// File type with phantom states
+const File = struct {
+    handle: i32,
+};
+
+// Open a file - returns opened! state (requires cleanup)
+~pub event open { path: []const u8 }
+| opened { file: *File[opened!] }
+
+~proc open {
+    std.debug.print("Opening file: {s}\n", .{path});
+    const allocator = std.heap.page_allocator;
+    const f = allocator.create(File) catch unreachable;
+    f.* = File{ .handle = 42 };
+    return .{ .opened = .{ .file = f } };
+}
+
+// Close a file - CONSUMES opened! state (disposes the resource)
+~pub event close { file: *File[!opened] }
+| closed {}
+
+~proc close {
+    std.debug.print("Closing file\n", .{});
+    return .{ .closed = .{} };
+}
