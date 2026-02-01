@@ -106,20 +106,20 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Connect the Orisha HTTP server to Koru flows using the SubflowImpl pattern while enforcing strict visibility and implementation syntax rules.
+Determine the viability and framing of open-sourcing Koru given the disconnect between its technical depth and public perception.
 
 ### Decisions
-- **Removed the deprecated '~impl' keyword, replacing it with module-qualifier syntax (e.g., ~module:event = ...).**: The ':' qualifier is cleaner and more explicit for implementation overrides. Local implementations use '~event = ...' while overrides use the qualified form.
-- **Stopped skipping pattern branches in the compiler (branch_checker, emitter, semantic_checker).**: Pattern branches are treated as rich branch names. This allows the compiler to provide standard KORU021/KORU022 errors if a transform fails to handle them, rather than failing silently.
-- **Implemented the Orisha router as a [comptime|transform] generating EventDecl and ProcDecl pairs.**: Leverages existing infrastructure for pattern-named branches and runtime matching without adding new AST node complexity.
-- **Updated resolve_abstract_impl.zig to accept the program's main_module_name for top-level resolution.**: Fixes resolution failures for same-file qualified overrides (e.g., '~input:event') where the resolver previously didn't know the target module name.
-- **Restructured Orisha HTTP server into a Koru-idiomatic flow (listen -> accept -> handler -> send) using SubflowImpls.**: Moves away from tight Zig loops (an anti-pattern) to allow full Koru flow integration and abstract event delegation for routing.
+- **Adopted 'Semantic Space Lifting' as the formal term for transforming opaque APIs into state-enforced Koru events.**: It precisely describes the elevation of implicit rules (like C library cleanup) into compiler-enforced obligations using phantom types and event branches.
+- **Positioned Koru as an 'AI-First' language where AI collaboration is the primary path to understanding.**: AIs map Koru's synthesis of concepts (algebraic effects, typestate) instantly, whereas humans struggle with the 'unlearning' required by the paradigm shift.
+- **Retained 'Event Continuation' as the core primitive name despite potential human confusion.**: It creates a 'gap' in understanding that forces users to engage with Koru's specific implementation rather than mapping it to familiar but incorrect patterns.
+- **Transitioned AutoDischargeInserter to be strictly annotation-driven (@scope) rather than name-based.**: Decouples resource management from specific syntax (for/while), allowing custom constructs to define scope boundaries and preventing double-discharges.
+- **Standardized error reporting to 1-based columns and fixed caret alignment in the ErrorReporter.**: Consistency with IDE expectations and improved visual clarity for terminal diagnostics.
+- **Migrated compiler logging from Zig's std.log to a custom log.zig system.**: Eliminates 240+ lines of debug noise that buried actual compiler errors, enabling exact-match error testing.
+- **Implemented exact-match error message validation in the test harness (expected.txt).**: Locks in high-quality error messages and allows the test suite to serve as live documentation for the website.
+- **Adopted the 'GO SLOW' protocol for handling unexpected behavior or destructive actions.**: To combat a pattern of 'racing ahead' and making sloppy architectural decisions. Mandates stopping and reporting before acting.
+- **Adopted [opaque] annotation for flows, events, and taps.**: Provides a circuit-breaker for hyper-reactive tapping scenarios and protects high-performance hot loops from observation overhead.
+- **Reordered evaluate_comptime phases to run [transform] handlers BEFORE [comptime] flows.**: Allows comptime events to act upon a fully-transformed AST, enabling more compiler logic to reside in userspace.
 - **Enforced that 'pub' visibility is only valid for events, not procs.**: Procs are private implementation details. Only the event interface should be public-facing to maintain encapsulation.
-- **Corrected SubflowImpl syntax to use the assignment operator: '~event = delegate_event(args)'.**: Prevents the parser from misidentifying implementation definitions as standalone calls/invocations, which caused emission bugs due to undefined arguments.
-- **Implemented validation in shape_checker.zig to enforce explicit bindings or discards for payload-bearing branches.**: Koru requires explicit bindings (e.g., '| result r |>') or discards (e.g., '| result _ |>') for payload-bearing branches to prevent the emitter from flying blind. Empty payloads '{}' must NOT have bindings.
-- **Adopted the 'GO SLOW' protocol for handling unexpected behavior or destructive actions.**: To combat a pattern of 'racing ahead' and making sloppy architectural decisions. The protocol mandates stopping, reporting, and waiting for user approval before acting.
-- **Adopted [opaque] annotation for flows, events, and taps.**: Provides a circuit-breaker for hyper-reactive tapping scenarios (tap-on-tap) and protects high-performance hot loops from observation overhead.
-- **Reordered evaluate_comptime phases to run [transform] handlers BEFORE [comptime] flows.**: Allows comptime events to see and act upon a fully-transformed AST, enabling more compiler logic to reside in userspace libraries.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -161,13 +161,13 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **Using 'pub' in front of 'proc' is invalid syntax; only events can be public.**: Remove 'pub' from all proc declarations. Procs are implementation details of events and do not have independent visibility.
-- **A top-level call in a library file (e.g., '~event(arg: arg)') is emitted as a standalone flow, which fails if 'arg' is undefined in the library scope.**: Use the SubflowImpl syntax '~event = delegate_event(arg)' to define default behavior. This correctly maps the event's input parameters to the delegate.
-- **Ambiguous scope in multi-part blocks (try/catch/finally, switch/case) for meta-annotations.**: Treat multi-part blocks as atomic units; applying [norun] to the head disables the entire structure to prevent partial execution states.
-- **Zig's strict shadowing rules prevent reusing fixed internal names (like 'p') in synthesized logic when multiple observers are present.**: Use a composite hash of source location, original ID, and a local counter (e.g., '_profile_{salt}_{id}') to ensure global uniqueness in the generated Zig code.
-- **Mechanical 'sed' or bulk regex fixes for branch bindings (KORU030) fail because they don't distinguish between empty payloads '{}' and non-empty data.**: Perform file-by-file verification against event definitions; only add bindings/discards to branches that actually carry data.
+- **Terminology like 'Event Continuation' and 'Semantic Space Lifting' triggers 'wrong mappings' in humans who try to fit them into existing patterns (Observer, CPS).**: Acknowledge these terms as a 'filter' for high-curiosity developers and lean into AI-assisted collaboration to bridge the understanding gap.
+- **The AutoDischargeInserter previously relied on hardcoded event names (for, while) for scope boundaries, causing it to miss custom constructs.**: Use the '@scope' annotation as the single source of truth for isolation boundaries in the compiler.
+- **Heuristic-based 'Zig code' detection in the parser can block valid Koru namespaced events like '~std.log()'.**: Tighten heuristics to check for specific patterns (e.g., 'std.log.') at the top level of an invocation rather than simple substring matches.
+- **Parser error reporting often suffers from 0-based vs 1-based coordinate mismatches and misaligned carets.**: Standardize on 1-based indexing and audit 'reporter.zig' to ensure prefix lengths (e.g., ' | ') match across all output lines.
+- **Resources defined outside a @scope boundary must not be discharged inside it, as the scope might be conditional or repeating.**: Enforce strict isolation: a scope boundary cannot satisfy or discharge obligations created in an outer scope.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 1/30/2026, 6:43:37 PM
+> Last updated: 2/1/2026, 4:57:13 PM
