@@ -46,6 +46,13 @@ pub fn isContinuationLine(line: []const u8) bool {
     return trimmed[0] == '|';
 }
 
+/// Check if this is a comment-only line (starts with //)
+pub fn isCommentLine(line: []const u8) bool {
+    const trimmed = trim(line);
+    if (trimmed.len < 2) return false;
+    return trimmed[0] == '/' and trimmed[1] == '/';
+}
+
 /// Check if a string is a valid identifier (starts with letter/underscore, contains only alphanumeric/underscore)
 pub fn isValidIdentifier(s: []const u8) bool {
     if (s.len == 0) return false;

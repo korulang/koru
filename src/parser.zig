@@ -4253,6 +4253,12 @@ pub const Parser = struct {
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
 
+            // Skip comment lines but continue looking for continuations
+            if (lexer.isCommentLine(line)) {
+                self.current += 1;
+                continue;
+            }
+
             // Check if this is a continuation
             if (!lexer.isContinuationLine(line)) break;
 
@@ -4357,6 +4363,12 @@ pub const Parser = struct {
         // Look for continuation lines at greater indentation
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
+
+            // Skip comment lines but continue looking for continuations
+            if (lexer.isCommentLine(line)) {
+                self.current += 1;
+                continue;
+            }
 
             if (!lexer.isContinuationLine(line)) break;
 
@@ -4888,13 +4900,31 @@ pub const Parser = struct {
             };
 
             if (after_pipe.len == 0 and self.current < self.lines.len) {
-                // Nothing after |> on this line - check next line for the step
-                const next_line = self.lines[self.current];
-                const next_indent = lexer.getIndent(next_line);
-                const next_trimmed = lexer.trim(next_line);
+                // Nothing after |> on this line - check subsequent lines for the step
+                // Skip comment and blank lines first
+                while (self.current < self.lines.len) {
+                    const next_line = self.lines[self.current];
+                    const next_indent = lexer.getIndent(next_line);
+                    const next_trimmed = lexer.trim(next_line);
 
-                // Next line must be more indented and not be a continuation line (|)
-                if (next_indent > indent and next_trimmed.len > 0 and next_trimmed[0] != '|') {
+                    // Must be more indented than the | line
+                    if (next_indent <= indent) break;
+
+                    // Skip comment lines
+                    if (lexer.isCommentLine(next_line)) {
+                        self.current += 1;
+                        continue;
+                    }
+
+                    // Skip blank lines
+                    if (next_trimmed.len == 0) {
+                        self.current += 1;
+                        continue;
+                    }
+
+                    // If it's a continuation line, stop - let nested continuation parsing handle it
+                    if (next_trimmed[0] == '|') break;
+
                     // This is the step content - consume it
                     self.current += 1;
 
@@ -4907,6 +4937,7 @@ pub const Parser = struct {
                     if (allocated_rest) |ar| self.allocator.free(ar);
                     allocated_rest = try next_buf.toOwnedSlice(self.allocator);
                     full_rest = allocated_rest.?;
+                    break;
                 }
             }
 
@@ -5029,6 +5060,12 @@ pub const Parser = struct {
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
 
+            // Skip comment lines but continue scanning
+            if (lexer.isCommentLine(line)) {
+                self.current += 1;
+                continue;
+            }
+
             // Check if this is a continuation line
             if (!lexer.isContinuationLine(line)) break;
 
@@ -5047,6 +5084,13 @@ pub const Parser = struct {
 
         while (self.current < end_current) {
             const line = self.lines[self.current];
+
+            // Skip comment lines
+            if (lexer.isCommentLine(line)) {
+                self.current += 1;
+                continue;
+            }
+
             if (!lexer.isContinuationLine(line)) break;
 
             const indent = lexer.getIndent(line);
@@ -5199,6 +5243,87 @@ pub const Parser = struct {
 
             allocated_content = try content_buf.toOwnedSlice(self.allocator);
             full_content = allocated_content.?;
+        }
+
+        // If content is empty, look for body on subsequent indented lines
+        if (lexer.trim(full_content).len == 0) {
+            // Skip comment lines and find the first real content line
+            while (self.current < self.lines.len) {
+                const next_line = self.lines[self.current];
+                const next_indent = lexer.getIndent(next_line);
+
+                // Must be more indented than the |> line
+                if (next_indent <= indent) break;
+
+                // Skip comment lines
+                if (lexer.isCommentLine(next_line)) {
+                    self.current += 1;
+                    continue;
+                }
+
+                // Skip blank lines
+                if (lexer.trim(next_line).len == 0) {
+                    self.current += 1;
+                    continue;
+                }
+
+                // Found the body line - check if it's a continuation or an invocation
+                if (lexer.isContinuationLine(next_line)) {
+                    // It's a continuation - let the caller handle nested continuations
+                    break;
+                }
+
+                // It's an invocation line - parse it as the body
+                const body_content = lexer.trim(next_line);
+                self.current += 1;
+
+                // Parse the invocation
+                const body_steps = try self.parsePipelineSteps(body_content);
+                const body_step: ?ast.Step = if (body_steps.len > 0) body_steps[0] else null;
+
+                // Parse continuations of this invocation (at greater indentation than the |> line)
+                // Use `indent` (the |> line's indent), not `next_indent` (the body's indent)
+                // This matches the behavior of inline |> where continuations are relative to the |> line
+                var body_continuations: []const ast.Continuation = try self.parseNestedContinuationsForLevel(indent);
+
+                // If there are chained steps, build the chain
+                if (body_steps.len > 1) {
+                    var current_nested: []const ast.Continuation = body_continuations;
+
+                    var step_idx: usize = body_steps.len;
+                    while (step_idx > 1) {
+                        step_idx -= 1;
+
+                        var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                        try cont_list.append(self.allocator, ast.Continuation{
+                            .branch = try self.allocator.dupe(u8, ""),
+                            .binding = null,
+                            .binding_annotations = &[_][]const u8{},
+                            .binding_type = .branch_payload,
+                            .condition = null,
+                            .condition_expr = null,
+                            .node = body_steps[step_idx],
+                            .indent = next_indent,
+                            .continuations = current_nested,
+                            .location = location,
+                        });
+
+                        current_nested = try cont_list.toOwnedSlice(self.allocator);
+                    }
+                    body_continuations = current_nested;
+                }
+
+                return ast.Continuation{
+                    .branch = try self.allocator.dupe(u8, ""),
+                    .binding = null,
+                    .condition = null,
+                    .condition_expr = null,
+                    .node = body_step,
+                    .indent = indent,
+                    .continuations = body_continuations,
+                    .location = location,
+                };
+            }
         }
 
         const steps = try self.parsePipelineSteps(full_content);
