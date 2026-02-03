@@ -2,7 +2,6 @@
 // Validates the [type]"path" syntax for reading files as Source at compile time
 //
 // Syntax: ~event [type]"path"
-// vs:     ~event [type]{ inline content }
 
 const std = @import("std");
 

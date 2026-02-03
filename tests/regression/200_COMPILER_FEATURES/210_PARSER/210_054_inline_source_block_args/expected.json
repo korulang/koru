@@ -228,6 +228,7 @@
                     "branch": "transformed",
                     "binding": null,
                     "binding_type": "branch_payload",
+                    "condition": null,
                     "step":                     {
                         "type": "terminal"
                     },
@@ -267,6 +268,7 @@
                     "branch": "ready",
                     "binding": null,
                     "binding_type": "branch_payload",
+                    "condition": null,
                     "step":                     {
                         "type": "invocation",
                         "invocation": {
@@ -303,6 +305,7 @@
                             "branch": "transformed",
                             "binding": null,
                             "binding_type": "branch_payload",
+                            "condition": null,
                             "step":                             {
                                 "type": "terminal"
                             },

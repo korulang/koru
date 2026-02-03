@@ -262,54 +262,54 @@ pub const VisitorEmitter = struct {
             self.branches.deinit();
         }
 
-        fn addEvent(self: *MetatypeScanResult, event: []const u8) void {
+        fn addEvent(self: *MetatypeScanResult, event: []const u8) !void {
             if (event.len == 0) return;
             // Check for duplicates
             for (self.events.items) |e| {
                 if (std.mem.eql(u8, e, event)) return;
             }
-            self.events.append(event) catch {};
+            try self.events.append(event);
         }
 
-        fn addBranch(self: *MetatypeScanResult, branch: []const u8) void {
+        fn addBranch(self: *MetatypeScanResult, branch: []const u8) !void {
             // Check for duplicates (empty branches are valid - void events)
             for (self.branches.items) |b| {
                 if (std.mem.eql(u8, b, branch)) return;
             }
-            self.branches.append(branch) catch {};
+            try self.branches.append(branch);
         }
 
-        fn merge(self: *MetatypeScanResult, other: *const MetatypeScanResult) void {
+        fn merge(self: *MetatypeScanResult, other: *const MetatypeScanResult) !void {
             if (other.profile) self.profile = true;
             if (other.transition) self.transition = true;
             if (other.audit) self.audit = true;
-            for (other.events.items) |e| self.addEvent(e);
-            for (other.branches.items) |b| self.addBranch(b);
+            for (other.events.items) |e| try self.addEvent(e);
+            for (other.branches.items) |b| try self.addBranch(b);
         }
     };
 
     /// Scan AST items for metatype_binding steps to detect Profile/Transition/Audit metatypes
     /// Also collects events and branches for building EventEnum/BranchEnum
     /// This is needed because ~tap() transforms the AST directly without using the tap registry
-    fn scanForMetatypes(items: []const ast.Item, allocator: std.mem.Allocator) MetatypeScanResult {
+    fn scanForMetatypes(items: []const ast.Item, allocator: std.mem.Allocator) !MetatypeScanResult {
         var result = MetatypeScanResult.init(allocator);
         for (items) |item| {
             switch (item) {
                 .flow => |flow| {
-                    var found = scanContinuationsForMetatypes(flow.continuations, allocator);
+                    var found = try scanContinuationsForMetatypes(flow.continuations, allocator);
                     defer found.deinit();
-                    result.merge(&found);
+                    try result.merge(&found);
                 },
                 .module_decl => |mod| {
-                    var nested = scanForMetatypes(mod.items, allocator);
+                    var nested = try scanForMetatypes(mod.items, allocator);
                     defer nested.deinit();
-                    result.merge(&nested);
+                    try result.merge(&nested);
                 },
                 .subflow_impl => |sub| {
                     if (sub.body == .flow) {
-                        var found = scanContinuationsForMetatypes(sub.body.flow.continuations, allocator);
+                        var found = try scanContinuationsForMetatypes(sub.body.flow.continuations, allocator);
                         defer found.deinit();
-                        result.merge(&found);
+                        try result.merge(&found);
                     }
                 },
                 else => {},
@@ -318,7 +318,7 @@ pub const VisitorEmitter = struct {
         return result;
     }
 
-    fn scanContinuationsForMetatypes(conts: []const ast.Continuation, allocator: std.mem.Allocator) MetatypeScanResult {
+    fn scanContinuationsForMetatypes(conts: []const ast.Continuation, allocator: std.mem.Allocator) !MetatypeScanResult {
         var result = MetatypeScanResult.init(allocator);
         for (conts) |cont| {
             if (cont.node) |step| {
@@ -329,9 +329,9 @@ pub const VisitorEmitter = struct {
                     } else if (std.mem.eql(u8, mb.metatype, "Transition")) {
                         result.transition = true;
                         // Collect events and branches for Transition enum
-                        result.addEvent(mb.source_event);  // source_event is non-optional
-                        if (mb.dest_event) |dst| result.addEvent(dst);  // dest_event is optional
-                        result.addBranch(mb.branch);
+                        try result.addEvent(mb.source_event);  // source_event is non-optional
+                        if (mb.dest_event) |dst| try result.addEvent(dst);  // dest_event is optional
+                        try result.addBranch(mb.branch);
                     } else if (std.mem.eql(u8, mb.metatype, "Audit")) {
                         result.audit = true;
                     }
@@ -339,9 +339,9 @@ pub const VisitorEmitter = struct {
             }
             // Recurse into nested continuations
             if (cont.continuations.len > 0) {
-                var found = scanContinuationsForMetatypes(cont.continuations, allocator);
+                var found = try scanContinuationsForMetatypes(cont.continuations, allocator);
                 defer found.deinit();
-                result.merge(&found);
+                try result.merge(&found);
             }
         }
         return result;
@@ -401,7 +401,7 @@ pub const VisitorEmitter = struct {
         // Check tap registry for metatype usage (old tap transformer)
         // AND scan AST for metatype_binding steps (new ~tap() library syntax)
         // These are "magical ambient types" emitted at top level when needed
-        var ast_metatypes = scanForMetatypes(self.all_items, self.allocator);
+        var ast_metatypes = try scanForMetatypes(self.all_items, self.allocator);
         defer ast_metatypes.deinit();
         const has_base_transition = self.tap_registry.hasTransitionTaps() or ast_metatypes.transition;
         const has_profiling_transition = self.tap_registry.hasProfileTaps() or ast_metatypes.profile;

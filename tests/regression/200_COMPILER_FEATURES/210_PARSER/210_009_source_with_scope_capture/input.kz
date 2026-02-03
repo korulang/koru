@@ -27,11 +27,8 @@
     return .{ .rendered = .{ .html = "<div>Captured binding in scope!</div>" } };
 }
 
-// Test: Source block with new syntax
-// NOTE: Continuation pipeline Source blocks (| data u |> renderHTML [HTML]{ })
-// are not yet supported - that requires extending parsePipelineSteps to handle [Type]{ } syntax
-// For now, test that the new syntax works at module level
-~renderHTML [HTML]{
+// Test: Source block syntax
+~renderHTML {
     <div>
         <h1>Module-level test</h1>
         <p>Syntax validated</p>

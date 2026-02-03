@@ -90,7 +90,7 @@
 
                                 ]
                             },
-                            "phantom_type": "sh"
+                            "phantom_type": null
                         }
                     }
                 ],
@@ -140,7 +140,7 @@
 
                                 ]
                             },
-                            "phantom_type": "sh"
+                            "phantom_type": null
                         }
                     }
                 ],

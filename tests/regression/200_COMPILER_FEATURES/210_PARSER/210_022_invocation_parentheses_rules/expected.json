@@ -125,7 +125,7 @@
 
                                 ]
                             },
-                            "phantom_type": "HTML"
+                            "phantom_type": null
                         }
                     }
                 ],
@@ -211,7 +211,7 @@
 
                                 ]
                             },
-                            "phantom_type": "HTML"
+                            "phantom_type": null
                         }
                     }
                 ],
@@ -289,6 +289,7 @@
                     "branch": "",
                     "binding": null,
                     "binding_type": "branch_payload",
+                    "condition": null,
                     "step":                     {
                         "type": "invocation",
                         "invocation": {
@@ -327,24 +328,6 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
                 "line": 26,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
-                "line": 27,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
-                "line": 28,
                 "col": 0
             }
         }

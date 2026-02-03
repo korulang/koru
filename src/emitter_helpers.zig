@@ -680,7 +680,7 @@ pub fn emitTapsNamespace(
                 break;
             }
         }
-        if (!found) all_events.append(e) catch {};
+        if (!found) try all_events.append(e);
     }
     for (ast_events) |e| {
         var found = false;
@@ -690,7 +690,7 @@ pub fn emitTapsNamespace(
                 break;
             }
         }
-        if (!found) all_events.append(e) catch {};
+        if (!found) try all_events.append(e);
     }
     const events = all_events.items;
 
@@ -705,7 +705,7 @@ pub fn emitTapsNamespace(
                 break;
             }
         }
-        if (!found) all_branches.append(b) catch {};
+        if (!found) try all_branches.append(b);
     }
     for (ast_branches) |b| {
         var found = false;
@@ -715,7 +715,7 @@ pub fn emitTapsNamespace(
                 break;
             }
         }
-        if (!found) all_branches.append(b) catch {};
+        if (!found) try all_branches.append(b);
     }
     const branches = all_branches.items;
 

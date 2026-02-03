@@ -4,15 +4,15 @@
 ~event voidCall {}
 ~voidCall()
 
-// VALID: Zero params, source block → NO (), uses []
+// VALID: Zero params, source block → NO ()
 ~event renderSimple { source: Source[HTML] }
-~renderSimple [HTML]{
+~renderSimple {
     <h1>Hello!</h1>
 }
 
 // VALID: With params, source block → requires () for params
 ~event renderWithData { name: []const u8, source: Source[HTML] }
-~renderWithData(name: "Alice") [HTML]{
+~renderWithData(name: "Alice") {
     <p>${name}</p>
 }
 
@@ -23,5 +23,3 @@
 
 // INVALID CASES (should be parser errors):
 // ~voidCall                          // Missing () when no source block
-// ~renderSimple() [HTML]{ }          // Has () with zero-param source block
-// ~renderSimple { }                  // Source block without [] leader

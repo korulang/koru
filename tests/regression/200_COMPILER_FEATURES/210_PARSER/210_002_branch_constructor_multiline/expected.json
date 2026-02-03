@@ -179,6 +179,7 @@
                             "branch": "positive",
                             "binding": "p",
                             "binding_type": "branch_payload",
+                            "condition": null,
                             "step":                             {
                                 "type": "branch_constructor",
                                 "branch_constructor": {
@@ -202,6 +203,7 @@
                             "branch": "negative",
                             "binding": null,
                             "binding_type": "branch_payload",
+                            "condition": null,
                             "step":                             {
                                 "type": "branch_constructor",
                                 "branch_constructor": {
@@ -225,6 +227,7 @@
                             "branch": "zero",
                             "binding": null,
                             "binding_type": "branch_payload",
+                            "condition": null,
                             "step":                             {
                                 "type": "branch_constructor",
                                 "branch_constructor": {

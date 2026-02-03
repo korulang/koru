@@ -1,17 +1,16 @@
 const std = @import("std");
 const log = @import("log");
 const ast = @import("ast");
-const Parser = @import("parser").Parser;  // Needed for tests
+const Parser = @import("parser").Parser; // Needed for tests
 
 // Define explicit error set to avoid circular inference issues
 const SerializeError = error{
     OutOfMemory,
 };
 
-
 /// Serializes a parsed Koru AST into Zig source code containing the AST as data.
 /// This is Phase 2 of the metacircular compilation architecture.
-/// 
+///
 /// The output is a Zig file containing:
 /// 1. Type definitions for all AST nodes
 /// 2. The complete program AST as const declarations
@@ -83,7 +82,7 @@ pub const AstSerializer = struct {
         self.indent();
         try self.writeIndent();
         try self.write("\\\\");
-        
+
         var iter = std.mem.splitScalar(u8, str, '\n');
         var first = true;
         while (iter.next()) |line| {
@@ -95,11 +94,11 @@ pub const AstSerializer = struct {
             try self.write(line);
             first = false;
         }
-        
+
         // Close the multiline string properly
         try self.write("\n");
         try self.writeIndent();
-        
+
         self.dedent();
     }
 
@@ -392,19 +391,19 @@ pub const AstSerializer = struct {
     fn serializeEventDecl(self: *AstSerializer, event: *const ast.EventDecl) !void {
         try self.write("EventDecl{\n");
         self.indent();
-        
+
         // Path
         try self.writeIndent();
         try self.write(".path = ");
         try self.serializeDottedPath(event.path);
         try self.write(",\n");
-        
+
         // Input shape
         try self.writeIndent();
         try self.write(".input = ");
         try self.serializeShape(&event.input);
         try self.write(",\n");
-        
+
         // Branches
         try self.writeIndent();
         try self.write(".branches = &[_]Branch{\n");
@@ -422,7 +421,7 @@ pub const AstSerializer = struct {
         try self.write(".is_public = ");
         try self.write(if (event.is_public) "true" else "false");
         try self.write(",\n");
-        
+
         // Is implicit flow
         try self.writeIndent();
         try self.write(".is_implicit_flow = ");
@@ -473,17 +472,17 @@ pub const AstSerializer = struct {
     fn serializeProcDecl(self: *AstSerializer, proc: *const ast.ProcDecl) !void {
         try self.write("ProcDecl{\n");
         self.indent();
-        
+
         // Path
         try self.writeIndent();
         try self.write(".path = ");
         try self.serializeDottedPath(proc.path);
         try self.write(",\n");
-        
+
         // Body (Zig code as multiline string)
         try self.writeIndent();
         try self.write(".body = ");
-        
+
         if (std.mem.indexOf(u8, proc.body, "\n") != null) {
             try self.writeMultilineString(proc.body);
             try self.write(",\n");
@@ -491,7 +490,7 @@ pub const AstSerializer = struct {
             try self.writeString(proc.body);
             try self.write(",\n");
         }
-        
+
         // Serialize inline flows
         try self.writeIndent();
         try self.write(".inline_flows = &[_]Flow{\n");
@@ -503,7 +502,7 @@ pub const AstSerializer = struct {
         self.dedent();
         try self.writeIndent();
         try self.write("},\n");
-        
+
         // Serialize annotations
         try self.writeIndent();
         try self.write(".annotations = &.{\n");
@@ -564,13 +563,13 @@ pub const AstSerializer = struct {
     fn serializeFlow(self: *AstSerializer, flow: *const ast.Flow) SerializeError!void {
         try self.write("Flow{\n");
         self.indent();
-        
+
         // Invocation
         try self.writeIndent();
         try self.write(".invocation = ");
         try self.serializeInvocation(&flow.invocation);
         try self.write(",\n");
-        
+
         // Continuations
         try self.writeIndent();
         try self.write(".continuations = &[_]Continuation{\n");
@@ -595,7 +594,7 @@ pub const AstSerializer = struct {
         self.dedent();
         try self.writeIndent();
         try self.write("},\n");
-        
+
         // Pre-label (always write, even if null)
         try self.writeIndent();
         try self.write(".pre_label = ");
@@ -605,7 +604,7 @@ pub const AstSerializer = struct {
             try self.write("null");
         }
         try self.write(",\n");
-        
+
         // Post-label (always write, even if null)
         try self.writeIndent();
         try self.write(".post_label = ");
@@ -615,7 +614,7 @@ pub const AstSerializer = struct {
             try self.write("null");
         }
         try self.write(",\n");
-        
+
         // SuperShape for inline flows with union types
         try self.writeIndent();
         try self.write(".super_shape = ");
@@ -662,17 +661,17 @@ pub const AstSerializer = struct {
             try self.writeIndent();
             try self.write("SuperShape.BranchVariant{\n");
             self.indent();
-            
+
             try self.writeIndent();
             try self.write(".name = ");
             try self.writeString(branch.name);
             try self.write(",\n");
-            
+
             try self.writeIndent();
             try self.write(".payload = ");
             try self.serializeShape(&branch.payload);
             try self.write(",\n");
-            
+
             try self.writeIndent();
             try self.write(".sources = &[_]DottedPath{\n");
             self.indent();
@@ -698,7 +697,7 @@ pub const AstSerializer = struct {
     fn serializeEventTap(self: *AstSerializer, tap: *const ast.EventTap) SerializeError!void {
         try self.write("EventTap{\n");
         self.indent();
-        
+
         // Source (nullable)
         try self.writeIndent();
         try self.write(".source = ");
@@ -718,7 +717,7 @@ pub const AstSerializer = struct {
             try self.write("null");
         }
         try self.write(",\n");
-        
+
         // Continuations
         try self.writeIndent();
         try self.write(".continuations = &[_]Continuation{\n");
@@ -730,7 +729,7 @@ pub const AstSerializer = struct {
         self.dedent();
         try self.writeIndent();
         try self.write("},\n");
-        
+
         // is_input_tap
         try self.writeIndent();
         try self.write(".is_input_tap = ");
@@ -992,13 +991,13 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write("Continuation{\n");
         self.indent();
-        
+
         // Branch name
         try self.writeIndent();
         try self.write(".branch = ");
         try self.writeString(cont.branch);
         try self.write(",\n");
-        
+
         // Binding (always write, even if null)
         try self.writeIndent();
         try self.write(".binding = ");
@@ -1056,11 +1055,11 @@ pub const AstSerializer = struct {
             try self.write("null");
         }
         try self.write(",\n");
-        
+
         // Condition expression (parsed where clause - for now just null)
         try self.writeIndent();
         try self.write(".condition_expr = null,\n");
-        
+
         // Node
         try self.writeIndent();
         if (cont.node) |step| {
@@ -1096,7 +1095,7 @@ pub const AstSerializer = struct {
         try self.write(".location = ");
         try self.serializeSourceLocation(&cont.location);
         try self.write(",\n");
-        
+
         self.dedent();
         try self.writeIndent();
         try self.write("}");
@@ -1224,27 +1223,27 @@ pub const AstSerializer = struct {
                 } else {
                     try self.write("null");
                 }
-                try self.write(", .branches = &[_]NamedBranch{} } }");  // TODO: serialize branches
+                try self.write(", .branches = &[_]NamedBranch{} } }"); // TODO: serialize branches
             },
             .conditional => |cond| {
                 try self.write(".{ .conditional = .{ .condition = ");
                 try self.writeString(cond.condition);
-                try self.write(", .condition_expr = null, .branches = &[_]NamedBranch{} } }");  // TODO: serialize branches
+                try self.write(", .condition_expr = null, .branches = &[_]NamedBranch{} } }"); // TODO: serialize branches
             },
             .capture => |cap| {
                 try self.write(".{ .capture = .{ .init_expr = ");
                 try self.writeString(cap.init_expr);
-                try self.write(", .branches = &[_]NamedBranch{} } }");  // TODO: serialize branches
+                try self.write(", .branches = &[_]NamedBranch{} } }"); // TODO: serialize branches
             },
             .switch_result => |sr| {
                 try self.write(".{ .switch_result = .{ .expression = ");
                 try self.writeString(sr.expression);
-                try self.write(", .branches = &[_]NamedBranch{} } }");  // TODO: serialize branches
+                try self.write(", .branches = &[_]NamedBranch{} } }"); // TODO: serialize branches
             },
             .assignment => |asgn| {
                 try self.write(".{ .assignment = .{ .target = ");
                 try self.writeString(asgn.target);
-                try self.write(", .fields = &[_]Field{} } }");  // TODO: serialize fields
+                try self.write(", .fields = &[_]Field{} } }"); // TODO: serialize fields
             },
         }
     }
@@ -1299,7 +1298,7 @@ pub const AstSerializer = struct {
         }
         try self.write(", .location = .{ .file = ");
         try self.writeString(import.location.file);
-        try self.buffer.writer(self.allocator).print(", .line = {d}, .column = {d} }}, .module = ", .{import.location.line, import.location.column});
+        try self.buffer.writer(self.allocator).print(", .line = {d}, .column = {d} }}, .module = ", .{ import.location.line, import.location.column });
         try self.writeString(import.module);
         try self.write(" }");
     }
@@ -1457,7 +1456,7 @@ pub const AstSerializer = struct {
         } else {
             try self.write("null");
         }
-        
+
         // Serialize expression fields for branch constructors
         try self.write(", .expression = ");
         if (field.expression) |expr| {
@@ -1466,17 +1465,17 @@ pub const AstSerializer = struct {
         } else {
             try self.write("null");
         }
-        
+
         try self.write(", .expression_str = ");
         if (field.expression_str) |expr_str| {
             try self.writeString(expr_str);
         } else {
             try self.write("null");
         }
-        
+
         try self.write(", .owns_expression = ");
         try self.write(if (field.owns_expression) "true" else "false");
-        
+
         try self.write(" }");
     }
 
@@ -1485,7 +1484,7 @@ pub const AstSerializer = struct {
         try self.serializeExprNode(&expr.node);
         try self.write(" }");
     }
-    
+
     fn serializeExprNode(self: *AstSerializer, node: *const ast.ExprNode) SerializeError!void {
         switch (node.*) {
             .literal => |lit| {
@@ -1544,7 +1543,7 @@ pub const AstSerializer = struct {
             },
         }
     }
-    
+
     fn serializePath(self: *AstSerializer, segments: []const []const u8) !void {
         try self.write("&[_][]const u8{");
         for (segments, 0..) |seg, i| {
@@ -1975,6 +1974,15 @@ pub const AstSerializer = struct {
             .branch_payload => "branch_payload",
             .transition => "transition",
         });
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write("\"condition\": ");
+        if (cont.condition) |cond| {
+            try self.writeString(cond);
+        } else {
+            try self.write("null");
+        }
         try self.write(",\n");
 
         // Step (optional)
@@ -2501,7 +2509,7 @@ pub const AstSerializer = struct {
             try self.write("\"type\": ");
             if (field.module_path) |module_path| {
                 // Output as "module.path:Type" for cross-module types
-                const full_type = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{module_path, field.type});
+                const full_type = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ module_path, field.type });
                 defer self.allocator.free(full_type);
                 try self.writeString(full_type);
             } else {
@@ -2778,7 +2786,7 @@ pub const AstSerializer = struct {
 
 test "serialize simple Koru program" {
     const allocator = std.testing.allocator;
-    
+
     const source =
         \\const std = @import("std");
         \\
@@ -2792,28 +2800,28 @@ test "serialize simple Koru program" {
         \\    return .{ .done = .{} };
         \\}
     ;
-    
+
     // Parse the source
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     // Serialize the AST
     var serializer = try AstSerializer.init(allocator);
     defer serializer.deinit();
-    
+
     const serialized = try serializer.serialize(&parse_result.source_file);
     defer allocator.free(serialized);
-    
+
     // Verify the output contains expected elements
     try std.testing.expect(std.mem.indexOf(u8, serialized, "PROGRAM_AST") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".host_line = \"const std = @import(\\\"std\\\");\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".event_decl = EventDecl{") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".proc_decl = ProcDecl{") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".host_line = \"const x = 42;\"") != null);
-    
+
     // Print a sample for visual inspection
     log.debug("\n=== Sample of serialized AST ===\n", .{});
     const sample_end = @min(serialized.len, 1000);
@@ -2822,7 +2830,7 @@ test "serialize simple Koru program" {
 
 test "serialize Zig lines are preserved" {
     const allocator = std.testing.allocator;
-    
+
     const source =
         \\fn helper(x: i32) i32 {
         \\    return x * 2;
@@ -2830,19 +2838,19 @@ test "serialize Zig lines are preserved" {
         \\
         \\const data = [_]u8{1, 2, 3};
     ;
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     var serializer = try AstSerializer.init(allocator);
     defer serializer.deinit();
-    
+
     const serialized = try serializer.serialize(&parse_result.source_file);
     defer allocator.free(serialized);
-    
+
     // Check that Zig lines are preserved
     try std.testing.expect(std.mem.indexOf(u8, serialized, "fn helper(x: i32) i32 {") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, "return x * 2;") != null);
@@ -2851,7 +2859,7 @@ test "serialize Zig lines are preserved" {
 
 test "serialize proc body preserves Zig code" {
     const allocator = std.testing.allocator;
-    
+
     const source =
         \\~event compute { x: i32 }
         \\| result { value: i32 }
@@ -2862,19 +2870,19 @@ test "serialize proc body preserves Zig code" {
         \\    return .{ .result = .{ .value = doubled + tripled } };
         \\}
     ;
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     var serializer = try AstSerializer.init(allocator);
     defer serializer.deinit();
-    
+
     const serialized = try serializer.serialize(&parse_result.source_file);
     defer allocator.free(serialized);
-    
+
     // Check that proc body is preserved
     try std.testing.expect(std.mem.indexOf(u8, serialized, "const doubled = e.x * 2;") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, "const tripled = e.x * 3;") != null);
@@ -2882,7 +2890,7 @@ test "serialize proc body preserves Zig code" {
 
 test "serialize complete mixed program" {
     const allocator = std.testing.allocator;
-    
+
     const source =
         \\// Top-level comment
         \\const std = @import("std");
@@ -2913,19 +2921,19 @@ test "serialize complete mixed program" {
         \\| success s |> _
         \\| failure f |> _
     ;
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     var serializer = try AstSerializer.init(allocator);
     defer serializer.deinit();
-    
+
     const serialized = try serializer.serialize(&parse_result.source_file);
     defer allocator.free(serialized);
-    
+
     // Verify all types of content are serialized
     try std.testing.expect(std.mem.indexOf(u8, serialized, "// Top-level comment") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, "pub fn utility() void") != null);
@@ -2933,14 +2941,14 @@ test "serialize complete mixed program" {
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".event_decl") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".proc_decl") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".flow") != null);
-    
+
     // Print for inspection
     log.debug("\n=== Complete mixed program serialized ===\n", .{});
     const lines = std.mem.splitScalar(u8, serialized, '\n');
     var line_count: usize = 0;
     var iter = lines;
     while (iter.next()) |line| : (line_count += 1) {
-        if (line_count >= 30) break;  // Just show first 30 lines
+        if (line_count >= 30) break; // Just show first 30 lines
         log.debug("{s}\n", .{line});
     }
     log.debug("... (truncated, total length: {} bytes)\n", .{serialized.len});

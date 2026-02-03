@@ -15,7 +15,6 @@ fn log_debug(comptime fmt: []const u8, args: anytype) void {
     if (DEBUG) std.debug.print(fmt, args);
 }
 
-
 /// Check if line has a source block pattern: `eventName { ... }` or `eventName(args) { ... }`
 /// Source blocks are opaque - their content should not affect parsing decisions.
 /// Returns true if there's a `{` that's NOT inside parentheses AND no `=` before it.
@@ -143,7 +142,7 @@ fn findTopLevelBrace(s: []const u8) ?usize {
 pub const ParseError = error{
     OutOfMemory,
     InvalidSyntax,
-    UnexpectedEOF,  // Match the actual error used in the code
+    UnexpectedEOF, // Match the actual error used in the code
     InvalidEventDeclaration,
     InvalidProcDeclaration,
     InvalidFlowSyntax,
@@ -157,7 +156,7 @@ pub const ParseError = error{
 pub const ParseResult = struct {
     source_file: ast.Program,
     registry: type_registry.TypeRegistry,
-    
+
     pub fn deinit(self: *ParseResult) void {
         self.source_file.deinit();
         self.registry.deinit();
@@ -173,14 +172,14 @@ pub const Parser = struct {
     // Parser state
     context_stack: std.ArrayList(Context),
     // Events can be implemented by procs or subflows
-    registry: type_registry.TypeRegistry,  // Type registry for all declarations
+    registry: type_registry.TypeRegistry, // Type registry for all declarations
 
     // Flag to indicate if we're parsing the compiler bootstrap library
     // When true, procs in this file cannot use inline flows (metacircular requirement)
     is_compiler_library: bool,
 
     // FOUNDATIONAL: Module context for all parsed items
-    module_name: []const u8,  // Canonical module path (e.g., "input", "lib/fs")
+    module_name: []const u8, // Canonical module path (e.g., "input", "lib/fs")
 
     // Global inline flow counter - must match emitter's global numbering
     inline_flow_counter: u32,
@@ -318,15 +317,15 @@ pub const Parser = struct {
             .context_stack = context_stack,
             // No subflow tracking needed - events are the interface
             .registry = type_registry.TypeRegistry.init(allocator),
-            .is_compiler_library = false,  // Default to false, caller can set if needed
+            .is_compiler_library = false, // Default to false, caller can set if needed
             .module_name = module_name,
-            .inline_flow_counter = 0,  // Global counter across all procs
-            .fail_fast = false,  // Default to lenient mode (continue past errors)
-            .compiler_flags = compiler_flags,  // Flags for conditional imports
-            .resolver = resolver,  // Module resolver for import paths
+            .inline_flow_counter = 0, // Global counter across all procs
+            .fail_fast = false, // Default to lenient mode (continue past errors)
+            .compiler_flags = compiler_flags, // Flags for conditional imports
+            .resolver = resolver, // Module resolver for import paths
         };
     }
-    
+
     pub fn deinit(self: *Parser) void {
         self.allocator.free(self.lines);
         self.reporter.deinit();
@@ -510,7 +509,7 @@ pub const Parser = struct {
                         }
                         try ann_str.append(self.allocator, ']');
 
-                        const synthetic_line = try std.fmt.allocPrint(self.allocator, "~{s}{s}", .{ann_str.items, construct_content});
+                        const synthetic_line = try std.fmt.allocPrint(self.allocator, "~{s}{s}", .{ ann_str.items, construct_content });
                         defer self.allocator.free(synthetic_line);
 
                         // Temporarily replace the next line with the synthetic line
@@ -600,7 +599,8 @@ pub const Parser = struct {
                 // Check for conditional imports: ~[flag]import
                 // If the import has annotations but no matching compiler flag, skip it
                 if (std.mem.indexOf(u8, after_tilde, "[") != null and
-                    std.mem.indexOf(u8, after_tilde, "]import ") != null) {
+                    std.mem.indexOf(u8, after_tilde, "]import ") != null)
+                {
                     // This is an annotated import - check if we should skip it
                     const close_bracket = std.mem.indexOf(u8, after_tilde, "]") orelse 0;
                     if (close_bracket > 0) {
@@ -631,7 +631,7 @@ pub const Parser = struct {
                         // Flag matches - normalize the line by stripping [flag] annotation
                         // Transform "~[profile]import ..." to "~import ..."
                         const import_start = std.mem.indexOf(u8, after_tilde, "]import ") orelse unreachable;
-                        const after_bracket = after_tilde[import_start + 1..]; // Skip the ]
+                        const after_bracket = after_tilde[import_start + 1 ..]; // Skip the ]
                         // Allocate normalized line: ~ + (stuff after ])
                         const normalized_line = try std.fmt.allocPrint(self.allocator, "~{s}", .{after_bracket});
                         self.lines[self.current] = normalized_line;
@@ -690,7 +690,7 @@ pub const Parser = struct {
     }
 
     const AnnotationBlockResult = struct {
-        annotations: [][]const u8,  // Owned slice, caller must free individual strings and the slice
+        annotations: [][]const u8, // Owned slice, caller must free individual strings and the slice
         /// Content after the closing ] (for inline syntax)
         /// For vertical syntax, this is always empty since ] is on its own line or line ending
         remaining: []const u8,
@@ -720,7 +720,7 @@ pub const Parser = struct {
                     try annotations.append(self.allocator, try self.allocator.dupe(u8, trimmed_ann));
                 }
             }
-            const remaining = content_with_bracket[close_bracket + 1..];
+            const remaining = content_with_bracket[close_bracket + 1 ..];
             return AnnotationBlockResult{
                 .annotations = try annotations.toOwnedSlice(self.allocator),
                 .remaining = remaining,
@@ -751,7 +751,7 @@ pub const Parser = struct {
                         try annotations.append(self.allocator, try self.allocator.dupe(u8, ann_content));
                     }
                 }
-                const remaining = lexer.trim(trimmed[bracket_idx + 1..]); // Content after ]
+                const remaining = lexer.trim(trimmed[bracket_idx + 1 ..]); // Content after ]
                 self.current += 1;
                 return AnnotationBlockResult{
                     .annotations = try annotations.toOwnedSlice(self.allocator),
@@ -773,7 +773,7 @@ pub const Parser = struct {
             // This is INVALID syntax in vertical annotation block!
             try self.reporter.addError(
                 .PARSE003,
-                self.current + 1,  // Convert to 1-based line number
+                self.current + 1, // Convert to 1-based line number
                 1,
                 "invalid line in vertical annotation block - expected '-' bullet or ']'",
                 .{},
@@ -797,13 +797,13 @@ pub const Parser = struct {
             );
             return error.UnexpectedEOF;
         }
-        
+
         const line = self.lines[self.current];
         const trimmed = lexer.trim(line);
-        
+
         // Remove the ~ prefix
         const after_tilde = lexer.trim(trimmed[1..]);
-        
+
         // Check for annotations first: ~[annotation]construct
         var annotations = try std.ArrayList([]const u8).initCapacity(self.allocator, 4);
         defer {
@@ -812,7 +812,7 @@ pub const Parser = struct {
             }
             annotations.deinit(self.allocator);
         }
-        
+
         var remaining = after_tilde;
         if (std.mem.startsWith(u8, after_tilde, "[")) {
             // Parse annotation block (supports both inline ~[a|b] and vertical ~[\n-a\n-b\n])
@@ -878,7 +878,7 @@ pub const Parser = struct {
             return .{ .flow = try self.parseFlow(annotations.items) };
         }
     }
-    
+
     fn parseEventInputShape(self: *Parser, event_line: []const u8, event_line_index: usize) !ast.Shape {
         const trimmed_line = lexer.trim(event_line);
 
@@ -930,22 +930,47 @@ pub const Parser = struct {
             const trimmed = lexer.trim(current_line);
             if (trimmed.len == 0) continue;
 
-            for (trimmed) |c| {
-                if (c == '{') brace_depth += 1;
-                if (c == '}') {
-                    brace_depth -= 1;
-                    if (brace_depth == 0) {
-                        const end_idx = std.mem.indexOf(u8, trimmed, "}").?;
-                        const final_content = lexer.trim(trimmed[0..end_idx]);
-                        if (final_content.len > 0) {
-                            try shape_content.appendSlice(self.allocator, final_content);
+            // Track braces properly, skipping those in strings/comments
+            var in_string = false;
+            var string_char: ?u8 = null;
+            var closing_brace_idx: ?usize = null;
+
+            for (trimmed, 0..) |c, idx| {
+                // Skip line comments
+                if (!in_string and c == '/' and idx + 1 < trimmed.len and trimmed[idx + 1] == '/') {
+                    break;
+                }
+
+                // Handle string literals
+                if (!in_string and (c == '"' or c == '\'')) {
+                    in_string = true;
+                    string_char = c;
+                } else if (in_string) {
+                    if (c == '\\' and idx + 1 < trimmed.len) {
+                        continue; // Escaped char handled by next iteration
+                    } else if (c == string_char) {
+                        in_string = false;
+                        string_char = null;
+                    }
+                } else {
+                    // Not in string or comment - count braces
+                    if (c == '{') brace_depth += 1;
+                    if (c == '}') {
+                        brace_depth -= 1;
+                        if (brace_depth == 0) {
+                            closing_brace_idx = idx;
+                            break;
                         }
-                        break;
                     }
                 }
             }
 
-            if (brace_depth > 0) {
+            if (closing_brace_idx) |end_idx| {
+                const final_content = lexer.trim(trimmed[0..end_idx]);
+                if (final_content.len > 0) {
+                    try shape_content.appendSlice(self.allocator, final_content);
+                }
+            } else if (brace_depth > 0) {
                 try shape_content.appendSlice(self.allocator, trimmed);
                 try shape_content.append(self.allocator, ',');
             }
@@ -955,7 +980,7 @@ pub const Parser = struct {
             try self.reporter.addError(
                 .PARSE004,
                 start_line,
-                @intCast(brace_start + 1),  // Convert to 1-based column
+                @intCast(brace_start + 1), // Convert to 1-based column
                 "unmatched '{{' in event shape",
                 .{},
             );
@@ -1011,7 +1036,7 @@ pub const Parser = struct {
         );
         return error.ParseError;
     }
-    
+
     fn parseEventDeclWithAnnotations(self: *Parser, is_public: bool, annotations: [][]const u8) !ast.EventDecl {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
@@ -1061,7 +1086,7 @@ pub const Parser = struct {
             );
             return error.ParseError;
         };
-        
+
         const trimmed_after_event = lexer.trim(after_event);
         const brace_idx_opt = std.mem.indexOf(u8, trimmed_after_event, "{");
         const parsed_path_str = if (brace_idx_opt) |idx|
@@ -1166,7 +1191,7 @@ pub const Parser = struct {
                             try trailing_annotations.append(self.allocator, try self.allocator.dupe(u8, trimmed_ann));
                         }
                     }
-                    branch_content = lexer.trim(branch_content[close_bracket_idx + 1..]);
+                    branch_content = lexer.trim(branch_content[close_bracket_idx + 1 ..]);
                 }
 
                 // Parse all branches on this line (separated by |)
@@ -1256,7 +1281,7 @@ pub const Parser = struct {
             // Check for trailing annotations on the line containing the closing brace
             const last_shape_line = self.lines[self.current - 1];
             if (std.mem.lastIndexOf(u8, last_shape_line, "}")) |close_idx| {
-                var after_brace = lexer.trim(last_shape_line[close_idx + 1..]);
+                var after_brace = lexer.trim(last_shape_line[close_idx + 1 ..]);
                 if (lexer.startsWith(after_brace, "[")) {
                     // Find the matching closing bracket of the annotation block
                     const close_bracket_idx = blk: {
@@ -1335,7 +1360,7 @@ pub const Parser = struct {
         // Combined annotations (passed-in + trailing)
         var all_annotations = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
         defer all_annotations.deinit(self.allocator);
-        
+
         for (annotations) |ann| {
             try all_annotations.append(self.allocator, ann);
         }
@@ -1390,13 +1415,13 @@ pub const Parser = struct {
             .module = try self.allocator.dupe(u8, self.module_name),
         };
 
-        log_debug("PARSER: Created EventDecl module='{s}', path.module_qualifier={s}\n", .{event_decl.module, if (event_decl.path.module_qualifier) |m| m else "null"});
+        log_debug("PARSER: Created EventDecl module='{s}', path.module_qualifier={s}\n", .{ event_decl.module, if (event_decl.path.module_qualifier) |m| m else "null" });
 
         // Register the event with the type registry
         const path_str = try self.pathToString(event_decl.path);
         defer self.allocator.free(path_str);
         try self.registry.registerEvent(path_str, &event_decl);
-        
+
         return event_decl;
     }
 
@@ -1411,7 +1436,7 @@ pub const Parser = struct {
             );
             return error.UnexpectedEOF;
         }
-        
+
         const line = self.lines[self.current];
         self.current += 1;
         const event_line_index = self.current - 1;
@@ -1431,11 +1456,11 @@ pub const Parser = struct {
             );
             return error.ParseError;
         };
-        
+
         // Check for annotations: [pure|fusible|...]
         var annotations = try std.ArrayList([]const u8).initCapacity(self.allocator, 4);
         defer annotations.deinit(self.allocator);
-        
+
         var path_start = after_event;
         const trimmed_after = lexer.trim(after_event);
         if (std.mem.startsWith(u8, trimmed_after, "[")) {
@@ -1454,7 +1479,7 @@ pub const Parser = struct {
 
             path_start = lexer.trim(result.remaining);
         }
-        
+
         const trimmed_path_start = lexer.trim(path_start);
         const brace_idx_opt = std.mem.indexOf(u8, trimmed_path_start, "{");
         const parsed_path_str = if (brace_idx_opt) |idx|
@@ -1480,7 +1505,7 @@ pub const Parser = struct {
         else
             "";
         const input = try self.parseEventInputShape(shape_source, event_line_index);
-        
+
         // Parse branches (continuation lines starting with |)
         var branches = try std.ArrayList(ast.Branch).initCapacity(self.allocator, 8);
         errdefer {
@@ -1489,7 +1514,7 @@ pub const Parser = struct {
             }
             branches.deinit(self.allocator);
         }
-        
+
         while (self.current < self.lines.len) {
             const next_line = self.lines[self.current];
             if (!lexer.isBranchContinuation(next_line)) break;
@@ -1513,10 +1538,10 @@ pub const Parser = struct {
             try branches.append(self.allocator, branch);
             // parseBranch handles line advancement including multi-line payloads
         }
-        
+
         // Check if this is an implicit flow event
         const is_implicit_flow = self.checkImplicitFlowEvent(&input);
-        
+
         const event_decl = ast.EventDecl{
             .path = path,
             .input = input,
@@ -1527,15 +1552,15 @@ pub const Parser = struct {
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
-        
+
         // Register the event with the type registry
         const path_str = try self.pathToString(event_decl.path);
         defer self.allocator.free(path_str);
         try self.registry.registerEvent(path_str, &event_decl);
-        
+
         return event_decl;
     }
-    
+
     fn parseProcDeclWithAnnotations(self: *Parser, annotations: [][]const u8) !ast.ProcDecl {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
@@ -1547,14 +1572,14 @@ pub const Parser = struct {
             );
             return error.UnexpectedEOF;
         }
-        
+
         const line = self.lines[self.current];
         self.current += 1;
-        
+
         // Parse: ~[annotations]proc <path> { ... }
         const trimmed = lexer.trim(line);
         const after_tilde = lexer.trim(trimmed[1..]); // Skip ~
-        
+
         // Skip past annotations if present (both inline and vertical syntax)
         var remaining = after_tilde;
         if (std.mem.startsWith(u8, after_tilde, "[")) {
@@ -1594,7 +1619,7 @@ pub const Parser = struct {
             );
             return error.ParseError;
         };
-        
+
         // Find the path (everything before { or =)
         // Check for both ~proc name { ... } and ~proc name = flow syntax
         const brace_idx_opt = std.mem.indexOf(u8, after_proc, "{");
@@ -1602,11 +1627,11 @@ pub const Parser = struct {
 
         const is_flow_expression = if (brace_idx_opt) |brace_idx|
             if (equals_idx_opt) |equals_idx|
-                equals_idx < brace_idx  // = comes before { means it's a flow expression
+                equals_idx < brace_idx // = comes before { means it's a flow expression
             else
                 false
         else
-            equals_idx_opt != null;  // No { but has = means flow expression
+            equals_idx_opt != null; // No { but has = means flow expression
 
         const delimiter_idx = if (is_flow_expression)
             equals_idx_opt.?
@@ -1631,7 +1656,7 @@ pub const Parser = struct {
         if (std.mem.indexOfScalar(u8, parsed_path_str, '|')) |pipe_idx| {
             // Split at pipe: path before, variant after
             path_for_parsing = lexer.trim(parsed_path_str[0..pipe_idx]);
-            const target_str = lexer.trim(parsed_path_str[pipe_idx + 1..]);
+            const target_str = lexer.trim(parsed_path_str[pipe_idx + 1 ..]);
             if (target_str.len > 0) {
                 target = try self.allocator.dupe(u8, target_str);
             }
@@ -1649,7 +1674,7 @@ pub const Parser = struct {
             defer flow_lines.deinit(self.allocator);
 
             // Get the first line after =
-            const first_line = lexer.trim(after_proc[delimiter_idx + 1..]);
+            const first_line = lexer.trim(after_proc[delimiter_idx + 1 ..]);
             try flow_lines.appendSlice(self.allocator, first_line);
 
             // Track base indentation from first continuation line
@@ -1718,7 +1743,7 @@ pub const Parser = struct {
                 // Extract field expressions from { ... }
                 const brace_start = std.mem.indexOf(u8, trimmed_flow, "{").?;
                 const brace_end = std.mem.lastIndexOf(u8, trimmed_flow, "}").?;
-                const fields_str = lexer.trim(trimmed_flow[brace_start + 1..brace_end]);
+                const fields_str = lexer.trim(trimmed_flow[brace_start + 1 .. brace_end]);
 
                 // Transform Koru field syntax to Zig syntax
                 // Koru: "field: value" or "field1: value1, field2: value2"
@@ -1738,7 +1763,7 @@ pub const Parser = struct {
                     // Split on : to get field name and value
                     if (std.mem.indexOf(u8, trimmed_field, ":")) |colon_idx| {
                         const field_name = lexer.trim(trimmed_field[0..colon_idx]);
-                        const field_value = lexer.trim(trimmed_field[colon_idx + 1..]);
+                        const field_value = lexer.trim(trimmed_field[colon_idx + 1 ..]);
 
                         try zig_fields.append(self.allocator, '.');
                         try zig_fields.appendSlice(self.allocator, field_name);
@@ -1754,19 +1779,10 @@ pub const Parser = struct {
                 defer self.allocator.free(zig_fields_str);
 
                 // Generate return statement with transformed fields
-                break :blk try std.fmt.allocPrint(
-                    self.allocator,
-                    "return .{{ .{s} = .{{ {s} }} }};",
-                    .{branch_name, zig_fields_str}
-                );
-            }
-            else
+                break :blk try std.fmt.allocPrint(self.allocator, "return .{{ .{s} = .{{ {s} }} }};", .{ branch_name, zig_fields_str });
+            } else
                 // Regular flow: wrap with ~ for inline flow extraction
-                try std.fmt.allocPrint(
-                    self.allocator,
-                    "return ~{s};",
-                    .{flow_body}
-                );
+                try std.fmt.allocPrint(self.allocator, "return ~{s};", .{flow_body});
             raw_body = transformed;
         } else {
             // Brace body: extract balanced braces
@@ -1787,7 +1803,7 @@ pub const Parser = struct {
             FlowExtractionResult{ .flows = &.{}, .modified_body = raw_body }
         else
             try self.extractInlineFlows(raw_body, path);
-        
+
         // Copy annotations
         var annotations_copy = try self.allocator.alloc([]const u8, annotations.len);
         for (annotations, 0..) |ann, i| {
@@ -1827,10 +1843,10 @@ pub const Parser = struct {
             );
             return error.UnexpectedEOF;
         }
-        
+
         const line = self.lines[self.current];
         self.current += 1;
-        
+
         // Parse: ~proc[annotations] <path> { ... }
         const after_proc = lexer.afterPrefix(line, "~proc") orelse {
             try self.reporter.addError(
@@ -1842,11 +1858,11 @@ pub const Parser = struct {
             );
             return error.ParseError;
         };
-        
+
         // Check for annotations: [pure|async|...]
         var annotations = try std.ArrayList([]const u8).initCapacity(self.allocator, 4);
         defer annotations.deinit(self.allocator);
-        
+
         var path_start = after_proc;
         const trimmed_after = lexer.trim(after_proc);
         if (std.mem.startsWith(u8, trimmed_after, "[")) {
@@ -1865,7 +1881,7 @@ pub const Parser = struct {
 
             path_start = lexer.trim(result.remaining);
         }
-        
+
         // Find the path (everything before the first {)
         const brace_idx = std.mem.indexOf(u8, path_start, "{") orelse {
             try self.reporter.addError(
@@ -1877,7 +1893,7 @@ pub const Parser = struct {
             );
             return error.ParseError;
         };
-        
+
         const parsed_path_str = lexer.trim(path_start[0..brace_idx]);
 
         // Check for |variant suffix (e.g., "blur|gpu" or "compute|naive")
@@ -1887,7 +1903,7 @@ pub const Parser = struct {
         if (std.mem.indexOfScalar(u8, parsed_path_str, '|')) |pipe_idx| {
             // Split at pipe: path before, variant after
             path_for_parsing = lexer.trim(parsed_path_str[0..pipe_idx]);
-            const target_str = lexer.trim(parsed_path_str[pipe_idx + 1..]);
+            const target_str = lexer.trim(parsed_path_str[pipe_idx + 1 ..]);
             if (target_str.len > 0) {
                 target = try self.allocator.dupe(u8, target_str);
             }
@@ -1897,7 +1913,7 @@ pub const Parser = struct {
 
         // Extract the body (balanced braces)
         const raw_body = try self.extractProcBody(path_start[brace_idx..]);
-        
+
         // Check if this proc has the [raw] annotation - if so, skip inline flow extraction
         var has_raw_annotation = false;
         for (annotations.items) |ann| {
@@ -1906,21 +1922,20 @@ pub const Parser = struct {
                 break;
             }
         }
-        
+
         // Extract inline flows and get modified body (unless [raw] annotation is present)
         const extraction_result = if (has_raw_annotation)
             FlowExtractionResult{ .flows = &.{}, .modified_body = raw_body }
         else
             try self.extractInlineFlows(raw_body, path);
-        
+
         // Debug output for flow extraction
         const path_debug = try self.pathToString(path);
         defer self.allocator.free(path_debug);
-        
+
         // Debug: Show modified body if flows were found
-        if (extraction_result.flows.len > 0 or extraction_result.modified_body.len != raw_body.len) {
-        }
-        
+        if (extraction_result.flows.len > 0 or extraction_result.modified_body.len != raw_body.len) {}
+
         const proc_decl = ast.ProcDecl{
             .path = path,
             .body = extraction_result.modified_body,
@@ -1930,20 +1945,20 @@ pub const Parser = struct {
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
-        
+
         // Register the proc with the type registry
         const path_str = try self.pathToString(proc_decl.path);
         defer self.allocator.free(path_str);
         try self.registry.registerProc(path_str, &proc_decl);
-        
+
         return proc_decl;
     }
-    
+
     const FlowExtractionResult = struct {
         modified_body: []const u8,
         flows: []ast.Flow,
     };
-    
+
     fn extractInlineFlows(self: *Parser, body: []const u8, proc_path: ast.DottedPath) !FlowExtractionResult {
         var extracted_flows = try std.ArrayList(ast.Flow).initCapacity(self.allocator, 0);
         errdefer {
@@ -1952,19 +1967,19 @@ pub const Parser = struct {
             }
             extracted_flows.deinit(self.allocator);
         }
-        
+
         var modified_body = try std.ArrayList(u8).initCapacity(self.allocator, body.len);
         defer modified_body.deinit(self.allocator);
-        
+
         // Split body into lines for processing
         var body_lines = try std.ArrayList([]const u8).initCapacity(self.allocator, 32);
         defer body_lines.deinit(self.allocator);
-        
+
         var line_iter = std.mem.splitScalar(u8, body, '\n');
         while (line_iter.next()) |line| {
             try body_lines.append(self.allocator, line);
         }
-        
+
         // Process line by line
         var i: usize = 0;
         // Note: Using self.inline_flow_counter (global) instead of local counter
@@ -1974,13 +1989,14 @@ pub const Parser = struct {
             const line = body_lines.items[i];
             const trimmed = lexer.trim(line);
             const current_indent = lexer.getIndent(line);
-            
+
             // Check if this line contains an inline flow
             // Patterns: "~...", "return ~...", "const name = ~..."
             const has_inline_flow = blk: {
-                if (lexer.startsWith(trimmed, "~") and 
+                if (lexer.startsWith(trimmed, "~") and
                     !lexer.startsWith(trimmed, "~proc") and
-                    !lexer.startsWith(trimmed, "~event")) {
+                    !lexer.startsWith(trimmed, "~event"))
+                {
                     break :blk true;
                 }
                 if (lexer.startsWith(trimmed, "return ~")) {
@@ -1993,32 +2009,29 @@ pub const Parser = struct {
                 }
                 break :blk false;
             };
-            
+
             if (has_inline_flow) {
-                // Found an inline flow! 
-                
+                // Found an inline flow!
+
                 // Collect all lines belonging to this flow
                 var flow_lines = try std.ArrayList([]const u8).initCapacity(self.allocator, 8);
                 defer flow_lines.deinit(self.allocator);
-                
+
                 // Add the first line (the ~ line)
                 try flow_lines.append(self.allocator, line);
                 i += 1;
-                
+
                 // Collect continuation lines (including nested ones)
                 var brace_depth: i32 = 0;
-                
-                // Check if the first line has unmatched braces
-                for (trimmed) |c| {
-                    if (c == '{') brace_depth += 1;
-                    if (c == '}') brace_depth -= 1;
-                }
-                
+
+                // Check if the first line has unmatched braces (skip braces in strings/comments)
+                brace_depth += lexer.countBraceDepthChange(trimmed);
+
                 while (i < body_lines.items.len) {
                     const next_line = body_lines.items[i];
                     const next_trimmed = lexer.trim(next_line);
                     const next_indent = lexer.getIndent(next_line);
-                    
+
                     // A line belongs to the flow if:
                     // 1. It starts with | and has indent > the flow's indent (continuation)
                     // 2. It's part of a multi-line constructor (brace_depth > 0)
@@ -2032,7 +2045,7 @@ pub const Parser = struct {
                             const peek_line = body_lines.items[j];
                             const peek_trimmed = lexer.trim(peek_line);
                             const peek_indent = lexer.getIndent(peek_line);
-                            
+
                             if (peek_trimmed.len > 0 and !lexer.startsWith(peek_trimmed, "//")) {
                                 if (lexer.startsWith(peek_trimmed, "|") and peek_indent >= current_indent) {
                                     found_more_flow = true;
@@ -2041,16 +2054,13 @@ pub const Parser = struct {
                             }
                             j += 1;
                         }
-                        
+
                         if (found_more_flow) {
                             try flow_lines.append(self.allocator, next_line);
-                            
-                            // Update brace depth for empty/comment lines
-                            for (next_trimmed) |c| {
-                                if (c == '{') brace_depth += 1;
-                                if (c == '}') brace_depth -= 1;
-                            }
-                            
+
+                            // Update brace depth for empty/comment lines (skip braces in strings/comments)
+                            brace_depth += lexer.countBraceDepthChange(next_trimmed);
+
                             i += 1;
                         } else {
                             break;
@@ -2058,13 +2068,10 @@ pub const Parser = struct {
                     } else if (lexer.startsWith(next_trimmed, "|") and next_indent >= current_indent) {
                         // This is a continuation at same or greater indent
                         try flow_lines.append(self.allocator, next_line);
-                        
-                        // Update brace depth for continuation lines
-                        for (next_trimmed) |c| {
-                            if (c == '{') brace_depth += 1;
-                            if (c == '}') brace_depth -= 1;
-                        }
-                        
+
+                        // Update brace depth for continuation lines (skip braces in strings/comments)
+                        brace_depth += lexer.countBraceDepthChange(next_trimmed);
+
                         i += 1;
                     } else if (brace_depth > 0) {
                         // We're inside a multi-line constructor
@@ -2084,23 +2091,21 @@ pub const Parser = struct {
                                         !lexer.startsWith(next_trimmed, "fn ") and
                                         !lexer.startsWith(next_trimmed, "if ") and
                                         !lexer.startsWith(next_trimmed, "while ") and
-                                        !lexer.startsWith(next_trimmed, "for ")) {
+                                        !lexer.startsWith(next_trimmed, "for "))
+                                    {
                                         break :blk true;
                                     }
                                 }
                             }
                             break :blk false;
                         };
-                        
+
                         if (is_valid_constructor_line) {
                             try flow_lines.append(self.allocator, next_line);
-                            
-                            // Update brace depth
-                            for (next_trimmed) |c| {
-                                if (c == '{') brace_depth += 1;
-                                if (c == '}') brace_depth -= 1;
-                            }
-                            
+
+                            // Update brace depth (skip braces in strings/comments)
+                            brace_depth += lexer.countBraceDepthChange(next_trimmed);
+
                             i += 1;
                         } else {
                             // Not a valid constructor line, stop collecting
@@ -2111,21 +2116,21 @@ pub const Parser = struct {
                         break;
                     }
                 }
-                
+
                 // Parse the collected flow
                 var parsed_flow = try self.parseCollectedFlow(flow_lines.items, current_indent);
-                
+
                 // Use UnionCollector to analyze branches and build SuperShape
                 const union_collector = @import("union_collector");
                 var collector = union_collector.UnionCollector.init(self.allocator);
                 var collection_result = try collector.collectFromFlow(&parsed_flow);
                 defer collection_result.deinit(self.allocator);
-                
+
                 // Transfer ownership of super_shape to the flow
                 if (collection_result.transferSuperShape()) |super_shape| {
                     parsed_flow.super_shape = super_shape;
                 }
-                
+
                 // Check for conflicts and report them
                 if (collection_result.has_conflicts) {
                     for (collection_result.conflicts) |_| {
@@ -2133,18 +2138,14 @@ pub const Parser = struct {
                         // For now, we'll continue but the code generator will need to handle this
                     }
                 }
-                
+
                 try extracted_flows.append(self.allocator, parsed_flow);
 
                 // Generate a unique name for this flow (global counter)
                 self.inline_flow_counter += 1;
-                const flow_name = try std.fmt.allocPrint(
-                    self.allocator,
-                    "__inline_flow_{d}",
-                    .{self.inline_flow_counter}
-                );
+                const flow_name = try std.fmt.allocPrint(self.allocator, "__inline_flow_{d}", .{self.inline_flow_counter});
                 defer self.allocator.free(flow_name);
-                
+
                 // Generate replacement based on the pattern
                 const replacement = blk: {
                     // Create indentation string
@@ -2183,23 +2184,15 @@ pub const Parser = struct {
                         }
                     } else try self.allocator.dupe(u8, ".{}");
                     defer self.allocator.free(args_str);
-                    
+
                     if (lexer.startsWith(trimmed, "return ~")) {
                         // Terminal flow: return ~... -> return __inline_flow_N(args)
-                        break :blk try std.fmt.allocPrint(
-                            self.allocator,
-                            "{s}return {s}({s});",
-                            .{ indent_str, flow_name, args_str }
-                        );
+                        break :blk try std.fmt.allocPrint(self.allocator, "{s}return {s}({s});", .{ indent_str, flow_name, args_str });
                     } else if (lexer.startsWith(trimmed, "const ")) {
                         // Assignment flow: const x = ~... -> const x = __inline_flow_N(args)
                         const eq_idx = std.mem.indexOf(u8, trimmed, " = ~") orelse unreachable;
-                        const var_decl = trimmed[0..eq_idx + 3]; // "const x = "
-                        break :blk try std.fmt.allocPrint(
-                            self.allocator,
-                            "{s}{s}{s}({s});",
-                            .{ indent_str, var_decl, flow_name, args_str }
-                        );
+                        const var_decl = trimmed[0 .. eq_idx + 3]; // "const x = "
+                        break :blk try std.fmt.allocPrint(self.allocator, "{s}{s}{s}({s});", .{ indent_str, var_decl, flow_name, args_str });
                     } else {
                         // Direct flow: ~...
                         // Check if this is the last non-empty statement in the proc body
@@ -2225,26 +2218,17 @@ pub const Parser = struct {
 
                         if (is_terminal) {
                             // Terminal flow with implicit return
-                            break :blk try std.fmt.allocPrint(
-                                self.allocator,
-                                "{s}return {s}({s});",
-                                .{ indent_str, flow_name, args_str }
-                            );
+                            break :blk try std.fmt.allocPrint(self.allocator, "{s}return {s}({s});", .{ indent_str, flow_name, args_str });
                         } else {
                             // Non-terminal flow: assign to result variable
-                            break :blk try std.fmt.allocPrint(
-                                self.allocator,
-                                "{s}const result_{d} = {s}({s});",
-                                .{ indent_str, self.inline_flow_counter, flow_name, args_str }
-                            );
+                            break :blk try std.fmt.allocPrint(self.allocator, "{s}const result_{d} = {s}({s});", .{ indent_str, self.inline_flow_counter, flow_name, args_str });
                         }
                     }
                 };
                 defer self.allocator.free(replacement);
-                
+
                 try modified_body.appendSlice(self.allocator, replacement);
                 try modified_body.append(self.allocator, '\n');
-                
             } else {
                 // Not a flow, keep line as-is
                 try modified_body.appendSlice(self.allocator, line);
@@ -2252,59 +2236,55 @@ pub const Parser = struct {
                 i += 1;
             }
         }
-        
+
         // Remove trailing newline if present
         if (modified_body.items.len > 0 and modified_body.items[modified_body.items.len - 1] == '\n') {
             _ = modified_body.pop();
         }
-        
+
         return FlowExtractionResult{
             .modified_body = try modified_body.toOwnedSlice(self.allocator),
             .flows = try extracted_flows.toOwnedSlice(self.allocator),
         };
     }
-    
+
     fn parseCollectedFlow(self: *Parser, flow_lines: [][]const u8, base_indent: usize) anyerror!ast.Flow {
         // Adjust indentation - make it relative to base_indent
         var adjusted_lines = try std.ArrayList([]const u8).initCapacity(self.allocator, flow_lines.len);
         defer adjusted_lines.deinit(self.allocator);
-        
+
         for (flow_lines, 0..) |line, idx| {
             const line_indent = lexer.getIndent(line);
             const relative_indent = if (line_indent >= base_indent) line_indent - base_indent else 0;
-            
+
             // Get the trimmed line
             var trimmed = lexer.trim(line);
-            
+
             // For the first line, strip any prefix (return, const x = )
             if (idx == 0) {
                 if (lexer.startsWith(trimmed, "return ~")) {
                     trimmed = trimmed[7..]; // Skip "return "
                 } else if (lexer.startsWith(trimmed, "const ")) {
                     if (std.mem.indexOf(u8, trimmed, " = ~")) |eq_idx| {
-                        trimmed = trimmed[eq_idx + 3..]; // Skip "const x = "
+                        trimmed = trimmed[eq_idx + 3 ..]; // Skip "const x = "
                     }
                 }
             }
-            
+
             // Create new line with adjusted indentation
             const spaces = try self.allocator.alloc(u8, relative_indent);
             defer self.allocator.free(spaces);
             @memset(spaces, ' ');
-            
-            const adjusted_line = try std.fmt.allocPrint(
-                self.allocator,
-                "{s}{s}",
-                .{ spaces, trimmed }
-            );
+
+            const adjusted_line = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ spaces, trimmed });
             try adjusted_lines.append(self.allocator, adjusted_line);
         }
-        
+
         // Create a temporary parser with these lines
         var context_stack = try std.ArrayList(Context).initCapacity(self.allocator, 8);
         defer context_stack.deinit(self.allocator);
         try context_stack.append(self.allocator, .in_proc); // We're in a proc context
-        
+
         var temp_parser = Parser{
             .allocator = self.allocator,
             .lines = adjusted_lines.items,
@@ -2314,10 +2294,10 @@ pub const Parser = struct {
             .registry = self.registry,
             .is_compiler_library = self.is_compiler_library,
             .module_name = self.module_name,
-            .inline_flow_counter = self.inline_flow_counter,  // Inherit parent's counter
-            .fail_fast = self.fail_fast,  // Inherit parent's fail_fast mode
-            .compiler_flags = self.compiler_flags,  // Inherit parent's compiler flags
-            .resolver = self.resolver,  // Inherit parent's resolver
+            .inline_flow_counter = self.inline_flow_counter, // Inherit parent's counter
+            .fail_fast = self.fail_fast, // Inherit parent's fail_fast mode
+            .compiler_flags = self.compiler_flags, // Inherit parent's compiler flags
+            .resolver = self.resolver, // Inherit parent's resolver
         };
 
         // Parse the flow (no annotations in embedded context)
@@ -2327,11 +2307,10 @@ pub const Parser = struct {
         for (adjusted_lines.items) |line| {
             self.allocator.free(line);
         }
-        
+
         return flow;
     }
-    
-    
+
     fn pathToString(self: *Parser, path: ast.DottedPath) ![]const u8 {
         var buf = try std.ArrayList(u8).initCapacity(self.allocator, 64);
         errdefer buf.deinit(self.allocator);
@@ -2349,15 +2328,15 @@ pub const Parser = struct {
 
         return buf.toOwnedSlice(self.allocator);
     }
-    
+
     /// Check if an event is an implicit flow event
     /// Returns true if the event has exactly one parameter of type Source
     fn checkImplicitFlowEvent(self: *Parser, input: *const ast.Shape) bool {
         _ = self; // Parser context not needed for this check
-        
+
         // Must have exactly one field
         if (input.fields.len != 1) return false;
-        
+
         const field = input.fields[0];
 
         // Check for Source parameter named "source"
@@ -2367,14 +2346,9 @@ pub const Parser = struct {
 
         return false;
     }
-    
+
     /// Create an invocation with synthetic Source argument for implicit flow events
-    fn createImplicitFlowInvocation(
-        self: *Parser,
-        original: ast.Invocation,
-        continuations: []ast.Continuation,
-        event_type: type_registry.EventType
-    ) !ast.Invocation {
+    fn createImplicitFlowInvocation(self: *Parser, original: ast.Invocation, continuations: []ast.Continuation, event_type: type_registry.EventType) !ast.Invocation {
         _ = continuations; // No longer needed
 
         // Determine which field is the implicit flow field
@@ -2404,10 +2378,7 @@ pub const Parser = struct {
         }
 
         // Create new args array with the synthetic Source argument
-        var new_args = try std.ArrayList(ast.Arg).initCapacity(
-            self.allocator,
-            original.args.len + 1
-        );
+        var new_args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, original.args.len + 1);
         defer new_args.deinit(self.allocator);
 
         // Copy existing args
@@ -2422,7 +2393,7 @@ pub const Parser = struct {
         };
 
         try new_args.append(self.allocator, source_arg);
-        
+
         // Check if we need to add Program
         for (input_shape.fields) |field| {
             if (std.mem.eql(u8, field.type, "Program")) {
@@ -2434,20 +2405,14 @@ pub const Parser = struct {
                 break;
             }
         }
-        
+
         return ast.Invocation{
             .path = original.path,
             .args = try new_args.toOwnedSlice(self.allocator),
         };
     }
 
-    fn createImplicitSourceInvocation(
-        self: *Parser,
-        original: ast.Invocation,
-        source_text: []const u8,
-        phantom_type: ?[]const u8,
-        event_type: type_registry.EventType
-    ) !ast.Invocation {
+    fn createImplicitSourceInvocation(self: *Parser, original: ast.Invocation, source_text: []const u8, phantom_type: ?[]const u8, event_type: type_registry.EventType) !ast.Invocation {
         // Find the 'source' field of type Source
         var source_field_name: []const u8 = undefined;
         var found_source = false;
@@ -2472,23 +2437,14 @@ pub const Parser = struct {
                 const path_str = try self.pathToString(original.path);
                 defer self.allocator.free(path_str);
 
-                try self.reporter.addError(
-                    .PARSE001,
-                    self.current,
-                    0,
-                    "Implicit source block syntax [Type]{{ }} requires parameter named 'source'. Event '{s}' has Source parameter named '{s}'. Either rename parameter to 'source' or use explicit syntax: ~{s}({s}: [Type]{{ }})",
-                    .{ path_str, alt_name, path_str, alt_name }
-                );
+                try self.reporter.addError(.PARSE001, self.current, 0, "Implicit source block syntax [Type]{{ }} requires parameter named 'source'. Event '{s}' has Source parameter named '{s}'. Either rename parameter to 'source' or use explicit syntax: ~{s}({s}: [Type]{{ }})", .{ path_str, alt_name, path_str, alt_name });
                 return error.ParseError;
             }
             return original;
         }
 
         // Create new args array with the source argument
-        var new_args = try std.ArrayList(ast.Arg).initCapacity(
-            self.allocator,
-            original.args.len + 1
-        );
+        var new_args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, original.args.len + 1);
         defer new_args.deinit(self.allocator);
 
         // Copy existing args
@@ -2507,7 +2463,7 @@ pub const Parser = struct {
                         // Create scope binding for this continuation variable
                         const scope_binding = ast.ScopeBinding{
                             .name = try self.allocator.dupe(u8, binding_name),
-                            .type = try self.allocator.dupe(u8, "unknown"),  // Type inference would go here
+                            .type = try self.allocator.dupe(u8, "unknown"), // Type inference would go here
                             .value_ref = try self.allocator.dupe(u8, binding_name),
                         };
                         try bindings.append(self.allocator, scope_binding);
@@ -2532,8 +2488,8 @@ pub const Parser = struct {
         // Add the source argument with Source value
         const source_arg = ast.Arg{
             .name = try self.allocator.dupe(u8, source_field_name),
-            .value = try self.allocator.dupe(u8, source_text),  // Keep string value for compatibility
-            .source_value = source_value,  // Add Source struct with scope
+            .value = try self.allocator.dupe(u8, source_text), // Keep string value for compatibility
+            .source_value = source_value, // Add Source struct with scope
         };
 
         try new_args.append(self.allocator, source_arg);
@@ -2554,10 +2510,7 @@ pub const Parser = struct {
         phantom_type: ?[]const u8,
     ) !ast.Invocation {
         // Create new args array with the source argument
-        var new_args = try std.ArrayList(ast.Arg).initCapacity(
-            self.allocator,
-            original.args.len + 1
-        );
+        var new_args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, original.args.len + 1);
         defer new_args.deinit(self.allocator);
 
         // Copy existing args
@@ -2616,14 +2569,14 @@ pub const Parser = struct {
         var depth: i32 = 0;
         var body_lines = try std.ArrayList([]const u8).initCapacity(self.allocator, 8);
         defer body_lines.deinit(self.allocator);
-        
+
         // First line contains the opening brace
         if (!std.mem.startsWith(u8, lexer.trim(start), "{")) {
             return error.ParseError;
         }
-        
+
         // Debug: Starting extraction
-        
+
         // Check if it's a single-line body
         // Look for a closing brace AFTER the opening brace
         var brace_count: i32 = 1; // We already have the opening brace
@@ -2638,25 +2591,25 @@ pub const Parser = struct {
                 }
             }
         }
-        
+
         if (single_line_end) |end_idx| {
             // Single line body - extract everything between the braces
             const body_content = lexer.trim(start[1..end_idx]);
             // Single-line body
             return try self.allocator.dupe(u8, body_content);
         }
-        
+
         // Multi-line body
         depth = 1;
         // Multi-line body
         try body_lines.append(self.allocator, start[1..]); // Skip opening brace
-        
+
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
             self.current += 1;
-            
+
             // Processing line
-            
+
             // First check if this line would close the proc
             // A proc ends when we see a closing brace that would bring depth to 0
             var temp_depth = depth;
@@ -2698,9 +2651,9 @@ pub const Parser = struct {
 
                 i += 1;
             }
-            
+
             // Check depth change
-            
+
             // If this line would make depth go to 0 or negative, the proc is ending
             if (temp_depth <= 0) {
                 // Don't include the closing brace line in the body
@@ -2708,15 +2661,15 @@ pub const Parser = struct {
                 depth = temp_depth; // Update depth to reflect we found the closing brace
                 break;
             }
-            
+
             // This line is part of the proc body, include it
             // Including line in body
             try body_lines.append(self.allocator, line);
             depth = temp_depth;
         }
-        
+
         if (depth != 0) {
-            log_debug("ERROR: Proc body extraction failed! Final depth = {}, body_lines count = {}\n", .{depth, body_lines.items.len});
+            log_debug("ERROR: Proc body extraction failed! Final depth = {}, body_lines count = {}\n", .{ depth, body_lines.items.len });
             if (body_lines.items.len > 0) {
                 log_debug("  First line: {s}\n", .{body_lines.items[0]});
                 if (body_lines.items.len > 1) {
@@ -2733,7 +2686,7 @@ pub const Parser = struct {
             );
             return error.ParseError;
         }
-        
+
         // Join lines with newlines
         var total_len: usize = 0;
         for (body_lines.items, 0..) |line, i| {
@@ -2742,11 +2695,11 @@ pub const Parser = struct {
                 total_len += 1; // for newline
             }
         }
-        
+
         if (total_len == 0) {
             return try self.allocator.dupe(u8, "");
         }
-        
+
         var result = try self.allocator.alloc(u8, total_len);
         var offset: usize = 0;
         for (body_lines.items, 0..) |line, i| {
@@ -2757,9 +2710,9 @@ pub const Parser = struct {
                 offset += 1;
             }
         }
-        
+
         // Return final body
-        
+
         return result;
     }
 
@@ -2791,7 +2744,7 @@ pub const Parser = struct {
         if (std.mem.startsWith(u8, after_tilde, "[")) {
             // Find the closing ] and skip past it
             if (std.mem.indexOf(u8, after_tilde, "]")) |close_pos| {
-                remaining = lexer.trim(after_tilde[close_pos + 1..]);
+                remaining = lexer.trim(after_tilde[close_pos + 1 ..]);
             }
         }
 
@@ -2831,14 +2784,8 @@ pub const Parser = struct {
             const file_path = trimmed_after[path_start..path_end];
 
             // Find the [ to extract phantom type
-            const bracket_start = std.mem.lastIndexOf(u8, trimmed_after[0..quote_start + 1], "[") orelse {
-                try self.reporter.addError(
-                    .PARSE001,
-                    self.current,
-                    0,
-                    "File source syntax requires phantom type: ~event [type]\"path\"",
-                    .{}
-                );
+            const bracket_start = std.mem.lastIndexOf(u8, trimmed_after[0 .. quote_start + 1], "[") orelse {
+                try self.reporter.addError(.PARSE001, self.current, 0, "File source syntax requires phantom type: ~event [type]\"path\"", .{});
                 return error.ParseError;
             };
             const phantom_type = trimmed_after[bracket_start + 1 .. quote_start];
@@ -2849,13 +2796,7 @@ pub const Parser = struct {
 
             // Read the file content
             const file_content = self.readSourceFile(file_path) catch |err| {
-                try self.reporter.addError(
-                    .PARSE001,
-                    self.current,
-                    0,
-                    "Failed to read source file '{s}': {s}",
-                    .{ file_path, @errorName(err) }
-                );
+                try self.reporter.addError(.PARSE001, self.current, 0, "Failed to read source file '{s}': {s}", .{ file_path, @errorName(err) });
                 return error.ParseError;
             };
 
@@ -2869,35 +2810,9 @@ pub const Parser = struct {
         } else if (has_implicit_flow_brace) {
             // Parse event name and args up to the {
             const brace_idx = std.mem.lastIndexOf(u8, remaining, "{") orelse unreachable;
-            var invocation_str = lexer.trim(remaining[0..brace_idx]);
-
-            // Check for phantom type annotation [Type]{ and strip it from invocation string
-            const phantom_type = try self.parseSourcePhantomType(invocation_str);
-            if (phantom_type != null) {
-                // Strip [Type] from the invocation string
-                const bracket_start = std.mem.lastIndexOf(u8, invocation_str, "[") orelse invocation_str.len;
-                invocation_str = lexer.trim(invocation_str[0..bracket_start]);
-            }
+            const invocation_str = lexer.trim(remaining[0..brace_idx]);
 
             invocation = try self.parseEventInvocation(invocation_str);
-
-            // Validate: if using [Type]{ } syntax with zero other params, () is forbidden
-            if (phantom_type != null and invocation.args.len == 0) {
-                // Check if invocation_str has explicit ()
-                if (std.mem.indexOf(u8, invocation_str, "()")) |_| {
-                    // Get event name without ()
-                    const event_name_end = std.mem.indexOf(u8, invocation_str, "()") orelse invocation_str.len;
-                    const event_name = lexer.trim(invocation_str[0..event_name_end]);
-                    try self.reporter.addError(
-                        .PARSE001,
-                        self.current,
-                        0,
-                        "Cannot use '()' with Source block syntax. Use '~{s} [{s}]{{ }}' (without parentheses) or add parameters: '~{s}(param: value) [{s}]{{ }}'",
-                        .{ event_name, phantom_type.?, event_name, phantom_type.? },
-                    );
-                    return error.InvalidSourceBlockSyntax;
-                }
-            }
 
             // Look up the event to determine if it expects Source
             const path_str = try self.pathToString(invocation.path);
@@ -2918,7 +2833,7 @@ pub const Parser = struct {
                 if (has_source_param) {
                     // Parse as Source block (raw text) - used by both implicit flow and templates
                     uses_implicit_source = true;
-                    const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), phantom_type);
+                    const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), null);
                     implicit_source_text = result.source;
                     implicit_source_phantom_type = result.phantom_type;
                     continuations = result.continuations;
@@ -2932,7 +2847,7 @@ pub const Parser = struct {
                 // Assume it takes a Source parameter (optimistic parsing).
                 // If it's truly invalid, later passes will catch it after keyword resolution.
                 uses_implicit_source = true;
-                const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), phantom_type);
+                const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), null);
                 implicit_source_text = result.source;
                 implicit_source_phantom_type = result.phantom_type;
                 continuations = result.continuations;
@@ -2982,15 +2897,9 @@ pub const Parser = struct {
                         // | followed by space then word is invalid (branch must be on new line)
                         if (next_char == ' ') {
                             // Check if there's a word after the space (branch name)
-                            const after_pipe = lexer.trim(invocation_str[i + 1..]);
+                            const after_pipe = lexer.trim(invocation_str[i + 1 ..]);
                             if (after_pipe.len > 0 and after_pipe[0] != '>' and after_pipe[0] != '?') {
-                                try self.reporter.addError(
-                                    .PARSE001,
-                                    self.current,
-                                    @as(u16, @intCast(i)),
-                                    "Branch continuation '|' must start on a new line with proper indentation",
-                                    .{}
-                                );
+                                try self.reporter.addError(.PARSE001, self.current, @as(u16, @intCast(i)), "Branch continuation '|' must start on a new line with proper indentation", .{});
                                 return error.ParseError;
                             }
                         }
@@ -3031,14 +2940,14 @@ pub const Parser = struct {
             try self.allocator.dupe(u8, l)
         else
             null;
-        
+
         // Check if this is an invocation of an implicit flow event
         const path_str = try self.pathToString(invocation.path);
         defer self.allocator.free(path_str);
-        
+
         var final_invocation = invocation;
         var final_continuations = continuations;
-        
+
         if (uses_implicit_flow) {
             // With {} syntax, we need to separate flow items from output continuations
             // and create the synthetic flow parameter
@@ -3048,7 +2957,7 @@ pub const Parser = struct {
                 var output_items = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 4);
                 defer flow_ast_items.deinit(self.allocator);
                 defer output_items.deinit(self.allocator);
-                
+
                 for (continuations) |cont| {
                     if (std.mem.eql(u8, cont.branch, "<flow_ast_item>")) {
                         try flow_ast_items.append(self.allocator, cont);
@@ -3056,47 +2965,30 @@ pub const Parser = struct {
                         try output_items.append(self.allocator, cont);
                     }
                 }
-                
+
                 // Create synthetic invocation with flow parameter
-                final_invocation = try self.createImplicitFlowInvocation(
-                    invocation,
-                    try flow_ast_items.toOwnedSlice(self.allocator),
-                    event_type
-                );
-                
+                final_invocation = try self.createImplicitFlowInvocation(invocation, try flow_ast_items.toOwnedSlice(self.allocator), event_type);
+
                 // Use only the output continuations
                 final_continuations = try output_items.toOwnedSlice(self.allocator);
             }
         } else if (uses_implicit_source) {
             // With {} syntax and Source parameter, add the captured text as source parameter
             if (self.registry.getEventType(path_str)) |event_type| {
-                final_invocation = try self.createImplicitSourceInvocation(
-                    invocation,
-                    implicit_source_text.?,
-                    implicit_source_phantom_type,
-                    event_type
-                );
+                final_invocation = try self.createImplicitSourceInvocation(invocation, implicit_source_text.?, implicit_source_phantom_type, event_type);
                 // continuations are already the output continuations from parseImplicitSourceBlock
             } else {
                 // Event not in registry (happens during module imports when fail_fast=false)
                 // Add source parameter with default name "source"
-                final_invocation = try self.createImplicitSourceInvocationDefault(
-                    invocation,
-                    implicit_source_text.?,
-                    implicit_source_phantom_type
-                );
+                final_invocation = try self.createImplicitSourceInvocationDefault(invocation, implicit_source_text.?, implicit_source_phantom_type);
             }
         } else if (self.registry.getEventType(path_str)) |event_type| {
             if (event_type.is_implicit_flow) {
                 // Regular syntax - continuations become flow parameter
-                final_invocation = try self.createImplicitFlowInvocation(
-                    invocation,
-                    continuations,
-                    event_type
-                );
+                final_invocation = try self.createImplicitFlowInvocation(invocation, continuations, event_type);
             }
         }
-        
+
         // Duplicate annotations for the Flow (caller will free the original annotations)
         var flow_annotations = try self.allocator.alloc([]const u8, annotations.len);
         for (annotations, 0..) |ann, i| {
@@ -3114,7 +3006,7 @@ pub const Parser = struct {
             .module = try self.allocator.dupe(u8, self.module_name),
         };
     }
-    
+
     /// Check if content has an unescaped escape sequence like \n or \t
     /// Returns false for \\n (escaped backslash + n) which is valid in paths
     fn hasUnescapedEscape(content: []const u8, escape_char: u8) bool {
@@ -3155,62 +3047,65 @@ pub const Parser = struct {
         // This allows ~capture(expr: { total: @as(i32, 0) }) while blocking ~@as(...)
         if (std.mem.indexOf(u8, check_range, "@import") != null or
             std.mem.indexOf(u8, check_range, "@as") != null or
-            std.mem.indexOf(u8, check_range, "@field") != null) {
+            std.mem.indexOf(u8, check_range, "@field") != null)
+        {
             return true;
         }
-        
+
         // Check for print patterns with format strings and tuple args
         // Only flag these at TOP LEVEL (before first paren), not inside args
         // This allows valid event names like ~std.log() while blocking actual Zig logging
         if (std.mem.indexOf(u8, check_range, "log_debug(") != null or
             std.mem.indexOf(u8, check_range, "std.log.") != null or
-            std.mem.indexOf(u8, check_range, "std.debug.") != null) {
+            std.mem.indexOf(u8, check_range, "std.debug.") != null)
+        {
             return true;
         }
-        
+
         // Check for raw string literals with escape sequences as first argument
         // This catches things like "text\n" which is Zig, not Koru
         // BUT we must not flag \\n or \\t (escaped backslash + letter)
         if (std.mem.indexOf(u8, content, "(\"") != null) {
-            const after_paren = content[std.mem.indexOf(u8, content, "(\"").? + 1..];
+            const after_paren = content[std.mem.indexOf(u8, content, "(\"").? + 1 ..];
             // Look for UNESCAPED \n or \t (Zig printf style)
             // \\n = escaped backslash + n (OK in Koru paths)
             // \n = actual newline escape (Zig code)
             if (hasUnescapedEscape(after_paren, 'n') or
-                hasUnescapedEscape(after_paren, 't')) {
+                hasUnescapedEscape(after_paren, 't'))
+            {
                 return true;
             }
         }
-        
+
         return false;
     }
-    
+
     fn parseMultiLineInvocation(self: *Parser, first_line: []const u8) anyerror!ast.Invocation {
         // Parse event name from first line (everything before the {)
         const brace_idx = std.mem.lastIndexOf(u8, first_line, "{") orelse unreachable;
         const event_name = lexer.trim(first_line[0..brace_idx]);
         const parsed_path = try lexer.parseQualifiedPath(self.allocator, event_name, ast);
-        
+
         // Now parse multi-line arguments
         var args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, 8);
         defer args.deinit(self.allocator);
-        
+
         // Keep consuming lines until we find the closing }
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
             const trimmed = lexer.trim(line);
-            
+
             // Check if this is the closing brace
             if (std.mem.eql(u8, trimmed, "}")) {
                 self.current += 1;
                 break;
             }
-            
+
             // Check if this line has a field: pattern (use depth-aware search for { ... } expressions)
             if (lexer.indexOfAtDepthZero(trimmed, ':')) |colon_idx| {
                 const field_name = lexer.trim(trimmed[0..colon_idx]);
-                const after_colon = lexer.trim(trimmed[colon_idx + 1..]);
-                
+                const after_colon = lexer.trim(trimmed[colon_idx + 1 ..]);
+
                 // Check if this starts a block { for Source
                 if (std.mem.eql(u8, after_colon, "{")) {
                     // This is a Source block
@@ -3218,7 +3113,7 @@ pub const Parser = struct {
                     try args.append(self.allocator, block_arg);
                 } else if (std.mem.endsWith(u8, after_colon, ",")) {
                     // Normal argument with trailing comma
-                    const value = lexer.trim(after_colon[0..after_colon.len - 1]);
+                    const value = lexer.trim(after_colon[0 .. after_colon.len - 1]);
                     try args.append(self.allocator, ast.Arg{
                         .name = try self.allocator.dupe(u8, field_name),
                         .value = try self.allocator.dupe(u8, value),
@@ -3236,27 +3131,27 @@ pub const Parser = struct {
                 self.current += 1;
             }
         }
-        
+
         return ast.Invocation{
             .path = parsed_path,
             .args = try args.toOwnedSlice(self.allocator),
         };
     }
-    
+
     fn parseFlowAstOrSourceArg(self: *Parser, field_name: []const u8, start_line: usize) anyerror!ast.Arg {
-        // We're at a line like "field: {" 
+        // We're at a line like "field: {"
         // Need to consume lines until we find the closing }
         var content_lines = try std.ArrayList([]const u8).initCapacity(self.allocator, 16);
         defer content_lines.deinit(self.allocator);
-        
+
         // Track the indentation of the closing brace
         var closing_brace_indent: ?usize = null;
         var start_idx = start_line + 1; // Start from line after the opening {
-        
+
         while (start_idx < self.lines.len) : (start_idx += 1) {
             const line = self.lines[start_idx];
             const trimmed = lexer.trim(line);
-            
+
             // Check if this line is just a closing brace
             if (std.mem.eql(u8, trimmed, "}") or std.mem.endsWith(u8, trimmed, "},")) {
                 // Found the closing brace - record its indentation
@@ -3264,19 +3159,19 @@ pub const Parser = struct {
                 self.current = start_idx + 1; // Move past the closing brace
                 break;
             }
-            
+
             // Otherwise, this line is part of the content
             try content_lines.append(self.allocator, line);
         }
-        
+
         // Now dedent the content based on the closing brace position
         const dedent_amount = closing_brace_indent orelse 0;
         var final_content = try std.ArrayList(u8).initCapacity(self.allocator, 512);
         defer final_content.deinit(self.allocator);
-        
+
         for (content_lines.items, 0..) |line, i| {
             if (i > 0) try final_content.appendSlice(self.allocator, "\n");
-            
+
             // Remove dedent_amount spaces from the beginning
             const line_indent = lexer.getIndent(line);
             const start_pos = @min(dedent_amount, line_indent);
@@ -3290,7 +3185,7 @@ pub const Parser = struct {
             .value = string_value,
         };
     }
-    
+
     fn parseEventInvocation(self: *Parser, line: []const u8) anyerror!ast.Invocation {
         // Parse event invocation
         // Remove label anchors if present (both # and @ for now)
@@ -3328,14 +3223,14 @@ pub const Parser = struct {
         var i: usize = 0;
         while (i < clean.len) : (i += 1) {
             const c = clean[i];
-            if (c == '"' and (i == 0 or clean[i-1] != '\\')) {
+            if (c == '"' and (i == 0 or clean[i - 1] != '\\')) {
                 in_string = !in_string;
             } else if (!in_string) {
                 if (c == '(') paren_depth += 1;
                 if (c == ')') paren_depth -= 1;
                 if (c == '{') brace_depth += 1;
                 if (c == '}') brace_depth -= 1;
-                if (c == '|' and paren_depth == 0 and brace_depth == 0 and i > 0 and clean[i-1] == ' ') {
+                if (c == '|' and paren_depth == 0 and brace_depth == 0 and i > 0 and clean[i - 1] == ' ') {
                     pipe_idx = i - 1; // Point to the space before the pipe
                     break;
                 }
@@ -3350,18 +3245,18 @@ pub const Parser = struct {
         // Check for Source block syntax: eventName [Type]{ ... }
         // Look for ]{ pattern to distinguish from array types like [100]f64
         const source_block_marker = std.mem.indexOf(u8, invocation_part, "]{");
-        log_debug("[DEBUG] parseEventInvocation: source_block_marker={?d} invocation_part='{s}'\n", .{source_block_marker, invocation_part});
+        log_debug("[DEBUG] parseEventInvocation: source_block_marker={?d} invocation_part='{s}'\n", .{ source_block_marker, invocation_part });
 
         if (source_block_marker) |marker_idx| {
             // Find the opening [ by searching backwards from ]{
-            const bracket_idx = std.mem.lastIndexOf(u8, invocation_part[0..marker_idx + 1], "[");
+            const bracket_idx = std.mem.lastIndexOf(u8, invocation_part[0 .. marker_idx + 1], "[");
 
             if (bracket_idx) |b_idx| {
                 // This is a Source block invocation!
                 const before_bracket = lexer.trim(invocation_part[0..b_idx]);
 
                 // Extract phantom type from [Type] (we know ] is at marker_idx)
-                const phantom_type = lexer.trim(invocation_part[b_idx + 1..marker_idx]);
+                const phantom_type = lexer.trim(invocation_part[b_idx + 1 .. marker_idx]);
 
                 // Extract block content from { ... } (marker_idx + 1 points to { position + 1)
                 const brace_start = marker_idx + 1; // Position of {
@@ -3377,7 +3272,7 @@ pub const Parser = struct {
                     return error.ParseError;
                 }
 
-                const source_text = lexer.trim(invocation_part[brace_start + 1..close_brace_idx.?]);
+                const source_text = lexer.trim(invocation_part[brace_start + 1 .. close_brace_idx.?]);
 
                 // Check if before_bracket has args: event(args)
                 // If so, parse path and args separately
@@ -3422,7 +3317,7 @@ pub const Parser = struct {
                 defer self.allocator.free(path_str);
 
                 // Look up event type
-                log_debug("[DEBUG] parseEventInvocation: path_str='{s}' existing_args.len={d} source_text='{s}'\n", .{path_str, existing_args.len, source_text});
+                log_debug("[DEBUG] parseEventInvocation: path_str='{s}' existing_args.len={d} source_text='{s}'\n", .{ path_str, existing_args.len, source_text });
                 if (self.registry.getEventType(path_str)) |event_type| {
                     log_debug("[DEBUG] parseEventInvocation: event found in registry, calling createImplicitSourceInvocation\n", .{});
                     // Create base invocation with existing args
@@ -3432,12 +3327,7 @@ pub const Parser = struct {
                     };
 
                     // Create invocation with implicit Source parameter added
-                    return try self.createImplicitSourceInvocation(
-                        base_invocation,
-                        source_text,
-                        phantom_type,
-                        event_type
-                    );
+                    return try self.createImplicitSourceInvocation(base_invocation, source_text, phantom_type, event_type);
                 } else {
                     // Event not found in registry - use default source param name "source"
                     log_debug("[DEBUG] parseEventInvocation: event NOT in registry, adding source with default name\n", .{});
@@ -3496,7 +3386,7 @@ pub const Parser = struct {
                 return error.ParseError;
             }
 
-            const source_text = lexer.trim(invocation_part[b_idx + 1..close_brace_idx.?]);
+            const source_text = lexer.trim(invocation_part[b_idx + 1 .. close_brace_idx.?]);
 
             // Parse the event path (and args if present)
             var parsed_path: ast.DottedPath = undefined;
@@ -3556,12 +3446,8 @@ pub const Parser = struct {
                 };
 
                 // Create invocation with implicit Source parameter (no phantom type)
-                return try self.createImplicitSourceInvocation(
-                    base_invocation,
-                    source_text,
-                    null,  // No phantom type for bare source blocks
-                    event_type
-                );
+                return try self.createImplicitSourceInvocation(base_invocation, source_text, null, // No phantom type for bare source blocks
+                    event_type);
             } else {
                 // Event not found in registry - create source arg manually
                 var args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, existing_args.len + 1);
@@ -3604,7 +3490,7 @@ pub const Parser = struct {
         if (std.mem.indexOfScalar(u8, raw_path_str, '|')) |variant_pipe_idx| {
             // Split at pipe: path before, variant after
             path_str = lexer.trim(raw_path_str[0..variant_pipe_idx]);
-            const variant_str = lexer.trim(raw_path_str[variant_pipe_idx + 1..]);
+            const variant_str = lexer.trim(raw_path_str[variant_pipe_idx + 1 ..]);
             if (variant_str.len > 0) {
                 variant = try self.allocator.dupe(u8, variant_str);
             }
@@ -3749,10 +3635,10 @@ pub const Parser = struct {
             );
             return error.UnexpectedEOF;
         }
-        
+
         const line = self.lines[self.current];
         self.current += 1;
-        
+
         // Parse: ~event.name = ... or ~module:event = ...
         const after_tilde = lexer.trim(line[1..]);
         const eq_idx = findTopLevelEquals(after_tilde) orelse {
@@ -3774,8 +3660,8 @@ pub const Parser = struct {
         const is_impl = event_path.module_qualifier != null;
 
         // The flow body follows the = sign
-        const body_str = lexer.trim(after_tilde[eq_idx + 1..]);
-        
+        const body_str = lexer.trim(after_tilde[eq_idx + 1 ..]);
+
         // Check if it's a branch constructor (immediate return syntax)
         if (body_str.len > 0) {
             // Check for branch constructor pattern: word followed by {
@@ -3784,11 +3670,12 @@ pub const Parser = struct {
                 const before_brace = lexer.trim(body_str[0..b_idx]);
                 // If there's no dot or paren before the brace, it's a branch constructor
                 if (std.mem.indexOf(u8, before_brace, ".") == null and
-                    !std.mem.containsAtLeast(u8, before_brace, 1, "(")) {
+                    !std.mem.containsAtLeast(u8, before_brace, 1, "("))
+                {
                     // It's an immediate branch constructor!
                     // Check if we have closing brace on same line
                     const closing_idx = std.mem.lastIndexOf(u8, body_str, "}");
-                    
+
                     if (closing_idx != null and closing_idx.? > b_idx) {
                         // Single-line, complete branch constructor
                         const branch_constructor = try self.parseBranchConstructor(body_str);
@@ -3803,11 +3690,11 @@ pub const Parser = struct {
                         // Multi-line branch constructor starting on this line
                         var constructor_content = try std.ArrayList(u8).initCapacity(self.allocator, 256);
                         defer constructor_content.deinit(self.allocator);
-                        
+
                         // Add the content from the first line
                         try constructor_content.appendSlice(self.allocator, body_str);
                         try constructor_content.append(self.allocator, ' ');
-                        
+
                         // Track brace depth (already have one open brace)
                         var brace_depth: i32 = 1;
                         // NOTE: Don't increment self.current here - line 3277 already advanced past
@@ -3816,23 +3703,20 @@ pub const Parser = struct {
                         while (self.current < self.lines.len and brace_depth > 0) {
                             const curr_line = self.lines[self.current];
                             self.current += 1;
-                            
+
                             const trimmed_line = lexer.trim(curr_line);
                             if (trimmed_line.len == 0) continue;
-                            
-                            // Count braces
-                            for (trimmed_line) |c| {
-                                if (c == '{') brace_depth += 1;
-                                if (c == '}') brace_depth -= 1;
-                            }
-                            
+
+                            // Count braces (skip braces in strings/comments)
+                            brace_depth += lexer.countBraceDepthChange(trimmed_line);
+
                             // Add this line's content
                             try constructor_content.appendSlice(self.allocator, trimmed_line);
                             if (brace_depth > 0) {
                                 try constructor_content.append(self.allocator, ' ');
                             }
                         }
-                        
+
                         // Parse the complete constructor
                         const branch_constructor = try self.parseBranchConstructor(constructor_content.items);
                         return ast.SubflowImpl{
@@ -3929,7 +3813,7 @@ pub const Parser = struct {
             );
             return error.UnexpectedEof;
         }
-        
+
         // Skip blank lines
         while (self.current < self.lines.len) {
             const next_line = self.lines[self.current];
@@ -3937,7 +3821,7 @@ pub const Parser = struct {
             if (trimmed_next.len > 0) break;
             self.current += 1;
         }
-        
+
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
                 .PARSE003,
@@ -3950,18 +3834,19 @@ pub const Parser = struct {
         }
         const body_line = self.lines[self.current];
         const trimmed_body = lexer.trim(body_line);
-        
+
         // Check for branch constructor (immediate return syntax)
         const brace_idx = std.mem.indexOf(u8, trimmed_body, "{");
         if (brace_idx) |b_idx| {
             const before_brace = lexer.trim(trimmed_body[0..b_idx]);
             if (std.mem.indexOf(u8, before_brace, ".") == null and
                 !std.mem.containsAtLeast(u8, before_brace, 1, "(") and
-                !lexer.startsWith(trimmed_body, "|")) {  // Not a continuation
+                !lexer.startsWith(trimmed_body, "|"))
+            { // Not a continuation
                 // It's an immediate branch constructor!
                 // Check if it's multiline by looking for closing brace
                 const closing_idx = std.mem.lastIndexOf(u8, trimmed_body, "}");
-                
+
                 if (closing_idx != null and closing_idx.? > b_idx) {
                     // Single-line branch constructor
                     self.current += 1;
@@ -3977,35 +3862,32 @@ pub const Parser = struct {
                     // Multi-line branch constructor - collect all lines
                     var constructor_content = try std.ArrayList(u8).initCapacity(self.allocator, 256);
                     defer constructor_content.deinit(self.allocator);
-                    
+
                     // Add the first line
                     try constructor_content.appendSlice(self.allocator, trimmed_body);
                     try constructor_content.append(self.allocator, ' ');
-                    
+
                     // Track brace depth
                     var brace_depth: i32 = 1;
                     self.current += 1; // Move to next line
-                    
+
                     while (self.current < self.lines.len and brace_depth > 0) {
                         const curr_line = self.lines[self.current];
                         self.current += 1;
-                        
+
                         const trimmed_line = lexer.trim(curr_line);
                         if (trimmed_line.len == 0) continue;
-                        
-                        // Count braces
-                        for (trimmed_line) |c| {
-                            if (c == '{') brace_depth += 1;
-                            if (c == '}') brace_depth -= 1;
-                        }
-                        
+
+                        // Count braces (skip braces in strings/comments)
+                        brace_depth += lexer.countBraceDepthChange(trimmed_line);
+
                         // Add this line's content
                         try constructor_content.appendSlice(self.allocator, trimmed_line);
                         if (brace_depth > 0) {
                             try constructor_content.append(self.allocator, ' ');
                         }
                     }
-                    
+
                     // Parse the complete constructor
                     const branch_constructor = try self.parseBranchConstructor(constructor_content.items);
                     return ast.SubflowImpl{
@@ -4096,7 +3978,7 @@ pub const Parser = struct {
     fn parseImplicitFlowBlock(self: *Parser, base_indent: usize) ![]ast.Continuation {
         // Parse the flow content inside {} and then any output continuations after
         // Returns ALL continuations - the caller will package the flow part appropriately
-        
+
         var all_continuations = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 8);
         errdefer {
             for (all_continuations.items) |*cont| {
@@ -4104,30 +3986,30 @@ pub const Parser = struct {
             }
             all_continuations.deinit(self.allocator);
         }
-        
+
         // First, parse the flow content inside {}
         var flow_ast_continuations = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 4);
         defer flow_ast_continuations.deinit(self.allocator);
-        
+
         var inside_braces = true;
-        
+
         while (self.current < self.lines.len and inside_braces) {
             const line = self.lines[self.current];
             const trimmed = lexer.trim(line);
-            
+
             // Check for closing brace
             if (std.mem.eql(u8, trimmed, "}")) {
                 self.current += 1;
                 inside_braces = false;
                 break;
             }
-            
+
             // Skip empty lines
             if (trimmed.len == 0) {
                 self.current += 1;
                 continue;
             }
-            
+
             // Inside {}, we require ~ for each flow
             if (!lexer.startsWith(trimmed, "~")) {
                 try self.reporter.addError(
@@ -4179,28 +4061,11 @@ pub const Parser = struct {
         for (output_continuations) |cont| {
             try all_continuations.append(self.allocator, cont);
         }
-        
+
         // The caller will need to distinguish flow items from output continuations
         // For now, we use the special "<flow_ast_item>" branch name as a marker
-        
+
         return all_continuations.toOwnedSlice(self.allocator);
-    }
-
-    /// Parse phantom type annotation before Source block
-    /// Syntax: [Type] or [] (empty)
-    /// Returns the phantom type string (empty string for [])
-    fn parseSourcePhantomType(self: *Parser, line: []const u8) !?[]const u8 {
-        const trimmed = lexer.trim(line);
-
-        // Look for [ at the start
-        const bracket_start = std.mem.indexOf(u8, trimmed, "[") orelse return null;
-        const bracket_end = std.mem.indexOf(u8, trimmed[bracket_start..], "]") orelse return null;
-
-        // Extract the phantom type between [ and ]
-        const phantom_content = lexer.trim(trimmed[bracket_start + 1..bracket_start + bracket_end]);
-
-        // Return duplicated string (empty string for [])
-        return try self.allocator.dupe(u8, phantom_content);
     }
 
     fn parseImplicitSourceBlock(self: *Parser, base_indent: usize, phantom_type: ?[]const u8) !struct { source: []const u8, continuations: []ast.Continuation, phantom_type: ?[]const u8 } {
@@ -4317,7 +4182,7 @@ pub const Parser = struct {
         }
 
         // Extract the continuation part after |>
-        const continuation_part = lexer.trim(full_line[pipe_idx.? + 2..]);
+        const continuation_part = lexer.trim(full_line[pipe_idx.? + 2 ..]);
 
         // Parse the pipeline steps from the continuation
         const steps = try self.parsePipelineSteps(continuation_part);
@@ -4346,7 +4211,7 @@ pub const Parser = struct {
             // Create continuation for this step
             var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
             try cont_list.append(self.allocator, ast.Continuation{
-                .branch = try self.allocator.dupe(u8, ""),  // Empty branch for void event continuation
+                .branch = try self.allocator.dupe(u8, ""), // Empty branch for void event continuation
                 .binding = null,
                 .binding_type = .branch_payload,
                 .condition = null,
@@ -4404,7 +4269,7 @@ pub const Parser = struct {
 
             // Only take continuations at the expected level
             if (indent != expected_indent.?) break;
-            
+
             // Parse the continuation (which will also parse its nested continuations)
             const location = self.getLineLocation(self.current, indent);
             self.current += 1; // Move past current line before parsing
@@ -4414,17 +4279,17 @@ pub const Parser = struct {
 
         return continuations.toOwnedSlice(self.allocator);
     }
-    
+
     fn parseContinuationInternal(self: *Parser, indent: usize, parent_indent: usize, location: errors.SourceLocation) !ast.Continuation {
         _ = parent_indent;
         const line = self.lines[self.current - 1]; // We already incremented
         const trimmed = lexer.trim(line);
-        
+
         // Skip the | prefix
         const after_bar = lexer.trim(trimmed[1..]);
-        
+
         var cont: ast.Continuation = undefined;
-        
+
         if (lexer.startsWith(after_bar, ">")) {
             // Pipeline continuation |>
             cont = try self.parsePipelineContinuationBase(after_bar[1..], indent, location);
@@ -4435,13 +4300,13 @@ pub const Parser = struct {
             // Branch continuation
             cont = try self.parseBranchContinuationBase(after_bar, indent, location);
         }
-        
+
         // Initialize continuations as empty, will be filled by caller if needed
         cont.continuations = &[_]ast.Continuation{};
-        
+
         return cont;
     }
-    
+
     fn parseContinuationWithNested(self: *Parser, indent: usize, location: errors.SourceLocation) anyerror!ast.Continuation {
         const line = self.lines[self.current - 1]; // We already incremented in parseContinuations
         const trimmed = lexer.trim(line);
@@ -4479,7 +4344,7 @@ pub const Parser = struct {
 
         return cont;
     }
-    
+
     fn parseNestedContinuationsForLevel(self: *Parser, parent_indent: usize) anyerror![]ast.Continuation {
         var continuations = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 8);
         errdefer {
@@ -4488,29 +4353,29 @@ pub const Parser = struct {
             }
             continuations.deinit(self.allocator);
         }
-        
+
         // Look for continuation lines at greater indentation
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
-            
+
             if (!lexer.isContinuationLine(line)) break;
-            
+
             const indent = lexer.getIndent(line);
             if (indent <= parent_indent) break;
-            
+
             // Found a nested continuation - parse it and its nested ones recursively
             const location = self.getLineLocation(self.current, indent);
             self.current += 1;
             const cont = try self.parseContinuationWithNested(indent, location);
-            
+
             // After parsing this continuation, check for its nested ones
-            
+
             try continuations.append(self.allocator, cont);
         }
-        
+
         return continuations.toOwnedSlice(self.allocator);
     }
-    
+
     fn parseContinuation(self: *Parser, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         const line = self.lines[self.current];
         const trimmed = lexer.trim(line);
@@ -4526,7 +4391,7 @@ pub const Parser = struct {
             return self.parseBranchContinuation(after_bar, indent, location);
         }
     }
-    
+
     fn parsePipelineContinuation(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         var cont = try self.parsePipelineContinuationBase(content, indent, location);
 
@@ -4545,7 +4410,7 @@ pub const Parser = struct {
 
         return cont;
     }
-    
+
     fn parseDerefContinuationBase(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
 
         // Parse: *target [(args)]
@@ -4569,7 +4434,7 @@ pub const Parser = struct {
 
         if (paren_idx) |p| {
             const args_end = std.mem.indexOf(u8, trimmed[p..], ")") orelse trimmed.len - p;
-            const args_str = trimmed[p..p + args_end + 1];
+            const args_str = trimmed[p .. p + args_end + 1];
             const parsed_args = try lexer.parseArgs(self.allocator, args_str);
             defer self.allocator.free(parsed_args);
 
@@ -4593,7 +4458,7 @@ pub const Parser = struct {
         };
 
         return ast.Continuation{
-            .branch = try self.allocator.dupe(u8, "*deref"),  // Special marker
+            .branch = try self.allocator.dupe(u8, "*deref"), // Special marker
             .binding = null,
             .condition = null,
             .condition_expr = null,
@@ -4603,7 +4468,7 @@ pub const Parser = struct {
             .location = location,
         };
     }
-    
+
     fn parseBranchContinuationBase(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         // Note: *deref syntax is handled at a higher level, not here
 
@@ -4673,7 +4538,8 @@ pub const Parser = struct {
             if (parts.peek()) |next| {
                 if (std.mem.eql(u8, next, "Transition") or
                     std.mem.eql(u8, next, "Profile") or
-                    std.mem.eql(u8, next, "Audit")) {
+                    std.mem.eql(u8, next, "Audit"))
+                {
                     catchall_metatype = try self.allocator.dupe(u8, next);
                     _ = parts.next(); // consume metatype
 
@@ -4699,7 +4565,6 @@ pub const Parser = struct {
                 }
             }
 
-
             const catch_all_branch = try self.allocator.dupe(u8, "?");
             try self.context_stack.append(self.allocator, .{
                 .in_continuation = .{
@@ -4724,7 +4589,7 @@ pub const Parser = struct {
             }
 
             return ast.Continuation{
-                .branch = try self.allocator.dupe(u8, "?"),  // Special branch name for catch-all
+                .branch = try self.allocator.dupe(u8, "?"), // Special branch name for catch-all
                 .binding = binding,
                 .binding_type = .branch_payload,
                 .is_catchall = true,
@@ -4760,7 +4625,8 @@ pub const Parser = struct {
 
         if (parts.peek()) |next| {
             if (!std.mem.startsWith(u8, next, "|>") and !std.mem.startsWith(u8, next, "@") and
-                !std.mem.eql(u8, next, "when")) {
+                !std.mem.eql(u8, next, "when"))
+            {
                 // Check if binding has annotations: identifier[ann1|ann2|...]
                 var identifier: []const u8 = next;
 
@@ -4772,7 +4638,7 @@ pub const Parser = struct {
                     if (std.mem.indexOf(u8, next, "]")) |bracket_end| {
                         if (bracket_end > bracket_start + 1) {
                             // Parse annotations between [ and ]
-                            const ann_str = next[bracket_start + 1..bracket_end];
+                            const ann_str = next[bracket_start + 1 .. bracket_end];
                             var ann_list = try std.ArrayList([]const u8).initCapacity(self.allocator, 4);
                             errdefer {
                                 for (ann_list.items) |ann| {
@@ -4830,12 +4696,12 @@ pub const Parser = struct {
                 // Find when the condition ends (before |> or end of line)
                 const remaining = parts.rest();
                 const pipe_idx = std.mem.indexOf(u8, remaining, "|>");
-                
+
                 const condition_str = if (pipe_idx) |idx|
                     lexer.trim(remaining[0..idx])
                 else
                     lexer.trim(remaining);
-                    
+
                 if (condition_str.len == 0) {
                     try self.reporter.addError(
                         .PARSE003,
@@ -4846,9 +4712,9 @@ pub const Parser = struct {
                     );
                     return error.ParseError;
                 }
-                
+
                 condition = try self.allocator.dupe(u8, condition_str);
-                
+
                 // Update rest to skip past the condition
                 if (pipe_idx) |idx| {
                     rest = remaining[idx..];
@@ -4857,19 +4723,25 @@ pub const Parser = struct {
                 }
             }
         }
-        
+
         // Parse the condition expression if we have one
         var condition_expr: ?*ast.Expression = null;
         if (condition) |cond_str| {
             var expr_parser = expression_parser.ExpressionParser.init(self.allocator, cond_str);
             defer expr_parser.deinit();
-            
+
             condition_expr = expr_parser.parse() catch |err| {
-                // Failed to parse when expression - error will be returned
-                return err;
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current + 1,
+                    indent + 2,
+                    "invalid when condition '{s}': {s}",
+                    .{ cond_str, @errorName(err) },
+                );
+                return error.ParseError;
             };
         }
-        
+
         // Parse step if present
         var step: ?ast.Step = null;
 
@@ -5010,7 +4882,7 @@ pub const Parser = struct {
             // When rest is just "|>" or "  |>" with nothing after, look at next line
             const after_pipe = blk: {
                 if (std.mem.indexOf(u8, full_rest, "|>")) |pipe_idx| {
-                    break :blk lexer.trim(full_rest[pipe_idx + 2..]);
+                    break :blk lexer.trim(full_rest[pipe_idx + 2 ..]);
                 }
                 break :blk full_rest;
             };
@@ -5050,7 +4922,7 @@ pub const Parser = struct {
             // Handle multi-line source blocks in continuations
             // If full_rest ends with { (after trimming), collect lines until matching }
             const trimmed_rest = lexer.trim(full_rest);
-            log_debug("[DEBUG] parseBranchContinuationBase: trimmed_rest='{s}' ends_with_brace={}\n", .{trimmed_rest, trimmed_rest.len > 0 and trimmed_rest[trimmed_rest.len - 1] == '{'});
+            log_debug("[DEBUG] parseBranchContinuationBase: trimmed_rest='{s}' ends_with_brace={}\n", .{ trimmed_rest, trimmed_rest.len > 0 and trimmed_rest[trimmed_rest.len - 1] == '{' });
             if (trimmed_rest.len > 0 and trimmed_rest[trimmed_rest.len - 1] == '{') {
                 // Multi-line source block - collect content
                 var source_buf = try std.ArrayList(u8).initCapacity(self.allocator, 256);
@@ -5066,11 +4938,8 @@ pub const Parser = struct {
                     const src_line = self.lines[self.current];
                     const src_trimmed = lexer.trim(src_line);
 
-                    // Count braces
-                    for (src_trimmed) |c| {
-                        if (c == '{') brace_depth += 1;
-                        if (c == '}') brace_depth -= 1;
-                    }
+                    // Count braces (skip braces in strings/comments)
+                    brace_depth += lexer.countBraceDepthChange(src_trimmed);
 
                     try source_buf.appendSlice(self.allocator, src_line);
                     try source_buf.append(self.allocator, '\n');
@@ -5095,12 +4964,12 @@ pub const Parser = struct {
                     var current_nested: []const ast.Continuation = &[_]ast.Continuation{};
 
                     var step_idx: usize = steps.len;
-                    while (step_idx > 1) {  // Skip steps[0], it's already in 'step'
+                    while (step_idx > 1) { // Skip steps[0], it's already in 'step'
                         step_idx -= 1;
 
                         var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
                         try cont_list.append(self.allocator, ast.Continuation{
-                            .branch = try self.allocator.dupe(u8, ""),  // Empty branch for void continuation
+                            .branch = try self.allocator.dupe(u8, ""), // Empty branch for void continuation
                             .binding = null,
                             .binding_annotations = &[_][]const u8{},
                             .binding_type = .branch_payload,
@@ -5125,7 +4994,7 @@ pub const Parser = struct {
                         .condition_expr = condition_expr,
                         .node = step,
                         .indent = indent,
-                        .continuations = current_nested,  // Points to steps[1] -> steps[2] -> ...
+                        .continuations = current_nested, // Points to steps[1] -> steps[2] -> ...
                         .location = location,
                     };
                 }
@@ -5136,7 +5005,7 @@ pub const Parser = struct {
             .branch = owned_branch,
             .binding = binding,
             .binding_annotations = binding_annotations,
-            .binding_type = .branch_payload,  // Parser always uses branch_payload; backend determines transition semantics
+            .binding_type = .branch_payload, // Parser always uses branch_payload; backend determines transition semantics
             .condition = condition,
             .condition_expr = condition_expr,
             .node = step,
@@ -5145,7 +5014,7 @@ pub const Parser = struct {
             .location = location,
         };
     }
-    
+
     fn parseNestedContinuations(self: *Parser, parent_indent: usize) ![]ast.Continuation {
         var continuations = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 8);
         errdefer {
@@ -5154,43 +5023,43 @@ pub const Parser = struct {
             }
             continuations.deinit(self.allocator);
         }
-        
+
         // Look for continuation lines at greater indentation
         const saved_current = self.current;
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
-            
+
             // Check if this is a continuation line
             if (!lexer.isContinuationLine(line)) break;
-            
+
             const indent = lexer.getIndent(line);
-            
+
             // Only take continuations with greater indentation than parent
             if (indent <= parent_indent) break;
-            
+
             // Parse this continuation and its nested ones
             self.current += 1;
         }
-        
+
         // Now parse them in a second pass to avoid circular dependencies
         const end_current = self.current;
         self.current = saved_current;
-        
+
         while (self.current < end_current) {
             const line = self.lines[self.current];
             if (!lexer.isContinuationLine(line)) break;
-            
+
             const indent = lexer.getIndent(line);
             if (indent <= parent_indent) break;
-            
+
             self.current += 1;
             const cont = try self.parseContinuationInternal(indent, parent_indent, self.getLineLocation(self.current - 1, indent));
             try continuations.append(self.allocator, cont);
         }
-        
+
         return continuations.toOwnedSlice(self.allocator);
     }
-    
+
     fn parseDerefContinuation(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         var cont = try self.parseDerefContinuationBase(content, indent, location);
         cont.continuations = try self.parseNestedContinuationsForLevel(indent);
@@ -5224,7 +5093,7 @@ pub const Parser = struct {
 
         return cont;
     }
-    
+
     fn parsePipelineContinuationBase(self: *Parser, content: []const u8, indent: usize, location: errors.SourceLocation) !ast.Continuation {
         // This is a |> continuation (pipeline step on new line)
 
@@ -5232,17 +5101,10 @@ pub const Parser = struct {
         // Source blocks need special handling - they capture raw text, not collapsed content
         const has_open_brace = std.mem.indexOf(u8, content, "{") != null;
         const has_close_brace = std.mem.indexOf(u8, content, "}") != null;
-        log_debug("[DEBUG] parsePipelineContinuationBase: content='{s}' has_open={} has_close={}\n", .{content, has_open_brace, has_close_brace});
+        log_debug("[DEBUG] parsePipelineContinuationBase: content='{s}' has_open={} has_close={}\n", .{ content, has_open_brace, has_close_brace });
         if (has_open_brace and !has_close_brace) {
             const brace_idx = std.mem.lastIndexOf(u8, content, "{") orelse unreachable;
-            var invocation_str = lexer.trim(content[0..brace_idx]);
-
-            // Check for phantom type annotation [Type]{ and strip it
-            const phantom_type = try self.parseSourcePhantomType(invocation_str);
-            if (phantom_type != null) {
-                const bracket_start = std.mem.lastIndexOf(u8, invocation_str, "[") orelse invocation_str.len;
-                invocation_str = lexer.trim(invocation_str[0..bracket_start]);
-            }
+            const invocation_str = lexer.trim(content[0..brace_idx]);
 
             // Parse the invocation to get the event path
             const temp_invocation = try self.parseEventInvocation(invocation_str);
@@ -5260,33 +5122,20 @@ pub const Parser = struct {
                         }
                     }
                 }
-            } else {
-                // Event not in registry - check if it looks like a Source block invocation
-                // (has [Type] annotation or event name suggests Source)
-                has_source_param = phantom_type != null;
             }
 
             if (has_source_param) {
                 // This IS a Source block - parse it properly!
                 log_debug("[DEBUG] parsePipelineContinuationBase: has_source_param=true, path={s}\n", .{path_str});
-                const result = try self.parseImplicitSourceBlock(indent, phantom_type);
+                const result = try self.parseImplicitSourceBlock(indent, null);
                 log_debug("[DEBUG] parseImplicitSourceBlock returned source len={d}\n", .{result.source.len});
 
                 // Create the invocation with source_value
                 var final_invocation: ast.Invocation = undefined;
                 if (self.registry.getEventType(path_str)) |event_type| {
-                    final_invocation = try self.createImplicitSourceInvocation(
-                        temp_invocation,
-                        result.source,
-                        result.phantom_type,
-                        event_type
-                    );
+                    final_invocation = try self.createImplicitSourceInvocation(temp_invocation, result.source, result.phantom_type, event_type);
                 } else {
-                    final_invocation = try self.createImplicitSourceInvocationDefault(
-                        temp_invocation,
-                        result.source,
-                        result.phantom_type
-                    );
+                    final_invocation = try self.createImplicitSourceInvocationDefault(temp_invocation, result.source, result.phantom_type);
                 }
 
                 // Create the step and continuation
@@ -5316,19 +5165,15 @@ pub const Parser = struct {
             var content_buf = try std.ArrayList(u8).initCapacity(self.allocator, 256);
             defer content_buf.deinit(self.allocator);
             try content_buf.appendSlice(self.allocator, content);
-            
-            // Track brace depth to handle nested objects
-            var brace_depth: i32 = 0;
-            for (content) |c| {
-                if (c == '{') brace_depth += 1;
-                if (c == '}') brace_depth -= 1;
-            }
-            
+
+            // Track brace depth to handle nested objects (skip braces in strings/comments)
+            var brace_depth: i32 = lexer.countBraceDepthChange(content);
+
             // Keep reading lines until all braces are matched
             while (self.current < self.lines.len and brace_depth > 0) {
                 const next_line = self.lines[self.current];
                 const next_indent = lexer.getIndent(next_line);
-                
+
                 // Stop if we hit a line with less indentation (unless it's just closing braces)
                 const next_trimmed = lexer.trim(next_line);
                 if (next_indent <= indent) {
@@ -5342,23 +5187,20 @@ pub const Parser = struct {
                     }
                     if (!only_closing_braces) break;
                 }
-                
+
                 // Add this line to our content
                 try content_buf.appendSlice(self.allocator, " ");
                 try content_buf.appendSlice(self.allocator, next_trimmed);
                 self.current += 1;
-                
-                // Update brace depth
-                for (next_trimmed) |c| {
-                    if (c == '{') brace_depth += 1;
-                    if (c == '}') brace_depth -= 1;
-                }
+
+                // Update brace depth (skip braces in strings/comments)
+                brace_depth += lexer.countBraceDepthChange(next_trimmed);
             }
-            
+
             allocated_content = try content_buf.toOwnedSlice(self.allocator);
             full_content = allocated_content.?;
         }
-        
+
         const steps = try self.parsePipelineSteps(full_content);
         const step: ?ast.Step = if (steps.len > 0) steps[0] else null;
 
@@ -5368,12 +5210,12 @@ pub const Parser = struct {
             var current_nested: []const ast.Continuation = &[_]ast.Continuation{};
 
             var step_idx: usize = steps.len;
-            while (step_idx > 1) {  // Skip steps[0], it's already in 'step'
+            while (step_idx > 1) { // Skip steps[0], it's already in 'step'
                 step_idx -= 1;
 
                 var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
                 try cont_list.append(self.allocator, ast.Continuation{
-                    .branch = try self.allocator.dupe(u8, ""),  // Empty branch for void continuation
+                    .branch = try self.allocator.dupe(u8, ""), // Empty branch for void continuation
                     .binding = null,
                     .binding_annotations = &[_][]const u8{},
                     .binding_type = .branch_payload,
@@ -5389,19 +5231,19 @@ pub const Parser = struct {
             }
 
             return ast.Continuation{
-                .branch = try self.allocator.dupe(u8, ""),  // Empty branch for pipeline continuation
+                .branch = try self.allocator.dupe(u8, ""), // Empty branch for pipeline continuation
                 .binding = null,
                 .condition = null,
                 .condition_expr = null,
                 .node = step,
                 .indent = indent,
-                .continuations = current_nested,  // Points to steps[1] -> steps[2] -> ...
+                .continuations = current_nested, // Points to steps[1] -> steps[2] -> ...
                 .location = location,
             };
         }
 
         return ast.Continuation{
-            .branch = try self.allocator.dupe(u8, ""),  // Empty branch for pipeline continuation
+            .branch = try self.allocator.dupe(u8, ""), // Empty branch for pipeline continuation
             .binding = null,
             .condition = null,
             .condition_expr = null,
@@ -5411,7 +5253,7 @@ pub const Parser = struct {
             .location = location,
         };
     }
-    
+
     fn parsePipelineSteps(self: *Parser, content: []const u8) ![]ast.Step {
         var steps = try std.ArrayList(ast.Step).initCapacity(self.allocator, 8);
         errdefer {
@@ -5420,7 +5262,7 @@ pub const Parser = struct {
             }
             steps.deinit(self.allocator);
         }
-        
+
         // Check if there's a @label at the end (without |>)
         var working_content = content;
         var trailing_label: ?[]const u8 = null;
@@ -5428,32 +5270,32 @@ pub const Parser = struct {
             trailing_label = try self.allocator.dupe(u8, label);
             working_content = lexer.withoutLabel(content);
         }
-        
+
         // Split on |> and parse each step
         var iter = std.mem.splitSequence(u8, working_content, "|>");
         while (iter.next()) |step_str| {
             const trimmed = lexer.trim(step_str);
             if (trimmed.len == 0) continue;
-            
+
             const step = try self.parseStep(trimmed);
             try steps.append(self.allocator, step);
         }
-        
+
         // Add trailing label if present
         if (trailing_label) |label| {
             try steps.append(self.allocator, ast.Step{ .label_apply = label });
         }
-        
+
         return steps.toOwnedSlice(self.allocator);
     }
-    
+
     fn parseStep(self: *Parser, content: []const u8) !ast.Step {
         // Strip comments first (everything after //)
         var clean_content = content;
         if (std.mem.indexOf(u8, content, "//")) |comment_idx| {
             clean_content = content[0..comment_idx];
         }
-        
+
         // Check for terminal marker (_)
         if (std.mem.eql(u8, lexer.trim(clean_content), "_")) {
             return ast.Step{ .terminal = {} };
@@ -5485,11 +5327,12 @@ pub const Parser = struct {
             if (space_idx) |idx| {
                 // We have something after the label - check if it looks like an invocation
                 const potential_label = after_hash[0..idx];
-                const after_space = lexer.trim(after_hash[idx + 1..]);
+                const after_space = lexer.trim(after_hash[idx + 1 ..]);
 
                 // Check if what follows looks like an event invocation
                 if (std.mem.indexOfScalar(u8, after_space, '(') != null or
-                    std.mem.indexOfScalar(u8, after_space, '.') != null) {
+                    std.mem.indexOfScalar(u8, after_space, '.') != null)
+                {
                     // This is a label declaration pattern: #label event(args)
                     // Parse the invocation part
                     const inv_step = try self.parseStep(after_space);
@@ -5498,8 +5341,8 @@ pub const Parser = struct {
                             .label_with_invocation = .{
                                 .label = try self.allocator.dupe(u8, potential_label),
                                 .invocation = inv_step.invocation,
-                                .is_declaration = true,  // # means declaration/anchor
-                            }
+                                .is_declaration = true, // # means declaration/anchor
+                            },
                         };
                     }
                 }
@@ -5543,12 +5386,10 @@ pub const Parser = struct {
                     });
                 }
 
-                return ast.Step{
-                    .label_jump = .{
-                        .label = try self.allocator.dupe(u8, label_name),
-                        .args = try arg_list.toOwnedSlice(self.allocator),
-                    }
-                };
+                return ast.Step{ .label_jump = .{
+                    .label = try self.allocator.dupe(u8, label_name),
+                    .args = try arg_list.toOwnedSlice(self.allocator),
+                } };
             }
 
             // Simple label apply without args (for compatibility)
@@ -5585,7 +5426,7 @@ pub const Parser = struct {
             // Check for regular branch constructor pattern (no dot, no paren before brace)
             const is_regular_bc = std.mem.indexOf(u8, before_brace, ".") == null and
                 !std.mem.containsAtLeast(u8, before_brace, 1, "(") and
-                !has_bracket;  // Not a Source block!
+                !has_bracket; // Not a Source block!
 
             if (is_immediate_bc or is_regular_bc) {
                 // It's a branch constructor!
@@ -5633,7 +5474,7 @@ pub const Parser = struct {
         // Otherwise it's an invocation - always an event now
         return ast.Step{ .invocation = try self.parseEventInvocation(clean_content) };
     }
-    
+
     fn splitFieldsRespectingBraces(self: *Parser, fields_str: []const u8) ![][]const u8 {
         var result = try std.ArrayList([]const u8).initCapacity(self.allocator, 8);
         defer result.deinit(self.allocator);
@@ -5649,7 +5490,7 @@ pub const Parser = struct {
             const c = fields_str[i];
 
             // Handle string literals
-            if (c == '"' and (i == 0 or fields_str[i-1] != '\\')) {
+            if (c == '"' and (i == 0 or fields_str[i - 1] != '\\')) {
                 in_string = !in_string;
                 continue;
             }
@@ -5673,20 +5514,20 @@ pub const Parser = struct {
                 field_start = i + 1;
             }
         }
-        
+
         // Don't forget the last field
         const last_field = lexer.trim(fields_str[field_start..]);
         if (last_field.len > 0) {
             try result.append(self.allocator, last_field);
         }
-        
+
         return try result.toOwnedSlice(self.allocator);
     }
-    
+
     fn parseBranchConstructor(self: *Parser, content: []const u8) !ast.BranchConstructor {
         return self.parseBranchConstructorWithContext(content, self.isInProc());
     }
-    
+
     fn parseBranchConstructorWithContext(self: *Parser, content: []const u8, _: bool) !ast.BranchConstructor {
         // Format: branch_name { field: value, field: value }
         // OR shorthand: .{ .branch_name = .{ fields } }
@@ -5728,7 +5569,7 @@ pub const Parser = struct {
                 if (eq_idx) |idx| {
                     branch_name = lexer.trim(after_dot[0..idx]);
                     // Extract fields from the inner .{ fields } part
-                    const after_eq = lexer.trim(after_dot[idx + 1..]);
+                    const after_eq = lexer.trim(after_dot[idx + 1 ..]);
                     // Find the inner .{ ... }
                     const inner_brace_idx = std.mem.indexOf(u8, after_eq, "{");
                     const inner_closing_idx = std.mem.lastIndexOf(u8, after_eq, "}");
@@ -5794,9 +5635,15 @@ pub const Parser = struct {
                     '{', '(', '[' => depth += 1,
                     '}', ')', ']' => depth -= 1,
                     ':', '=' => if (depth == 0) break :blk false, // Explicit field syntax
-                    '.' => if (depth == 0) { has_dot_at_depth_0 = true; },
-                    ',' => if (depth == 0) { has_comma_at_depth_0 = true; },
-                    '+', '-', '*', '/' => if (depth == 0) { has_operator_at_depth_0 = true; },
+                    '.' => if (depth == 0) {
+                        has_dot_at_depth_0 = true;
+                    },
+                    ',' => if (depth == 0) {
+                        has_comma_at_depth_0 = true;
+                    },
+                    '+', '-', '*', '/' => if (depth == 0) {
+                        has_operator_at_depth_0 = true;
+                    },
                     else => {},
                 }
             }
@@ -5850,7 +5697,7 @@ pub const Parser = struct {
                     const dot_idx = std.mem.lastIndexOf(u8, trimmed, ".");
                     if (dot_idx) |idx| {
                         // Take the field name after the dot
-                        break :blk lexer.trim(trimmed[idx + 1..]);
+                        break :blk lexer.trim(trimmed[idx + 1 ..]);
                     } else {
                         // Simple identifier - use as is
                         break :blk trimmed;
@@ -5865,8 +5712,8 @@ pub const Parser = struct {
                 const field_value = if (sep_idx) |idx|
                     lexer.trim(trimmed[idx + 1 ..])
                 else
-                    trimmed;  // The whole expression becomes the value
-                
+                    trimmed; // The whole expression becomes the value
+
                 // Expressions are allowed everywhere - they're pure by construction
                 // (no arbitrary function calls, side effects controlled by event system)
                 const is_complex_expr = !self.isValidBranchConstructorValue(field_value);
@@ -5886,21 +5733,21 @@ pub const Parser = struct {
 
         // Has expressions if any field has a non-simple value
         const has_expressions = true; // All branch constructors can have expressions now
-        
+
         return ast.BranchConstructor{
             .branch_name = try self.allocator.dupe(u8, branch_name),
             .fields = try fields.toOwnedSlice(self.allocator),
             .has_expressions = has_expressions,
         };
     }
-    
+
     fn parseBranchPayloadShape(self: *Parser, branch_line: []const u8) !ast.Shape {
         // Look for opening brace on the current line
         const brace_start = std.mem.indexOf(u8, branch_line, "{") orelse {
             // No shape specified, return empty shape
             return ast.Shape{ .fields = &.{} };
         };
-        
+
         // Check if closing brace is on the same line - BUT find the MATCHING one
         const close_offset = blk: {
             var depth: i32 = 0;
@@ -5918,61 +5765,85 @@ pub const Parser = struct {
             }
             break :blk null;
         };
-        
+
         if (close_offset) |off| {
             // Single-line shape
-            const content = lexer.trim(branch_line[brace_start + 1..brace_start + off]);
+            const content = lexer.trim(branch_line[brace_start + 1 .. brace_start + off]);
             return self.parseShape(content);
         }
-        
+
         // Multi-line shape - collect lines until matching brace
         var shape_content = try std.ArrayList(u8).initCapacity(self.allocator, 256);
         defer shape_content.deinit(self.allocator);
-        
+
         // Add content from the first line (after the opening brace)
-        const first_line_content = lexer.trim(branch_line[brace_start + 1..]);
+        const first_line_content = lexer.trim(branch_line[brace_start + 1 ..]);
         if (first_line_content.len > 0) {
             try shape_content.appendSlice(self.allocator, first_line_content);
             try shape_content.append(self.allocator, ',');
         }
-        
+
         // Track brace depth to handle nested types
         var brace_depth: i32 = 1;
         const start_line = self.current;
-        
+
         while (self.current < self.lines.len and brace_depth > 0) {
             const line = self.lines[self.current];
             self.current += 1;
-            
+
             // Skip empty lines
             const trimmed = lexer.trim(line);
             if (trimmed.len == 0) continue;
-            
-            // Count braces in this line
-            for (trimmed) |c| {
-                if (c == '{') brace_depth += 1;
-                if (c == '}') {
-                    brace_depth -= 1;
-                    if (brace_depth == 0) {
-                        // Found closing brace - extract content before it
-                        const end_idx = std.mem.indexOf(u8, trimmed, "}").?;
-                        const final_content = lexer.trim(trimmed[0..end_idx]);
-                        if (final_content.len > 0) {
-                            try shape_content.appendSlice(self.allocator, final_content);
+
+            // Count braces properly, skipping those in strings/comments
+            var in_string = false;
+            var string_char: ?u8 = null;
+            var closing_brace_idx: ?usize = null;
+
+            for (trimmed, 0..) |c, idx| {
+                // Skip line comments
+                if (!in_string and c == '/' and idx + 1 < trimmed.len and trimmed[idx + 1] == '/') {
+                    break;
+                }
+
+                // Handle string literals
+                if (!in_string and (c == '"' or c == '\'')) {
+                    in_string = true;
+                    string_char = c;
+                } else if (in_string) {
+                    if (c == '\\' and idx + 1 < trimmed.len) {
+                        continue; // Escaped char handled by next iteration
+                    } else if (c == string_char) {
+                        in_string = false;
+                        string_char = null;
+                    }
+                } else {
+                    // Not in string or comment - count braces
+                    if (c == '{') brace_depth += 1;
+                    if (c == '}') {
+                        brace_depth -= 1;
+                        if (brace_depth == 0) {
+                            closing_brace_idx = idx;
+                            break;
                         }
-                        // Don't back up - parseBranch expects current to be at the next line
-                        break;
                     }
                 }
             }
-            
-            if (brace_depth > 0) {
+
+            if (closing_brace_idx) |end_idx| {
+                // Found closing brace - extract content before it
+                const final_content = lexer.trim(trimmed[0..end_idx]);
+                if (final_content.len > 0) {
+                    try shape_content.appendSlice(self.allocator, final_content);
+                }
+                // Don't back up - parseBranch expects current to be at the next line
+            } else if (brace_depth > 0) {
                 // Add this line's content
                 try shape_content.appendSlice(self.allocator, trimmed);
                 try shape_content.append(self.allocator, ',');
             }
         }
-        
+
         if (brace_depth != 0) {
             try self.reporter.addError(
                 .PARSE004,
@@ -5983,17 +5854,17 @@ pub const Parser = struct {
             );
             return error.ParseError;
         }
-        
+
         return self.parseShape(shape_content.items);
     }
-    
+
     fn parseBranch(self: *Parser) !ast.Branch {
         const line = self.lines[self.current];
         const trimmed = lexer.trim(line);
-        
+
         // We'll consume this line
         self.current += 1;
-        
+
         // Skip | prefix
         const after_bar = lexer.trim(trimmed[1..]);
 
@@ -6028,7 +5899,8 @@ pub const Parser = struct {
             // Find branch name (first identifier token)
             var name_end: usize = 0;
             while (name_end < branch_start.len and
-                   (std.ascii.isAlphanumeric(branch_start[name_end]) or branch_start[name_end] == '_')) {
+                (std.ascii.isAlphanumeric(branch_start[name_end]) or branch_start[name_end] == '_'))
+            {
                 name_end += 1;
             }
 
@@ -6137,7 +6009,7 @@ pub const Parser = struct {
 
                 if (start_pos) |start| {
                     if (start > 0) {
-                        const bracket_content = type_str[start + 1..end_pos];
+                        const bracket_content = type_str[start + 1 .. end_pos];
                         // Check if it's a number (array dimension) vs phantom tag
                         const is_number = blk: {
                             if (bracket_content.len == 0) break :blk true; // empty []
@@ -6178,9 +6050,7 @@ pub const Parser = struct {
             const module_colon_idx: ?usize = blk: {
                 var bracket_depth: i32 = 0;
                 for (type_str, 0..) |c, idx| {
-                    if (c == '[') bracket_depth += 1
-                    else if (c == ']') bracket_depth -= 1
-                    else if (c == ':' and bracket_depth == 0) break :blk idx;
+                    if (c == '[') bracket_depth += 1 else if (c == ']') bracket_depth -= 1 else if (c == ':' and bracket_depth == 0) break :blk idx;
                 }
                 break :blk null;
             };
@@ -6188,7 +6058,7 @@ pub const Parser = struct {
                 // Extract module path before the colon
                 module_path = try self.allocator.dupe(u8, type_str[0..colon_idx]);
                 // Everything after colon is the type name, with prefix restored
-                const base_type = type_str[colon_idx + 1..];
+                const base_type = type_str[colon_idx + 1 ..];
                 if (type_prefix.len > 0) {
                     actual_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, base_type });
                 } else {
@@ -6255,7 +6125,7 @@ pub const Parser = struct {
 
         if (close_brace_idx) |close_idx| {
             // Single-line shape - check for annotations after }
-            const after_brace = lexer.trim(branch_start[close_idx + 1..]);
+            const after_brace = lexer.trim(branch_start[close_idx + 1 ..]);
             if (lexer.startsWith(after_brace, "[")) {
                 // Find matching ] for the entire annotation block, respecting nested brackets
                 const close_bracket_idx = blk: {
@@ -6303,25 +6173,25 @@ pub const Parser = struct {
             .annotations = try annotations.toOwnedSlice(self.allocator),
         };
     }
-    
+
     /// Split fields on commas, but respect bracket boundaries
     /// e.g., "a: Type[x,y], b: Other" -> ["a: Type[x,y]", "b: Other"]
     /// Check if a string is a valid identifier (letters, numbers, underscores, no leading digit)
     fn isValidIdentifier(name: []const u8) bool {
         if (name.len == 0) return false;
-        
+
         // First character must be letter or underscore
         const first = name[0];
         if (!std.ascii.isAlphabetic(first) and first != '_') return false;
-        
+
         // Rest can be letters, numbers, or underscores
         for (name[1..]) |c| {
             if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
         }
-        
+
         return true;
     }
-    
+
     fn splitFieldsRespectingBrackets(self: *Parser, content: []const u8) !std.ArrayList([]const u8) {
         var result = try std.ArrayList([]const u8).initCapacity(self.allocator, 8);
         errdefer result.deinit(self.allocator);
@@ -6362,7 +6232,7 @@ pub const Parser = struct {
 
         return result;
     }
-    
+
     fn parseShape(self: *Parser, content: []const u8) !ast.Shape {
         var fields = try std.ArrayList(ast.Field).initCapacity(self.allocator, 8);
         errdefer {
@@ -6385,12 +6255,12 @@ pub const Parser = struct {
                 .is_wildcard = true,
             };
         }
-        
+
         // Parse fields: name: type, name: type, ...
         // BUT respect brackets - don't split on commas inside []
         var field_strings = try self.splitFieldsRespectingBrackets(content);
         defer field_strings.deinit(self.allocator);
-        
+
         for (field_strings.items) |field_str| {
             const trimmed_field = lexer.trim(field_str);
             if (trimmed_field.len == 0) continue;
@@ -6408,7 +6278,7 @@ pub const Parser = struct {
                 );
                 continue;
             };
-            
+
             const field_name = lexer.trim(trimmed_field[0..colon_idx]);
 
             // Validate field name is a valid identifier (starts with letter/underscore)
@@ -6426,7 +6296,7 @@ pub const Parser = struct {
                 }
             }
 
-            var field_type = lexer.trim(trimmed_field[colon_idx + 1..]);
+            var field_type = lexer.trim(trimmed_field[colon_idx + 1 ..]);
 
             // Check for special types: Source, File, EmbedFile, Expression, and InvocationMeta
             // Source can have phantom type: Source[HTML], Source[SQL], etc.
@@ -6467,14 +6337,14 @@ pub const Parser = struct {
                 // We need to match brackets properly, respecting nesting
                 var last_phantom_start: ?usize = null;
                 var last_phantom_end: ?usize = null;
-                
+
                 // Scan from the end backwards to find the last complete bracket pair
                 if (field_type.len > 0 and field_type[field_type.len - 1] == ']') {
                     // Type ends with ], might have a phantom tag
                     var bracket_depth: i32 = 0;
                     var i = field_type.len - 1;
                     const end_pos = i;
-                    
+
                     // Find matching [ for this ]
                     while (i > 0) : (i -= 1) {
                         if (field_type[i] == ']') {
@@ -6490,14 +6360,14 @@ pub const Parser = struct {
                         }
                     }
                 }
-                
+
                 // Check if we found a phantom tag
                 if (last_phantom_start) |start| {
                     if (last_phantom_end) |end| {
                         // Ensure this isn't at position 0 (would be array type like []u8)
                         if (start > 0) {
-                            const bracket_content = field_type[start + 1..end];
-                            
+                            const bracket_content = field_type[start + 1 .. end];
+
                             // Check if this looks like a tag (not a number or empty)
                             const is_number = blk: {
                                 for (bracket_content) |c| {
@@ -6505,12 +6375,12 @@ pub const Parser = struct {
                                 }
                                 break :blk bracket_content.len > 0;
                             };
-                            
+
                             if (!is_number and bracket_content.len > 0) {
                                 // This is a phantom tag/state!
                                 // Just capture the raw string - analyzers interpret
                                 phantom = try self.allocator.dupe(u8, bracket_content);
-                                
+
                                 // Remove tag from type for Zig emission
                                 field_type = field_type[0..start];
                             }
@@ -6518,7 +6388,7 @@ pub const Parser = struct {
                     }
                 }
             }
-            
+
             // Check for cross-module type reference: module.path:TypeName
             // Handle type prefixes like ?*, *, [], []const that come before the module path
             var module_path: ?[]const u8 = null;
@@ -6540,9 +6410,7 @@ pub const Parser = struct {
             const colon_count = std.mem.count(u8, field_type, ":");
             if (colon_count > 1) {
                 // Multiple colons are ambiguous - which is the module boundary?
-                try self.reporter.addError(.PARSE003, self.current + 1, 1,
-                    "Multiple colons in type reference '{s}' - expected format 'module.path:Type' or just 'Type'",
-                    .{field_type});
+                try self.reporter.addError(.PARSE003, self.current + 1, 1, "Multiple colons in type reference '{s}' - expected format 'module.path:Type' or just 'Type'", .{field_type});
                 return error.ParseError;
             }
 
@@ -6551,7 +6419,7 @@ pub const Parser = struct {
                 // Extract module path before the colon (now without prefix)
                 module_path = try self.allocator.dupe(u8, field_type[0..module_colon_idx]);
                 // Everything after colon is the type name, with prefix restored
-                const base_type = field_type[module_colon_idx + 1..];
+                const base_type = field_type[module_colon_idx + 1 ..];
                 if (type_prefix.len > 0) {
                     actual_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, base_type });
                 } else {
@@ -6576,31 +6444,31 @@ pub const Parser = struct {
 
             try fields.append(self.allocator, field);
         }
-        
+
         return ast.Shape{ .fields = try fields.toOwnedSlice(self.allocator) };
     }
-    
+
     fn isValidBranchConstructorValue(self: *Parser, value: []const u8) bool {
         _ = self;
         const trimmed = lexer.trim(value);
-        
+
         // Allow string literals
         if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
             return true;
         }
-        
+
         // Allow nested objects { ... }
         if (trimmed.len >= 2 and trimmed[0] == '{' and trimmed[trimmed.len - 1] == '}') {
             // TODO: Could validate the object contents recursively
             return true;
         }
-        
+
         // Allow array literals [ ... ]
         if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
             // TODO: Could validate the array contents recursively
             return true;
         }
-        
+
         // Allow number literals
         if (trimmed.len > 0) {
             var all_numeric = true;
@@ -6617,7 +6485,7 @@ pub const Parser = struct {
             }
             if (all_numeric) return true;
         }
-        
+
         // Allow field access (including chained access like r.user.id)
         if (std.mem.indexOf(u8, trimmed, ".")) |_| {
             // But make sure it doesn't start with { or [ (those are handled above)
@@ -6626,7 +6494,7 @@ pub const Parser = struct {
                 var parts_iter = std.mem.tokenizeScalar(u8, trimmed, '.');
                 var valid_chain = true;
                 var part_count: u32 = 0;
-                
+
                 while (parts_iter.next()) |part| {
                     if (!isValidIdentifier(part)) {
                         valid_chain = false;
@@ -6634,28 +6502,28 @@ pub const Parser = struct {
                     }
                     part_count += 1;
                 }
-                
+
                 // Must have at least 2 parts (binding.field)
                 if (valid_chain and part_count >= 2) {
                     return true;
                 }
             }
         }
-        
+
         // Allow bare identifiers (for passing through values)
         if (isValidIdentifier(trimmed)) {
             return true;
         }
-        
+
         // Reject anything with operators or function calls
-        const forbidden = [_][]const u8{ 
+        const forbidden = [_][]const u8{
             "+", "*", "/", "%", // Arithmetic (but minus is allowed at start for negatives)
             "(", ")", // Function calls (unless part of nested structure)
             "&&", "||", "!", // Logic
             "<", ">", "==", "!=", // Comparison
             "?", ":", // Ternary
         };
-        
+
         for (forbidden) |op| {
             // Skip minus at start (negative numbers)
             if (std.mem.eql(u8, op, "-") and trimmed.len > 0 and trimmed[0] == '-') {
@@ -6666,31 +6534,30 @@ pub const Parser = struct {
                 return false;
             }
         }
-        
+
         return false;
     }
-    
-    
+
     fn parseLabelAnchor(self: *Parser) !ast.Item {
         const line = self.lines[self.current];
         const trimmed = lexer.trim(line);
         const after_hash = lexer.trim(trimmed[2..]); // Skip ~#
-        
+
         // Check if this is a standalone label (~#name) or pre-invocation (~#name event)
         const space_idx = std.mem.indexOf(u8, after_hash, " ");
-        
+
         if (space_idx) |idx| {
             // Pre-invocation label: ~#name event(args)
             const label_name = after_hash[0..idx];
-            const event_part = lexer.trim(after_hash[idx + 1..]);
-            
+            const event_part = lexer.trim(after_hash[idx + 1 ..]);
+
             // Parse the event invocation
             const invocation = try self.parseEventInvocation(event_part);
-            
+
             // Move to next line and parse continuations
             self.current += 1;
             const continuations = try self.parseContinuations(lexer.getIndent(line));
-            
+
             return .{ .flow = ast.Flow{
                 .invocation = invocation,
                 .continuations = continuations,
@@ -6699,23 +6566,23 @@ pub const Parser = struct {
                 .super_shape = null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
-            }};
+            } };
         } else {
             // Standalone label: ~#name
             self.current += 1;
             const continuations = try self.parseContinuations(lexer.getIndent(line));
-            
+
             return .{ .label_decl = ast.LabelDecl{
                 .name = try self.allocator.dupe(u8, after_hash),
                 .continuations = continuations,
-            }};
+            } };
         }
     }
-    
+
     fn parseLabelDecl(self: *Parser) !ast.LabelDecl {
         const line = self.lines[self.current];
         self.current += 1;
-        
+
         // Parse: ~@name
         const after_at = lexer.afterPrefix(line, "~@") orelse {
             try self.reporter.addError(
@@ -6727,24 +6594,23 @@ pub const Parser = struct {
             );
             return error.ParseError;
         };
-        
+
         const name = lexer.trim(after_at);
         const continuations = try self.parseContinuations(lexer.getIndent(line));
-        
+
         return ast.LabelDecl{
             .name = try self.allocator.dupe(u8, name),
             .continuations = continuations,
         };
     }
-    
-    
+
     fn parseImportDecl(self: *Parser) !ast.ImportDecl {
         const line = self.lines[self.current];
         self.current += 1;
-        
+
         // Parse: ~import "path"
         const after_tilde = lexer.trim(line[1..]);
-        
+
         // Skip the "import " part
         const after_import = if (lexer.startsWith(after_tilde, "import "))
             lexer.trim(after_tilde[7..])
@@ -6758,16 +6624,16 @@ pub const Parser = struct {
             );
             return error.ParseError;
         };
-        
+
         // Extract the path from quotes
         var path: []const u8 = undefined;
         const path_str = after_import;
         if (lexer.startsWith(path_str, "\"") and std.mem.endsWith(u8, path_str, "\"")) {
             // Quoted path
-            path = path_str[1..path_str.len - 1];
+            path = path_str[1 .. path_str.len - 1];
         } else if (lexer.startsWith(path_str, "'") and std.mem.endsWith(u8, path_str, "'")) {
             // Single quoted path
-            path = path_str[1..path_str.len - 1];
+            path = path_str[1 .. path_str.len - 1];
         } else {
             // Unquoted path (for simplicity)
             path = path_str;
@@ -6818,7 +6684,7 @@ pub const Parser = struct {
 
             // 4. Enforce maximum import depth: $alias/a/b (2 segments max)
             if (slash_pos) |first_slash| {
-                const path_after_alias = path[first_slash + 1..];
+                const path_after_alias = path[first_slash + 1 ..];
                 var segment_count: usize = 1; // Count the first segment
                 var i: usize = 0;
                 while (i < path_after_alias.len) : (i += 1) {
@@ -6834,10 +6700,10 @@ pub const Parser = struct {
                         self.current,
                         1,
                         "import path too deep: '{s}' has {d} segments after alias (max: 2)\n" ++
-                        "  To fix: add a new alias to koru.json, e.g.:\n" ++
-                        "    \"paths\": {{ \"mylib\": \"./path/to/lib\" }}\n" ++
-                        "  Then use: ~import \"$mylib/...\" (Suggested: extract '{s}' as its own alias)",
-                        .{path, segment_count, alias_name},
+                            "  To fix: add a new alias to koru.json, e.g.:\n" ++
+                            "    \"paths\": {{ \"mylib\": \"./path/to/lib\" }}\n" ++
+                            "  Then use: ~import \"$mylib/...\" (Suggested: extract '{s}' as its own alias)",
+                        .{ path, segment_count, alias_name },
                     );
                     return error.ParseError;
                 }
@@ -6864,7 +6730,7 @@ pub const Parser = struct {
             // Strip .kz extension if present
             var result = try namespace.toOwnedSlice(self.allocator);
             if (std.mem.endsWith(u8, result, ".kz")) {
-                const trimmed = result[0..result.len - 3];
+                const trimmed = result[0 .. result.len - 3];
                 const final = try self.allocator.dupe(u8, trimmed);
                 self.allocator.free(result);
                 break :blk final;
@@ -6876,7 +6742,7 @@ pub const Parser = struct {
             const filename_start = if (last_slash > 0) last_slash + 1 else 0;
             const filename = path[filename_start..];
             const base_name = if (std.mem.endsWith(u8, filename, ".kz"))
-                filename[0..filename.len - 3]
+                filename[0 .. filename.len - 3]
             else
                 filename;
             break :blk try self.allocator.dupe(u8, base_name);
@@ -6906,7 +6772,7 @@ pub const Parser = struct {
 
         // Use ModuleResolver to resolve the import path
         var result = try resolver.resolveBoth(import_path, self.reporter.file_name);
-        defer result.deinit(resolver.allocator);  // CRITICAL: Use resolver's allocator, not parser's!
+        defer result.deinit(resolver.allocator); // CRITICAL: Use resolver's allocator, not parser's!
 
         // Process directory imports (if directory was found)
         if (result.dir_path) |dir_path| {
@@ -6922,13 +6788,13 @@ pub const Parser = struct {
                 // Extract filename without .kz extension for namespace
                 const basename = std.fs.path.basename(file_path);
                 const file_name = if (std.mem.endsWith(u8, basename, ".kz"))
-                    basename[0..basename.len - 3]
+                    basename[0 .. basename.len - 3]
                 else
                     basename;
 
                 // Combined namespace: namespace.filename
                 var combined_namespace_buf: [256]u8 = undefined;
-                const combined_namespace = try std.fmt.bufPrint(&combined_namespace_buf, "{s}.{s}", .{namespace, file_name});
+                const combined_namespace = try std.fmt.bufPrint(&combined_namespace_buf, "{s}.{s}", .{ namespace, file_name });
 
                 // Parse and register this file
                 try self.parseAndRegisterSingleFile(file_path, combined_namespace);
@@ -6957,25 +6823,13 @@ pub const Parser = struct {
 
         // Read the file
         const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
-            try self.reporter.addError(
-                .PARSE003,
-                self.current,
-                1,
-                "failed to open import file '{s}': {s}",
-                .{file_path, @errorName(err)}
-            );
+            try self.reporter.addError(.PARSE003, self.current, 1, "failed to open import file '{s}': {s}", .{ file_path, @errorName(err) });
             return error.ParseError;
         };
         defer file.close();
 
         const source = file.readToEndAlloc(self.allocator, 10 * 1024 * 1024) catch |err| {
-            try self.reporter.addError(
-                .PARSE003,
-                self.current,
-                1,
-                "failed to read import file '{s}': {s}",
-                .{file_path, @errorName(err)}
-            );
+            try self.reporter.addError(.PARSE003, self.current, 1, "failed to read import file '{s}': {s}", .{ file_path, @errorName(err) });
             return error.ParseError;
         };
         defer self.allocator.free(source);
@@ -6998,11 +6852,7 @@ pub const Parser = struct {
             // Only register public events
             if (event_type.is_public) {
                 // Register with FULL namespace (e.g., "std.compiler:requires")
-                const namespaced_path = try std.fmt.allocPrint(
-                    self.allocator,
-                    "{s}:{s}",
-                    .{namespace, event_path}
-                );
+                const namespaced_path = try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ namespace, event_path });
                 try self.registry.events.put(namespaced_path, event_type);
             }
         }
@@ -7013,24 +6863,24 @@ pub const Parser = struct {
 
 test "parser produces AST from simple event" {
     const allocator = std.testing.allocator;
-    
+
     const source =
         \\~event compute { x: i32 }
         \\| done { result: i32 }
     ;
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     // Verify we got an AST
     try std.testing.expect(parse_result.source_file.items.len == 1);
-    
+
     const item = parse_result.source_file.items[0];
     try std.testing.expect(item == .event_decl);
-    
+
     const event = item.event_decl;
     try std.testing.expectEqualStrings(event.path.segments[0], "compute");
     try std.testing.expect(event.input.fields.len == 1);
@@ -7041,27 +6891,27 @@ test "parser produces AST from simple event" {
 
 test "parser handles flow with continuation" {
     const allocator = std.testing.allocator;
-    
+
     const source =
         \\~hello()
         \\| greeting g -> ~print(g.message)
     ;
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     try std.testing.expect(parse_result.source_file.items.len == 1);
-    
+
     const item = parse_result.source_file.items[0];
     try std.testing.expect(item == .flow);
-    
+
     const flow = item.flow;
     try std.testing.expectEqualStrings(flow.invocation.path.segments[0], "hello");
     try std.testing.expect(flow.continuations.len == 1);
-    
+
     const cont = flow.continuations[0];
     try std.testing.expectEqualStrings(cont.branch, "greeting");
     try std.testing.expect(cont.binding != null);
@@ -7070,24 +6920,24 @@ test "parser handles flow with continuation" {
 
 test "parser handles proc declaration" {
     const allocator = std.testing.allocator;
-    
+
     const source =
         \\~proc compute {
         \\    return .done{ .result = x + y };
         \\}
     ;
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     try std.testing.expect(parse_result.source_file.items.len == 1);
-    
+
     const item = parse_result.source_file.items[0];
     try std.testing.expect(item == .proc_decl);
-    
+
     const proc = item.proc_decl;
     try std.testing.expectEqualStrings(proc.path.segments[0], "compute");
     // ProcDecl only stores the body as opaque Zig code
@@ -7096,7 +6946,7 @@ test "parser handles proc declaration" {
 
 test "parser handles complex nested proc body extraction" {
     const allocator = std.testing.allocator;
-    
+
     // Test with complex nested braces, including strings with braces
     const source =
         \\~[raw]proc complex.test {
@@ -7118,27 +6968,27 @@ test "parser handles complex nested proc body extraction" {
         \\}
         \\~something.after.proc()
     ;
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     // Should have 2 items: the proc and the flow after
     try std.testing.expect(parse_result.source_file.items.len == 2);
-    
+
     const proc_item = parse_result.source_file.items[0];
     try std.testing.expect(proc_item == .proc_decl);
-    
+
     const proc = proc_item.proc_decl;
     try std.testing.expectEqualStrings(proc.path.segments[0], "complex");
     try std.testing.expectEqualStrings(proc.path.segments[1], "test");
-    
+
     // The body should contain all the nested code
     try std.testing.expect(std.mem.indexOf(u8, proc.body, "const str1") != null);
     try std.testing.expect(std.mem.indexOf(u8, proc.body, "return result") != null);
-    
+
     // Make sure the flow after the proc was parsed
     const flow_item = parse_result.source_file.items[1];
     try std.testing.expect(flow_item == .flow);
@@ -7147,21 +6997,22 @@ test "parser handles complex nested proc body extraction" {
 
 test "parser handles import statement" {
     const allocator = std.testing.allocator;
-    
-    const source = \\~import math = "std/math.kz"
+
+    const source = 
+        \\~import math = "std/math.kz"
     ;
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     try std.testing.expect(parse_result.source_file.items.len == 1);
-    
+
     const item = parse_result.source_file.items[0];
     try std.testing.expect(item == .import_decl);
-    
+
     const import = item.import_decl;
     try std.testing.expectEqualStrings(import.path, "std/math.kz");
     try std.testing.expectEqualStrings(import.local_name.?, "math");
@@ -7169,32 +7020,32 @@ test "parser handles import statement" {
 
 test "parser handles empty file" {
     const allocator = std.testing.allocator;
-    
+
     const source = "";
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     try std.testing.expect(parse_result.source_file.items.len == 0);
 }
 
 test "parser handles Source in event field" {
     const allocator = std.testing.allocator;
-    
+
     const source =
         \\~event macro { code: Source }
         \\| done { result: Source }
     ;
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     const event = parse_result.source_file.items[0].event_decl;
     try std.testing.expect(event.input.fields[0].is_source);
     try std.testing.expectEqualStrings(event.input.fields[0].name, "code");
@@ -7202,7 +7053,7 @@ test "parser handles Source in event field" {
 
 test "parser validates branch names" {
     const allocator = std.testing.allocator;
-    
+
     // Valid branch name
     {
         const source =
@@ -7210,49 +7061,49 @@ test "parser validates branch names" {
             \\| valid_branch { data: i32 }
             \\| another_one { msg: []const u8 }
         ;
-        
+
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
-        
+
         var parse_result = try parser.parse();
         defer parse_result.deinit();
-        
+
         try std.testing.expect(parse_result.source_file.items.len == 1);
         const event = parse_result.source_file.items[0].event_decl;
         try std.testing.expect(event.branches.len == 2);
         try std.testing.expectEqualStrings(event.branches[0].name, "valid_branch");
         try std.testing.expectEqualStrings(event.branches[1].name, "another_one");
     }
-    
+
     // Invalid branch name with spaces
     {
         const source =
             \\~event test {}
             \\| this is invalid { data: i32 }
         ;
-        
+
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
-        
+
         const result = parser.parse();
-        
+
         // Should fail due to invalid branch name
         try std.testing.expectError(error.ParseError, result);
         try std.testing.expect(parser.reporter.hasErrors());
     }
-    
+
     // Invalid branch name starting with number
     {
         const source =
             \\~event test {}
             \\| 123invalid { data: i32 }
         ;
-        
+
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
-        
+
         const result = parser.parse();
-        
+
         // Should fail due to invalid branch name
         try std.testing.expectError(error.ParseError, result);
         try std.testing.expect(parser.reporter.hasErrors());
@@ -7261,7 +7112,7 @@ test "parser validates branch names" {
 
 test "parser validates branch constructors" {
     const allocator = std.testing.allocator;
-    
+
     // Valid branch constructor
     {
         const source =
@@ -7271,16 +7122,16 @@ test "parser validates branch constructors" {
             \\~test() 
             \\| ok |> ok { msg: "success" }
         ;
-        
+
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
-        
+
         var parse_result = try parser.parse();
         defer parse_result.deinit();
-        
+
         try std.testing.expect(parse_result.source_file.items.len == 2);
     }
-    
+
     // Invalid branch constructor with spaces in name
     {
         const source =
@@ -7290,12 +7141,12 @@ test "parser validates branch constructors" {
             \\~test() 
             \\| ok |> invalid name { msg: "fail" }
         ;
-        
+
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
         defer parser.deinit();
-        
+
         const result = parser.parse();
-        
+
         // Should fail due to invalid branch name in constructor
         try std.testing.expectError(error.ParseError, result);
     }
@@ -7303,20 +7154,20 @@ test "parser validates branch constructors" {
 
 test "parser handles shorthand notation in branch constructors" {
     const allocator = std.testing.allocator;
-    
+
     const source =
         \\~event test {}
         \\| ok { data: i32 }
         \\
         \\~test = ok { r.user.id }
     ;
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var parse_result = try parser.parse();
     defer parse_result.deinit();
-    
+
     try std.testing.expect(parse_result.source_file.items.len == 2);
     const subflow = parse_result.source_file.items[1].subflow_impl;
     const bc = subflow.body.immediate;
@@ -7452,14 +7303,14 @@ test "parser handles sibling continuations with when guards" {
     const cont1 = flow.continuations[0];
     try std.testing.expectEqualStrings("key", cont1.branch);
     try std.testing.expectEqualStrings("k", cont1.binding.?);
-    try std.testing.expect(cont1.condition != null);  // HAS when guard
+    try std.testing.expect(cont1.condition != null); // HAS when guard
     try std.testing.expectEqualStrings("(k.code == 'q')", cont1.condition.?);
 
     // Second continuation: else case (no when guard)
     const cont2 = flow.continuations[1];
     try std.testing.expectEqualStrings("key", cont2.branch);
     try std.testing.expectEqualStrings("k", cont2.binding.?);
-    try std.testing.expect(cont2.condition == null);  // NO when guard - this is the else case
+    try std.testing.expect(cont2.condition == null); // NO when guard - this is the else case
 }
 
 test "parser handles NESTED continuations with when guards" {

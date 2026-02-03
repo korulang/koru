@@ -7,13 +7,13 @@
 
 // Flow call with annotation on separate line
 ~[default]
-std.build:step(name: "compile") [sh]{
+std.build:step(name: "compile") {
     zig build
 }
 
 // Flow call with compound annotation on separate line
 ~[default, depends_on("compile")]
-std.build:step(name: "run") [sh]{
+std.build:step(name: "run") {
     ./zig-out/bin/main
 }
 

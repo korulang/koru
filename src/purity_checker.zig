@@ -264,7 +264,7 @@ pub const PurityChecker = struct {
             var found_any_proc = false;
 
             // Find all procs for this event (including in modules)
-            self.findProcsForEvent(source.items, event_name, &all_procs_pure, &all_procs_trans_pure, &found_any_proc) catch {};
+            try self.findProcsForEvent(source.items, event_name, &all_procs_pure, &all_procs_trans_pure, &found_any_proc);
 
             // Set event purity based on proc implementations
             if (found_any_proc) {

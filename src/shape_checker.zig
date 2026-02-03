@@ -37,27 +37,13 @@ pub const ShapeChecker = struct {
     }
     
     pub fn deinit(self: *ShapeChecker) void {
-        // TODO/FIXME: Temporarily disabled EventDecl cleanup to prevent crashes
-        // ISSUE: Mixed allocator ownership - some events are allocated by emitter's allocator
-        //        but we're trying to free them with shape_checker's allocator
-        // IMPACT: ~46 small memory leaks per compilation (process ends anyway)
-        // FIX: Implement proper ownership model - either:
-        //      1. Always use shape_checker's allocator for events stored here
-        //      2. Track which allocator owns each event
-        //      3. Use arena allocator that doesn't need individual frees
-        // See TECHNICAL_DEBT.md for full details
-        
+        // Note: EventInfo/ProcInfo/SubflowImplInfo store POINTERS to AST data,
+        // not copies. The AST is owned by the parser and freed there.
+        // We only free the key strings that we allocated.
+
         var events_iter = self.events.iterator();
         while (events_iter.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
-            // TEMPORARILY COMMENTED OUT - causes invalid free crashes
-            // const event_decl = entry.value_ptr.decl;
-            // for (event_decl.path.segments) |segment| {
-            //     self.allocator.free(segment);
-            // }
-            // self.allocator.free(event_decl.path.segments);
-            // self.allocator.free(event_decl.branches);
-            // self.allocator.destroy(event_decl);
         }
         self.events.deinit();
         
@@ -73,6 +59,11 @@ pub const ShapeChecker = struct {
             entry.value_ptr.jump_sites.deinit(self.allocator);
         }
         self.labels.deinit();
+
+        var subflow_iter = self.subflow_impls.iterator();
+        while (subflow_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+        }
         self.subflow_impls.deinit();
         self.type_engine.deinit();
     }
@@ -214,8 +205,8 @@ pub const ShapeChecker = struct {
                 .label_decl => |*label| {
                     // Determine if pre or post invocation based on continuations
                     const is_pre = label.continuations.len > 0;
-                    
-                    try self.labels.put(label.name, LabelInfo{
+                    // Note: key ownership transfers to hashmap, freed in deinit
+                    try self.labels.put(try self.allocator.dupe(u8, label.name), LabelInfo{
                         .decl = label,
                         .expected_shape = null, // Will determine from usage
                         .line = 0,
@@ -226,7 +217,7 @@ pub const ShapeChecker = struct {
                 .subflow_impl => |*subflow| {
                     // Subflow implementations are validated against their event
                     const event_path = try self.pathToString(subflow.event_path);
-                    defer self.allocator.free(event_path);
+                    // Note: key ownership transfers to hashmap, freed in deinit
                     try self.subflow_impls.put(event_path, SubflowImplInfo{
                         .impl = subflow,
                         .line = 0,
@@ -532,6 +523,13 @@ pub const ShapeChecker = struct {
                 // Get the event declaration for branch validation
                 const event = self.events.get(event_name) orelse {
                     _ = subflow_impl;
+                    try self.reporter.addError(
+                        .KORU040,
+                        location.line,
+                        location.column,
+                        "subflow '{s}' has no matching event declaration",
+                        .{event_name},
+                    );
                     return error.SubflowWithoutEvent;
                 };
                 // Check branch coverage (with terminal marker awareness)
@@ -542,11 +540,19 @@ pub const ShapeChecker = struct {
                 );
 
                 if (!covered) {
+                    // Error already reported by checkBranchCoverageWithTerminals
                     return error.IncompleteBranchCoverage;
                 }
                 return;
             }
             // Unknown event
+            try self.reporter.addError(
+                .KORU040,
+                location.line,
+                location.column,
+                "unknown event '{s}'",
+                .{event_name},
+            );
             return error.UnknownEvent;
         };
         
@@ -1161,15 +1167,24 @@ pub const ShapeChecker = struct {
         defer self.allocator.free(event_name);
 
         const event_info = self.events.get(event_name) orelse {
+            try self.reporter.addError(
+                .KORU040,
+                flow.location.line,
+                flow.location.column,
+                "unknown event '{s}'",
+                .{event_name},
+            );
             return error.UnknownEvent;
         };
 
-        // Check branch coverage for the inline flow
-        const covered = try self.checkBranchCoverage(
+        // Check branch coverage for the inline flow using the version with proper error reporting
+        const covered = try self.checkBranchCoverageWithTerminals(
             event_info.decl.branches,
             flow.continuations,
+            flow.location,
         );
         if (!covered) {
+            // Error already reported by checkBranchCoverageWithTerminals
             return error.IncompleteBranchCoverage;
         }
         _ = proc_event;
@@ -1213,19 +1228,33 @@ pub const ShapeChecker = struct {
         const label_info = self.labels.getPtr(label_name) orelse {
             // Label doesn't exist!
             log.debug("ERROR: Jump to unknown label '{s}'\n", .{label_name});
+            try self.reporter.addError(
+                .KORU041,
+                continuation.location.line,
+                continuation.location.column,
+                "unknown label '@{s}'",
+                .{label_name},
+            );
             return error.UnknownLabel;
         };
-        
+
         // Check if this is a parameterized jump
         const is_parameterized = invocation != null;
-        
+
         // For pre-invocation labels (~#label pattern), we expect parameters
         if (label_info.is_pre_invocation) {
             if (!is_parameterized) {
                 log.debug("ERROR: Pre-invocation label '{s}' requires parameters\n", .{label_name});
+                try self.reporter.addError(
+                    .KORU045,
+                    continuation.location.line,
+                    continuation.location.column,
+                    "label '@{s}' requires parameters (it's a pre-invocation label)",
+                    .{label_name},
+                );
                 return error.LabelRequiresParameters;
             }
-            
+
             // Validate the invocation parameters match expected shape
             if (invocation) |inv| {
                 // TODO: Validate that inv matches the expected event shape at the label
@@ -1235,6 +1264,13 @@ pub const ShapeChecker = struct {
             // Post-invocation label (#label pattern) - no parameters expected
             if (is_parameterized) {
                 log.debug("ERROR: Post-invocation label '{s}' does not accept parameters\n", .{label_name});
+                try self.reporter.addError(
+                    .KORU046,
+                    continuation.location.line,
+                    continuation.location.column,
+                    "label '@{s}' does not accept parameters (it's a post-invocation label)",
+                    .{label_name},
+                );
                 return error.LabelDoesNotAcceptParameters;
             }
         }
@@ -1249,7 +1285,7 @@ pub const ShapeChecker = struct {
         // Validate shape compatibility
         // For post-invocation labels, the current continuation's branch output must match
         // For pre-invocation labels, the invocation parameters must match
-        _ = continuation;
+        // (continuation is used above for location reporting)
     }
 
     fn registerContinuationLabels(self: *ShapeChecker, cont: *const ast.Continuation) !void {
@@ -1282,6 +1318,13 @@ pub const ShapeChecker = struct {
                 const label_name = step.label_with_invocation.label;
                 if (self.labels.get(label_name) == null) {
                     log.debug("ERROR: Unknown label '{s}'\n", .{label_name});
+                    try self.reporter.addError(
+                        .KORU041,
+                        cont.location.line,
+                        cont.location.column,
+                        "unknown label '@{s}'",
+                        .{label_name},
+                    );
                     return error.UnknownLabel;
                 }
             }
@@ -1290,6 +1333,13 @@ pub const ShapeChecker = struct {
                 const label_name = step.label_jump.label;
                 if (self.labels.get(label_name) == null) {
                     log.debug("ERROR: Unknown label '{s}'\n", .{label_name});
+                    try self.reporter.addError(
+                        .KORU041,
+                        cont.location.line,
+                        cont.location.column,
+                        "unknown label '@{s}'",
+                        .{label_name},
+                    );
                     return error.UnknownLabel;
                 }
             }

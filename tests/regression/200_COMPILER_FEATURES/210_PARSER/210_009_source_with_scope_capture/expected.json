@@ -238,33 +238,6 @@
             }
         },
         {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 32,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 33,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 34,
-                "col": 0
-            }
-        },
-        {
             "type": "flow",
             "invocation": {
                 "event": ["renderHTML"],
@@ -276,7 +249,7 @@
                             "text": "<div>\n    <h1>Module-level test</h1>\n    <p>Syntax validated</p>\n</div>\n",
                             "location": {
                                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                                "line": 42,
+                                "line": 39,
                                 "col": 0
                             },
                             "scope": {
@@ -284,7 +257,7 @@
 
                                 ]
                             },
-                            "phantom_type": "HTML"
+                            "phantom_type": null
                         }
                     }
                 ],
@@ -295,6 +268,7 @@
                     "branch": "rendered",
                     "binding": "h",
                     "binding_type": "branch_payload",
+                    "condition": null,
                     "step":                     {
                         "type": "invocation",
                         "invocation": {
@@ -317,7 +291,7 @@
             "post_label": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
-                "line": 35,
+                "line": 32,
                 "col": 0
             }
         }

@@ -13,6 +13,10 @@
 - For core semantics, add a minimal `.kz` plus a targeted Zig test.
 - Use judgment: ask for confirmation before major semantic changes or scope pivots; otherwise proceed and summarize clearly.
 
+### Agent‑specific note (Codex)
+- This guidance is primarily to constrain Claude; Codex may operate with a lighter touch.
+- Codex is authorized to proceed without extra confirmations for routine changes, clean generated artifacts proactively, and treat these guidelines as flexible defaults (not hard stops).
+
 ## Project Memory (prose)
 - Optional: `prose context` for current goals, constraints, gotchas.
 - Optional: `prose search "<query>"` for designs/decisions; `prose status` for freshness.

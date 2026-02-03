@@ -206,6 +206,49 @@ pub fn findMatchingBrace(text: []const u8, start: usize) ?usize {
     return null; // Unmatched braces
 }
 
+/// Count the net brace depth change in a string, skipping braces inside strings and comments.
+/// Returns positive for net opens, negative for net closes.
+/// Use this instead of naive `for (line) |c| if (c == '{') depth += 1` patterns.
+pub fn countBraceDepthChange(text: []const u8) i32 {
+    var depth: i32 = 0;
+    var in_string = false;
+    var string_char: ?u8 = null;
+    var i: usize = 0;
+
+    while (i < text.len) {
+        const char = text[i];
+
+        // Skip line comments - rest of line doesn't count
+        if (!in_string and char == '/' and i + 1 < text.len and text[i + 1] == '/') {
+            break;
+        }
+
+        // Handle string literals - braces inside strings don't count
+        if (!in_string and (char == '"' or char == '\'')) {
+            in_string = true;
+            string_char = char;
+        } else if (in_string) {
+            if (char == '\\' and i + 1 < text.len) {
+                i += 1; // Skip escaped character
+            } else if (char == string_char) {
+                in_string = false;
+                string_char = null;
+            }
+        } else {
+            // Not in a string or comment - count braces
+            if (char == '{') {
+                depth += 1;
+            } else if (char == '}') {
+                depth -= 1;
+            }
+        }
+
+        i += 1;
+    }
+
+    return depth;
+}
+
 /// Find the index of a character, but only when at depth 0 (not inside braces, parens, or brackets)
 /// Used for finding argument separators like ':' that shouldn't match inside nested structures
 pub fn indexOfAtDepthZero(text: []const u8, needle: u8) ?usize {

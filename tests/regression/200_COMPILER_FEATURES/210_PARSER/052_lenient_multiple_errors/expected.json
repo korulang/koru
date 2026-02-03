@@ -80,7 +80,7 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
                 "line": 11,
-                "col": 0
+                "col": 1
             },
             "raw_text": "~event broken_event {\n    value: i32\n| success {}\n\n// This event is valid - should still be parsed\n"
         },

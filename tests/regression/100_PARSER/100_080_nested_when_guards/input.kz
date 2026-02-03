@@ -1,0 +1,24 @@
+// TEST: Nested continuations with when-guards should parse without parse_error nodes.
+
+~event run {}
+| ready { t: i32 }
+| err {}
+
+~event poll { t: i32 }
+| key { code: u8 }
+| done {}
+
+~event cleanup {}
+| done {}
+
+~event handle_key { code: u8 }
+| done {}
+
+~run()
+| ready t |> poll(t: t.t)
+    | key k when (k.code == 'q') |> cleanup()
+        | done |> _
+    | key k |> handle_key(code: k.code)
+        | done |> _
+    | done |> _
+| err _ |> _

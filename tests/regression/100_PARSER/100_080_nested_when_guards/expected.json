@@ -1,0 +1,304 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "run",
+            "path": ["run"],
+            "module": "input",
+            "input": {
+                "fields": [
+
+                ]
+            },
+            "branches": [
+                {
+                    "name": "ready",
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "t",
+                                "type": "i32",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "err",
+                    "payload": {
+                        "fields": [
+
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
+                "line": 7,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "poll",
+            "path": ["poll"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "t",
+                        "type": "i32",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "key",
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "code",
+                                "type": "u8",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "done",
+                    "payload": {
+                        "fields": [
+
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
+                "line": 11,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "cleanup",
+            "path": ["cleanup"],
+            "module": "input",
+            "input": {
+                "fields": [
+
+                ]
+            },
+            "branches": [
+                {
+                    "name": "done",
+                    "payload": {
+                        "fields": [
+
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
+                "line": 14,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "handle_key",
+            "path": ["handle_key"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "code",
+                        "type": "u8",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "done",
+                    "payload": {
+                        "fields": [
+
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
+                "line": 17,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["run"],
+                "args": [
+
+                ],
+                "variant": null
+            },
+            "continuations": [
+                {
+                    "branch": "ready",
+                    "binding": "t",
+                    "binding_type": "branch_payload",
+                    "condition": null,
+                    "step":                     {
+                        "type": "invocation",
+                        "invocation": {
+                            "event": ["poll"],
+                            "args": [
+                                {
+                                    "name": "t",
+                                    "value": "t.t"
+                                }
+                            ],
+                            "variant": null
+                        }
+                    },
+                    "continuations": [
+                        {
+                            "branch": "key",
+                            "binding": "k",
+                            "binding_type": "branch_payload",
+                            "condition": "(k.code == 'q')",
+                            "step":                             {
+                                "type": "invocation",
+                                "invocation": {
+                                    "event": ["cleanup"],
+                                    "args": [
+
+                                    ],
+                                    "variant": null
+                                }
+                            },
+                            "continuations": [
+                                {
+                                    "branch": "done",
+                                    "binding": null,
+                                    "binding_type": "branch_payload",
+                                    "condition": null,
+                                    "step":                                     {
+                                        "type": "terminal"
+                                    },
+                                    "continuations": [
+
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "branch": "key",
+                            "binding": "k",
+                            "binding_type": "branch_payload",
+                            "condition": null,
+                            "step":                             {
+                                "type": "invocation",
+                                "invocation": {
+                                    "event": ["handle_key"],
+                                    "args": [
+                                        {
+                                            "name": "code",
+                                            "value": "k.code"
+                                        }
+                                    ],
+                                    "variant": null
+                                }
+                            },
+                            "continuations": [
+                                {
+                                    "branch": "done",
+                                    "binding": null,
+                                    "binding_type": "branch_payload",
+                                    "condition": null,
+                                    "step":                                     {
+                                        "type": "terminal"
+                                    },
+                                    "continuations": [
+
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "branch": "done",
+                            "binding": null,
+                            "binding_type": "branch_payload",
+                            "condition": null,
+                            "step":                             {
+                                "type": "terminal"
+                            },
+                            "continuations": [
+
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "branch": "err",
+                    "binding": "_",
+                    "binding_type": "branch_payload",
+                    "condition": null,
+                    "step":                     {
+                        "type": "terminal"
+                    },
+                    "continuations": [
+
+                    ]
+                }
+            ],
+            "pre_label": null,
+            "post_label": null,
+            "location": {
+                "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
+                "line": 18,
+                "col": 0
+            }
+        }
+    ]
+}

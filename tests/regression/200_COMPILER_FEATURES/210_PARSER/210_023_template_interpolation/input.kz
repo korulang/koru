@@ -221,7 +221,7 @@ const std = @import("std");
 }
 
 // Module-level test: Source block gets passed to renderHTML
-~renderHTML [HTML]{
+~renderHTML {
     <div>
         <h1>Hello, World!</h1>
         <p>This is a template</p>

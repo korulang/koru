@@ -269,7 +269,7 @@ pub const AutoDischargeInserter = struct {
         if (self.reporter.hasErrors()) {
             const stderr_writer = std.debug.lockStderrWriter(&.{});
             defer std.debug.unlockStderrWriter();
-            self.reporter.printErrors(stderr_writer) catch {};
+            try self.reporter.printErrors(stderr_writer);
             return error.ValidationFailed;
         }
 
@@ -314,13 +314,13 @@ pub const AutoDischargeInserter = struct {
 
                     // Validate: [!] annotation requires auto-dischargeable event (0 or 1 branches)
                     if (eventHasDefaultAnnotation(event_decl) and event_decl.branches.len > 1) {
-                        self.reporter.addError(
+                        try self.reporter.addError(
                             .KORU083,
                             event_decl.location.line,
                             event_decl.location.column,
                             "[!] annotation requires single-outcome event - events with multiple branches require manual handling",
                             .{},
-                        ) catch {};
+                        );
                     }
 
                     const qualified_name = try std.fmt.allocPrint(
@@ -344,13 +344,13 @@ pub const AutoDischargeInserter = struct {
 
                             // Validate: [!] annotation requires void event (no branches)
                             if (eventHasDefaultAnnotation(event_decl) and event_decl.branches.len > 0) {
-                                self.reporter.addError(
+                                try self.reporter.addError(
                                     .KORU083,
                                     event_decl.location.line,
                                     event_decl.location.column,
                                     "[!] annotation requires void event (no branches) - branched events cannot be auto-discharged",
                                     .{},
-                                ) catch {};
+                                );
                             }
 
                             const qualified_name = try std.fmt.allocPrint(
