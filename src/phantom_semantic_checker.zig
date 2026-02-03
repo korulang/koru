@@ -1426,22 +1426,48 @@ pub const PhantomSemanticChecker = struct {
             },
             .label_jump => |lj| {
                 // Look up the target event for this label
-                const target_decl = self.label_map.get(lj.label) orelse {
-                    log.debug("[PHANTOM-FLOW]   Label '@{s}' not found in map, skipping jump validation\n", .{lj.label});
-                    return true;
-                };
-
-                // Validate jump arguments against target event's signature
-                for (lj.args) |arg| {
-                    const arg_valid = try self.validateArgument(arg, target_decl, target_decl.module, context, location);
-                    if (!arg_valid) {
-                        has_errors = true;
+                const target_decl = self.label_map.get(lj.label);
+                if (target_decl) |decl| {
+                    // Validate jump arguments against target event's signature
+                    for (lj.args) |arg| {
+                        const arg_valid = try self.validateArgument(arg, decl, decl.module, context, location);
+                        if (!arg_valid) {
+                            has_errors = true;
+                        }
                     }
+
+                    // Validate event-level phantom preconditions for the jump
+                    const context_valid = try self.validateEventContextPhantom(decl, decl.module, context, location, lj.label);
+                    if (!context_valid) has_errors = true;
+                } else {
+                    log.debug("[PHANTOM-FLOW]   Label '@{s}' not found in map, skipping jump arg validation\n", .{lj.label});
                 }
 
-                // Validate event-level phantom preconditions for the jump
-                const context_valid = try self.validateEventContextPhantom(target_decl, target_decl.module, context, location, lj.label);
-                if (!context_valid) has_errors = true;
+                // Label jumps must not drop cleanup obligations.
+                if (context.hasUncleanedResources()) {
+                    const uncleaned = try context.getUncleanedResources(self.allocator);
+                    defer self.allocator.free(uncleaned);
+
+                    for (uncleaned) |resource| {
+                        var passed = false;
+                        for (lj.args) |arg| {
+                            if (std.mem.eql(u8, arg.value, resource)) {
+                                passed = true;
+                                break;
+                            }
+                        }
+                        if (!passed) {
+                            try self.reporter.addError(
+                                .KORU030,
+                                location.line,
+                                location.column,
+                                "Label jump '@{s}' drops cleanup obligation for '{s}' - pass it as an argument or discharge it before jumping",
+                                .{ lj.label, resource }
+                            );
+                            has_errors = true;
+                        }
+                    }
+                }
 
                 return !has_errors;
             },

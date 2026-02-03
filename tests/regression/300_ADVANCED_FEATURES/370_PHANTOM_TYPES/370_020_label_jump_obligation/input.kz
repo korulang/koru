@@ -1,11 +1,11 @@
 // TEST: Phantom obligation tracking across label jumps
-// STATUS: MUST_FAIL (currently passes but SHOULD fail)
+// STATUS: MUST_FAIL (fixed)
 //
 // BUG: When a label jump (@loop) occurs, phantom obligations from the
 // current scope are not being checked. This allows resource leaks.
 //
 // EXPECTED: Compiler error - obligation not satisfied before @loop
-// ACTUAL: Compiles successfully (BUG!)
+// ACTUAL: Compiler error (KORU030) once obligations are enforced
 //
 // This test documents the gap discovered while building Orisha HTTP server.
 // The `| failed |> @accept_loop(server: s)` branch leaks the connection.
@@ -49,7 +49,7 @@ const Resource = struct { id: i32 };
 | created c |> use(res: c.res)
     | ok o |> close(res: o.res)
         | closed |> _
-    | failed |> @loop  // BUG! c.res has [open!] obligation, not discharged!
+    | failed _f |> @loop()  // BUG! c.res has [open!] obligation, not discharged!
 
 pub fn main() void {
     std.debug.print("Test compiled - BUG: should have been rejected!\n", .{});
