@@ -893,9 +893,23 @@ pub const PhantomSemanticChecker = struct {
             return false;
         }
 
+        // Check for @scope annotation on the binding (e.g., | each _[@scope] |>)
+        const has_scope = blk: {
+            for (cont.binding_annotations) |ann| {
+                if (std.mem.eql(u8, ann, "@scope")) {
+                    break :blk true;
+                }
+            }
+            break :blk false;
+        };
+
         // Build binding context - inherit from parent if provided
+        // If @scope, mark inherited obligations as outer-scope
         var context = if (parent_context) |parent|
-            try BindingContext.inherit(parent, self.allocator)
+            if (has_scope)
+                try BindingContext.inheritWithScope(parent, self.allocator)
+            else
+                try BindingContext.inherit(parent, self.allocator)
         else
             BindingContext.init(self.allocator);
         defer context.deinit();
@@ -1043,6 +1057,9 @@ pub const PhantomSemanticChecker = struct {
                 var first_lost: ?[]const u8 = null;
 
                 for (uncleaned) |resource| {
+                    if (has_scope and context.isOuterScope(resource)) {
+                        continue;
+                    }
                     // For hard terminals (_), all uncleaned resources are errors
                     var documented_escape = false;
 
@@ -1449,6 +1466,9 @@ pub const PhantomSemanticChecker = struct {
                     defer self.allocator.free(uncleaned);
 
                     for (uncleaned) |resource| {
+                        if (context.isOuterScope(resource)) {
+                            continue;
+                        }
                         var passed = false;
                         for (lj.args) |arg| {
                             if (std.mem.eql(u8, arg.value, resource)) {

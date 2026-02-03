@@ -1,0 +1,43 @@
+// TEST: Label jump inside @scope must not drop INNER obligations
+// STATUS: MUST_FAIL (KORU030)
+//
+// The resource is created inside @scope and then a label jump occurs.
+// This should be rejected because the inner obligation is dropped.
+
+const std = @import("std");
+
+const Resource = struct { id: i32 };
+
+~event create {}
+| created { res: *Resource[open!] }
+
+~proc create {
+    const r = std.heap.page_allocator.create(Resource) catch unreachable;
+    r.* = .{ .id = 2 };
+    return .{ .created = .{ .res = r } };
+}
+
+~event close { res: *Resource[!open] }
+| closed {}
+
+~proc close {
+    std.heap.page_allocator.destroy(res);
+    return .{ .closed = .{} };
+}
+
+~pub event with_context {}
+| scoped {}
+| done {}
+
+~proc with_context {
+    return .{ .scoped = .{} };
+}
+
+~#loop create()
+| created c |> with_context()
+    | scoped _[@scope] |> create()
+        | created _inner |> @loop()
+    | done |> close(res: c.res)
+        | closed |> _
+
+pub fn main() void {}
