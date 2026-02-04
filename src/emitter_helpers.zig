@@ -115,6 +115,7 @@ pub const EmissionContext = struct {
     current_label: ?[]const u8 = null, // Current label for continuation-level breaks
     is_sync: bool = false, // true for synchronous inline flows (no try/!)
     tap_registry: ?*tap_registry_module.TapRegistry = null, // Event tap registry for inline emission (mutable for tracking references)
+    type_registry: ?*type_registry_module.TypeRegistry = null, // Type registry for array literal type hints
     current_source_event: ?[]const u8 = null, // Canonical name of current source event for tap matching
     current_branch: ?[]const u8 = null, // Current branch name for tap matching
     label_handler_invocation: ?*const ast.Invocation = null, // Invocation for current label's handler (for re-calling in label_jump)
@@ -1004,6 +1005,43 @@ pub fn extractSliceElementType(slice_type: []const u8) ?[]const u8 {
     return null;
 }
 
+const SliceTypeInfo = struct {
+    element_type: []const u8,
+    is_const: bool,
+    is_optional: bool,
+};
+
+fn parseSliceType(slice_type: []const u8) ?SliceTypeInfo {
+    var rest = std.mem.trim(u8, slice_type, " \t");
+    var is_optional = false;
+
+    if (rest.len > 0 and rest[0] == '?') {
+        is_optional = true;
+        rest = rest[1..];
+    }
+
+    if (!std.mem.startsWith(u8, rest, "[]")) {
+        return null;
+    }
+
+    rest = rest[2..];
+    var is_const = false;
+    if (std.mem.startsWith(u8, rest, "const ")) {
+        is_const = true;
+        rest = rest[6..];
+    }
+
+    if (rest.len == 0) {
+        return null;
+    }
+
+    return SliceTypeInfo{
+        .element_type = rest,
+        .is_const = is_const,
+        .is_optional = is_optional,
+    };
+}
+
 /// Check if a value looks like a Koru struct literal: { field: value, ... }
 /// Must be single-line (not a Source block) and contain field: value patterns
 fn isKoruStructLiteral(value: []const u8) bool {
@@ -1045,7 +1083,7 @@ fn isKoruStructLiteral(value: []const u8) bool {
 }
 
 /// Emit a Koru struct literal as Zig: { field: value } -> .{ .field = value }
-fn emitStructLiteral(emitter: *CodeEmitter, ctx: *EmissionContext, value: []const u8) !void {
+fn emitStructLiteral(emitter: *CodeEmitter, ctx: *EmissionContext, value: []const u8) EmitError!void {
     const inner = value[1 .. value.len - 1]; // Strip { and }
 
     try emitter.write(".{");
@@ -1126,11 +1164,7 @@ fn emitStructLiteral(emitter: *CodeEmitter, ctx: *EmissionContext, value: []cons
 
                 // Recursively handle nested struct/array literals
                 if (field_value.len >= 2 and field_value[0] == '[' and field_value[field_value.len - 1] == ']') {
-                    // Nested array literal
-                    const array_contents = field_value[1 .. field_value.len - 1];
-                    try emitter.write("&.{ ");
-                    try emitValue(emitter, ctx, array_contents);
-                    try emitter.write(" }");
+                    return error.ArrayLiteralMissingType;
                 } else if (isKoruStructLiteral(field_value)) {
                     // Nested struct literal
                     try emitStructLiteral(emitter, ctx, field_value);
@@ -1156,7 +1190,7 @@ fn emitStructLiteral(emitter: *CodeEmitter, ctx: *EmissionContext, value: []cons
 /// Emit array contents, transforming any nested struct literals
 /// Input: "{ x: 1, y: 2 }, { x: 3, y: 4 }" (comma-separated elements)
 /// Output: ".{ .x = 1, .y = 2 }, .{ .x = 3, .y = 4 }"
-fn emitArrayContents(emitter: *CodeEmitter, ctx: *EmissionContext, contents: []const u8) !void {
+pub fn emitArrayContents(emitter: *CodeEmitter, ctx: *EmissionContext, contents: []const u8) EmitError!void {
     var i: usize = 0;
     var first_element = true;
 
@@ -1210,11 +1244,7 @@ fn emitArrayContents(emitter: *CodeEmitter, ctx: *EmissionContext, contents: []c
             if (isKoruStructLiteral(element)) {
                 try emitStructLiteral(emitter, ctx, element);
             } else if (element.len >= 2 and element[0] == '[' and element[element.len - 1] == ']') {
-                // Nested array literal
-                const nested_contents = element[1 .. element.len - 1];
-                try emitter.write("&.{ ");
-                try emitArrayContents(emitter, ctx, nested_contents);
-                try emitter.write(" }");
+                return error.ArrayLiteralMissingType;
             } else {
                 try emitValue(emitter, ctx, element);
             }
@@ -1651,6 +1681,7 @@ fn emitSubflowContinuationsWithDepth(
             .ast_items = all_items,
             .is_sync = true,
             .tap_registry = tap_registry,  // Pass through tap registry for inline taps!
+            .type_registry = type_registry,
             .main_module_name = main_module_name,  // Pass through for canonical event naming
             .current_source_event = source_event_name,  // Set source event for inline tap emission!
         };
@@ -2044,6 +2075,10 @@ fn emitSubflowContinuationsWithDepth(
                                 }
                                 const event_canonical = event_name_buf[0..event_name_pos];
                                 const event_type = type_registry.getEventType(event_canonical);
+                                var value_ctx = EmissionContext{
+                                    .allocator = std.heap.page_allocator,
+                                    .main_module_name = main_module_name,
+                                };
 
                                 for (inv.args, 0..) |arg, idx| {
                                     if (idx > 0) try emitter.write(", ");
@@ -2068,50 +2103,23 @@ fn emitSubflowContinuationsWithDepth(
                                     try emitter.write(" = ");
 
                                     // Check for Koru array literal syntax: [a, b, c]
-                                    // Transform to Zig: &[_]ElementType{ a, b, c }
                                     if (arg.value.len >= 2 and arg.value[0] == '[' and arg.value[arg.value.len - 1] == ']') {
-                                        // Look up the parameter type from the event type
-                                        var element_type: ?[]const u8 = null;
-                                        if (event_type) |et| {
-                                            if (et.input_shape) |shape| {
-                                                for (shape.fields) |field| {
-                                                    if (std.mem.eql(u8, field.name, param_name)) {
-                                                        element_type = extractSliceElementType(field.type);
-                                                        break;
+                                        const field = blk: {
+                                            if (event_type) |et| {
+                                                if (et.input_shape) |shape| {
+                                                    for (shape.fields) |*field| {
+                                                        if (std.mem.eql(u8, field.name, param_name)) {
+                                                            break :blk field;
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
-
-                                        const contents = arg.value[1 .. arg.value.len - 1]; // Strip [ and ]
-
-                                        // Create a minimal EmissionContext for emitArrayContents
-                                        var minimal_ctx = EmissionContext{
-                                            .allocator = std.heap.page_allocator,
+                                            break :blk null;
                                         };
-
-                                        // Check if element type is a primitive (no uppercase = primitive like i32, u8, etc.)
-                                        // Custom types (like ContextSnapshot) need module qualification we don't have,
-                                        // so use anonymous array syntax and let Zig infer the type
-                                        const is_primitive = if (element_type) |et| blk: {
-                                            for (et) |c| {
-                                                if (c >= 'A' and c <= 'Z') break :blk false;
-                                            }
-                                            break :blk true;
-                                        } else false;
-
-                                        if (element_type != null and is_primitive) {
-                                            // Emit proper Zig array literal with explicit primitive type
-                                            try emitter.write("&[_]");
-                                            try emitter.write(element_type.?);
-                                            try emitter.write("{ ");
-                                            try emitArrayContents(emitter, &minimal_ctx, contents);
-                                            try emitter.write(" }");
+                                        if (field) |field_info| {
+                                            try emitArrayLiteralForField(emitter, &value_ctx, field_info, arg.value);
                                         } else {
-                                            // Custom type or no type info - use anonymous array (let Zig infer)
-                                            try emitter.write("&.{ ");
-                                            try emitArrayContents(emitter, &minimal_ctx, contents);
-                                            try emitter.write(" }");
+                                            return error.ArrayLiteralMissingType;
                                         }
                                     } else {
                                         try emitter.write(arg.value);
@@ -3420,6 +3428,7 @@ fn emitInvocation(
     if (ctx.ast_items) |items| {
         if (findSubflowImplByPath(items, &invocation.path)) |subflow_impl| {
             if (subflow_impl.body == .immediate) {
+                const event_decl = findEventDeclByPath(items, &invocation.path);
                 // Emit: const result: EventType.Output = blk: {
                 //     const n = 5;  // bind input args
                 //     break :blk .{ .branch = value };
@@ -3482,7 +3491,100 @@ fn emitInvocation(
                 // Emit the break with the branch constructor
                 try emitter.writeIndent();
                 try emitter.write("break :blk ");
-                try emitBranchConstructor(emitter, ctx, &subflow_impl.body.immediate, true);
+                if (event_decl) |event| {
+                    try emitBranchConstructorWithEvent(emitter, ctx, &subflow_impl.body.immediate, event);
+                } else if (ctx.type_registry) |type_registry| {
+                    var resolved_event_type: ?type_registry_module.EventType = null;
+
+                    const canonical = try buildCanonicalEventName(&subflow_impl.event_path, ctx.allocator, ctx.main_module_name);
+                    defer ctx.allocator.free(canonical);
+                    if (type_registry.getEventType(canonical)) |event_type| {
+                        resolved_event_type = event_type;
+                    }
+
+                    if (resolved_event_type == null) {
+                        const fallback_canonical = try buildCanonicalEventName(&invocation.path, ctx.allocator, ctx.main_module_name);
+                        defer ctx.allocator.free(fallback_canonical);
+                        if (type_registry.getEventType(fallback_canonical)) |event_type| {
+                            resolved_event_type = event_type;
+                        }
+                    }
+
+                    if (resolved_event_type == null) {
+                        if (invocation.path.module_qualifier) |mq| {
+                            if (resolveModuleAlias(mq, items)) |resolved| {
+                                var temp_path = ast.DottedPath{
+                                    .module_qualifier = resolved,
+                                    .segments = invocation.path.segments,
+                                };
+                                const alt_canonical = try buildCanonicalEventName(&temp_path, ctx.allocator, ctx.main_module_name);
+                                defer ctx.allocator.free(alt_canonical);
+                                if (type_registry.getEventType(alt_canonical)) |event_type| {
+                                    resolved_event_type = event_type;
+                                }
+                            }
+                        }
+                    }
+
+                    if (resolved_event_type == null) {
+                        var match_count: usize = 0;
+                        var import_iter = type_registry.imports.iterator();
+                        while (import_iter.next()) |entry| {
+                            const module_path = entry.value_ptr.*;
+                            var temp_path = ast.DottedPath{
+                                .module_qualifier = module_path,
+                                .segments = invocation.path.segments,
+                            };
+                            const import_canonical = try buildCanonicalEventName(&temp_path, ctx.allocator, ctx.main_module_name);
+                            defer ctx.allocator.free(import_canonical);
+                            if (type_registry.getEventType(import_canonical)) |event_type| {
+                                match_count += 1;
+                                resolved_event_type = event_type;
+                                if (match_count > 1) {
+                                    resolved_event_type = null;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (resolved_event_type == null) {
+                        var match_count: usize = 0;
+                        var event_iter = type_registry.events.iterator();
+                        while (event_iter.next()) |entry| {
+                            const event_name = entry.key_ptr.*;
+                            const colon_idx = std.mem.indexOfScalar(u8, event_name, ':') orelse continue;
+                            const path_part = event_name[colon_idx + 1 ..];
+
+                            var seg_iter = std.mem.splitScalar(u8, path_part, '.');
+                            var seg_index: usize = 0;
+                            var matches = true;
+                            while (seg_iter.next()) |seg| {
+                                if (seg_index >= invocation.path.segments.len or !std.mem.eql(u8, seg, invocation.path.segments[seg_index])) {
+                                    matches = false;
+                                    break;
+                                }
+                                seg_index += 1;
+                            }
+                            if (!matches or seg_index != invocation.path.segments.len) continue;
+
+                            match_count += 1;
+                            resolved_event_type = entry.value_ptr.*;
+                            if (match_count > 1) {
+                                resolved_event_type = null;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (resolved_event_type) |event_type| {
+                        try emitBranchConstructorWithEventType(emitter, ctx, &subflow_impl.body.immediate, event_type);
+                    } else {
+                        try emitBranchConstructor(emitter, ctx, &subflow_impl.body.immediate, true);
+                    }
+                } else {
+                    try emitBranchConstructor(emitter, ctx, &subflow_impl.body.immediate, true);
+                }
                 try emitter.write(";\n");
 
                 emitter.indent_level -= 1;
@@ -3915,33 +4017,21 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
             try emitter.write("}");
         } else {
             // Check for Koru array literal syntax: [a, b, c]
-            // Transform to Zig: &[_]ElementType{ a, b, c }
             if (arg.value.len >= 2 and arg.value[0] == '[' and arg.value[arg.value.len - 1] == ']') {
-                // Look up the parameter type from the event declaration
-                var element_type: ?[]const u8 = null;
-                if (event_decl) |event| {
-                    for (event.input.fields) |field| {
-                        if (std.mem.eql(u8, field.name, param_name)) {
-                            // Extract element type from slice type (e.g., "[]const i32" -> "i32")
-                            element_type = extractSliceElementType(field.type);
-                            break;
+                const field = blk: {
+                    if (event_decl) |event| {
+                        for (event.input.fields) |*field| {
+                            if (std.mem.eql(u8, field.name, param_name)) {
+                                break :blk field;
+                            }
                         }
                     }
-                }
-
-                const contents = arg.value[1 .. arg.value.len - 1]; // Strip [ and ]
-                if (element_type) |et| {
-                    // Emit proper Zig array literal
-                    try emitter.write("&[_]");
-                    try emitter.write(et);
-                    try emitter.write("{ ");
-                    try emitArrayContents(emitter, ctx, contents);
-                    try emitter.write(" }");
+                    break :blk null;
+                };
+                if (field) |field_info| {
+                    try emitArrayLiteralForField(emitter, ctx, field_info, arg.value);
                 } else {
-                    // No type info - emit as anonymous array (let Zig infer)
-                    try emitter.write("&.{ ");
-                    try emitArrayContents(emitter, ctx, contents);
-                    try emitter.write(" }");
+                    return error.ArrayLiteralMissingType;
                 }
             } else if (isKoruStructLiteral(arg.value)) {
                 // Koru struct literal: { field: value, field2: value }
@@ -4117,8 +4207,27 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
     }
 }
 
+const EmitError = error{
+    BufferOverflow,
+    ArrayLiteralMissingType,
+    ArrayLiteralInvalidTarget,
+};
+
 /// Emit a value expression (may reference input fields)
-fn emitValue(emitter: *CodeEmitter, ctx: *EmissionContext, value: []const u8) !void {
+pub fn emitValue(emitter: *CodeEmitter, ctx: *EmissionContext, value: []const u8) EmitError!void {
+    const trimmed = std.mem.trim(u8, value, " \t");
+
+    // Koru array literal: [a, b, c]
+    if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+        return error.ArrayLiteralMissingType;
+    }
+
+    // Koru struct literal: { field: value } -> .{ .field = value }
+    if (isKoruStructLiteral(trimmed)) {
+        try emitStructLiteral(emitter, ctx, trimmed);
+        return;
+    }
+
     // If we have an input_var and input_fields, replace input field references
     if (ctx.input_var) |input_var| {
         if (ctx.input_fields) |fields| {
@@ -4138,6 +4247,11 @@ fn emitValueWithBindingSubstitution(
     value: []const u8,
     substitution: ?BindingSubstitution,
 ) !void {
+    const trimmed = std.mem.trim(u8, value, " \t");
+    if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+        return error.ArrayLiteralMissingType;
+    }
+
     if (substitution == null) {
         // No substitution needed
         try emitter.write(value);
@@ -6436,6 +6550,208 @@ fn emitStepWithBindingSubstitution(
     }
 }
 
+fn findBranchFieldForEvent(
+    event: *const ast.EventDecl,
+    branch_name: []const u8,
+    field_name: ?[]const u8,
+) ?*const ast.Field {
+    for (event.branches) |branch| {
+        if (!std.mem.eql(u8, branch.name, branch_name)) continue;
+        if (field_name) |name| {
+            for (branch.payload.fields) |*field| {
+                if (std.mem.eql(u8, field.name, name)) return field;
+            }
+        } else if (branch.payload.fields.len > 0) {
+            return &branch.payload.fields[0];
+        }
+        return null;
+    }
+    return null;
+}
+
+fn findBranchFieldForEventType(
+    event_type: type_registry_module.EventType,
+    branch_name: []const u8,
+    field_name: ?[]const u8,
+) ?*const ast.Field {
+    for (event_type.branches) |branch| {
+        if (!std.mem.eql(u8, branch.name, branch_name)) continue;
+        const payload = branch.payload orelse return null;
+        if (field_name) |name| {
+            for (payload.fields) |*field| {
+                if (std.mem.eql(u8, field.name, name)) return field;
+            }
+        } else if (payload.fields.len > 0) {
+            return &payload.fields[0];
+        }
+        return null;
+    }
+    return null;
+}
+
+fn writeQualifiedType(
+    emitter: *CodeEmitter,
+    module_path: []const u8,
+    main_module_name: ?[]const u8,
+    type_name: []const u8,
+) !void {
+    var remaining = type_name;
+    var prefix: []const u8 = "";
+    const prefixes = [_][]const u8{
+        "[]const ",
+        "[]",
+        "?*const ",
+        "?*",
+        "*const ",
+        "*",
+        "?",
+    };
+    for (prefixes) |candidate| {
+        if (std.mem.startsWith(u8, remaining, candidate)) {
+            prefix = candidate;
+            remaining = remaining[candidate.len..];
+            break;
+        }
+    }
+
+    if (prefix.len > 0) {
+        try emitter.write(prefix);
+    }
+    try writeModulePath(emitter, module_path, main_module_name);
+    try emitter.write(".");
+    try emitter.write(remaining);
+}
+
+pub fn emitArrayLiteralForField(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    field: *const ast.Field,
+    value: []const u8,
+) EmitError!void {
+    const trimmed = std.mem.trim(u8, value, " \t");
+    if (trimmed.len < 2 or trimmed[0] != '[' or trimmed[trimmed.len - 1] != ']') {
+        return error.ArrayLiteralMissingType;
+    }
+
+    const contents = trimmed[1 .. trimmed.len - 1];
+    const slice_info = parseSliceType(field.type) orelse {
+        return error.ArrayLiteralInvalidTarget;
+    };
+
+    if (slice_info.is_const) {
+        try emitter.write("&[_]");
+    } else {
+        try emitter.write("@constCast(&[_]");
+    }
+
+    if (field.module_path) |module_path| {
+        try writeQualifiedType(emitter, module_path, ctx.main_module_name, slice_info.element_type);
+    } else {
+        try emitter.write(slice_info.element_type);
+    }
+    try emitter.write("{ ");
+    try emitArrayContents(emitter, ctx, contents);
+    if (slice_info.is_const) {
+        try emitter.write(" }");
+    } else {
+        try emitter.write(" })");
+    }
+}
+
+fn emitBranchConstructorWithEventType(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    bc: *const ast.BranchConstructor,
+    event_type: type_registry_module.EventType,
+) EmitError!void {
+    try emitter.write(".{ .");
+    try writeBranchName(emitter, bc.branch_name);
+    try emitter.write(" = ");
+
+    if (bc.plain_value) |pv| {
+        const trimmed = std.mem.trim(u8, pv, " \t");
+        if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+            if (findBranchFieldForEventType(event_type, bc.branch_name, null)) |field| {
+                try emitArrayLiteralForField(emitter, ctx, field, pv);
+            } else {
+                try emitValue(emitter, ctx, pv);
+            }
+        } else {
+            try emitValue(emitter, ctx, pv);
+        }
+    } else {
+        try emitter.write(".{");
+        for (bc.fields, 0..) |field, idx| {
+            if (idx > 0) {
+                try emitter.write(", ");
+            }
+            try emitter.write(" .");
+            try emitter.write(field.name);
+            try emitter.write(" = ");
+            const value = if (field.expression_str) |expr| expr else field.type;
+            const trimmed = std.mem.trim(u8, value, " \t");
+            if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+                if (findBranchFieldForEventType(event_type, bc.branch_name, field.name)) |branch_field| {
+                    try emitArrayLiteralForField(emitter, ctx, branch_field, value);
+                } else {
+                    try emitValue(emitter, ctx, value);
+                }
+            } else {
+                try emitValue(emitter, ctx, value);
+            }
+        }
+        try emitter.write(" }");
+    }
+    try emitter.write(" }");
+}
+
+fn emitBranchConstructorWithEvent(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    bc: *const ast.BranchConstructor,
+    event: *const ast.EventDecl,
+) EmitError!void {
+    try emitter.write(".{ .");
+    try writeBranchName(emitter, bc.branch_name);
+    try emitter.write(" = ");
+
+    if (bc.plain_value) |pv| {
+        const trimmed = std.mem.trim(u8, pv, " \t");
+        if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+            if (findBranchFieldForEvent(event, bc.branch_name, null)) |field| {
+                try emitArrayLiteralForField(emitter, ctx, field, pv);
+            } else {
+                try emitValue(emitter, ctx, pv);
+            }
+        } else {
+            try emitValue(emitter, ctx, pv);
+        }
+    } else {
+        try emitter.write(".{");
+        for (bc.fields, 0..) |field, idx| {
+            if (idx > 0) {
+                try emitter.write(", ");
+            }
+            try emitter.write(" .");
+            try emitter.write(field.name);
+            try emitter.write(" = ");
+            const value = if (field.expression_str) |expr| expr else field.type;
+            const trimmed = std.mem.trim(u8, value, " \t");
+            if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+                if (findBranchFieldForEvent(event, bc.branch_name, field.name)) |branch_field| {
+                    try emitArrayLiteralForField(emitter, ctx, branch_field, value);
+                } else {
+                    try emitValue(emitter, ctx, value);
+                }
+            } else {
+                try emitValue(emitter, ctx, value);
+            }
+        }
+        try emitter.write(" }");
+    }
+    try emitter.write(" }");
+}
+
 /// Emit a branch constructor (.branch = .{ fields })
 pub fn emitBranchConstructor(
     emitter: *CodeEmitter,
@@ -6591,8 +6907,6 @@ pub fn emitModuleSubset(
     type_registry: ?*type_registry_module.TypeRegistry,
     original_main_module_name: ?[]const u8,
 ) ![]const u8 {
-    _ = type_registry; // TODO: use for type resolution
-
     // Allocate a buffer for the emitted code (64KB should be plenty for a test module)
     const BUFFER_SIZE = 64 * 1024;
     const buffer = try allocator.alloc(u8, BUFFER_SIZE);
@@ -6610,6 +6924,7 @@ pub fn emitModuleSubset(
         .module_prefix = module_name,
         .main_module_name = original_main_module_name,
         .is_sync = true,
+        .type_registry = type_registry,
     };
 
     // Emit module struct header
@@ -6619,13 +6934,38 @@ pub fn emitModuleSubset(
     code_emitter.indent_level = 1;
     ctx.indent_level = 1;
 
+    var emitted_events = std.StringHashMap(void).init(allocator);
+    defer emitted_events.deinit();
+
     // First pass: emit all event declarations
     for (items) |item| {
         switch (item) {
             .event_decl => |event| {
+                const canonical = try buildCanonicalEventName(&event.path, allocator, original_main_module_name);
+                defer allocator.free(canonical);
+                try emitted_events.put(canonical, {});
                 try emitEventDeclForModule(&code_emitter, &ctx, &event, items);
             },
             else => {},
+        }
+    }
+
+    // Second pass: emit mocked event decls that are missing from the subset
+    if (type_registry) |registry| {
+        for (items) |item| {
+            if (item != .subflow_impl) continue;
+            const sf = item.subflow_impl;
+            if (sf.body != .immediate) continue;
+            if (findEventDeclByPath(items, &sf.event_path) != null) continue;
+
+            const canonical = try buildCanonicalEventName(&sf.event_path, allocator, original_main_module_name);
+            defer allocator.free(canonical);
+            if (emitted_events.contains(canonical)) continue;
+
+            if (registry.getEventType(canonical)) |event_type| {
+                try emitted_events.put(canonical, {});
+                try emitEventDeclForModuleFromType(&code_emitter, &ctx, &sf.event_path, event_type, &sf);
+            }
         }
     }
 
@@ -6641,6 +6981,114 @@ pub fn emitModuleSubset(
     allocator.free(buffer);
 
     return result;
+}
+
+fn emitEventDeclForModuleFromType(
+    code_emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    event_path: *const ast.DottedPath,
+    event_type: type_registry_module.EventType,
+    subflow: *const ast.SubflowImpl,
+) !void {
+    // Event struct header: pub const foo_event = struct {
+    try code_emitter.writeIndent();
+    try code_emitter.write("pub const ");
+    for (event_path.segments, 0..) |segment, idx| {
+        if (idx > 0) try code_emitter.write("_");
+        try code_emitter.write(segment);
+    }
+    try code_emitter.write("_event = struct {\n");
+    code_emitter.indent_level += 1;
+
+    // Input struct
+    try code_emitter.writeIndent();
+    try code_emitter.write("pub const Input = struct {\n");
+    code_emitter.indent_level += 1;
+    if (event_type.input_shape) |shape| {
+        for (shape.fields) |field| {
+            try code_emitter.writeIndent();
+            try writeBranchName(code_emitter, field.name);
+            try code_emitter.write(": ");
+            try writeFieldType(code_emitter, field, ctx.main_module_name);
+            try code_emitter.write(",\n");
+        }
+    }
+    code_emitter.indent_level -= 1;
+    try code_emitter.writeIndent();
+    try code_emitter.write("};\n");
+
+    // Output union
+    try code_emitter.writeIndent();
+    if (event_type.branches.len == 0) {
+        try code_emitter.write("pub const Output = void;\n");
+    } else {
+        try code_emitter.write("pub const Output = union(enum) {\n");
+        code_emitter.indent_level += 1;
+        for (event_type.branches) |branch| {
+            try code_emitter.writeIndent();
+            try writeBranchName(code_emitter, branch.name);
+            try code_emitter.write(": struct {\n");
+            code_emitter.indent_level += 1;
+            if (branch.payload) |payload| {
+                for (payload.fields) |field| {
+                    try code_emitter.writeIndent();
+                    try writeBranchName(code_emitter, field.name);
+                    try code_emitter.write(": ");
+                    try writeFieldType(code_emitter, field, ctx.main_module_name);
+                    try code_emitter.write(",\n");
+                }
+            }
+            code_emitter.indent_level -= 1;
+            try code_emitter.writeIndent();
+            try code_emitter.write("},\n");
+        }
+        code_emitter.indent_level -= 1;
+        try code_emitter.writeIndent();
+        try code_emitter.write("};\n");
+    }
+
+    // Handler function
+    try code_emitter.writeIndent();
+    try code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
+    code_emitter.indent_level += 1;
+
+    if (event_type.input_shape) |shape| {
+        for (shape.fields) |field| {
+            try code_emitter.writeIndent();
+            try code_emitter.write("const ");
+            try code_emitter.write(field.name);
+            try code_emitter.write(" = __koru_event_input.");
+            try code_emitter.write(field.name);
+            try code_emitter.write(";\n");
+        }
+        for (shape.fields) |field| {
+            try code_emitter.writeIndent();
+            try code_emitter.write("_ = &");
+            try code_emitter.write(field.name);
+            try code_emitter.write(";\n");
+        }
+    }
+    try code_emitter.writeIndent();
+    try code_emitter.write("_ = &__koru_event_input;\n");
+
+    if (subflow.body == .immediate) {
+        const bc = subflow.body.immediate;
+        try code_emitter.writeIndent();
+        try code_emitter.write("return ");
+        try emitBranchConstructorWithEventType(code_emitter, ctx, &bc, event_type);
+        try code_emitter.write(";\n");
+    } else {
+        try code_emitter.writeIndent();
+        try code_emitter.write("@panic(\"missing mock implementation\");\n");
+    }
+
+    code_emitter.indent_level -= 1;
+    try code_emitter.writeIndent();
+    try code_emitter.write("}\n");
+
+    code_emitter.indent_level -= 1;
+    try code_emitter.writeIndent();
+    try code_emitter.write("};\n\n");
 }
 
 /// Emit a single event declaration for a module subset
@@ -6745,7 +7193,7 @@ fn emitEventDeclForModule(
                 }
                 try code_emitter.writeIndent();
                 try code_emitter.write("return ");
-                try emitBranchConstructor(code_emitter, ctx, &bc, true);
+                try emitBranchConstructorWithEvent(code_emitter, ctx, &bc, event);
                 try code_emitter.write(";\n");
             },
             .flow => |flow| {

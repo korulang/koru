@@ -28,6 +28,7 @@ const validateMocks = struct {
         const ast = @import("ast");
         const emitter_helpers = @import("emitter_helpers");
         const errors_mod = @import("errors");
+        const type_registry_module = @import("type_registry");
 
         if (mocks.len == 0) return true;
 
@@ -47,6 +48,20 @@ const validateMocks = struct {
             }
         }.check;
 
+        var local_registry_ptr: ?*type_registry_module.TypeRegistry = null;
+        const type_registry_ptr: ?*type_registry_module.TypeRegistry = if (program.type_registry) |ptr| blk: {
+            break :blk @ptrCast(@alignCast(ptr));
+        } else blk: {
+            local_registry_ptr = allocator.create(type_registry_module.TypeRegistry) catch unreachable;
+            local_registry_ptr.?.* = type_registry_module.TypeRegistry.init(allocator);
+            local_registry_ptr.?.populateFromAST(program.items) catch unreachable;
+            break :blk local_registry_ptr.?;
+        };
+        defer if (local_registry_ptr) |ptr| {
+            ptr.deinit();
+            allocator.destroy(ptr);
+        };
+
         for (mocks) |mock_item| {
             if (mock_item != .subflow_impl) continue;
             const sf = mock_item.subflow_impl;
@@ -59,7 +74,21 @@ const validateMocks = struct {
                 sf.location.line;
             const mock_column = sf.location.column;
 
-            const event_decl = emitter_helpers.findEventDeclByPath(program.items, &sf.event_path) orelse {
+            const event_decl = emitter_helpers.findEventDeclByPath(program.items, &sf.event_path);
+            var event_type: ?type_registry_module.EventType = null;
+            if (event_decl == null) {
+                if (type_registry_ptr) |registry| {
+                    const canonical = emitter_helpers.buildCanonicalEventName(&sf.event_path, allocator, program.main_module_name) catch null;
+                    if (canonical) |name| {
+                        defer allocator.free(name);
+                        if (registry.getEventType(name)) |et| {
+                            event_type = et;
+                        }
+                    }
+                }
+            }
+
+            if (event_decl == null and event_type == null) {
                 reporter.addError(
                     .KORU040,
                     mock_line,
@@ -70,33 +99,70 @@ const validateMocks = struct {
                     @panic("Mock shape validation failed");
                 };
                 continue;
-            };
+            }
 
-            var branch_ptr: ?*const ast.Branch = null;
-            for (event_decl.branches) |*branch| {
-                if (std_import.mem.eql(u8, branch.name, bc.branch_name)) {
-                    branch_ptr = branch;
-                    break;
+            var payload_fields: []const ast.Field = &[_]ast.Field{};
+            var payload_is_wildcard = false;
+
+            if (event_decl) |decl| {
+                var branch_ptr: ?*const ast.Branch = null;
+                for (decl.branches) |*branch| {
+                    if (std_import.mem.eql(u8, branch.name, bc.branch_name)) {
+                        branch_ptr = branch;
+                        break;
+                    }
+                }
+
+                const branch = branch_ptr orelse {
+                    reporter.addError(
+                        .KORU021,
+                        mock_line,
+                        mock_column,
+                        "unknown branch '{s}' in mock",
+                        .{bc.branch_name},
+                    ) catch {
+                        @panic("Mock shape validation failed");
+                    };
+                    continue;
+                };
+
+                payload_fields = branch.payload.fields;
+                payload_is_wildcard = branch.payload.is_wildcard;
+            } else if (event_type) |et| {
+                var branch_type_ptr: ?*const type_registry_module.BranchType = null;
+                for (et.branches) |*branch| {
+                    if (std_import.mem.eql(u8, branch.name, bc.branch_name)) {
+                        branch_type_ptr = branch;
+                        break;
+                    }
+                }
+
+                const branch_type = branch_type_ptr orelse {
+                    reporter.addError(
+                        .KORU021,
+                        mock_line,
+                        mock_column,
+                        "unknown branch '{s}' in mock",
+                        .{bc.branch_name},
+                    ) catch {
+                        @panic("Mock shape validation failed");
+                    };
+                    continue;
+                };
+
+                if (branch_type.payload) |payload| {
+                    payload_fields = payload.fields;
+                    payload_is_wildcard = payload.is_wildcard;
+                } else {
+                    payload_fields = &[_]ast.Field{};
+                    payload_is_wildcard = false;
                 }
             }
 
-            const branch = branch_ptr orelse {
-                reporter.addError(
-                    .KORU021,
-                    mock_line,
-                    mock_column,
-                    "unknown branch '{s}' in mock",
-                    .{bc.branch_name},
-                ) catch {
-                    @panic("Mock shape validation failed");
-                };
-                continue;
-            };
-
-            if (branch.payload.is_wildcard) continue;
+            if (payload_is_wildcard) continue;
 
             if (bc.plain_value != null and bc.fields.len == 0) {
-                if (branch.payload.fields.len != 1) {
+                if (payload_fields.len != 1) {
                     reporter.addError(
                         .KORU081,
                         mock_line,
@@ -110,7 +176,7 @@ const validateMocks = struct {
                 continue;
             }
 
-            for (branch.payload.fields) |expected_field| {
+            for (payload_fields) |expected_field| {
                 if (!fieldExists(bc.fields, expected_field.name)) {
                     reporter.addError(
                         .KORU080,
@@ -125,7 +191,7 @@ const validateMocks = struct {
             }
 
             for (bc.fields) |provided_field| {
-                if (!fieldExists(branch.payload.fields, provided_field.name)) {
+                if (!fieldExists(payload_fields, provided_field.name)) {
                     reporter.addError(
                         .KORU081,
                         mock_line,
@@ -323,15 +389,31 @@ const validateMocks = struct {
         @panic("Mock shape validation failed");
     }
 
+    const type_registry_module = @import("type_registry");
+    var local_registry_ptr: ?*type_registry_module.TypeRegistry = null;
+    const type_registry_ptr: ?*type_registry_module.TypeRegistry = if (program.type_registry) |ptr| blk: {
+        break :blk @ptrCast(@alignCast(ptr));
+    } else blk: {
+        local_registry_ptr = allocator.create(type_registry_module.TypeRegistry) catch unreachable;
+        local_registry_ptr.?.* = type_registry_module.TypeRegistry.init(allocator);
+        local_registry_ptr.?.populateFromAST(program.items) catch unreachable;
+        break :blk local_registry_ptr.?;
+    };
+    defer if (local_registry_ptr) |ptr| {
+        ptr.deinit();
+        allocator.destroy(ptr);
+    };
+
     // Emit the test module using emitModuleSubset
     // Pass the original main module name so event references are redirected to test module
     const test_module_code = emitter_helpers.emitModuleSubset(
         allocator,
         test_module_items.items,
         test_module_name,
-        null,  // type_registry not needed for basic test emission
+        type_registry_ptr,
         program.main_module_name,  // original main module name for event redirection
-    ) catch {
+    ) catch |err| {
+        std_import.debug.print("emitModuleSubset failed in test: {s}\n", .{@errorName(err)});
         return .{ .transformed = .{ .program = program } };
     };
 
@@ -477,6 +559,7 @@ const validateMocks = struct {
         .main_module_name = module_prefix_owned,
         .module_prefix = module_prefix_owned,  // KEY: Use test module for local references!
         .is_sync = true,
+        .type_registry = type_registry_ptr,
     };
     code_emitter.indent_level = 1;
 

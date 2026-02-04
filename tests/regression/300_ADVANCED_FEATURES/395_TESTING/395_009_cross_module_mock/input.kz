@@ -40,18 +40,13 @@
 }
 
 // ============================================
-// FUTURE: Array literal test (feature gap)
+// Array literal mock
 // ============================================
-//
-// Once Koru has array literal syntax, add this test:
-//
-// ~test(Cross-module mock should return 3 lines) {
-//     ~std.fs:read_lines = lines ["line1", "line2", "line3"]
-//
-//     ~process_config(path: "/fake/path")
-//     | ok result |> assert(result.line_count == 3)
-//     | failed |> assert.fail()
-// }
-//
-// FEATURE GAP: Koru needs native array literals like ["a", "b"]
-// WORKAROUND: Use &.{ "a", "b" } Zig escape when available
+
+~test(Cross-module mock should return 3 lines) {
+    ~std.fs:read_lines = lines ["line1", "line2", "line3"]
+
+    ~process_config(path: "/fake/path")
+    | ok result |> assert(result.line_count == 3)
+    | failed |> assert.fail()
+}

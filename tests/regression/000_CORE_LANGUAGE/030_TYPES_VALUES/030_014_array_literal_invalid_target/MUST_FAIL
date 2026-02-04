@@ -1,0 +1,6 @@
+Array literal must target a slice type
+
+This test MUST FAIL to ensure array literals only apply to slice parameters.
+Expected error: array literal used for non-slice field (numbers: i32).
+
+If this test passes, the compiler is accepting untyped/invalid array literals.

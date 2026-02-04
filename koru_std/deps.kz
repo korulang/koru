@@ -21,6 +21,7 @@
 //   koruc main.kz deps install --pm brew   # Force specific package manager
 
 ~import "$std/compiler"
+~import "$std/build"
 
 ~[comptime]
 
@@ -243,6 +244,32 @@
         .apk = "zig",
     }) catch {};
 
+    // Helper to check build flags - inline to avoid cross-module import issues
+    const ann_parser = @import("annotation_parser");
+    const RootEnv = @import("root").CompilerEnv;
+    const matchesBuildFlags = struct {
+        fn check(annotations: []const []const u8) bool {
+            for (annotations) |ann| {
+                const maybe_call = ann_parser.parseCall(std.heap.page_allocator, ann) catch continue;
+                if (maybe_call) |call| {
+                    defer {
+                        var mc = call;
+                        mc.deinit(std.heap.page_allocator);
+                    }
+                    if (std.mem.eql(u8, call.name, "build")) {
+                        for (call.args) |arg| {
+                            var buf: [64]u8 = undefined;
+                            const flag = std.fmt.bufPrint(&buf, "build={s}", .{arg}) catch continue;
+                            if (RootEnv.hasFlagRuntime(flag)) return true;
+                        }
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+    }.check;
+
     // Scan program items for additional project dependencies
     for (program.items) |item| {
         if (item == .flow) {
@@ -253,6 +280,8 @@
                     std.mem.eql(u8, flow.invocation.path.segments[0], "requires") and
                     std.mem.eql(u8, flow.invocation.path.segments[1], "system"))
                 {
+                    // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
+                    if (!matchesBuildFlags(flow.invocation.annotations)) continue;
                     // Extract source parameter
                     for (flow.invocation.args) |arg| {
                         if (std.mem.eql(u8, arg.name, "source")) {

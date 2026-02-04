@@ -394,6 +394,7 @@ pub const TypeRegistry = struct {
                 fields[i] = ast.Field{
                     .name = try self.allocator.dupe(u8, field.name),
                     .type = try self.allocator.dupe(u8, field.type),
+                    .module_path = if (field.module_path) |mp| try self.allocator.dupe(u8, mp) else null,
                     .is_source = field.is_source,
                     .is_file = field.is_file,
                     .is_embed_file = field.is_embed_file,

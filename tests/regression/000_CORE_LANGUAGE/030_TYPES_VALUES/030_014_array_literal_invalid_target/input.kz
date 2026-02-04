@@ -1,0 +1,15 @@
+// TEST: Array literal must target a slice type
+//
+// Koru array literal syntax ([a, b, c]) is only valid when the target
+// parameter is a slice (e.g. []const i32). Using it for a non-slice
+// parameter must fail.
+
+~event take { numbers: i32 }
+| done { }
+
+~proc take {
+    return .{ .done = {} };
+}
+
+~take(numbers: [1, 2, 3])
+| done |> _

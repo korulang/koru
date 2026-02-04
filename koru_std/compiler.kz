@@ -1487,9 +1487,9 @@ const joinPathAlloc = struct {
         // DUMP POINT 3: AST before transform handlers
         backend_output.dumpAST(ctx.ast, "3-pre-transform", ctx.allocator);
 
-        const post_transform_ast = backend_output.run_pass("transform", ctx.ast, ctx.allocator) catch {
+        const post_transform_ast = backend_output.run_pass("transform", ctx.ast, ctx.allocator) catch |err| {
             // Transformation failed - return original AST unchanged
-            std.debug.print("WARNING: Transform execution failed\n", .{});
+            std.debug.print("WARNING: Transform execution failed ({s})\n", .{@errorName(err)});
             return .{ .ctx = ctx };
         };
 

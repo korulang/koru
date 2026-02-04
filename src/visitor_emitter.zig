@@ -424,6 +424,7 @@ pub const VisitorEmitter = struct {
             .ast_items = self.all_items,  // Full AST for event declaration lookup
             .is_sync = true, // Tap functions call handlers synchronously (no try/!)
             .tap_registry = self.tap_registry,
+            .type_registry = self.type_registry,
             .main_module_name = self.main_module_name,
             .emit_mode = self.emit_mode,
             .module_annotations = source_file.module_annotations,
@@ -866,6 +867,7 @@ pub const VisitorEmitter = struct {
                     .ast_items = self.all_items,
                     .is_sync = true, // Top-level flows are synchronous
                     .tap_registry = self.tap_registry,
+                    .type_registry = self.type_registry,
                     .main_module_name = self.main_module_name,
                     .emit_mode = self.emit_mode,
                     .module_annotations = module_annotations,
@@ -993,6 +995,7 @@ pub const VisitorEmitter = struct {
                                 .ast_items = self.all_items,
                                 .is_sync = true, // NativeLoop continuations are synchronous
                                 .tap_registry = self.tap_registry,
+                                .type_registry = self.type_registry,
                                 .main_module_name = self.main_module_name,
                                 .emit_mode = self.emit_mode,
                                 .module_annotations = &[_][]const u8{}, // NativeLoop has no module annotations
@@ -1441,12 +1444,25 @@ pub const VisitorEmitter = struct {
                                                     try self.code_emitter.writeIndent();
                                                     try self.code_emitter.write("_ = &__koru_event_input;\n");
                                                 }
+                                                var value_ctx = emitter.EmissionContext{
+                                                    .allocator = self.allocator,
+                                                    .main_module_name = self.main_module_name,
+                                                };
                                                 try self.code_emitter.writeIndent();
                                                 try self.code_emitter.write("return .{ .");
                                                 try emitter.writeBranchName(self.code_emitter, bc.branch_name);
                                                 try self.code_emitter.write(" = ");
                                                 if (bc.plain_value) |pv| {
-                                                    try self.code_emitter.write(pv);
+                                                    const trimmed = std.mem.trim(u8, pv, " \t");
+                                                    if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+                                                        if (self.findBranchField(event, bc.branch_name, null)) |field| {
+                                                            try emitter.emitArrayLiteralForField(self.code_emitter, &value_ctx, field, pv);
+                                                        } else {
+                                                            try emitter.emitValue(self.code_emitter, &value_ctx, pv);
+                                                        }
+                                                    } else {
+                                                        try emitter.emitValue(self.code_emitter, &value_ctx, pv);
+                                                    }
                                                 } else {
                                                     try self.code_emitter.write(".{");
                                                     for (bc.fields, 0..) |field, k| {
@@ -1455,7 +1471,16 @@ pub const VisitorEmitter = struct {
                                                         try self.code_emitter.write(field.name);
                                                         try self.code_emitter.write(" = ");
                                                         const value = if (field.expression_str) |expr| expr else field.type;
-                                                        try self.code_emitter.write(value);
+                                                        const trimmed = std.mem.trim(u8, value, " \t");
+                                                        if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+                                                            if (self.findBranchField(event, bc.branch_name, field.name)) |branch_field| {
+                                                                try emitter.emitArrayLiteralForField(self.code_emitter, &value_ctx, branch_field, value);
+                                                            } else {
+                                                                try emitter.emitValue(self.code_emitter, &value_ctx, value);
+                                                            }
+                                                        } else {
+                                                            try emitter.emitValue(self.code_emitter, &value_ctx, value);
+                                                        }
                                                     }
                                                     try self.code_emitter.write(" }");
                                                 }
@@ -1669,13 +1694,26 @@ pub const VisitorEmitter = struct {
                                         try self.code_emitter.writeIndent();
                                         try self.code_emitter.write("_ = &__koru_event_input;\n");
                                     }
+                                    var value_ctx = emitter.EmissionContext{
+                                        .allocator = self.allocator,
+                                        .main_module_name = self.main_module_name,
+                                    };
                                     try self.code_emitter.writeIndent();
                                     try self.code_emitter.write("return .{ .");
                                     try emitter.writeBranchName(self.code_emitter, bc.branch_name);
                                     try self.code_emitter.write(" = ");
                                     // Check for plain value (non-struct branch)
                                     if (bc.plain_value) |pv| {
-                                        try self.code_emitter.write(pv);
+                                        const trimmed = std.mem.trim(u8, pv, " \t");
+                                        if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+                                            if (self.findBranchField(event, bc.branch_name, null)) |field| {
+                                                try emitter.emitArrayLiteralForField(self.code_emitter, &value_ctx, field, pv);
+                                            } else {
+                                                try emitter.emitValue(self.code_emitter, &value_ctx, pv);
+                                            }
+                                        } else {
+                                            try emitter.emitValue(self.code_emitter, &value_ctx, pv);
+                                        }
                                     } else {
                                         try self.code_emitter.write(".{");
                                         for (bc.fields, 0..) |field, k| {
@@ -1685,7 +1723,16 @@ pub const VisitorEmitter = struct {
                                             try self.code_emitter.write(" = ");
                                             // Use expression_str if present (for expressions), otherwise use type
                                             const value = if (field.expression_str) |expr| expr else field.type;
-                                            try self.code_emitter.write(value);
+                                            const trimmed = std.mem.trim(u8, value, " \t");
+                                            if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+                                                if (self.findBranchField(event, bc.branch_name, field.name)) |branch_field| {
+                                                    try emitter.emitArrayLiteralForField(self.code_emitter, &value_ctx, branch_field, value);
+                                                } else {
+                                                    try emitter.emitValue(self.code_emitter, &value_ctx, value);
+                                                }
+                                            } else {
+                                                try emitter.emitValue(self.code_emitter, &value_ctx, value);
+                                            }
                                         }
                                         try self.code_emitter.write(" }");
                                     }
@@ -1725,6 +1772,7 @@ pub const VisitorEmitter = struct {
                                             .allocator = self.allocator,
                                             .ast_items = self.all_items,
                                             .tap_registry = self.tap_registry,
+                                            .type_registry = self.type_registry,
                                             .main_module_name = self.main_module_name,
                                             .current_source_event = null,
                                             .label_contexts = null,
@@ -1762,6 +1810,10 @@ pub const VisitorEmitter = struct {
                                                 if (cont.node) |step| {
                                                     if (step == .branch_constructor) {
                                                         const bc = &step.branch_constructor;
+                                                        var value_ctx = emitter.EmissionContext{
+                                                            .allocator = self.allocator,
+                                                            .main_module_name = self.main_module_name,
+                                                        };
                                                         try self.code_emitter.writeIndent();
                                                         try self.code_emitter.write("return .{ .");
                                                         try emitter.writeBranchName(self.code_emitter, bc.branch_name);
@@ -1769,13 +1821,22 @@ pub const VisitorEmitter = struct {
                                                         for (bc.fields, 0..) |field, k| {
                                                             if (k > 0) try self.code_emitter.write(",");
                                                             try self.code_emitter.write(" .");
-                                                            try self.code_emitter.write(field.name);
-                                                            try self.code_emitter.write(" = ");
-                                                            const value = if (field.expression_str) |expr| expr else field.type;
-                                                            try self.code_emitter.write(value);
+                                                        try self.code_emitter.write(field.name);
+                                                        try self.code_emitter.write(" = ");
+                                                        const value = if (field.expression_str) |expr| expr else field.type;
+                                                        const trimmed = std.mem.trim(u8, value, " \t");
+                                                        if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+                                                            if (self.findBranchField(event, bc.branch_name, field.name)) |branch_field| {
+                                                                try emitter.emitArrayLiteralForField(self.code_emitter, &value_ctx, branch_field, value);
+                                                            } else {
+                                                                try emitter.emitValue(self.code_emitter, &value_ctx, value);
+                                                            }
+                                                        } else {
+                                                            try emitter.emitValue(self.code_emitter, &value_ctx, value);
                                                         }
-                                                        try self.code_emitter.write(" } };\n");
                                                     }
+                                                    try self.code_emitter.write(" } };\n");
+                                                }
                                                 }
                                             }
                                         }
@@ -1838,6 +1899,10 @@ pub const VisitorEmitter = struct {
                                         const event_canonical_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
                                         defer self.allocator.free(event_canonical_name);
                                         const event_type = self.type_registry.getEventType(event_canonical_name);
+                                        var value_ctx = emitter.EmissionContext{
+                                            .allocator = self.allocator,
+                                            .main_module_name = self.main_module_name,
+                                        };
 
                                         for (flow.invocation.args, 0..) |arg, k| {
                                             if (k > 0) try self.code_emitter.write(", ");
@@ -1861,36 +1926,24 @@ pub const VisitorEmitter = struct {
                                             try self.code_emitter.write(param_name);
                                             try self.code_emitter.write(" = ");
 
-                                            // Check for Koru array literal syntax: [a, b, c]
-                                            // Transform to Zig: &[_]ElementType{ a, b, c }
                                             if (arg.value.len >= 2 and arg.value[0] == '[' and arg.value[arg.value.len - 1] == ']') {
-                                                // Look up the parameter type from the invoked event declaration
-                                                var element_type: ?[]const u8 = null;
-                                                if (invoked_event) |inv_event| {
-                                                    for (inv_event.input.fields) |field| {
-                                                        if (std.mem.eql(u8, field.name, param_name)) {
-                                                            element_type = emitter.extractSliceElementType(field.type);
-                                                            break;
+                                                const field = blk: {
+                                                    if (invoked_event) |inv_event| {
+                                                        for (inv_event.input.fields) |*field| {
+                                                            if (std.mem.eql(u8, field.name, param_name)) {
+                                                                break :blk field;
+                                                            }
                                                         }
                                                     }
-                                                }
-
-                                                const contents = arg.value[1 .. arg.value.len - 1]; // Strip [ and ]
-                                                if (element_type) |et| {
-                                                    // Emit proper Zig array literal with explicit type
-                                                    try self.code_emitter.write("&[_]");
-                                                    try self.code_emitter.write(et);
-                                                    try self.code_emitter.write("{ ");
-                                                    try self.code_emitter.write(contents);
-                                                    try self.code_emitter.write(" }");
+                                                    break :blk null;
+                                                };
+                                                if (field) |field_info| {
+                                                    try emitter.emitArrayLiteralForField(self.code_emitter, &value_ctx, field_info, arg.value);
                                                 } else {
-                                                    // No type info - emit as anonymous array (let Zig infer)
-                                                    try self.code_emitter.write("&.{ ");
-                                                    try self.code_emitter.write(contents);
-                                                    try self.code_emitter.write(" }");
+                                                    return error.ArrayLiteralMissingType;
                                                 }
                                             } else {
-                                                try self.code_emitter.write(arg.value);
+                                                try emitter.emitValue(self.code_emitter, &value_ctx, arg.value);
                                             }
                                         }
                                         // NOTE: Comptime injection of program/allocator is now handled
@@ -2285,6 +2338,7 @@ pub const VisitorEmitter = struct {
                                 .ast_items = self.all_items,
                                 .is_sync = true, // Inline flows call synchronous handlers
                                 .tap_registry = self.tap_registry,
+                                .type_registry = self.type_registry,
                                 .main_module_name = self.main_module_name,
                                 .emit_mode = self.emit_mode,
                                 .module_annotations = source_file.module_annotations,
@@ -2360,6 +2414,7 @@ pub const VisitorEmitter = struct {
                                 .ast_items = self.all_items,
                                 .is_sync = true,
                                 .tap_registry = self.tap_registry,
+                                .type_registry = self.type_registry,
                                 .main_module_name = self.main_module_name,
                                 .emit_mode = self.emit_mode,
                                 .module_annotations = module.annotations,
@@ -2886,6 +2941,27 @@ pub const VisitorEmitter = struct {
         }
 
         return false;
+    }
+
+    fn findBranchField(
+        self: *VisitorEmitter,
+        event: *const ast.EventDecl,
+        branch_name: []const u8,
+        field_name: ?[]const u8,
+    ) ?*const ast.Field {
+        _ = self;
+        for (event.branches) |branch| {
+            if (!std.mem.eql(u8, branch.name, branch_name)) continue;
+            if (field_name) |name| {
+                for (branch.payload.fields) |*field| {
+                    if (std.mem.eql(u8, field.name, name)) return field;
+                }
+            } else if (branch.payload.fields.len > 0) {
+                return &branch.payload.fields[0];
+            }
+            return null;
+        }
+        return null;
     }
 
     fn valueUsesArgsDirectly(self: *VisitorEmitter, value: []const u8) bool {

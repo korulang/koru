@@ -12,6 +12,7 @@ const std = @import("std");
 const Root = @import("root");
 const ast_functional = @import("ast_functional");
 const emitter_helpers = @import("emitter_helpers");
+const annotation_parser = @import("annotation_parser");
 
 // Re-export variant registry functions from the core
 // This allows userland code to query variants via std.build.getVariant()
@@ -20,6 +21,74 @@ pub const registerVariant = emitter_helpers.registerVariant;
 
 // Import shared compiler types (to avoid circular dependency with compiler.kz)
 ~import "$std/compiler_types"
+
+// ============================================================================
+// FLAG MATCHING - Annotation-based conditional compilation
+// ============================================================================
+// Use ~[build("prod")] or ~[build("dev", "staging")] to conditionally include
+// declarations based on the --build=X compiler flag.
+//
+// Usage in source code:
+//   ~[build("prod")]koru.docker:image(tag: "myapp:latest") {
+//       FROM alpine:3.18
+//       COPY zig-out/bin/main /usr/local/bin/myapp
+//       CMD ["myapp"]
+//   }
+//
+//   ~[build("dev")]koru.docker:image(tag: "myapp:latest") {
+//       FROM alpine:3.18
+//       RUN apk add --no-cache gdb strace
+//       COPY zig-out/bin/main /usr/local/bin/myapp
+//       CMD ["myapp", "--debug"]
+//   }
+//
+// Then: koruc main.kz --build=prod docker build
+//
+// Usage in a command proc:
+//   for (program.items) |item| {
+//       if (item == .flow) {
+//           const flow = item.flow;
+//           if (!matchesFlags(flow.invocation.annotations)) continue;
+//           // ... process the flow
+//       }
+//   }
+//
+// Semantics:
+//   - No build(...) annotation → always matches
+//   - Has build("x", "y", ...) → matches if --build=x OR --build=y
+//
+pub fn matchesFlags(annotations: []const []const u8) bool {
+    // Look for build(...) parametrized annotation
+    for (annotations) |ann| {
+        // Try to parse as a parametrized call
+        const maybe_call = annotation_parser.parseCall(std.heap.page_allocator, ann) catch continue;
+        if (maybe_call) |call| {
+            defer {
+                var mutable_call = call;
+                mutable_call.deinit(std.heap.page_allocator);
+            }
+
+            // Check if this is a build() annotation
+            if (std.mem.eql(u8, call.name, "build")) {
+                // Check if any of the args match current --build=X flag
+                for (call.args) |arg| {
+                    // Build the flag string: "build=prod", "build=dev", etc.
+                    var flag_buf: [64]u8 = undefined;
+                    const flag = std.fmt.bufPrint(&flag_buf, "build={s}", .{arg}) catch continue;
+
+                    if (Root.CompilerEnv.hasFlagRuntime(flag)) {
+                        return true;  // Found a matching build flag
+                    }
+                }
+                // Has build() annotation but none of the args matched
+                return false;
+            }
+        }
+    }
+
+    // No build() annotation found → always matches
+    return true;
+}
 
 // Declare build dependency using implicit Source block
 // Usage: ~std.build:requires { exe.linkSystemLibrary("sqlite3"); }
@@ -42,11 +111,11 @@ pub const registerVariant = emitter_helpers.registerVariant;
 // ============================================================================
 // Allows selecting different proc variants based on --build flag.
 // Usage:
-//   ~[release]std.build:variants {
+//   ~[build("release")]std.build:variants {
 //       "compute": "fast",
 //       "blur": "gpu"
 //   }
-//   ~[debug]std.build:variants {
+//   ~[build("debug")]std.build:variants {
 //       "compute": "naive",
 //       "blur": "cpu"
 //   }
@@ -64,36 +133,7 @@ pub const registerVariant = emitter_helpers.registerVariant;
 
 ~proc variants {
     // Check if this config's annotation matches the --build flag
-    var matched = false;
-
-    // If no annotations, this is the default config (always applies if no flag set)
-    if (meta.annotations.len == 0) {
-        matched = true;
-    } else {
-        // Check each annotation against the build flag
-        for (meta.annotations) |ann| {
-            // Known build configs - check with comptime strings
-            if (std.mem.eql(u8, ann, "release")) {
-                if (Root.CompilerEnv.hasFlag("build=release")) {
-                    matched = true;
-                    break;
-                }
-            } else if (std.mem.eql(u8, ann, "debug")) {
-                if (Root.CompilerEnv.hasFlag("build=debug")) {
-                    matched = true;
-                    break;
-                }
-            } else if (std.mem.eql(u8, ann, "test")) {
-                if (Root.CompilerEnv.hasFlag("build=test")) {
-                    matched = true;
-                    break;
-                }
-            }
-            // Add more build configs as needed
-        }
-    }
-
-    if (!matched) {
+    if (!matchesFlags(meta.annotations)) {
         return .{ .skipped = .{ .reason = "no matching build flag" } };
     }
 
@@ -365,6 +405,8 @@ pub const registerVariant = emitter_helpers.registerVariant;
                         std.mem.eql(u8, flow.invocation.path.segments[0], "requires"));
 
                     if (is_build_requires) {
+                        // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
+                        if (!matchesFlags(flow.invocation.annotations)) continue;
                         // Extract source parameter
                         for (flow.invocation.args) |arg| {
                             if (std.mem.eql(u8, arg.name, "source")) {
@@ -399,6 +441,8 @@ pub const registerVariant = emitter_helpers.registerVariant;
                                 std.mem.eql(u8, flow.invocation.path.segments[0], "requires"));
 
                             if (is_build_requires) {
+                                // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
+                                if (!matchesFlags(flow.invocation.annotations)) continue;
                                 for (flow.invocation.args) |arg| {
                                     if (std.mem.eql(u8, arg.name, "source")) {
                                         // Deduplicate by checking if this source already exists

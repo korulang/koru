@@ -4065,13 +4065,19 @@ pub const PROGRAM_AST = Program{
                     \\        @panic("Mock shape validation failed");
                     \\    }
                     \\
+                    \\    const type_registry_module = @import("type_registry");
+                    \\    const type_registry_ptr: ?*type_registry_module.TypeRegistry = if (program.type_registry) |ptr|
+                    \\        @ptrCast(@alignCast(ptr))
+                    \\    else
+                    \\        null;
+                    \\
                     \\    // Emit the test module using emitModuleSubset
                     \\    // Pass the original main module name so event references are redirected to test module
                     \\    const test_module_code = emitter_helpers.emitModuleSubset(
                     \\        allocator,
                     \\        test_module_items.items,
                     \\        test_module_name,
-                    \\        null,  // type_registry not needed for basic test emission
+                    \\        type_registry_ptr,
                     \\        program.main_module_name,  // original main module name for event redirection
                     \\    ) catch {
                     \\        return .{ .transformed = .{ .program = program } };

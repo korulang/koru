@@ -120,7 +120,16 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
     // Made pub so backend_output_emitted.zig can access it via @import("root")
     try writer.writeAll("/// Compiler Environment - Query compilation context at backend comptime\n");
     try writer.writeAll("pub const CompilerEnv = struct {\n");
-    try writer.writeAll("    /// Check if a compiler flag is set\n");
+
+    // Generate the flags array for runtime access
+    try writer.writeAll("    /// All compiler flags (for runtime checking)\n");
+    try writer.writeAll("    pub const flags = &[_][]const u8{\n");
+    for (config.flags.items) |flag| {
+        try writer.print("        \"{s}\",\n", .{flag});
+    }
+    try writer.writeAll("    };\n\n");
+
+    try writer.writeAll("    /// Check if a compiler flag is set (comptime)\n");
     try writer.writeAll("    pub fn hasFlag(comptime name: []const u8) bool {\n");
 
     // Generate comptime switch for all flags
@@ -128,15 +137,20 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         try writer.writeAll("        _ = name;\n");
         try writer.writeAll("        return false;\n");
     } else {
-        try writer.writeAll("        inline for (&[_][]const u8{\n");
-        for (config.flags.items) |flag| {
-            try writer.print("            \"{s}\",\n", .{flag});
-        }
-        try writer.writeAll("        }) |flag| {\n");
+        try writer.writeAll("        inline for (flags) |flag| {\n");
         try writer.writeAll("            if (std.mem.eql(u8, name, flag)) return true;\n");
         try writer.writeAll("        }\n");
         try writer.writeAll("        return false;\n");
     }
+    try writer.writeAll("    }\n\n");
+
+    // Generate runtime flag checker
+    try writer.writeAll("    /// Check if a compiler flag is set (runtime)\n");
+    try writer.writeAll("    pub fn hasFlagRuntime(name: []const u8) bool {\n");
+    try writer.writeAll("        for (flags) |flag| {\n");
+    try writer.writeAll("            if (std.mem.eql(u8, name, flag)) return true;\n");
+    try writer.writeAll("        }\n");
+    try writer.writeAll("        return false;\n");
     try writer.writeAll("    }\n\n");
 
     try writer.writeAll("    /// Get environment variable value\n");
