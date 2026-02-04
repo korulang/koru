@@ -9,7 +9,7 @@
 // ✅ Both procs emit correctly
 //
 // What this does NOT test:
-// ❌ Actual polyglot compilation (not implemented yet)
+// ❌ Actual variant compilation (not implemented yet)
 // ❌ Variant selection logic (future work)
 // ❌ GPU code generation (future work)
 

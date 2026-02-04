@@ -106,20 +106,23 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Determine the viability and framing of open-sourcing Koru given the disconnect between its technical depth and public perception.
+Transition the Koru compiler toward production-grade robustness and standardized terminology (Variants, AI-First framing).
 
 ### Decisions
 - **Adopted 'Semantic Space Lifting' as the formal term for transforming opaque APIs into state-enforced Koru events.**: It precisely describes the elevation of implicit rules (like C library cleanup) into compiler-enforced obligations using phantom types and event branches.
 - **Positioned Koru as an 'AI-First' language where AI collaboration is the primary path to understanding.**: AIs map Koru's synthesis of concepts (algebraic effects, typestate) instantly, whereas humans struggle with the 'unlearning' required by the paradigm shift.
-- **Retained 'Event Continuation' as the core primitive name despite potential human confusion.**: It creates a 'gap' in understanding that forces users to engage with Koru's specific implementation rather than mapping it to familiar but incorrect patterns.
+- **Renamed 'polyglot' concepts and test directories to 'variants'.**: 'Variants' more accurately describes alternative implementations (GPU, JS, Zig, or strategy-based) for the same event interface, aligning with the existing '|variant' syntax.
+- **Implemented 'State Poisoning' for resource disposal instead of ownership transfer.**: Tracks 'disposed' bindings in a hashmap during semantic checking to enforce protocol safety (no double-commit) without the overhead of a full move-semantics engine.
+- **Implemented Strict Compile Mode and Guaranteed Diagnostics.**: Ensures the compiler fails if any parse_error nodes are generated, preventing silent acceptance of invalid code and improving trust in the reporter.
 - **Transitioned AutoDischargeInserter to be strictly annotation-driven (@scope) rather than name-based.**: Decouples resource management from specific syntax (for/while), allowing custom constructs to define scope boundaries and preventing double-discharges.
+- **Enforced mandatory validation for cleanup obligations during label jumps.**: Prevents resource leaks during non-linear flow. Jumps must either pass obligations to the target or discharge them, unless suspended by a @scope annotation.
+- **Adopted [opaque] annotation for flows, events, and taps.**: Provides a circuit-breaker for hyper-reactive tapping scenarios and protects high-performance hot loops from observation overhead.
 - **Standardized error reporting to 1-based columns and fixed caret alignment in the ErrorReporter.**: Consistency with IDE expectations and improved visual clarity for terminal diagnostics.
 - **Migrated compiler logging from Zig's std.log to a custom log.zig system.**: Eliminates 240+ lines of debug noise that buried actual compiler errors, enabling exact-match error testing.
 - **Implemented exact-match error message validation in the test harness (expected.txt).**: Locks in high-quality error messages and allows the test suite to serve as live documentation for the website.
 - **Adopted the 'GO SLOW' protocol for handling unexpected behavior or destructive actions.**: To combat a pattern of 'racing ahead' and making sloppy architectural decisions. Mandates stopping and reporting before acting.
-- **Adopted [opaque] annotation for flows, events, and taps.**: Provides a circuit-breaker for hyper-reactive tapping scenarios and protects high-performance hot loops from observation overhead.
-- **Reordered evaluate_comptime phases to run [transform] handlers BEFORE [comptime] flows.**: Allows comptime events to act upon a fully-transformed AST, enabling more compiler logic to reside in userspace.
-- **Enforced that 'pub' visibility is only valid for events, not procs.**: Procs are private implementation details. Only the event interface should be public-facing to maintain encapsulation.
+- **Updated lexer and parser to skip comment and blank lines in continuation blocks.**: Prevents the parser from incorrectly consuming comments as the step body for branch continuations (e.g., | done |> // comment \n step()).
+- **Established /usr/local/lib/koru as the global system path for Koru compiler sources and standard library.**: Allows the compiler to behave as a standard system tool and fixes fragility of 'koruc run' outside the repo root.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -161,13 +164,12 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **Terminology like 'Event Continuation' and 'Semantic Space Lifting' triggers 'wrong mappings' in humans who try to fit them into existing patterns (Observer, CPS).**: Acknowledge these terms as a 'filter' for high-curiosity developers and lean into AI-assisted collaboration to bridge the understanding gap.
-- **The AutoDischargeInserter previously relied on hardcoded event names (for, while) for scope boundaries, causing it to miss custom constructs.**: Use the '@scope' annotation as the single source of truth for isolation boundaries in the compiler.
-- **Heuristic-based 'Zig code' detection in the parser can block valid Koru namespaced events like '~std.log()'.**: Tighten heuristics to check for specific patterns (e.g., 'std.log.') at the top level of an invocation rather than simple substring matches.
-- **Parser error reporting often suffers from 0-based vs 1-based coordinate mismatches and misaligned carets.**: Standardize on 1-based indexing and audit 'reporter.zig' to ensure prefix lengths (e.g., ' | ') match across all output lines.
-- **Resources defined outside a @scope boundary must not be discharged inside it, as the scope might be conditional or repeating.**: Enforce strict isolation: a scope boundary cannot satisfy or discharge obligations created in an outer scope.
+- **Parser heuristics for multi-line continuations can misinterpret comments as step bodies.**: Explicitly skip comment lines (lexer.isCommentLine()) and blank lines when looking for the next-line step body in parseBranchContinuationBase.
+- **Label jumps normally require all active phantom obligations to be passed as arguments to prevent resource leaks.**: Use the '@scope' annotation to distinguish between obligations created within the current block and those inherited from outer scopes; jumps only need to account for local obligations.
+- **AST JSON regression tests are sensitive to additive schema changes because they are compared as raw text.**: Implement AST JSON schema versioning and move towards tolerant JSON comparison that ignores additive keys.
+- **Optional 'documentation-only' syntax (like call-site phantom types) complicates the grammar and creates parser fragility.**: Remove redundant syntax that doesn't affect semantics or codegen to reduce parser ambiguity with array literals.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 2/1/2026, 4:57:13 PM
+> Last updated: 2/4/2026, 4:40:11 PM

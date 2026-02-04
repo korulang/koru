@@ -1,5 +1,5 @@
-// Test 815: Polyglot multi-target compilation
-// Tests |variant syntax for language-specific implementations
+// Test 815: Variant multi-target compilation
+// Tests |variant syntax for target-specific implementations
 const std = @import("std");
 
 // Event: Pure interface (no variant)

@@ -2,7 +2,7 @@
 
 ## Status: ✅ IMPLEMENTED (Stub Phase)
 
-The GPU shader compilation is **completely isolated** from the main compiler pipeline, following the design in POLYGLOT.md exactly.
+The GPU shader compilation is **completely isolated** from the main compiler pipeline, following the design in VARIANTS.md exactly.
 
 ## Architecture Overview
 
@@ -16,10 +16,10 @@ The GPU shader compilation is **completely isolated** from the main compiler pip
 │     ↓                                                         │
 │  Shape Checker (validates event interfaces only)            │
 │     ↓                                                         │
-│  Compiler Coordinator (NEW: adds polyglot pass)             │
+│  Compiler Coordinator (NEW: adds variant pass)             │
 │     ↓                                                         │
 │  ┌────────────────────────────────────────────┐             │
-│  │   Polyglot Compiler Pass (NEW!)            │             │
+│  │   Variant Compiler Pass (NEW!)            │             │
 │  │   - Walks AST for procs with .target       │             │
 │  │   - Dispatches to compile.target event     │             │
 │  │   - Replaces proc.body with Zig wrapper    │             │
@@ -128,8 +128,8 @@ This is the **ONLY** modification to the main pipeline. Everything else is new, 
 
 - [x] Create isolated GLSL compiler module
 - [x] Add `compile.target` event to compiler bootstrap
-- [x] Add `compile_polyglot` compiler pass event
-- [x] Wire polyglot pass into coordinator
+- [x] Add `compile_variant` compiler pass event
+- [x] Wire variant pass into coordinator
 - [x] Create stub implementations
 
 ### 🚧 Phase 2: GLSL Implementation (TODO)

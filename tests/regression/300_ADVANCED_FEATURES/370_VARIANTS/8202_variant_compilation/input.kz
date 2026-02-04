@@ -1,6 +1,6 @@
-// Test 817: Polyglot Variant Architecture
+// Test 817: Variant Compilation Architecture
 //
-// Demonstrates the complete pattern for polyglot compilation using |variant syntax.
+// Demonstrates the complete pattern for variant compilation using |variant syntax.
 // This test proves the architecture WITHOUT modifying compiler_bootstrap.kz!
 //
 // KEY CONCEPTS (see docs/KORU-BUILD.md):
@@ -30,7 +30,7 @@
 // ✅ Architecture is sound and composable
 //
 // Phase 2 (not in this test):
-// - Add compiler.passes.compile_polyglot pass
+// - Add compiler.passes.compile_variants pass
 // - Walk AST, transform procs with .target
 // - Insert pass into compiler.coordinate pipeline
 
@@ -122,17 +122,17 @@ const std = @import("std");
 // Custom Compiler Coordinator (demonstrates override mechanism)
 // ================================================================
 // By defining compiler.coordinate as a SUBFLOW, we can completely
-// replace the compilation pipeline! Real polyglot coordinator would:
+// replace the compilation pipeline! Real variant coordinator would:
 //
 // ~compiler.coordinate =
 //     compiler.passes.evaluate_comptime(ast: ast)
 //     | evaluated ev |> compiler.check.structure(ast: ev.ast)
-//     | valid v |> compiler.passes.compile_polyglot(ast: v.ast)  ← NEW!
+//     | valid v |> compiler.passes.compile_variants(ast: v.ast)  ← NEW!
 //     | transformed t |> compiler.check.phantom.semantic(ast: t.ast)
 //     | valid v2 |> compiler.emit.zig(ast: v2.ast)
 //     | emitted em |> coordinated { ... }
 //
-// The compiler.passes.compile_polyglot pass would:
+// The compiler.passes.compile_variants pass would:
 // 1. Walk AST for procs with .target field
 // 2. For each, invoke ~compile.target event (defined above)
 // 3. Replace proc.body with returned wrapper code
