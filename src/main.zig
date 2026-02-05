@@ -2917,6 +2917,24 @@ fn installZigDirect(allocator: std.mem.Allocator) !void {
     std.debug.print("\n  Add to PATH: export PATH=\"{s}:$PATH\"\n", .{zig_path});
 }
 
+// Print parse_error nodes from AST when the reporter doesn't have them.
+// Defense-in-depth: lenient parser may create parse_error AST nodes without
+// adding to the reporter (e.g. extractProcBody returns error.ParseError
+// without calling addError). This ensures those errors are still surfaced.
+fn printAstParseErrors(source_file: *const ast.Program, writer: anytype) !void {
+    for (source_file.items) |*item| {
+        if (item.* == .parse_error) {
+            const pe = item.parse_error;
+            try writer.print("error[{s}]: {s}\n", .{ @tagName(pe.error_code), pe.message });
+            try writer.print("  --> {s}:{}:{}\n", .{ pe.location.file, pe.location.line, pe.location.column });
+            if (pe.hint) |hint| {
+                try writer.print("  hint: {s}\n", .{hint});
+            }
+            try writer.writeAll("\n");
+        }
+    }
+}
+
 // A simple writer that wraps a File
 const FileWriter = struct {
     file: std.fs.File,
@@ -3218,9 +3236,12 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
                 const parse_result = try parser.parse();
 
                 // Abort on parse errors in imported files
-                if (parser.reporter.hasErrors()) {
+                if (parser.reporter.hasErrors() or parse_result.source_file.hasParseErrors()) {
                     const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
                     try parser.reporter.printErrors(stderr_writer);
+                    if (!parser.reporter.hasErrors()) {
+                        try printAstParseErrors(&parse_result.source_file, stderr_writer);
+                    }
                     std.process.exit(1);
                 }
 
@@ -3268,9 +3289,12 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
             const parse_result = try parser.parse();
 
             // Abort on parse errors in imported files
-            if (parser.reporter.hasErrors()) {
+            if (parser.reporter.hasErrors() or parse_result.source_file.hasParseErrors()) {
                 const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
                 try parser.reporter.printErrors(stderr_writer);
+                if (!parser.reporter.hasErrors()) {
+                    try printAstParseErrors(&parse_result.source_file, stderr_writer);
+                }
                 std.process.exit(1);
             }
 
@@ -5631,9 +5655,15 @@ pub fn main() !void {
     }
 
     // For non-JSON mode, fail immediately if there are parse errors
-    if (parser.reporter.hasErrors()) {
+    // Defense-in-depth: check BOTH reporter errors AND parse_error AST nodes.
+    // Lenient parser may create parse_error nodes without adding to reporter.
+    if (parser.reporter.hasErrors() or source_file.hasParseErrors()) {
         const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
         try parser.reporter.printErrors(stderr_writer);
+        if (!parser.reporter.hasErrors()) {
+            // Reporter is empty but AST has parse_error nodes — print them
+            try printAstParseErrors(&source_file, stderr_writer);
+        }
         std.process.exit(1);
     }
 
