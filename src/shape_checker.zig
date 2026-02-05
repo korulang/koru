@@ -523,10 +523,9 @@ pub const ShapeChecker = struct {
                 // Get the event declaration for branch validation
                 const event = self.events.get(event_name) orelse {
                     _ = subflow_impl;
-                    try self.reporter.addError(
+                    try self.reporter.addErrorAtLocation(
                         .KORU040,
-                        location.line,
-                        location.column,
+                        location,
                         "subflow '{s}' has no matching event declaration",
                         .{event_name},
                     );
@@ -546,10 +545,9 @@ pub const ShapeChecker = struct {
                 return;
             }
             // Unknown event
-            try self.reporter.addError(
+            try self.reporter.addErrorAtLocation(
                 .KORU040,
-                location.line,
-                location.column,
+                location,
                 "unknown event '{s}'",
                 .{event_name},
             );
@@ -613,7 +611,7 @@ pub const ShapeChecker = struct {
 
                 if (!is_meta_event and self.events.get(source_path) == null) {
                     log.debug("ERROR: Unknown source event '{s}' in tap\n", .{source_path});
-                    try self.reporter.addError(.KORU040, location.line, location.column, "unknown source event '{s}' in tap", .{source_path});
+                    try self.reporter.addErrorAtLocation(.KORU040, location, "unknown source event '{s}' in tap", .{source_path});
                     // Continue checking for more errors
                 }
             }
@@ -651,7 +649,7 @@ pub const ShapeChecker = struct {
 
                 if (self.events.get(dest_path) == null) {
                     log.debug("ERROR: Unknown destination event '{s}' in tap\n", .{dest_path});
-                    try self.reporter.addError(.KORU040, location.line, location.column, "unknown destination event '{s}' in tap", .{dest_path});
+                    try self.reporter.addErrorAtLocation(.KORU040, location, "unknown destination event '{s}' in tap", .{dest_path});
                     // Continue checking for more errors
                 }
             }
@@ -1167,10 +1165,9 @@ pub const ShapeChecker = struct {
         defer self.allocator.free(event_name);
 
         const event_info = self.events.get(event_name) orelse {
-            try self.reporter.addError(
+            try self.reporter.addErrorAtLocation(
                 .KORU040,
-                flow.location.line,
-                flow.location.column,
+                flow.location,
                 "unknown event '{s}'",
                 .{event_name},
             );

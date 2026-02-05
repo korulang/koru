@@ -141,6 +141,19 @@ pub const ErrorReporter = struct {
         });
     }
     
+    /// Like addError, but uses the full SourceLocation (including file) from the caller
+    /// instead of the reporter's file_name. Use this when errors can originate from
+    /// multiple files (e.g. shape_checker validating flows with per-flow locations).
+    pub fn addErrorAtLocation(self: *ErrorReporter, code: ErrorCode, location: SourceLocation, comptime fmt: []const u8, args: anytype) !void {
+        const message = try std.fmt.allocPrint(self.allocator, fmt, args);
+        try self.errors.append(self.allocator, .{
+            .code = code,
+            .message = message,
+            .location = location,
+            .hint = null,
+        });
+    }
+
     pub fn addErrorWithHint(self: *ErrorReporter, code: ErrorCode, line: usize, column: usize, comptime fmt: []const u8, args: anytype, comptime hint_fmt: []const u8, hint_args: anytype) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
         const hint = try std.fmt.allocPrint(self.allocator, hint_fmt, hint_args);
