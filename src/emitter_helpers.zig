@@ -66,15 +66,22 @@ pub const EmitMode = enum {
 pub fn shouldFilter(item_annotations: []const []const u8, module_annotations: []const []const u8, module_path: []const u8, mode: EmitMode) bool {
     _ = module_path; // No longer needed for compiler_bootstrap special case
 
-    // Explicit override semantics: if item has ANY annotations, use ONLY those; otherwise inherit from module
-    // This means: annotated constructs don't inherit module annotations, only unannotated ones do
-    const annotations_to_check = if (item_annotations.len > 0)
-        item_annotations
-    else
-        module_annotations;
+    // Phase annotation semantics:
+    // - Module-level [comptime] makes ALL items in the module comptime by default
+    // - Module-level [runtime] makes ALL items in the module available at runtime
+    // - Item-level annotations override module-level annotations
+    // - [comptime|runtime] means available in both phases
+    // This allows modules like testing.kz to be marked [comptime] while still having
+    // specific items marked [runtime] if needed.
+    const has_module_comptime = purity_helpers.hasAnnotation(module_annotations, "comptime");
+    const has_module_runtime = purity_helpers.hasAnnotation(module_annotations, "runtime");
+    const has_item_comptime = purity_helpers.hasAnnotation(item_annotations, "comptime");
+    const has_item_runtime = purity_helpers.hasAnnotation(item_annotations, "runtime");
 
-    const has_comptime = purity_helpers.hasAnnotation(annotations_to_check, "comptime");
-    const has_runtime = purity_helpers.hasAnnotation(annotations_to_check, "runtime");
+    // Item is comptime if either the module or item has [comptime] annotation
+    // UNLESS the item or module explicitly has [runtime] (which allows runtime emission)
+    const is_comptime = has_module_comptime or has_item_comptime;
+    const is_runtime = has_item_runtime or has_module_runtime;
 
     // Filter based on emit mode and phase annotations
     switch (mode) {
@@ -83,14 +90,14 @@ pub fn shouldFilter(item_annotations: []const []const u8, module_annotations: []
             return false;
         },
         .comptime_only => {
-            // Emit if has [comptime] annotation (with or without [runtime])
-            // Filter OUT modules without [comptime]
-            return !has_comptime;
+            // Emit if comptime (possibly combined with runtime)
+            // Filter OUT items that are not comptime
+            return !is_comptime and !has_item_comptime;
         },
         .runtime_only => {
-            // Emit if has [runtime] OR no phase annotations (default runtime)
-            // Filter OUT if ONLY [comptime] (not both, not neither)
-            return has_comptime and !has_runtime;
+            // Emit if runtime OR no phase annotations (default runtime)
+            // Filter OUT if comptime-only (not also marked runtime)
+            return is_comptime and !is_runtime;
         },
     }
 }

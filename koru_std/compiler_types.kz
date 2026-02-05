@@ -1,7 +1,7 @@
-// NOTE: This module is marked ~[comptime|runtime] because its types need to be
-// available both at comptime (for compiler passes in backend_output_emitted.zig)
-// and runtime (for user programs that reference CompilerContext).
-~[comptime|runtime]
+// NOTE: This module is marked ~[comptime] because CompilerContext contains
+// ast.Program pointers which are only available during compilation.
+// If runtime code needs context, use a different type without AST dependencies.
+~[comptime]
 
 // Dummy event to prevent auto-injection of compiler import (which would create circular dependency)
 ~event __compiler_types_marker {} | done {}

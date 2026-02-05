@@ -1,3 +1,4 @@
+~[comptime]
 // Koru Testing Framework
 //
 // Compiler-guided test development with automatic mock detection.
