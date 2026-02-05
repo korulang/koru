@@ -2853,12 +2853,10 @@ pub const Parser = struct {
                 continuations = result.continuations;
             }
         } else {
-            // Check if this opens a multi-line argument block (regular)
-            const invocation_str = remaining;
-            invocation = if (std.mem.endsWith(u8, lexer.trim(invocation_str), "{"))
-                try self.parseMultiLineInvocation(invocation_str)
-            else
-                try self.parseEventInvocation(invocation_str);
+            // Regular invocation (no implicit flow/source block)
+            // Note: invocations ending with { are always caught by has_implicit_flow_brace
+            // above, so parseEventInvocation is the only path here.
+            invocation = try self.parseEventInvocation(remaining);
 
             // Check for invalid inline branch continuations: ~event() | branch |> _
             // Branch continuations must be on a new line - only void chaining (|>) is allowed inline
@@ -2868,11 +2866,11 @@ pub const Parser = struct {
                 var i: usize = 0;
                 var brace_depth: i32 = 0;
                 var in_string = false;
-                while (i < invocation_str.len) : (i += 1) {
-                    const c = invocation_str[i];
+                while (i < remaining.len) : (i += 1) {
+                    const c = remaining[i];
 
                     // Track string state (skip escaped quotes)
-                    if (c == '"' and (i == 0 or invocation_str[i - 1] != '\\')) {
+                    if (c == '"' and (i == 0 or remaining[i - 1] != '\\')) {
                         in_string = !in_string;
                         continue;
                     }
@@ -2891,13 +2889,13 @@ pub const Parser = struct {
                     }
 
                     // Only check pipes at brace_depth 0 (outside source blocks)
-                    if (brace_depth == 0 and c == '|' and i + 1 < invocation_str.len) {
-                        const next_char = invocation_str[i + 1];
+                    if (brace_depth == 0 and c == '|' and i + 1 < remaining.len) {
+                        const next_char = remaining[i + 1];
                         // |> is valid (void chaining), |? is valid (catch-all)
                         // | followed by space then word is invalid (branch must be on new line)
                         if (next_char == ' ') {
                             // Check if there's a word after the space (branch name)
-                            const after_pipe = lexer.trim(invocation_str[i + 1 ..]);
+                            const after_pipe = lexer.trim(remaining[i + 1 ..]);
                             if (after_pipe.len > 0 and after_pipe[0] != '>' and after_pipe[0] != '?') {
                                 try self.reporter.addError(.PARSE001, self.current, @as(u16, @intCast(i)), "Branch continuation '|' must start on a new line with proper indentation", .{});
                                 return error.ParseError;
@@ -2913,13 +2911,13 @@ pub const Parser = struct {
             const has_inline_continuation = blk: {
                 var j: usize = 0;
                 var in_str = false;
-                while (j < invocation_str.len) : (j += 1) {
-                    const ch = invocation_str[j];
-                    if (ch == '"' and (j == 0 or invocation_str[j - 1] != '\\')) {
+                while (j < remaining.len) : (j += 1) {
+                    const ch = remaining[j];
+                    if (ch == '"' and (j == 0 or remaining[j - 1] != '\\')) {
                         in_str = !in_str;
                         continue;
                     }
-                    if (!in_str and ch == '|' and j + 1 < invocation_str.len and invocation_str[j + 1] == '>') {
+                    if (!in_str and ch == '|' and j + 1 < remaining.len and remaining[j + 1] == '>') {
                         break :blk true;
                     }
                 }
@@ -2928,7 +2926,7 @@ pub const Parser = struct {
 
             if (has_inline_continuation) {
                 // Parse inline continuation from the same line
-                continuations = try self.parseInlineContinuation(invocation_str, lexer.getIndent(line));
+                continuations = try self.parseInlineContinuation(remaining, lexer.getIndent(line));
             } else {
                 // Parse regular multi-line continuations
                 continuations = try self.parseContinuations(lexer.getIndent(line));
@@ -3078,64 +3076,6 @@ pub const Parser = struct {
         }
 
         return false;
-    }
-
-    fn parseMultiLineInvocation(self: *Parser, first_line: []const u8) anyerror!ast.Invocation {
-        // Parse event name from first line (everything before the {)
-        const brace_idx = std.mem.lastIndexOf(u8, first_line, "{") orelse unreachable;
-        const event_name = lexer.trim(first_line[0..brace_idx]);
-        const parsed_path = try lexer.parseQualifiedPath(self.allocator, event_name, ast);
-
-        // Now parse multi-line arguments
-        var args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, 8);
-        defer args.deinit(self.allocator);
-
-        // Keep consuming lines until we find the closing }
-        while (self.current < self.lines.len) {
-            const line = self.lines[self.current];
-            const trimmed = lexer.trim(line);
-
-            // Check if this is the closing brace
-            if (std.mem.eql(u8, trimmed, "}")) {
-                self.current += 1;
-                break;
-            }
-
-            // Check if this line has a field: pattern (use depth-aware search for { ... } expressions)
-            if (lexer.indexOfAtDepthZero(trimmed, ':')) |colon_idx| {
-                const field_name = lexer.trim(trimmed[0..colon_idx]);
-                const after_colon = lexer.trim(trimmed[colon_idx + 1 ..]);
-
-                // Check if this starts a block { for Source
-                if (std.mem.eql(u8, after_colon, "{")) {
-                    // This is a Source block
-                    const block_arg = try self.parseFlowAstOrSourceArg(field_name, self.current);
-                    try args.append(self.allocator, block_arg);
-                } else if (std.mem.endsWith(u8, after_colon, ",")) {
-                    // Normal argument with trailing comma
-                    const value = lexer.trim(after_colon[0 .. after_colon.len - 1]);
-                    try args.append(self.allocator, ast.Arg{
-                        .name = try self.allocator.dupe(u8, field_name),
-                        .value = try self.allocator.dupe(u8, value),
-                    });
-                    self.current += 1;
-                } else {
-                    // Normal argument without comma (last one)
-                    try args.append(self.allocator, ast.Arg{
-                        .name = try self.allocator.dupe(u8, field_name),
-                        .value = try self.allocator.dupe(u8, after_colon),
-                    });
-                    self.current += 1;
-                }
-            } else {
-                self.current += 1;
-            }
-        }
-
-        return ast.Invocation{
-            .path = parsed_path,
-            .args = try args.toOwnedSlice(self.allocator),
-        };
     }
 
     fn parseFlowAstOrSourceArg(self: *Parser, field_name: []const u8, start_line: usize) anyerror!ast.Arg {
