@@ -518,7 +518,7 @@ pub const AutoDischargeInserter = struct {
                                         .KORU030,
                                         flow.location.line,
                                         flow.location.column,
-                                        "Multiple disposal options for resource '{s}' at scope exit. Mark one with [!].",
+                                        "Multiple disposal options for resource '{s}' at scope exit. Discharge explicitly in your code.",
                                         .{binding_name},
                                     );
                                 }
@@ -859,7 +859,7 @@ pub const AutoDischargeInserter = struct {
                                         .KORU030,
                                         flow.location.line,
                                         flow.location.column,
-                                        "Multiple disposal options for resource '{s}' at scope exit. Mark one with [!].",
+                                        "Multiple disposal options for resource '{s}' at scope exit. Discharge explicitly in your code.",
                                         .{binding_name},
                                     );
                                 }
@@ -1181,7 +1181,7 @@ pub const AutoDischargeInserter = struct {
                             .KORU030,
                             flow.location.line,
                             flow.location.column,
-                            "Multiple disposal options for resource '{s}': {s}. Mark one with [!] or be explicit.",
+                            "Multiple disposal options for resource '{s}': {s}. Discharge explicitly in your code.",
                             .{ binding_path, fbs.getWritten() },
                         );
                     }
@@ -1343,7 +1343,7 @@ pub const AutoDischargeInserter = struct {
                         .KORU030,
                         flow.location.line,
                         flow.location.column,
-                        "Multiple disposal options for resource '{s}': {s}. Mark one with [!] or be explicit.",
+                        "Multiple disposal options for resource '{s}': {s}. Discharge explicitly in your code.",
                         .{ binding_path, fbs.getWritten() },
                     );
                 }

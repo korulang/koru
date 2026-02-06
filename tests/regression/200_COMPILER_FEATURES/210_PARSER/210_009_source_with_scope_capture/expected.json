@@ -115,7 +115,8 @@
                                 "is_file": false,
                                 "is_embed_file": false,
                                 "is_expression": false,
-                                "is_invocation_meta": false
+                                "is_invocation_meta": false,
+                                "phantom": null
                             },
                             {
                                 "name": "age",
@@ -124,7 +125,8 @@
                                 "is_file": false,
                                 "is_embed_file": false,
                                 "is_expression": false,
-                                "is_invocation_meta": false
+                                "is_invocation_meta": false,
+                                "phantom": null
                             }
                         ]
                     }
@@ -175,7 +177,8 @@
                         "is_file": false,
                         "is_embed_file": false,
                         "is_expression": false,
-                        "is_invocation_meta": false
+                        "is_invocation_meta": false,
+                        "phantom": null
                     }
                 ]
             },
@@ -191,7 +194,8 @@
                                 "is_file": false,
                                 "is_embed_file": false,
                                 "is_expression": false,
-                                "is_invocation_meta": false
+                                "is_invocation_meta": false,
+                                "phantom": null
                             }
                         ]
                     }

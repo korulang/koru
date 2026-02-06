@@ -53,7 +53,8 @@
                         "is_file": false,
                         "is_embed_file": false,
                         "is_expression": true,
-                        "is_invocation_meta": false
+                        "is_invocation_meta": false,
+                        "phantom": null
                     },
                     {
                         "name": "source",
@@ -62,7 +63,8 @@
                         "is_file": false,
                         "is_embed_file": false,
                         "is_expression": false,
-                        "is_invocation_meta": false
+                        "is_invocation_meta": false,
+                        "phantom": null
                     },
                     {
                         "name": "invocation",
@@ -71,7 +73,8 @@
                         "is_file": false,
                         "is_embed_file": false,
                         "is_expression": false,
-                        "is_invocation_meta": false
+                        "is_invocation_meta": false,
+                        "phantom": null
                     },
                     {
                         "name": "program",
@@ -80,7 +83,8 @@
                         "is_file": false,
                         "is_embed_file": false,
                         "is_expression": false,
-                        "is_invocation_meta": false
+                        "is_invocation_meta": false,
+                        "phantom": null
                     },
                     {
                         "name": "allocator",
@@ -89,7 +93,8 @@
                         "is_file": false,
                         "is_embed_file": false,
                         "is_expression": false,
-                        "is_invocation_meta": false
+                        "is_invocation_meta": false,
+                        "phantom": null
                     }
                 ]
             },
@@ -105,7 +110,8 @@
                                 "is_file": false,
                                 "is_embed_file": false,
                                 "is_expression": false,
-                                "is_invocation_meta": false
+                                "is_invocation_meta": false,
+                                "phantom": null
                             }
                         ]
                     }

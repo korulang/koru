@@ -106,23 +106,16 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Transition the Koru compiler toward production-grade robustness and standardized terminology (Variants, AI-First framing).
+Harden the Koru compiler's semantic layer by implementing phantom type serialization, refining phase inheritance, and automating regression tracking.
 
 ### Decisions
-- **Adopted 'Semantic Space Lifting' as the formal term for transforming opaque APIs into state-enforced Koru events.**: It precisely describes the elevation of implicit rules (like C library cleanup) into compiler-enforced obligations using phantom types and event branches.
-- **Positioned Koru as an 'AI-First' language where AI collaboration is the primary path to understanding.**: AIs map Koru's synthesis of concepts (algebraic effects, typestate) instantly, whereas humans struggle with the 'unlearning' required by the paradigm shift.
-- **Renamed 'polyglot' concepts and test directories to 'variants'.**: 'Variants' more accurately describes alternative implementations (GPU, JS, Zig, or strategy-based) for the same event interface, aligning with the existing '|variant' syntax.
-- **Implemented 'State Poisoning' for resource disposal instead of ownership transfer.**: Tracks 'disposed' bindings in a hashmap during semantic checking to enforce protocol safety (no double-commit) without the overhead of a full move-semantics engine.
-- **Implemented Strict Compile Mode and Guaranteed Diagnostics.**: Ensures the compiler fails if any parse_error nodes are generated, preventing silent acceptance of invalid code and improving trust in the reporter.
-- **Transitioned AutoDischargeInserter to be strictly annotation-driven (@scope) rather than name-based.**: Decouples resource management from specific syntax (for/while), allowing custom constructs to define scope boundaries and preventing double-discharges.
-- **Enforced mandatory validation for cleanup obligations during label jumps.**: Prevents resource leaks during non-linear flow. Jumps must either pass obligations to the target or discharge them, unless suspended by a @scope annotation.
-- **Adopted [opaque] annotation for flows, events, and taps.**: Provides a circuit-breaker for hyper-reactive tapping scenarios and protects high-performance hot loops from observation overhead.
-- **Standardized error reporting to 1-based columns and fixed caret alignment in the ErrorReporter.**: Consistency with IDE expectations and improved visual clarity for terminal diagnostics.
-- **Migrated compiler logging from Zig's std.log to a custom log.zig system.**: Eliminates 240+ lines of debug noise that buried actual compiler errors, enabling exact-match error testing.
-- **Implemented exact-match error message validation in the test harness (expected.txt).**: Locks in high-quality error messages and allows the test suite to serve as live documentation for the website.
-- **Adopted the 'GO SLOW' protocol for handling unexpected behavior or destructive actions.**: To combat a pattern of 'racing ahead' and making sloppy architectural decisions. Mandates stopping and reporting before acting.
-- **Updated lexer and parser to skip comment and blank lines in continuation blocks.**: Prevents the parser from incorrectly consuming comments as the step body for branch continuations (e.g., | done |> // comment \n step()).
-- **Established /usr/local/lib/koru as the global system path for Koru compiler sources and standard library.**: Allows the compiler to behave as a standard system tool and fixes fragility of 'koruc run' outside the repo root.
+- **Include 'phantom' type annotations (e.g., File[open!]) in AST JSON serialization.**: To support downstream tools and debuggers that need to distinguish between standard types and semantic state-tracking metadata.
+- **Implemented compile-time validation for array literals assigned to non-array targets.**: To catch type mismatches early and ensure Koru's array literals ([...]) have a known element type from context, avoiding performance-degrading heuristics.
+- **Introduced deps.kz for centralized dependency management and enhanced testing.kz with mock support.**: Standardizes internal/external dependency resolution and provides better visibility into regression suite health via automated reporting (CLEANUP_TESTS.md).
+- **Refined phase annotation inheritance to allow module-level defaults (e.g., [comptime]) with item-level overrides (e.g., [runtime]).**: Enables modules like testing.kz to be comptime by default while allowing specific runtime components, preventing illegal cross-phase references of AST pointers.
+- **Established a 'Ground Truth' documentation policy, prioritizing verified tests and code over markdown.**: Prevents 'poisoning' the development process with outdated design docs. Generated llms.md as a machine-consumable spec derived strictly from SUCCESS-marked tests.
+- **Adopted the '.impl' pattern and atomic unit treatment for complex control structures (try/catch, switch).**: Ensures architectural symmetry and prevents 'Frankenstein' states where a partial block (like a catch) is executed or transformed without its parent.
+- **Standardized on Liquid-style {{ var }} syntax, deprecating ${var}.**: Provides a unified, powerful metaprogramming interface and reduces maintenance burden of dual-syntax templating.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -164,12 +157,12 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **Parser heuristics for multi-line continuations can misinterpret comments as step bodies.**: Explicitly skip comment lines (lexer.isCommentLine()) and blank lines when looking for the next-line step body in parseBranchContinuationBase.
-- **Label jumps normally require all active phantom obligations to be passed as arguments to prevent resource leaks.**: Use the '@scope' annotation to distinguish between obligations created within the current block and those inherited from outer scopes; jumps only need to account for local obligations.
-- **AST JSON regression tests are sensitive to additive schema changes because they are compared as raw text.**: Implement AST JSON schema versioning and move towards tolerant JSON comparison that ignores additive keys.
-- **Optional 'documentation-only' syntax (like call-site phantom types) complicates the grammar and creates parser fragility.**: Remove redundant syntax that doesn't affect semantics or codegen to reduce parser ambiguity with array literals.
+- **Module-level phase annotations (e.g., [comptime]) were failing to propagate to individual items unless explicitly handled in inheritance logic.**: Refactor 'shouldFilter' to check both module and item-level annotations, allowing item-level to override or complement module defaults.
+- **Circular dependencies or runtime crashes occur when modules containing AST pointers (like CompilerContext) are marked for runtime emission.**: Strictly mark modules with AST dependencies as ~[comptime] and ensure the emitter filters them out of runtime builds.
+- **Array literals assigned to non-array types or mutable targets ([]T) lacked strict validation, leading to type-resolution gaps.**: Enforce strict type-driven emission where array literals resolve to a known slice type from context or error out; forbid mutable targets to prevent hidden allocations.
+- **Large test result JSONs (6000+ lines) can bloat the repository and make diffs difficult to review.**: Maintain 'test-results/latest.json' as the primary pointer and consider git-ignoring individual timestamped runs.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 2/4/2026, 4:40:11 PM
+> Last updated: 2/6/2026, 7:22:11 PM
