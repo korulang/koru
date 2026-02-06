@@ -1,0 +1,65 @@
+// ============================================================================
+// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// ============================================================================
+// Test: inline_body inside subflow_impl default handler
+// Feature: When a transform (e.g. [expand]) sets inline_body on a flow inside
+//          a subflow_impl, the emitter must emit the inline code instead of
+//          generating a handler call. This tests that the default handler
+//          emission path respects Flow.inline_body.
+// Verifies: Subflow can use [expand] transforms with branching continuations
+// ============================================================================
+
+~import "$std/template"
+~import "$std/io"
+
+const std = @import("std");
+
+// Template: check if value > 0, return tagged union
+~std.template:define(name: "check_positive") {
+    blk: {
+        const Result = union(enum) {
+            positive: struct { val: i32 },
+            negative: void,
+        };
+        const __value: i32 = {{ expr }};
+        if (__value > 0) {
+            break :blk Result{ .positive = .{ .val = __value } };
+        } else {
+            break :blk Result{ .negative = {} };
+        }
+    }
+}
+
+// [expand] event with branches — produces inline_body + switch
+~[norun|expand]pub event check_positive { expr: Expression }
+| positive { val: i32 }
+| negative {}
+
+// Event to test
+~event classify { input: i32 }
+| result { output: i32 }
+
+// Subflow: uses check_positive (an [expand] with inline_body) inside subflow_impl
+// This is the key pattern — inline_body must work in the default handler path
+~classify = check_positive(expr: input)
+| positive p |> result { output: p.val }
+| negative |> result { output: -1 }
+
+// Helper to print
+~event print_result { value: i32 }
+| done {}
+
+~proc print_result {
+    std.debug.print("{}\n", .{value});
+    return .{ .done = .{} };
+}
+
+// Test 1: positive value → should output 42
+~classify(input: 42)
+| result r |> print_result(value: r.output)
+    | done |> _
+
+// Test 2: negative value → should output -1
+~classify(input: -5)
+| result r |> print_result(value: r.output)
+    | done |> _

@@ -1,0 +1,70 @@
+// ============================================================================
+// REGRESSION TEST
+// ============================================================================
+// Test: inline_body inside cross-module ~impl subflow_impl
+// Feature: When a transform (e.g. [expand]) sets inline_body on a flow inside
+//          a cross-module ~impl subflow_impl (is_impl=true), the emitter must
+//          emit the inline code. This is the exact pattern orisha:router uses.
+// Verifies: emitEventDecl's is_impl flow path respects Flow.inline_body
+// ============================================================================
+
+~import "$std/template"
+
+const std = @import("std");
+
+// Template: classify a number as positive or not
+~std.template:define(name: "classify_num") {
+    blk: {
+        const Result = union(enum) {
+            positive: struct { val: i32 },
+            non_positive: void,
+        };
+        const __v: i32 = {{ expr }};
+        if (__v > 0) {
+            break :blk Result{ .positive = .{ .val = __v } };
+        } else {
+            break :blk Result{ .non_positive = {} };
+        }
+    }
+}
+
+// [expand] event — template produces inline_body + branches
+~[norun|expand]pub event classify_num { expr: Expression }
+| positive { val: i32 }
+| non_positive {}
+
+// Abstract event — simulates a library event like orisha:handler
+~[abstract]pub event categorize { value: i32 }
+| result { output: i32 }
+
+// Default implementation (fallback)
+~proc categorize {
+    return .{ .result = .{ .output = -999 } };
+}
+
+// Cross-module impl using expand — THIS IS THE KEY PATTERN
+// input:categorize means is_impl=true (module qualifier present)
+// classify_num is [expand] so it sets inline_body on the flow
+// The emitter must use inline_body instead of trying to call classify_num_event.handler
+~input:categorize = classify_num(expr: value)
+| positive p |> result { output: p.val }
+| non_positive |> result { output: 0 }
+
+// Helper to print
+~event print_num { n: i32 }
+| done {}
+
+~proc print_num {
+    std.debug.print("{}\n", .{n});
+    return .{ .done = .{} };
+}
+
+// Test 1: positive value -> should output 42
+~categorize(value: 42)
+| result r |> print_num(n: r.output)
+    | done |> _
+
+// Test 2: non-positive value -> should output 0
+~categorize(value: 0)
+| result r |> print_num(n: r.output)
+    | done |> _

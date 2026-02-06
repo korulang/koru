@@ -519,12 +519,14 @@ fn applyExpandTemplate(
         return WalkResult{ .found = false, .program = program };
     };
 
-    if (containing_item.* != .flow) {
-        log.debug("[EXPAND] ERROR: Containing item is not a flow\n", .{});
+    const flow = if (containing_item.* == .flow)
+        &containing_item.flow
+    else if (containing_item.* == .subflow_impl and containing_item.subflow_impl.body == .flow)
+        &containing_item.subflow_impl.body.flow
+    else {
+        log.debug("[EXPAND] ERROR: Containing item is not a flow or subflow_impl\n", .{});
         return WalkResult{ .found = false, .program = program };
-    }
-
-    const flow = &containing_item.flow;
+    };
 
     // Create new invocation with @pass_ran("transform") annotation to prevent re-expansion
     const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch {

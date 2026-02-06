@@ -1333,28 +1333,36 @@ pub const VisitorEmitter = struct {
                                     try self.code_emitter.write("_ = &__koru_event_input;\n");
 
                                     // Generate the flow invocation and continuations
-                                    try self.code_emitter.writeIndent();
-                                    try self.code_emitter.write("const result = ");
+                                    if (flow.inline_body) |inline_code| {
+                                        // Transform set inline_body — emit inline instead of handler call
+                                        try self.code_emitter.writeIndent();
+                                        try self.code_emitter.write("const result = ");
+                                        try self.code_emitter.write(inline_code);
+                                        try self.code_emitter.write(";\n");
+                                    } else {
+                                        try self.code_emitter.writeIndent();
+                                        try self.code_emitter.write("const result = ");
 
-                                    // Emit the event call
-                                    if (flow.invocation.path.module_qualifier) |mq| {
-                                        try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
-                                        try self.code_emitter.write(".");
-                                    }
-                                    for (flow.invocation.path.segments, 0..) |seg, idx| {
-                                        if (idx > 0) try self.code_emitter.write("_");
-                                        try self.code_emitter.write(seg);
-                                    }
-                                    try self.code_emitter.write("_event.handler(.{");
+                                        // Emit the event call
+                                        if (flow.invocation.path.module_qualifier) |mq| {
+                                            try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
+                                            try self.code_emitter.write(".");
+                                        }
+                                        for (flow.invocation.path.segments, 0..) |seg, idx| {
+                                            if (idx > 0) try self.code_emitter.write("_");
+                                            try self.code_emitter.write(seg);
+                                        }
+                                        try self.code_emitter.write("_event.handler(.{");
 
-                                    for (flow.invocation.args, 0..) |arg, k| {
-                                        if (k > 0) try self.code_emitter.write(", ");
-                                        try self.code_emitter.write(" .");
-                                        try self.code_emitter.write(arg.name);
-                                        try self.code_emitter.write(" = ");
-                                        try self.code_emitter.write(arg.value);
+                                        for (flow.invocation.args, 0..) |arg, k| {
+                                            if (k > 0) try self.code_emitter.write(", ");
+                                            try self.code_emitter.write(" .");
+                                            try self.code_emitter.write(arg.name);
+                                            try self.code_emitter.write(" = ");
+                                            try self.code_emitter.write(arg.value);
+                                        }
+                                        try self.code_emitter.write(" });\n");
                                     }
-                                    try self.code_emitter.write(" });\n");
 
                                     // Emit continuations
                                     var indent_buf: [64]u8 = undefined;
@@ -1508,53 +1516,61 @@ pub const VisitorEmitter = struct {
                                                 try self.code_emitter.writeIndent();
                                                 try self.code_emitter.write("_ = &__koru_event_input;\n");
 
-                                                // Generate the invocation
-                                                try self.code_emitter.writeIndent();
-                                                try self.code_emitter.write("const result = ");
-
-                                                // Check if this is a self-call (delegating to default)
-                                                const is_self_call = blk: {
-                                                    // For cross-module impl, self-call means calling the same event
-                                                    if (flow.invocation.path.module_qualifier) |inv_mq| {
-                                                        if (eql(u8, inv_mq, event_module) and
-                                                            flow.invocation.path.segments.len == event.path.segments.len)
-                                                        {
-                                                            var segs_match = true;
-                                                            for (flow.invocation.path.segments, 0..) |seg, j| {
-                                                                if (!eql(u8, seg, event.path.segments[j])) {
-                                                                    segs_match = false;
-                                                                    break;
-                                                                }
-                                                            }
-                                                            if (segs_match) break :blk true;
-                                                        }
-                                                    }
-                                                    break :blk false;
-                                                };
-
-                                                if (is_self_call) {
-                                                    try self.code_emitter.write("_default_handler(.{");
+                                                // Generate the invocation (or inline_body if transform set it)
+                                                if (flow.inline_body) |inline_code| {
+                                                    // Transform set inline_body — emit inline instead of handler call
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("const result = ");
+                                                    try self.code_emitter.write(inline_code);
+                                                    try self.code_emitter.write(";\n");
                                                 } else {
-                                                    if (flow.invocation.path.module_qualifier) |mq| {
-                                                        try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
-                                                        try self.code_emitter.write(".");
-                                                    }
-                                                    for (flow.invocation.path.segments, 0..) |seg, idx| {
-                                                        if (idx > 0) try self.code_emitter.write("_");
-                                                        try self.code_emitter.write(seg);
-                                                    }
-                                                    try self.code_emitter.write("_event.handler(.{");
-                                                }
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("const result = ");
 
-                                                // Write arguments
-                                                for (flow.invocation.args, 0..) |arg, k| {
-                                                    if (k > 0) try self.code_emitter.write(", ");
-                                                    try self.code_emitter.write(" .");
-                                                    try self.code_emitter.write(arg.name);
-                                                    try self.code_emitter.write(" = ");
-                                                    try self.code_emitter.write(arg.value);
+                                                    // Check if this is a self-call (delegating to default)
+                                                    const is_self_call = blk: {
+                                                        // For cross-module impl, self-call means calling the same event
+                                                        if (flow.invocation.path.module_qualifier) |inv_mq| {
+                                                            if (eql(u8, inv_mq, event_module) and
+                                                                flow.invocation.path.segments.len == event.path.segments.len)
+                                                            {
+                                                                var segs_match = true;
+                                                                for (flow.invocation.path.segments, 0..) |seg, j| {
+                                                                    if (!eql(u8, seg, event.path.segments[j])) {
+                                                                        segs_match = false;
+                                                                        break;
+                                                                    }
+                                                                }
+                                                                if (segs_match) break :blk true;
+                                                            }
+                                                        }
+                                                        break :blk false;
+                                                    };
+
+                                                    if (is_self_call) {
+                                                        try self.code_emitter.write("_default_handler(.{");
+                                                    } else {
+                                                        if (flow.invocation.path.module_qualifier) |mq| {
+                                                            try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
+                                                            try self.code_emitter.write(".");
+                                                        }
+                                                        for (flow.invocation.path.segments, 0..) |seg, idx| {
+                                                            if (idx > 0) try self.code_emitter.write("_");
+                                                            try self.code_emitter.write(seg);
+                                                        }
+                                                        try self.code_emitter.write("_event.handler(.{");
+                                                    }
+
+                                                    // Write arguments
+                                                    for (flow.invocation.args, 0..) |arg, k| {
+                                                        if (k > 0) try self.code_emitter.write(", ");
+                                                        try self.code_emitter.write(" .");
+                                                        try self.code_emitter.write(arg.name);
+                                                        try self.code_emitter.write(" = ");
+                                                        try self.code_emitter.write(arg.value);
+                                                    }
+                                                    try self.code_emitter.write(" });\n");
                                                 }
-                                                try self.code_emitter.write(" });\n");
 
                                                 // Generate switch on result with continuations
                                                 var indent_buf: [64]u8 = undefined;
@@ -1786,57 +1802,83 @@ pub const VisitorEmitter = struct {
                                             try emitter.emitContinuationBody(self.code_emitter, &emitter_ctx, cont, &result_counter);
                                         }
                                     } else if (flow.inline_body) |inline_code| {
-                                        // Emit the inline code directly
-                                        try self.code_emitter.writeIndent();
-                                        try self.code_emitter.write("// >>> INLINE: transformed subflow\n");
+                                        // Check if continuations have named branches (need switch)
+                                        const has_named_branches = blk: {
+                                            for (flow.continuations) |cont| {
+                                                if (cont.branch.len > 0) break :blk true;
+                                            }
+                                            break :blk false;
+                                        };
 
-                                        // Calculate indent for proper formatting
-                                        var indent_buf: [64]u8 = undefined;
-                                        var indent_pos: usize = 0;
-                                        var idx: usize = 0;
-                                        while (idx < self.code_emitter.indent_level) : (idx += 1) {
-                                            @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
-                                            indent_pos += 4;
-                                        }
-                                        const indent_str = indent_buf[0..indent_pos];
+                                        if (has_named_branches) {
+                                            // Branching continuations — emit: const result = <inline>; switch(result) { ... }
+                                            try self.code_emitter.writeIndent();
+                                            try self.code_emitter.write("const result = ");
+                                            try self.code_emitter.write(inline_code);
+                                            try self.code_emitter.write(";\n");
 
-                                        try self.code_emitter.emitReindentedText(inline_code, indent_str);
-                                        try self.code_emitter.write("\n");
+                                            var indent_buf: [64]u8 = undefined;
+                                            var indent_pos: usize = 0;
+                                            var idx: usize = 0;
+                                            while (idx < self.code_emitter.indent_level) : (idx += 1) {
+                                                @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
+                                                indent_pos += 4;
+                                            }
+                                            const indent_str = indent_buf[0..indent_pos];
 
-                                        // After inline code, check for void continuations with branch constructors
-                                        // This handles: ~event = transform() |> branch { fields }
-                                        for (flow.continuations) |cont| {
-                                            if (cont.branch.len == 0) {  // Void/pipeline continuation
-                                                if (cont.node) |step| {
-                                                    if (step == .branch_constructor) {
-                                                        const bc = &step.branch_constructor;
-                                                        var value_ctx = emitter.EmissionContext{
-                                                            .allocator = self.allocator,
-                                                            .main_module_name = self.main_module_name,
-                                                        };
-                                                        try self.code_emitter.writeIndent();
-                                                        try self.code_emitter.write("return .{ .");
-                                                        try emitter.writeBranchName(self.code_emitter, bc.branch_name);
-                                                        try self.code_emitter.write(" = .{");
-                                                        for (bc.fields, 0..) |field, k| {
-                                                            if (k > 0) try self.code_emitter.write(",");
-                                                            try self.code_emitter.write(" .");
-                                                        try self.code_emitter.write(field.name);
-                                                        try self.code_emitter.write(" = ");
-                                                        const value = if (field.expression_str) |expr| expr else field.type;
-                                                        const trimmed = std.mem.trim(u8, value, " \t");
-                                                        if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
-                                                            if (self.findBranchField(event, bc.branch_name, field.name)) |branch_field| {
-                                                                try emitter.emitArrayLiteralForField(self.code_emitter, &value_ctx, branch_field, value);
-                                                            } else {
-                                                                try emitter.emitValue(self.code_emitter, &value_ctx, value);
+                                            const source_event_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
+                                            try emitter.emitSubflowContinuations(self.code_emitter, flow.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
+                                        } else {
+                                            // Void/pipeline continuations — emit inline code + branch constructors
+                                            try self.code_emitter.writeIndent();
+                                            try self.code_emitter.write("// >>> INLINE: transformed subflow\n");
+
+                                            var indent_buf: [64]u8 = undefined;
+                                            var indent_pos: usize = 0;
+                                            var idx: usize = 0;
+                                            while (idx < self.code_emitter.indent_level) : (idx += 1) {
+                                                @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
+                                                indent_pos += 4;
+                                            }
+                                            const indent_str = indent_buf[0..indent_pos];
+                                            _ = indent_str;
+
+                                            try self.code_emitter.emitReindentedText(inline_code, indent_buf[0..indent_pos]);
+                                            try self.code_emitter.write("\n");
+
+                                            for (flow.continuations) |cont| {
+                                                if (cont.branch.len == 0) {
+                                                    if (cont.node) |step| {
+                                                        if (step == .branch_constructor) {
+                                                            const bc = &step.branch_constructor;
+                                                            var value_ctx = emitter.EmissionContext{
+                                                                .allocator = self.allocator,
+                                                                .main_module_name = self.main_module_name,
+                                                            };
+                                                            try self.code_emitter.writeIndent();
+                                                            try self.code_emitter.write("return .{ .");
+                                                            try emitter.writeBranchName(self.code_emitter, bc.branch_name);
+                                                            try self.code_emitter.write(" = .{");
+                                                            for (bc.fields, 0..) |field, k| {
+                                                                if (k > 0) try self.code_emitter.write(",");
+                                                                try self.code_emitter.write(" .");
+                                                                try self.code_emitter.write(field.name);
+                                                                try self.code_emitter.write(" = ");
+                                                                const value = if (field.expression_str) |expr| expr else field.type;
+                                                                const trimmed = std.mem.trim(u8, value, " \t");
+                                                                if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
+                                                                    if (self.findBranchField(event, bc.branch_name, field.name)) |branch_field| {
+                                                                        try emitter.emitArrayLiteralForField(self.code_emitter, &value_ctx, branch_field, value);
+                                                                    } else {
+                                                                        try emitter.emitValue(self.code_emitter, &value_ctx, value);
+                                                                    }
+                                                                } else {
+                                                                    try emitter.emitValue(self.code_emitter, &value_ctx, value);
+                                                                }
                                                             }
-                                                        } else {
-                                                            try emitter.emitValue(self.code_emitter, &value_ctx, value);
+                                                            try self.code_emitter.write(" } };\n");
                                                         }
                                                     }
-                                                    try self.code_emitter.write(" } };\n");
-                                                }
                                                 }
                                             }
                                         }
