@@ -2541,6 +2541,16 @@ pub const AstSerializer = struct {
             try self.writeIndent();
             try self.write("\"is_invocation_meta\": ");
             try self.write(if (field.is_invocation_meta) "true" else "false");
+            try self.write(",\n");
+
+            // Phantom type annotation (e.g. File[open!] → phantom: "open!")
+            try self.writeIndent();
+            try self.write("\"phantom\": ");
+            if (field.phantom) |phantom| {
+                try self.writeString(phantom);
+            } else {
+                try self.write("null");
+            }
 
             try self.write("\n");
             self.dedent();
