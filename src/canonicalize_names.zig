@@ -70,19 +70,14 @@ fn canonicalizeItem(ctx: *Context, item: *ast.Item) !void {
             }
         },
         .flow => |*flow| {
+            if (flow.impl_of) |*impl_path| {
+                try canonicalizePath(ctx, @constCast(impl_path));
+            }
             try canonicalizeFlow(ctx, @constCast(flow));
         },
-        .subflow_impl => |*subflow| {
-            try canonicalizePath(ctx, @constCast(&subflow.event_path));
-
-            switch (subflow.body) {
-                .flow => |*flow| {
-                    try canonicalizeFlow(ctx, @constCast(flow));
-                },
-                .immediate => |*bc| {
-                    try canonicalizeBranchConstructor(ctx, @constCast(bc));
-                },
-            }
+        .immediate_impl => |*ii| {
+            try canonicalizePath(ctx, @constCast(&ii.event_path));
+            try canonicalizeBranchConstructor(ctx, @constCast(&ii.value));
         },
         .event_tap => |*tap| {
             // Update tap's module to use logical name for consistency with event paths

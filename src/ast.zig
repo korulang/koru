@@ -1430,17 +1430,8 @@ pub const ASTNode = union(enum) {
                         }
                         break :blk result;
                     },
-                    .subflow_impl => |*s| {
-                        if (s.body == .flow) {
-                            var result = try allocator.alloc(ASTNode, 1);
-                            result[0] = .{ .flow = @constCast(&s.body.flow) };
-                            break :blk result;
-                        } else {
-                            break :blk try allocator.alloc(ASTNode, 0);
-                        }
-                    },
                     // Leaf nodes (no children to traverse for transforms)
-                    .event_decl, .proc_decl, .event_tap, .label_decl, .import_decl,
+                    .event_decl, .proc_decl, .event_tap, .label_decl, .immediate_impl, .import_decl,
                     .host_line, .host_type_decl, .parse_error,
                     .native_loop, .fused_event, .inlined_event, .inline_code => {
                         break :blk try allocator.alloc(ASTNode, 0);
@@ -1620,17 +1611,7 @@ pub const ASTNode = union(enum) {
                         return item;
                     }
                 },
-                .subflow_impl => |*s| {
-                    if (s.body == .flow) {
-                        const f = &s.body.flow;
-                        if (&f.invocation == target_inv) {
-                            return item;
-                        }
-                        if (findInContinuations(f.continuations, target_inv)) {
-                            return item;
-                        }
-                    }
-                },
+                .immediate_impl => {},
                 .module_decl => |*m| {
                     // Recursively search in module items
                     if (findInItems(m.items, target_inv)) |found| {

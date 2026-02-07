@@ -225,32 +225,6 @@ fn replaceFlowInItems(
             // Found the target flow - replace it
             new_items[i] = new_item;
             found = true;
-        } else if (item.* == .subflow_impl and item.subflow_impl.body == .flow and
-            @intFromPtr(&item.subflow_impl.body.flow) == @intFromPtr(target_flow))
-        {
-            // Found target flow inside subflow_impl
-            // Check if caller already wrapped in subflow_impl (transforms do this)
-            if (new_item == .subflow_impl) {
-                // Caller already created proper subflow_impl wrapper - use it directly
-                new_items[i] = new_item;
-            } else if (new_item == .flow) {
-                // Caller passed bare flow - wrap it preserving original metadata
-                const orig = &item.subflow_impl;
-                new_items[i] = ast.Item{
-                    .subflow_impl = ast.SubflowImpl{
-                        .event_path = try cloneDottedPath(allocator, &orig.event_path),
-                        .body = .{ .flow = new_item.flow },
-                        .is_impl = orig.is_impl,
-                        .location = orig.location,
-                        .module = try allocator.dupe(u8, orig.module),
-                    },
-                };
-            } else {
-                // Unexpected item type - clone original
-                new_items[i] = try cloneItem(allocator, item);
-                continue;
-            }
-            found = true;
         } else if (item.* == .module_decl) {
             // Recursively search inside module_decl
             const mod = &item.module_decl;
@@ -586,8 +560,8 @@ pub fn cloneItem(allocator: std.mem.Allocator, item: *const ast.Item) CloneError
         .label_decl => |label| {
             return .{ .label_decl = try cloneLabelDecl(allocator, &label) };
         },
-        .subflow_impl => |subflow| {
-            return .{ .subflow_impl = try cloneSubflowImpl(allocator, &subflow) };
+        .immediate_impl => |ii| {
+            return .{ .immediate_impl = try cloneImmediateImpl(allocator, &ii) };
         },
         .import_decl => |import| {
             return .{ .import_decl = try cloneImportDecl(allocator, &import) };
@@ -747,6 +721,7 @@ fn cloneFlow(allocator: std.mem.Allocator, flow: *const ast.Flow) CloneError!ast
         .location = flow.location,
         .module = try allocator.dupe(u8, flow.module),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
+        .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
     };
 }
 
@@ -764,25 +739,14 @@ fn cloneLabelDecl(allocator: std.mem.Allocator, label: *const ast.LabelDecl) !as
     };
 }
 
-fn cloneSubflowImpl(allocator: std.mem.Allocator, subflow: *const ast.SubflowImpl) !ast.SubflowImpl {
+fn cloneImmediateImpl(allocator: std.mem.Allocator, ii: *const ast.ImmediateImpl) !ast.ImmediateImpl {
     return .{
-        .event_path = try cloneDottedPath(allocator, &subflow.event_path),
-        .body = try cloneSubflowBody(allocator, &subflow.body),
-        .is_impl = subflow.is_impl,
-        .location = subflow.location,
-        .module = try allocator.dupe(u8, subflow.module),
+        .event_path = try cloneDottedPath(allocator, &ii.event_path),
+        .value = try cloneBranchConstructor(allocator, &ii.value),
+        .annotations = try cloneStringSlice(allocator, ii.annotations),
+        .location = ii.location,
+        .module = try allocator.dupe(u8, ii.module),
     };
-}
-
-fn cloneSubflowBody(allocator: std.mem.Allocator, body: *const ast.SubflowBody) !ast.SubflowBody {
-    switch (body.*) {
-        .flow => |flow| {
-            return .{ .flow = try cloneFlow(allocator, &flow) };
-        },
-        .immediate => |bc| {
-            return .{ .immediate = try cloneBranchConstructor(allocator, &bc) };
-        },
-    }
 }
 
 fn cloneImportDecl(allocator: std.mem.Allocator, import: *const ast.ImportDecl) !ast.ImportDecl {
@@ -1705,7 +1669,7 @@ pub fn pruneBackendOnly(
                 .flow,
                 .event_tap,
                 .label_decl,
-                .subflow_impl,
+                .immediate_impl,
                 .import_decl,
                 .host_line,
                 .host_type_decl => return true,
@@ -1942,22 +1906,23 @@ pub fn createEventDecl(
     };
 }
 
-/// Create a subflow implementation
-/// Used to generate subflow definitions from extracted continuation branches
+/// Create an impl flow (a flow that implements a named event)
+/// Used to generate subflow definitions from extracted continuation branches.
+/// Returns a Flow with impl_of set to the given event_path.
 /// Example:
-///   const subflow = try createSubflowImpl(allocator, event_path, flow, "main");
-pub fn createSubflowImpl(
+///   const impl_flow = try createImplFlow(allocator, event_path, flow, "main");
+pub fn createImplFlow(
     allocator: std.mem.Allocator,
     event_path: ast.DottedPath,
     body_flow: ast.Flow,
     module: []const u8,
-) !ast.SubflowImpl {
-    return ast.SubflowImpl{
-        .event_path = event_path,
-        .body = .{ .flow = body_flow },
-        .location = .{ .line = 0, .column = 0, .file = "" }, // Generated code
-        .module = try allocator.dupe(u8, module),
-    };
+) !ast.Flow {
+    // Start from the body_flow and set impl_of
+    var result = body_flow;
+    result.impl_of = event_path;
+    result.location = .{ .line = 0, .column = 0, .file = "" }; // Generated code
+    result.module = try allocator.dupe(u8, module);
+    return result;
 }
 
 // ============================================================
@@ -2039,7 +2004,7 @@ pub fn generateUniqueName(
 // Critical for threading - converting continuation branches into callable subflows.
 
 /// Extract a continuation branch as a standalone Flow
-/// Converts | run |> worker(x: 1) | done |> _ into a Flow that can be wrapped in SubflowImpl
+/// Converts | run |> worker(x: 1) | done |> _ into a Flow (with impl_of set by the caller)
 ///
 /// Example:
 ///   const run_cont = findContinuationByBranch(flow, "run");

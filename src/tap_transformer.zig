@@ -152,18 +152,9 @@ fn transformItems(
 
     for (items) |item| {
         switch (item) {
-            .subflow_impl => |subflow| {
-                log.debug("TAP TRANSFORMER: Found subflow for event: {s}\n", .{subflow.event_path.segments[0]});
-                // Transform this subflow
-                const transformed_subflow = try transformSubflow(
-                    &subflow,
-                    tap_registry,
-                    emit_mode,
-                    allocator,
-                    main_module_name,
-                    opaque_events,
-                );
-                try transformed.append(allocator, ast.Item{ .subflow_impl = transformed_subflow });
+            .immediate_impl => {
+                // Immediate impls have no flow body to transform; pass through
+                try transformed.append(allocator, item);
             },
             .flow => |flow| {
                 // Transform top-level flows (e.g., ~hello() | done |> _)
@@ -218,57 +209,6 @@ fn transformItems(
     }
 
     return try transformed.toOwnedSlice(allocator);
-}
-
-/// Transform a single subflow - the core algorithm
-fn transformSubflow(
-    subflow: *const ast.SubflowImpl,
-    tap_registry: *TapRegistry,
-    emit_mode: EmitMode,
-    allocator: std.mem.Allocator,
-    main_module_name: []const u8,
-    opaque_events: *const OpaqueEventSet,
-) !ast.SubflowImpl {
-    _ = main_module_name; // No longer needed - all paths are canonical
-
-    // Get canonical event name for this subflow (e.g., "main:add_five")
-    // After canonicalization, module_qualifier is always set!
-    const source_event_canonical = try pathToString(subflow.event_path, allocator);
-    defer allocator.free(source_event_canonical);
-
-    // Transform the subflow body
-    const transformed_body = switch (subflow.body) {
-        .flow => |flow| blk: {
-            if (hasOpaqueAnnotation(flow.annotations)) {
-                break :blk ast.SubflowBody{ .flow = flow };
-            }
-
-            // Get the invoked event name from the main invocation (already canonical!)
-            const invoked_event = try pathToString(flow.invocation.path, allocator);
-            defer allocator.free(invoked_event);
-
-            log.debug("TAP TRANSFORMER: Subflow '{s}' invokes '{s}'\n", .{source_event_canonical, invoked_event});
-
-            // Transform continuations - check for taps FROM the invoked event ON each branch
-            const transformed_continuations = try transformContinuationsWithInvokedEvent(
-                flow.continuations,
-                invoked_event,  // Check for taps FROM this event
-                tap_registry,
-                emit_mode,
-                allocator,
-                opaque_events,
-            );
-
-            var new_flow = flow;
-            new_flow.continuations = transformed_continuations;
-            break :blk ast.SubflowBody{ .flow = new_flow };
-        },
-        .immediate => |imm| ast.SubflowBody{ .immediate = imm }, // No transformation needed
-    };
-
-    var new_subflow = subflow.*;
-    new_subflow.body = transformed_body;
-    return new_subflow;
 }
 
 /// Transform continuations - insert tap invocations where they match

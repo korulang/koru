@@ -62,12 +62,6 @@ pub const FlowChecker = struct {
                 .flow => |*flow| {
                     try self.validateFlow(flow, flow.location);
                 },
-                .subflow_impl => |*subflow| {
-                    // Validate subflow implementations (e.g., ~event_name = for(...))
-                    if (subflow.body == .flow) {
-                        try self.validateFlow(&subflow.body.flow, subflow.body.flow.location);
-                    }
-                },
                 .proc_decl => |*proc| {
                     // Check inline flows in proc declarations for duplicate branch handlers
                     // Only in backend mode (semantic check that may need transforms applied)
@@ -83,11 +77,6 @@ pub const FlowChecker = struct {
                         switch (module_item.*) {
                             .flow => |*flow| {
                                 try self.validateFlow(flow, flow.location);
-                            },
-                            .subflow_impl => |*subflow| {
-                                if (subflow.body == .flow) {
-                                    try self.validateFlow(&subflow.body.flow, subflow.body.flow.location);
-                                }
                             },
                             .proc_decl => |*proc| {
                                 // Only in backend mode

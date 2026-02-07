@@ -4622,36 +4622,7 @@ fn resolveKeywordsInItem(
                 try resolveKeywordsInItem(@constCast(mod_item), registry, allocator, main_module, all_items);
             }
         },
-        .subflow_impl => |*subflow| {
-            // CRITICAL: Resolve keywords in subflow bodies!
-            // Without this, ~for/~if/~capture inside subflows won't resolve to std.control
-            if (subflow.body == .flow) {
-                const flow = &subflow.body.flow;
-
-                // Save the old qualifier to detect if keyword resolution happened
-                const old_qualifier = flow.invocation.path.module_qualifier;
-
-                // Resolve the main invocation path
-                try resolveKeywordInPath(&flow.invocation.path, registry, allocator, main_module);
-
-                // If keyword resolution happened (qualifier changed), fix up Expression args
-                const qualifier_changed = if (old_qualifier) |old| blk: {
-                    if (flow.invocation.path.module_qualifier) |new| {
-                        break :blk !std.mem.eql(u8, old, new);
-                    }
-                    break :blk true;
-                } else flow.invocation.path.module_qualifier != null;
-
-                if (qualifier_changed) {
-                    try fixupExpressionArgs(&flow.invocation, allocator, all_items);
-                }
-
-                // Resolve paths in continuations
-                for (flow.continuations) |*cont| {
-                    try resolveKeywordsInContinuation(@constCast(cont), registry, allocator, main_module);
-                }
-            }
-        },
+        // impl flows are now .flow items with impl_of set — handled by the .flow case above
         else => {},
     }
 }
@@ -4880,11 +4851,7 @@ fn populateInvocationSourceInItems(
                     try populateInvocationSourceInContinuation(@constCast(cont), allocator, module_name);
                 }
             },
-            .subflow_impl => |*subflow| {
-                if (subflow.body == .flow) {
-                    try populateInvocationSourceInFlow(&subflow.body.flow, allocator, subflow.module);
-                }
-            },
+            // impl flows are now .flow items — handled by the .flow case in the caller
             .module_decl => |*module| {
                 try populateInvocationSourceInItems(@constCast(module.items), allocator, module.logical_name);
             },
@@ -5012,11 +4979,7 @@ fn enforceInvocationVisibilityInItems(
                     try enforceInvocationVisibilityInContinuation(&cont, all_items, reporter, allocator, module_name);
                 }
             },
-            .subflow_impl => |subflow| {
-                if (subflow.body == .flow) {
-                    try enforceInvocationVisibilityInFlow(&subflow.body.flow, all_items, reporter, allocator, subflow.module);
-                }
-            },
+            // impl flows are now .flow items — handled by the .flow case in the caller
             .module_decl => |module| {
                 try enforceInvocationVisibilityInItems(module.items, all_items, reporter, allocator, module.logical_name);
             },

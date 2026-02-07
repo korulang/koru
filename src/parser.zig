@@ -869,7 +869,7 @@ pub const Parser = struct {
         } else if (findTopLevelEquals(remaining) != null) {
             // Event implementation via subflow: ~event.name = ...
             // NOTE: This only matches = outside of source blocks (checked above)
-            return .{ .subflow_impl = try self.parseSubflowImpl() };
+            return try self.parseSubflowImpl();
         } else if (std.mem.indexOfScalar(u8, remaining, '(') != null) {
             // It's an invocation with args
             return .{ .flow = try self.parseFlow(annotations.items) };
@@ -3564,7 +3564,10 @@ pub const Parser = struct {
         };
     }
 
-    fn parseSubflowImpl(self: *Parser) !ast.SubflowImpl {
+    // Parses ~event = ... syntax. Returns either:
+    //   Item{ .immediate_impl = ... } for branch constructor bodies
+    //   Item{ .flow = Flow{ .impl_of = event_path, ... } } for flow bodies
+    fn parseSubflowImpl(self: *Parser) !ast.Item {
         if (self.current >= self.lines.len) {
             try self.reporter.addError(
                 .PARSE001,
@@ -3595,10 +3598,6 @@ pub const Parser = struct {
         const event_path_str = lexer.trim(after_tilde[0..eq_idx]);
         const event_path = try lexer.parseQualifiedPath(self.allocator, event_path_str, ast);
 
-        // If there's a module qualifier (e.g., ~module:event = ...), this is an impl override
-        // The colon syntax indicates explicit implementation of an abstract event
-        const is_impl = event_path.module_qualifier != null;
-
         // The flow body follows the = sign
         const body_str = lexer.trim(after_tilde[eq_idx + 1 ..]);
 
@@ -3619,13 +3618,12 @@ pub const Parser = struct {
                     if (closing_idx != null and closing_idx.? > b_idx) {
                         // Single-line, complete branch constructor
                         const branch_constructor = try self.parseBranchConstructor(body_str);
-                        return ast.SubflowImpl{
+                        return ast.Item{ .immediate_impl = .{
                             .event_path = event_path,
-                            .body = ast.SubflowBody{ .immediate = branch_constructor },
+                            .value = branch_constructor,
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
-                            .is_impl = is_impl,
-                        };
+                        } };
                     } else {
                         // Multi-line branch constructor starting on this line
                         var constructor_content = try std.ArrayList(u8).initCapacity(self.allocator, 256);
@@ -3637,8 +3635,6 @@ pub const Parser = struct {
 
                         // Track brace depth (already have one open brace)
                         var brace_depth: i32 = 1;
-                        // NOTE: Don't increment self.current here - line 3277 already advanced past
-                        // the opening line, so we're already at the first field line
 
                         while (self.current < self.lines.len and brace_depth > 0) {
                             const curr_line = self.lines[self.current];
@@ -3659,13 +3655,12 @@ pub const Parser = struct {
 
                         // Parse the complete constructor
                         const branch_constructor = try self.parseBranchConstructor(constructor_content.items);
-                        return ast.SubflowImpl{
+                        return ast.Item{ .immediate_impl = .{
                             .event_path = event_path,
-                            .body = ast.SubflowBody{ .immediate = branch_constructor },
+                            .value = branch_constructor,
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
-                            .is_impl = is_impl,
-                        };
+                        } };
                     }
                 }
             }
@@ -3685,32 +3680,30 @@ pub const Parser = struct {
                     if (first_space) |idx| {
                         // Has expression: "ok expr"
                         const expr_part = lexer.trim(body_str[idx..]);
-                        return ast.SubflowImpl{
+                        return ast.Item{ .immediate_impl = .{
                             .event_path = event_path,
-                            .body = ast.SubflowBody{ .immediate = .{
+                            .value = .{
                                 .branch_name = try self.allocator.dupe(u8, branch_name),
                                 .fields = &.{},
                                 .plain_value = try self.allocator.dupe(u8, expr_part),
                                 .has_expressions = true,
-                            } },
+                            },
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
-                            .is_impl = is_impl,
-                        };
+                        } };
                     } else {
                         // Just branch name: "ok"
-                        return ast.SubflowImpl{
+                        return ast.Item{ .immediate_impl = .{
                             .event_path = event_path,
-                            .body = ast.SubflowBody{ .immediate = .{
+                            .value = .{
                                 .branch_name = try self.allocator.dupe(u8, branch_name),
                                 .fields = &.{},
                                 .plain_value = null,
                                 .has_expressions = false,
-                            } },
+                            },
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
-                            .is_impl = is_impl,
-                        };
+                        } };
                     }
                 }
             }
@@ -3723,23 +3716,13 @@ pub const Parser = struct {
             const invocation = try self.parseEventInvocation(body_str);
             const continuations = try self.parseContinuations(lexer.getIndent(line));
 
-            return ast.SubflowImpl{
-                .event_path = event_path,
-                .body = ast.SubflowBody{
-                    .flow = ast.Flow{
-                        .invocation = invocation,
-                        .continuations = continuations,
-                        .pre_label = null,
-                        .post_label = null,
-                        .super_shape = null,
-                        .location = self.getCurrentLocation(),
-                        .module = try self.allocator.dupe(u8, self.module_name),
-                    },
-                },
+            return ast.Item{ .flow = .{
+                .invocation = invocation,
+                .continuations = continuations,
+                .impl_of = event_path,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
-                .is_impl = is_impl,
-            };
+            } };
         }
 
         // Flow body on next line(s) - handle multi-line flows
@@ -3791,13 +3774,12 @@ pub const Parser = struct {
                     // Single-line branch constructor
                     self.current += 1;
                     const branch_constructor = try self.parseBranchConstructor(trimmed_body);
-                    return ast.SubflowImpl{
+                    return ast.Item{ .immediate_impl = .{
                         .event_path = event_path,
-                        .body = ast.SubflowBody{ .immediate = branch_constructor },
+                        .value = branch_constructor,
                         .location = self.getCurrentLocation(),
                         .module = try self.allocator.dupe(u8, self.module_name),
-                        .is_impl = is_impl,
-                    };
+                    } };
                 } else {
                     // Multi-line branch constructor - collect all lines
                     var constructor_content = try std.ArrayList(u8).initCapacity(self.allocator, 256);
@@ -3830,30 +3812,24 @@ pub const Parser = struct {
 
                     // Parse the complete constructor
                     const branch_constructor = try self.parseBranchConstructor(constructor_content.items);
-                    return ast.SubflowImpl{
+                    return ast.Item{ .immediate_impl = .{
                         .event_path = event_path,
-                        .body = ast.SubflowBody{ .immediate = branch_constructor },
+                        .value = branch_constructor,
                         .location = self.getCurrentLocation(),
                         .module = try self.allocator.dupe(u8, self.module_name),
-                        .is_impl = is_impl,
-                    };
+                    } };
                 }
             }
         }
 
         // Check if the line is an invocation or a continuation
         if (lexer.startsWith(trimmed_body, "|")) {
-            // This is a continuation line, but we haven't parsed an invocation yet!
-            // This means the subflow starts with just continuations (like a multi-line flow)
-            // We need to backtrack and parse this as a full multi-line flow
-
+            // Continuation-only subflow (no explicit invocation on first line)
             // Push in_subflow_impl context to allow full expressions in branch constructors
             try self.context_stack.append(self.allocator, .in_subflow_impl);
             defer _ = self.context_stack.pop();
 
-            // Create a dummy "pass-through" invocation for now
-            // In the future, we might want to handle this case differently
-            // Duplicate the event_path for the invocation
+            // Create a pass-through invocation duplicating the event path
             var dup_segments = try self.allocator.alloc([]const u8, event_path.segments.len);
             for (event_path.segments, 0..) |seg, i| {
                 dup_segments[i] = try self.allocator.dupe(u8, seg);
@@ -3869,23 +3845,13 @@ pub const Parser = struct {
             // Now parse all the continuations starting from current line
             const continuations = try self.parseContinuations(lexer.getIndent(line));
 
-            return ast.SubflowImpl{
-                .event_path = event_path,
-                .body = ast.SubflowBody{
-                    .flow = ast.Flow{
-                        .invocation = invocation,
-                        .continuations = continuations,
-                        .pre_label = null,
-                        .post_label = null,
-                        .super_shape = null,
-                        .location = self.getCurrentLocation(),
-                        .module = try self.allocator.dupe(u8, self.module_name),
-                    },
-                },
+            return ast.Item{ .flow = .{
+                .invocation = invocation,
+                .continuations = continuations,
+                .impl_of = event_path,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
-                .is_impl = is_impl,
-            };
+            } };
         }
 
         // Otherwise parse as normal flow starting with an invocation
@@ -3897,22 +3863,13 @@ pub const Parser = struct {
         self.current += 1; // Move past the invocation line
         const continuations = try self.parseContinuations(lexer.getIndent(body_line));
 
-        return ast.SubflowImpl{
-            .event_path = event_path,
-            .body = ast.SubflowBody{
-                .flow = ast.Flow{
-                    .invocation = invocation,
-                    .continuations = continuations,
-                    .pre_label = null,
-                    .post_label = null,
-                    .location = self.getCurrentLocation(),
-                    .module = try self.allocator.dupe(u8, self.module_name),
-                },
-            },
+        return ast.Item{ .flow = .{
+            .invocation = invocation,
+            .continuations = continuations,
+            .impl_of = event_path,
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
-            .is_impl = is_impl,
-        };
+        } };
     }
 
     fn parseImplicitFlowBlock(self: *Parser, base_indent: usize) ![]ast.Continuation {
@@ -7234,8 +7191,8 @@ test "parser handles shorthand notation in branch constructors" {
     defer parse_result.deinit();
 
     try std.testing.expect(parse_result.source_file.items.len == 2);
-    const subflow = parse_result.source_file.items[1].subflow_impl;
-    const bc = subflow.body.immediate;
+    const ii = parse_result.source_file.items[1].immediate_impl;
+    const bc = ii.value;
     try std.testing.expectEqualStrings(bc.branch_name, "ok");
     try std.testing.expect(bc.fields.len == 1);
     // In shorthand, r.user.id becomes field name "id" with value "r.user.id"

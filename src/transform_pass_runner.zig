@@ -32,22 +32,14 @@ fn countMatchingFlowsInProgram(transform_name: []const u8, program: *const Progr
             .flow => |flow| {
                 count += countMatchingInFlow(&flow, transform_name);
             },
-            .subflow_impl => |subflow| {
-                if (subflow.body == .flow) {
-                    count += countMatchingInFlow(&subflow.body.flow, transform_name);
-                }
-            },
+            .immediate_impl => {},
             .module_decl => |module| {
                 for (module.items) |mod_item| {
                     switch (mod_item) {
                         .flow => |flow| {
                             count += countMatchingInFlow(&flow, transform_name);
                         },
-                        .subflow_impl => |subflow| {
-                            if (subflow.body == .flow) {
-                                count += countMatchingInFlow(&subflow.body.flow, transform_name);
-                            }
-                        },
+                        .immediate_impl => {},
                         else => {},
                     }
                 }
@@ -521,10 +513,8 @@ fn applyExpandTemplate(
 
     const flow = if (containing_item.* == .flow)
         &containing_item.flow
-    else if (containing_item.* == .subflow_impl and containing_item.subflow_impl.body == .flow)
-        &containing_item.subflow_impl.body.flow
     else {
-        log.debug("[EXPAND] ERROR: Containing item is not a flow or subflow_impl\n", .{});
+        log.debug("[EXPAND] ERROR: Containing item is not a flow\n", .{});
         return WalkResult{ .found = false, .program = program };
     };
 

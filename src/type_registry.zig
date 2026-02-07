@@ -231,23 +231,43 @@ pub const TypeRegistry = struct {
         try self.procs.put(key, proc_sig);
     }
     
-    /// Register a subflow implementation for an event
-    pub fn registerSubflowImpl(self: *TypeRegistry, event_path: []const u8, _: *const ast.SubflowImpl) !void {
+    /// Register a subflow implementation for an event (from a Flow with impl_of set)
+    pub fn registerImplFlow(self: *TypeRegistry, event_path: []const u8, _: *const ast.Flow) !void {
         const key = try self.allocator.dupe(u8, event_path);
         errdefer self.allocator.free(key);
-        
+
         // Look up the corresponding event to get types
         const event_type = self.events.get(event_path);
-        
+
         var subflow_type = SubflowType{
             .event_path = try self.allocator.dupe(u8, event_path),
             .output_shape = null, // Will be set from event type if available
         };
         errdefer subflow_type.deinit(self.allocator);
-        
+
         // TODO: Set output_shape from event_type branches
         _ = event_type;
-        
+
+        try self.subflows.put(key, subflow_type);
+    }
+
+    /// Register an immediate impl for an event
+    pub fn registerImmediateImpl(self: *TypeRegistry, event_path: []const u8, _: *const ast.ImmediateImpl) !void {
+        const key = try self.allocator.dupe(u8, event_path);
+        errdefer self.allocator.free(key);
+
+        // Look up the corresponding event to get types
+        const event_type = self.events.get(event_path);
+
+        var subflow_type = SubflowType{
+            .event_path = try self.allocator.dupe(u8, event_path),
+            .output_shape = null, // Will be set from event type if available
+        };
+        errdefer subflow_type.deinit(self.allocator);
+
+        // TODO: Set output_shape from event_type branches
+        _ = event_type;
+
         try self.subflows.put(key, subflow_type);
     }
     
@@ -289,10 +309,18 @@ pub const TypeRegistry = struct {
                 defer self.allocator.free(canonical_name);
                 try self.registerProc(canonical_name, &proc);
             },
-            .subflow_impl => |subflow| {
-                const canonical_name = try self.buildCanonicalName(&subflow.event_path);
+            .flow => |flow| {
+                // Register impl flows (flows with impl_of set)
+                if (flow.impl_of) |impl_path| {
+                    const canonical_name = try self.buildCanonicalName(&impl_path);
+                    defer self.allocator.free(canonical_name);
+                    try self.registerImplFlow(canonical_name, &flow);
+                }
+            },
+            .immediate_impl => |ii| {
+                const canonical_name = try self.buildCanonicalName(&ii.event_path);
                 defer self.allocator.free(canonical_name);
-                try self.registerSubflowImpl(canonical_name, &subflow);
+                try self.registerImmediateImpl(canonical_name, &ii);
             },
             .module_decl => |module| {
                 // Recursively process module items
@@ -300,7 +328,7 @@ pub const TypeRegistry = struct {
                     try self.populateFromItem(module_item);
                 }
             },
-            .import_decl, .host_line, .host_type_decl, .parse_error, .flow, .event_tap, .label_decl, .native_loop, .fused_event, .inlined_event, .inline_code => {
+            .import_decl, .host_line, .host_type_decl, .parse_error, .event_tap, .label_decl, .native_loop, .fused_event, .inlined_event, .inline_code => {
                 // These don't need registration in TypeRegistry
             },
         }

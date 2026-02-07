@@ -233,8 +233,7 @@ pub const AstSerializer = struct {
         try self.writeLine("const Flow = ast.Flow;");
         try self.writeLine("const EventTap = ast.EventTap;");
         try self.writeLine("const LabelDecl = ast.LabelDecl;");
-        try self.writeLine("const SubflowImpl = ast.SubflowImpl;");
-        try self.writeLine("const SubflowBody = ast.SubflowBody;");
+        try self.writeLine("const ImmediateImpl = ast.ImmediateImpl;");
         try self.writeLine("const ImportDecl = ast.ImportDecl;");
         try self.writeLine("const ModuleDecl = ast.ModuleDecl;");
         try self.writeLine("const DottedPath = ast.DottedPath;");
@@ -294,9 +293,9 @@ pub const AstSerializer = struct {
                 try self.serializeImportDecl(&import);
                 try self.write(" }");
             },
-            .subflow_impl => |subflow| {
-                try self.write(".{ .subflow_impl = ");
-                try self.serializeSubflowImpl(&subflow);
+            .immediate_impl => |imm| {
+                try self.write(".{ .immediate_impl = ");
+                try self.serializeImmediateImpl(&imm);
                 try self.write(" }");
             },
             .label_decl => |label| {
@@ -640,6 +639,16 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write(".location = ");
         try self.serializeSourceLocation(&flow.location);
+        try self.write(",\n");
+
+        // impl_of (null for top-level flows, set for impl flows)
+        try self.writeIndent();
+        try self.write(".impl_of = ");
+        if (flow.impl_of) |impl_of| {
+            try self.serializeDottedPath(impl_of);
+        } else {
+            try self.write("null");
+        }
         try self.write(",\n");
 
         // Module
@@ -1303,44 +1312,41 @@ pub const AstSerializer = struct {
         try self.write(" }");
     }
 
-    fn serializeSubflowImpl(self: *AstSerializer, subflow: *const ast.SubflowImpl) !void {
-        try self.write("SubflowImpl{\n");
+    fn serializeImmediateImpl(self: *AstSerializer, imm: *const ast.ImmediateImpl) !void {
+        try self.write("ImmediateImpl{\n");
         self.indent();
 
         try self.writeIndent();
         try self.write(".event_path = ");
-        try self.serializeDottedPath(subflow.event_path);
+        try self.serializeDottedPath(imm.event_path);
         try self.write(",\n");
 
         try self.writeIndent();
-        try self.write(".body = ");
-        switch (subflow.body) {
-            .flow => |flow| {
-                try self.write(".{ .flow = ");
-                try self.serializeFlow(&flow);
-                try self.write(" }");
-            },
-            .immediate => |imm| {
-                try self.write(".{ .immediate = ");
-                try self.serializeBranchConstructor(&imm);
-                try self.write(" }");
-            },
+        try self.write(".value = ");
+        try self.serializeBranchConstructor(&imm.value);
+        try self.write(",\n");
+
+        // Annotations
+        try self.writeIndent();
+        try self.write(".annotations = &.{\n");
+        self.indent();
+        for (imm.annotations) |ann| {
+            try self.writeIndent();
+            try self.writeString(ann);
+            try self.write(",\n");
         }
-        try self.write(",\n");
-
+        self.dedent();
         try self.writeIndent();
-        try self.write(".is_impl = ");
-        try self.write(if (subflow.is_impl) "true" else "false");
-        try self.write(",\n");
+        try self.write("},\n");
 
         try self.writeIndent();
         try self.write(".location = ");
-        try self.serializeSourceLocation(subflow.location);
+        try self.serializeSourceLocation(&imm.location);
         try self.write(",\n");
 
         try self.writeIndent();
         try self.write(".module = ");
-        try self.writeString(subflow.module);
+        try self.writeString(imm.module);
         try self.write(",\n");
 
         self.dedent();
@@ -1640,10 +1646,10 @@ pub const AstSerializer = struct {
                 try self.write(",\n");
                 try self.serializeLabelDeclJson(&item.label_decl);
             },
-            .subflow_impl => {
-                try self.writeString("subflow_impl");
+            .immediate_impl => {
+                try self.writeString("immediate_impl");
                 try self.write(",\n");
-                try self.serializeSubflowImplJson(&item.subflow_impl);
+                try self.serializeImmediateImplJson(&item.immediate_impl);
             },
             .host_type_decl => {
                 try self.writeString("host_type_decl");
@@ -1828,6 +1834,16 @@ pub const AstSerializer = struct {
         }
         try self.write(",\n");
 
+        // impl_of (null for top-level flows, set for impl flows)
+        try self.writeIndent();
+        try self.write("\"impl_of\": ");
+        if (flow.impl_of) |impl_of| {
+            try self.serializeDottedPathJson(&impl_of);
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+
         // Location
         try self.writeIndent();
         try self.write("\"location\": ");
@@ -1872,6 +1888,16 @@ pub const AstSerializer = struct {
         try self.write("\"post_label\": ");
         if (flow.post_label) |label| {
             try self.writeString(label);
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+
+        // impl_of (null for top-level flows, set for impl flows)
+        try self.writeIndent();
+        try self.write("\"impl_of\": ");
+        if (flow.impl_of) |impl_of| {
+            try self.serializeDottedPathJson(&impl_of);
         } else {
             try self.write("null");
         }
@@ -2416,51 +2442,35 @@ pub const AstSerializer = struct {
         try self.writeString(label.name);
     }
 
-    fn serializeSubflowImplJson(self: *AstSerializer, subflow: *const ast.SubflowImpl) !void {
+    fn serializeImmediateImplJson(self: *AstSerializer, imm: *const ast.ImmediateImpl) !void {
         try self.writeIndent();
         try self.write("\"event_path\": ");
-        try self.serializeDottedPathJson(&subflow.event_path);
+        try self.serializeDottedPathJson(&imm.event_path);
         try self.write(",\n");
 
-        // Serialize body (flow or immediate branch constructor)
+        // Serialize value (branch constructor)
         try self.writeIndent();
-        try self.write("\"body\": ");
-        switch (subflow.body) {
-            .flow => |flow| {
-                try self.write("{\n");
-                self.indent();
-                try self.writeIndent();
-                try self.write("\"type\": \"flow\",\n");
-                try self.writeIndent();
-                try self.write("\"flow\": {\n");
-                self.indent();
-                try self.serializeFlowJson(&flow);
-                self.dedent();
-                try self.writeIndent();
-                try self.write("}\n");
-                self.dedent();
-                try self.writeIndent();
-                try self.write("}");
-            },
-            .immediate => |imm| {
-                try self.write("{\n");
-                self.indent();
-                try self.writeIndent();
-                try self.write("\"type\": \"immediate\",\n");
-                try self.writeIndent();
-                try self.write("\"immediate\": ");
-                try self.serializeBranchConstructorJson(&imm);
-                try self.write("\n");
-                self.dedent();
-                try self.writeIndent();
-                try self.write("}");
-            },
-        }
+        try self.write("\"value\": ");
+        try self.serializeBranchConstructorJson(&imm.value);
         try self.write(",\n");
+
+        // Annotations
+        try self.writeIndent();
+        try self.write("\"annotations\": [\n");
+        self.indent();
+        for (imm.annotations, 0..) |ann, i| {
+            if (i > 0) try self.write(",\n");
+            try self.writeIndent();
+            try self.writeString(ann);
+        }
+        try self.write("\n");
+        self.dedent();
+        try self.writeIndent();
+        try self.write("],\n");
 
         try self.writeIndent();
         try self.write("\"location\": ");
-        try self.serializeLocationJson(&subflow.location);
+        try self.serializeLocationJson(&imm.location);
     }
 
     fn serializeHostTypeDeclJson(self: *AstSerializer, host_type: *const ast.HostTypeDecl) !void {

@@ -548,28 +548,11 @@ pub const PhantomSemanticChecker = struct {
         for (items) |item| {
             switch (item) {
                 .flow => |*flow| {
-                    const module = flow.module; // Already qualified for top-level or from module_decl.items walk
-                    log.debug("[PHANTOM-FLOW] Validating flow in module '{s}'\n", .{module});
-                    if (!try self.validateFlow(flow, event_map, module, null)) {
-                        has_errors = true;
-                    }
-                },
-                .proc_decl => |*proc| {
-                    const module = proc.module;
-                    log.debug("[PHANTOM-FLOW] Validating proc '{s}' in module '{s}'\n", .{try self.pathToString(proc.path), module});
-                    for (proc.inline_flows) |*flow| {
-                        if (!try self.validateFlow(flow, event_map, module, null)) {
-                            has_errors = true;
-                        }
-                    }
-                },
-                .subflow_impl => |*sub| {
-                    if (sub.body == .flow) {
-                        const module = current_module orelse "input"; // Need to pass module context down
-                        log.debug("[PHANTOM-FLOW] Validating subflow in module '{s}'\n", .{module});
+                    if (flow.impl_of) |impl_path| {
+                        const module = current_module orelse "input";
+                        log.debug("[PHANTOM-FLOW] Validating impl flow in module '{s}'\n", .{module});
 
-                        // Look up the event this subflow implements
-                        const impl_event_name = try self.pathToString(sub.event_path);
+                        const impl_event_name = try self.pathToString(impl_path);
                         defer self.allocator.free(impl_event_name);
 
                         const impl_qualified = try std.fmt.allocPrint(
@@ -582,13 +565,28 @@ pub const PhantomSemanticChecker = struct {
                         const impl_event: ?*const ast.EventDecl = if (event_map.get(impl_qualified)) |info| info.decl else null;
 
                         if (impl_event) |ev| {
-                            log.debug("[PHANTOM-FLOW]   Subflow implements event: '{s}'\n", .{impl_qualified});
+                            log.debug("[PHANTOM-FLOW]   Impl flow implements event: '{s}'\n", .{impl_qualified});
                             _ = ev;
                         } else {
-                            log.debug("[PHANTOM-FLOW]   Subflow event '{s}' not found in event map\n", .{impl_qualified});
+                            log.debug("[PHANTOM-FLOW]   Impl event '{s}' not found in event map\n", .{impl_qualified});
                         }
 
-                        if (!try self.validateFlow(&sub.body.flow, event_map, module, impl_event)) {
+                        if (!try self.validateFlow(flow, event_map, module, impl_event)) {
+                            has_errors = true;
+                        }
+                    } else {
+                        const module = flow.module;
+                        log.debug("[PHANTOM-FLOW] Validating flow in module '{s}'\n", .{module});
+                        if (!try self.validateFlow(flow, event_map, module, null)) {
+                            has_errors = true;
+                        }
+                    }
+                },
+                .proc_decl => |*proc| {
+                    const module = proc.module;
+                    log.debug("[PHANTOM-FLOW] Validating proc '{s}' in module '{s}'\n", .{try self.pathToString(proc.path), module});
+                    for (proc.inline_flows) |*flow| {
+                        if (!try self.validateFlow(flow, event_map, module, null)) {
                             has_errors = true;
                         }
                     }

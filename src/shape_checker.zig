@@ -19,7 +19,7 @@ pub const ShapeChecker = struct {
     events: std.StringHashMap(EventInfo),
     procs: std.StringHashMap(ProcInfo),
     labels: std.StringHashMap(LabelInfo),
-    subflow_impls: std.StringHashMap(SubflowImplInfo),
+    impl_flows: std.StringHashMap(ImplFlowInfo),
     
     // Type inference engine
     type_engine: type_inference.TypeInference,
@@ -31,13 +31,13 @@ pub const ShapeChecker = struct {
             .events = std.StringHashMap(EventInfo).init(allocator),
             .procs = std.StringHashMap(ProcInfo).init(allocator),
             .labels = std.StringHashMap(LabelInfo).init(allocator),
-            .subflow_impls = std.StringHashMap(SubflowImplInfo).init(allocator),
+            .impl_flows = std.StringHashMap(ImplFlowInfo).init(allocator),
             .type_engine = try type_inference.TypeInference.init(allocator, reporter),
         };
     }
     
     pub fn deinit(self: *ShapeChecker) void {
-        // Note: EventInfo/ProcInfo/SubflowImplInfo store POINTERS to AST data,
+        // Note: EventInfo/ProcInfo/ImplFlowInfo store POINTERS to AST data,
         // not copies. The AST is owned by the parser and freed there.
         // We only free the key strings that we allocated.
 
@@ -60,11 +60,11 @@ pub const ShapeChecker = struct {
         }
         self.labels.deinit();
 
-        var subflow_iter = self.subflow_impls.iterator();
-        while (subflow_iter.next()) |entry| {
+        var impl_flow_iter = self.impl_flows.iterator();
+        while (impl_flow_iter.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
         }
-        self.subflow_impls.deinit();
+        self.impl_flows.deinit();
         self.type_engine.deinit();
     }
     
@@ -214,14 +214,24 @@ pub const ShapeChecker = struct {
                         .jump_sites = try std.ArrayList(LabelInfo.JumpSite).initCapacity(self.allocator, 0),
                     });
                 },
-                .subflow_impl => |*subflow| {
-                    // Subflow implementations are validated against their event
-                    const event_path = try self.pathToString(subflow.event_path);
-                    // Note: key ownership transfers to hashmap, freed in deinit
-                    try self.subflow_impls.put(event_path, SubflowImplInfo{
-                        .impl = subflow,
+                .flow => |*flow| {
+                    // Register impl flows (flows with impl_of set)
+                    if (flow.impl_of) |impl_path| {
+                        const event_path = try self.pathToString(impl_path);
+                        // Note: key ownership transfers to hashmap, freed in deinit
+                        try self.impl_flows.put(event_path, ImplFlowInfo{
+                            .flow = flow,
+                            .line = 0,
+                        });
+                    }
+                },
+                .immediate_impl => |*ii| {
+                    const event_path = try self.pathToString(ii.event_path);
+                    try self.impl_flows.put(event_path, ImplFlowInfo{
+                        .flow = null, // immediate impl, not a flow
                         .line = 0,
                     });
+
                 },
                 .module_decl => |*module| {
                     // Process items from imported modules
@@ -285,15 +295,9 @@ pub const ShapeChecker = struct {
                 .proc_decl => |*proc| {
                     try self.validateProc(proc, null);
                 },
-                .subflow_impl => |*subflow| {
-                    // Subflow body can be either a flow or an immediate value
-                    switch (subflow.body) {
-                        .flow => |*flow| try self.validateFlow(flow, flow.location, source_file),
-                        .immediate => {
-                            // Immediate values (like branch constructors) are already validated
-                            // during parsing and type inference. No additional validation needed.
-                        },
-                    }
+                .immediate_impl => {
+                    // Immediate values (like branch constructors) are already validated
+                    // during parsing and type inference. No additional validation needed.
                 },
                 .module_decl => |*module| {
                     // Validate flows and taps in imported modules
@@ -518,11 +522,11 @@ pub const ShapeChecker = struct {
         const final_event_info = event_info orelse {
             log.debug("ERROR: Unknown event '{s}'\n", .{event_name});
             // Check if it's a subflow implementation
-            if (self.subflow_impls.get(event_name)) |subflow_impl| {
-                // Subflow implementation exists - it implements this event
+            if (self.impl_flows.get(event_name)) |impl_flow_info| {
+                // Implementation exists - it implements this event
                 // Get the event declaration for branch validation
                 const event = self.events.get(event_name) orelse {
-                    _ = subflow_impl;
+                    _ = impl_flow_info;
                     try self.reporter.addErrorAtLocation(
                         .KORU040,
                         location,
@@ -1413,8 +1417,8 @@ const LabelInfo = struct {
     };
 };
 
-const SubflowImplInfo = struct {
-    impl: *const ast.SubflowImpl,
+const ImplFlowInfo = struct {
+    flow: ?*const ast.Flow, // null for immediate impls
     line: usize,
 };
 
