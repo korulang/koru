@@ -780,7 +780,7 @@ fn cloneEventTap(allocator: std.mem.Allocator, tap: *const ast.EventTap) !ast.Ev
     };
 }
 
-fn cloneDottedPath(allocator: std.mem.Allocator, path: *const ast.DottedPath) !ast.DottedPath {
+pub fn cloneDottedPath(allocator: std.mem.Allocator, path: *const ast.DottedPath) !ast.DottedPath {
     var segments = try allocator.alloc([]const u8, path.segments.len);
     errdefer allocator.free(segments);
 
@@ -1119,10 +1119,13 @@ pub fn replacePipelineStep(
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null, // TODO: clone if needed
         .inline_body = if (flow.inline_body) |body| try allocator.dupe(u8, body) else null,
+        .preamble_code = if (flow.preamble_code) |preamble| try allocator.dupe(u8, preamble) else null,
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,
         .location = flow.location,
         .module = try allocator.dupe(u8, flow.module),
+        .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .is_impl = flow.is_impl,
     };
 }
 
@@ -1197,10 +1200,13 @@ pub fn filterNestedContinuations(
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null,
         .inline_body = if (flow.inline_body) |body| try allocator.dupe(u8, body) else null,
+        .preamble_code = if (flow.preamble_code) |preamble| try allocator.dupe(u8, preamble) else null,
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,
         .location = flow.location,
         .module = try allocator.dupe(u8, flow.module),
+        .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .is_impl = flow.is_impl,
     };
 }
 
@@ -1316,10 +1322,13 @@ pub fn replacePipelineStepAtPath(
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null,
         .inline_body = if (flow.inline_body) |body| try allocator.dupe(u8, body) else null,
+        .preamble_code = if (flow.preamble_code) |preamble| try allocator.dupe(u8, preamble) else null,
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,
         .location = flow.location,
         .module = try allocator.dupe(u8, flow.module),
+        .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .is_impl = flow.is_impl,
     };
 }
 
@@ -1411,10 +1420,13 @@ pub fn filterNestedContinuationsAtPath(
         .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
         .super_shape = null,
         .inline_body = if (flow.inline_body) |body| try allocator.dupe(u8, body) else null,
+        .preamble_code = if (flow.preamble_code) |preamble| try allocator.dupe(u8, preamble) else null,
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,
         .location = flow.location,
         .module = try allocator.dupe(u8, flow.module),
+        .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .is_impl = flow.is_impl,
     };
 }
 

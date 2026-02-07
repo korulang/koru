@@ -939,9 +939,10 @@ const processTestFlow = struct {
         code_emitter.indent_level = 1;
 
         // Emit each test flow, substituting mocks
+        var mock_counter: usize = 0;
         for (test_flows.items) |flow_item| {
             if (flow_item == .flow) {
-                emitFlowWithMocks(&code_emitter, &emit_ctx, &flow_item.flow, &mock_map) catch {};
+                emitFlowWithMocks(&code_emitter, &emit_ctx, &flow_item.flow, &mock_map, &mock_counter) catch {};
             }
         }
 
@@ -1075,6 +1076,7 @@ const emitFlowWithMocks = struct {
         ctx: *@import("emitter_helpers").EmissionContext,
         flow_to_emit: *const @import("ast").Flow,
         mocks: *const std.StringHashMap(@import("ast").BranchConstructor),
+        counter: *usize,
     ) !void {
         const ast_mod = @import("ast");
         const emitter_helpers = @import("emitter_helpers");
@@ -1090,7 +1092,8 @@ const emitFlowWithMocks = struct {
         // Check if this invocation has a mock
         if (mocks.get(inv_path)) |bc| {
             // Emit mock value directly
-            const result_var = try std.fmt.allocPrint(ctx.allocator, "result_{d}", .{ctx.indent_level});
+            const result_var = try std.fmt.allocPrint(ctx.allocator, "__mock_result_{d}", .{counter.*});
+            counter.* += 1;
 
             try code_emitter.writeIndent();
             try code_emitter.write("const ");
@@ -1129,7 +1132,7 @@ const emitFlowWithMocks = struct {
                                 .is_pure = true,
                                 .is_transitively_pure = false,
                             };
-                            try call(code_emitter, ctx, &nested_flow, mocks);
+                            try call(code_emitter, ctx, &nested_flow, mocks, counter);
                         }
                     }
                     break;

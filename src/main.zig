@@ -719,33 +719,12 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                 }
 
                 try writer.writeAll(" });\n");
-                try writer.writeAll("        switch (__thunk_result) {\n");
-
-                for (flow.continuations) |cont| {
-                    try writer.writeAll("            .");
-                    try writeBranchName(writer, cont.branch);
-                    try writer.writeAll(" => ");
-
-                    if (cont.binding) |binding| {
-                        try writer.writeAll("|");
-                        try writer.writeAll(binding);
-                        try writer.writeAll("| ");
-                    }
-
-                    try writer.writeAll("{\n");
-
-                    // Suppress unused binding warning
-                    // Skip for "_" since that's a discard and can't be referenced
-                    if (cont.binding) |binding| {
-                        if (!std.mem.eql(u8, binding, "_")) {
-                            try writer.writeAll("                _ = &");
-                            try writer.writeAll(binding);
-                            try writer.writeAll(";\n");
-                        }
-                    }
-
+                const has_void_continuation = flow.continuations.len == 1 and flow.continuations[0].branch.len == 0;
+                if (has_void_continuation) {
+                    const cont = flow.continuations[0];
+                    try writer.writeAll("        _ = &__thunk_result;\n");
                     if (cont.node) |step| {
-                        try writer.writeAll("                ");
+                        try writer.writeAll("        ");
                         switch (step) {
                             .invocation => |inv| {
                                 // Call the handler from backend_output
@@ -820,11 +799,114 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                             },
                         }
                     }
+                } else {
+                    try writer.writeAll("        switch (__thunk_result) {\n");
 
-                    try writer.writeAll("            },\n");
+                    for (flow.continuations) |cont| {
+                        try writer.writeAll("            .");
+                        try writeBranchName(writer, cont.branch);
+                        try writer.writeAll(" => ");
+
+                        if (cont.binding) |binding| {
+                            try writer.writeAll("|");
+                            try writer.writeAll(binding);
+                            try writer.writeAll("| ");
+                        }
+
+                        try writer.writeAll("{\n");
+
+                        // Suppress unused binding warning
+                        // Skip for "_" since that's a discard and can't be referenced
+                        if (cont.binding) |binding| {
+                            if (!std.mem.eql(u8, binding, "_")) {
+                                try writer.writeAll("                _ = &");
+                                try writer.writeAll(binding);
+                                try writer.writeAll(";\n");
+                            }
+                        }
+
+                        if (cont.node) |step| {
+                            try writer.writeAll("                ");
+                            switch (step) {
+                                .invocation => |inv| {
+                                    // Call the handler from backend_output
+                                    try writer.writeAll("_ = ");
+                                    if (inv.path.module_qualifier) |mq| {
+                                        // Module-qualified event: backend_output.koru_<module>.<event>_event
+                                        try writer.writeAll("backend_output.koru_");
+                                        if (module_alias_map.get(mq)) |full_path| {
+                                            try writer.writeAll(full_path);
+                                        } else {
+                                            try writer.writeAll(mq);
+                                        }
+                                        try writer.writeAll(".");
+                                        for (inv.path.segments, 0..) |seg, i| {
+                                            if (i > 0) try writer.writeAll("_");
+                                            try writer.writeAll(seg);
+                                        }
+                                    } else {
+                                        // Local event: backend_output.main_module.<event>_event
+                                        try writer.writeAll("backend_output.main_module.");
+                                        for (inv.path.segments, 0..) |seg, i| {
+                                            if (i > 0) try writer.writeAll("_");
+                                            try writer.writeAll(seg);
+                                        }
+                                    }
+                                    try writer.writeAll("_event.handler(.{");
+                                    // For now, use a simple heuristic: if arg.name starts with quote, it's positional
+                                    // and we use "text" as the field name (works for println, print, etc.)
+                                    for (inv.args, 0..) |arg, i| {
+                                        if (i > 0) try writer.writeAll(", ");
+                                        try writer.writeAll(" .");
+                                        // Check if this is a positional argument (name starts with quote or is the value)
+                                        if (arg.name.len > 0 and (arg.name[0] == '"' or std.mem.eql(u8, arg.name, arg.value))) {
+                                            // Positional argument - use "text" as field name for now
+                                            try writer.writeAll("text");
+                                        } else {
+                                            try writer.writeAll(arg.name);
+                                        }
+                                        try writer.writeAll(" = ");
+                                        // Source arguments have source_value set - always quote those
+                                        // Also apply heuristic for Koru syntax that needs stringification:
+                                        // - Struct literals: { ... }
+                                        // - Range literals: 0..3
+                                        // Other values (identifiers, field access) should remain as expressions
+                                        const has_source_value = arg.source_value != null;
+                                        const needs_quoting = has_source_value or (arg.value.len > 0 and
+                                            (arg.value[0] == '{' or std.mem.indexOf(u8, arg.value, "..") != null));
+                                        if (needs_quoting) {
+                                            // For Source args, use the actual source text
+                                            const text_to_quote = if (arg.source_value) |sv| sv.text else arg.value;
+                                            try writer.writeAll("\"");
+                                            for (text_to_quote) |c| {
+                                                switch (c) {
+                                                    '\n' => try writer.writeAll("\\n"),
+                                                    '\r' => try writer.writeAll("\\r"),
+                                                    '\t' => try writer.writeAll("\\t"),
+                                                    '\\' => try writer.writeAll("\\\\"),
+                                                    '"' => try writer.writeAll("\\\""),
+                                                    else => try writer.writeByte(c),
+                                                }
+                                            }
+                                            try writer.writeAll("\"");
+                                        } else {
+                                            try writer.writeAll(arg.value);
+                                        }
+                                    }
+                                    try writer.writeAll(" });\n");
+                                },
+                                .terminal => {},
+                                else => {
+                                    try writer.writeAll("// TODO: Handle step type\n");
+                                },
+                            }
+                        }
+
+                        try writer.writeAll("            },\n");
+                    }
+
+                    try writer.writeAll("        }\n");
                 }
-
-                try writer.writeAll("        }\n");
                 try writer.writeAll("    }\n\n");
             }
 

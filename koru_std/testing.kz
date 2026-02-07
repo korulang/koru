@@ -511,11 +511,13 @@ const validateMocks = struct {
         }
     }
 
-    // Find ALL flows in the transformed program (not by index)
+    // Find ONLY flows that originated from the test source block
     var transformed_flows = std_import.ArrayList(*const ast.Flow).initCapacity(allocator, 8) catch unreachable;
     for (transformed_program.items) |*t_item| {
         if (t_item.* == .flow) {
-            transformed_flows.append(allocator, &t_item.flow) catch {};
+            if (std_import.mem.eql(u8, t_item.flow.location.file, "__test__.kz")) {
+                transformed_flows.append(allocator, &t_item.flow) catch {};
+            }
         }
     }
 
@@ -725,7 +727,7 @@ const emitFlowWithMocks = struct {
         }
 
         if (mocks.get(inv_path)) |bc| {
-            const result_var = try @import("std").fmt.allocPrint(ctx.allocator, "result_{d}", .{counter.*});
+            const result_var = try @import("std").fmt.allocPrint(ctx.allocator, "__mock_result_{d}", .{counter.*});
             counter.* += 1;
 
             try code_emitter.writeIndent();

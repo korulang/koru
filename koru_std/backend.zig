@@ -2126,7 +2126,7 @@ pub const PROGRAM_AST = Program{
                                     .{ .host_line = .{ .content = "        // Check if this invocation has a mock", .location = .{ .line = 1090, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .host_line = .{ .content = "        if (mocks.get(inv_path)) |bc| {", .location = .{ .line = 1091, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .host_line = .{ .content = "            // Emit mock value directly", .location = .{ .line = 1092, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            const result_var = try std.fmt.allocPrint(ctx.allocator, \"result_{d}\", .{ctx.indent_level});", .location = .{ .line = 1093, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            const result_var = try std.fmt.allocPrint(ctx.allocator, \"__mock_result_{d}\", .{ctx.indent_level});", .location = .{ .line = 1093, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .host_line = .{ .content = "            try code_emitter.writeIndent();", .location = .{ .line = 1095, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .host_line = .{ .content = "            try code_emitter.write(\"const \");", .location = .{ .line = 1096, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .host_line = .{ .content = "            try code_emitter.write(result_var);", .location = .{ .line = 1097, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/compiler.kz" }, .module = "compiler" } },            
@@ -4257,11 +4257,13 @@ pub const PROGRAM_AST = Program{
                     \\        }
                     \\    }
                     \\
-                    \\    // Find ALL flows in the transformed program (not by index)
+                    \\    // Find ONLY flows that originated from the test source block
                     \\    var transformed_flows = std_import.ArrayList(*const ast.Flow).initCapacity(allocator, 8) catch unreachable;
                     \\    for (transformed_program.items) |*t_item| {
                     \\        if (t_item.* == .flow) {
-                    \\            transformed_flows.append(allocator, &t_item.flow) catch {};
+                    \\            if (std_import.mem.eql(u8, t_item.flow.location.file, "__test__.kz")) {
+                    \\                transformed_flows.append(allocator, &t_item.flow) catch {};
+                    \\            }
                     \\        }
                     \\    }
                     \\
@@ -4470,7 +4472,7 @@ pub const PROGRAM_AST = Program{
                                     .{ .host_line = .{ .content = "            return;", .location = .{ .line = 724, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/testing.kz" }, .module = "testing" } },            
                                     .{ .host_line = .{ .content = "        }", .location = .{ .line = 725, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/testing.kz" }, .module = "testing" } },            
                                     .{ .host_line = .{ .content = "        if (mocks.get(inv_path)) |bc| {", .location = .{ .line = 727, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/testing.kz" }, .module = "testing" } },            
-                                    .{ .host_line = .{ .content = "            const result_var = try @import(\"std\").fmt.allocPrint(ctx.allocator, \"result_{d}\", .{counter.*});", .location = .{ .line = 728, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/testing.kz" }, .module = "testing" } },            
+                                    .{ .host_line = .{ .content = "            const result_var = try @import(\"std\").fmt.allocPrint(ctx.allocator, \"__mock_result_{d}\", .{counter.*});", .location = .{ .line = 728, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/testing.kz" }, .module = "testing" } },            
                                     .{ .host_line = .{ .content = "            counter.* += 1;", .location = .{ .line = 729, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/testing.kz" }, .module = "testing" } },            
                                     .{ .host_line = .{ .content = "            try code_emitter.writeIndent();", .location = .{ .line = 731, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/testing.kz" }, .module = "testing" } },            
                                     .{ .host_line = .{ .content = "            try code_emitter.write(\"const \");", .location = .{ .line = 732, .column = 0, .file = "/Users/larsde/src/koru-ast-rewrite/koru_std/testing.kz" }, .module = "testing" } },            

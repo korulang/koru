@@ -2010,6 +2010,8 @@ pub const AutoDischargeInserter = struct {
             .is_transitively_pure = flow.is_transitively_pure,
             .location = flow.location,
             .module = try self.allocator.dupe(u8, flow.module),
+            .impl_of = if (flow.impl_of) |io| try ast_functional.cloneDottedPath(self.allocator, &io) else null,
+            .is_impl = flow.is_impl,
         };
     }
 
@@ -2045,6 +2047,8 @@ pub const AutoDischargeInserter = struct {
             .is_transitively_pure = flow.is_transitively_pure,
             .location = flow.location,
             .module = try self.allocator.dupe(u8, flow.module),
+            .impl_of = if (flow.impl_of) |io| try ast_functional.cloneDottedPath(self.allocator, &io) else null,
+            .is_impl = flow.is_impl,
         };
     }
 
@@ -2163,6 +2167,8 @@ pub const AutoDischargeInserter = struct {
             .is_transitively_pure = flow.is_transitively_pure,
             .location = flow.location,
             .module = try self.allocator.dupe(u8, flow.module),
+            .impl_of = if (flow.impl_of) |io| try ast_functional.cloneDottedPath(self.allocator, &io) else null,
+            .is_impl = flow.is_impl,
         };
     }
 
