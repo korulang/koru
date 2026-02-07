@@ -63,7 +63,7 @@ module: []const u8
 ```
 event_path: DottedPath           // Which event this implements
 body: SubflowBody                // Either a Flow or an immediate BranchConstructor
-is_impl: bool                    // ~impl vs ~handler =
+is_impl: bool                    // true if event_path has module qualifier (colon syntax)
 location: SourceLocation
 module: []const u8
 ```
@@ -113,7 +113,7 @@ pub const Flow = struct {
 
     // NEW: Subflow implementation context (null for top-level flows)
     impl_of: ?DottedPath = null,  // Which event this flow implements (null = top-level)
-    is_impl: bool = false,        // true for ~impl, false for ~handler =
+    is_impl: bool = false,        // true if impl_of path has module qualifier (colon syntax)
 
     // Helper for readability at callsites
     pub fn isImpl(self: *const Flow) bool {

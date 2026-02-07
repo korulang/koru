@@ -10,7 +10,7 @@
 //
 // Usage:
 //   Runs automatically as part of compiler pipeline.
-//   To override: ~impl std.optimizer:optimize = your_custom_optimizer(ctx)
+//   To override: ~std.optimizer:optimize = your_custom_optimizer(ctx)
 
 ~[comptime]
 
@@ -28,7 +28,7 @@
 // DEFAULT OPTIMIZE IMPLEMENTATION
 // ============================================================
 // Provides the default implementation for std.compiler:optimize
-// Users can override with ~impl std.compiler:optimize = ...
+// Users can override with ~std.compiler:optimize = ...
 
 // Default optimization pipeline - chains all optimization passes
 ~optimize = std.optimizations.kernels:optimize(ctx)

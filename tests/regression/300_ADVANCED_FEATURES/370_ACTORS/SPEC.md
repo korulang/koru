@@ -56,7 +56,7 @@ Returns capture-like scope with hydrated state.
 | stored {}
 ```
 
-User provides implementation via `~impl`.
+User provides implementation via cross-module overrides (colon syntax).
 
 ## Implementation via Tap
 
@@ -80,18 +80,18 @@ User provides implementation via `~impl`.
 
 ### Test Mode (static data)
 ```koru
-~impl player.load = loaded { id: id, gold: 100, health: 100 }
-~impl player.store = stored {}
+~player:load = loaded { id: id, gold: 100, health: 100 }
+~player:store = stored {}
 ```
 
 ### SQLite
 ```koru
-~impl player.load =
+~player:load =
     sqlite.query(sql: "SELECT * FROM players WHERE id = ?", args: .{id})
     | row r |> loaded { id: r.id, gold: r.gold, health: r.health }
     | empty |> not_found {}
 
-~impl player.store =
+~player:store =
     sqlite.exec(sql: "INSERT OR REPLACE INTO players VALUES (?, ?, ?)",
                 args: .{id, gold, health})
     | ok |> stored {}
@@ -223,11 +223,11 @@ The actor `| as s |>` IS capture, just with persistence bookends.
 | take_damage { damage: u16 }
 
 // Persistence (user provides)
-~impl player.load = app.db:player.get(id: id)
+~player:load = app.db:player.get(id: id)
     | found p |> loaded { id: p.id, gold: p.gold, health: p.health }
     | missing |> not_found {}
 
-~impl player.store = app.db:player.upsert(id: id, gold: gold, health: health)
+~player:store = app.db:player.upsert(id: id, gold: gold, health: health)
     | ok |> stored {}
 
 // Implementation (user provides)

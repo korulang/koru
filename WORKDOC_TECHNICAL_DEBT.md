@@ -157,7 +157,7 @@ Rationale: correctness and parser stability unblock everything else and prevent 
 ## 7) Low: Cleanup (P3)
 
 ### L1. Dead Code Removal
-**Targets:** old build system remnants, deprecated `~impl` scaffolding, unused emitter paths.  
+**Targets:** old build system remnants, deprecated scaffolding, unused emitter paths.  
 **Acceptance criteria:** remove with no behavior change; tests unchanged.
 
 ### L2. Test Infrastructure Gaps

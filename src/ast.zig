@@ -323,7 +323,7 @@ pub const ProcDecl = struct {
     inline_flows: []const Flow = &.{}, // Flows extracted from proc body (Zig only)
     annotations: []const []const u8 = &[_][]const u8{}, // Proc annotations like [pure|async]
     target: ?[]const u8 = null, // Language target: "gpu", "js", "python", null = Zig
-    is_impl: bool = false,  // True if this implements an abstract event (~impl proc)
+    is_impl: bool = false,  // True if event_path has module qualifier (cross-module implementation)
     is_public: bool = false, // True if declared with ~pub proc
 
     // Purity tracking
@@ -561,7 +561,7 @@ pub const LabelDecl = struct {
 pub const SubflowImpl = struct {
     event_path: DottedPath,  // The event this subflow implements (e.g., user.authenticate)
     body: SubflowBody,       // Either a flow or immediate branch return
-    is_impl: bool = false,   // True if this implements an abstract event (~impl)
+    is_impl: bool = false,   // True if event_path has module qualifier (cross-module implementation)
 
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },

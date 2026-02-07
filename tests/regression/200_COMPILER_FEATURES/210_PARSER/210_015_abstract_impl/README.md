@@ -1,15 +1,15 @@
-# Abstract Events and Implementation
+# Abstract Events and Cross-Module Overrides
 
 ## Feature Overview
 
-Abstract events enable declaring event signatures that can be implemented elsewhere in the program. This provides dependency inversion without runtime overhead or OOP-style inheritance complexity.
+Abstract events enable declaring event signatures that can be overridden elsewhere in the program. This provides dependency inversion without runtime overhead or OOP-style inheritance complexity.
 
 ## Syntax
 
 ### Declaring Abstract Events
 
 ```koru
-~abstract event foo { input_fields... }
+~[abstract] event foo { input_fields... }
 | branch_1 { fields... }
 | branch_2 { fields... }
 ```
@@ -22,13 +22,17 @@ Abstract events enable declaring event signatures that can be implemented elsewh
 }
 ```
 
-### Providing Implementation
+### Providing an Override
+
+The colon in the event path (`:`) signals a cross-module override:
 
 ```koru
-~impl fully.qualified:foo =
+~fully.qualified:foo =
     some_flow |> expression
     | branch |> continuation
 ```
+
+There is no special keyword — the `:` in the path is what makes it an implementation override.
 
 ## Semantics
 
@@ -36,7 +40,7 @@ Abstract events enable declaring event signatures that can be implemented elsewh
 
 ```koru
 // library.kz
-~abstract event coordinate { ctx: CompilerContext }
+~[abstract] event coordinate { ctx: CompilerContext }
 | finished { ctx: CompilerContext }
 
 ~proc coordinate {
@@ -45,51 +49,51 @@ Abstract events enable declaring event signatures that can be implemented elsewh
 }
 ```
 
-### Implementation Site (User Code)
+### Override Site (User Code)
 
 ```koru
 // user_code.kz
 ~import "$std/library"
 
-~impl std.library:coordinate =
+~std.library:coordinate =
     std.library:coordinate(...)  // Delegates to default
     | finished f |> custom_logic()
 ```
 
-**Within `~impl` scope:**
+**Within override scope:**
 - Event name refers to the **default implementation** (delegation)
 - Allows extending or wrapping default behavior
 - If no default exists, calling it is a compile error
 
-**Outside `~impl` scope:**
-- Event name refers to the **impl version**
+**Outside override scope:**
+- Event name refers to the **overridden version**
 - Users always call the overridden implementation
 
 ## Compile-Time Guarantees
 
 ### Error: Abstract Event Not Implemented
 ```koru
-~abstract event foo {}
-// No ~impl provided
+~[abstract] event foo {}
+// No override provided
 ~foo()  // ERROR: Abstract event 'foo' not implemented
 ```
 
 ### Error: Multiple Implementations
 ```koru
-~impl foo = ...
-~impl foo = ...  // ERROR: Event 'foo' already implemented
+~mod:foo = ...
+~mod:foo = ...  // ERROR: Event 'foo' already implemented
 ```
 
 ### Error: Delegation to Non-Existent Default
 ```koru
-~abstract event foo {}  // No ~proc foo
-~impl foo = foo()  // ERROR: Cannot delegate to 'foo': no default implementation
+~[abstract] event foo {}  // No ~proc foo
+~mod:foo = foo()  // ERROR: Cannot delegate to 'foo': no default implementation
 ```
 
 ### Error: Fully Qualified Name Required
 ```koru
-~impl coordinate = ...  // ERROR: Implementation must use fully qualified name
-~impl std.library:coordinate = ...  // OK
+~coordinate = ...  // ERROR: Implementation must use fully qualified name
+~std.library:coordinate = ...  // OK (colon indicates cross-module override)
 ```
 
 ## Use Cases
@@ -105,16 +109,16 @@ Abstract events enable declaring event signatures that can be implemented elsewh
 
 **After (clean abstraction):**
 ```koru
-~abstract event compiler.coordinate {}
+~[abstract] event compiler.coordinate {}
 ~proc compiler.coordinate {}  // Default
-~impl std.compiler:compiler.coordinate = ...  // User override
+~std.compiler:compiler.coordinate = ...  // User override
 ```
 
 ### 2. Library Interfaces
 
 ```koru
 // logger.kz
-~abstract event log { message: []const u8 }
+~[abstract] event log { message: []const u8 }
 | done {}
 
 ~proc log {
@@ -122,7 +126,7 @@ Abstract events enable declaring event signatures that can be implemented elsewh
 }
 
 // user_code.kz
-~impl logger:log =
+~logger:log =
     write_to_file(message)  // Custom: log to file
     | written |> .{ .done = .{} }
 ```
@@ -131,12 +135,12 @@ Abstract events enable declaring event signatures that can be implemented elsewh
 
 ```koru
 // http_client.kz
-~abstract event fetch { url: []const u8 }
+~[abstract] event fetch { url: []const u8 }
 | success { body: []const u8 }
 | error { code: i32 }
 
 // test.kz
-~impl http_client:fetch =
+~http_client:fetch =
     .{ .success = .{ .body = "mock response" } }  // No network call
 ```
 
@@ -153,7 +157,7 @@ Abstract events enable declaring event signatures that can be implemented elsewh
 
 **Koru Solutions:**
 - Flat, not hierarchical (no inheritance tree)
-- Explicit and searchable (`~impl` is greppable)
+- Explicit and searchable (`:` in event path is greppable)
 - Compile-time resolution (zero overhead)
 - Single implementation enforced
 - Delegation is explicit
@@ -164,7 +168,7 @@ Abstract events enable declaring event signatures that can be implemented elsewh
 
 **Go:** `type Foo interface { ... }` + implicit implementation → Hidden
 
-**Koru:** `~impl foo = ...` → Just a flow. Simple.
+**Koru:** `~mod:foo = ...` → Just a flow. Simple.
 
 ## Implementation Notes
 
@@ -181,12 +185,13 @@ Abstract events enable declaring event signatures that can be implemented elsewh
 }
 ```
 
-**Impl Declaration:**
+**Override (SubflowImpl with is_impl=true):**
 ```json
 {
-  "type": "impl_decl",
-  "target_event": ["std", "library", "coordinate"],
-  "implementation": {
+  "type": "subflow_impl",
+  "event_path": ["std", "library", "coordinate"],
+  "is_impl": true,
+  "body": {
     "type": "flow",
     ...
   }
@@ -195,32 +200,32 @@ Abstract events enable declaring event signatures that can be implemented elsewh
 
 ### Resolution Strategy
 
-1. Parse phase: Track `~abstract` events and `~impl` declarations
+1. Parse phase: Track abstract events and cross-module overrides
 2. Import phase: Combine all ASTs, checking for duplicates
 3. Canonicalize phase: Resolve fully qualified names
 4. Validation phase:
    - Check all abstract events are implemented
    - Check no duplicate implementations
    - Check delegation targets exist
-5. Emission phase: Replace abstract event calls with impl flows
+5. Emission phase: Replace abstract event calls with override flows
 
 ### Edge Cases
 
 **Delegation Chain:**
 ```koru
-~impl foo = foo() | result |> foo()  // Calls default twice, NOT recursive
+~mod:foo = foo() | result |> foo()  // Calls default twice, NOT recursive
 ```
 
 **Partial Delegation:**
 ```koru
-~impl foo =
+~mod:foo =
     foo(x: 1) | branch_a a |> custom_a()
     foo(x: 2) | branch_b b |> custom_b()
 ```
 
 **No Delegation:**
 ```koru
-~impl foo = completely_custom |> flow  // Don't use default at all
+~mod:foo = completely_custom |> flow  // Don't use default at all
 ```
 
 ## Future Considerations
@@ -229,8 +234,8 @@ Abstract events enable declaring event signatures that can be implemented elsewh
 
 Not currently supported:
 ```koru
-~[test] impl foo = mock_version()
-~[prod] impl foo = real_version()
+~[test] mod:foo = mock_version()
+~[prod] mod:foo = real_version()
 ```
 
 Could be added later if needed.
@@ -239,8 +244,8 @@ Could be added later if needed.
 
 Not currently supported:
 ```koru
-~impl foo.windows = windows_version()
-~impl foo.linux = linux_version()
+~mod:foo.windows = windows_version()
+~mod:foo.linux = linux_version()
 ```
 
 Current design enforces single implementation. Conditional compilation may be better fit.

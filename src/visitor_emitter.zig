@@ -1142,7 +1142,7 @@ pub const VisitorEmitter = struct {
             try self.code_emitter.write("};\n");
         }
 
-        // For abstract events, check if there's an ~impl (subflow_impl with is_impl = true)
+        // For abstract events, check if there's a cross-module override (subflow_impl with is_impl = true)
         // If found, we should skip the default proc_decl
         var has_impl_override = false;
         if (event.hasAnnotation("abstract")) {
@@ -1403,7 +1403,7 @@ pub const VisitorEmitter = struct {
         }
         log.debug(" in {} items\n", .{items_to_search.len});
 
-        // FIRST: Check top-level SubflowImpls for cross-module overrides (e.g., ~impl std.compiler:coordinate)
+        // FIRST: Check top-level SubflowImpls for cross-module overrides (e.g., ~std.compiler:coordinate = ...)
         // This ensures user-defined overrides take precedence over module-internal implementations
         if (has_impl_override) {
             if (event.path.module_qualifier) |event_module| {
@@ -1429,7 +1429,7 @@ pub const VisitorEmitter = struct {
                                         }
                                     }
                                     if (matches) {
-                                        log.debug("  [emitEventDecl] Found cross-module ~impl override for {s}:{s}\n", .{event_module, event.path.segments[0]});
+                                        log.debug("  [emitEventDecl] Found cross-module override for {s}:{s}\n", .{event_module, event.path.segments[0]});
                                         switch (subflow.body) {
                                             .immediate => |bc| {
                                                 // Generate implicit input bindings for immediate subflows
@@ -1496,7 +1496,7 @@ pub const VisitorEmitter = struct {
                                                 found_impl = true;
                                             },
                                             .flow => |flow| {
-                                                // Cross-module ~impl with flow body (delegation pattern)
+                                                // Cross-module override with flow body (delegation pattern)
                                                 // Generate implicit input bindings
                                                 for (event.input.fields) |field| {
                                                     try self.code_emitter.writeIndent();
@@ -1603,7 +1603,7 @@ pub const VisitorEmitter = struct {
         for (items_to_search) |impl_item| {
             switch (impl_item) {
                 .proc_decl => |proc| {
-                    // Skip proc_decl if this is an abstract event with an ~impl override
+                    // Skip proc_decl if this is an abstract event with a cross-module override
                     if (has_impl_override) continue;
 
                     if (proc.path.segments.len == event.path.segments.len) {
@@ -1906,7 +1906,7 @@ pub const VisitorEmitter = struct {
                                         }
 
                                         // Check if this is a self-call (impl calling the same event to delegate to default)
-                                        // This happens in ~impl patterns like: ~impl foo = foo(x: 42) | ok |> ...
+                                        // This happens in override patterns like: ~mod:foo = foo(x: 42) | ok |> ...
                                         const is_self_call = blk: {
                                             if (!has_impl_override) break :blk false;
                                             if (flow.invocation.path.segments.len != event.path.segments.len) break :blk false;

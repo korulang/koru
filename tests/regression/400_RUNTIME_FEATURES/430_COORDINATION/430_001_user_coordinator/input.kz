@@ -7,7 +7,7 @@
 ~import "$std/compiler"
 
 // Override coordinate - just return error immediately
-// Note: No ~impl keyword! Just a cross-module subflow definition.
+// Cross-module subflow override: the colon in the path makes it an impl.
 ~std.compiler:coordinate = error { message: "Testing!" }
 
 // Some test code (doesn't matter - coordinator will error immediately)

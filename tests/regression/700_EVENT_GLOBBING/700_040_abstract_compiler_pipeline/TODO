@@ -12,7 +12,7 @@ What abstract events add:
 - Compile-time single-implementation enforcement
 
 Current: Users override by implementing compiler.coordinate
-Future: ~abstract event + ~impl for explicit contract
+Future: ~[abstract] event + cross-module overrides for explicit contract
 
 The fractal structure already exists:
 - compiler.coordinate (whole pipeline)

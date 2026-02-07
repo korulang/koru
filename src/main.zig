@@ -911,7 +911,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         // ============================================================================
         // The compiler pipeline is now fully flow-based in koru_std/compiler.kz
         // The coordinate event (abstract) handles both default and user-overridden pipelines
-        // via the ~impl mechanism - no special detection needed!
+        // via cross-module subflow overrides - no special detection needed!
         // ============================================================================
 
         // Add runtime emitter that calls the coordinate event from backend_output_emitted.zig
@@ -924,7 +924,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         );
 
         // Call the coordinate event - abstract/impl mechanism handles user overrides
-        try writer.writeAll("        // Call coordinate event (uses user's ~impl if provided, otherwise default)\n");
+        try writer.writeAll("        // Call coordinate event (uses cross-module override if provided, otherwise default)\n");
         try writer.writeAll("        const result = backend_output.koru_");
         try writer.writeAll(compiler_module);
         try writer.writeAll(".coordinate_event.handler(.{ .program_ast = source_ast, .allocator = allocator });\n\n");
@@ -6261,7 +6261,7 @@ pub fn main() !void {
     // try processImports(allocator, &source_file, input);
 
     // NOTE: Compiler override detection removed - the abstract/impl mechanism in
-    // koru_std/compiler.kz handles this automatically via ~abstract and ~impl
+    // koru_std/compiler.kz handles this automatically via abstract events and cross-module overrides
 
     // Purity checking pass
     var purity_check = PurityChecker.init(compile_allocator);

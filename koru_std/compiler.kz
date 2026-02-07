@@ -535,7 +535,7 @@ pub const CompilerContext = struct {
 // ============================================================
 
 // The compiler coordinator (user-overridable)
-// Abstract: Users can override with ~impl std.compiler:coordinate = ...
+// Abstract: Users can override with ~std.compiler:coordinate = ...
 ~[comptime|abstract] pub event coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
 | coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
 | error { message: []const u8 }

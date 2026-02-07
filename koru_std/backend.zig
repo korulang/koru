@@ -706,7 +706,7 @@ pub const PROGRAM_AST = Program{
                                     .{ .host_line = .{ .content = "// COMPILER COORDINATION - User-overridable compilation pipeline", .location = .{ .line = 499, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 500, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .host_line = .{ .content = "// The compiler coordinator (user-overridable)", .location = .{ .line = 502, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Abstract: Users can override with ~impl std.compiler:coordinate = ...", .location = .{ .line = 503, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Abstract: Users can override with ~std.compiler:coordinate = ...", .location = .{ .line = 503, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"coordinate"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -8438,7 +8438,7 @@ const joinPath = struct {
 // The visitor emitter handles abstract/impl resolution automatically
 const RuntimeEmitter = struct {
     pub fn emit(allocator: std.mem.Allocator, source_ast: *const Program) ![]const u8 {
-        // Call coordinate event (uses user's ~impl if provided, otherwise default)
+        // Call coordinate event (uses cross-module override if provided, otherwise default)
         const result = backend_output.koru_std.compiler.coordinate_event.handler(.{ .program_ast = source_ast, .allocator = allocator });
 
         // Handle both success and error branches
