@@ -13,11 +13,9 @@ const Item = ast.Item;
 ~[norun]pub event sample_impl {}
 
 ~proc sample_transform {
-    // Deriving flow from item as in io.kz
+    // Deriving flow from item
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
 

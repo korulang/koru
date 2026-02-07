@@ -121,8 +121,16 @@ pub const SymbolTable = struct {
                         .body = proc.body,
                     });
                 },
-                .subflow_impl => |subflow| {
-                    const path_str = try pathToString(self.allocator, subflow.event_path);
+                .flow => |flow| {
+                    if (flow.impl_of) |impl_path| {
+                        const path_str = try pathToString(self.allocator, impl_path);
+                        if (self.events.getPtr(path_str)) |info| {
+                            info.has_subflow = true;
+                        }
+                    }
+                },
+                .immediate_impl => |ii| {
+                    const path_str = try pathToString(self.allocator, ii.event_path);
                     if (self.events.getPtr(path_str)) |info| {
                         info.has_subflow = true;
                     }

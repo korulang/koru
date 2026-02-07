@@ -261,9 +261,9 @@ fn getItemKey(allocator: std.mem.Allocator, item: *const ast.Item) ![]u8 {
         .label_decl => |label| {
             return try std.fmt.allocPrint(allocator, "label:{s}", .{label.name});
         },
-        .subflow_impl => |subflow| {
-            return try std.fmt.allocPrint(allocator, "subflow:{s}", .{
-                try pathToString(allocator, &subflow.event_path),
+        .immediate_impl => |ii| {
+            return try std.fmt.allocPrint(allocator, "immediate_impl:{s}", .{
+                try pathToString(allocator, &ii.event_path),
             });
         },
         .import_decl => |import| {
@@ -308,9 +308,9 @@ fn itemsConflict(a: *const ast.Item, b: *const ast.Item) !bool {
             const b_label = b.label_decl;
             return std.mem.eql(u8, a_label.name, b_label.name);
         },
-        .subflow_impl => |a_subflow| {
-            const b_subflow = b.subflow_impl;
-            return pathsEqual(&a_subflow.event_path, &b_subflow.event_path);
+        .immediate_impl => |a_ii| {
+            const b_ii = b.immediate_impl;
+            return pathsEqual(&a_ii.event_path, &b_ii.event_path);
         },
         else => return false,  // Other items don't conflict
     }

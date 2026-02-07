@@ -1,9 +1,9 @@
 // ============================================================================
 // REGRESSION TEST
 // ============================================================================
-// Test: inline_body inside cross-module ~impl subflow_impl
+// Test: inline_body inside cross-module subflow_impl override
 // Feature: When a transform (e.g. [expand]) sets inline_body on a flow inside
-//          a cross-module ~impl subflow_impl (is_impl=true), the emitter must
+//          a cross-module subflow_impl (is_impl=true), the emitter must
 //          emit the inline code. This is the exact pattern orisha:router uses.
 // Verifies: emitEventDecl's is_impl flow path respects Flow.inline_body
 // ============================================================================

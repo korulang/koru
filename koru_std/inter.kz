@@ -118,7 +118,7 @@ const std = @import("std");
                 var flows_transformed: usize = 0;
                 var imports: usize = 0;
                 var host_lines: usize = 0;
-                var subflow_impls: usize = 0;
+                var immediate_impls: usize = 0;
                 var modules: usize = 0;
 
                 // Helper to count a flow and check if transformed
@@ -136,10 +136,7 @@ const std = @import("std");
                         .flow => |f| countFlow(f, &flows, &flows_transformed),
                         .import_decl => imports += 1,
                         .host_line => host_lines += 1,
-                        .subflow_impl => |si| {
-                            subflow_impls += 1;
-                            if (si.body == .flow) countFlow(si.body.flow, &flows, &flows_transformed);
-                        },
+                        .immediate_impl => immediate_impls += 1,
                         .module_decl => |mod| {
                             modules += 1;
                             for (mod.items) |mod_item| {
@@ -149,10 +146,7 @@ const std = @import("std");
                                     .flow => |f| countFlow(f, &flows, &flows_transformed),
                                     .import_decl => imports += 1,
                                     .host_line => host_lines += 1,
-                                    .subflow_impl => |si| {
-                                        subflow_impls += 1;
-                                        if (si.body == .flow) countFlow(si.body.flow, &flows, &flows_transformed);
-                                    },
+                                    .immediate_impl => immediate_impls += 1,
                                     else => {},
                                 }
                             }
@@ -165,7 +159,7 @@ const std = @import("std");
                 std.debug.print("  Events: {d}\n", .{events});
                 std.debug.print("  Procs: {d}\n", .{procs});
                 std.debug.print("  Flows: {d} ({d} transformed)\n", .{flows, flows_transformed});
-                if (subflow_impls > 0) std.debug.print("  Subflow impls: {d}\n", .{subflow_impls});
+                if (immediate_impls > 0) std.debug.print("  Immediate impls: {d}\n", .{immediate_impls});
                 std.debug.print("  Host lines: {d}\n", .{host_lines});
                 std.debug.print("  Errors: {d}, Warnings: {d}\n", .{ctx.errors.items.len, ctx.warnings.items.len});
                 std.debug.print("\n", .{});

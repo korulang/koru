@@ -72,8 +72,6 @@ var metatype_global_counter: usize = 0;
     }
 
     const tap_flow = if (item.* == .flow) &item.flow
-        else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-            &item.subflow_impl.body.flow
         else return .{ .transformed = .{ .program = program } };
 
     if (tap_flow.continuations.len == 0) {
@@ -1163,87 +1161,10 @@ var metatype_global_counter: usize = 0;
                     .is_transitively_pure = flow.is_transitively_pure,
                     .location = flow.location,
                     .module = flow.module,
+                    .impl_of = flow.impl_of,
                 };
                 new_items.append(allocator, ast.Item{ .flow = new_flow }) catch unreachable;
                 any_tap_inserted = true;
-            } else {
-                new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
-            }
-        } else if (prog_item.* == .subflow_impl) {
-            // Handle subflow implementations - must descend into the subflow body
-            const subflow = &prog_item.subflow_impl;
-
-            // Only process if body is a flow
-            if (subflow.body == .flow) {
-                const flow = &subflow.body.flow;
-                var flow_modified = false;
-                var new_continuations = flow.continuations;
-
-                if (Helper.flowIsOpaque(flow)) {
-                    new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
-                    continue;
-                }
-
-                const invoked_is_opaque = Helper.isEventOpaque(&opaque_events, &flow.invocation.path, flow.module, allocator);
-                const force_dest_match = source_is_wildcard and Helper.pathMatches(
-                    dest_final,
-                    dest_is_wildcard,
-                    &flow.invocation.path,
-                    flow.module,
-                    allocator,
-                );
-                const result = Helper.transformContinuations(
-                    allocator,
-                    flow.continuations,
-                    all_tap_branches,
-                    is_metatype,
-                    source,
-                    source_is_wildcard,
-                    dest_final,
-                    dest_is_wildcard,
-                    force_dest_match,
-                    tap_salt,
-                    metatype_counter,
-                    tap_is_opaque,
-                    &flow.invocation.path,
-                    flow.module,
-                    invoked_is_opaque,
-                    &opaque_events,
-                ) catch unreachable;
-
-                if (result.modified) {
-                    new_continuations = result.conts;
-                    flow_modified = true;
-                }
-
-                if (flow_modified) {
-                    // Create modified subflow with transformed flow body
-                    const new_flow = ast.Flow{
-                        .invocation = flow.invocation,
-                        .continuations = new_continuations,
-                        .annotations = flow.annotations,
-                        .pre_label = flow.pre_label,
-                        .post_label = flow.post_label,
-                        .super_shape = flow.super_shape,
-                        .inline_body = flow.inline_body,
-                        .is_pure = flow.is_pure,
-                        .is_transitively_pure = flow.is_transitively_pure,
-                        .location = flow.location,
-                        .module = flow.module,
-                    };
-                    const new_body = ast.SubflowBody{ .flow = new_flow };
-                    const new_subflow = ast.SubflowImpl{
-                        .event_path = subflow.event_path,
-                        .body = new_body,
-                        .is_impl = subflow.is_impl,
-                        .location = subflow.location,
-                        .module = subflow.module,
-                    };
-                    new_items.append(allocator, ast.Item{ .subflow_impl = new_subflow }) catch unreachable;
-                    any_tap_inserted = true;
-                } else {
-                    new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
-                }
             } else {
                 new_items.append(allocator, ast_functional.cloneItem(allocator, prog_item) catch unreachable) catch unreachable;
             }
@@ -1355,85 +1276,10 @@ var metatype_global_counter: usize = 0;
                             .is_transitively_pure = flow.is_transitively_pure,
                             .location = flow.location,
                             .module = flow.module,
+                            .impl_of = flow.impl_of,
                         };
                         new_mod_items.append(allocator, ast.Item{ .flow = new_flow }) catch unreachable;
                         any_tap_inserted = true;
-                    } else {
-                        new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
-                    }
-                } else if (mod_item.* == .subflow_impl) {
-                    // Handle subflow implementations inside modules
-                    const subflow = &mod_item.subflow_impl;
-
-                    if (subflow.body == .flow) {
-                        const flow = &subflow.body.flow;
-                        var flow_modified = false;
-                        var new_continuations = flow.continuations;
-
-                        if (Helper.flowIsOpaque(flow)) {
-                            new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
-                            continue;
-                        }
-
-                        const invoked_is_opaque = Helper.isEventOpaque(&opaque_events, &flow.invocation.path, flow.module, allocator);
-                        const force_dest_match = source_is_wildcard and Helper.pathMatches(
-                            dest_final,
-                            dest_is_wildcard,
-                            &flow.invocation.path,
-                            flow.module,
-                            allocator,
-                        );
-                        const result = Helper.transformContinuations(
-                            allocator,
-                            flow.continuations,
-                            all_tap_branches,
-                            is_metatype,
-                            source,
-                            source_is_wildcard,
-                            dest_final,
-                            dest_is_wildcard,
-                            force_dest_match,
-                            tap_salt,
-                            metatype_counter,
-                            tap_is_opaque,
-                            &flow.invocation.path,
-                            flow.module,
-                            invoked_is_opaque,
-                            &opaque_events,
-                        ) catch unreachable;
-
-                        if (result.modified) {
-                            new_continuations = result.conts;
-                            flow_modified = true;
-                        }
-
-                        if (flow_modified) {
-                            const new_flow = ast.Flow{
-                                .invocation = flow.invocation,
-                                .continuations = new_continuations,
-                                .annotations = flow.annotations,
-                                .pre_label = flow.pre_label,
-                                .post_label = flow.post_label,
-                                .super_shape = flow.super_shape,
-                                .inline_body = flow.inline_body,
-                                .is_pure = flow.is_pure,
-                                .is_transitively_pure = flow.is_transitively_pure,
-                                .location = flow.location,
-                                .module = flow.module,
-                            };
-                            const new_body = ast.SubflowBody{ .flow = new_flow };
-                            const new_subflow = ast.SubflowImpl{
-                                .event_path = subflow.event_path,
-                                .body = new_body,
-                                .is_impl = subflow.is_impl,
-                                .location = subflow.location,
-                                .module = subflow.module,
-                            };
-                            new_mod_items.append(allocator, ast.Item{ .subflow_impl = new_subflow }) catch unreachable;
-                            any_tap_inserted = true;
-                        } else {
-                            new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
-                        }
                     } else {
                         new_mod_items.append(allocator, ast_functional.cloneItem(allocator, mod_item) catch unreachable) catch unreachable;
                     }

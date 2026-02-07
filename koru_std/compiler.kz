@@ -535,7 +535,7 @@ pub const CompilerContext = struct {
 // ============================================================
 
 // The compiler coordinator (user-overridable)
-// Abstract: Users can override with ~impl std.compiler:coordinate = ...
+// Abstract: Users can override with ~std.compiler:coordinate = ...
 ~[comptime|abstract] pub event coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
 | coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
 | error { message: []const u8 }
@@ -856,7 +856,7 @@ const processTestFlow = struct {
 
         for (parse_result.source_file.items) |*parsed_item| {
             switch (parsed_item.*) {
-                .subflow_impl => {
+                .immediate_impl => {
                     // This is a mock! Clone it
                     const cloned = ast_functional.cloneItem(allocator, parsed_item) catch continue;
                     mocks.append(allocator, cloned) catch {};
@@ -889,17 +889,15 @@ const processTestFlow = struct {
         // Build mock lookup map (event path -> branch constructor)
         var mock_map = std.StringHashMap(ast_mod.BranchConstructor).init(allocator);
         for (mocks.items) |mock_item| {
-            if (mock_item == .subflow_impl) {
-                const sf = mock_item.subflow_impl;
-                if (sf.body == .immediate) {
-                    // Build event path string
-                    var path_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
-                    for (sf.event_path.segments, 0..) |seg, i| {
-                        if (i > 0) path_buf.append(allocator, '.') catch {};
-                        path_buf.appendSlice(allocator, seg) catch {};
-                    }
-                    mock_map.put(path_buf.items, sf.body.immediate) catch {};
+            if (mock_item == .immediate_impl) {
+                const sf = mock_item.immediate_impl;
+                // Build event path string
+                var path_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                for (sf.event_path.segments, 0..) |seg, i| {
+                    if (i > 0) path_buf.append(allocator, '.') catch {};
+                    path_buf.appendSlice(allocator, seg) catch {};
                 }
+                mock_map.put(path_buf.items, sf.value) catch {};
             }
         }
 
@@ -941,9 +939,10 @@ const processTestFlow = struct {
         code_emitter.indent_level = 1;
 
         // Emit each test flow, substituting mocks
+        var mock_counter: usize = 0;
         for (test_flows.items) |flow_item| {
             if (flow_item == .flow) {
-                emitFlowWithMocks(&code_emitter, &emit_ctx, &flow_item.flow, &mock_map) catch {};
+                emitFlowWithMocks(&code_emitter, &emit_ctx, &flow_item.flow, &mock_map, &mock_counter) catch {};
             }
         }
 
@@ -1077,6 +1076,7 @@ const emitFlowWithMocks = struct {
         ctx: *@import("emitter_helpers").EmissionContext,
         flow_to_emit: *const @import("ast").Flow,
         mocks: *const std.StringHashMap(@import("ast").BranchConstructor),
+        counter: *usize,
     ) !void {
         const ast_mod = @import("ast");
         const emitter_helpers = @import("emitter_helpers");
@@ -1092,7 +1092,8 @@ const emitFlowWithMocks = struct {
         // Check if this invocation has a mock
         if (mocks.get(inv_path)) |bc| {
             // Emit mock value directly
-            const result_var = try std.fmt.allocPrint(ctx.allocator, "result_{d}", .{ctx.indent_level});
+            const result_var = try std.fmt.allocPrint(ctx.allocator, "__mock_result_{d}", .{counter.*});
+            counter.* += 1;
 
             try code_emitter.writeIndent();
             try code_emitter.write("const ");
@@ -1131,7 +1132,7 @@ const emitFlowWithMocks = struct {
                                 .is_pure = true,
                                 .is_transitively_pure = false,
                             };
-                            try call(code_emitter, ctx, &nested_flow, mocks);
+                            try call(code_emitter, ctx, &nested_flow, mocks, counter);
                         }
                     }
                     break;

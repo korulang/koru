@@ -212,7 +212,7 @@ pub const Item = union(enum) {
     flow: Flow,
     event_tap: EventTap,
     label_decl: LabelDecl,
-    subflow_impl: SubflowImpl,
+    immediate_impl: ImmediateImpl,
     import_decl: ImportDecl,
     host_line: HostLine,
     host_type_decl: HostTypeDecl,
@@ -233,7 +233,7 @@ pub const Item = union(enum) {
             .flow => |*f| f.deinit(allocator),
             .event_tap => |*t| t.deinit(allocator),
             .label_decl => |*l| l.deinit(allocator),
-            .subflow_impl => |*s| s.deinit(allocator),
+            .immediate_impl => |*ii| ii.deinit(allocator),
             .import_decl => |*i| i.deinit(allocator),
             .host_type_decl => |*h| h.deinit(allocator),
             .parse_error => |*pe| pe.deinit(allocator),
@@ -323,7 +323,7 @@ pub const ProcDecl = struct {
     inline_flows: []const Flow = &.{}, // Flows extracted from proc body (Zig only)
     annotations: []const []const u8 = &[_][]const u8{}, // Proc annotations like [pure|async]
     target: ?[]const u8 = null, // Language target: "gpu", "js", "python", null = Zig
-    is_impl: bool = false,  // True if this implements an abstract event (~impl proc)
+    is_impl: bool = false,  // True if event_path has module qualifier (cross-module implementation)
     is_public: bool = false, // True if declared with ~pub proc
 
     // Purity tracking
@@ -476,9 +476,24 @@ pub const Flow = struct {
     is_pure: bool = true,  // Flows are always locally pure (just composition)
     is_transitively_pure: bool = false,  // Default false until purity checker walks and verifies
 
+    // Subflow implementation context (null for top-level flows)
+    // When set, this flow implements the named event.
+    impl_of: ?DottedPath = null,
+
+    // True if the source syntax had a colon (cross-module override: ~mod:event = ...).
+    // MUST be stored at parse time, before canonicalize_names adds module qualifiers
+    // to all paths (which would make impl_of.module_qualifier non-null for locals too).
+    is_impl: bool = false,
+
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
+
+    /// Returns true if this flow is a cross-module implementation override.
+    /// Uses the stored is_impl flag set at parse time (pre-canonicalization).
+    pub fn isImpl(self: *const Flow) bool {
+        return self.is_impl;
+    }
 
     pub fn deinit(self: *Flow, allocator: std.mem.Allocator) void {
         self.invocation.deinit(allocator);
@@ -506,6 +521,10 @@ pub const Flow = struct {
                 allocator.free(@constCast(branch.sources));
             }
             allocator.free(@constCast(ss.branches));
+        }
+        if (self.impl_of) |*io| {
+            var mutable_io = io.*;
+            mutable_io.deinit(allocator);
         }
         allocator.free(self.module);
     }
@@ -558,31 +577,34 @@ pub const LabelDecl = struct {
     }
 };
 
-pub const SubflowImpl = struct {
-    event_path: DottedPath,  // The event this subflow implements (e.g., user.authenticate)
-    body: SubflowBody,       // Either a flow or immediate branch return
-    is_impl: bool = false,   // True if this implements an abstract event (~impl)
+// Immediate branch return for a subflow implementation (no flow body).
+// Used for constants, stubs, defaults — e.g. ~player:load = loaded { id: id, gold: 100 }
+// The flow-based case is now handled by Flow with impl_of set.
+pub const ImmediateImpl = struct {
+    event_path: DottedPath,          // Which event this implements
+    value: BranchConstructor,        // The immediate branch return value
+    annotations: []const []const u8 = &[_][]const u8{},
 
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
-    pub fn deinit(self: *SubflowImpl, allocator: std.mem.Allocator) void {
-        self.event_path.deinit(allocator);
-        self.body.deinit(allocator);
-        allocator.free(self.module);
+    // Stored at parse time: true if event_path had module qualifier before canonicalization
+    is_impl: bool = false,
+
+    pub fn isImpl(self: *const ImmediateImpl) bool {
+        return self.is_impl;
     }
-};
 
-pub const SubflowBody = union(enum) {
-    flow: Flow,                      // Full flow with invocation and continuations
-    immediate: BranchConstructor,    // Immediate branch return (constants, stubs, defaults, etc.)
-
-    pub fn deinit(self: *SubflowBody, allocator: std.mem.Allocator) void {
-        switch (self.*) {
-            .flow => |*f| f.deinit(allocator),
-            .immediate => |*bc| bc.deinit(allocator),
+    pub fn deinit(self: *ImmediateImpl, allocator: std.mem.Allocator) void {
+        self.event_path.deinit(allocator);
+        var mutable_value = self.value;
+        mutable_value.deinit(allocator);
+        for (self.annotations) |ann| {
+            allocator.free(ann);
         }
+        allocator.free(@constCast(self.annotations));
+        allocator.free(self.module);
     }
 };
 
@@ -1413,17 +1435,8 @@ pub const ASTNode = union(enum) {
                         }
                         break :blk result;
                     },
-                    .subflow_impl => |*s| {
-                        if (s.body == .flow) {
-                            var result = try allocator.alloc(ASTNode, 1);
-                            result[0] = .{ .flow = @constCast(&s.body.flow) };
-                            break :blk result;
-                        } else {
-                            break :blk try allocator.alloc(ASTNode, 0);
-                        }
-                    },
                     // Leaf nodes (no children to traverse for transforms)
-                    .event_decl, .proc_decl, .event_tap, .label_decl, .import_decl,
+                    .event_decl, .proc_decl, .event_tap, .label_decl, .immediate_impl, .import_decl,
                     .host_line, .host_type_decl, .parse_error,
                     .native_loop, .fused_event, .inlined_event, .inline_code => {
                         break :blk try allocator.alloc(ASTNode, 0);
@@ -1603,17 +1616,7 @@ pub const ASTNode = union(enum) {
                         return item;
                     }
                 },
-                .subflow_impl => |*s| {
-                    if (s.body == .flow) {
-                        const f = &s.body.flow;
-                        if (&f.invocation == target_inv) {
-                            return item;
-                        }
-                        if (findInContinuations(f.continuations, target_inv)) {
-                            return item;
-                        }
-                    }
-                },
+                .immediate_impl => {},
                 .module_decl => |*m| {
                     // Recursively search in module items
                     if (findInItems(m.items, target_inv)) |found| {

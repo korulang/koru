@@ -105,24 +105,18 @@ test "tap_transformer: basic subflow tap insertion" {
     };
     try subflow_continuations.append(allocator, result_cont);
 
-    const subflow = ast.SubflowImpl{
-        .annotations = &[_][]const u8{},
-        .event_path = ast.DottedPath{
+    const impl_flow = ast.Flow{
+        .invocation = five_invocation,
+        .continuations = try subflow_continuations.toOwnedSlice(),
+        .super_shape = null,
+        .impl_of = ast.DottedPath{
             .module_qualifier = null,
             .segments = &[_][]const u8{"add_five"},
-        },
-        .body = ast.SubflowBody{
-            .flow = ast.Flow{
-                .invocation = five_invocation,
-                .continuations = try subflow_continuations.toOwnedSlice(),
-                .super_shape = null,
-                .inline_flows = &[_]ast.Flow{},
-            },
         },
         .module = "",
     };
 
-    try items.append(ast.Item{ .subflow_impl = subflow });
+    try items.append(ast.Item{ .flow = impl_flow });
 
     const source_ast = ast.Program{
         .items = try items.toOwnedSlice(),
@@ -144,8 +138,7 @@ test "tap_transformer: basic subflow tap insertion" {
     try testing.expect(transformed_ast.items.len == 2);
 
     // Find the transformed subflow
-    const transformed_subflow = transformed_ast.items[1].subflow_impl;
-    const flow = transformed_subflow.body.flow;
+    const flow = transformed_ast.items[1].flow;
 
     // Check that continuation has 1 nested continuation (due to transformation prepending)
     try testing.expect(flow.continuations.len == 1);
@@ -212,24 +205,18 @@ test "tap_transformer: no taps means no transformation" {
     };
     try subflow_continuations.append(allocator, result_cont);
 
-    const subflow = ast.SubflowImpl{
-        .annotations = &[_][]const u8{},
-        .event_path = ast.DottedPath{
+    const impl_flow = ast.Flow{
+        .invocation = five_invocation,
+        .continuations = try subflow_continuations.toOwnedSlice(),
+        .super_shape = null,
+        .impl_of = ast.DottedPath{
             .module_qualifier = null,
             .segments = &[_][]const u8{"add_five"},
-        },
-        .body = ast.SubflowBody{
-            .flow = ast.Flow{
-                .invocation = five_invocation,
-                .continuations = try subflow_continuations.toOwnedSlice(),
-                .super_shape = null,
-                .inline_flows = &[_]ast.Flow{},
-            },
         },
         .module = "",
     };
 
-    try items.append(ast.Item{ .subflow_impl = subflow });
+    try items.append(ast.Item{ .flow = impl_flow });
 
     const source_ast = ast.Program{
         .items = try items.toOwnedSlice(),
@@ -248,8 +235,7 @@ test "tap_transformer: no taps means no transformation" {
     defer allocator.free(transformed_ast.items);
 
     // Verify NO transformation (pipeline still has 1 step)
-    const transformed_subflow = transformed_ast.items[0].subflow_impl;
-    const flow = transformed_subflow.body.flow;
+    const flow = transformed_ast.items[0].flow;
     const cont = flow.continuations[0];
 
     try testing.expect(cont.pipeline.len == 1);

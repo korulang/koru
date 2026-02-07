@@ -255,11 +255,9 @@ const std = @import("std");
         }
     }.append;
 
-    // Handle both flow items and subflow_impl items
+    // Get the flow from the item (flows with impl context now use item.flow with impl_of set)
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
 
@@ -444,13 +442,10 @@ const std = @import("std");
             .is_transitively_pure = flow.is_transitively_pure,
             .location = flow.location,
             .module = flow.module,
+            .impl_of = flow.impl_of,
         };
 
-        const new_item = if (item.* == .subflow_impl) blk2: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = transformed_flow };
-            break :blk2 ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = transformed_flow };
+        const new_item = ast.Item{ .flow = transformed_flow };
 
         const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
         if (maybe_new_program) |new_program| {
@@ -528,11 +523,7 @@ const std = @import("std");
             final_step,
         ) catch unreachable;
 
-        const new_item = if (item.* == .subflow_impl) blk2: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = modified_flow };
-            break :blk2 ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = modified_flow };
+        const new_item = ast.Item{ .flow = modified_flow };
 
         const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
         if (maybe_new_program) |new_program| {
@@ -629,11 +620,9 @@ const std = @import("std");
         }
     }.append;
 
-    // Get the flow from the item
+    // Get the flow from the item (flows with impl context now use item.flow with impl_of set)
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
 
@@ -835,13 +824,10 @@ const std = @import("std");
             .is_transitively_pure = flow.is_transitively_pure,
             .location = flow.location,
             .module = flow.module,
+            .impl_of = flow.impl_of,
         };
 
-        const new_item = if (item.* == .subflow_impl) blk: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = transformed_flow };
-            break :blk ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = transformed_flow };
+        const new_item = ast.Item{ .flow = transformed_flow };
 
         const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
         if (maybe_new_program) |new_program| {
@@ -902,11 +888,7 @@ const std = @import("std");
             new_node,
         ) catch unreachable;
 
-        const new_item = if (item.* == .subflow_impl) blk: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = modified_flow };
-            break :blk ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = modified_flow };
+        const new_item = ast.Item{ .flow = modified_flow };
 
         const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
         if (maybe_new_program) |new_program| {

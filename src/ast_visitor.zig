@@ -29,7 +29,7 @@ pub const ASTVisitor = struct {
     visitProcPre: ?*const fn (self: *ASTVisitor, proc: *ast.ProcDecl) anyerror!TraversalControl = null,
     visitFlowPre: ?*const fn (self: *ASTVisitor, flow: *ast.Flow) anyerror!TraversalControl = null,
     visitLabelPre: ?*const fn (self: *ASTVisitor, label: *ast.LabelDecl) anyerror!TraversalControl = null,
-    visitSubflowPre: ?*const fn (self: *ASTVisitor, subflow: *ast.SubflowImpl) anyerror!TraversalControl = null,
+    visitImmediateImplPre: ?*const fn (self: *ASTVisitor, ii: *ast.ImmediateImpl) anyerror!TraversalControl = null,
     visitImportPre: ?*const fn (self: *ASTVisitor, import: *ast.ImportDecl) anyerror!TraversalControl = null,
     visitHostLinePre: ?*const fn (self: *ASTVisitor, line: *[]const u8) anyerror!TraversalControl = null,
 
@@ -39,7 +39,7 @@ pub const ASTVisitor = struct {
     visitProcPost: ?*const fn (self: *ASTVisitor, proc: *ast.ProcDecl) anyerror!void = null,
     visitFlowPost: ?*const fn (self: *ASTVisitor, flow: *ast.Flow) anyerror!void = null,
     visitLabelPost: ?*const fn (self: *ASTVisitor, label: *ast.LabelDecl) anyerror!void = null,
-    visitSubflowPost: ?*const fn (self: *ASTVisitor, subflow: *ast.SubflowImpl) anyerror!void = null,
+    visitImmediateImplPost: ?*const fn (self: *ASTVisitor, ii: *ast.ImmediateImpl) anyerror!void = null,
     visitImportPost: ?*const fn (self: *ASTVisitor, import: *ast.ImportDecl) anyerror!void = null,
     visitHostLinePost: ?*const fn (self: *ASTVisitor, line: *[]const u8) anyerror!void = null,
     
@@ -95,7 +95,7 @@ pub const ASTVisitor = struct {
             .flow => |*flow| return self.visitFlow(flow),
             .event_tap => |*tap| return self.visitEventTap(tap),
             .label_decl => |*label| return self.visitLabel(label),
-            .subflow_impl => |*subflow| return self.visitSubflow(subflow),
+            .immediate_impl => |*ii| return self.visitImmediateImpl(ii),
             .import_decl => |*import| return self.visitImport(import),
             .host_line => |*line| return self.visitHostLine(line),
         }
@@ -214,29 +214,29 @@ pub const ASTVisitor = struct {
         return .continue_traversal;
     }
     
-    fn visitSubflow(self: *ASTVisitor, subflow: *ast.SubflowImpl) !TraversalControl {
+    fn visitImmediateImpl(self: *ASTVisitor, ii: *ast.ImmediateImpl) !TraversalControl {
         // Pre-visit
         if (self.order == .pre_order or self.order == .both) {
-            if (self.visitSubflowPre) |visitor| {
-                const control = try visitor(self, subflow);
+            if (self.visitImmediateImplPre) |visitor| {
+                const control = try visitor(self, ii);
                 if (control != .continue_traversal) {
-                    if (control == .skip_children and self.order == .both and self.visitSubflowPost != null) {
-                        try self.visitSubflowPost.?(self, subflow);
+                    if (control == .skip_children and self.order == .both and self.visitImmediateImplPost != null) {
+                        try self.visitImmediateImplPost.?(self, ii);
                     }
                     return control;
                 }
             }
         }
-        
-        // Visit subflow body
-        
+
+        // Immediate impls are leaf nodes (no children)
+
         // Post-visit
         if (self.order == .post_order or self.order == .both) {
-            if (self.visitSubflowPost) |visitor| {
-                try visitor(self, subflow);
+            if (self.visitImmediateImplPost) |visitor| {
+                try visitor(self, ii);
             }
         }
-        
+
         return .continue_traversal;
     }
     

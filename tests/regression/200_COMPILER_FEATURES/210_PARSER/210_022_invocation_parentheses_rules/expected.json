@@ -63,6 +63,7 @@
             ],
             "pre_label": null,
             "post_label": null,
+            "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
                 "line": 6,
@@ -137,6 +138,7 @@
             ],
             "pre_label": null,
             "post_label": null,
+            "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
                 "line": 10,
@@ -225,6 +227,7 @@
             ],
             "pre_label": null,
             "post_label": null,
+            "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
                 "line": 16,
@@ -310,6 +313,7 @@
             ],
             "pre_label": null,
             "post_label": null,
+            "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_022_invocation_parentheses_rules/input.kz",
                 "line": 23,

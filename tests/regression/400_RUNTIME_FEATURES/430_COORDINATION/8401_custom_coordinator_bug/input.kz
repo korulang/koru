@@ -1,7 +1,7 @@
 // Test: Custom Compiler Coordinator Override
 //
 // Validates that users can override the abstract coordinate event
-// with their own pipeline implementation using ~impl.
+// with their own pipeline implementation using cross-module overrides (~mod:event = ...).
 //
 // The custom coordinator prints a marker, then delegates to standard pipeline.
 

@@ -10,7 +10,8 @@ pub const ValidationError = error{
 };
 
 const ImplItem = union(enum) {
-    subflow: *const ast.SubflowImpl,
+    flow: *const ast.Flow,
+    immediate_impl: *const ast.ImmediateImpl,
     proc: *const ast.ProcDecl,
 };
 
@@ -20,7 +21,7 @@ pub const AbstractImplValidator = struct {
     // Map canonical event path -> EventDecl (only abstract events)
     abstract_events: std.StringHashMap(*const ast.EventDecl),
 
-    // Map canonical event path -> ImplItem (SubflowImpl or ProcDecl with is_impl=true)
+    // Map canonical event path -> ImplItem (Flow with impl_of, ImmediateImpl, or ProcDecl with is_impl=true)
     impls: std.StringHashMap(ImplItem),
 
     // Map canonical event path -> ProcDecl (for future delegation validation)
@@ -95,7 +96,8 @@ pub const AbstractImplValidator = struct {
                     // Check for duplicate implementation
                     if (self.impls.get(impl_name)) |existing| {
                         const existing_location = switch (existing) {
-                            .subflow => |s| s.location,
+                            .flow => |f| f.location,
+                            .immediate_impl => |ii| ii.location,
                             .proc => |p| p.location,
                         };
                         log.debug("ERROR: Duplicate implementation for '{s}'\n", .{impl_name});
@@ -116,16 +118,50 @@ pub const AbstractImplValidator = struct {
                     try self.impls.put(impl_name, ImplItem{ .proc = proc });
                 }
             },
-            .subflow_impl => |*subflow| {
-                // If this subflow is marked as impl, track it
-                if (subflow.is_impl) {
-                    const canonical_name = try self.buildCanonicalName(&subflow.event_path);
+            .flow => |*flow| {
+                // If this flow implements an event, track it
+                if (flow.impl_of) |impl_path| {
+                    if (flow.isImpl()) {
+                        const canonical_name = try self.buildCanonicalName(&impl_path);
+                        errdefer self.allocator.free(canonical_name);
+
+                        // Check for duplicate implementation
+                        if (self.impls.get(canonical_name)) |existing| {
+                            const existing_location = switch (existing) {
+                                .flow => |f| f.location,
+                                .immediate_impl => |ii| ii.location,
+                                .proc => |p| p.location,
+                            };
+                            log.debug("ERROR: Duplicate implementation for '{s}'\n", .{canonical_name});
+                            log.debug("  First impl at: {s}:{}:{}\n", .{
+                                existing_location.file,
+                                existing_location.line,
+                                existing_location.column,
+                            });
+                            log.debug("  Second impl at: {s}:{}:{}\n", .{
+                                flow.location.file,
+                                flow.location.line,
+                                flow.location.column,
+                            });
+                            self.allocator.free(canonical_name);
+                            return ValidationError.DuplicateImplementation;
+                        }
+
+                        try self.impls.put(canonical_name, ImplItem{ .flow = flow });
+                    }
+                }
+            },
+            .immediate_impl => |*ii| {
+                // If this immediate impl is a cross-module override, track it
+                if (ii.isImpl()) {
+                    const canonical_name = try self.buildCanonicalName(&ii.event_path);
                     errdefer self.allocator.free(canonical_name);
 
                     // Check for duplicate implementation
                     if (self.impls.get(canonical_name)) |existing| {
                         const existing_location = switch (existing) {
-                            .subflow => |s| s.location,
+                            .flow => |f| f.location,
+                            .immediate_impl => |existing_ii| existing_ii.location,
                             .proc => |p| p.location,
                         };
                         log.debug("ERROR: Duplicate implementation for '{s}'\n", .{canonical_name});
@@ -135,15 +171,15 @@ pub const AbstractImplValidator = struct {
                             existing_location.column,
                         });
                         log.debug("  Second impl at: {s}:{}:{}\n", .{
-                            subflow.location.file,
-                            subflow.location.line,
-                            subflow.location.column,
+                            ii.location.file,
+                            ii.location.line,
+                            ii.location.column,
                         });
                         self.allocator.free(canonical_name);
                         return ValidationError.DuplicateImplementation;
                     }
 
-                    try self.impls.put(canonical_name, ImplItem{ .subflow = subflow });
+                    try self.impls.put(canonical_name, ImplItem{ .immediate_impl = ii });
                 }
             },
             .module_decl => |*module| {
@@ -166,7 +202,8 @@ pub const AbstractImplValidator = struct {
             const impl_item = entry.value_ptr.*;
 
             const impl_location = switch (impl_item) {
-                .subflow => |s| s.location,
+                .flow => |f| f.location,
+                .immediate_impl => |ii| ii.location,
                 .proc => |p| p.location,
             };
 

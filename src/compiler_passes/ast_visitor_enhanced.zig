@@ -141,7 +141,7 @@ pub fn Walker(comptime UserData: type) type {
                 .flow => |*flow| try self.walkFlow(flow),
                 .event_tap => |*tap| try self.walkEventTap(tap),
                 .label_decl => {}, // TODO: Handle labels
-                .subflow_impl => {}, // TODO: Handle subflows
+                .immediate_impl => {}, // Immediate impls are leaf nodes
                 .import_decl => {}, // TODO: Handle imports
                 .host_line => {}, // Skip host lines
             }

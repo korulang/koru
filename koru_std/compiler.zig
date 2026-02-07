@@ -18,8 +18,7 @@ const Flow = ast.Flow;
 const FlowAST = ast.FlowAST;
 const EventTap = ast.EventTap;
 const LabelDecl = ast.LabelDecl;
-const SubflowImpl = ast.SubflowImpl;
-const SubflowBody = ast.SubflowBody;
+const ImmediateImpl = ast.ImmediateImpl;
 const ImportDecl = ast.ImportDecl;
 const ModuleDecl = ast.ModuleDecl;
 const DottedPath = ast.DottedPath;
@@ -116,9 +115,8 @@ pub const PROGRAM_AST = Program{
         .{ .host_line = .{ .content = "// Default coordination pipeline implemented as a subflow, NOT YET USED, because ", .location = .{ .line = 32, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_bootstrap.kz" }, .module = "/Users/larsde/src/koru/koru_std/compiler_bootstrap" } },
         .{ .host_line = .{ .content = "// we're not parsing and emitting it. Should be done, but it is a vanity project", .location = .{ .line = 33, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_bootstrap.kz" }, .module = "/Users/larsde/src/koru/koru_std/compiler_bootstrap" } },
         .{ .host_line = .{ .content = "// at this point. Compiler internals.", .location = .{ .line = 34, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_bootstrap.kz" }, .module = "/Users/larsde/src/koru/koru_std/compiler_bootstrap" } },
-        .{ .subflow_impl = SubflowImpl{
-            .event_path = .{ .module_qualifier = null, .segments = &[_][]const u8{"compiler", "coordinate", "default"} },
-            .body = .{ .flow = Flow{
+        .{ .flow = Flow{
+                .impl_of = .{ .module_qualifier = null, .segments = &[_][]const u8{"compiler", "coordinate", "default"} },
                 .invocation = Invocation{
                     .path = .{ .module_qualifier = null, .segments = &[_][]const u8{"compiler", "passes", "process_ccp_commands"} },
                     .args = &[_]Arg{
@@ -247,9 +245,6 @@ pub const PROGRAM_AST = Program{
                 .is_transitively_pure = false,
                 .location = .{ .line = 42, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_bootstrap.kz" },
                 .module = "/Users/larsde/src/koru/koru_std/compiler_bootstrap",
-            } },
-            .location = .{ .line = 42, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_bootstrap.kz" },
-            .module = "/Users/larsde/src/koru/koru_std/compiler_bootstrap",
         } },
         .{ .host_line = .{ .content = "// Parser service - makes the Koru parser available at backend comptime", .location = .{ .line = 43, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_bootstrap.kz" }, .module = "/Users/larsde/src/koru/koru_std/compiler_bootstrap" } },
         .{ .host_line = .{ .content = "// This enables dynamic module loading during compilation passes", .location = .{ .line = 44, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_bootstrap.kz" }, .module = "/Users/larsde/src/koru/koru_std/compiler_bootstrap" } },
@@ -1638,9 +1633,8 @@ pub const PROGRAM_AST = Program{
         .{ .host_line = .{ .content = "// Default coordination pipeline implemented as a subflow, NOT YET USED, because ", .location = .{ .line = 32, .column = 0, .file = "koru_std/compiler_bootstrap.kz" }, .module = "koru_std/compiler_bootstrap" } },
         .{ .host_line = .{ .content = "// we're not parsing and emitting it. Should be done, but it is a vanity project", .location = .{ .line = 33, .column = 0, .file = "koru_std/compiler_bootstrap.kz" }, .module = "koru_std/compiler_bootstrap" } },
         .{ .host_line = .{ .content = "// at this point. Compiler internals.", .location = .{ .line = 34, .column = 0, .file = "koru_std/compiler_bootstrap.kz" }, .module = "koru_std/compiler_bootstrap" } },
-        .{ .subflow_impl = SubflowImpl{
-            .event_path = .{ .module_qualifier = null, .segments = &[_][]const u8{"compiler", "coordinate", "default"} },
-            .body = .{ .flow = Flow{
+        .{ .flow = Flow{
+                .impl_of = .{ .module_qualifier = null, .segments = &[_][]const u8{"compiler", "coordinate", "default"} },
                 .invocation = Invocation{
                     .path = .{ .module_qualifier = null, .segments = &[_][]const u8{"compiler", "passes", "process_ccp_commands"} },
                     .args = &[_]Arg{

@@ -117,7 +117,7 @@ fn resolveAbstractEvent(
 /// Default impl is either:
 /// - No module_qualifier (local reference in source)
 /// - Module_qualifier matches current_module (canonicalized to same module)
-/// Returns pointer to the Item (either proc_decl or subflow_impl)
+/// Returns pointer to the Item (proc_decl, flow with impl_of, or immediate_impl)
 fn findDefaultImpl(items: []const ast.Item, event_name: []const u8, current_module: ?[]const u8) ?*ast.Item {
     for (@constCast(items)) |*item| {
         switch (item.*) {
@@ -126,17 +126,34 @@ fn findDefaultImpl(items: []const ast.Item, event_name: []const u8, current_modu
                     return item;
                 }
             },
-            .subflow_impl => |subflow| {
-                // Default impl is in the SAME module as the abstract event
-                // After canonicalization, it may have module_qualifier set to the current module
-                const is_same_module = if (subflow.event_path.module_qualifier) |mq|
+            .flow => |flow| {
+                // Check impl flows (flows with impl_of set)
+                if (flow.impl_of) |impl_path| {
+                    // Default impl is in the SAME module as the abstract event
+                    // After canonicalization, it may have module_qualifier set to the current module
+                    const is_same_module = if (impl_path.module_qualifier) |mq|
+                        current_module != null and std.mem.eql(u8, mq, current_module.?)
+                    else
+                        true; // No qualifier means local (same module)
+
+                    if (is_same_module and
+                        impl_path.segments.len > 0 and
+                        std.mem.eql(u8, impl_path.segments[0], event_name))
+                    {
+                        return item;
+                    }
+                }
+            },
+            .immediate_impl => |ii| {
+                // Check immediate impls
+                const is_same_module = if (ii.event_path.module_qualifier) |mq|
                     current_module != null and std.mem.eql(u8, mq, current_module.?)
                 else
-                    true; // No qualifier means local (same module)
+                    true;
 
                 if (is_same_module and
-                    subflow.event_path.segments.len > 0 and
-                    std.mem.eql(u8, subflow.event_path.segments[0], event_name))
+                    ii.event_path.segments.len > 0 and
+                    std.mem.eql(u8, ii.event_path.segments[0], event_name))
                 {
                     return item;
                 }
@@ -158,12 +175,25 @@ fn hasOverrideImpl(
 
     for (@constCast(all_items)) |*item| {
         switch (item.*) {
-            .subflow_impl => |*subflow| {
-                // Override has a module_qualifier pointing to the abstract's module
-                if (subflow.event_path.module_qualifier) |mq| {
+            .flow => |flow| {
+                // Override: impl flow with module_qualifier pointing to the abstract's module
+                if (flow.impl_of) |impl_path| {
+                    if (impl_path.module_qualifier) |mq| {
+                        if (std.mem.eql(u8, mq, target_module) and
+                            impl_path.segments.len > 0 and
+                            std.mem.eql(u8, impl_path.segments[0], event_name))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            },
+            .immediate_impl => |ii| {
+                // Override: immediate impl with module_qualifier pointing to the abstract's module
+                if (ii.event_path.module_qualifier) |mq| {
                     if (std.mem.eql(u8, mq, target_module) and
-                        subflow.event_path.segments.len > 0 and
-                        std.mem.eql(u8, subflow.event_path.segments[0], event_name))
+                        ii.event_path.segments.len > 0 and
+                        std.mem.eql(u8, ii.event_path.segments[0], event_name))
                     {
                         return true;
                     }
@@ -192,15 +222,28 @@ fn renameToDefault(item: *ast.Item, event_name: []const u8, allocator: std.mem.A
                 proc.path.segments = new_segments;
             }
         },
-        .subflow_impl => |*subflow| {
+        .flow => |*flow| {
+            // Replace first segment of impl_of with `event.default`
+            if (flow.impl_of) |*impl_path| {
+                if (impl_path.segments.len > 0) {
+                    var new_segments = try allocator.alloc([]const u8, impl_path.segments.len);
+                    new_segments[0] = new_name;
+                    for (impl_path.segments[1..], 1..) |seg, i| {
+                        new_segments[i] = seg;
+                    }
+                    impl_path.segments = new_segments;
+                }
+            }
+        },
+        .immediate_impl => |*ii| {
             // Replace first segment with `event.default`
-            if (subflow.event_path.segments.len > 0) {
-                var new_segments = try allocator.alloc([]const u8, subflow.event_path.segments.len);
+            if (ii.event_path.segments.len > 0) {
+                var new_segments = try allocator.alloc([]const u8, ii.event_path.segments.len);
                 new_segments[0] = new_name;
-                for (subflow.event_path.segments[1..], 1..) |seg, i| {
+                for (ii.event_path.segments[1..], 1..) |seg, i| {
                     new_segments[i] = seg;
                 }
-                subflow.event_path.segments = new_segments;
+                ii.event_path.segments = new_segments;
             }
         },
         else => {},
@@ -279,9 +322,22 @@ fn findDefaultImplRecursive(items: []const ast.Item, event_name: []const u8, tar
                     }
                 }
             },
-            .subflow_impl => |subflow| {
-                if (subflow.event_path.segments.len > 0) {
-                    const seg = subflow.event_path.segments[0];
+            .flow => |flow| {
+                if (flow.impl_of) |impl_path| {
+                    if (impl_path.segments.len > 0) {
+                        const seg = impl_path.segments[0];
+                        if (std.mem.endsWith(u8, seg, ".default")) {
+                            const prefix = seg[0 .. seg.len - ".default".len];
+                            if (std.mem.eql(u8, prefix, event_name)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            },
+            .immediate_impl => |ii| {
+                if (ii.event_path.segments.len > 0) {
+                    const seg = ii.event_path.segments[0];
                     if (std.mem.endsWith(u8, seg, ".default")) {
                         const prefix = seg[0 .. seg.len - ".default".len];
                         if (std.mem.eql(u8, prefix, event_name)) {

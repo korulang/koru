@@ -2681,17 +2681,25 @@ fn findProcDeclByPathInModule(items: []const ast.Item, segments: []const []const
     return null;
 }
 
-/// Find a subflow implementation by its event path
-/// Returns the SubflowImpl if found (could have flow or immediate body)
+/// Tagged union for the two kinds of impl items that can be found by path:
+/// - An ImmediateImpl (constant/mock value)
+/// - A Flow with impl_of set (flow-based implementation)
+pub const FoundImpl = union(enum) {
+    immediate_impl: *const ast.ImmediateImpl,
+    flow: *const ast.Flow,
+};
+
+/// Find an implementation (ImmediateImpl or Flow with impl_of) by its event path.
+/// Returns a FoundImpl tagged union if found.
 /// NOTE: User-defined overrides at top level take precedence over module-internal implementations
-pub fn findSubflowImplByPath(items: []const ast.Item, path: *const ast.DottedPath) ?*const ast.SubflowImpl {
+pub fn findImplByPath(items: []const ast.Item, path: *const ast.DottedPath) ?FoundImpl {
     if (log.level == .debug) {
-        log.debug("[findSubflowImplByPath] Looking for path: module_qual={s}, segments.len={d}\n", .{
+        log.debug("[findImplByPath] Looking for path: module_qual={s}, segments.len={d}\n", .{
             if (path.module_qualifier) |m| m else "(null)",
             path.segments.len,
         });
         for (path.segments) |seg| {
-            log.debug("[findSubflowImplByPath]   segment: {s}\n", .{seg});
+            log.debug("[findImplByPath]   segment: {s}\n", .{seg});
         }
     }
 
@@ -2702,35 +2710,51 @@ pub fn findSubflowImplByPath(items: []const ast.Item, path: *const ast.DottedPat
             switch (item.*) {
                 .module_decl => |*module| {
                     if (std.mem.eql(u8, module.logical_name, module_qual)) {
-                        log.debug("[findSubflowImplByPath] Looking in module '{s}'\n", .{module.logical_name});
-                        return findSubflowImplByPathInModule(module.items, path.segments);
+                        log.debug("[findImplByPath] Looking in module '{s}'\n", .{module.logical_name});
+                        return findImplByPathInModule(module.items, path.segments);
                     }
                 },
                 else => {},
             }
         }
-        return findSubflowImplByPathInModule(items, path.segments);
+        return findImplByPathInModule(items, path.segments);
     }
 
-    // No module qualifier - search for local subflow impls
+    // No module qualifier - search for local impls
     for (items) |*item| {
         switch (item.*) {
-            .subflow_impl => |*sf| {
-                if (sf.event_path.segments.len == path.segments.len) {
+            .immediate_impl => |*ii| {
+                if (ii.event_path.segments.len == path.segments.len) {
                     var matches = true;
-                    for (sf.event_path.segments, 0..) |segment, i| {
+                    for (ii.event_path.segments, 0..) |segment, i| {
                         if (!std.mem.eql(u8, segment, path.segments[i])) {
                             matches = false;
                             break;
                         }
                     }
                     if (matches) {
-                        return sf;
+                        return .{ .immediate_impl = ii };
+                    }
+                }
+            },
+            .flow => |*flow| {
+                if (flow.impl_of) |impl_path| {
+                    if (impl_path.segments.len == path.segments.len) {
+                        var matches = true;
+                        for (impl_path.segments, 0..) |segment, i| {
+                            if (!std.mem.eql(u8, segment, path.segments[i])) {
+                                matches = false;
+                                break;
+                            }
+                        }
+                        if (matches) {
+                            return .{ .flow = flow };
+                        }
                     }
                 }
             },
             .module_decl => |*module| {
-                if (findSubflowImplByPath(module.items, path)) |found| {
+                if (findImplByPath(module.items, path)) |found| {
                     return found;
                 }
             },
@@ -2740,21 +2764,37 @@ pub fn findSubflowImplByPath(items: []const ast.Item, path: *const ast.DottedPat
     return null;
 }
 
-/// Helper: Find subflow impl by segments within a specific module's items
-fn findSubflowImplByPathInModule(items: []const ast.Item, segments: []const []const u8) ?*const ast.SubflowImpl {
+/// Helper: Find impl by segments within a specific module's items
+fn findImplByPathInModule(items: []const ast.Item, segments: []const []const u8) ?FoundImpl {
     for (items) |*item| {
         switch (item.*) {
-            .subflow_impl => |*sf| {
-                if (sf.event_path.segments.len == segments.len) {
+            .immediate_impl => |*ii| {
+                if (ii.event_path.segments.len == segments.len) {
                     var matches = true;
-                    for (sf.event_path.segments, 0..) |segment, i| {
+                    for (ii.event_path.segments, 0..) |segment, i| {
                         if (!std.mem.eql(u8, segment, segments[i])) {
                             matches = false;
                             break;
                         }
                     }
                     if (matches) {
-                        return sf;
+                        return .{ .immediate_impl = ii };
+                    }
+                }
+            },
+            .flow => |*flow| {
+                if (flow.impl_of) |impl_path| {
+                    if (impl_path.segments.len == segments.len) {
+                        var matches = true;
+                        for (impl_path.segments, 0..) |segment, i| {
+                            if (!std.mem.eql(u8, segment, segments[i])) {
+                                matches = false;
+                                break;
+                            }
+                        }
+                        if (matches) {
+                            return .{ .flow = flow };
+                        }
                     }
                 }
             },
@@ -3398,7 +3438,7 @@ fn branchHasPayloadFieldsSearchAll(
 }
 
 /// Emit an invocation (const result = event.handler(...))
-/// If a SubflowImpl with immediate body exists for this path, inline the value instead
+/// If an ImmediateImpl exists for this path, inline the value instead
 fn emitInvocation(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
@@ -3430,175 +3470,182 @@ fn emitInvocation(
         }
     }
 
-    // Check for SubflowImpl with immediate body (mock/constant value)
+    // Check for ImmediateImpl (mock/constant value)
     // If found, inline the value instead of calling the handler
     if (ctx.ast_items) |items| {
-        if (findSubflowImplByPath(items, &invocation.path)) |subflow_impl| {
-            if (subflow_impl.body == .immediate) {
-                const event_decl = findEventDeclByPath(items, &invocation.path);
-                // Emit: const result: EventType.Output = blk: {
-                //     const n = 5;  // bind input args
-                //     break :blk .{ .branch = value };
-                // };
-                // Use a labeled block to scope the input bindings and avoid redeclaration
-                try emitter.writeIndent();
-                if (!std.mem.eql(u8, result_var, "_")) {
-                    try emitter.write("const ");
+        const found_immediate: ?*const ast.ImmediateImpl = blk: {
+            if (findImplByPath(items, &invocation.path)) |found| {
+                switch (found) {
+                    .immediate_impl => |ii| break :blk ii,
+                    .flow => break :blk null,
                 }
-                try emitter.write(result_var);
-                try emitter.write(": ");
-                try emitInvocationTarget(emitter, ctx, &invocation.path);
-                try emitter.write(".Output = blk: {\n");
+            }
+            break :blk null;
+        };
+        if (found_immediate) |immediate_impl| {
+            const event_decl = findEventDeclByPath(items, &invocation.path);
+            const immediate_bc = &immediate_impl.value;
+            // Emit: const result: EventType.Output = blk: {
+            //     const n = 5;  // bind input args
+            //     break :blk .{ .branch = value };
+            // };
+            // Use a labeled block to scope the input bindings and avoid redeclaration
+            try emitter.writeIndent();
+            if (!std.mem.eql(u8, result_var, "_")) {
+                try emitter.write("const ");
+            }
+            try emitter.write(result_var);
+            try emitter.write(": ");
+            try emitInvocationTarget(emitter, ctx, &invocation.path);
+            try emitter.write(".Output = blk: {\n");
 
-                emitter.indent_level += 1;
+            emitter.indent_level += 1;
 
-                // Bind input arguments so they're available in the expression
-                // e.g., for ~double(n: 5) with ~double = result { n * 2 }
-                // we need: const n = 5;
-                // Skip if:
-                //   - arg.name == arg.value (already in scope, would shadow)
-                //   - arg.name is not referenced in the immediate expression (avoid shadowing outer scope)
-                const immediate_bc = &subflow_impl.body.immediate;
-                for (invocation.args) |arg| {
-                    // Skip binding if name equals value (e.g., path: path) - already in scope
-                    if (std.mem.eql(u8, arg.name, arg.value)) {
-                        continue;
-                    }
-                    // Check if this parameter is actually used in the immediate expression
-                    // If not, skip it to avoid shadowing outer scope variables
-                    const expr_to_check = if (immediate_bc.plain_value) |pv| pv else blk: {
-                        // Check all field expressions
-                        var is_used = false;
-                        for (immediate_bc.fields) |field| {
-                            const field_val = if (field.expression_str) |e| e else field.type;
-                            if (containsIdentifier(field_val, arg.name)) {
-                                is_used = true;
-                                break;
-                            }
+            // Bind input arguments so they're available in the expression
+            // e.g., for ~double(n: 5) with ~double = result { n * 2 }
+            // we need: const n = 5;
+            // Skip if:
+            //   - arg.name == arg.value (already in scope, would shadow)
+            //   - arg.name is not referenced in the immediate expression (avoid shadowing outer scope)
+            for (invocation.args) |arg| {
+                // Skip binding if name equals value (e.g., path: path) - already in scope
+                if (std.mem.eql(u8, arg.name, arg.value)) {
+                    continue;
+                }
+                // Check if this parameter is actually used in the immediate expression
+                // If not, skip it to avoid shadowing outer scope variables
+                const expr_to_check = if (immediate_bc.plain_value) |pv| pv else blk2: {
+                    // Check all field expressions
+                    var is_used = false;
+                    for (immediate_bc.fields) |field| {
+                        const field_val = if (field.expression_str) |e| e else field.type;
+                        if (containsIdentifier(field_val, arg.name)) {
+                            is_used = true;
+                            break;
                         }
-                        if (!is_used) continue;
-                        break :blk "";
-                    };
-                    if (expr_to_check.len > 0 and !containsIdentifier(expr_to_check, arg.name)) {
-                        continue;
                     }
-                    try emitter.writeIndent();
-                    try emitter.write("const ");
-                    try emitter.write(arg.name);
-                    try emitter.write(" = ");
-                    try emitValue(emitter, ctx, arg.value);
-                    try emitter.write(";\n");
-                    // Suppress unused variable warning (for mocks that return constants)
-                    try emitter.writeIndent();
-                    try emitter.write("_ = &");
-                    try emitter.write(arg.name);
-                    try emitter.write(";\n");
+                    if (!is_used) continue;
+                    break :blk2 "";
+                };
+                if (expr_to_check.len > 0 and !containsIdentifier(expr_to_check, arg.name)) {
+                    continue;
+                }
+                try emitter.writeIndent();
+                try emitter.write("const ");
+                try emitter.write(arg.name);
+                try emitter.write(" = ");
+                try emitValue(emitter, ctx, arg.value);
+                try emitter.write(";\n");
+                // Suppress unused variable warning (for mocks that return constants)
+                try emitter.writeIndent();
+                try emitter.write("_ = &");
+                try emitter.write(arg.name);
+                try emitter.write(";\n");
+            }
+
+            // Emit the break with the branch constructor
+            try emitter.writeIndent();
+            try emitter.write("break :blk ");
+            if (event_decl) |event| {
+                try emitBranchConstructorWithEvent(emitter, ctx, &immediate_impl.value, event);
+            } else if (ctx.type_registry) |type_registry| {
+                var resolved_event_type: ?type_registry_module.EventType = null;
+
+                const canonical = try buildCanonicalEventName(&immediate_impl.event_path, ctx.allocator, ctx.main_module_name);
+                defer ctx.allocator.free(canonical);
+                if (type_registry.getEventType(canonical)) |event_type| {
+                    resolved_event_type = event_type;
                 }
 
-                // Emit the break with the branch constructor
-                try emitter.writeIndent();
-                try emitter.write("break :blk ");
-                if (event_decl) |event| {
-                    try emitBranchConstructorWithEvent(emitter, ctx, &subflow_impl.body.immediate, event);
-                } else if (ctx.type_registry) |type_registry| {
-                    var resolved_event_type: ?type_registry_module.EventType = null;
-
-                    const canonical = try buildCanonicalEventName(&subflow_impl.event_path, ctx.allocator, ctx.main_module_name);
-                    defer ctx.allocator.free(canonical);
-                    if (type_registry.getEventType(canonical)) |event_type| {
+                if (resolved_event_type == null) {
+                    const fallback_canonical = try buildCanonicalEventName(&invocation.path, ctx.allocator, ctx.main_module_name);
+                    defer ctx.allocator.free(fallback_canonical);
+                    if (type_registry.getEventType(fallback_canonical)) |event_type| {
                         resolved_event_type = event_type;
                     }
+                }
 
-                    if (resolved_event_type == null) {
-                        const fallback_canonical = try buildCanonicalEventName(&invocation.path, ctx.allocator, ctx.main_module_name);
-                        defer ctx.allocator.free(fallback_canonical);
-                        if (type_registry.getEventType(fallback_canonical)) |event_type| {
-                            resolved_event_type = event_type;
-                        }
-                    }
-
-                    if (resolved_event_type == null) {
-                        if (invocation.path.module_qualifier) |mq| {
-                            if (resolveModuleAlias(mq, items)) |resolved| {
-                                var temp_path = ast.DottedPath{
-                                    .module_qualifier = resolved,
-                                    .segments = invocation.path.segments,
-                                };
-                                const alt_canonical = try buildCanonicalEventName(&temp_path, ctx.allocator, ctx.main_module_name);
-                                defer ctx.allocator.free(alt_canonical);
-                                if (type_registry.getEventType(alt_canonical)) |event_type| {
-                                    resolved_event_type = event_type;
-                                }
-                            }
-                        }
-                    }
-
-                    if (resolved_event_type == null) {
-                        var match_count: usize = 0;
-                        var import_iter = type_registry.imports.iterator();
-                        while (import_iter.next()) |entry| {
-                            const module_path = entry.value_ptr.*;
+                if (resolved_event_type == null) {
+                    if (invocation.path.module_qualifier) |mq| {
+                        if (resolveModuleAlias(mq, items)) |resolved| {
                             var temp_path = ast.DottedPath{
-                                .module_qualifier = module_path,
+                                .module_qualifier = resolved,
                                 .segments = invocation.path.segments,
                             };
-                            const import_canonical = try buildCanonicalEventName(&temp_path, ctx.allocator, ctx.main_module_name);
-                            defer ctx.allocator.free(import_canonical);
-                            if (type_registry.getEventType(import_canonical)) |event_type| {
-                                match_count += 1;
+                            const alt_canonical = try buildCanonicalEventName(&temp_path, ctx.allocator, ctx.main_module_name);
+                            defer ctx.allocator.free(alt_canonical);
+                            if (type_registry.getEventType(alt_canonical)) |event_type| {
                                 resolved_event_type = event_type;
-                                if (match_count > 1) {
-                                    resolved_event_type = null;
-                                    break;
-                                }
                             }
                         }
                     }
+                }
 
-                    if (resolved_event_type == null) {
-                        var match_count: usize = 0;
-                        var event_iter = type_registry.events.iterator();
-                        while (event_iter.next()) |entry| {
-                            const event_name = entry.key_ptr.*;
-                            const colon_idx = std.mem.indexOfScalar(u8, event_name, ':') orelse continue;
-                            const path_part = event_name[colon_idx + 1 ..];
-
-                            var seg_iter = std.mem.splitScalar(u8, path_part, '.');
-                            var seg_index: usize = 0;
-                            var matches = true;
-                            while (seg_iter.next()) |seg| {
-                                if (seg_index >= invocation.path.segments.len or !std.mem.eql(u8, seg, invocation.path.segments[seg_index])) {
-                                    matches = false;
-                                    break;
-                                }
-                                seg_index += 1;
-                            }
-                            if (!matches or seg_index != invocation.path.segments.len) continue;
-
+                if (resolved_event_type == null) {
+                    var match_count: usize = 0;
+                    var import_iter = type_registry.imports.iterator();
+                    while (import_iter.next()) |entry| {
+                        const module_path = entry.value_ptr.*;
+                        var temp_path = ast.DottedPath{
+                            .module_qualifier = module_path,
+                            .segments = invocation.path.segments,
+                        };
+                        const import_canonical = try buildCanonicalEventName(&temp_path, ctx.allocator, ctx.main_module_name);
+                        defer ctx.allocator.free(import_canonical);
+                        if (type_registry.getEventType(import_canonical)) |event_type| {
                             match_count += 1;
-                            resolved_event_type = entry.value_ptr.*;
+                            resolved_event_type = event_type;
                             if (match_count > 1) {
                                 resolved_event_type = null;
                                 break;
                             }
                         }
                     }
-
-                    if (resolved_event_type) |event_type| {
-                        try emitBranchConstructorWithEventType(emitter, ctx, &subflow_impl.body.immediate, event_type);
-                    } else {
-                        try emitBranchConstructor(emitter, ctx, &subflow_impl.body.immediate, true);
-                    }
-                } else {
-                    try emitBranchConstructor(emitter, ctx, &subflow_impl.body.immediate, true);
                 }
-                try emitter.write(";\n");
 
-                emitter.indent_level -= 1;
-                try emitter.writeIndent();
-                try emitter.write("};\n");
-                return;
+                if (resolved_event_type == null) {
+                    var match_count: usize = 0;
+                    var event_iter = type_registry.events.iterator();
+                    while (event_iter.next()) |entry| {
+                        const event_name = entry.key_ptr.*;
+                        const colon_idx = std.mem.indexOfScalar(u8, event_name, ':') orelse continue;
+                        const path_part = event_name[colon_idx + 1 ..];
+
+                        var seg_iter = std.mem.splitScalar(u8, path_part, '.');
+                        var seg_index: usize = 0;
+                        var matches = true;
+                        while (seg_iter.next()) |seg| {
+                            if (seg_index >= invocation.path.segments.len or !std.mem.eql(u8, seg, invocation.path.segments[seg_index])) {
+                                matches = false;
+                                break;
+                            }
+                            seg_index += 1;
+                        }
+                        if (!matches or seg_index != invocation.path.segments.len) continue;
+
+                        match_count += 1;
+                        resolved_event_type = entry.value_ptr.*;
+                        if (match_count > 1) {
+                            resolved_event_type = null;
+                            break;
+                        }
+                    }
+                }
+
+                if (resolved_event_type) |event_type| {
+                    try emitBranchConstructorWithEventType(emitter, ctx, &immediate_impl.value, event_type);
+                } else {
+                    try emitBranchConstructor(emitter, ctx, &immediate_impl.value, true);
+                }
+            } else {
+                try emitBranchConstructor(emitter, ctx, &immediate_impl.value, true);
             }
+            try emitter.write(";\n");
+
+            emitter.indent_level -= 1;
+            try emitter.writeIndent();
+            try emitter.write("};\n");
+            return;
         }
     }
 
@@ -6958,20 +7005,20 @@ pub fn emitModuleSubset(
     }
 
     // Second pass: emit mocked event decls that are missing from the subset
+    // These are ImmediateImpl items (constant/mock values) whose events aren't declared locally.
     if (type_registry) |registry| {
         for (items) |item| {
-            if (item != .subflow_impl) continue;
-            const sf = item.subflow_impl;
-            if (sf.body != .immediate) continue;
-            if (findEventDeclByPath(items, &sf.event_path) != null) continue;
+            if (item != .immediate_impl) continue;
+            const ii = item.immediate_impl;
+            if (findEventDeclByPath(items, &ii.event_path) != null) continue;
 
-            const canonical = try buildCanonicalEventName(&sf.event_path, allocator, original_main_module_name);
+            const canonical = try buildCanonicalEventName(&ii.event_path, allocator, original_main_module_name);
             defer allocator.free(canonical);
             if (emitted_events.contains(canonical)) continue;
 
             if (registry.getEventType(canonical)) |event_type| {
                 try emitted_events.put(canonical, {});
-                try emitEventDeclForModuleFromType(&code_emitter, &ctx, &sf.event_path, event_type, &sf);
+                try emitEventDeclForModuleFromType(&code_emitter, &ctx, &ii.event_path, event_type, &ii);
             }
         }
     }
@@ -6995,7 +7042,7 @@ fn emitEventDeclForModuleFromType(
     ctx: *EmissionContext,
     event_path: *const ast.DottedPath,
     event_type: type_registry_module.EventType,
-    subflow: *const ast.SubflowImpl,
+    immediate_impl: *const ast.ImmediateImpl,
 ) !void {
     // Event struct header: pub const foo_event = struct {
     try code_emitter.writeIndent();
@@ -7078,15 +7125,12 @@ fn emitEventDeclForModuleFromType(
     try code_emitter.writeIndent();
     try code_emitter.write("_ = &__koru_event_input;\n");
 
-    if (subflow.body == .immediate) {
-        const bc = subflow.body.immediate;
+    // ImmediateImpl always has a value (BranchConstructor) - emit it directly
+    {
         try code_emitter.writeIndent();
         try code_emitter.write("return ");
-        try emitBranchConstructorWithEventType(code_emitter, ctx, &bc, event_type);
+        try emitBranchConstructorWithEventType(code_emitter, ctx, &immediate_impl.value, event_type);
         try code_emitter.write(";\n");
-    } else {
-        try code_emitter.writeIndent();
-        try code_emitter.write("@panic(\"missing mock implementation\");\n");
     }
 
     code_emitter.indent_level -= 1;
@@ -7183,14 +7227,15 @@ fn emitEventDeclForModule(
     try code_emitter.writeIndent();
     try code_emitter.write("_ = &__koru_event_input;\n");
 
-    // Find and emit implementation (subflow_impl or proc_decl)
-    // Use findSubflowImplByPath which correctly handles module_qualifier differences
+    // Find and emit implementation (ImmediateImpl, Flow with impl_of, or proc_decl)
+    // Use findImplByPath which correctly handles module_qualifier differences
     var found_impl = false;
 
-    // First check for SubflowImpl (mock or flow body)
-    if (findSubflowImplByPath(all_items, &event.path)) |subflow| {
-        switch (subflow.body) {
-            .immediate => |bc| {
+    // First check for impl items (immediate mock or flow body)
+    if (findImplByPath(all_items, &event.path)) |found| {
+        switch (found) {
+            .immediate_impl => |ii| {
+                const bc = &ii.value;
                 // Mock with immediate value - emit return statement
                 if (log.level == .debug) {
                     log.debug("[DEBUG emitEventDeclForModule] Found immediate mock for event, branch={s}, fields.len={d}\n", .{ bc.branch_name, bc.fields.len });
@@ -7200,12 +7245,12 @@ fn emitEventDeclForModule(
                 }
                 try code_emitter.writeIndent();
                 try code_emitter.write("return ");
-                try emitBranchConstructorWithEvent(code_emitter, ctx, &bc, event);
+                try emitBranchConstructorWithEvent(code_emitter, ctx, bc, event);
                 try code_emitter.write(";\n");
             },
             .flow => |flow| {
-                // Full subflow - emit the flow body
-                try emitFlow(code_emitter, ctx, &flow);
+                // Full flow impl - emit the flow body
+                try emitFlow(code_emitter, ctx, flow);
             },
         }
         found_impl = true;

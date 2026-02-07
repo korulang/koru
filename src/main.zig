@@ -719,33 +719,12 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                 }
 
                 try writer.writeAll(" });\n");
-                try writer.writeAll("        switch (__thunk_result) {\n");
-
-                for (flow.continuations) |cont| {
-                    try writer.writeAll("            .");
-                    try writeBranchName(writer, cont.branch);
-                    try writer.writeAll(" => ");
-
-                    if (cont.binding) |binding| {
-                        try writer.writeAll("|");
-                        try writer.writeAll(binding);
-                        try writer.writeAll("| ");
-                    }
-
-                    try writer.writeAll("{\n");
-
-                    // Suppress unused binding warning
-                    // Skip for "_" since that's a discard and can't be referenced
-                    if (cont.binding) |binding| {
-                        if (!std.mem.eql(u8, binding, "_")) {
-                            try writer.writeAll("                _ = &");
-                            try writer.writeAll(binding);
-                            try writer.writeAll(";\n");
-                        }
-                    }
-
+                const has_void_continuation = flow.continuations.len == 1 and flow.continuations[0].branch.len == 0;
+                if (has_void_continuation) {
+                    const cont = flow.continuations[0];
+                    try writer.writeAll("        _ = &__thunk_result;\n");
                     if (cont.node) |step| {
-                        try writer.writeAll("                ");
+                        try writer.writeAll("        ");
                         switch (step) {
                             .invocation => |inv| {
                                 // Call the handler from backend_output
@@ -820,11 +799,114 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                             },
                         }
                     }
+                } else {
+                    try writer.writeAll("        switch (__thunk_result) {\n");
 
-                    try writer.writeAll("            },\n");
+                    for (flow.continuations) |cont| {
+                        try writer.writeAll("            .");
+                        try writeBranchName(writer, cont.branch);
+                        try writer.writeAll(" => ");
+
+                        if (cont.binding) |binding| {
+                            try writer.writeAll("|");
+                            try writer.writeAll(binding);
+                            try writer.writeAll("| ");
+                        }
+
+                        try writer.writeAll("{\n");
+
+                        // Suppress unused binding warning
+                        // Skip for "_" since that's a discard and can't be referenced
+                        if (cont.binding) |binding| {
+                            if (!std.mem.eql(u8, binding, "_")) {
+                                try writer.writeAll("                _ = &");
+                                try writer.writeAll(binding);
+                                try writer.writeAll(";\n");
+                            }
+                        }
+
+                        if (cont.node) |step| {
+                            try writer.writeAll("                ");
+                            switch (step) {
+                                .invocation => |inv| {
+                                    // Call the handler from backend_output
+                                    try writer.writeAll("_ = ");
+                                    if (inv.path.module_qualifier) |mq| {
+                                        // Module-qualified event: backend_output.koru_<module>.<event>_event
+                                        try writer.writeAll("backend_output.koru_");
+                                        if (module_alias_map.get(mq)) |full_path| {
+                                            try writer.writeAll(full_path);
+                                        } else {
+                                            try writer.writeAll(mq);
+                                        }
+                                        try writer.writeAll(".");
+                                        for (inv.path.segments, 0..) |seg, i| {
+                                            if (i > 0) try writer.writeAll("_");
+                                            try writer.writeAll(seg);
+                                        }
+                                    } else {
+                                        // Local event: backend_output.main_module.<event>_event
+                                        try writer.writeAll("backend_output.main_module.");
+                                        for (inv.path.segments, 0..) |seg, i| {
+                                            if (i > 0) try writer.writeAll("_");
+                                            try writer.writeAll(seg);
+                                        }
+                                    }
+                                    try writer.writeAll("_event.handler(.{");
+                                    // For now, use a simple heuristic: if arg.name starts with quote, it's positional
+                                    // and we use "text" as the field name (works for println, print, etc.)
+                                    for (inv.args, 0..) |arg, i| {
+                                        if (i > 0) try writer.writeAll(", ");
+                                        try writer.writeAll(" .");
+                                        // Check if this is a positional argument (name starts with quote or is the value)
+                                        if (arg.name.len > 0 and (arg.name[0] == '"' or std.mem.eql(u8, arg.name, arg.value))) {
+                                            // Positional argument - use "text" as field name for now
+                                            try writer.writeAll("text");
+                                        } else {
+                                            try writer.writeAll(arg.name);
+                                        }
+                                        try writer.writeAll(" = ");
+                                        // Source arguments have source_value set - always quote those
+                                        // Also apply heuristic for Koru syntax that needs stringification:
+                                        // - Struct literals: { ... }
+                                        // - Range literals: 0..3
+                                        // Other values (identifiers, field access) should remain as expressions
+                                        const has_source_value = arg.source_value != null;
+                                        const needs_quoting = has_source_value or (arg.value.len > 0 and
+                                            (arg.value[0] == '{' or std.mem.indexOf(u8, arg.value, "..") != null));
+                                        if (needs_quoting) {
+                                            // For Source args, use the actual source text
+                                            const text_to_quote = if (arg.source_value) |sv| sv.text else arg.value;
+                                            try writer.writeAll("\"");
+                                            for (text_to_quote) |c| {
+                                                switch (c) {
+                                                    '\n' => try writer.writeAll("\\n"),
+                                                    '\r' => try writer.writeAll("\\r"),
+                                                    '\t' => try writer.writeAll("\\t"),
+                                                    '\\' => try writer.writeAll("\\\\"),
+                                                    '"' => try writer.writeAll("\\\""),
+                                                    else => try writer.writeByte(c),
+                                                }
+                                            }
+                                            try writer.writeAll("\"");
+                                        } else {
+                                            try writer.writeAll(arg.value);
+                                        }
+                                    }
+                                    try writer.writeAll(" });\n");
+                                },
+                                .terminal => {},
+                                else => {
+                                    try writer.writeAll("// TODO: Handle step type\n");
+                                },
+                            }
+                        }
+
+                        try writer.writeAll("            },\n");
+                    }
+
+                    try writer.writeAll("        }\n");
                 }
-
-                try writer.writeAll("        }\n");
                 try writer.writeAll("    }\n\n");
             }
 
@@ -911,7 +993,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         // ============================================================================
         // The compiler pipeline is now fully flow-based in koru_std/compiler.kz
         // The coordinate event (abstract) handles both default and user-overridden pipelines
-        // via the ~impl mechanism - no special detection needed!
+        // via cross-module subflow overrides - no special detection needed!
         // ============================================================================
 
         // Add runtime emitter that calls the coordinate event from backend_output_emitted.zig
@@ -924,7 +1006,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         );
 
         // Call the coordinate event - abstract/impl mechanism handles user overrides
-        try writer.writeAll("        // Call coordinate event (uses user's ~impl if provided, otherwise default)\n");
+        try writer.writeAll("        // Call coordinate event (uses cross-module override if provided, otherwise default)\n");
         try writer.writeAll("        const result = backend_output.koru_");
         try writer.writeAll(compiler_module);
         try writer.writeAll(".coordinate_event.handler(.{ .program_ast = source_ast, .allocator = allocator });\n\n");
@@ -4622,36 +4704,7 @@ fn resolveKeywordsInItem(
                 try resolveKeywordsInItem(@constCast(mod_item), registry, allocator, main_module, all_items);
             }
         },
-        .subflow_impl => |*subflow| {
-            // CRITICAL: Resolve keywords in subflow bodies!
-            // Without this, ~for/~if/~capture inside subflows won't resolve to std.control
-            if (subflow.body == .flow) {
-                const flow = &subflow.body.flow;
-
-                // Save the old qualifier to detect if keyword resolution happened
-                const old_qualifier = flow.invocation.path.module_qualifier;
-
-                // Resolve the main invocation path
-                try resolveKeywordInPath(&flow.invocation.path, registry, allocator, main_module);
-
-                // If keyword resolution happened (qualifier changed), fix up Expression args
-                const qualifier_changed = if (old_qualifier) |old| blk: {
-                    if (flow.invocation.path.module_qualifier) |new| {
-                        break :blk !std.mem.eql(u8, old, new);
-                    }
-                    break :blk true;
-                } else flow.invocation.path.module_qualifier != null;
-
-                if (qualifier_changed) {
-                    try fixupExpressionArgs(&flow.invocation, allocator, all_items);
-                }
-
-                // Resolve paths in continuations
-                for (flow.continuations) |*cont| {
-                    try resolveKeywordsInContinuation(@constCast(cont), registry, allocator, main_module);
-                }
-            }
-        },
+        // impl flows are now .flow items with impl_of set — handled by the .flow case above
         else => {},
     }
 }
@@ -4880,11 +4933,7 @@ fn populateInvocationSourceInItems(
                     try populateInvocationSourceInContinuation(@constCast(cont), allocator, module_name);
                 }
             },
-            .subflow_impl => |*subflow| {
-                if (subflow.body == .flow) {
-                    try populateInvocationSourceInFlow(&subflow.body.flow, allocator, subflow.module);
-                }
-            },
+            // impl flows are now .flow items — handled by the .flow case in the caller
             .module_decl => |*module| {
                 try populateInvocationSourceInItems(@constCast(module.items), allocator, module.logical_name);
             },
@@ -5012,11 +5061,7 @@ fn enforceInvocationVisibilityInItems(
                     try enforceInvocationVisibilityInContinuation(&cont, all_items, reporter, allocator, module_name);
                 }
             },
-            .subflow_impl => |subflow| {
-                if (subflow.body == .flow) {
-                    try enforceInvocationVisibilityInFlow(&subflow.body.flow, all_items, reporter, allocator, subflow.module);
-                }
-            },
+            // impl flows are now .flow items — handled by the .flow case in the caller
             .module_decl => |module| {
                 try enforceInvocationVisibilityInItems(module.items, all_items, reporter, allocator, module.logical_name);
             },
@@ -6261,7 +6306,7 @@ pub fn main() !void {
     // try processImports(allocator, &source_file, input);
 
     // NOTE: Compiler override detection removed - the abstract/impl mechanism in
-    // koru_std/compiler.kz handles this automatically via ~abstract and ~impl
+    // koru_std/compiler.kz handles this automatically via abstract events and cross-module overrides
 
     // Purity checking pass
     var purity_check = PurityChecker.init(compile_allocator);

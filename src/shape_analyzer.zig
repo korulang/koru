@@ -32,10 +32,10 @@ pub const ShapeAnalyzer = struct {
         self.analyzed_subflows.deinit();
     }
     
-    /// Analyze all exit points of a subflow implementation to collect output shapes
-    pub fn analyzeSubflowImpl(
+    /// Analyze all exit points of an impl flow (Flow with impl_of set) to collect output shapes
+    pub fn analyzeImplFlow(
         self: *ShapeAnalyzer,
-        subflow_impl: *const ast.SubflowImpl,
+        impl_flow: *const ast.Flow,
     ) ![]ExitPoint {
         var exit_points = try std.ArrayList(ExitPoint).initCapacity(self.allocator, 8);
         errdefer {
@@ -44,33 +44,54 @@ pub const ShapeAnalyzer = struct {
             }
             exit_points.deinit(self.allocator);
         }
-        
+
         // Create a type context for this analysis
         var ctx = try type_context.TypeContext.init(self.allocator, self.registry);
         defer ctx.deinit();
-        
-        // Register event input fields as bindings for the subflow
-        // This is the key difference from old subflows - we use the event's input fields
-        const event_path = try self.pathToString(subflow_impl.event_path);
+
+        // Register event input fields as bindings
+        const event_path = if (impl_flow.impl_of) |impl_path|
+            try self.pathToString(impl_path)
+        else
+            try self.pathToString(impl_flow.invocation.path);
         defer self.allocator.free(event_path);
         try ctx.registerEventInputFields(event_path);
-        
-        // Handle based on body type
-        switch (subflow_impl.body) {
-            .flow => |flow| {
-                // Start from the root flow
-                try self.collectExitPoints(&flow, &exit_points, &ctx);
-            },
-            .immediate => |branch_constructor| {
-                // For immediate returns, there's just one exit point
-                const exit_point = ExitPoint{
-                    .branch_name = try self.allocator.dupe(u8, branch_constructor.branch_name),
-                    .fields = try self.duplicateFieldsWithTypes(branch_constructor.fields, &ctx),
-                };
-                try exit_points.append(self.allocator, exit_point);
-            },
+
+        // Start from the root flow
+        try self.collectExitPoints(impl_flow, &exit_points, &ctx);
+
+        return try exit_points.toOwnedSlice(self.allocator);
+    }
+
+    /// Analyze all exit points of an immediate impl to collect output shapes
+    pub fn analyzeImmediateImpl(
+        self: *ShapeAnalyzer,
+        immediate_impl: *const ast.ImmediateImpl,
+    ) ![]ExitPoint {
+        var exit_points = try std.ArrayList(ExitPoint).initCapacity(self.allocator, 8);
+        errdefer {
+            for (exit_points.items) |*ep| {
+                ep.deinit(self.allocator);
+            }
+            exit_points.deinit(self.allocator);
         }
-        
+
+        // Create a type context for this analysis
+        var ctx = try type_context.TypeContext.init(self.allocator, self.registry);
+        defer ctx.deinit();
+
+        // Register event input fields as bindings
+        const event_path = try self.pathToString(immediate_impl.event_path);
+        defer self.allocator.free(event_path);
+        try ctx.registerEventInputFields(event_path);
+
+        // For immediate returns, there's just one exit point
+        const exit_point = ExitPoint{
+            .branch_name = try self.allocator.dupe(u8, immediate_impl.value.branch_name),
+            .fields = try self.duplicateFieldsWithTypes(immediate_impl.value.fields, &ctx),
+        };
+        try exit_points.append(self.allocator, exit_point);
+
         return try exit_points.toOwnedSlice(self.allocator);
     }
     

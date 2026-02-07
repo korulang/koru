@@ -229,7 +229,7 @@ const VisitorContext = struct {
                 .proc_decl => |proc| try self.visitProcDecl(proc),
                 .flow => |flow| try self.visitFlow(flow),
                 .module_decl => |module| try self.visitModuleDecl(module),
-                .subflow_impl => |subflow| try self.visitSubflowImpl(subflow),
+                .immediate_impl => |impl| try self.visitImmediateImpl(impl),
                 .import_decl => |import| try self.visitImportDecl(import),
                 .label_decl => |label| try self.visitLabelDecl(label),
                 .event_tap => |tap| try self.visitEventTap(tap),
@@ -341,14 +341,13 @@ const VisitorContext = struct {
             try self.emitter.emitStructEnd();
         }
         
-        fn visitSubflowImpl(self: *ASTVisitor, subflow: anytype) !void {
-            // Subflow implementations are the ~compiler.coordinate.default = ... constructs
-            // They define how an event responds to being invoked
-            try self.emitter.emitComment("Subflow implementation");
-            
-            // TODO: Full subflow implementation
-            // This needs to generate the actual handler code
-            _ = subflow;
+        fn visitImmediateImpl(self: *ASTVisitor, impl: anytype) !void {
+            // Immediate implementations are inline event response constructs
+            // They define how an event responds with an immediate branch constructor
+            try self.emitter.emitComment("Immediate implementation");
+
+            // TODO: Full immediate impl code generation
+            _ = impl;
         }
         
         fn visitImportDecl(self: *ASTVisitor, import: anytype) !void {

@@ -245,18 +245,26 @@ pub const SymbolTable = struct {
                         .body_size = body_size,
                     });
                 },
-                .subflow_impl => |subflow| {
-                    const path_str = try pathToString(self.allocator, &subflow.event_path);
+                .flow => |flow| {
+                    if (flow.impl_of) |impl_path| {
+                        const path_str = try pathToString(self.allocator, &impl_path);
+                        defer self.allocator.free(path_str);
+                        if (self.events.getPtr(path_str)) |info| {
+                            info.has_subflow = true;
+                        }
+                    } else {
+                        try self.flows.append(self.allocator, FlowInfo{
+                            .has_label = flow.pre_label != null or flow.post_label != null,
+                            .continuation_count = flow.continuations.len,
+                        });
+                    }
+                },
+                .immediate_impl => |ii| {
+                    const path_str = try pathToString(self.allocator, &ii.event_path);
                     defer self.allocator.free(path_str);
                     if (self.events.getPtr(path_str)) |info| {
                         info.has_subflow = true;
                     }
-                },
-                .flow => |flow| {
-                    try self.flows.append(self.allocator, FlowInfo{
-                        .has_label = flow.pre_label != null or flow.post_label != null,
-                        .continuation_count = flow.continuations.len,
-                    });
                 },
                 else => {},
             }
