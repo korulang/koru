@@ -212,7 +212,7 @@ pub const Item = union(enum) {
     flow: Flow,
     event_tap: EventTap,
     label_decl: LabelDecl,
-    subflow_impl: SubflowImpl,
+    immediate_impl: ImmediateImpl,
     import_decl: ImportDecl,
     host_line: HostLine,
     host_type_decl: HostTypeDecl,
@@ -233,7 +233,7 @@ pub const Item = union(enum) {
             .flow => |*f| f.deinit(allocator),
             .event_tap => |*t| t.deinit(allocator),
             .label_decl => |*l| l.deinit(allocator),
-            .subflow_impl => |*s| s.deinit(allocator),
+            .immediate_impl => |*ii| ii.deinit(allocator),
             .import_decl => |*i| i.deinit(allocator),
             .host_type_decl => |*h| h.deinit(allocator),
             .parse_error => |*pe| pe.deinit(allocator),
@@ -476,9 +476,21 @@ pub const Flow = struct {
     is_pure: bool = true,  // Flows are always locally pure (just composition)
     is_transitively_pure: bool = false,  // Default false until purity checker walks and verifies
 
+    // Subflow implementation context (null for top-level flows)
+    // When set, this flow implements the named event. The colon in the path
+    // (module_qualifier != null) distinguishes cross-module overrides from local handlers.
+    impl_of: ?DottedPath = null,
+
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
+
+    /// Returns true if this flow is a cross-module implementation override.
+    /// Derived from impl_of.module_qualifier — no separate bool needed.
+    pub fn isImpl(self: *const Flow) bool {
+        if (self.impl_of) |path| return path.module_qualifier != null;
+        return false;
+    }
 
     pub fn deinit(self: *Flow, allocator: std.mem.Allocator) void {
         self.invocation.deinit(allocator);
@@ -506,6 +518,10 @@ pub const Flow = struct {
                 allocator.free(@constCast(branch.sources));
             }
             allocator.free(@constCast(ss.branches));
+        }
+        if (self.impl_of) |*io| {
+            var mutable_io = io.*;
+            mutable_io.deinit(allocator);
         }
         allocator.free(self.module);
     }
@@ -558,31 +574,32 @@ pub const LabelDecl = struct {
     }
 };
 
-pub const SubflowImpl = struct {
-    event_path: DottedPath,  // The event this subflow implements (e.g., user.authenticate)
-    body: SubflowBody,       // Either a flow or immediate branch return
-    is_impl: bool = false,   // True if event_path has module qualifier (cross-module implementation)
+// Immediate branch return for a subflow implementation (no flow body).
+// Used for constants, stubs, defaults — e.g. ~player:load = loaded { id: id, gold: 100 }
+// The flow-based case is now handled by Flow with impl_of set.
+pub const ImmediateImpl = struct {
+    event_path: DottedPath,          // Which event this implements
+    value: BranchConstructor,        // The immediate branch return value
+    annotations: []const []const u8 = &[_][]const u8{},
 
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
-    pub fn deinit(self: *SubflowImpl, allocator: std.mem.Allocator) void {
-        self.event_path.deinit(allocator);
-        self.body.deinit(allocator);
-        allocator.free(self.module);
+    /// Derived: true if event_path has module qualifier (cross-module override)
+    pub fn isImpl(self: *const ImmediateImpl) bool {
+        return self.event_path.module_qualifier != null;
     }
-};
 
-pub const SubflowBody = union(enum) {
-    flow: Flow,                      // Full flow with invocation and continuations
-    immediate: BranchConstructor,    // Immediate branch return (constants, stubs, defaults, etc.)
-
-    pub fn deinit(self: *SubflowBody, allocator: std.mem.Allocator) void {
-        switch (self.*) {
-            .flow => |*f| f.deinit(allocator),
-            .immediate => |*bc| bc.deinit(allocator),
+    pub fn deinit(self: *ImmediateImpl, allocator: std.mem.Allocator) void {
+        self.event_path.deinit(allocator);
+        var mutable_value = self.value;
+        mutable_value.deinit(allocator);
+        for (self.annotations) |ann| {
+            allocator.free(ann);
         }
+        allocator.free(@constCast(self.annotations));
+        allocator.free(self.module);
     }
 };
 
