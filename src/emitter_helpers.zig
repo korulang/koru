@@ -2951,7 +2951,7 @@ pub fn emitFlow(
             for (flow.continuations) |*cont| {
                 try emitter.writeIndent();
                 try emitter.write(".");
-                try emitter.write(cont.branch);
+                try writeBranchName(emitter, cont.branch);
                 try emitter.write(" => ");
 
                 if (cont.binding) |binding| {

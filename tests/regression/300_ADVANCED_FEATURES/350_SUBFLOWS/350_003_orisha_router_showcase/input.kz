@@ -1,0 +1,54 @@
+// ============================================================================
+// REGRESSION TEST - Orisha Router Showcase
+// ============================================================================
+// Test: Pattern-branch router transform (the core orisha routing pattern)
+// Feature: orisha:router reads pattern branches like [GET /path] and generates
+//          inline dispatch code. Tests method matching, path matching, parameter
+//          extraction, and catch-all fallback.
+// Verifies: Full router transform pipeline — pattern parsing, inline_body
+//           generation, branch name escaping, parameter extraction
+// ============================================================================
+
+~import "$orisha"
+~import "$std/io"
+
+const std = @import("std");
+
+// Test request struct (matches orisha.Request)
+const TestRequest = struct {
+    method: []const u8,
+    path: []const u8,
+};
+
+const req_root = TestRequest{ .method = "GET", .path = "/" };
+const req_about = TestRequest{ .method = "GET", .path = "/about" };
+const req_user = TestRequest{ .method = "GET", .path = "/users/42" };
+const req_post = TestRequest{ .method = "POST", .path = "/" };
+
+// Test 1: exact path match
+~orisha:router(req: &req_root)
+| [GET /] |> std.io:print.ln("matched GET /")
+| [GET /about] |> std.io:print.ln("matched GET /about")
+| [GET /users/:id] _ |> std.io:print.ln("matched user")
+| [*] |> std.io:print.ln("catch-all")
+
+// Test 2: second route match
+~orisha:router(req: &req_about)
+| [GET /] |> std.io:print.ln("matched GET /")
+| [GET /about] |> std.io:print.ln("matched GET /about")
+| [GET /users/:id] _ |> std.io:print.ln("matched user")
+| [*] |> std.io:print.ln("catch-all")
+
+// Test 3: parameter extraction from path
+~orisha:router(req: &req_user)
+| [GET /] |> std.io:print.ln("matched GET /")
+| [GET /about] |> std.io:print.ln("matched GET /about")
+| [GET /users/:id] p |> std.io:print.ln("user={{ p.id:s }}")
+| [*] |> std.io:print.ln("catch-all")
+
+// Test 4: catch-all fallback (POST doesn't match any GET route)
+~orisha:router(req: &req_post)
+| [GET /] |> std.io:print.ln("matched GET /")
+| [GET /about] |> std.io:print.ln("matched GET /about")
+| [GET /users/:id] _ |> std.io:print.ln("matched user")
+| [*] |> std.io:print.ln("catch-all")
