@@ -57,8 +57,6 @@ const std = @import("std");
     // Get the flow from the item
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
 

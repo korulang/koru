@@ -64,22 +64,21 @@ const validateMocks = struct {
         };
 
         for (mocks) |mock_item| {
-            if (mock_item != .subflow_impl) continue;
-            const sf = mock_item.subflow_impl;
-            if (sf.body != .immediate) continue;
+            if (mock_item != .immediate_impl) continue;
+            const ii = mock_item.immediate_impl;
 
-            const bc = sf.body.immediate;
+            const bc = ii.value;
             const mock_line = if (source.location.line > 0)
-                source.location.line + sf.location.line - 1
+                source.location.line + ii.location.line - 1
             else
-                sf.location.line;
-            const mock_column = sf.location.column;
+                ii.location.line;
+            const mock_column = ii.location.column;
 
-            const event_decl = emitter_helpers.findEventDeclByPath(program.items, &sf.event_path);
+            const event_decl = emitter_helpers.findEventDeclByPath(program.items, &ii.event_path);
             var event_type: ?type_registry_module.EventType = null;
             if (event_decl == null) {
                 if (type_registry_ptr) |registry| {
-                    const canonical = emitter_helpers.buildCanonicalEventName(&sf.event_path, allocator, program.main_module_name) catch null;
+                    const canonical = emitter_helpers.buildCanonicalEventName(&ii.event_path, allocator, program.main_module_name) catch null;
                     if (canonical) |name| {
                         defer allocator.free(name);
                         if (registry.getEventType(name)) |et| {
@@ -261,8 +260,6 @@ const validateMocks = struct {
     // Get the flow from the item
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
 
@@ -295,7 +292,7 @@ const validateMocks = struct {
         // Clone parsed items to owned memory
         for (result.source_file.items) |*parsed_item| {
             switch (parsed_item.*) {
-                .subflow_impl => {
+                .immediate_impl => {
                     const cloned = ast_functional.cloneItem(allocator, parsed_item) catch continue;
                     cloned_mocks.append(allocator, cloned) catch {};
                 },
@@ -342,15 +339,15 @@ const validateMocks = struct {
     // Build test module items: program items with mocks substituted
     var test_module_items = std_import.ArrayList(ast.Item).initCapacity(allocator, cloned_program.items.len + cloned_mocks.items.len) catch unreachable;
 
-    // Helper to check if a SubflowImpl matches any mock
+    // Helper to check if an impl matches any mock (mocks are now immediate_impl items)
     const matchesMock = struct {
-        fn check(subflow_path: *const ast.DottedPath, mocks: []const ast.Item) bool {
+        fn check(impl_path: *const ast.DottedPath, mocks: []const ast.Item) bool {
             for (mocks) |mock_item| {
-                if (mock_item == .subflow_impl) {
-                    const mock_path = &mock_item.subflow_impl.event_path;
-                    if (subflow_path.segments.len == mock_path.segments.len) {
+                if (mock_item == .immediate_impl) {
+                    const mock_path = &mock_item.immediate_impl.event_path;
+                    if (impl_path.segments.len == mock_path.segments.len) {
                         var all_match = true;
-                        for (subflow_path.segments, mock_path.segments) |a, b| {
+                        for (impl_path.segments, mock_path.segments) |a, b| {
                             if (!std_import.mem.eql(u8, a, b)) {
                                 all_match = false;
                                 break;
@@ -364,16 +361,25 @@ const validateMocks = struct {
         }
     };
 
-    // Add cloned program items, filtering out SubflowImpls that are mocked
-    // Also skip flows, module_decls, and imports that shouldn't be in the flat test module
+    // Add cloned program items, filtering out impls that are mocked
+    // Also skip top-level flows, module_decls, and imports that shouldn't be in the flat test module
     for (cloned_program.items) |p_item| {
         switch (p_item) {
-            .flow => {},  // Skip top-level flows (they contain ~test)
+            .flow => |f| {
+                // Skip top-level flows (they contain ~test), but keep impl flows (impl_of set)
+                if (f.impl_of) |*impl_path| {
+                    // Only add if NOT mocked
+                    if (!matchesMock.check(impl_path, cloned_mocks.items)) {
+                        test_module_items.append(allocator, p_item) catch {};
+                    }
+                }
+                // else: top-level flow, skip
+            },
             .module_decl => {},  // Skip module declarations (test module is flat)
             .import_decl => {},  // Skip imports (test module uses parent's imports)
-            .subflow_impl => |sf| {
+            .immediate_impl => |ii| {
                 // Only add if NOT mocked
-                if (!matchesMock.check(&sf.event_path, cloned_mocks.items)) {
+                if (!matchesMock.check(&ii.event_path, cloned_mocks.items)) {
                     test_module_items.append(allocator, p_item) catch {};
                 }
             },
@@ -381,7 +387,7 @@ const validateMocks = struct {
         }
     }
 
-    // Add mock SubflowImpls (these override any filtered out)
+    // Add mock immediate_impls (these override any filtered out)
     for (cloned_mocks.items) |m| {
         test_module_items.append(allocator, m) catch {};
     }
@@ -449,33 +455,29 @@ const validateMocks = struct {
     // Build mock lookup map for purity checking (still needed to know what's mocked)
     var mock_paths = std_import.StringHashMap(ast.BranchConstructor).init(allocator);
     for (cloned_mocks.items) |mock_item| {
-        if (mock_item == .subflow_impl) {
-            const sf = mock_item.subflow_impl;
-            if (sf.body == .immediate) {
-                var path_buf = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
-                for (sf.event_path.segments, 0..) |seg, i| {
-                    if (i > 0) path_buf.append(allocator, '.') catch {};
-                    path_buf.appendSlice(allocator, seg) catch {};
-                }
-                mock_paths.put(path_buf.items, sf.body.immediate) catch {};
+        if (mock_item == .immediate_impl) {
+            const ii = mock_item.immediate_impl;
+            var path_buf = std_import.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+            for (ii.event_path.segments, 0..) |seg, i| {
+                if (i > 0) path_buf.append(allocator, '.') catch {};
+                path_buf.appendSlice(allocator, seg) catch {};
             }
+            mock_paths.put(path_buf.items, ii.value) catch {};
         }
     }
 
-    // Also scan program for constant events
+    // Also scan program for constant events (immediate_impl items)
     const scanForConstants = struct {
         fn scan(items: []const ast.Item, paths: *std_import.StringHashMap(ast.BranchConstructor), alloc: std_import.mem.Allocator) void {
             for (items) |prog_item| {
                 switch (prog_item) {
-                    .subflow_impl => |sf| {
-                        if (sf.body == .immediate) {
-                            var path_buf = std_import.ArrayList(u8).initCapacity(alloc, 64) catch unreachable;
-                            for (sf.event_path.segments, 0..) |seg, i| {
-                                if (i > 0) path_buf.append(alloc, '.') catch {};
-                                path_buf.appendSlice(alloc, seg) catch {};
-                            }
-                            paths.put(path_buf.items, sf.body.immediate) catch {};
+                    .immediate_impl => |ii| {
+                        var path_buf = std_import.ArrayList(u8).initCapacity(alloc, 64) catch unreachable;
+                        for (ii.event_path.segments, 0..) |seg, i| {
+                            if (i > 0) path_buf.append(alloc, '.') catch {};
+                            path_buf.appendSlice(alloc, seg) catch {};
                         }
+                        paths.put(path_buf.items, ii.value) catch {};
                     },
                     .module_decl => |mod| {
                         scan(mod.items, paths, alloc);
@@ -492,7 +494,7 @@ const validateMocks = struct {
     for (transformed_program.items, 0..) |t_item, idx| {
         const item_type = switch (t_item) {
             .flow => "flow",
-            .subflow_impl => "subflow_impl",
+            .immediate_impl => "immediate_impl",
             .event_decl => "event_decl",
             .proc_decl => "proc_decl",
             .module_decl => "module_decl",
@@ -813,8 +815,6 @@ const emitFlowWithMocks = struct {
     // Get the flow from the item
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
 
@@ -842,15 +842,12 @@ const emitFlowWithMocks = struct {
             .preamble_code = assert_code,
             .is_pure = true,
             .is_transitively_pure = true,
+            .impl_of = flow.impl_of,
             .location = flow.location,
             .module = flow.module,
         };
 
-        const new_item = if (item.* == .subflow_impl) blk: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = transformed_flow };
-            break :blk ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = transformed_flow };
+        const new_item = ast.Item{ .flow = transformed_flow };
 
         const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
         if (maybe_new_program) |new_program| {
@@ -912,11 +909,7 @@ const emitFlowWithMocks = struct {
             inline_node,
         ) catch unreachable;
 
-        const new_item = if (item.* == .subflow_impl) blk: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = modified_flow };
-            break :blk ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = modified_flow };
+        const new_item = ast.Item{ .flow = modified_flow };
 
         const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
         if (maybe_new_program) |new_program| {

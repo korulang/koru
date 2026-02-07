@@ -755,6 +755,10 @@ pub const VisitorEmitter = struct {
                 try self.code_emitter.write("};\n");
             },
             .flow => |flow| {
+                // Flows with impl_of are implementation overrides — they're emitted
+                // inside the abstract event handler, not as standalone functions.
+                if (flow.impl_of != null) return;
+
                 // Flows are emitted during Phase 1 (declarations)
 
                 // Check if this flow invokes an event with comptime parameters OR has norun annotation

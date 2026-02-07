@@ -477,19 +477,22 @@ pub const Flow = struct {
     is_transitively_pure: bool = false,  // Default false until purity checker walks and verifies
 
     // Subflow implementation context (null for top-level flows)
-    // When set, this flow implements the named event. The colon in the path
-    // (module_qualifier != null) distinguishes cross-module overrides from local handlers.
+    // When set, this flow implements the named event.
     impl_of: ?DottedPath = null,
+
+    // True if the source syntax had a colon (cross-module override: ~mod:event = ...).
+    // MUST be stored at parse time, before canonicalize_names adds module qualifiers
+    // to all paths (which would make impl_of.module_qualifier non-null for locals too).
+    is_impl: bool = false,
 
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
     /// Returns true if this flow is a cross-module implementation override.
-    /// Derived from impl_of.module_qualifier — no separate bool needed.
+    /// Uses the stored is_impl flag set at parse time (pre-canonicalization).
     pub fn isImpl(self: *const Flow) bool {
-        if (self.impl_of) |path| return path.module_qualifier != null;
-        return false;
+        return self.is_impl;
     }
 
     pub fn deinit(self: *Flow, allocator: std.mem.Allocator) void {

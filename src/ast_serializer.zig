@@ -651,6 +651,12 @@ pub const AstSerializer = struct {
         }
         try self.write(",\n");
 
+        // is_impl (true for cross-module overrides, set at parse time)
+        try self.writeIndent();
+        try self.write(".is_impl = ");
+        try self.write(if (flow.is_impl) "true" else "false");
+        try self.write(",\n");
+
         // Module
         try self.writeIndent();
         try self.write(".module = ");

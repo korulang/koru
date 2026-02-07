@@ -142,8 +142,6 @@ const std = @import("std");
     // Get the flow from the item
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         @panic("kernel.init: expected flow item");
 
@@ -404,6 +402,7 @@ const std = @import("std");
                 .continuations = new_continuations,
                 .pre_label = if (flow.pre_label) |l| allocator.dupe(u8, l) catch unreachable else null,
                 .post_label = if (flow.post_label) |l| allocator.dupe(u8, l) catch unreachable else null,
+                .impl_of = flow.impl_of,
                 .super_shape = null,
                 .inline_body = null,
                 .preamble_code = null,
@@ -423,11 +422,7 @@ const std = @import("std");
             new_step,
         ) catch unreachable;
 
-        new_item = if (item.* == .subflow_impl) blk: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = modified_flow };
-            break :blk ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = modified_flow };
+        new_item = ast.Item{ .flow = modified_flow };
     }
 
     // Replace flow in program
@@ -565,8 +560,6 @@ const std = @import("std");
     // Get the flow from the item
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         @panic("kernel.pairwise: expected flow item");
 
@@ -822,12 +815,8 @@ const std = @import("std");
         new_node,
     ) catch unreachable;
 
-    // Create new item, preserving subflow_impl wrapper if needed
-    const new_item = if (item.* == .subflow_impl) blk: {
-        var new_subflow = item.subflow_impl;
-        new_subflow.body = .{ .flow = modified_flow };
-        break :blk ast.Item{ .subflow_impl = new_subflow };
-    } else ast.Item{ .flow = modified_flow };
+    // Create new item from modified flow (impl_of is already on the flow)
+    const new_item = ast.Item{ .flow = modified_flow };
 
     // Replace the flow in the program with the modified flow
     const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;

@@ -3720,6 +3720,7 @@ pub const Parser = struct {
                 .invocation = invocation,
                 .continuations = continuations,
                 .impl_of = event_path,
+                .is_impl = event_path.module_qualifier != null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
             } };
@@ -3849,6 +3850,7 @@ pub const Parser = struct {
                 .invocation = invocation,
                 .continuations = continuations,
                 .impl_of = event_path,
+                .is_impl = event_path.module_qualifier != null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
             } };
@@ -3867,6 +3869,7 @@ pub const Parser = struct {
             .invocation = invocation,
             .continuations = continuations,
             .impl_of = event_path,
+            .is_impl = event_path.module_qualifier != null,
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
         } };

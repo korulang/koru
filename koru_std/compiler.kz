@@ -856,7 +856,7 @@ const processTestFlow = struct {
 
         for (parse_result.source_file.items) |*parsed_item| {
             switch (parsed_item.*) {
-                .subflow_impl => {
+                .immediate_impl => {
                     // This is a mock! Clone it
                     const cloned = ast_functional.cloneItem(allocator, parsed_item) catch continue;
                     mocks.append(allocator, cloned) catch {};
@@ -889,17 +889,15 @@ const processTestFlow = struct {
         // Build mock lookup map (event path -> branch constructor)
         var mock_map = std.StringHashMap(ast_mod.BranchConstructor).init(allocator);
         for (mocks.items) |mock_item| {
-            if (mock_item == .subflow_impl) {
-                const sf = mock_item.subflow_impl;
-                if (sf.body == .immediate) {
-                    // Build event path string
-                    var path_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
-                    for (sf.event_path.segments, 0..) |seg, i| {
-                        if (i > 0) path_buf.append(allocator, '.') catch {};
-                        path_buf.appendSlice(allocator, seg) catch {};
-                    }
-                    mock_map.put(path_buf.items, sf.body.immediate) catch {};
+            if (mock_item == .immediate_impl) {
+                const sf = mock_item.immediate_impl;
+                // Build event path string
+                var path_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                for (sf.event_path.segments, 0..) |seg, i| {
+                    if (i > 0) path_buf.append(allocator, '.') catch {};
+                    path_buf.appendSlice(allocator, seg) catch {};
                 }
+                mock_map.put(path_buf.items, sf.value) catch {};
             }
         }
 

@@ -722,6 +722,7 @@ fn cloneFlow(allocator: std.mem.Allocator, flow: *const ast.Flow) CloneError!ast
         .module = try allocator.dupe(u8, flow.module),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
         .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .is_impl = flow.is_impl,
     };
 }
 

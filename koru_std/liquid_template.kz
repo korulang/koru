@@ -41,8 +41,6 @@ const std = @import("std");
     // Get the flow from the item
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
 
@@ -127,15 +125,12 @@ const std = @import("std");
         .inline_body = inline_code,
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,
+        .impl_of = flow.impl_of,
         .location = flow.location,
         .module = flow.module,
     };
 
-    const new_item = if (item.* == .subflow_impl) blk: {
-        var new_subflow = item.subflow_impl;
-        new_subflow.body = .{ .flow = transformed_flow };
-        break :blk ast.Item{ .subflow_impl = new_subflow };
-    } else ast.Item{ .flow = transformed_flow };
+    const new_item = ast.Item{ .flow = transformed_flow };
 
     const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
     if (maybe_new_program) |new_program| {

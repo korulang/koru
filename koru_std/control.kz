@@ -26,11 +26,8 @@ const std = @import("std");
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
-    // Handle both flow items and subflow_impl items
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
 
@@ -138,16 +135,12 @@ const std = @import("std");
             .preamble_code = allocator.dupe(u8, "// ~if transformed") catch unreachable,
             .is_pure = flow.is_pure,
             .is_transitively_pure = flow.is_transitively_pure,
+            .impl_of = flow.impl_of,
             .location = flow.location,
             .module = flow.module,
         };
 
-        // Create the new item, preserving subflow_impl wrapper if needed
-        const new_item = if (item.* == .subflow_impl) blk: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = transformed_flow };
-            break :blk ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = transformed_flow };
+        const new_item = ast.Item{ .flow = transformed_flow };
 
         // Use replaceFlowRecursive to handle flows inside module_decls
         const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
@@ -292,12 +285,7 @@ const std = @import("std");
             &keepNotIfBranch,
         ) catch unreachable;
 
-        // Create the new item, preserving subflow_impl wrapper if needed
-        const new_item = if (item.* == .subflow_impl) blk: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = modified_flow };
-            break :blk ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = modified_flow };
+        const new_item = ast.Item{ .flow = modified_flow };
 
         // Replace in program using replaceFlowRecursive (handles items inside module_decls)
         const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
@@ -339,11 +327,8 @@ const std = @import("std");
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
-    // Handle both flow items and subflow_impl items
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
 
@@ -478,16 +463,12 @@ const std = @import("std");
             .preamble_code = allocator.dupe(u8, "// ~for transformed") catch unreachable,
             .is_pure = flow.is_pure,
             .is_transitively_pure = flow.is_transitively_pure,
+            .impl_of = flow.impl_of,
             .location = flow.location,
             .module = flow.module,
         };
 
-        // Create the new item, preserving subflow_impl wrapper if needed
-        const new_item = if (item.* == .subflow_impl) blk: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = transformed_flow };
-            break :blk ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = transformed_flow };
+        const new_item = ast.Item{ .flow = transformed_flow };
 
         // Replace in program using replaceFlowRecursive (handles items inside module_decls)
         const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
@@ -640,12 +621,7 @@ const std = @import("std");
             &keepNotForBranch,
         ) catch unreachable;
 
-        // Create the new item, preserving subflow_impl wrapper if needed
-        const new_item = if (item.* == .subflow_impl) blk: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = modified_flow };
-            break :blk ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = modified_flow };
+        const new_item = ast.Item{ .flow = modified_flow };
 
         // Replace in program using replaceFlowRecursive (handles items inside module_decls)
         const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
@@ -697,11 +673,8 @@ const std = @import("std");
     const ast_functional = @import("ast_functional");
     const codegen_utils = @import("codegen_utils");
 
-    // Handle both flow items and subflow_impl items
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
 
@@ -1121,12 +1094,7 @@ const std = @import("std");
             &keepNotCaptureBranch,
         ) catch unreachable;
 
-        // Create the new item, preserving subflow_impl wrapper if needed
-        const new_item = if (item.* == .subflow_impl) blk: {
-            var new_subflow = item.subflow_impl;
-            new_subflow.body = .{ .flow = modified_flow };
-            break :blk ast.Item{ .subflow_impl = new_subflow };
-        } else ast.Item{ .flow = modified_flow };
+        const new_item = ast.Item{ .flow = modified_flow };
 
         // Replace in program
         const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
@@ -1257,16 +1225,12 @@ const std = @import("std");
         .preamble_code = allocator.dupe(u8, "// ~capture transformed") catch unreachable,
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,
+        .impl_of = flow.impl_of,
         .location = flow.location,
         .module = flow.module,
     };
 
-    // Create the new item, preserving subflow_impl wrapper if needed
-    const new_item = if (item.* == .subflow_impl) blk: {
-        var new_subflow = item.subflow_impl;
-        new_subflow.body = .{ .flow = transformed_flow };
-        break :blk ast.Item{ .subflow_impl = new_subflow };
-    } else ast.Item{ .flow = transformed_flow };
+    const new_item = ast.Item{ .flow = transformed_flow };
 
     // Use replaceFlowRecursive to handle flows inside module_decls
     const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
@@ -1305,11 +1269,8 @@ const std = @import("std");
     const ast_functional = @import("ast_functional");
     const codegen_utils = @import("codegen_utils");
 
-    // Handle both flow items and subflow_impl items
     const flow = if (item.* == .flow)
         &item.flow
-    else if (item.* == .subflow_impl and item.subflow_impl.body == .flow)
-        &item.subflow_impl.body.flow
     else
         return .{ .transformed = .{ .program = program } };
 
@@ -1380,16 +1341,12 @@ const std = @import("std");
         .preamble_code = preamble,  // Use preamble_code!
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,
+        .impl_of = flow.impl_of,
         .location = flow.location,
         .module = flow.module,
     };
 
-    // Create the new item
-    const new_item = if (item.* == .subflow_impl) blk: {
-        var new_subflow = item.subflow_impl;
-        new_subflow.body = .{ .flow = transformed_flow };
-        break :blk ast.Item{ .subflow_impl = new_subflow };
-    } else ast.Item{ .flow = transformed_flow };
+    const new_item = ast.Item{ .flow = transformed_flow };
 
     // Use replaceFlowRecursive to handle flows inside module_decls
     const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
