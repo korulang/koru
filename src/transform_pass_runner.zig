@@ -559,6 +559,8 @@ fn applyExpandTemplate(
         .preamble_code = flow.preamble_code,
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,
+        .impl_of = flow.impl_of,
+        .is_impl = flow.is_impl,
         .location = flow.location,
         .module = flow.module,
     };
