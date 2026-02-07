@@ -1355,6 +1355,11 @@ pub const AstSerializer = struct {
         try self.writeString(imm.module);
         try self.write(",\n");
 
+        try self.writeIndent();
+        try self.write(".is_impl = ");
+        try self.write(if (imm.is_impl) "true" else "false");
+        try self.write(",\n");
+
         self.dedent();
         try self.writeIndent();
         try self.write("}");
@@ -2477,6 +2482,11 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write("\"location\": ");
         try self.serializeLocationJson(&imm.location);
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write("\"is_impl\": ");
+        try self.write(if (imm.is_impl) "true" else "false");
     }
 
     fn serializeHostTypeDeclJson(self: *AstSerializer, host_type: *const ast.HostTypeDecl) !void {

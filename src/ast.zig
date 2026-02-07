@@ -589,9 +589,11 @@ pub const ImmediateImpl = struct {
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
 
-    /// Derived: true if event_path has module qualifier (cross-module override)
+    // Stored at parse time: true if event_path had module qualifier before canonicalization
+    is_impl: bool = false,
+
     pub fn isImpl(self: *const ImmediateImpl) bool {
-        return self.event_path.module_qualifier != null;
+        return self.is_impl;
     }
 
     pub fn deinit(self: *ImmediateImpl, allocator: std.mem.Allocator) void {

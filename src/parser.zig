@@ -3623,6 +3623,7 @@ pub const Parser = struct {
                             .value = branch_constructor,
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
+                            .is_impl = event_path.module_qualifier != null,
                         } };
                     } else {
                         // Multi-line branch constructor starting on this line
@@ -3660,6 +3661,7 @@ pub const Parser = struct {
                             .value = branch_constructor,
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
+                            .is_impl = event_path.module_qualifier != null,
                         } };
                     }
                 }
@@ -3690,6 +3692,7 @@ pub const Parser = struct {
                             },
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
+                            .is_impl = event_path.module_qualifier != null,
                         } };
                     } else {
                         // Just branch name: "ok"
@@ -3703,6 +3706,7 @@ pub const Parser = struct {
                             },
                             .location = self.getCurrentLocation(),
                             .module = try self.allocator.dupe(u8, self.module_name),
+                            .is_impl = event_path.module_qualifier != null,
                         } };
                     }
                 }
@@ -3780,6 +3784,7 @@ pub const Parser = struct {
                         .value = branch_constructor,
                         .location = self.getCurrentLocation(),
                         .module = try self.allocator.dupe(u8, self.module_name),
+                        .is_impl = event_path.module_qualifier != null,
                     } };
                 } else {
                     // Multi-line branch constructor - collect all lines
@@ -3818,6 +3823,7 @@ pub const Parser = struct {
                         .value = branch_constructor,
                         .location = self.getCurrentLocation(),
                         .module = try self.allocator.dupe(u8, self.module_name),
+                        .is_impl = event_path.module_qualifier != null,
                     } };
                 }
             }
