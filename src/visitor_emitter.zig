@@ -489,6 +489,8 @@ pub const VisitorEmitter = struct {
             for (source_file.items) |item| {
                 if (item == .flow) {
                     const flow = item.flow;
+                    // Impl flows are handled by the abstract event handler, not as standalone
+                    if (flow.impl_of != null) continue;
                     const invokes_comptime_event = self.flowInvokesComptimeEvent(&flow, source_file.items);
 
                     // Only emit calls to comptime flows that are not [norun] or [transform]
@@ -548,6 +550,9 @@ pub const VisitorEmitter = struct {
                         }
                     },
                     .flow => |flow| {
+                        // Impl flows are handled by the abstract event handler, not counted
+                        if (flow.impl_of != null) continue;
+
                         // Check if transform already ran (look for @pass_ran annotation)
                         var has_pass_ran = false;
                         for (flow.invocation.annotations) |ann| {
@@ -608,6 +613,9 @@ pub const VisitorEmitter = struct {
                 for (source_file.items) |item| {
                     switch (item) {
                         .flow => |flow| {
+                            // Impl flows are handled by the abstract event handler, not called standalone
+                            if (flow.impl_of != null) continue;
+
                             // CRITICAL: Check if transform already ran (look for @pass_ran annotation)
                             var has_pass_ran = false;
                             for (flow.invocation.annotations) |ann| {
