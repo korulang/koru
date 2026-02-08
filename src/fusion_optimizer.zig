@@ -136,7 +136,6 @@ fn generateFusedVariant(
     const fused_proc = ast.ProcDecl{
         .path = fused_path,
         .body = stub_body,
-        .inline_flows = &.{}, // No flows in generated code (yet)
         .annotations = &[_][]const u8{}, // TODO: Copy from original?
         .target = null, // Always Zig for generated code
         .is_pure = original_proc.is_pure,

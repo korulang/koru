@@ -320,7 +320,6 @@ pub const HostTypeDecl = struct {
 pub const ProcDecl = struct {
     path: DottedPath,
     body: []const u8, // Opaque code (language determined by target)
-    inline_flows: []const Flow = &.{}, // Flows extracted from proc body (Zig only)
     annotations: []const []const u8 = &[_][]const u8{}, // Proc annotations like [pure|async]
     target: ?[]const u8 = null, // Language target: "gpu", "js", "python", null = Zig
     is_impl: bool = false,  // True if event_path has module qualifier (cross-module implementation)
@@ -341,11 +340,6 @@ pub const ProcDecl = struct {
     pub fn deinit(self: *ProcDecl, allocator: std.mem.Allocator) void {
         self.path.deinit(allocator);
         allocator.free(self.body);
-        for (self.inline_flows) |*flow| {
-            var mutable_flow = flow.*;
-            mutable_flow.deinit(allocator);
-        }
-        allocator.free(@constCast(self.inline_flows));
         for (self.annotations) |ann| {
             allocator.free(ann);
         }

@@ -150,11 +150,6 @@ pub const PurityAnalyzer = struct {
                 .calls = std.ArrayList([]const u8).initCapacity(self.allocator, 0) catch unreachable,
             };
 
-            // Extract calls from inline flows
-            for (proc.inline_flows) |flow| {
-                try self.extractCallsFromFlow(&flow, &call_info);
-            }
-
             try self.call_graph.put(proc_name, call_info);
         }
 

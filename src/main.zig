@@ -4918,11 +4918,7 @@ fn populateInvocationSourceInItems(
             .flow => |*flow| {
                 try populateInvocationSourceInFlow(flow, allocator, flow.module);
             },
-            .proc_decl => |*proc| {
-                for (@constCast(proc.inline_flows)) |*flow| {
-                    try populateInvocationSourceInFlow(flow, allocator, proc.module);
-                }
-            },
+            .proc_decl => {},
             .event_tap => |*tap| {
                 for (tap.continuations) |*cont| {
                     try populateInvocationSourceInContinuation(@constCast(cont), allocator, tap.module);
@@ -5046,11 +5042,7 @@ fn enforceInvocationVisibilityInItems(
             .flow => |flow| {
                 try enforceInvocationVisibilityInFlow(&flow, all_items, reporter, allocator, flow.module);
             },
-            .proc_decl => |proc| {
-                for (proc.inline_flows) |flow| {
-                    try enforceInvocationVisibilityInFlow(&flow, all_items, reporter, allocator, proc.module);
-                }
-            },
+            .proc_decl => {},
             .event_tap => |tap| {
                 for (tap.continuations) |cont| {
                     try enforceInvocationVisibilityInContinuation(&cont, all_items, reporter, allocator, tap.module);

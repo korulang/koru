@@ -91,30 +91,10 @@ pub const FusionDetector = struct {
 
     /// Detect fusion opportunities within a proc
     fn detectInProc(self: *FusionDetector, proc: *const ast.ProcDecl, report: *FusionReport) !void {
-        // Look at each inline flow
-        for (proc.inline_flows) |*flow| {
-            // Check if this flow starts a fusable chain
-            const chain = try self.buildChain(flow);
-            defer self.allocator.free(chain);
-
-            // Chain of 2+ pure events = fusion opportunity!
-            if (chain.len >= 2 and try self.isChainPure(chain)) {
-                const proc_name = try self.pathToString(proc.path);
-
-                var chain_copy = try self.allocator.alloc([]const u8, chain.len);
-                for (chain, 0..) |event_name, i| {
-                    chain_copy[i] = try self.allocator.dupe(u8, event_name);
-                }
-
-                try report.opportunities.append(self.allocator, .{
-                    .chain = chain_copy,
-                    .location = proc_name,
-                });
-
-                report.total_chains += 1;
-                report.total_events_in_chains += chain.len;
-            }
-        }
+        _ = self;
+        _ = proc;
+        _ = report;
+        // Inline flows removed — fusion detection now only applies to top-level flows
     }
 
     /// Build a chain of event calls from a flow

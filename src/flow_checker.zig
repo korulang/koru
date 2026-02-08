@@ -62,15 +62,7 @@ pub const FlowChecker = struct {
                 .flow => |*flow| {
                     try self.validateFlow(flow, flow.location);
                 },
-                .proc_decl => |*proc| {
-                    // Check inline flows in proc declarations for duplicate branch handlers
-                    // Only in backend mode (semantic check that may need transforms applied)
-                    if (self.mode == .all) {
-                        for (proc.inline_flows) |*inline_flow| {
-                            try self.checkDuplicateBranchHandlers(inline_flow.continuations, inline_flow.location);
-                        }
-                    }
-                },
+                .proc_decl => {},
                 .module_decl => |*module| {
                     // Validate flows in imported modules
                     for (module.items) |*module_item| {
@@ -78,14 +70,7 @@ pub const FlowChecker = struct {
                             .flow => |*flow| {
                                 try self.validateFlow(flow, flow.location);
                             },
-                            .proc_decl => |*proc| {
-                                // Only in backend mode
-                                if (self.mode == .all) {
-                                    for (proc.inline_flows) |*inline_flow| {
-                                        try self.checkDuplicateBranchHandlers(inline_flow.continuations, inline_flow.location);
-                                    }
-                                }
-                            },
+                            .proc_decl => {},
                             else => {},
                         }
                     }
@@ -109,6 +94,11 @@ pub const FlowChecker = struct {
 
         // === FRONTEND CHECKS (syntactic, always run) ===
         // These run even for transformed flows
+
+        // Check for duplicate branch handlers at each level
+        if (!is_transform_flow) {
+            try self.checkDuplicateBranchHandlers(flow.continuations, location);
+        }
 
         // Skip when-clause checks for transformed flows (structure has changed)
         // Also skip for transform invocations (like ~tap) which use fan-out semantics

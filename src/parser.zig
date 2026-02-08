@@ -1822,7 +1822,6 @@ pub const Parser = struct {
         return ast.ProcDecl{
             .path = path,
             .body = extraction_result.modified_body,
-            .inline_flows = extraction_result.flows,
             .annotations = annotations_copy,
             .target = target,
             .is_pure = is_pure,
@@ -1939,7 +1938,6 @@ pub const Parser = struct {
         const proc_decl = ast.ProcDecl{
             .path = path,
             .body = extraction_result.modified_body,
-            .inline_flows = extraction_result.flows,
             .annotations = try annotations.toOwnedSlice(self.allocator),
             .target = target,
             .location = self.getCurrentLocation(),

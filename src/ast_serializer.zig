@@ -490,17 +490,6 @@ pub const AstSerializer = struct {
             try self.write(",\n");
         }
 
-        // Serialize inline flows
-        try self.writeIndent();
-        try self.write(".inline_flows = &[_]Flow{\n");
-        self.indent();
-        for (proc.inline_flows) |*flow| {
-            try self.serializeFlow(flow);
-            try self.write(",\n");
-        }
-        self.dedent();
-        try self.writeIndent();
-        try self.write("},\n");
 
         // Serialize annotations
         try self.writeIndent();
@@ -1782,19 +1771,6 @@ pub const AstSerializer = struct {
             try self.writeString("zig");
         }
         try self.write(",\n");
-
-        // Inline flows
-        try self.writeIndent();
-        try self.write("\"inline_flows\": [\n");
-        self.indent();
-        for (proc.inline_flows, 0..) |*flow, i| {
-            if (i > 0) try self.write(",\n");
-            try self.serializeFlowDetailJson(flow);
-        }
-        try self.write("\n");
-        self.dedent();
-        try self.writeIndent();
-        try self.write("],\n");
 
         try self.writeIndent();
         try self.write("\"is_pure\": ");

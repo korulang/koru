@@ -109,15 +109,7 @@ pub const PurityChecker = struct {
             switch (item.*) {
                 .proc_decl => |*proc| {
                     const proc_name = try self.pathToString(proc.path);
-
-                    var call_info = try CallInfo.init(self.allocator);
-
-                    // Walk inline flows to find event invocations
-                    for (proc.inline_flows) |*flow| {
-                        const invoked_event = try self.pathToString(flow.invocation.path);
-                        try call_info.calls.append(self.allocator, try self.allocator.dupe(u8, invoked_event));
-                    }
-
+                    const call_info = try CallInfo.init(self.allocator);
                     try self.call_graph.put(proc_name, call_info);
                 },
                 .module_decl => |*module| {

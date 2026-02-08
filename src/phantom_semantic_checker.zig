@@ -582,15 +582,7 @@ pub const PhantomSemanticChecker = struct {
                         }
                     }
                 },
-                .proc_decl => |*proc| {
-                    const module = proc.module;
-                    log.debug("[PHANTOM-FLOW] Validating proc '{s}' in module '{s}'\n", .{try self.pathToString(proc.path), module});
-                    for (proc.inline_flows) |*flow| {
-                        if (!try self.validateFlow(flow, event_map, module, null)) {
-                            has_errors = true;
-                        }
-                    }
-                },
+                .proc_decl => {},
                 .module_decl => |module| {
                     // Recursively validate items in module
                     if (!try self.validateItems(module.items, event_map, module.logical_name)) {

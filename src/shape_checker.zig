@@ -1122,16 +1122,10 @@ pub const ShapeChecker = struct {
         };
         defer self.allocator.free(path);  // Free temp string after lookup
 
-        const event_info = self.events.get(path) orelse {
+        _ = self.events.get(path) orelse {
             // Proc without matching event
             return error.ProcWithoutEvent;
         };
-
-        // Validate inline flows extracted from proc body
-        // These have different validation rules than top-level flows
-        for (proc.inline_flows) |*inline_flow| {
-            try self.validateInlineFlow(inline_flow, event_info);
-        }
     }
 
     fn validateInlineFlow(self: *ShapeChecker, flow: *const ast.Flow, proc_event: ?EventInfo) !void {

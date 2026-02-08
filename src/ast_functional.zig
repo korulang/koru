@@ -680,16 +680,9 @@ fn cloneProcDecl(allocator: std.mem.Allocator, proc: *const ast.ProcDecl) !ast.P
         annotations[i] = try allocator.dupe(u8, ann);
     }
 
-    // Clone inline flows
-    var inline_flows = try allocator.alloc(ast.Flow, proc.inline_flows.len);
-    for (proc.inline_flows, 0..) |flow, i| {
-        inline_flows[i] = try cloneFlow(allocator, &flow);
-    }
-
     return .{
         .path = try cloneDottedPath(allocator, &proc.path),
         .body = try allocator.dupe(u8, proc.body),
-        .inline_flows = inline_flows,
         .annotations = annotations,
         .target = if (proc.target) |t| try allocator.dupe(u8, t) else null,
         .is_impl = proc.is_impl,

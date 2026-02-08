@@ -387,10 +387,6 @@ pub const VisitorEmitter = struct {
             try self.visitItem(item, source_file.module_annotations, source_file.items);
         }
 
-        // Phase 1.5: Generate inline flow helper functions (still inside main_module!)
-        // These are module-level functions that wrap inline flows from procs
-        try self.emitInlineFlowFunctions(source_file);
-
         // Phase 1.6: Generate tap functions (event observers)
         // These wrap tap continuations and are called at tap injection points
 

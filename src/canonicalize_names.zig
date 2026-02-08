@@ -63,11 +63,6 @@ fn canonicalizeItem(ctx: *Context, item: *ast.Item) !void {
         },
         .proc_decl => |*proc| {
             try canonicalizePath(ctx, @constCast(&proc.path));
-
-            // Canonicalize inline flows
-            for (proc.inline_flows) |*flow| {
-                try canonicalizeFlow(ctx, @constCast(flow));
-            }
         },
         .flow => |*flow| {
             if (flow.impl_of) |*impl_path| {

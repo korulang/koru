@@ -184,11 +184,6 @@ pub fn Walker(comptime UserData: type) type {
             try self.context.pushPath(name);
             defer self.context.popPath();
             
-            // Walk inline flows
-            for (proc.inline_flows) |*flow| {
-                try self.walkFlow(flow);
-            }
-            
             if (self.visitor.vtable.postVisitProcDecl) |postVisit| {
                 try postVisit(&self.visitor, &self.context, proc);
             }
