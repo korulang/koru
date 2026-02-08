@@ -106,7 +106,7 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Harden the Koru compiler's semantic layer by implementing phantom type serialization, refining phase inheritance, and automating regression tracking.
+Finalize the AST rewrite merge (unifying Flow and SubflowImpl) and stabilize the compiler pipeline against metadata loss regressions.
 
 ### Decisions
 - **Include 'phantom' type annotations (e.g., File[open!]) in AST JSON serialization.**: To support downstream tools and debuggers that need to distinguish between standard types and semantic state-tracking metadata.
@@ -116,6 +116,10 @@ Harden the Koru compiler's semantic layer by implementing phantom type serializa
 - **Established a 'Ground Truth' documentation policy, prioritizing verified tests and code over markdown.**: Prevents 'poisoning' the development process with outdated design docs. Generated llms.md as a machine-consumable spec derived strictly from SUCCESS-marked tests.
 - **Adopted the '.impl' pattern and atomic unit treatment for complex control structures (try/catch, switch).**: Ensures architectural symmetry and prevents 'Frankenstein' states where a partial block (like a catch) is executed or transformed without its parent.
 - **Standardized on Liquid-style {{ var }} syntax, deprecating ${var}.**: Provides a unified, powerful metaprogramming interface and reduces maintenance burden of dual-syntax templating.
+- **Unify 'SubflowImpl' into the 'Flow' AST node using 'impl_of' and 'is_impl' metadata.**: Reduces AST duplication and simplifies the compiler pipeline. Impls are now semantically identified as flows that exist inside event handlers rather than standalone functions.
+- **Mandate metadata preservation (impl_of, preamble_code) in all AST functional helpers (map, transformWhere).**: Prevents 'information leakage' where reconstructive compiler passes accidentally strip critical implementation metadata, causing impls to be incorrectly emitted as top-level flows.
+- **Track and use actual field names for 'Expression' parameters in transform handler codegen.**: Moves from convention-based naming (hardcoded '.expr') to metadata-driven generation, allowing DSLs like the Orisha router to use domain-specific names (e.g., '.req') in Zig glue code.
+- **Adopt a 'regression-first' metacircular workflow with a dedicated run_regression.sh suite.**: Ensures stability in a self-hosting environment where compiler changes have cascading effects on the standard library and generated artifacts.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -157,12 +161,13 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **Module-level phase annotations (e.g., [comptime]) were failing to propagate to individual items unless explicitly handled in inheritance logic.**: Refactor 'shouldFilter' to check both module and item-level annotations, allowing item-level to override or complement module defaults.
-- **Circular dependencies or runtime crashes occur when modules containing AST pointers (like CompilerContext) are marked for runtime emission.**: Strictly mark modules with AST dependencies as ~[comptime] and ensure the emitter filters them out of runtime builds.
-- **Array literals assigned to non-array types or mutable targets ([]T) lacked strict validation, leading to type-resolution gaps.**: Enforce strict type-driven emission where array literals resolve to a known slice type from context or error out; forbid mutable targets to prevent hidden allocations.
-- **Large test result JSONs (6000+ lines) can bloat the repository and make diffs difficult to review.**: Maintain 'test-results/latest.json' as the primary pointer and consider git-ignoring individual timestamped runs.
+- **AST metadata (impl_of, is_impl, preamble_code) is lost during 'reconstructive' transformations in the pipeline.**: Audit and update ast_functional.zig (map/filter/transformWhere) and auto_discharge_inserter.zig to explicitly copy metadata fields when creating new node instances.
+- **Variable name collisions (e.g., result_0) in output_emitted.zig when multiple flows are transformed in the same scope.**: Use unique, prefixed naming conventions like __mock_result_* for testing transforms and restrict emission to specific source blocks.
+- **Invalid Zig syntax (. =>) generated for comptime thunks when a flow returns void.**: Skip switch generation for void continuations in the thunk generator logic.
+- **Hardcoded field names (like '.expr') in codegen break when host Zig structs use custom naming.**: Track the actual field name during the parameter detection phase and store it in the event metadata for use during emission.
+- **Stale 'koruc' binaries leading to serialization mismatches after AST schema changes.**: Enforce a 'zig build' step immediately following any changes to src/ast.zig or the parser.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 2/6/2026, 7:22:11 PM
+> Last updated: 2/8/2026, 1:40:56 PM
