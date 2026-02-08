@@ -172,7 +172,7 @@ const MESSAGES: u64 = 10_000_000;
 | continue { sum: u64, received: u64 }
 | done { sum: u64 }
 
-~proc consume_loop = dequeue(ring: ring)
+~consume_loop = dequeue(ring: ring)
 | some msg |> check_if_done(sum: sum + msg.value, received: received + 1)
     | continue s |> continue { sum: s.sum, received: s.received }
     | done s |> done { sum: s.sum }

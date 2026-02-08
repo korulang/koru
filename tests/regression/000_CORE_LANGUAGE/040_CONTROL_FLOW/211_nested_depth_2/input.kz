@@ -8,29 +8,22 @@
 // ============================================================================
 
 const std = @import("std");
+~import "$std/io"
 
 // Simple events that add values
 ~event add_one { value: i32 }
 | done { result: i32 }
 
-~proc add_one = done { result: value + 1 }
+~add_one = done { result: value + 1 }
 
 ~event add_two { value: i32 }
 | done { result: i32 }
 
-~proc add_two = done { result: value + 2 }
+~add_two = done { result: value + 2 }
 
-// Chain: start → add_one → add_two → result
+// Chain: 10 → add_one → add_two → print result
 // Depth 2: Two nested continuations
-~event chain { start: i32 }
-| done { result: i32 }
-
-~proc chain = add_one(value: start)
-| done a |> add_two(value: a.result)
-    | done b |> done { result: b.result }
-
 // Test: 10 + 1 + 2 = 13
-pub fn main() void {
-    const result = chain_event.handler(.{ .start = 10 });
-    std.debug.print("{}\n", .{result.done.result});
-}
+~add_one(value: 10)
+| done a |> add_two(value: a.result)
+    | done b |> std.io:print.ln("{{b.result}}")

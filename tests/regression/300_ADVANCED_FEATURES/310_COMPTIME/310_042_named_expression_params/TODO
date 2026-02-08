@@ -1,1 +1,1 @@
-Named Expression parameter extraction not yet implemented in transform handler generation (main.zig)
+Should use Pattern Branches instead of named Expression parameters. Pattern Branches are the better mechanism for this.

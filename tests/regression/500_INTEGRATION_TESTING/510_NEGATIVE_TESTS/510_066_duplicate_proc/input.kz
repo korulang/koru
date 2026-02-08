@@ -4,5 +4,5 @@
 ~event foo { x: i32 }
 | done {}
 
-~proc foo = done {}
-~proc foo = done {}
+~foo = done {}
+~foo = done {}

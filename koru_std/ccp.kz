@@ -43,8 +43,7 @@ const std = @import("std");
 
     const timestamp = std.time.milliTimestamp();
     var timestamp_buf: [32]u8 = undefined;
-    const timestamp_str = std.fmt.bufPrint(&timestamp_buf, "{d}", .{timestamp}) catch
-        return;
+    const timestamp_str = std.fmt.bufPrint(&timestamp_buf, "{d}", .{timestamp}) catch unreachable;
     @memcpy(buffer[pos..][0..timestamp_str.len], timestamp_str);
     pos += timestamp_str.len;
 
@@ -82,8 +81,7 @@ const std = @import("std");
     @memcpy(buffer[pos..][0..dur_prefix.len], dur_prefix);
     pos += dur_prefix.len;
     var dur_buf: [32]u8 = undefined;
-    const dur_str = std.fmt.bufPrint(&dur_buf, "{d}", .{timestamp_ns}) catch
-        return;
+    const dur_str = std.fmt.bufPrint(&dur_buf, "{d}", .{timestamp_ns}) catch unreachable;
     @memcpy(buffer[pos..][0..dur_str.len], dur_str);
     pos += dur_str.len;
 

@@ -1,4 +1,0 @@
-Hello executed
-Universal observer fired!
-Goodbye executed
-Universal observer fired!

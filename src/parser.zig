@@ -1620,28 +1620,31 @@ pub const Parser = struct {
             return error.ParseError;
         };
 
-        // Find the path (everything before { or =)
-        // Check for both ~proc name { ... } and ~proc name = flow syntax
+        // Find the path (everything before {)
+        // Proc bodies are always host language in braces. The = syntax is for flows only.
         const brace_idx_opt = std.mem.indexOf(u8, after_proc, "{");
         const equals_idx_opt = std.mem.indexOf(u8, after_proc, "=");
 
-        const is_flow_expression = if (brace_idx_opt) |brace_idx|
-            if (equals_idx_opt) |equals_idx|
-                equals_idx < brace_idx // = comes before { means it's a flow expression
-            else
-                false
-        else
-            equals_idx_opt != null; // No { but has = means flow expression
-
-        const delimiter_idx = if (is_flow_expression)
-            equals_idx_opt.?
-        else
-            brace_idx_opt orelse {
+        // Reject ~proc X = ... syntax — procs contain host language, not flow expressions
+        if (equals_idx_opt) |equals_idx| {
+            if (brace_idx_opt == null or equals_idx < brace_idx_opt.?) {
                 try self.reporter.addError(
                     .PARSE003,
                     self.current - 1,
                     1,
-                    "proc declaration missing body or flow expression",
+                    "proc declarations must use braces for host language code. The '=' syntax is only valid on flows.",
+                    .{},
+                );
+                return error.ParseError;
+            }
+        }
+
+        const delimiter_idx = brace_idx_opt orelse {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current - 1,
+                    1,
+                    "proc declaration missing body",
                     .{},
                 );
                 return error.ParseError;
@@ -1664,130 +1667,8 @@ pub const Parser = struct {
 
         const path = try lexer.parseQualifiedPath(self.allocator, path_for_parsing, ast);
 
-        // Handle two cases: ~proc name { body } vs ~proc name = flow
-        var raw_body: []const u8 = undefined;
-
-        if (is_flow_expression) {
-            // Flow expression: transform to `return ~flow;` so existing inline flow extraction works
-            // Extract flow body after =, looking for lines that continue the flow
-            var flow_lines = try std.ArrayList(u8).initCapacity(self.allocator, 256);
-            defer flow_lines.deinit(self.allocator);
-
-            // Get the first line after =
-            const first_line = lexer.trim(after_proc[delimiter_idx + 1 ..]);
-            try flow_lines.appendSlice(self.allocator, first_line);
-
-            // Track base indentation from first continuation line
-            var base_indent: ?usize = null;
-
-            // Continue reading lines that are part of the flow (start with | or are continuations)
-            while (self.current < self.lines.len) {
-                const next_line = self.lines[self.current];
-                const trimmed_next = lexer.trim(next_line);
-
-                // Check if this line continues the flow (starts with |)
-                if (trimmed_next.len > 0 and trimmed_next[0] == '|') {
-                    const line_indent = lexer.getIndent(next_line);
-
-                    // Set base indent from first continuation line
-                    if (base_indent == null) {
-                        base_indent = line_indent;
-                    }
-
-                    // Calculate relative indent
-                    const relative_indent = line_indent - base_indent.?;
-
-                    try flow_lines.append(self.allocator, '\n');
-                    // Preserve relative indentation
-                    for (0..relative_indent) |_| {
-                        try flow_lines.append(self.allocator, ' ');
-                    }
-                    try flow_lines.appendSlice(self.allocator, trimmed_next);
-                    self.current += 1;
-                } else {
-                    // Not part of flow, stop
-                    break;
-                }
-            }
-
-            // Check if this is a branch constructor pattern: "branch_name {}"
-            const flow_body = try flow_lines.toOwnedSlice(self.allocator);
-            const trimmed_flow = lexer.trim(flow_body);
-
-            // Branch constructor detection: identifier followed by {}
-            const is_branch_constructor = blk: {
-                // Find first whitespace or {
-                var i: usize = 0;
-                while (i < trimmed_flow.len) : (i += 1) {
-                    const c = trimmed_flow[i];
-                    if (c == ' ' or c == '\t' or c == '{') break;
-                }
-                if (i >= trimmed_flow.len) break :blk false;
-
-                const identifier = lexer.trim(trimmed_flow[0..i]);
-                const rest = lexer.trim(trimmed_flow[i..]);
-
-                // Check if rest is just "{}" or "{ }" with optional fields
-                if (rest.len >= 2 and rest[0] == '{' and std.mem.endsWith(u8, rest, "}")) {
-                    break :blk identifier.len > 0;
-                }
-                break :blk false;
-            };
-
-            const transformed = if (is_branch_constructor) blk: {
-                // Branch constructor: generate direct return with field expressions
-                // Extract branch name
-                const branch_end = std.mem.indexOf(u8, trimmed_flow, " ") orelse std.mem.indexOf(u8, trimmed_flow, "{").?;
-                const branch_name = trimmed_flow[0..branch_end];
-
-                // Extract field expressions from { ... }
-                const brace_start = std.mem.indexOf(u8, trimmed_flow, "{").?;
-                const brace_end = std.mem.lastIndexOf(u8, trimmed_flow, "}").?;
-                const fields_str = lexer.trim(trimmed_flow[brace_start + 1 .. brace_end]);
-
-                // Transform Koru field syntax to Zig syntax
-                // Koru: "field: value" or "field1: value1, field2: value2"
-                // Zig: ".field = value" or ".field1 = value1, .field2 = value2"
-                var zig_fields = try std.ArrayList(u8).initCapacity(self.allocator, fields_str.len + 20);
-                defer zig_fields.deinit(self.allocator);
-
-                var field_iter = std.mem.splitScalar(u8, fields_str, ',');
-                var first = true;
-                while (field_iter.next()) |field| {
-                    const trimmed_field = lexer.trim(field);
-                    if (trimmed_field.len == 0) continue;
-
-                    if (!first) try zig_fields.appendSlice(self.allocator, ", ");
-                    first = false;
-
-                    // Split on : to get field name and value
-                    if (std.mem.indexOf(u8, trimmed_field, ":")) |colon_idx| {
-                        const field_name = lexer.trim(trimmed_field[0..colon_idx]);
-                        const field_value = lexer.trim(trimmed_field[colon_idx + 1 ..]);
-
-                        try zig_fields.append(self.allocator, '.');
-                        try zig_fields.appendSlice(self.allocator, field_name);
-                        try zig_fields.appendSlice(self.allocator, " = ");
-                        try zig_fields.appendSlice(self.allocator, field_value);
-                    } else {
-                        // No colon, just copy as-is (might be a single expression)
-                        try zig_fields.appendSlice(self.allocator, trimmed_field);
-                    }
-                }
-
-                const zig_fields_str = try zig_fields.toOwnedSlice(self.allocator);
-                defer self.allocator.free(zig_fields_str);
-
-                // Generate return statement with transformed fields
-                break :blk try std.fmt.allocPrint(self.allocator, "return .{{ .{s} = .{{ {s} }} }};", .{ branch_name, zig_fields_str });
-            } else
-                // Regular flow: wrap with ~ for inline flow extraction
-                try std.fmt.allocPrint(self.allocator, "return ~{s};", .{flow_body});
-            raw_body = transformed;
-        } else {
-            // Brace body: extract balanced braces
-            raw_body = try self.extractProcBody(after_proc[delimiter_idx..]);
-        }
+        // Proc bodies are always host language in braces
+        const raw_body = try self.extractProcBody(after_proc[delimiter_idx..]);
 
         // Check if this proc has the [raw] annotation - if so, skip inline flow extraction
         var has_raw_annotation = false;

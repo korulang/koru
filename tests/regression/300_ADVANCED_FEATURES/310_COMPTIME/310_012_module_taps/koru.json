@@ -1,8 +1,0 @@
-{
-  "name": "test-310-012-module-taps",
-  "version": "0.1.0",
-  "paths": {
-    "std": "../../../../../koru_std",
-    "test": "."
-  }
-}
