@@ -2938,7 +2938,15 @@ pub fn emitFlow(
 
     // Zero-overhead control flow: if inline_body is set, emit it directly
     // This enables ~if, ~for to emit literal Zig control flow instead of handler calls
-    if (flow.inline_body) |inline_code| {
+    if (flow.inline_body) |inline_code_raw| {
+        const inline_stmt_marker = "//@koru:inline_stmt\n";
+        var inline_code = inline_code_raw;
+        var is_inline_stmt = false;
+        if (std.mem.indexOf(u8, inline_code, inline_stmt_marker)) |marker_idx| {
+            is_inline_stmt = true;
+            inline_code = inline_code[marker_idx + inline_stmt_marker.len..];
+        }
+
         const trimmed_inline = std.mem.trimRight(u8, inline_code, " \t\r\n");
         // Check if inline code is already a statement (ends with ;) or is comment-only (no ; needed)
         const is_comment_only = blk: {
@@ -2946,7 +2954,7 @@ pub fn emitFlow(
             break :blk trimmed_left.len == 0 or
                        (trimmed_left.len >= 2 and std.mem.eql(u8, trimmed_left[0..2], "//"));
         };
-        const inline_is_statement = is_comment_only or
+        const inline_is_statement = is_comment_only or is_inline_stmt or
             (trimmed_inline.len > 0 and trimmed_inline[trimmed_inline.len - 1] == ';');
         const only_void_continuations = blk: {
             if (flow.continuations.len == 0) break :blk true;

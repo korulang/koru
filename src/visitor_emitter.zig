@@ -55,6 +55,76 @@ fn writeMangledSegment(code_emitter: *emitter.CodeEmitter, segment: []const u8) 
     }
 }
 
+/// Emit inline statement code dedented and reindented to current emitter level.
+fn emitInlineStmtDedented(code_emitter: *emitter.CodeEmitter, inline_code: []const u8) !void {
+    // Build current indent string (4 spaces per level).
+    var indent_buf: [64]u8 = undefined;
+    var indent_pos: usize = 0;
+    var idx: usize = 0;
+    while (idx < code_emitter.indent_level) : (idx += 1) {
+        @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
+        indent_pos += 4;
+    }
+    const indent_str = indent_buf[0..indent_pos];
+
+    // Find minimum indentation across non-empty lines.
+    var min_indent: usize = std.math.maxInt(usize);
+    var i: usize = 0;
+    while (i < inline_code.len) {
+        var line_end = i;
+        while (line_end < inline_code.len and inline_code[line_end] != '\n') {
+            line_end += 1;
+        }
+
+        var j = i;
+        var count: usize = 0;
+        while (j < line_end and (inline_code[j] == ' ' or inline_code[j] == '\t')) : (j += 1) {
+            count += 1;
+        }
+        if (j < line_end) {
+            if (count < min_indent) min_indent = count;
+        }
+
+        i = line_end;
+        if (i < inline_code.len and inline_code[i] == '\n') i += 1;
+    }
+    if (min_indent == std.math.maxInt(usize)) min_indent = 0;
+
+    // Emit lines with dedent + current indent.
+    i = 0;
+    while (i < inline_code.len) {
+        var line_end = i;
+        while (line_end < inline_code.len and inline_code[line_end] != '\n') {
+            line_end += 1;
+        }
+
+        // Check if line has non-whitespace content.
+        var has_content = false;
+        var k = i;
+        while (k < line_end) : (k += 1) {
+            if (inline_code[k] != ' ' and inline_code[k] != '\t') {
+                has_content = true;
+                break;
+            }
+        }
+
+        if (has_content) {
+            try code_emitter.write(indent_str);
+            var start = i;
+            var skipped: usize = 0;
+            while (start < line_end and skipped < min_indent and (inline_code[start] == ' ' or inline_code[start] == '\t')) {
+                start += 1;
+                skipped += 1;
+            }
+            try code_emitter.write(inline_code[start..line_end]);
+        }
+
+        try code_emitter.write("\n");
+        i = line_end;
+        if (i < inline_code.len and inline_code[i] == '\n') i += 1;
+    }
+}
+
 /// Use EmitMode from emitter_helpers to avoid duplication
 pub const EmitMode = emitter.EmitMode;
 
@@ -1386,12 +1456,35 @@ pub const VisitorEmitter = struct {
                                     try self.code_emitter.write("_ = &__koru_event_input;\n");
 
                                     // Generate the flow invocation and continuations
-                                    if (flow.inline_body) |inline_code| {
+                                    if (flow.inline_body) |inline_code_raw| {
                                         // Transform set inline_body -- emit inline instead of handler call
-                                        try self.code_emitter.writeIndent();
-                                        try self.code_emitter.write("const result = ");
-                                        try self.code_emitter.write(inline_code);
-                                        try self.code_emitter.write(";\n");
+                                        const inline_stmt_marker = "//@koru:inline_stmt\n";
+                                        var inline_code = inline_code_raw;
+                                        var is_inline_stmt = false;
+                                        if (std.mem.indexOf(u8, inline_code, inline_stmt_marker)) |marker_idx| {
+                                            is_inline_stmt = true;
+                                            inline_code = inline_code[marker_idx + inline_stmt_marker.len..];
+                                        }
+
+                                        if (is_inline_stmt) {
+                                            const has_named_branches = blk: {
+                                                for (flow.continuations) |cont| {
+                                                    if (cont.branch.len > 0) break :blk true;
+                                                }
+                                                break :blk false;
+                                            };
+                                            if (has_named_branches) {
+                                                try self.code_emitter.writeIndent();
+                                                try self.code_emitter.write("@compileError(\"inline_stmt cannot be used with named continuations\");\n");
+                                            } else {
+                                                try emitInlineStmtDedented(self.code_emitter, inline_code);
+                                            }
+                                        } else {
+                                            try self.code_emitter.writeIndent();
+                                            try self.code_emitter.write("const result = ");
+                                            try self.code_emitter.write(inline_code);
+                                            try self.code_emitter.write(";\n");
+                                        }
                                     } else {
                                         try self.code_emitter.writeIndent();
                                         try self.code_emitter.write("const result = ");
@@ -1594,12 +1687,35 @@ pub const VisitorEmitter = struct {
                                                 try self.code_emitter.write("_ = &__koru_event_input;\n");
 
                                                 // Generate the invocation (or inline_body if transform set it)
-                                                if (flow.inline_body) |inline_code| {
+                                                if (flow.inline_body) |inline_code_raw| {
                                                     // Transform set inline_body -- emit inline instead of handler call
-                                                    try self.code_emitter.writeIndent();
-                                                    try self.code_emitter.write("const result = ");
-                                                    try self.code_emitter.write(inline_code);
-                                                    try self.code_emitter.write(";\n");
+                                                    const inline_stmt_marker = "//@koru:inline_stmt\n";
+                                                    var inline_code = inline_code_raw;
+                                                    var is_inline_stmt = false;
+                                                    if (std.mem.indexOf(u8, inline_code, inline_stmt_marker)) |marker_idx| {
+                                                        is_inline_stmt = true;
+                                                        inline_code = inline_code[marker_idx + inline_stmt_marker.len..];
+                                                    }
+
+                                                    if (is_inline_stmt) {
+                                                        const has_named_branches = blk: {
+                                                            for (flow.continuations) |cont| {
+                                                                if (cont.branch.len > 0) break :blk true;
+                                                            }
+                                                            break :blk false;
+                                                        };
+                                                        if (has_named_branches) {
+                                                            try self.code_emitter.writeIndent();
+                                                            try self.code_emitter.write("@compileError(\"inline_stmt cannot be used with named continuations\");\n");
+                                                        } else {
+                                                            try emitInlineStmtDedented(self.code_emitter, inline_code);
+                                                        }
+                                                    } else {
+                                                        try self.code_emitter.writeIndent();
+                                                        try self.code_emitter.write("const result = ");
+                                                        try self.code_emitter.write(inline_code);
+                                                        try self.code_emitter.write(";\n");
+                                                    }
                                                 } else {
                                                     try self.code_emitter.writeIndent();
                                                     try self.code_emitter.write("const result = ");
