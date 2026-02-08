@@ -144,9 +144,6 @@
             "path": ["getUserData"],
             "module": "input",
             "target": "zig",
-            "inline_flows": [
-
-            ],
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",
@@ -222,9 +219,6 @@
             "path": ["renderHTML"],
             "module": "input",
             "target": "zig",
-            "inline_flows": [
-
-            ],
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_009_source_with_scope_capture/input.kz",

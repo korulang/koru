@@ -1128,8 +1128,6 @@ pub const PROGRAM_AST = Program{
                     \\    };
                     \\    return .{ .created = .{ .ctx = ctx } };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -1177,8 +1175,6 @@ pub const PROGRAM_AST = Program{
                     \\    ) catch "Passes: <unknown> (flow-based: frontend, analysis, emission)";
                     \\    return .{ .formatted = .{ .metrics = metrics } };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -1224,8 +1220,6 @@ pub const PROGRAM_AST = Program{
                     \\    // Print to stderr with separator showing which dump this is
                     \\    std.debug.print("=== AST DUMP: {s} ===\n{s}\n", .{flag, json_output});
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -1696,8 +1690,6 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    return .{ .ctx = updated_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -1833,8 +1825,6 @@ pub const PROGRAM_AST = Program{
                     \\    mutable_ctx.passes_completed += 1;
                     \\    return .{ .ctx = mutable_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -2687,8 +2677,6 @@ pub const PROGRAM_AST = Program{
                     \\    updated_ctx.current_pass = "emission";
                     \\    return .{ .ctx = .{ .ctx = updated_ctx, .code = final_code } };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -2760,8 +2748,6 @@ pub const PROGRAM_AST = Program{
                     \\    // This is fine for comptime usage where everything gets evaluated away
                     \\    return .{ .parsed = .{ .items = parse_result.source_file.items } };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -3098,8 +3084,6 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    return .{ .ctx = updated_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -3199,8 +3183,6 @@ pub const PROGRAM_AST = Program{
                     \\    mutable_ctx.passes_completed += 1;
                     \\    return .{ .ctx = mutable_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -3290,8 +3272,6 @@ pub const PROGRAM_AST = Program{
                     \\    mutable_ctx.passes_completed += 1;
                     \\    return .{ .ctx = mutable_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -3462,8 +3442,6 @@ pub const PROGRAM_AST = Program{
                     \\    mutable_ctx.passes_completed += 1;
                     \\    return .{ .ctx = mutable_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -3554,8 +3532,6 @@ pub const PROGRAM_AST = Program{
                     \\    mutable_ctx.passes_completed += 1;
                     \\    return .{ .ctx = mutable_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -3580,8 +3556,6 @@ pub const PROGRAM_AST = Program{
                     \\    mutable_ctx.passes_completed += 1;
                     \\    return .{ .ctx = mutable_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -3612,8 +3586,6 @@ pub const PROGRAM_AST = Program{
                     \\    updated_ctx.passes_completed += 1;
                     \\    return .{ .ctx = updated_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -3662,8 +3634,6 @@ pub const PROGRAM_AST = Program{
                     \\    updated_ctx.passes_completed += 1;
                     \\    return .{ .ctx = updated_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -3980,8 +3950,6 @@ pub const PROGRAM_AST = Program{
                     \\    }
                     \\    return .{ .failed = .{ .message = "Mock shape validation failed" } };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -4346,8 +4314,6 @@ pub const PROGRAM_AST = Program{
                     \\    }
                     \\    return .{ .transformed = .{ .program = program } };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -4719,8 +4685,6 @@ pub const PROGRAM_AST = Program{
                     \\        return .{ .transformed = .{ .program = program } };
                     \\    }
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -4757,8 +4721,6 @@ pub const PROGRAM_AST = Program{
                     \\    // assert.ok is a pass-through checkpoint - do nothing
                     \\    // The test passed this branch by reaching this point
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -4801,8 +4763,6 @@ pub const PROGRAM_AST = Program{
                     \\    const msg = message orelse "Assertion failed";
                     \\    @panic(msg);
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                     "pure",
                 },
@@ -5169,8 +5129,6 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    return .{ .launched = .{} };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -5680,8 +5638,6 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    std.debug.print("\n", .{});
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -5718,8 +5674,6 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    // Void event - collected during AST walking
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -6203,8 +6157,6 @@ pub const PROGRAM_AST = Program{
                     \\        }
                     \\    }
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -6574,8 +6526,6 @@ pub const PROGRAM_AST = Program{
                     \\        }
                     \\    }
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -7217,8 +7167,6 @@ pub const PROGRAM_AST = Program{
                     \\        @panic("capture transform: flow not found");
                     \\    }
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -7367,8 +7315,6 @@ pub const PROGRAM_AST = Program{
                     \\        return .{ .transformed = .{ .program = program } };
                     \\    }
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -7509,8 +7455,6 @@ pub const PROGRAM_AST = Program{
                     \\    // TODO: Actually validate Zig syntax
                     \\    return .{ .added = .{} };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -7653,8 +7597,6 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    return .{ .configured = .{ .count = count } };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -8150,8 +8092,6 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    return .{ .collected = .{ .ctx = updated_ctx } };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -8230,8 +8170,6 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    return .{ .ctx = updated_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -8332,8 +8270,6 @@ pub const PROGRAM_AST = Program{
                     \\    updated_ctx.passes_completed += 1;
                     \\    return .{ .ctx = updated_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -8399,8 +8335,6 @@ pub const PROGRAM_AST = Program{
                     \\    updated_ctx.passes_completed += 1;
                     \\    return .{ .ctx = updated_ctx };
                     ,
-                .inline_flows = &[_]Flow{
-                },
                 .annotations = &.{
                 },
                 .target = null,
@@ -8722,8 +8656,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    std.debug.print("{s}", .{text});
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,
@@ -8756,8 +8688,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    std.debug.print("{s}\n", .{text});
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,
@@ -8826,8 +8756,6 @@ pub const PROGRAM_AST = Program{
                 \\    // For now, return a placeholder
                 \\    return .{ .failed = .{ .message = "readln not yet implemented" } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,
@@ -8877,8 +8805,6 @@ pub const PROGRAM_AST = Program{
                 \\    const duped = std.heap.page_allocator.dupe(u8, buf[0..end]) catch "";
                 \\    return .{ .ok = .{ .line = duped } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,
@@ -8934,8 +8860,6 @@ pub const PROGRAM_AST = Program{
                 \\    };
                 \\    return .{ .printed = .{} };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,
@@ -8977,8 +8901,6 @@ pub const PROGRAM_AST = Program{
                 \\    std.debug.print("✅ {s}\n", .{message});
                 \\    return .{ .printed = .{} };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,
@@ -9020,8 +8942,6 @@ pub const PROGRAM_AST = Program{
                 \\    std.debug.print("⚠️  {s}\n", .{message});
                 \\    return .{ .printed = .{} };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,
@@ -9095,8 +9015,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    return .{ .ok = .{ .text = content } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,
@@ -9173,8 +9091,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    return .{ .ok = .{ .text = content } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,
@@ -9220,8 +9136,6 @@ pub const PROGRAM_AST = Program{
                 \\    }
                 \\    return .{ .ok = .{ .argv = arg_list.toOwnedSlice() catch &.{} } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,
@@ -9632,8 +9546,6 @@ pub const PROGRAM_AST = Program{
                 \\        return .{ .transformed = .{ .program = program } };
                 \\    }
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,
@@ -10046,8 +9958,6 @@ pub const PROGRAM_AST = Program{
                 \\        }
                 \\    }
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &.{
             },
             .target = null,

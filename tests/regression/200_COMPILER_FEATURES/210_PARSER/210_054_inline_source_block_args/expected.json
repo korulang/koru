@@ -129,9 +129,6 @@
             "path": ["inline", "source"],
             "module": "input",
             "target": "zig",
-            "inline_flows": [
-
-            ],
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
@@ -171,9 +168,6 @@
             "path": ["setup"],
             "module": "input",
             "target": "zig",
-            "inline_flows": [
-
-            ],
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",

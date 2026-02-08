@@ -185,7 +185,7 @@ const std = @import("std");
         .target = null, // null = Zig
         .module = event_decl.module,
         .location = event_decl.location,
-        .inline_flows = &[_]ast.Flow{},
+
     };
 
     // std.debug.print("[PARSER TRANSFORM] Created {s}.parse proc\n", .{event_name});

@@ -215,9 +215,6 @@
             "path": ["log"],
             "module": "input",
             "target": "zig",
-            "inline_flows": [
-
-            ],
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",

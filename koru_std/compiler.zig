@@ -522,8 +522,6 @@ pub const PROGRAM_AST = Program{
                 \\    const requires_slice = temp_array[0..count];
                 \\    return .{ .collected = .{ .ast = program_ast, .requires = requires_slice } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
             },
             .target = null,
@@ -681,8 +679,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    return .{ .emitted = .{ .path = __koru_event_input.output_path } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
             },
             .target = null,
@@ -780,8 +776,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    return .{ .emitted = .{ .code = final_code } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
                 "raw",
             },
@@ -852,8 +846,6 @@ pub const PROGRAM_AST = Program{
                 \\    // This is fine for comptime usage where everything gets evaluated away
                 \\    return .{ .parsed = .{ .items = parse_result.source_file.items } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
                 "raw",
             },
@@ -1082,8 +1074,6 @@ pub const PROGRAM_AST = Program{
                 \\        .events_executed = 0  // No longer tracked after debug logging removal
                 \\    } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
                 "raw",
             },
@@ -1150,8 +1140,6 @@ pub const PROGRAM_AST = Program{
                 \\    // Validation succeeded
                 \\    return .{ .valid = .{ .ast = __koru_event_input.ast } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
                 "raw",
             },
@@ -1276,8 +1264,6 @@ pub const PROGRAM_AST = Program{
                 \\    // All phantom states validated!
                 \\    return .{ .valid = .{ .ast = __koru_event_input.ast } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
                 "raw",
             },
@@ -1396,8 +1382,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    return .{ .transformed = .{ .ast = new_ast } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
             },
             .target = null,
@@ -1487,8 +1471,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    return .{ .instrumented = .{ .ast = new_ast } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
             },
             .target = null,
@@ -1531,8 +1513,6 @@ pub const PROGRAM_AST = Program{
                 \\    // For now, just pass through the AST unchanged
                 \\    return .{ .processed = .{ .ast = __koru_event_input.ast } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
             },
             .target = null,
@@ -2043,8 +2023,6 @@ pub const PROGRAM_AST = Program{
                 \\    const requires_slice = temp_array[0..count];
                 \\    return .{ .collected = .{ .ast = program_ast, .requires = requires_slice } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
             },
             .target = null,
@@ -2202,8 +2180,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    return .{ .emitted = .{ .path = __koru_event_input.output_path } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
             },
             .target = null,
@@ -2301,8 +2277,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    return .{ .emitted = .{ .code = final_code } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
                 "raw",
             },
@@ -2373,8 +2347,6 @@ pub const PROGRAM_AST = Program{
                 \\    // This is fine for comptime usage where everything gets evaluated away
                 \\    return .{ .parsed = .{ .items = parse_result.source_file.items } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
                 "raw",
             },
@@ -2603,8 +2575,6 @@ pub const PROGRAM_AST = Program{
                 \\        .events_executed = 0  // No longer tracked after debug logging removal
                 \\    } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
                 "raw",
             },
@@ -2671,8 +2641,6 @@ pub const PROGRAM_AST = Program{
                 \\    // Validation succeeded
                 \\    return .{ .valid = .{ .ast = __koru_event_input.ast } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
                 "raw",
             },
@@ -2797,8 +2765,6 @@ pub const PROGRAM_AST = Program{
                 \\    // All phantom states validated!
                 \\    return .{ .valid = .{ .ast = __koru_event_input.ast } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
                 "raw",
             },
@@ -2917,8 +2883,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    return .{ .transformed = .{ .ast = new_ast } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
             },
             .target = null,
@@ -3008,8 +2972,6 @@ pub const PROGRAM_AST = Program{
                 \\
                 \\    return .{ .instrumented = .{ .ast = new_ast } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
             },
             .target = null,
@@ -3052,8 +3014,6 @@ pub const PROGRAM_AST = Program{
                 \\    // For now, just pass through the AST unchanged
                 \\    return .{ .processed = .{ .ast = __koru_event_input.ast } };
                 ,
-            .inline_flows = &[_]Flow{
-            },
             .annotations = &[_][]const u8{
             },
             .target = null,

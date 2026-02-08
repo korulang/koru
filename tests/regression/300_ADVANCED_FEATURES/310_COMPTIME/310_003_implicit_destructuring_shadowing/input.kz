@@ -1,9 +1,9 @@
 // ============================================================================
-// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
+// Test: Implicit destructuring shadowing
+// Implicit field destructuring currently generates `const name = e.name`
+// which shadows module-level `const name`. The emitter should detect this
+// and generate a non-colliding name (e.g. `const __name = e.name`).
 // ============================================================================
-// Test 008: Shorthand syntax for parameters
-// When a variable name matches a parameter name, can use shorthand
-// This test will likely FAIL as the feature may not be implemented
 const std = @import("std");
 
 ~event greet { name: []const u8 }
