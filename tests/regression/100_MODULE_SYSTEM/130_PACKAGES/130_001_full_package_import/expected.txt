@@ -1,5 +1,0 @@
-Test: full package import
-From parent io.kz
-No file
-Written to console
-Connection failed

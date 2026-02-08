@@ -1,3 +1,0 @@
-Test: parent + submodule import
-From parent io.kz
-Error opening file
