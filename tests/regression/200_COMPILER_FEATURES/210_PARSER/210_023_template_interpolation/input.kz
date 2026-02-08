@@ -120,7 +120,6 @@ const std = @import("std");
     const runtime_proc = ast.ProcDecl{
         .path = renderHTML_path,
         .body = proc_body,
-        .inline_flows = &[_]ast.Flow{},
         .annotations = &[_][]const u8{},
         .target = null,
         .is_impl = true,

@@ -550,6 +550,12 @@ pub const FlowChecker = struct {
         for (continuations, 0..) |cont, i| {
             for (continuations[i + 1 ..]) |other| {
                 if (std.mem.eql(u8, cont.branch, other.branch)) {
+                    // When-clauses allow multiple handlers for the same branch:
+                    //   | high h when (h.x > 10) |> ...
+                    //   | high h when (h.x > 5) |> ...
+                    //   | high |> ...  (else case)
+                    if (cont.condition != null or other.condition != null) continue;
+
                     // Found duplicate branch at same level - this is an error
                     try self.reporter.addError(
                         .SHAPE002,

@@ -8,16 +8,10 @@
 | negative { val: i32 }
 | zero {}
 
-~event compute { value: i32 }
-| result { doubled: i32 }
-
-~proc compute {
-    const output = ~validate(val: value)
-        | positive p |> result { doubled: p.val * 2 }
-        | negative |> result { doubled: 0 }
-        | zero |> result {
-            doubled: 0
-        }
-
-    return output;
-}
+// Multi-line branch constructor: the closing brace on its own line
+~validate(val: 0)
+| positive p |> result { doubled: p.val * 2 }
+| negative |> result { doubled: 0 }
+| zero |> result {
+        doubled: 0
+    }
