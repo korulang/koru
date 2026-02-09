@@ -280,184 +280,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         var comptime_event_names = try std.ArrayList([]const u8).initCapacity(allocator, 16);
         defer comptime_event_names.deinit(allocator);
 
-        // Also track transform events (Source/Program params) to exclude from comptime thunks
-        var transform_event_names = try std.ArrayList([]const u8).initCapacity(allocator, 16);
-        defer transform_event_names.deinit(allocator);
-
-        for (source_file.items) |item| {
-            if (item == .event_decl) {
-                const event = item.event_decl;
-
-                // Skip compiler.* events - they're handled separately
-                if (event.path.segments.len > 0 and std.mem.eql(u8, event.path.segments[0], "compiler")) {
-                    continue;
-                }
-
-                // Skip [norun] events - they're metadata only, not executable
-                var is_norun = false;
-                for (event.annotations) |ann| {
-                    if (std.mem.eql(u8, ann, "norun")) {
-                        is_norun = true;
-                        break;
-                    }
-                }
-                if (is_norun) {
-                    continue;
-                }
-
-                // Check if this is a comptime event (Source/Program parameters OR [transform] annotation)
-                var is_comptime = false;
-
-                // Check for [transform] annotation
-                for (event.annotations) |ann| {
-                    if (std.mem.eql(u8, ann, "transform")) {
-                        is_comptime = true;
-                        break;
-                    }
-                }
-
-                // Also check for Source/Program parameters
-                if (!is_comptime) {
-                    for (event.input.fields) |field| {
-                        if (field.is_source) {
-                            is_comptime = true;
-                            break;
-                        }
-                        if (std.mem.eql(u8, field.type, "Program") or
-                            std.mem.eql(u8, field.type, "Program") or
-                            std.mem.eql(u8, field.type, "*const Program"))
-                        {
-                            is_comptime = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (is_comptime) {
-                    // Build event name: module:event or just event
-                    var event_name_buf: [256]u8 = undefined;
-                    var event_name_len: usize = 0;
-
-                    if (event.path.module_qualifier) |mq| {
-                        @memcpy(event_name_buf[0..mq.len], mq);
-                        event_name_len += mq.len;
-                        event_name_buf[event_name_len] = ':';
-                        event_name_len += 1;
-                    }
-
-                    for (event.path.segments, 0..) |seg, i| {
-                        if (i > 0) {
-                            event_name_buf[event_name_len] = '.';
-                            event_name_len += 1;
-                        }
-                        @memcpy(event_name_buf[event_name_len .. event_name_len + seg.len], seg);
-                        event_name_len += seg.len;
-                    }
-
-                    const event_name = try allocator.dupe(u8, event_name_buf[0..event_name_len]);
-                    // Events with Source/Program are [comptime|transform] - add to transform list, NOT comptime thunks
-                    try transform_event_names.append(allocator, event_name);
-                }
-            }
-
-            // Also check events in imported modules
-            if (item == .module_decl) {
-                const module = item.module_decl;
-                for (module.items) |mod_item| {
-                    if (mod_item == .event_decl) {
-                        const event = mod_item.event_decl;
-
-                        // Skip compiler.* events
-                        if (event.path.segments.len > 0 and std.mem.eql(u8, event.path.segments[0], "compiler")) {
-                            continue;
-                        }
-
-                        // Skip [norun] events - they're metadata only, not executable
-                        var is_norun = false;
-                        for (event.annotations) |ann| {
-                            if (std.mem.eql(u8, ann, "norun")) {
-                                is_norun = true;
-                                break;
-                            }
-                        }
-                        if (is_norun) {
-                            continue;
-                        }
-
-                        // Check if this is a comptime event (Source/Program parameters OR [transform] annotation)
-                        var is_comptime = false;
-
-                        // Check for [transform] annotation
-                        for (event.annotations) |ann| {
-                            if (std.mem.eql(u8, ann, "transform")) {
-                                is_comptime = true;
-                                break;
-                            }
-                        }
-
-                        // Also check for Source/Program parameters
-                        if (!is_comptime) {
-                            for (event.input.fields) |field| {
-                                if (field.is_source) {
-                                    is_comptime = true;
-                                    break;
-                                }
-                                if (std.mem.eql(u8, field.type, "Program") or
-                                    std.mem.eql(u8, field.type, "Program") or
-                                    std.mem.eql(u8, field.type, "*const Program"))
-                                {
-                                    is_comptime = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (is_comptime) {
-                            // Build event name with FULL module qualifier from module's logical_name
-                            // For $std/taps, logical_name is "std.taps", we want "std.taps:tap"
-                            // This matches what keyword resolution produces
-                            var event_name_buf: [256]u8 = undefined;
-                            var event_name_len: usize = 0;
-
-                            // Use full module logical_name as qualifier
-                            const module_qualifier = module.logical_name;
-
-                            if (module_qualifier.len > 0) {
-                                const mq = module_qualifier;
-                                @memcpy(event_name_buf[0..mq.len], mq);
-                                event_name_len += mq.len;
-                                event_name_buf[event_name_len] = ':';
-                                event_name_len += 1;
-                            }
-
-                            for (event.path.segments, 0..) |seg, i| {
-                                if (i > 0) {
-                                    event_name_buf[event_name_len] = '.';
-                                    event_name_len += 1;
-                                }
-                                @memcpy(event_name_buf[event_name_len .. event_name_len + seg.len], seg);
-                                event_name_len += seg.len;
-                            }
-
-                            const event_name = try allocator.dupe(u8, event_name_buf[0..event_name_len]);
-                            // Events with Source/Program are [comptime|transform] - add to transform list, NOT comptime thunks
-                            try transform_event_names.append(allocator, event_name);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Debug: Print detected transform events (events with Source/Program params)
-        if (transform_event_names.items.len > 0) {
-            log.debug("\n=== TRANSFORM EVENT DETECTION ===\n", .{});
-            for (transform_event_names.items) |name| {
-                log.debug("  Detected transform event: {s}\n", .{name});
-            }
-            log.debug("=================================\n\n", .{});
-        }
-
         // Step 2: Find comptime flows
+        // NOTE: Transform events ([comptime|transform]) are handled entirely by
+        // the transform pass runner at Zig comptime — they don't need thunks.
         const ComptimeFlowInfo = struct {
             ast_index: usize,
             flow: *const ast.Flow,
@@ -491,8 +316,6 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
 
                 const inv_name = inv_name_buf[0..inv_name_len];
 
-                // Check if this flow invokes a comptime event OR a transform event
-                var matched = false;
                 for (comptime_event_names.items) |comptime_name| {
                     if (std.mem.eql(u8, inv_name, comptime_name)) {
                         log.debug("  [MATCH] Flow '{s}' (idx={}) matches comptime event '{s}'\n", .{ inv_name, idx, comptime_name });
@@ -501,33 +324,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                             .flow = flow,
                         });
                         log.debug("    → Appended to comptime_flows, now {} items\n", .{comptime_flows.items.len});
-                        matched = true;
                         break;
-                    }
-                }
-                // Also check transform events (like std.taps:tap, log.*)
-                // Use glob matching for patterns like log.*
-                // NOTE: Glob pattern transforms (log.*) are handled by the transform pass,
-                // NOT by comptime thunks. Only add concrete transform events to comptime_flows.
-                if (!matched) {
-                    for (transform_event_names.items) |transform_name| {
-                        if (matchGlobPattern(transform_name, inv_name)) {
-                            // Check if this is a glob pattern (contains *)
-                            // Glob patterns don't have concrete event structs and should NOT generate thunks
-                            const is_glob = std.mem.indexOfScalar(u8, transform_name, '*') != null;
-                            if (is_glob) {
-                                log.debug("  [MATCH-GLOB-TRANSFORM] Flow '{s}' matches glob transform '{s}' - handled by transform pass, not thunks\n", .{ inv_name, transform_name });
-                                // Don't add to comptime_flows - the transform pass will handle this
-                            } else {
-                                log.debug("  [MATCH-TRANSFORM] Flow '{s}' (idx={}) matches transform event '{s}'\n", .{ inv_name, idx, transform_name });
-                                try comptime_flows.append(allocator, .{
-                                    .ast_index = idx,
-                                    .flow = flow,
-                                });
-                                log.debug("    → Appended to comptime_flows, now {} items\n", .{comptime_flows.items.len});
-                            }
-                            break;
-                        }
                     }
                 }
             }
@@ -561,41 +358,14 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
 
                         const inv_name = inv_name_buf[0..inv_name_len];
 
-                        // Check if this flow invokes a comptime event OR transform event
-                        var matched = false;
                         for (comptime_event_names.items) |comptime_name| {
                             if (std.mem.eql(u8, inv_name, comptime_name)) {
                                 log.debug("  [MATCH-MODULE] Flow '{s}' in module matches comptime event '{s}'\n", .{ inv_name, comptime_name });
-                                // Note: Using top-level index for module flows
-                                // The AST walker will need to handle this correctly
                                 try comptime_flows.append(allocator, .{
-                                    .ast_index = idx, // Points to the module_decl item
+                                    .ast_index = idx,
                                     .flow = flow,
                                 });
-                                matched = true;
                                 break;
-                            }
-                        }
-                        // Also check transform events (like std.taps:tap, log.*)
-                        // Use glob matching for patterns like log.*
-                        // NOTE: Glob pattern transforms are handled by the transform pass, not thunks
-                        if (!matched) {
-                            for (transform_event_names.items) |transform_name| {
-                                if (matchGlobPattern(transform_name, inv_name)) {
-                                    // Check if this is a glob pattern (contains *)
-                                    const is_glob = std.mem.indexOfScalar(u8, transform_name, '*') != null;
-                                    if (is_glob) {
-                                        log.debug("  [MATCH-MODULE-GLOB-TRANSFORM] Flow '{s}' matches glob transform '{s}' - handled by transform pass\n", .{ inv_name, transform_name });
-                                        // Don't add to comptime_flows
-                                    } else {
-                                        log.debug("  [MATCH-MODULE-TRANSFORM] Flow '{s}' in module matches transform event '{s}'\n", .{ inv_name, transform_name });
-                                        try comptime_flows.append(allocator, .{
-                                            .ast_index = idx,
-                                            .flow = flow,
-                                        });
-                                    }
-                                    break;
-                                }
                             }
                         }
                     }
@@ -764,32 +534,21 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                                         try writer.writeAll(arg.name);
                                     }
                                     try writer.writeAll(" = ");
-                                    // Source arguments have source_value set - always quote those
-                                    // Also apply heuristic for Koru syntax that needs stringification:
-                                    // - Struct literals: { ... }
-                                    // - Range literals: 0..3
-                                    // Other values (identifiers, field access) should remain as expressions
-                                    const has_source_value = arg.source_value != null;
-                                    const needs_quoting = has_source_value or (arg.value.len > 0 and
-                                        (arg.value[0] == '{' or std.mem.indexOf(u8, arg.value, "..") != null));
-                                    if (needs_quoting) {
-                                        // For Source args, use the actual source text
-                                        const text_to_quote = if (arg.source_value) |sv| sv.text else arg.value;
-                                        try writer.writeAll("\"");
-                                        for (text_to_quote) |c| {
-                                            switch (c) {
-                                                '\n' => try writer.writeAll("\\n"),
-                                                '\r' => try writer.writeAll("\\r"),
-                                                '\t' => try writer.writeAll("\\t"),
-                                                '\\' => try writer.writeAll("\\\\"),
-                                                '"' => try writer.writeAll("\\\""),
-                                                else => try writer.writeByte(c),
-                                            }
+                                    // Always quote nested invocation args in comptime thunks.
+                                    // These are AST data, not runtime expressions.
+                                    const text_to_quote = if (arg.source_value) |sv| sv.text else arg.value;
+                                    try writer.writeAll("\"");
+                                    for (text_to_quote) |c| {
+                                        switch (c) {
+                                            '\n' => try writer.writeAll("\\n"),
+                                            '\r' => try writer.writeAll("\\r"),
+                                            '\t' => try writer.writeAll("\\t"),
+                                            '\\' => try writer.writeAll("\\\\"),
+                                            '"' => try writer.writeAll("\\\""),
+                                            else => try writer.writeByte(c),
                                         }
-                                        try writer.writeAll("\"");
-                                    } else {
-                                        try writer.writeAll(arg.value);
                                     }
+                                    try writer.writeAll("\"");
                                 }
                                 try writer.writeAll(" });\n");
                             },
@@ -866,32 +625,21 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                                             try writer.writeAll(arg.name);
                                         }
                                         try writer.writeAll(" = ");
-                                        // Source arguments have source_value set - always quote those
-                                        // Also apply heuristic for Koru syntax that needs stringification:
-                                        // - Struct literals: { ... }
-                                        // - Range literals: 0..3
-                                        // Other values (identifiers, field access) should remain as expressions
-                                        const has_source_value = arg.source_value != null;
-                                        const needs_quoting = has_source_value or (arg.value.len > 0 and
-                                            (arg.value[0] == '{' or std.mem.indexOf(u8, arg.value, "..") != null));
-                                        if (needs_quoting) {
-                                            // For Source args, use the actual source text
-                                            const text_to_quote = if (arg.source_value) |sv| sv.text else arg.value;
-                                            try writer.writeAll("\"");
-                                            for (text_to_quote) |c| {
-                                                switch (c) {
-                                                    '\n' => try writer.writeAll("\\n"),
-                                                    '\r' => try writer.writeAll("\\r"),
-                                                    '\t' => try writer.writeAll("\\t"),
-                                                    '\\' => try writer.writeAll("\\\\"),
-                                                    '"' => try writer.writeAll("\\\""),
-                                                    else => try writer.writeByte(c),
-                                                }
+                                        // Always quote nested invocation args in comptime thunks.
+                                        // These are AST data, not runtime expressions.
+                                        const text_to_quote = if (arg.source_value) |sv| sv.text else arg.value;
+                                        try writer.writeAll("\"");
+                                        for (text_to_quote) |c| {
+                                            switch (c) {
+                                                '\n' => try writer.writeAll("\\n"),
+                                                '\r' => try writer.writeAll("\\r"),
+                                                '\t' => try writer.writeAll("\\t"),
+                                                '\\' => try writer.writeAll("\\\\"),
+                                                '"' => try writer.writeAll("\\\""),
+                                                else => try writer.writeByte(c),
                                             }
-                                            try writer.writeAll("\"");
-                                        } else {
-                                            try writer.writeAll(arg.value);
                                         }
+                                        try writer.writeAll("\"");
                                     }
                                     try writer.writeAll(" });\n");
                                 },
@@ -2466,51 +2214,6 @@ fn joinPathSegmentsWithDots(allocator: std.mem.Allocator, segments: []const []co
 
 /// Match a pattern against a value using glob semantics
 /// Patterns can use * for wildcards (e.g., log.* matches log.info)
-fn matchGlobPattern(pattern: []const u8, value: []const u8) bool {
-    // Exact match
-    if (std.mem.eql(u8, pattern, value)) return true;
-
-    // No wildcard - exact match only
-    if (std.mem.indexOfScalar(u8, pattern, '*') == null) return false;
-
-    // Full wildcard matches anything
-    if (std.mem.eql(u8, pattern, "*")) return true;
-
-    // Prefix wildcard: *.suffix
-    if (pattern.len > 2 and pattern[0] == '*' and pattern[1] == '.') {
-        const suffix = pattern[1..];
-        return std.mem.endsWith(u8, value, suffix);
-    }
-
-    // Suffix wildcard with dot: prefix.*
-    if (pattern.len > 2 and pattern[pattern.len - 2] == '.' and pattern[pattern.len - 1] == '*') {
-        const prefix = pattern[0 .. pattern.len - 2];
-        return std.mem.startsWith(u8, value, prefix) and
-            value.len > prefix.len and value[prefix.len] == '.';
-    }
-
-    // Bare suffix wildcard: prefix*
-    if (pattern.len > 1 and pattern[pattern.len - 1] == '*') {
-        const prefix = pattern[0 .. pattern.len - 1];
-        return std.mem.startsWith(u8, value, prefix);
-    }
-
-    // Bare prefix wildcard: *suffix
-    if (pattern.len > 1 and pattern[0] == '*') {
-        const suffix = pattern[1..];
-        return std.mem.endsWith(u8, value, suffix);
-    }
-
-    // Middle wildcard: prefix.*.suffix
-    if (std.mem.indexOfScalar(u8, pattern, '*')) |star_idx| {
-        const prefix = pattern[0..star_idx];
-        const suffix = pattern[star_idx + 1 ..];
-        return std.mem.startsWith(u8, value, prefix) and std.mem.endsWith(u8, value, suffix) and
-            value.len >= prefix.len + suffix.len;
-    }
-
-    return false;
-}
 
 /// Generate the visitor pattern backend
 fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_file: *ast.Program) !void {

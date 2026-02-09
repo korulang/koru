@@ -310,12 +310,62 @@ fn generatePipelineCode(
                 try buf.appendSlice(allocator, " } };\n");
             },
             .inline_code => |code| {
-                // Emit inline code directly (used by transforms like ~capture)
-                const ind = try indent(allocator, indent_level);
-                defer allocator.free(ind);
-                try buf.appendSlice(allocator, ind);
-                try buf.appendSlice(allocator, code);
-                try buf.appendSlice(allocator, "\n");
+                if (nested.len > 0) {
+                    // Inline code produces a result value — wrap in labeled block,
+                    // assign to result variable, and generate switch on nested continuations.
+                    // Convention: inline code uses break :__KORU_INLINE__ to produce its result.
+                    const result_var = try std.fmt.allocPrint(allocator, "{s}{d}", .{ var_prefix, result_counter.* });
+                    defer allocator.free(result_var);
+                    result_counter.* += 1;
+
+                    // Generate unique label
+                    const label = try std.fmt.allocPrint(allocator, "__koru_inline_{d}", .{result_counter.*});
+                    defer allocator.free(label);
+
+                    const ind = try indent(allocator, indent_level);
+                    defer allocator.free(ind);
+
+                    // const result_N = __koru_inline_N: { <code with label replaced> };
+                    try buf.appendSlice(allocator, ind);
+                    try buf.appendSlice(allocator, "const ");
+                    try buf.appendSlice(allocator, result_var);
+                    try buf.appendSlice(allocator, " = ");
+                    try buf.appendSlice(allocator, label);
+                    try buf.appendSlice(allocator, ": ");
+
+                    // Replace __KORU_INLINE__ placeholder with actual label in the inline code
+                    var pos: usize = 0;
+                    while (pos < code.len) {
+                        if (pos + 15 <= code.len and std.mem.eql(u8, code[pos..pos + 15], "__KORU_INLINE__")) {
+                            try buf.appendSlice(allocator, label);
+                            pos += 15;
+                        } else {
+                            try buf.append(allocator, code[pos]);
+                            pos += 1;
+                        }
+                    }
+                    try buf.appendSlice(allocator, ";\n");
+
+                    // Generate switch for nested continuations
+                    const switch_code = try generateBranchSwitch(
+                        allocator,
+                        result_var,
+                        nested,
+                        main_module_name,
+                        result_counter,
+                        indent_level,
+                        var_prefix,
+                    );
+                    defer allocator.free(switch_code);
+                    try buf.appendSlice(allocator, switch_code);
+                } else {
+                    // Simple inline code — no result needed
+                    const ind = try indent(allocator, indent_level);
+                    defer allocator.free(ind);
+                    try buf.appendSlice(allocator, ind);
+                    try buf.appendSlice(allocator, code);
+                    try buf.appendSlice(allocator, "\n");
+                }
             },
             .assignment => |asgn| {
                 // Emit assignment: target = .{ .field1 = expr1, .field2 = expr2 };
@@ -607,14 +657,19 @@ fn generateBranchSwitch(
         try buf.appendSlice(allocator, " => ");
 
         if (cont.binding) |binding| {
-            try buf.append(allocator, '|');
-            try buf.appendSlice(allocator, binding);
-            // Suffix with indent level to avoid shadowing in nested switches
-            try buf.append(allocator, '_');
-            var level_buf: [16]u8 = undefined;
-            const level_str = std.fmt.bufPrint(&level_buf, "{d}", .{indent_level}) catch unreachable;
-            try buf.appendSlice(allocator, level_str);
-            try buf.appendSlice(allocator, "| {\n");
+            // Discard bindings ("_") should not generate a capture to avoid unused variable errors
+            if (std.mem.eql(u8, binding, "_")) {
+                try buf.appendSlice(allocator, "{\n");
+            } else {
+                try buf.append(allocator, '|');
+                try buf.appendSlice(allocator, binding);
+                // Suffix with indent level to avoid shadowing in nested switches
+                try buf.append(allocator, '_');
+                var level_buf: [16]u8 = undefined;
+                const level_str = std.fmt.bufPrint(&level_buf, "{d}", .{indent_level}) catch unreachable;
+                try buf.appendSlice(allocator, level_str);
+                try buf.appendSlice(allocator, "| {\n");
+            }
         } else {
             try buf.appendSlice(allocator, "{\n");
         }

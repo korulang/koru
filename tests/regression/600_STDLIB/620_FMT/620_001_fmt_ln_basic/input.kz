@@ -1,0 +1,12 @@
+// TEST: fmt:ln basic - format a string and get it back via | line continuation
+~import "$std/fmt"
+~import "$std/io"
+
+~event greet { name: []const u8 }
+| greeted { message: []const u8 }
+
+~greet = std.fmt:ln("Hello, {{ name:s }}!")
+| line l |> greeted { message: l.text }
+
+~greet(name: "World")
+| greeted g |> std.io:println(text: g.message)

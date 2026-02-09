@@ -271,24 +271,301 @@ pub const FormattedText = struct {
 //   }
 //   | formatted f |> ...
 
-~[comptime|transform]pub event fmt.blk.with_allocator {
-    source: Source,
-    user_allocator: std.mem.Allocator,
+// TODO: fmt.blk.with_allocator - requires solving how user params
+// coexist with transform infrastructure params in the pass runner.
+// ~[comptime|transform]pub event fmt.blk.with_allocator { ... }
+
+// ============================================================================
+// FMT.LN - One-line format with Liquid templates, returns text via continuation
+// ============================================================================
+//
+// Syntax:
+//   std.fmt:ln("Hello {{ name:s }}! Count: {{ count:d }}")
+//   | line l |> ... use l.text ...
+//
+// Zero allocation: uses a thread-local buffer (safe across workers).
+// The {{ var:spec }} placeholders are resolved at compile time into
+// std.fmt.bufPrint calls that run at runtime in the caller's scope.
+
+~[comptime|transform]pub event ln {
     invocation: *const Invocation,
     item: *const Item,
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| formatted *FormattedText[allocated!]
+| transformed { program: *const Program }
 
-~proc fmt.blk.with_allocator {
-    // Same implementation as fmt.blk but uses user_allocator instead of page_allocator
-    // TODO: Implement - for now just delegate conceptually
-    _ = source;
-    _ = user_allocator;
-    _ = invocation;
-    _ = item;
-    _ = program;
-    _ = allocator;
-    return .{ .formatted = undefined };
+~[norun]pub event ln.impl {
+    expr: []const u8,
+}
+| line { text: []const u8 }
+
+~proc ln {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // Helper: Check if identifier is a Zig keyword
+    const isZigKeyword = struct {
+        fn check(word: []const u8) bool {
+            const keywords = [_][]const u8{
+                "error", "type", "async", "await", "suspend", "resume",
+                "try", "catch", "if", "else", "switch", "while",
+                "for", "break", "continue", "return", "defer", "errdefer",
+                "test", "pub", "export", "extern", "packed", "inline",
+                "noinline", "comptime", "nosuspend", "volatile", "allowzero",
+                "align", "linksection", "callconv", "noalias",
+                "struct", "enum", "union", "opaque", "fn", "const",
+                "var", "anyframe", "anytype", "anyerror", "unreachable",
+                "undef", "null", "true", "false", "and", "or",
+                "orelse", "threadlocal",
+            };
+            for (keywords) |kw| {
+                if (std.mem.eql(u8, word, kw)) return true;
+            }
+            return false;
+        }
+    }.check;
+
+    // Helper: Append path with escaped keywords (e.g., err.error -> err.@"error")
+    const appendEscapedPath = struct {
+        fn append(buf: *std.ArrayList(u8), alloc: std.mem.Allocator, path: []const u8) void {
+            var start: usize = 0;
+            var pos: usize = 0;
+            var is_first = true;
+
+            while (pos <= path.len) {
+                if (pos == path.len or path[pos] == '.') {
+                    const segment = path[start..pos];
+                    if (!is_first) {
+                        buf.append(alloc, '.') catch unreachable;
+                        if (isZigKeyword(segment)) {
+                            buf.appendSlice(alloc, "@\"") catch unreachable;
+                            buf.appendSlice(alloc, segment) catch unreachable;
+                            buf.append(alloc, '"') catch unreachable;
+                        } else {
+                            buf.appendSlice(alloc, segment) catch unreachable;
+                        }
+                    } else {
+                        buf.appendSlice(alloc, segment) catch unreachable;
+                    }
+                    is_first = false;
+                    start = pos + 1;
+                }
+                pos += 1;
+            }
+        }
+    }.append;
+
+    // Get the flow from the item
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    // Extract the expression string from the first invocation arg
+    const expr = if (invocation.args.len > 0) invocation.args[0].value else "";
+
+    // Parse the expression string for {{ ... }} placeholders
+    var format_buf = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+    var args_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+    var i: usize = 0;
+    var first_arg = true;
+
+    // Strip quotes
+    const start_pos: usize = if (expr.len > 0 and expr[0] == '"') 1 else 0;
+    const end_pos: usize = if (expr.len > 0 and expr[expr.len - 1] == '"') expr.len - 1 else expr.len;
+    const content = expr[start_pos..end_pos];
+
+    while (i < content.len) {
+        if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '{') {
+            const placeholder_start = i + 2;
+            var ws_start = placeholder_start;
+            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+
+            var j = ws_start;
+            while (j + 1 < content.len and !(content[j] == '}' and content[j + 1] == '}')) : (j += 1) {}
+
+            if (j + 1 < content.len) {
+                var ws_end = j;
+                while (ws_end > ws_start and (content[ws_end - 1] == ' ' or content[ws_end - 1] == '\t')) : (ws_end -= 1) {}
+
+                const placeholder = content[ws_start..ws_end];
+                var var_name: []const u8 = placeholder;
+                var format_spec: []const u8 = "any";
+
+                if (std.mem.indexOf(u8, placeholder, ":")) |colon_pos| {
+                    var_name = placeholder[0..colon_pos];
+                    format_spec = placeholder[colon_pos + 1..];
+                }
+
+                format_buf.append(allocator, '{') catch unreachable;
+                format_buf.appendSlice(allocator, format_spec) catch unreachable;
+                format_buf.append(allocator, '}') catch unreachable;
+
+                if (!first_arg) {
+                    args_buf.appendSlice(allocator, ", ") catch unreachable;
+                }
+                appendEscapedPath(&args_buf, allocator, var_name);
+                first_arg = false;
+                i = j + 2;
+            } else {
+                format_buf.append(allocator, content[i]) catch unreachable;
+                i += 1;
+            }
+        } else {
+            switch (content[i]) {
+                '"' => format_buf.appendSlice(allocator, "\\\"") catch unreachable,
+                '\\' => format_buf.appendSlice(allocator, "\\\\") catch unreachable,
+                '\n' => format_buf.appendSlice(allocator, "\\n") catch unreachable,
+                '\r' => format_buf.appendSlice(allocator, "\\r") catch unreachable,
+                '\t' => format_buf.appendSlice(allocator, "\\t") catch unreachable,
+                else => format_buf.append(allocator, content[i]) catch unreachable,
+            }
+            i += 1;
+        }
+    }
+
+    // Generate inline code that formats into a thread-local buffer and
+    // breaks out with a tagged union value.
+    // Uses __KORU_INLINE__ as label placeholder — visitor_emitter replaces
+    // it with a unique label when wrapping in a labeled block.
+    //
+    // We define a local union type so the break value can be switched on
+    // by the continuation handler. This is self-contained — no external
+    // module path references needed.
+    const inline_code = std.fmt.allocPrint(
+        allocator,
+        \\{{
+        \\    const __S = struct {{ threadlocal var __buf: [4096]u8 = undefined; }};
+        \\    const __text = @import("std").fmt.bufPrint(&__S.__buf, "{s}", .{{{s}}}) catch "";
+        \\    const __LnResult = union(enum) {{ line: struct {{ text: []const u8 }} }};
+        \\    break :__KORU_INLINE__ @as(__LnResult, .{{ .line = .{{ .text = __text }} }});
+        \\}}
+        ,
+        .{ format_buf.items, args_buf.items }
+    ) catch unreachable;
+
+    // Check if this is a top-level ln (flow.invocation IS ln)
+    const is_top_level = blk: {
+        const segments = flow.invocation.path.segments;
+        break :blk segments.len == 1 and
+            std.mem.eql(u8, segments[0], "ln");
+    };
+
+    if (is_top_level) {
+        // TOP-LEVEL CASE: Set flow.inline_body, reroute to ln.impl
+        if (flow.inline_body != null) {
+            return .{ .transformed = .{ .program = program } };
+        }
+
+        const impl_segments = allocator.alloc([]const u8, 1) catch unreachable;
+        impl_segments[0] = allocator.dupe(u8, "ln.impl") catch unreachable;
+        const impl_path = ast.DottedPath{
+            .module_qualifier = flow.invocation.path.module_qualifier,
+            .segments = impl_segments,
+        };
+
+        const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+        for (flow.invocation.annotations, 0..) |ann, idx| {
+            new_inv_annotations[idx] = ann;
+        }
+        new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+        const new_invocation = ast.Invocation{
+            .path = impl_path,
+            .args = flow.invocation.args,
+            .annotations = new_inv_annotations,
+            .inserted_by_tap = flow.invocation.inserted_by_tap,
+            .from_opaque_tap = flow.invocation.from_opaque_tap,
+        };
+
+        const transformed_flow = ast.Flow{
+            .invocation = new_invocation,
+            .continuations = flow.continuations,
+            .annotations = flow.annotations,
+            .pre_label = flow.pre_label,
+            .post_label = flow.post_label,
+            .super_shape = flow.super_shape,
+            .inline_body = inline_code,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
+            .location = flow.location,
+            .module = flow.module,
+            .impl_of = flow.impl_of,
+        };
+
+        const new_item = ast.Item{ .flow = transformed_flow };
+        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result_ptr = allocator.create(ast.Program) catch unreachable;
+            result_ptr.* = new_program;
+            return .{ .transformed = .{ .program = result_ptr } };
+        }
+        return .{ .transformed = .{ .program = program } };
+    } else {
+        // PIPELINE CASE: Replace the ln invocation node with inline_code
+        // in the continuation tree. The nested continuations (| line l |>) stay
+        // in place — continuation_codegen handles inline_code + nested continuations
+        // by wrapping in a labeled block and generating a switch.
+
+        const findInvocationByPointer = struct {
+            const SearchResult = struct {
+                path: []const usize,
+            };
+
+            fn search(
+                alloc: std.mem.Allocator,
+                continuations: []const ast.Continuation,
+                current_path: []const usize,
+                target_inv: *const ast.Invocation,
+            ) ?SearchResult {
+                for (continuations, 0..) |*cont, cont_idx| {
+                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
+                    @memcpy(path[0..current_path.len], current_path);
+                    path[current_path.len] = cont_idx;
+
+                    if (cont.node) |node| {
+                        if (node == .invocation) {
+                            if (&node.invocation == target_inv) {
+                                return SearchResult{ .path = path };
+                            }
+                        }
+                    }
+
+                    if (search(alloc, cont.continuations, path, target_inv)) |result| {
+                        return result;
+                    }
+                    alloc.free(path);
+                }
+                return null;
+            }
+        };
+
+        const empty_path = &[_]usize{};
+        const search_result = findInvocationByPointer.search(allocator, flow.continuations, empty_path, invocation) orelse {
+            return .{ .transformed = .{ .program = program } };
+        };
+
+        // Replace the invocation node with inline_code
+        const new_step = ast.Node{ .inline_code = allocator.dupe(u8, inline_code) catch unreachable };
+
+        const new_flow = ast_functional.replacePipelineStepAtPath(
+            allocator,
+            flow,
+            search_result.path,
+            0,
+            new_step,
+        ) catch {
+            return .{ .transformed = .{ .program = program } };
+        };
+
+        const new_item = ast.Item{ .flow = new_flow };
+        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result_ptr = allocator.create(ast.Program) catch unreachable;
+            result_ptr.* = new_program;
+            return .{ .transformed = .{ .program = result_ptr } };
+        }
+        return .{ .transformed = .{ .program = program } };
+    }
 }
