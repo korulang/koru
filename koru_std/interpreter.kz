@@ -1935,6 +1935,44 @@ fn executeFlow(
                     },
                     .branch_constructor => |bc| {
                         // Construct a new value from the branch constructor!
+                        if (bc.plain_value) |expr| {
+                            // Identity branch constructor: result expr
+                            var value: FieldValue = undefined;
+
+                            // Try expression parser first for arithmetic like "c.x + 1"
+                            var expr_parser = koru_parser.ExpressionParser.init(ctx.allocator, expr);
+                            defer expr_parser.deinit();
+
+                            if (expr_parser.parse()) |parsed_expr| {
+                                if (evaluateExpression(parsed_expr, ctx.expr_bindings)) |eval_result| {
+                                    value = switch (eval_result) {
+                                        .int_val => |n| .{ .int_val = n },
+                                        .float_val => |f| .{ .float_val = f },
+                                        .bool_val => |b| .{ .bool_val = b },
+                                        .string_val => |s| .{ .string_val = s },
+                                        .null_val => .{ .string_val = "" },
+                                    };
+                                } else |_| {
+                                    // Eval failed - fall back to simple evaluation
+                                    value = .{ .string_val = try evaluateExpr(expr, ctx.env, ctx.allocator) };
+                                }
+                            } else |_| {
+                                // Parse failed - fall back to simple evaluation
+                                value = .{ .string_val = try evaluateExpr(expr, ctx.env, ctx.allocator) };
+                            }
+
+                            var fields = try ctx.allocator.alloc(NamedField, 1);
+                            fields[0] = .{
+                                .name = "__type_ref",
+                                .value = value,
+                            };
+
+                            return Value{
+                                .branch = try ctx.allocator.dupe(u8, bc.branch_name),
+                                .fields = fields,
+                            };
+                        }
+
                         var fields = try ctx.allocator.alloc(NamedField, bc.fields.len);
                         for (bc.fields, 0..) |field, i| {
                             var value: FieldValue = undefined;

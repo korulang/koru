@@ -1,0 +1,47 @@
+// Test: Interpreter identity branch constructor (result s) and discard (_)
+
+~import "$std/runtime"
+~import "$std/interpreter"
+~import "$std/io"
+
+const std = @import("std");
+
+// Event with identity branch payload
+~pub event add { a: i64, b: i64 }
+| sum i64
+
+~proc add {
+    return .{ .sum = a + b };
+}
+
+~std.runtime:register(scope: "test") {
+    add
+}
+
+const TEST_SOURCE_IDENTITY =
+    \\~add(a: 3, b: 4)
+    \\| sum s |> result s
+;
+
+const TEST_SOURCE_DISCARD =
+    \\~add(a: 3, b: 4)
+    \\| sum s |> _
+;
+
+~std.runtime:get_scope(name: "test")
+| scope s |> std.interpreter:run(source: TEST_SOURCE_IDENTITY, dispatcher: s.dispatcher)
+    | result r |> std.io:print.ln("IDENTITY {{ r.value.toJsonBuf():s }}")
+    | exhausted e |> std.io:print.ln("EXHAUSTED: {{ e.last_event }}")
+    | parse_error e |> std.io:print.ln("PARSE ERROR: {{ e.message }}")
+    | validation_error e |> std.io:print.ln("VALIDATION ERROR: {{ e.message }}")
+    | dispatch_error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message }}")
+| not_found |> std.io:print.ln("SCOPE NOT FOUND")
+
+~std.runtime:get_scope(name: "test")
+| scope s |> std.interpreter:run(source: TEST_SOURCE_DISCARD, dispatcher: s.dispatcher)
+    | result r |> std.io:print.ln("DISCARD {{ r.value.branch:s }}")
+    | exhausted e |> std.io:print.ln("EXHAUSTED: {{ e.last_event }}")
+    | parse_error e |> std.io:print.ln("PARSE ERROR: {{ e.message }}")
+    | validation_error e |> std.io:print.ln("VALIDATION ERROR: {{ e.message }}")
+    | dispatch_error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message }}")
+| not_found |> std.io:print.ln("SCOPE NOT FOUND")

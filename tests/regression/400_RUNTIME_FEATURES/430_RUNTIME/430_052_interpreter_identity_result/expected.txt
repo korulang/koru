@@ -1,0 +1,2 @@
+IDENTITY {"branch":"result","value":7}
+DISCARD discard
