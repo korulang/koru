@@ -403,6 +403,16 @@ pub fn build(b: *std.Build) void {
     });
     resolve_abstract_impl_module.addImport("ast", ast_module);
 
+    // Lightweight flow parser for interpreter eval (no type_registry, module_resolver, etc.)
+    const flow_parser_module = b.createModule(.{
+        .root_source_file = b.path("src/flow_parser.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    flow_parser_module.addImport("ast", ast_module);
+    flow_parser_module.addImport("lexer", lexer_module);
+    flow_parser_module.addImport("errors", errors_module);
+
     // Interpreter module - core interpreter for [frontend] execution mode
     const interpreter_module = b.createModule(.{
         .root_source_file = b.path("src/interpreter.zig"),
@@ -411,6 +421,7 @@ pub fn build(b: *std.Build) void {
     });
     interpreter_module.addImport("ast", ast_module);
     interpreter_module.addImport("log", log_module);
+    interpreter_module.addImport("flow_parser", flow_parser_module);
 
     // Tap Transformer module - AST transformation pass for zero-cost taps
     const tap_transformer_module = b.createModule(.{
@@ -473,6 +484,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("validate_abstract_impl", validate_abstract_impl_module);
     exe.root_module.addImport("resolve_abstract_impl", resolve_abstract_impl_module);
     exe.root_module.addImport("interpreter", interpreter_module);
+    exe.root_module.addImport("flow_parser", flow_parser_module);
     exe.root_module.addImport("flow_checker", flow_checker_module);
     exe.root_module.addImport("branch_checker", branch_checker_module);
     exe.root_module.addImport("codegen_utils", codegen_utils_module);
@@ -1083,7 +1095,14 @@ pub fn build(b: *std.Build) void {
     phantom_semantic_checker_tests.root_module.addImport("log", log_module);
     const run_phantom_semantic_checker_tests = b.addRunArtifact(phantom_semantic_checker_tests);
 
+    const flow_parser_tests = b.addTest(.{
+        .name = "flow_parser_tests",
+        .root_module = flow_parser_module,
+    });
+    const run_flow_parser_tests = b.addRunArtifact(flow_parser_tests);
+
     const test_step = b.step("test", "Run all tests");
+    test_step.dependOn(&run_flow_parser_tests.step);
     test_step.dependOn(&run_lexer_tests.step);
     test_step.dependOn(&run_parser_tests.step);
     test_step.dependOn(&run_ast_serializer_tests.step);
@@ -1133,4 +1152,22 @@ pub fn build(b: *std.Build) void {
     end_to_end_branch_tests.root_module.addImport("ast_serializer", ast_serializer_module);
     const run_end_to_end_branch_tests = b.addRunArtifact(end_to_end_branch_tests);
     test_step.dependOn(&run_end_to_end_branch_tests.step);
+
+    // Flow parser benchmark (zig build bench)
+    const bench_exe = b.addExecutable(.{
+        .name = "bench_flow_parser",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/bench_flow_parser.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    bench_exe.root_module.addImport("flow_parser", flow_parser_module);
+    bench_exe.root_module.addImport("parser", parser_module);
+    bench_exe.root_module.addImport("errors", errors_module);
+    bench_exe.root_module.addImport("ast", ast_module);
+
+    const run_bench = b.addRunArtifact(bench_exe);
+    const bench_step = b.step("bench", "Run flow parser benchmark");
+    bench_step.dependOn(&run_bench.step);
 }

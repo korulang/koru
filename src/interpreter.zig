@@ -978,6 +978,92 @@ pub fn runSource(
     return .{ .result = .{ .value = stable_value } };
 }
 
+/// Fast path: parse and execute a single flow using the lightweight flow parser.
+/// No type registry, module resolver, or full parser initialization.
+/// Falls back to runSource() if the flow parser returns an error (e.g., complex input).
+pub fn runSourceFast(
+    source: []const u8,
+    dispatcher: DispatchFn,
+    parser_module: anytype,
+    errors_module: anytype,
+    expr_parser_module: anytype,
+) RunResult {
+    const flow_parser = @import("flow_parser");
+
+    log.debug("[INTERPRETER] Fast-path parsing source ({d} bytes)\n", .{source.len});
+
+    // Create allocator for parsing + execution
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // Try the lightweight flow parser first
+    const parse_result = flow_parser.parseFlow(allocator, source);
+    switch (parse_result) {
+        .err => |e| {
+            log.debug("[INTERPRETER] Fast-path parse failed: {s}, falling back to full parser\n", .{e.message});
+            // Fall back to the full parser
+            return runSource(source, dispatcher, parser_module, errors_module);
+        },
+        .flow => |flow| {
+            log.debug("[INTERPRETER] Fast-path parse succeeded\n", .{});
+
+            // Validation pass
+            if (validateFlow(&flow, allocator)) |validation_err| {
+                log.debug("[INTERPRETER] Validation failed: {s} (binding: {s})\n", .{ validation_err.message, validation_err.binding_name });
+                return .{ .validation_error = .{
+                    .message = validation_err.message,
+                } };
+            }
+            log.debug("[INTERPRETER] Validation passed\n", .{});
+
+            // Create environment and context
+            var env = Environment.init(allocator);
+            defer env.deinit();
+
+            var expr_bindings = ExprBindings.init(allocator);
+            defer expr_bindings.deinit();
+
+            var ctx = InterpreterContext{
+                .env = &env,
+                .expr_bindings = &expr_bindings,
+                .allocator = allocator,
+                .dispatcher = dispatcher,
+            };
+
+            // Execute the flow
+            const result_value = executeFlow(&flow, &ctx, expr_parser_module) catch |err| {
+                const inv = &flow.invocation;
+                var name_buf: [256]u8 = undefined;
+                var name_len: usize = 0;
+                if (inv.path.module_qualifier) |mq| {
+                    @memcpy(name_buf[name_len..][0..mq.len], mq);
+                    name_len += mq.len;
+                    name_buf[name_len] = ':';
+                    name_len += 1;
+                }
+                for (inv.path.segments, 0..) |seg, i| {
+                    if (i > 0) {
+                        name_buf[name_len] = '.';
+                        name_len += 1;
+                    }
+                    @memcpy(name_buf[name_len..][0..seg.len], seg);
+                    name_len += seg.len;
+                }
+
+                return .{ .dispatch_error = .{
+                    .event_name = name_buf[0..name_len],
+                    .message = @errorName(err),
+                } };
+            };
+
+            const stable_value = result_value.clonePersistent();
+            log.debug("[INTERPRETER] Fast-path execution complete, branch: {s}\n", .{stable_value.branch});
+            return .{ .result = .{ .value = stable_value } };
+        },
+    }
+}
+
 /// Execute a pre-parsed flow AST - the fast path with no parsing overhead.
 pub fn evalFlow(
     flow: *const ast.Flow,
