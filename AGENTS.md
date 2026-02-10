@@ -13,6 +13,11 @@
 - For core semantics, add a minimal `.kz` plus a targeted Zig test.
 - Use judgment: ask for confirmation before major semantic changes or scope pivots; otherwise proceed and summarize clearly.
 
+## Project Status (Greenfield / Experimental)
+- There are **no external clients** to break. Assume greenfield and experimental.
+- Prioritize correctness and forward progress over backward compatibility.
+- It is acceptable to make semantic cleanups and breaking changes when they improve honesty or clarity.
+
 ### Agent‑specific note (Codex)
 - This guidance is primarily to constrain Claude; Codex may operate with a lighter touch.
 - Codex is authorized to proceed without extra confirmations for routine changes, clean generated artifacts proactively, and treat these guidelines as flexible defaults (not hard stops).
