@@ -33,8 +33,7 @@ const Entity = struct {
     return .{ .entity = .{ .e = e } };
 }
 
-// TAP: Should ONLY fire when entity has damage
-// BUG: The `when ent.e.has_damage` is completely ignored
+// TAP: Only fires when entity has damage
 ~tap(process_entity -> *)
 | entity ent when ent.e.has_damage |> handle_damage(e: ent.e)
 
