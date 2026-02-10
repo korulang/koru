@@ -1896,9 +1896,9 @@ fn executeFlow(
                 if (bound_value.fields.len == 1 and std.mem.eql(u8, bound_value.fields[0].name, "__type_ref")) {
                     // Scalar payload: bind the value directly
                     try ctx.expr_bindings.set(binding_name, fieldValueToExprValue(bound_value.fields[0].value));
-                    // Preserve branch name for debugging if needed
+                    // Preserve branch name as a metatype-style accessor
                     var branch_key_buf: [256]u8 = undefined;
-                    const branch_key = std.fmt.bufPrint(&branch_key_buf, "{s}.__branch", .{binding_name}) catch "";
+                    const branch_key = std.fmt.bufPrint(&branch_key_buf, "{s}.Branch", .{binding_name}) catch "";
                     if (branch_key.len > 0) {
                         const branch_key_owned = try ctx.allocator.dupe(u8, branch_key);
                         try ctx.expr_bindings.set(branch_key_owned, .{ .string_val = dispatch_result.branch });
@@ -1906,6 +1906,13 @@ fn executeFlow(
                 } else {
                     // Structured payload: binding resolves to branch name
                     try ctx.expr_bindings.set(binding_name, .{ .string_val = dispatch_result.branch });
+                    // Also expose branch name via metatype-style accessor
+                    var branch_key_buf: [256]u8 = undefined;
+                    const branch_key = std.fmt.bufPrint(&branch_key_buf, "{s}.Branch", .{binding_name}) catch "";
+                    if (branch_key.len > 0) {
+                        const branch_key_owned = try ctx.allocator.dupe(u8, branch_key);
+                        try ctx.expr_bindings.set(branch_key_owned, .{ .string_val = dispatch_result.branch });
+                    }
                 }
 
                 // If we have fields, add them as binding.field entries

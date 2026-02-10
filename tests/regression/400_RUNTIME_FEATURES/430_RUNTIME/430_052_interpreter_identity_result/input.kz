@@ -25,7 +25,7 @@ const TEST_SOURCE_IDENTITY =
 
 const TEST_SOURCE_BRANCH =
     \\~add(a: 3, b: 4)
-    \\| sum s |> result s.__branch
+    \\| sum s |> result s.Branch
 ;
 
 const TEST_SOURCE_DISCARD =
