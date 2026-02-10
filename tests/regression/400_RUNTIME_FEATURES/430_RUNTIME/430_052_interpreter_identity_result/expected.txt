@@ -1,2 +1,3 @@
 IDENTITY {"branch":"result","value":7}
+BRANCH {"branch":"result","value":"sum"}
 DISCARD discard
