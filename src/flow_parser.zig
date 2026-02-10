@@ -86,6 +86,16 @@ fn parseFlowInternal(allocator: std.mem.Allocator, source: []const u8) ParseErro
         } };
     }
 
+    // Require ~ prefix — reject non-flow source (event decls, multi-statement, etc.)
+    const first_line = lexer.trim(lines[invocation_line_idx].content);
+    if (first_line.len == 0 or first_line[0] != '~') {
+        return .{ .err = .{
+            .message = "Not a flow (missing ~ prefix)",
+            .line = lines[invocation_line_idx].line_num,
+            .column = 0,
+        } };
+    }
+
     // Collect invocation line(s) — handle multi-line args (unbalanced parens)
     const invocation_text = try collectMultiLineConstruct(allocator, lines, invocation_line_idx, '(', ')');
 
@@ -252,7 +262,10 @@ fn parseInvocationLine(allocator: std.mem.Allocator, line: []const u8, line_num:
             .args = args,
         };
     } else {
-        // No args: just path
+        // No args: just path — reject if it contains spaces (e.g. "event broken")
+        if (std.mem.indexOf(u8, content, " ") != null or std.mem.indexOf(u8, content, "\t") != null) {
+            return ParseError.InvalidInvocation;
+        }
         const path = lexer.parseQualifiedPath(allocator, content, ast) catch return ParseError.InvalidInvocation;
         return .{
             .path = path,
@@ -626,6 +639,25 @@ fn parseNode(allocator: std.mem.Allocator, content: []const u8) ParseError!ast.N
             .branch_name = try allocator.dupe(u8, trimmed),
             .fields = try allocator.alloc(ast.Field, 0),
         } };
+    }
+
+    // Branch constructor with plain value expression: "name expr"
+    // e.g., "result s" or "result s.Branch"
+    // Recognized by: first token is identifier, rest has no parens
+    if (std.mem.indexOf(u8, trimmed, "(") == null) {
+        if (std.mem.indexOf(u8, trimmed, " ")) |space_idx| {
+            const name_part = trimmed[0..space_idx];
+            const value_part = lexer.trim(trimmed[space_idx + 1 ..]);
+            if (name_part.len > 0 and value_part.len > 0 and
+                (std.ascii.isAlphabetic(name_part[0]) or name_part[0] == '_'))
+            {
+                return .{ .branch_constructor = .{
+                    .branch_name = try allocator.dupe(u8, name_part),
+                    .fields = try allocator.alloc(ast.Field, 0),
+                    .plain_value = try allocator.dupe(u8, value_part),
+                } };
+            }
+        }
     }
 
     // Invocation: path(args) or just path.with.dots

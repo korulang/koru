@@ -1170,4 +1170,22 @@ pub fn build(b: *std.Build) void {
     const run_bench = b.addRunArtifact(bench_exe);
     const bench_step = b.step("bench", "Run flow parser benchmark");
     bench_step.dependOn(&run_bench.step);
+
+    // Pipeline breakdown benchmark (zig build bench-pipeline)
+    const bench_pipeline_exe = b.addExecutable(.{
+        .name = "bench_pipeline",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/bench_pipeline.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    bench_pipeline_exe.root_module.addImport("flow_parser", flow_parser_module);
+    bench_pipeline_exe.root_module.addImport("parser", parser_module);
+    bench_pipeline_exe.root_module.addImport("errors", errors_module);
+    bench_pipeline_exe.root_module.addImport("ast", ast_module);
+
+    const run_bench_pipeline = b.addRunArtifact(bench_pipeline_exe);
+    const bench_pipeline_step = b.step("bench-pipeline", "Run pipeline breakdown benchmark");
+    bench_pipeline_step.dependOn(&run_bench_pipeline.step);
 }
