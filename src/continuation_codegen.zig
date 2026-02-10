@@ -239,7 +239,54 @@ fn generatePipelineCode(
     for (pipeline) |step| {
         switch (step) {
             .invocation => |inv| {
-                if (nested.len > 0) {
+                if (inv.inline_body) |ib| {
+                    // Transform set inline_body — emit inline code instead of handler call
+                    const result_var = try std.fmt.allocPrint(allocator, "{s}{d}", .{ var_prefix, result_counter.* });
+                    defer allocator.free(result_var);
+                    result_counter.* += 1;
+
+                    const ind = try indent(allocator, indent_level);
+                    defer allocator.free(ind);
+
+                    // Emit: const result_N = label: { <inline code with label replaced> };
+                    const label = try std.fmt.allocPrint(allocator, "__koru_inline_{d}", .{result_counter.*});
+                    defer allocator.free(label);
+
+                    try buf.appendSlice(allocator, ind);
+                    try buf.appendSlice(allocator, "const ");
+                    try buf.appendSlice(allocator, result_var);
+                    try buf.appendSlice(allocator, " = ");
+                    try buf.appendSlice(allocator, label);
+                    try buf.appendSlice(allocator, ": ");
+
+                    // Replace __KORU_INLINE__ placeholder with actual label
+                    const placeholder = "__KORU_INLINE__";
+                    var pos: usize = 0;
+                    while (pos < ib.len) {
+                        if (pos + placeholder.len <= ib.len and std.mem.eql(u8, ib[pos .. pos + placeholder.len], placeholder)) {
+                            try buf.appendSlice(allocator, label);
+                            pos += placeholder.len;
+                        } else {
+                            try buf.append(allocator, ib[pos]);
+                            pos += 1;
+                        }
+                    }
+                    try buf.appendSlice(allocator, ";\n");
+
+                    if (nested.len > 0) {
+                        const switch_code = try generateBranchSwitch(
+                            allocator,
+                            result_var,
+                            nested,
+                            main_module_name,
+                            result_counter,
+                            indent_level,
+                            var_prefix,
+                        );
+                        defer allocator.free(switch_code);
+                        try buf.appendSlice(allocator, switch_code);
+                    }
+                } else if (nested.len > 0) {
                     // This invocation has nested continuations - capture result and switch
                     const result_var = try std.fmt.allocPrint(allocator, "{s}{d}", .{ var_prefix, result_counter.* });
                     defer allocator.free(result_var);
@@ -669,6 +716,24 @@ fn generateBranchSwitch(
                 const level_str = std.fmt.bufPrint(&level_buf, "{d}", .{indent_level}) catch unreachable;
                 try buf.appendSlice(allocator, level_str);
                 try buf.appendSlice(allocator, "| {\n");
+
+                // Alias original binding name for inline code that references source-level names.
+                // E.g., `| result r |>` becomes `|r_2| { const r = r_2; _ = &r; ... }`
+                // This lets inline code use `r.field` while the switch binding is `r_2`.
+                const ind3 = try indent(allocator, indent_level + 2);
+                defer allocator.free(ind3);
+                try buf.appendSlice(allocator, ind3);
+                try buf.appendSlice(allocator, "const ");
+                try buf.appendSlice(allocator, binding);
+                try buf.appendSlice(allocator, " = ");
+                try buf.appendSlice(allocator, binding);
+                try buf.append(allocator, '_');
+                try buf.appendSlice(allocator, level_str);
+                try buf.appendSlice(allocator, ";\n");
+                try buf.appendSlice(allocator, ind3);
+                try buf.appendSlice(allocator, "_ = &");
+                try buf.appendSlice(allocator, binding);
+                try buf.appendSlice(allocator, ";\n");
             }
         } else {
             try buf.appendSlice(allocator, "{\n");

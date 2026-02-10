@@ -859,6 +859,10 @@ pub fn cloneInvocation(allocator: std.mem.Allocator, invocation: *const ast.Invo
             try allocator.dupe(u8, v)
         else
             null,
+        .inline_body = if (invocation.inline_body) |ib|
+            try allocator.dupe(u8, ib)
+        else
+            null,
     };
 }
 

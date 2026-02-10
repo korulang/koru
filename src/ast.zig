@@ -787,6 +787,11 @@ pub const Invocation = struct {
     source_module: []const u8 = "", // Module where this invocation appears
     variant: ?[]const u8 = null,  // Variant selector: "gpu", "naive", etc. for ~event|variant() calls
 
+    // Transform replacement: if set, emitter outputs this code instead of calling the handler.
+    // The path is kept for shape validation (the shape checker uses it to verify branch coverage).
+    // This is the canonical location — Flow.inline_body delegates here.
+    inline_body: ?[]const u8 = null,
+
     pub fn deinit(self: *Invocation, allocator: std.mem.Allocator) void {
         var mutable_path = self.path;
         mutable_path.deinit(allocator);
@@ -804,6 +809,9 @@ pub const Invocation = struct {
         }
         if (self.variant) |v| {
             allocator.free(@constCast(v));
+        }
+        if (self.inline_body) |ib| {
+            allocator.free(ib);
         }
     }
 };
