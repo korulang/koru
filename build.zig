@@ -669,6 +669,8 @@ pub fn build(b: *std.Build) void {
     integration_tests.root_module.addImport("parser", parser_module);
     integration_tests.root_module.addImport("ast", ast_module);
     integration_tests.root_module.addImport("lexer", lexer_module);
+    integration_tests.root_module.addImport("errors", errors_module);
+    integration_tests.root_module.addImport("type_registry", type_registry_module);
     
     // Shape checker integration tests
     const shape_checker_integration_tests = b.addTest(.{
@@ -1078,6 +1080,7 @@ pub fn build(b: *std.Build) void {
     phantom_semantic_checker_tests.root_module.addImport("ast", ast_module);
     phantom_semantic_checker_tests.root_module.addImport("errors", errors_module);
     phantom_semantic_checker_tests.root_module.addImport("phantom_parser", phantom_parser_module);
+    phantom_semantic_checker_tests.root_module.addImport("log", log_module);
     const run_phantom_semantic_checker_tests = b.addRunArtifact(phantom_semantic_checker_tests);
 
     const test_step = b.step("test", "Run all tests");

@@ -2243,3 +2243,313 @@ test "BindingContext - state variable does not create obligation" {
     try ctx.set("any", "F'_");
     try std.testing.expect(!ctx.hasUncleanedResources());
 }
+
+// ============================================================================
+// Phantom State Mismatch Unit Tests
+// Tests the full check() path with synthetic ASTs.
+//
+// ASTs must be built inline (not via helper function) because Zig struct
+// literals reference stack-allocated arrays that become dangling after return.
+// ============================================================================
+
+test "PhantomSemanticChecker - state mismatch rejected" {
+    const allocator = std.testing.allocator;
+
+    var reporter = try errors.ErrorReporter.init(allocator, "test.kz", "// phantom test");
+    defer reporter.deinit();
+
+    var checker = try PhantomSemanticChecker.init(allocator, &reporter);
+    defer checker.deinit();
+
+    // Event A: ~event open_file {} | opened { file: *File[open] }
+    var event_a_output_fields = [_]ast.Field{
+        .{ .name = "file", .type = "*File", .phantom = "open" },
+    };
+    var event_a_branches = [_]ast.Branch{
+        .{ .name = "opened", .payload = .{ .fields = &event_a_output_fields }, .is_deferred = false, .is_optional = false },
+    };
+
+    // Event B: ~event read_file { file: *File[closed] } | done {}
+    var event_b_input_fields = [_]ast.Field{
+        .{ .name = "file", .type = "*File", .phantom = "closed" },
+    };
+    var event_b_done_fields = [_]ast.Field{};
+    var event_b_branches = [_]ast.Branch{
+        .{ .name = "done", .payload = .{ .fields = &event_b_done_fields }, .is_deferred = false, .is_optional = false },
+    };
+
+    // Flow: ~open_file() | opened o |> read_file(file: o.file) | done |> _
+    var terminal_cont = [_]ast.Continuation{
+        .{
+            .branch = "done",
+            .binding = null,
+            .condition = null,
+            .node = .terminal,
+            .indent = 2,
+            .continuations = &[_]ast.Continuation{},
+        },
+    };
+    var flow_args = [_]ast.Arg{
+        .{ .name = "file", .value = "o.file" },
+    };
+    var flow_conts = [_]ast.Continuation{
+        .{
+            .branch = "opened",
+            .binding = "o",
+            .condition = null,
+            .node = .{ .invocation = .{
+                .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"read_file"}) },
+                .args = &flow_args,
+            } },
+            .indent = 1,
+            .continuations = &terminal_cont,
+        },
+    };
+
+    var items = [_]ast.Item{
+        .{ .event_decl = .{
+            .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"open_file"}) },
+            .input = .{ .fields = &[_]ast.Field{} },
+            .branches = &event_a_branches,
+            .annotations = @constCast(&[_][]const u8{}),
+            .location = .{ .line = 1, .column = 0, .file = "test.kz" },
+            .module = "input",
+        } },
+        .{ .event_decl = .{
+            .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"read_file"}) },
+            .input = .{ .fields = &event_b_input_fields },
+            .branches = &event_b_branches,
+            .annotations = @constCast(&[_][]const u8{}),
+            .location = .{ .line = 5, .column = 0, .file = "test.kz" },
+            .module = "input",
+        } },
+        .{ .flow = .{
+            .invocation = .{
+                .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"open_file"}) },
+                .args = &[_]ast.Arg{},
+            },
+            .continuations = &flow_conts,
+            .location = .{ .line = 8, .column = 0, .file = "test.kz" },
+            .module = "input",
+        } },
+    };
+
+    const program = ast.Program{
+        .items = &items,
+        .module_annotations = &[_][]const u8{},
+        .main_module_name = "input",
+        .allocator = allocator,
+    };
+
+    // check() should return ValidationFailed
+    const result = checker.check(&program);
+    try std.testing.expectError(error.ValidationFailed, result);
+
+    // Verify error message mentions phantom state mismatch
+    try std.testing.expect(reporter.errors.items.len > 0);
+    const err_msg = reporter.errors.items[0].message;
+    try std.testing.expect(std.mem.indexOf(u8, err_msg, "Phantom state mismatch") != null);
+}
+
+test "PhantomSemanticChecker - matching states accepted" {
+    const allocator = std.testing.allocator;
+
+    var reporter = try errors.ErrorReporter.init(allocator, "test.kz", "// phantom test");
+    defer reporter.deinit();
+
+    var checker = try PhantomSemanticChecker.init(allocator, &reporter);
+    defer checker.deinit();
+
+    // Event A: ~event open_file {} | opened { file: *File[open] }
+    var event_a_output_fields = [_]ast.Field{
+        .{ .name = "file", .type = "*File", .phantom = "open" },
+    };
+    var event_a_branches = [_]ast.Branch{
+        .{ .name = "opened", .payload = .{ .fields = &event_a_output_fields }, .is_deferred = false, .is_optional = false },
+    };
+
+    // Event B: ~event read_file { file: *File[open] } | done {} — MATCHES [open]
+    var event_b_input_fields = [_]ast.Field{
+        .{ .name = "file", .type = "*File", .phantom = "open" },
+    };
+    var event_b_done_fields = [_]ast.Field{};
+    var event_b_branches = [_]ast.Branch{
+        .{ .name = "done", .payload = .{ .fields = &event_b_done_fields }, .is_deferred = false, .is_optional = false },
+    };
+
+    // Flow: ~open_file() | opened o |> read_file(file: o.file) | done |> _
+    var terminal_cont = [_]ast.Continuation{
+        .{
+            .branch = "done",
+            .binding = null,
+            .condition = null,
+            .node = .terminal,
+            .indent = 2,
+            .continuations = &[_]ast.Continuation{},
+        },
+    };
+    var flow_args = [_]ast.Arg{
+        .{ .name = "file", .value = "o.file" },
+    };
+    var flow_conts = [_]ast.Continuation{
+        .{
+            .branch = "opened",
+            .binding = "o",
+            .condition = null,
+            .node = .{ .invocation = .{
+                .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"read_file"}) },
+                .args = &flow_args,
+            } },
+            .indent = 1,
+            .continuations = &terminal_cont,
+        },
+    };
+
+    var items = [_]ast.Item{
+        .{ .event_decl = .{
+            .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"open_file"}) },
+            .input = .{ .fields = &[_]ast.Field{} },
+            .branches = &event_a_branches,
+            .annotations = @constCast(&[_][]const u8{}),
+            .location = .{ .line = 1, .column = 0, .file = "test.kz" },
+            .module = "input",
+        } },
+        .{ .event_decl = .{
+            .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"read_file"}) },
+            .input = .{ .fields = &event_b_input_fields },
+            .branches = &event_b_branches,
+            .annotations = @constCast(&[_][]const u8{}),
+            .location = .{ .line = 5, .column = 0, .file = "test.kz" },
+            .module = "input",
+        } },
+        .{ .flow = .{
+            .invocation = .{
+                .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"open_file"}) },
+                .args = &[_]ast.Arg{},
+            },
+            .continuations = &flow_conts,
+            .location = .{ .line = 8, .column = 0, .file = "test.kz" },
+            .module = "input",
+        } },
+    };
+
+    const program = ast.Program{
+        .items = &items,
+        .module_annotations = &[_][]const u8{},
+        .main_module_name = "input",
+        .allocator = allocator,
+    };
+
+    // check() should succeed — no errors
+    try checker.check(&program);
+    try std.testing.expectEqual(@as(usize, 0), reporter.errors.items.len);
+}
+
+test "PhantomSemanticChecker - cross-module state mismatch rejected" {
+    const allocator = std.testing.allocator;
+
+    var reporter = try errors.ErrorReporter.init(allocator, "test.kz", "// phantom test");
+    defer reporter.deinit();
+
+    var checker = try PhantomSemanticChecker.init(allocator, &reporter);
+    defer checker.deinit();
+
+    // Event A: ~event open_file {} | opened { file: *File[fs:open] }
+    var event_a_output_fields = [_]ast.Field{
+        .{ .name = "file", .type = "*File", .phantom = "fs:open" },
+    };
+    var event_a_branches = [_]ast.Branch{
+        .{ .name = "opened", .payload = .{ .fields = &event_a_output_fields }, .is_deferred = false, .is_optional = false },
+    };
+
+    // Event B: ~event read_file { file: *File[mipmap:open] } | done {} — DIFFERENT MODULE
+    var event_b_input_fields = [_]ast.Field{
+        .{ .name = "file", .type = "*File", .phantom = "mipmap:open" },
+    };
+    var event_b_done_fields = [_]ast.Field{};
+    var event_b_branches = [_]ast.Branch{
+        .{ .name = "done", .payload = .{ .fields = &event_b_done_fields }, .is_deferred = false, .is_optional = false },
+    };
+
+    // Flow: ~open_file() | opened o |> read_file(file: o.file) | done |> _
+    var terminal_cont = [_]ast.Continuation{
+        .{
+            .branch = "done",
+            .binding = null,
+            .condition = null,
+            .node = .terminal,
+            .indent = 2,
+            .continuations = &[_]ast.Continuation{},
+        },
+    };
+    var flow_args = [_]ast.Arg{
+        .{ .name = "file", .value = "o.file" },
+    };
+    var flow_conts = [_]ast.Continuation{
+        .{
+            .branch = "opened",
+            .binding = "o",
+            .condition = null,
+            .node = .{ .invocation = .{
+                .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"read_file"}) },
+                .args = &flow_args,
+            } },
+            .indent = 1,
+            .continuations = &terminal_cont,
+        },
+    };
+
+    var items = [_]ast.Item{
+        .{ .import_decl = .{
+            .path = "fs",
+            .local_name = null,
+            .location = .{ .line = 0, .column = 0, .file = "test.kz" },
+            .module = "input",
+        } },
+        .{ .import_decl = .{
+            .path = "mipmap",
+            .local_name = null,
+            .location = .{ .line = 0, .column = 0, .file = "test.kz" },
+            .module = "input",
+        } },
+        .{ .event_decl = .{
+            .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"open_file"}) },
+            .input = .{ .fields = &[_]ast.Field{} },
+            .branches = &event_a_branches,
+            .annotations = @constCast(&[_][]const u8{}),
+            .location = .{ .line = 1, .column = 0, .file = "test.kz" },
+            .module = "input",
+        } },
+        .{ .event_decl = .{
+            .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"read_file"}) },
+            .input = .{ .fields = &event_b_input_fields },
+            .branches = &event_b_branches,
+            .annotations = @constCast(&[_][]const u8{}),
+            .location = .{ .line = 5, .column = 0, .file = "test.kz" },
+            .module = "input",
+        } },
+        .{ .flow = .{
+            .invocation = .{
+                .path = .{ .module_qualifier = null, .segments = @constCast(&[_][]const u8{"open_file"}) },
+                .args = &[_]ast.Arg{},
+            },
+            .continuations = &flow_conts,
+            .location = .{ .line = 8, .column = 0, .file = "test.kz" },
+            .module = "input",
+        } },
+    };
+
+    const program = ast.Program{
+        .items = &items,
+        .module_annotations = &[_][]const u8{},
+        .main_module_name = "input",
+        .allocator = allocator,
+    };
+
+    const result = checker.check(&program);
+    try std.testing.expectError(error.ValidationFailed, result);
+
+    try std.testing.expect(reporter.errors.items.len > 0);
+    const err_msg = reporter.errors.items[0].message;
+    try std.testing.expect(std.mem.indexOf(u8, err_msg, "Phantom state mismatch") != null);
+}
