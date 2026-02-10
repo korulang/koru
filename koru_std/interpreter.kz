@@ -175,6 +175,66 @@ pub const Value = struct {
         };
     }
 
+    /// Serialize to JSON into a caller-provided buffer.
+    /// Returns the written slice, or empty string on overflow.
+    pub fn toJson(self: Value, buf: []u8) []const u8 {
+        var stream = std.io.fixedBufferStream(buf);
+        const w = stream.writer();
+        self.writeJson(w) catch return "";
+        return stream.getWritten();
+    }
+
+    /// Convenience: serialize to a thread-local buffer (no allocation needed).
+    pub fn toJsonBuf(self: Value) []const u8 {
+        const S = struct { threadlocal var buf: [4096]u8 = undefined; };
+        return self.toJson(&S.buf);
+    }
+
+    fn writeJson(self: Value, w: anytype) !void {
+        try w.writeAll("{\"branch\":\"");
+        try w.writeAll(self.branch);
+        try w.writeByte('"');
+        if (self.fields.len == 1 and std.mem.eql(u8, self.fields[0].name, "__type_ref")) {
+            // Scalar payload — emit as "value": <val>
+            try w.writeAll(",\"value\":");
+            try writeFieldValue(w, self.fields[0].value);
+        } else if (self.fields.len > 0) {
+            // Named fields — emit as "fields": { ... }
+            try w.writeAll(",\"fields\":{");
+            for (self.fields, 0..) |f, i| {
+                if (i > 0) try w.writeByte(',');
+                try w.writeByte('"');
+                try w.writeAll(f.name);
+                try w.writeAll("\":");
+                try writeFieldValue(w, f.value);
+            }
+            try w.writeByte('}');
+        }
+        try w.writeByte('}');
+    }
+
+    fn writeFieldValue(w: anytype, fv: FieldValue) !void {
+        switch (fv) {
+            .int_val => |v| try std.fmt.format(w, "{d}", .{v}),
+            .float_val => |v| try std.fmt.format(w, "{d}", .{v}),
+            .bool_val => |v| try w.writeAll(if (v) "true" else "false"),
+            .string_val => |v| {
+                try w.writeByte('"');
+                for (v) |c| {
+                    switch (c) {
+                        '"' => try w.writeAll("\\\""),
+                        '\\' => try w.writeAll("\\\\"),
+                        '\n' => try w.writeAll("\\n"),
+                        '\r' => try w.writeAll("\\r"),
+                        '\t' => try w.writeAll("\\t"),
+                        else => try w.writeByte(c),
+                    }
+                }
+                try w.writeByte('"');
+            },
+        }
+    }
+
     /// Clone value into a page-allocated persistent copy (survives arena teardown).
     pub fn clonePersistent(self: Value) Value {
         const allocator = std.heap.page_allocator;
@@ -880,7 +940,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         if (parser.reporter.hasErrors()) {
             const err = parser.reporter.errors.items[0];
             return .{ .parse_error = .{
-                .message = err.message,
+                .message = std.heap.page_allocator.dupe(u8, err.message) catch "parse error",
                 .line = @intCast(err.location.line),
                 .column = @intCast(err.location.column),
             }};
@@ -921,7 +981,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         // std.debug.print("[INTERPRETER] Validation failed: {s} (binding: {s})\n",
         //     .{validation_err.message, validation_err.binding_name});
         return .{ .validation_error = .{
-            .message = validation_err.message,
+            .message = std.heap.page_allocator.dupe(u8, validation_err.message) catch "validation error",
         }};
     }
     // std.debug.print("[INTERPRETER] Validation passed\n", .{});
