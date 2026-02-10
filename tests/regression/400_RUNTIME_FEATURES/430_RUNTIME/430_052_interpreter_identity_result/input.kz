@@ -10,9 +10,7 @@ const std = @import("std");
 ~pub event add { a: i64, b: i64 }
 | sum i64
 
-~proc add {
-    return .{ .sum = a + b };
-}
+~add = sum a + b
 
 ~std.runtime:register(scope: "test") {
     add
