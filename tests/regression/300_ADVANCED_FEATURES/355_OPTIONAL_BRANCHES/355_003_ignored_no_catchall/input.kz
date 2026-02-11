@@ -1,0 +1,30 @@
+// Test 918c: Optional Branches - Ignored Without |? Catch-All
+//
+// Verifies:
+// 1. Optional branches can be COMPLETELY IGNORED
+// 2. No |? catch-all needed for optional branches
+// 3. Only required branches need handlers
+
+~import "$std/io"
+
+// Event with required + multiple optional branches
+~event analyze { value: u32 }
+| success { result: u32 }         // REQUIRED
+| ?warning { msg: []const u8 }    // OPTIONAL: ignored
+| ?debug { info: []const u8 }     // OPTIONAL: ignored
+
+~proc analyze {
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Large value" } };
+    }
+    return .{ .success = .{ .result = value * 2 } };
+}
+
+// value=50 → success
+~analyze(value: 50)
+| success _ |> std.io:print.ln("SUCCESS")
+// No warning handler, no |? — optional branches just ignored
+
+// value=150 → warning (optional, no handler — silently ignored)
+~analyze(value: 150)
+| success _ |> std.io:print.ln("SUCCESS")

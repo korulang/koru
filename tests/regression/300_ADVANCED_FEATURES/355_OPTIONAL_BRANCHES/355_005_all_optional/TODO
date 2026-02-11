@@ -1,0 +1,3 @@
+BUG: Emitter generates result.@"?" for |? catch-all when ALL branches are optional.
+The |? catch-all should expand into individual switch cases for each optional branch,
+but when there are zero required branches, the emitter takes a wrong codepath.

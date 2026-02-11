@@ -1,0 +1,34 @@
+// Test 918e: Optional Branches - All Branches Optional (Edge Case)
+//
+// Verifies:
+// 1. Event with NO required branches — all optional
+// 2. Handler uses ONLY |? to catch everything
+// 3. Edge case: zero required branches + only catch-all
+
+~import "$std/io"
+
+// Event with ONLY optional branches
+~event process { value: u32 }
+| ?success { result: u32 }
+| ?warning { msg: []const u8 }
+| ?err { msg: []const u8 }
+
+~proc process {
+    if (value == 0) {
+        return .{ .err = .{ .msg = "Zero value" } };
+    }
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Large value" } };
+    }
+    return .{ .success = .{ .result = value * 2 } };
+}
+
+// All caught by |?
+~process(value: 10)
+|? |> std.io:print.ln("OPTIONAL FIRED")
+
+~process(value: 150)
+|? |> std.io:print.ln("OPTIONAL FIRED")
+
+~process(value: 0)
+|? |> std.io:print.ln("OPTIONAL FIRED")

@@ -1,0 +1,52 @@
+// Test 918b: Optional Branches - Mix Explicit Handling + |? Catch-All
+//
+// Verifies:
+// 1. Handler explicitly handles SOME optional branches
+// 2. |? catches remaining optional branches
+// 3. Most realistic real-world pattern
+
+~import "$std/io"
+
+// Event with required + multiple optional branches
+~event process { value: u32 }
+| success { result: u32 }        // REQUIRED
+| ?warning { msg: []const u8 }   // OPTIONAL: handled explicitly
+| ?debug { info: []const u8 }    // OPTIONAL: caught by |?
+| ?trace { details: []const u8 } // OPTIONAL: caught by |?
+
+~proc process {
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Value too large" } };
+    }
+    if (value % 2 == 1) {
+        return .{ .debug = .{ .info = "Value is odd" } };
+    }
+    if (value < 5) {
+        return .{ .trace = .{ .details = "Very small value" } };
+    }
+    return .{ .success = .{ .result = value * 2 } };
+}
+
+// value=10 → success (required, handled)
+~process(value: 10)
+| success _ |> std.io:print.ln("SUCCESS")
+| warning _ |> std.io:print.ln("WARNING")
+|? |> std.io:print.ln("OPTIONAL CAUGHT")
+
+// value=150 → warning (optional, handled explicitly)
+~process(value: 150)
+| success _ |> std.io:print.ln("SUCCESS")
+| warning _ |> std.io:print.ln("WARNING")
+|? |> std.io:print.ln("OPTIONAL CAUGHT")
+
+// value=7 → debug (optional, caught by |?)
+~process(value: 7)
+| success _ |> std.io:print.ln("SUCCESS")
+| warning _ |> std.io:print.ln("WARNING")
+|? |> std.io:print.ln("OPTIONAL CAUGHT")
+
+// value=2 → trace (optional, caught by |?)
+~process(value: 2)
+| success _ |> std.io:print.ln("SUCCESS")
+| warning _ |> std.io:print.ln("WARNING")
+|? |> std.io:print.ln("OPTIONAL CAUGHT")

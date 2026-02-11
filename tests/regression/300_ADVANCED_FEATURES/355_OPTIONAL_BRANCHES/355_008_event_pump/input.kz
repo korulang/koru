@@ -1,0 +1,47 @@
+// Test 918h: Optional Branches - Event Pump Loop (THE USE CASE)
+//
+// Verifies:
+// 1. Event pump with multiple optional event types
+// 2. Loop using labels/jumps that repeatedly calls pump
+// 3. |? catches unhandled events, loop continues
+// 4. THE motivating use case: wrapping WIN32/SDL/etc event systems
+
+~import "$std/io"
+
+const std = @import("std");
+
+// Simulated event pump - all branches optional (any event can fire)
+~event pump { iteration: u32 }
+| ?keyboard { code: i32 }
+| ?mouse { code: i32 }
+| ?window { code: i32 }
+| ?timer { code: i32 }
+| ?quit {}
+
+~proc pump {
+    const i = iteration;
+
+    // After 8 iterations, quit
+    if (i >= 8) {
+        return .{ .quit = .{} };
+    }
+
+    // Cycle: keyboard, mouse, window, timer
+    const event_type = i % 4;
+    if (event_type == 0) {
+        return .{ .keyboard = .{ .code = @intCast(i) } };
+    } else if (event_type == 1) {
+        return .{ .mouse = .{ .code = @intCast(i) } };
+    } else if (event_type == 2) {
+        return .{ .window = .{ .code = @intCast(i) } };
+    } else {
+        return .{ .timer = .{ .code = @intCast(i) } };
+    }
+}
+
+// Event loop: only handle keyboard and mouse, |? catches the rest
+~#loop pump(iteration: 0)
+| keyboard _ |> std.io:print.ln("KEYBOARD") |> @loop(iteration: iteration + 1)
+| mouse _ |> std.io:print.ln("MOUSE") |> @loop(iteration: iteration + 1)
+| quit _ |> std.io:print.ln("QUIT")
+|? |> std.io:print.ln("OTHER") |> @loop(iteration: iteration + 1)

@@ -1,2 +1,0 @@
-Success: 100
-Warning: Large value

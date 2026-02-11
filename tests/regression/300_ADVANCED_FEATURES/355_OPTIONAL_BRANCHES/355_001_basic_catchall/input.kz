@@ -1,0 +1,44 @@
+// Test 918: Optional Branches - Basic |? Catch-All
+//
+// Verifies:
+// 1. Event with required and optional branches
+// 2. |? catches optional branches generically
+// 3. Required branches handled explicitly as usual
+
+~import "$std/io"
+
+// Event with both required and optional branches
+~event process { value: u32 }
+| success { result: u32 }        // REQUIRED: must be handled
+| ?warning { msg: []const u8 }   // OPTIONAL: can be caught by |?
+| ?debug { details: []const u8 } // OPTIONAL: can be caught by |?
+
+~proc process {
+    // When value > 100, return optional warning branch
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Value is large" } };
+    }
+
+    // When value is odd, return optional debug branch
+    if (value % 2 == 1) {
+        return .{ .debug = .{ .details = "Value is odd" } };
+    }
+
+    // Otherwise return required success branch
+    return .{ .success = .{ .result = value * 2 } };
+}
+
+// Call 1: value=10 → even, <100 → success branch
+~process(value: 10)
+| success _ |> std.io:print.ln("GOT SUCCESS")
+|? |> std.io:print.ln("GOT OPTIONAL")
+
+// Call 2: value=150 → >100 → warning branch (caught by |?)
+~process(value: 150)
+| success _ |> std.io:print.ln("GOT SUCCESS")
+|? |> std.io:print.ln("GOT OPTIONAL")
+
+// Call 3: value=7 → odd → debug branch (caught by |?)
+~process(value: 7)
+| success _ |> std.io:print.ln("GOT SUCCESS")
+|? |> std.io:print.ln("GOT OPTIONAL")

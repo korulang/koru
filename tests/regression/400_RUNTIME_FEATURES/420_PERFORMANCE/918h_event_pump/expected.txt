@@ -1,8 +1,0 @@
-Keyboard: 0
-Mouse: 1
-Other event (ignored)
-Other event (ignored)
-Keyboard: 4
-Mouse: 5
-Other event (ignored)
-Other event (ignored)

@@ -1,0 +1,30 @@
+// Test 918i: Optional Branches - No |? and No Handler
+//
+// Verifies:
+// 1. Handler has NO |? catch-all
+// 2. Optional branch fires at runtime with no handler
+// 3. Expected: silently ignored (optional = truly optional)
+
+~import "$std/io"
+
+// Event with required + optional branches
+~event process { value: u32 }
+| success { result: u32 }        // REQUIRED
+| ?warning { msg: []const u8 }   // OPTIONAL
+
+~proc process {
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Value too large" } };
+    }
+    return .{ .success = .{ .result = value * 2 } };
+}
+
+// value=10 → success → handled normally
+~process(value: 10)
+| success _ |> std.io:print.ln("SUCCESS")
+// No |? — that's OK
+
+// value=150 → warning → no handler, no |? → silently ignored
+~process(value: 150)
+| success _ |> std.io:print.ln("SUCCESS")
+// No warning handler, no |? — optional branch fires into the void

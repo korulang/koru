@@ -1,0 +1,40 @@
+// Test 918f: Optional Branches - API Evolution
+//
+// Verifies:
+// 1. Event evolved by adding NEW optional branch
+// 2. Old handler (|? catch-all) silently catches new branch
+// 3. Adding optional branches never breaks existing handlers
+// 4. Contrast: adding REQUIRED branches would break compilation (good!)
+
+~import "$std/io"
+
+// VERSION 2: added ?debug branch (new in v2)
+~event process { value: u32 }
+| success { result: u32 }        // REQUIRED (both versions)
+| ?warning { msg: []const u8 }   // OPTIONAL (both versions)
+| ?debug { info: []const u8 }    // OPTIONAL (NEW in v2)
+
+~proc process {
+    if (value < 5) {
+        return .{ .debug = .{ .info = "Small value" } };
+    }
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Large value" } };
+    }
+    return .{ .success = .{ .result = value * 2 } };
+}
+
+// Handler written for v1 — doesn't know about ?debug
+// |? silently catches the new branch
+~process(value: 10)
+| success _ |> std.io:print.ln("SUCCESS")
+|? |> std.io:print.ln("OPTIONAL")
+
+~process(value: 150)
+| success _ |> std.io:print.ln("SUCCESS")
+|? |> std.io:print.ln("OPTIONAL")
+
+// value=2 → returns ?debug (new in v2) — caught by |?
+~process(value: 2)
+| success _ |> std.io:print.ln("SUCCESS")
+|? |> std.io:print.ln("OPTIONAL")

@@ -1,0 +1,3 @@
+BUG: Label jump @loop(iteration: iteration + 1) fails — 'iteration' not in scope.
+The event input argument should be available for label jump re-invocation.
+This is a label/jump scoping issue, not an optional branches issue.
