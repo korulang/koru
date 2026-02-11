@@ -1,0 +1,28 @@
+// Test: Struct declared via ~struct used as event parameter type
+//
+// This is the real payoff: declare a type through Koru,
+// then use it in event signatures and flows.
+
+~import "$std/types"
+~import "$std/io"
+
+// Declare the type through Koru
+~struct(Player) {
+    name: []const u8,
+    health: i32,
+}
+
+// Use it in an event signature
+~event greet { player: Player }
+| greeted []const u8
+
+~proc greet {
+    return .{ .greeted = player.name };
+}
+
+// Use it in a flow
+const p = Player{ .name = "Alice", .health = 100 };
+
+~greet(player: p)
+| greeted msg |>
+    print.ln("Hello, {{ msg:s }}!")

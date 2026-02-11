@@ -11,6 +11,117 @@ const codegen_utils = @import("codegen_utils");
 // Sentinel value for tap function context (prevents infinite recursion)
 const TAP_FUNCTION_CONTEXT: usize = 9999;
 
+/// Extract declared name from a host line like "const name = ..." or "pub var foo = ..."
+fn extractDeclaredName(content: []const u8) ?[]const u8 {
+    var s = content;
+    // Skip leading whitespace
+    while (s.len > 0 and (s[0] == ' ' or s[0] == '\t')) s = s[1..];
+    // Skip "pub "
+    if (s.len >= 4 and std.mem.eql(u8, s[0..4], "pub ")) s = s[4..];
+    // Skip whitespace after pub
+    while (s.len > 0 and (s[0] == ' ' or s[0] == '\t')) s = s[1..];
+    // Check for "const " or "var "
+    if (s.len >= 6 and std.mem.eql(u8, s[0..6], "const ")) {
+        s = s[6..];
+    } else if (s.len >= 4 and std.mem.eql(u8, s[0..4], "var ")) {
+        s = s[4..];
+    } else {
+        return null;
+    }
+    // Skip whitespace
+    while (s.len > 0 and (s[0] == ' ' or s[0] == '\t')) s = s[1..];
+    // Extract identifier (alphanumeric + underscore)
+    var end: usize = 0;
+    while (end < s.len and (std.ascii.isAlphanumeric(s[end]) or s[end] == '_')) {
+        end += 1;
+    }
+    if (end == 0) return null;
+    return s[0..end];
+}
+
+/// Collect all module-level declared names from items in the same scope.
+/// These are names that would cause Zig shadowing errors if used as local bindings.
+fn collectDeclaredNames(items: []const ast.Item, allocator: std.mem.Allocator) !std.ArrayList([]const u8) {
+    var names = try std.ArrayList([]const u8).initCapacity(allocator, 0);
+    for (items) |item| {
+        switch (item) {
+            .host_line => |hl| {
+                if (extractDeclaredName(hl.content)) |name| {
+                    try names.append(allocator, name);
+                }
+            },
+            .inline_code => |ic| {
+                if (extractDeclaredName(ic.code)) |name| {
+                    try names.append(allocator, name);
+                }
+            },
+            .host_type_decl => |htd| {
+                try names.append(allocator, htd.name);
+            },
+            else => {},
+        }
+    }
+    return names;
+}
+
+/// Check if a field name would shadow a module-level declaration
+fn nameIsShadowed(name: []const u8, declared_names: []const []const u8) bool {
+    for (declared_names) |dn| {
+        if (std.mem.eql(u8, name, dn)) return true;
+    }
+    return false;
+}
+
+/// Replace word-boundary-matched identifier occurrences in text.
+/// Returns a new allocated string with all occurrences of `old_name` (as a whole identifier)
+/// replaced with `new_name`.
+fn replaceIdentifier(allocator: std.mem.Allocator, text: []const u8, old_name: []const u8, new_name: []const u8) ![]const u8 {
+    if (old_name.len == 0) return try allocator.dupe(u8, text);
+
+    // Count replacements to calculate output size
+    var count: usize = 0;
+    var i: usize = 0;
+    while (i + old_name.len <= text.len) {
+        if (std.mem.eql(u8, text[i .. i + old_name.len], old_name)) {
+            const before_ok = (i == 0) or (!std.ascii.isAlphanumeric(text[i - 1]) and text[i - 1] != '_');
+            const after_idx = i + old_name.len;
+            const after_ok = (after_idx >= text.len) or (!std.ascii.isAlphanumeric(text[after_idx]) and text[after_idx] != '_');
+            if (before_ok and after_ok) {
+                count += 1;
+                i += old_name.len;
+                continue;
+            }
+        }
+        i += 1;
+    }
+
+    if (count == 0) return try allocator.dupe(u8, text);
+
+    // Calculate output size: original - (count * old) + (count * new)
+    const new_len = text.len - (count * old_name.len) + (count * new_name.len);
+    const result = try allocator.alloc(u8, new_len);
+
+    var pos: usize = 0;
+    i = 0;
+    while (i < text.len) {
+        if (i + old_name.len <= text.len and std.mem.eql(u8, text[i .. i + old_name.len], old_name)) {
+            const before_ok = (i == 0) or (!std.ascii.isAlphanumeric(text[i - 1]) and text[i - 1] != '_');
+            const after_idx = i + old_name.len;
+            const after_ok = (after_idx >= text.len) or (!std.ascii.isAlphanumeric(text[after_idx]) and text[after_idx] != '_');
+            if (before_ok and after_ok) {
+                @memcpy(result[pos .. pos + new_name.len], new_name);
+                pos += new_name.len;
+                i += old_name.len;
+                continue;
+            }
+        }
+        result[pos] = text[i];
+        pos += 1;
+        i += 1;
+    }
+    return result[0..pos];
+}
+
 /// Strip phantom type annotations from a type string
 /// e.g., "*Resource[state!]" -> "*Resource", "[]const u8" -> "[]const u8"
 fn stripPhantom(type_str: []const u8) []const u8 {
@@ -1866,26 +1977,43 @@ pub const VisitorEmitter = struct {
                             }
                             try self.code_emitter.write("\n");
 
-                            // Generate implicit input bindings
+                            // Collect module-level names to detect shadowing
+                            var declared_names = try collectDeclaredNames(items_to_search, self.allocator);
+                            defer declared_names.deinit(self.allocator);
+
+                            // Generate implicit input bindings (skip shadowed fields)
                             for (event.input.fields) |field| {
-                                try self.code_emitter.writeIndent();
-                                try self.code_emitter.write("const ");
-                                try self.code_emitter.write(field.name);
-                                try self.code_emitter.write(" = __koru_event_input.");
-                                try self.code_emitter.write(field.name);
-                                try self.code_emitter.write(";\n");
+                                if (!nameIsShadowed(field.name, declared_names.items)) {
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write("const ");
+                                    try self.code_emitter.write(field.name);
+                                    try self.code_emitter.write(" = __koru_event_input.");
+                                    try self.code_emitter.write(field.name);
+                                    try self.code_emitter.write(";\n");
+                                }
                             }
                             // Suppress unused variable warnings
                             for (event.input.fields) |field| {
-                                try self.code_emitter.writeIndent();
-                                try self.code_emitter.write("_ = &");
-                                try self.code_emitter.write(field.name);
-                                try self.code_emitter.write(";\n");
+                                if (!nameIsShadowed(field.name, declared_names.items)) {
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write("_ = &");
+                                    try self.code_emitter.write(field.name);
+                                    try self.code_emitter.write(";\n");
+                                }
                             }
 
                             // Keep _ = &__koru_event_input for backwards compatibility
                             try self.code_emitter.writeIndent();
                             try self.code_emitter.write("_ = &__koru_event_input;\n");
+
+                            // Rewrite proc body: replace shadowed field names with __koru_event_input.field
+                            var proc_body: []const u8 = proc.body;
+                            for (event.input.fields) |field| {
+                                if (nameIsShadowed(field.name, declared_names.items)) {
+                                    const replacement = try std.fmt.allocPrint(self.allocator, "__koru_event_input.{s}", .{field.name});
+                                    proc_body = try replaceIdentifier(self.allocator, proc_body, field.name, replacement);
+                                }
+                            }
 
                             // Emit proc body with proper indentation
                             // Calculate indent string based on current indent_level
@@ -1898,7 +2026,7 @@ pub const VisitorEmitter = struct {
                             }
                             const indent_str = indent_buf[0..indent_pos];
 
-                            try self.code_emitter.emitReindentedText(proc.body, indent_str);
+                            try self.code_emitter.emitReindentedText(proc_body, indent_str);
                             try self.code_emitter.write("\n");
                             found_impl = true;
                             break;

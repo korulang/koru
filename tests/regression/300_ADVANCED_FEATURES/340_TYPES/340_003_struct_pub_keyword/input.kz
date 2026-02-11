@@ -1,0 +1,22 @@
+// Test: ~[pub] struct as keyword
+//
+// Pub annotation should still work with keyword syntax.
+
+~import "$std/types"
+~import "$std/io"
+
+// Private struct
+~struct(Internal) {
+    value: i32,
+}
+
+// Public struct
+~[pub] struct(Position) {
+    x: f32,
+    y: f32,
+}
+
+const p = Position{ .x = 1.0, .y = 2.0 };
+const i = Internal{ .value = 42 };
+
+~print.ln("x={{ p.x }}, y={{ p.y }}, v={{ i.value }}")

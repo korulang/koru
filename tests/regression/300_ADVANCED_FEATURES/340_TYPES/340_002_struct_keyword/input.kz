@@ -1,0 +1,18 @@
+// Test: ~struct as keyword (no module qualification)
+//
+// With [keyword] on types.kz, ~struct(Name) should work
+// without writing ~std.types:struct(Name)
+
+~import "$std/types"
+~import "$std/io"
+
+// Declare a struct using keyword syntax
+~struct(Player) {
+    name: []const u8,
+    health: i32,
+}
+
+// Use it to prove it compiled
+const player = Player{ .name = "Alice", .health = 100 };
+
+~print.ln("Player: {{ player.name:s }}, Health: {{ player.health:d }}")

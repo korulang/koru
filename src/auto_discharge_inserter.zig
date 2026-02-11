@@ -261,9 +261,155 @@ pub const AutoDischargeInserter = struct {
     }
 
     /// Main entry point - run the auto-discharge pass on a program
+    // =========================================================================
+    // Label loop scope annotation
+    // =========================================================================
+    // For #label flows, continuations that jump back (@label) are scoped
+    // (like `each` in a for-loop). Continuations that don't jump back are
+    // exit paths (like `done`). This adds @scope to the looping ones so
+    // the auto-discharge logic treats them correctly.
+    // =========================================================================
+
+    /// Check if a continuation tree contains a label_jump or label_apply matching the given label name
+    fn continuationContainsLabelJump(cont: *const ast.Continuation, label_name: []const u8) bool {
+        // Check the node in this continuation
+        if (cont.node) |node| {
+            switch (node) {
+                .label_jump => |lj| {
+                    if (std.mem.eql(u8, lj.label, label_name)) return true;
+                },
+                .label_apply => |la| {
+                    if (std.mem.eql(u8, la, label_name)) return true;
+                },
+                .label_with_invocation => |lwi| {
+                    if (!lwi.is_declaration and std.mem.eql(u8, lwi.label, label_name)) return true;
+                },
+                else => {},
+            }
+        }
+        // Recurse into nested continuations
+        for (cont.continuations) |*nested| {
+            if (continuationContainsLabelJump(nested, label_name)) return true;
+        }
+        return false;
+    }
+
+    /// Add @scope to binding_annotations of a continuation
+    fn addScopeAnnotation(self: *AutoDischargeInserter, cont: *const ast.Continuation) !ast.Continuation {
+        const old_anns = cont.binding_annotations;
+        const new_anns = try self.allocator.alloc([]const u8, old_anns.len + 1);
+        for (old_anns, 0..) |ann, ai| {
+            new_anns[ai] = try self.allocator.dupe(u8, ann);
+        }
+        new_anns[old_anns.len] = try self.allocator.dupe(u8, "@scope");
+
+        var new_cont = cont.*;
+        new_cont.binding_annotations = new_anns;
+        return new_cont;
+    }
+
+    /// Recursively walk a continuation tree, annotating label loop branches with @scope.
+    /// Returns new continuations array if modified, null if unchanged.
+    fn annotateContTree(self: *AutoDischargeInserter, conts: []const ast.Continuation) !?[]const ast.Continuation {
+        var modified = false;
+        const new_conts = try self.allocator.alloc(ast.Continuation, conts.len);
+        @memcpy(new_conts, conts);
+
+        for (new_conts, 0..) |*cont, ci| {
+            // Check if this continuation's node is a label declaration (#label event(...))
+            if (cont.node) |node| {
+                if (node == .label_with_invocation) {
+                    const lwi = node.label_with_invocation;
+                    if (lwi.is_declaration) {
+                        // This is a #label — annotate its sub-continuations
+                        const label_name = lwi.label;
+                        var branch_modified = false;
+                        const new_sub = try self.allocator.alloc(ast.Continuation, cont.continuations.len);
+                        @memcpy(new_sub, cont.continuations);
+
+                        for (new_sub, 0..) |*sub, si| {
+                            if (!hasScope(sub) and continuationContainsLabelJump(sub, label_name)) {
+                                new_sub[si] = try self.addScopeAnnotation(sub);
+                                branch_modified = true;
+                            }
+                        }
+
+                        if (branch_modified) {
+                            new_conts[ci].continuations = new_sub;
+                            modified = true;
+                        }
+                    }
+                }
+            }
+
+            // Recurse into sub-continuations regardless
+            if (cont.continuations.len > 0) {
+                if (try self.annotateContTree(cont.continuations)) |new_sub| {
+                    new_conts[ci].continuations = new_sub;
+                    modified = true;
+                }
+            }
+        }
+
+        if (modified) return new_conts;
+        return null;
+    }
+
+    /// Annotate label loop scopes across the entire program.
+    fn annotateLabelLoopScopes(self: *AutoDischargeInserter, program: *const ast.Program) !*const ast.Program {
+        var modified = false;
+        const new_items = try self.allocator.alloc(ast.Item, program.items.len);
+        @memcpy(new_items, program.items);
+
+        for (new_items) |*item| {
+            switch (item.*) {
+                .flow => |*flow| {
+                    // Handle top-level flows with pre_label
+                    if (flow.pre_label) |label_name| {
+                        var branch_modified = false;
+                        const new_conts = try self.allocator.alloc(ast.Continuation, flow.continuations.len);
+                        @memcpy(new_conts, flow.continuations);
+
+                        for (new_conts, 0..) |*cont, ci| {
+                            if (!hasScope(cont) and continuationContainsLabelJump(cont, label_name)) {
+                                new_conts[ci] = try self.addScopeAnnotation(cont);
+                                branch_modified = true;
+                            }
+                        }
+
+                        if (branch_modified) {
+                            flow.continuations = new_conts;
+                            modified = true;
+                        }
+                    }
+
+                    // Also recurse into continuation tree for nested #label nodes
+                    if (try self.annotateContTree(flow.continuations)) |new_conts| {
+                        flow.continuations = new_conts;
+                        modified = true;
+                    }
+                },
+                else => {},
+            }
+        }
+
+        if (modified) {
+            const new_program = try self.allocator.create(ast.Program);
+            new_program.* = program.*;
+            new_program.items = new_items;
+            return new_program;
+        }
+        return program;
+    }
+
     pub fn run(self: *AutoDischargeInserter, program: *const ast.Program) !*const ast.Program {
+        // Step 0: Annotate label loop scopes
+        // For #label flows, add @scope to continuations that jump back (@label).
+        // This must happen before auto-discharge so it sees the correct scope boundaries.
+        const annotated_program = try self.annotateLabelLoopScopes(program);
+
         // Step 1: Build event map
-        try self.buildEventMap(program);
+        try self.buildEventMap(annotated_program);
 
         // Check for validation errors (e.g., [!] on branched events)
         if (self.reporter.hasErrors()) {
@@ -274,7 +420,7 @@ pub const AutoDischargeInserter = struct {
         }
 
         // Step 2: Transform all flows (structural + terminator disposals)
-        var current_program = program;
+        var current_program = annotated_program;
         var iteration: u32 = 0;
         const max_iterations: u32 = 100000;
 

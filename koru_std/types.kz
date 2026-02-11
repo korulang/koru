@@ -39,7 +39,7 @@ const std = @import("std");
 // [pub] - emits `pub const Name = struct { ... }`
 // [soa] - (future) emits struct-of-arrays layout
 // [packed] - (future) emits packed struct
-~[comptime|transform]pub event struct {
+~[keyword|comptime|transform]pub event struct {
     expr: Expression,
     source: Source,
     item: *const Item,
@@ -75,13 +75,38 @@ const std = @import("std");
         }
     }
 
-    // Build the Zig struct declaration
-    // Note: source.text contains the body WITHOUT outer braces, so we add them
+    // Build the Zig struct declaration with clean formatting
     const pub_prefix = if (is_pub) "pub " else "";
+
+    // Re-indent source body: trim each line and add consistent 4-space indent
+    // First pass: calculate needed size
+    var needed: usize = 0;
+    var lines = std.mem.splitScalar(u8, source.text, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0) continue;
+        needed += 8 + trimmed.len + 1; // "        " + content + "\n"
+    }
+
+    // Second pass: build indented body
+    const body = allocator.alloc(u8, needed) catch unreachable;
+    var pos: usize = 0;
+    var lines2 = std.mem.splitScalar(u8, source.text, '\n');
+    while (lines2.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0) continue;
+        @memcpy(body[pos..][0..8], "        ");
+        pos += 8;
+        @memcpy(body[pos..][0..trimmed.len], trimmed);
+        pos += trimmed.len;
+        body[pos] = '\n';
+        pos += 1;
+    }
+
     const code = std.fmt.allocPrint(
         allocator,
-        "{s}const {s} = struct {{ {s} }};",
-        .{ pub_prefix, type_name, source.text }
+        "{s}const {s} = struct {{\n{s}    }};",
+        .{ pub_prefix, type_name, body[0..pos] }
     ) catch unreachable;
 
     // Create an InlineCode item to replace the flow

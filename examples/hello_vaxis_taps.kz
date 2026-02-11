@@ -1,0 +1,24 @@
+// Hello World with Taps - Koru + Vaxis TUI
+// The quit handler is a tap on the poll stream.
+~import "$vaxis"
+~import "$std/taps"
+
+// Tap: when 'q' is pressed, signal quit
+~tap(vaxis:poll -> *)
+| key k when (k.data.codepoint == 'q') |> vaxis:quit()
+    | done |> _
+
+// Main flow
+~vaxis:run(title: "Hello World")
+| ready t |> vaxis:clear()
+    | done |> vaxis:write_at(x: 2, y: 1, text: "Hello, World! (taps edition)")
+        | done |> vaxis:write_at(x: 2, y: 3, text: "Press 'q' to quit.")
+            | done |> vaxis:render()
+                | done |> #loop vaxis:poll()
+                    | key _ |> @loop()
+                    | resize _ |> @loop()
+                    | focus_in |> @loop()
+                    | focus_out |> @loop()
+                    | quit |> vaxis:cleanup(handle: t.tty)
+                        | done |> _
+| err _ |> _
