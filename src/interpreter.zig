@@ -1,6 +1,4 @@
 //! Koru Interpreter Core
-const log = @import("log");
-//!
 //! This module provides the core interpreter logic for executing Koru flows.
 //! It is used by:
 //! - The compiler's [frontend] execution mode
@@ -12,6 +10,7 @@ const log = @import("log");
 //! - Handles control flow (~if, ~for) specially
 //! - Uses typed FieldValue for dispatcher results (no string parsing!)
 
+const log = @import("log");
 const std = @import("std");
 const ast = @import("ast");
 
@@ -129,6 +128,77 @@ pub const InterpreterContext = struct {
     allocator: std.mem.Allocator,
     // Dispatcher function pointer - set by the scope
     dispatcher: ?DispatchFn,
+};
+
+const InterpreterThreadState = struct {
+    threadlocal var inited: bool = false;
+    threadlocal var arena: std.heap.ArenaAllocator = undefined;
+    threadlocal var env: Environment = undefined;
+    threadlocal var expr_bindings: ExprBindings = undefined;
+
+    fn ensureInit() void {
+        if (!inited) {
+            arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            env = Environment.init(std.heap.page_allocator);
+            expr_bindings = ExprBindings.init(std.heap.page_allocator);
+            inited = true;
+        }
+    }
+
+    fn prepare() std.mem.Allocator {
+        ensureInit();
+        _ = arena.reset(.retain_capacity);
+        if (env.bindings.count() != 0) env.clear();
+        if (expr_bindings.values.count() != 0) expr_bindings.clear();
+        return arena.allocator();
+    }
+};
+
+const InterpreterFlowCache = struct {
+    threadlocal var inited: bool = false;
+    threadlocal var arena: std.heap.ArenaAllocator = undefined;
+    threadlocal var source_hash: u64 = 0;
+    threadlocal var source_len: usize = 0;
+    threadlocal var source_copy: []const u8 = &[_]u8{};
+    threadlocal var flow: ast.Flow = undefined;
+    threadlocal var has_flow: bool = false;
+
+    fn ensureInit() void {
+        if (!inited) {
+            arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            inited = true;
+        }
+    }
+
+    fn getOrParse(source: []const u8) ?*const ast.Flow {
+        ensureInit();
+        const hash = std.hash.Wyhash.hash(0, source);
+        if (has_flow and source_len == source.len and source_hash == hash and std.mem.eql(u8, source, source_copy)) {
+            return &flow;
+        }
+
+        _ = arena.reset(.retain_capacity);
+        const allocator = arena.allocator();
+        source_copy = allocator.dupe(u8, source) catch {
+            has_flow = false;
+            return null;
+        };
+        const flow_parser = @import("flow_parser");
+        const parse_result = flow_parser.parseFlow(allocator, source_copy);
+        switch (parse_result) {
+            .flow => |f| {
+                flow = f;
+                has_flow = true;
+                source_len = source.len;
+                source_hash = hash;
+                return &flow;
+            },
+            .err => {
+                has_flow = false;
+                return null;
+            },
+        }
+    }
 };
 
 // ============================================================================
@@ -848,10 +918,7 @@ pub fn runSource(
 ) RunResult {
     log.debug("[INTERPRETER] Parsing source ({d} bytes)\n", .{source.len});
 
-    // Create allocator for parsing
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    const allocator = InterpreterThreadState.prepare();
 
     // Create error reporter
     var reporter = errors_module.ErrorReporter.init(
@@ -933,15 +1000,12 @@ pub fn runSource(
     log.debug("[INTERPRETER] Validation passed\n", .{});
 
     // Create environment and context
-    var env = Environment.init(allocator);
-    defer env.deinit();
-
-    var expr_bindings = ExprBindings.init(allocator);
-    defer expr_bindings.deinit();
+    const env = &InterpreterThreadState.env;
+    const expr_bindings = &InterpreterThreadState.expr_bindings;
 
     var ctx = InterpreterContext{
-        .env = &env,
-        .expr_bindings = &expr_bindings,
+        .env = env,
+        .expr_bindings = expr_bindings,
         .allocator = allocator,
         .dispatcher = dispatcher,
     };
@@ -992,10 +1056,7 @@ pub fn runSourceFast(
 
     log.debug("[INTERPRETER] Fast-path parsing source ({d} bytes)\n", .{source.len});
 
-    // Create allocator for parsing + execution
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    const allocator = InterpreterThreadState.prepare();
 
     // Try the lightweight flow parser first
     const parse_result = flow_parser.parseFlow(allocator, source);
@@ -1018,15 +1079,12 @@ pub fn runSourceFast(
             log.debug("[INTERPRETER] Validation passed\n", .{});
 
             // Create environment and context
-            var env = Environment.init(allocator);
-            defer env.deinit();
-
-            var expr_bindings = ExprBindings.init(allocator);
-            defer expr_bindings.deinit();
+            const env = &InterpreterThreadState.env;
+            const expr_bindings = &InterpreterThreadState.expr_bindings;
 
             var ctx = InterpreterContext{
-                .env = &env,
-                .expr_bindings = &expr_bindings,
+                .env = env,
+                .expr_bindings = expr_bindings,
                 .allocator = allocator,
                 .dispatcher = dispatcher,
             };
@@ -1064,6 +1122,70 @@ pub fn runSourceFast(
     }
 }
 
+/// Cached fast path: reuse parsed flow when the source string matches.
+/// Falls back to runSource() if parsing fails.
+pub fn runSourceFastCached(
+    source: []const u8,
+    dispatcher: DispatchFn,
+    parser_module: anytype,
+    errors_module: anytype,
+    expr_parser_module: anytype,
+) RunResult {
+    log.debug("[INTERPRETER] Cached fast-path parsing source ({d} bytes)\n", .{source.len});
+
+    const allocator = InterpreterThreadState.prepare();
+    const cached_flow = InterpreterFlowCache.getOrParse(source) orelse {
+        return runSource(source, dispatcher, parser_module, errors_module);
+    };
+
+    // Validation pass
+    if (validateFlow(cached_flow, allocator)) |validation_err| {
+        log.debug("[INTERPRETER] Validation failed: {s} (binding: {s})\n", .{ validation_err.message, validation_err.binding_name });
+        return .{ .validation_error = .{
+            .message = validation_err.message,
+        } };
+    }
+
+    const env = &InterpreterThreadState.env;
+    const expr_bindings = &InterpreterThreadState.expr_bindings;
+
+    var ctx = InterpreterContext{
+        .env = env,
+        .expr_bindings = expr_bindings,
+        .allocator = allocator,
+        .dispatcher = dispatcher,
+    };
+
+    const result_value = executeFlow(cached_flow, &ctx, expr_parser_module) catch |err| {
+        const inv = &cached_flow.invocation;
+        var name_buf: [256]u8 = undefined;
+        var name_len: usize = 0;
+        if (inv.path.module_qualifier) |mq| {
+            @memcpy(name_buf[name_len..][0..mq.len], mq);
+            name_len += mq.len;
+            name_buf[name_len] = ':';
+            name_len += 1;
+        }
+        for (inv.path.segments, 0..) |seg, i| {
+            if (i > 0) {
+                name_buf[name_len] = '.';
+                name_len += 1;
+            }
+            @memcpy(name_buf[name_len..][0..seg.len], seg);
+            name_len += seg.len;
+        }
+
+        return .{ .dispatch_error = .{
+            .event_name = name_buf[0..name_len],
+            .message = @errorName(err),
+        } };
+    };
+
+    const stable_value = result_value.clonePersistent();
+    log.debug("[INTERPRETER] Cached fast-path execution complete, branch: {s}\n", .{stable_value.branch});
+    return .{ .result = .{ .value = stable_value } };
+}
+
 /// Execute a pre-parsed flow AST - the fast path with no parsing overhead.
 pub fn evalFlow(
     flow: *const ast.Flow,
@@ -1072,10 +1194,7 @@ pub fn evalFlow(
 ) EvalResult {
     log.debug("[EVAL] Starting execution of pre-parsed flow\n", .{});
 
-    // Create allocator for execution
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    const allocator = InterpreterThreadState.prepare();
 
     // Validation pass
     if (validateFlow(flow, allocator)) |validation_err| {
@@ -1087,15 +1206,12 @@ pub fn evalFlow(
     log.debug("[EVAL] Validation passed\n", .{});
 
     // Create environment and context
-    var env = Environment.init(allocator);
-    defer env.deinit();
-
-    var expr_bindings = ExprBindings.init(allocator);
-    defer expr_bindings.deinit();
+    const env = &InterpreterThreadState.env;
+    const expr_bindings = &InterpreterThreadState.expr_bindings;
 
     var ctx = InterpreterContext{
-        .env = &env,
-        .expr_bindings = &expr_bindings,
+        .env = env,
+        .expr_bindings = expr_bindings,
         .allocator = allocator,
         .dispatcher = dispatcher,
     };

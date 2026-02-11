@@ -540,6 +540,68 @@ pub const InterpreterContext = struct {
     scope_name: []const u8,
 };
 
+pub const InterpreterThreadState = struct {
+    threadlocal var inited: bool = false;
+    threadlocal var arena: std.heap.ArenaAllocator = undefined;
+    threadlocal var env: Environment = undefined;
+    threadlocal var expr_bindings: ExprBindings = undefined;
+
+    pub fn prepare() std.mem.Allocator {
+        if (!inited) {
+            arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            env = Environment.init(std.heap.page_allocator);
+            expr_bindings = ExprBindings.init(std.heap.page_allocator);
+            inited = true;
+        }
+        _ = arena.reset(.retain_capacity);
+        if (env.bindings.count() != 0) env.clear();
+        if (expr_bindings.values.count() != 0) expr_bindings.clear();
+        return arena.allocator();
+    }
+};
+
+pub const InterpreterFlowCache = struct {
+    threadlocal var inited: bool = false;
+    threadlocal var arena: std.heap.ArenaAllocator = undefined;
+    threadlocal var source_hash: u64 = 0;
+    threadlocal var source_len: usize = 0;
+    threadlocal var source_copy: []const u8 = &[_]u8{};
+    threadlocal var flow: ast.Flow = undefined;
+    threadlocal var has_flow: bool = false;
+
+    pub fn getOrParse(source: []const u8) ?*const ast.Flow {
+        if (!inited) {
+            arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            inited = true;
+        }
+        const hash = std.hash.Wyhash.hash(0, source);
+        if (has_flow and source_len == source.len and source_hash == hash and std.mem.eql(u8, source, source_copy)) {
+            return &flow;
+        }
+
+        _ = arena.reset(.retain_capacity);
+        const allocator = arena.allocator();
+        source_copy = allocator.dupe(u8, source) catch {
+            has_flow = false;
+            return null;
+        };
+        const parse_result = flow_parser.parseFlow(allocator, source_copy);
+        switch (parse_result) {
+            .flow => |f| {
+                flow = f;
+                has_flow = true;
+                source_len = source.len;
+                source_hash = hash;
+                return &flow;
+            },
+            .err => {
+                has_flow = false;
+                return null;
+            },
+        }
+    }
+};
+
 // ============================================================================
 // DISPATCHER TYPE - Function signature for scope dispatchers
 // ============================================================================
@@ -894,6 +956,28 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 | validation_error { message: []const u8 }
 | dispatch_error { event_name: []const u8, message: []const u8 }
 
+// Cached parse + execute (reuses parsed flow for identical source input)
+~pub event run_cached {
+    source: []const u8,
+    dispatcher: DispatchFn,
+    cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
+    creates_obligations_fn: ?ObligationsArrayFn,   // event -> []obligations it creates
+    discharges_obligations_fn: ?ObligationsArrayFn, // event -> []obligations it discharges
+    discharge_event_fn: ?DischargeEventFn,         // obligation -> event that discharges it
+    creates_spec_fn: ?CreatesSpecFn = null,        // event -> []CreateSpec with field names
+    discharges_spec_fn: ?DischargesSpecFn = null,  // event -> []DischargeSpec with arg names
+    budget: ?u64,  // Optional budget limit (null = unlimited)
+    handle_pool: ?*HandlePool,  // Optional external pool (for bridges)
+    fail_fast: bool = true,
+    scope_name: []const u8 = "default",  // Scope name for handle isolation
+    auto_discharge: bool = true  // Auto-discharge undischarged handles at end
+}
+| result { value: Value, used: u64, handles: u32 }
+| exhausted { used: u64, last_event: []const u8, handles: u32 }
+| parse_error { message: []const u8, line: u32, column: u32 }
+| validation_error { message: []const u8 }
+| dispatch_error { event_name: []const u8, message: []const u8 }
+
 // Execute pre-parsed AST - for benchmarks and advanced use
 // This is the fast path: no parsing overhead, just execution!
 ~pub event eval {
@@ -914,16 +998,12 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
 | validation_error { message: []const u8 }
 | dispatch_error { event_name: []const u8, message: []const u8 }
-| scope_not_found { scope_name: []const u8 }
 
 ~proc run {
     const koru_errors = @import("koru_errors");
     const koru_ast = @import("koru_ast");
 
-    // Create allocator for parsing + execution
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    const allocator = InterpreterThreadState.prepare();
 
     // Fast path: lightweight flow parser (no TypeRegistry, no ModuleResolver, no ErrorReporter)
     // Falls back to full parser on failure for edge cases (multi-statement, error reporting)
@@ -970,11 +1050,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     }
 
     // Create environment and context
-    var env = Environment.init(allocator);
-    defer env.deinit();
-
-    var expr_bindings = ExprBindings.init(allocator);
-    defer expr_bindings.deinit();
+    const env = &InterpreterThreadState.env;
+    const expr_bindings = &InterpreterThreadState.expr_bindings;
 
     var budget_state = BudgetState.init(budget);
 
@@ -984,8 +1061,8 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     const active_pool: *HandlePool = if (handle_pool) |ext| ext else &local_pool;
 
     var ctx = InterpreterContext{
-        .env = &env,
-        .expr_bindings = &expr_bindings,
+        .env = env,
+        .expr_bindings = expr_bindings,
         .allocator = allocator,
         .dispatcher = dispatcher,
         .cost_fn = cost_fn,
@@ -1060,6 +1137,131 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
         allocator,
     );
 
+    return .{ .result = .{
+        .value = stable_value,
+        .used = budget_state.used,
+        .handles = @intCast(active_pool.countUndischarged()),
+    }};
+}
+
+// Cached fast path: reuse parsed flow when the source string matches.
+// Falls back to the full parser if parsing fails.
+~proc run_cached {
+    const koru_errors = @import("koru_errors");
+    const koru_ast = @import("koru_ast");
+
+    const allocator = InterpreterThreadState.prepare();
+    const cached_flow = InterpreterFlowCache.getOrParse(source) orelse blk: {
+        // Fallback: full parser for complex inputs
+        var reporter = koru_errors.ErrorReporter.init(allocator, "interpreter", source) catch {
+            return .{ .parse_error = .{
+                .message = "Failed to initialize error reporter",
+                .line = 0,
+                .column = 0,
+            }};
+        };
+        defer reporter.deinit();
+        var parser = koru_parser.Parser.init(allocator, source, "runtime_input", &[_][]const u8{}, null) catch {
+            return .{ .parse_error = .{
+                .message = "Failed to initialize parser",
+                .line = 0,
+                .column = 0,
+            }};
+        };
+        defer parser.deinit();
+        parser.fail_fast = fail_fast;
+        const parse_result = parser.parse() catch {
+            if (parser.reporter.hasErrors()) {
+                const err = parser.reporter.errors.items[0];
+                return .{ .parse_error = .{
+                    .message = std.heap.page_allocator.dupe(u8, err.message) catch "parse error",
+                    .line = @intCast(err.location.line),
+                    .column = @intCast(err.location.column),
+                }};
+            }
+            return .{ .parse_error = .{ .message = "Parse failed", .line = 0, .column = 0 }};
+        };
+        var found: ?*const koru_ast.Flow = null;
+        for (parse_result.source_file.items) |*item| {
+            if (item.* == .flow) { found = &item.flow; break; }
+        }
+        if (found) |f| break :blk f;
+        return .{ .parse_error = .{ .message = "No flow found in source", .line = 0, .column = 0 }};
+    };
+
+    if (validateFlow(cached_flow, allocator)) |validation_err| {
+        return .{ .validation_error = .{
+            .message = std.heap.page_allocator.dupe(u8, validation_err.message) catch "validation error",
+        }};
+    }
+
+    const env = &InterpreterThreadState.env;
+    const expr_bindings = &InterpreterThreadState.expr_bindings;
+
+    var budget_state = BudgetState.init(budget);
+
+    const using_external_pool = handle_pool != null;
+    var local_pool = if (handle_pool == null) HandlePool.init(allocator) else undefined;
+    defer if (!using_external_pool) local_pool.deinit();
+    const active_pool: *HandlePool = if (handle_pool) |ext| ext else &local_pool;
+
+    var ctx = InterpreterContext{
+        .env = env,
+        .expr_bindings = expr_bindings,
+        .allocator = allocator,
+        .dispatcher = dispatcher,
+        .cost_fn = cost_fn,
+        .creates_obligations_fn = creates_obligations_fn,
+        .discharges_obligations_fn = discharges_obligations_fn,
+        .discharge_event_fn = discharge_event_fn,
+        .creates_spec_fn = creates_spec_fn,
+        .discharges_spec_fn = discharges_spec_fn,
+        .budget = &budget_state,
+        .handle_pool = active_pool,
+        .scope_name = scope_name,
+    };
+
+    const result_value = executeFlow(cached_flow, &ctx) catch |err| {
+        if (err == error.BudgetExhausted) {
+            autoDischargeHandles(
+                auto_discharge,
+                using_external_pool,
+                active_pool,
+                discharges_spec_fn,
+                dispatcher,
+                allocator,
+            );
+            const stable_last_event = std.heap.page_allocator.dupe(u8, budget_state.last_event) catch budget_state.last_event;
+            return .{ .exhausted = .{
+                .used = budget_state.used,
+                .last_event = stable_last_event,
+                .handles = @intCast(active_pool.countUndischarged()),
+            }};
+        }
+        const inv = &cached_flow.invocation;
+        var name_buf: [256]u8 = undefined;
+        var name_len: usize = 0;
+        if (inv.path.module_qualifier) |mq| {
+            @memcpy(name_buf[name_len..][0..mq.len], mq);
+            name_len += mq.len;
+            name_buf[name_len] = ':';
+            name_len += 1;
+        }
+        for (inv.path.segments, 0..) |seg, i| {
+            if (i > 0) {
+                name_buf[name_len] = '.';
+                name_len += 1;
+            }
+            @memcpy(name_buf[name_len..][0..seg.len], seg);
+            name_len += seg.len;
+        }
+        return .{ .dispatch_error = .{
+            .event_name = name_buf[0..name_len],
+            .message = @errorName(err),
+        }};
+    };
+
+    const stable_value = result_value.clonePersistent();
     return .{ .result = .{
         .value = stable_value,
         .used = budget_state.used,
@@ -2025,10 +2227,7 @@ fn executeFlow(
 ~proc eval {
     std.debug.print("[EVAL] Starting execution of pre-parsed flow\n", .{});
 
-    // Create allocator for execution
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    const allocator = InterpreterThreadState.prepare();
 
     // Validation pass - check for errors BEFORE execution
     if (validateFlow(flow, allocator)) |validation_err| {
@@ -2041,11 +2240,8 @@ fn executeFlow(
     std.debug.print("[EVAL] Validation passed\n", .{});
 
     // Create environment and context
-    var env = Environment.init(allocator);
-    defer env.deinit();
-
-    var expr_bindings = ExprBindings.init(allocator);
-    defer expr_bindings.deinit();
+    const env = &InterpreterThreadState.env;
+    const expr_bindings = &InterpreterThreadState.expr_bindings;
 
     // Initialize budget tracking
     var budget_state = BudgetState.init(budget);
@@ -2057,8 +2253,8 @@ fn executeFlow(
     const active_pool: *HandlePool = if (handle_pool) |ext| ext else &local_pool;
 
     var ctx = InterpreterContext{
-        .env = &env,
-        .expr_bindings = &expr_bindings,
+        .env = env,
+        .expr_bindings = expr_bindings,
         .allocator = allocator,
         .dispatcher = dispatcher,
         .cost_fn = cost_fn,

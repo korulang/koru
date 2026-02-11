@@ -257,11 +257,13 @@ const koru_parser = @import("koru_parser");
     const Entry = struct {
         kind: EntryKind,
         name: []const u8,
+        internal_name: ?[]const u8,
         cost: u64,
     };
 
     const ResolvedEvent = struct {
         name: []const u8,
+        internal_name: ?[]const u8,
         cost: u64,
     };
 
@@ -382,27 +384,36 @@ const koru_parser = @import("koru_parser");
                 if (std.mem.startsWith(u8, entry_text, "scope(")) {
                     const close = std.mem.indexOf(u8, entry_text, ")") orelse continue;
                     const scope_ref_name = std.mem.trim(u8, entry_text[6..close], " \t");
-                    entries.append(alloc, .{ .kind = .scope_ref, .name = alloc.dupe(u8, scope_ref_name) catch scope_ref_name, .cost = 1 }) catch continue;
+                    entries.append(alloc, .{ .kind = .scope_ref, .name = alloc.dupe(u8, scope_ref_name) catch scope_ref_name, .internal_name = null, .cost = 1 }) catch continue;
                     continue;
                 }
 
                 if (entry_text.len >= 2 and (std.mem.endsWith(u8, entry_text, ":*") or std.mem.endsWith(u8, entry_text, ".*"))) {
                     const prefix = std.mem.trim(u8, entry_text[0 .. entry_text.len - 2], " \t");
-                    entries.append(alloc, .{ .kind = .glob, .name = alloc.dupe(u8, prefix) catch prefix, .cost = 1 }) catch continue;
+                    entries.append(alloc, .{ .kind = .glob, .name = alloc.dupe(u8, prefix) catch prefix, .internal_name = null, .cost = 1 }) catch continue;
                     continue;
                 }
 
-                var event_name = entry_text;
+                // Check for alias: internal_path -> alias(cost)
+                var alias_source = entry_text;
+                var internal_name_val: ?[]const u8 = null;
+                if (std.mem.indexOf(u8, entry_text, "->")) |arrow_idx| {
+                    const left = std.mem.trim(u8, entry_text[0..arrow_idx], " \t");
+                    internal_name_val = alloc.dupe(u8, left) catch left;
+                    alias_source = std.mem.trim(u8, entry_text[arrow_idx + 2 ..], " \t");
+                }
+
+                var event_name = alias_source;
                 var cost: u64 = 1;
-                if (std.mem.lastIndexOf(u8, entry_text, "(")) |paren_start| {
-                    if (entry_text[entry_text.len - 1] == ')') {
-                        const cost_str = entry_text[paren_start + 1 .. entry_text.len - 1];
-                        event_name = std.mem.trim(u8, entry_text[0..paren_start], " \t");
+                if (std.mem.lastIndexOf(u8, alias_source, "(")) |paren_start| {
+                    if (alias_source[alias_source.len - 1] == ')') {
+                        const cost_str = alias_source[paren_start + 1 .. alias_source.len - 1];
+                        event_name = std.mem.trim(u8, alias_source[0..paren_start], " \t");
                         cost = std.fmt.parseInt(u64, cost_str, 10) catch 1;
                     }
                 }
 
-                entries.append(alloc, .{ .kind = .event, .name = alloc.dupe(u8, event_name) catch event_name, .cost = cost }) catch continue;
+                entries.append(alloc, .{ .kind = .event, .name = alloc.dupe(u8, event_name) catch event_name, .internal_name = internal_name_val, .cost = cost }) catch continue;
             }
             return entries.toOwnedSlice(alloc) catch &.{};
         }
@@ -421,11 +432,11 @@ const koru_parser = @import("koru_parser");
             return null;
         }
 
-        fn appendUnique(events: *std.ArrayList(ResolvedEvent), alloc: std.mem.Allocator, name: []const u8, cost: u64) void {
+        fn appendUnique(events: *std.ArrayList(ResolvedEvent), alloc: std.mem.Allocator, name: []const u8, internal_name: ?[]const u8, cost: u64) void {
             for (events.items) |existing| {
                 if (std.mem.eql(u8, existing.name, name)) return;
             }
-            events.append(alloc, .{ .name = name, .cost = cost }) catch {};
+            events.append(alloc, .{ .name = name, .internal_name = internal_name, .cost = cost }) catch {};
         }
 
         fn resolveScope(
@@ -445,11 +456,11 @@ const koru_parser = @import("koru_parser");
 
             for (entries) |entry| {
                 switch (entry.kind) {
-                    .event => appendUnique(out_events, alloc, entry.name, entry.cost),
+                    .event => appendUnique(out_events, alloc, entry.name, entry.internal_name, entry.cost),
                     .glob => {
                         for (event_infos) |info| {
                             if (Helpers.matchGlob(entry.name, info.name)) {
-                                appendUnique(out_events, alloc, info.name, entry.cost);
+                                appendUnique(out_events, alloc, info.name, null, entry.cost);
                             }
                         }
                     },
@@ -630,7 +641,8 @@ const koru_parser = @import("koru_parser");
     const emit_helpers = !Helpers.hasRegistryHelpers(program, module_name);
     var events_list = std.ArrayList(EventEntry){ .items = &.{}, .capacity = 0 };
     for (resolved_events.items) |resolved| {
-        const info = RegistryHelper.findEventInfo(event_infos, resolved.name) orelse continue;
+        const lookup_name = resolved.internal_name orelse resolved.name;
+        const info = RegistryHelper.findEventInfo(event_infos, lookup_name) orelse continue;
         const obligations = extractObligations(allocator, info.event_decl, info.module_name);
         const branches = extractBranches(allocator, info.event_decl);
         const symbol = Helpers.buildEventSymbol(allocator, info.module_name, info.event_decl.path.segments, program.main_module_name);
@@ -1319,7 +1331,6 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                         .message = e.message,
                     } };
                 },
-                .scope_not_found => |e| return .{ .scope_not_found = .{ .scope_name = e.scope_name } },
             }
         },
         .not_found => return .{ .scope_not_found = .{ .scope_name = scope } },
@@ -1425,6 +1436,78 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                         .handles = r.handles,
                     } };
                 },
+                .exhausted => |e| return .{ .exhausted = .{
+                    .used = e.used,
+                    .last_event = e.last_event,
+                    .handles = e.handles,
+                } },
+                .parse_error => |e| return .{ .parse_error = .{
+                    .message = e.message,
+                    .line = e.line,
+                    .column = e.column,
+                } },
+                .validation_error => |e| return .{ .validation_error = .{ .message = e.message } },
+                .dispatch_error => |e| {
+                    if (std.mem.eql(u8, e.message, "EventDenied")) {
+                        return .{ .event_denied = .{ .name = e.event_name } };
+                    }
+                    return .{ .dispatch_error = .{
+                        .event_name = e.event_name,
+                        .message = e.message,
+                    } };
+                },
+            }
+        },
+        .not_found => return .{ .scope_not_found = .{ .scope_name = scope } },
+    }
+}
+
+// RUN_CACHED - Parse and execute Koru source against a named scope with cached parsing
+~pub event run_cached {
+    source: []const u8,
+    scope: []const u8,
+    budget: ?u64 = null,
+    handle_pool: ?*@import("root").koru_std.interpreter.HandlePool = null,
+    fail_fast: bool = true,
+    auto_discharge: bool = true,
+    shape: ?[]const u8 = null
+}
+| result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
+| exhausted { used: u64, last_event: []const u8, handles: u32 }
+| parse_error { message: []const u8, line: u32, column: u32 }
+| validation_error { message: []const u8 }
+| shape_error { branch: []const u8, field: ?[]const u8, message: []const u8 }
+| event_denied { name: []const u8 }
+| dispatch_error { event_name: []const u8, message: []const u8 }
+| scope_not_found { scope_name: []const u8 }
+
+~proc run_cached {
+    const interpreter_mod = @import("root").koru_std.interpreter;
+
+    const scope_result = get_scope_event.handler(.{ .name = scope });
+    switch (scope_result) {
+        .scope => |s| {
+            const result = interpreter_mod.run_cached_event.handler(.{
+                .source = source,
+                .dispatcher = s.dispatcher,
+                .cost_fn = s.cost_fn,
+                .creates_obligations_fn = s.creates_obligations_fn,
+                .discharges_obligations_fn = s.discharges_obligations_fn,
+                .discharge_event_fn = s.discharge_event_fn,
+                .creates_spec_fn = s.creates_spec_fn,
+                .discharges_spec_fn = s.discharges_spec_fn,
+                .budget = budget,
+                .handle_pool = handle_pool,
+                .fail_fast = fail_fast,
+                .scope_name = scope,
+                .auto_discharge = auto_discharge,
+            });
+            switch (result) {
+                .result => |r| return .{ .result = .{
+                    .value = r.value,
+                    .used = r.used,
+                    .handles = r.handles,
+                } },
                 .exhausted => |e| return .{ .exhausted = .{
                     .used = e.used,
                     .last_event = e.last_event,

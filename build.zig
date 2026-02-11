@@ -1188,4 +1188,23 @@ pub fn build(b: *std.Build) void {
     const run_bench_pipeline = b.addRunArtifact(bench_pipeline_exe);
     const bench_pipeline_step = b.step("bench-pipeline", "Run pipeline breakdown benchmark");
     bench_pipeline_step.dependOn(&run_bench_pipeline.step);
+
+    // Interpreter eval benchmark (zig build bench-interpreter)
+    const bench_interpreter_exe = b.addExecutable(.{
+        .name = "bench_interpreter",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/bench_interpreter.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    bench_interpreter_exe.root_module.addImport("interpreter", interpreter_module);
+    bench_interpreter_exe.root_module.addImport("parser", parser_module);
+    bench_interpreter_exe.root_module.addImport("errors", errors_module);
+    bench_interpreter_exe.root_module.addImport("ast", ast_module);
+    bench_interpreter_exe.root_module.addImport("flow_parser", flow_parser_module);
+
+    const run_bench_interpreter = b.addRunArtifact(bench_interpreter_exe);
+    const bench_interpreter_step = b.step("bench-interpreter", "Run interpreter eval benchmark");
+    bench_interpreter_step.dependOn(&run_bench_interpreter.step);
 }
