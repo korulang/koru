@@ -6681,7 +6681,12 @@ pub const Parser = struct {
         // is handled in main.zig's queueParentImports() during import resolution phase.
 
         // Use ModuleResolver to resolve the import path
-        var result = try resolver.resolveBoth(import_path, self.reporter.file_name);
+        var result = resolver.resolveBoth(import_path, self.reporter.file_name) catch |err| {
+            if (err == error.ModuleNotFound) {
+                try errors.moduleNotFound(&self.reporter, self.current, 1, import_path);
+            }
+            return err;
+        };
         defer result.deinit(resolver.allocator); // CRITICAL: Use resolver's allocator, not parser's!
 
         // Process directory imports (if directory was found)
@@ -6748,10 +6753,26 @@ pub const Parser = struct {
         var import_parser = try Parser.init(self.allocator, source, file_path, &[_][]const u8{}, self.resolver);
         defer import_parser.deinit();
 
-        // Parse import - errors will propagate naturally
+        // Parse import - propagate errors with context
         // NOTE: We intentionally don't call import_result.deinit() because we're storing
         // pointers to its EventTypes in our registry. Those need to stay alive.
-        var import_result = try import_parser.parse();
+        var import_result = import_parser.parse() catch |err| {
+            // Surface the inner parser's errors before propagating
+            if (import_parser.reporter.hasErrors()) {
+                const StderrWriter = struct {
+                    pub fn print(_: @This(), comptime fmt: []const u8, args: anytype) !void {
+                        var buf: [4096]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
+                        std.fs.File.stderr().writeAll(msg) catch {};
+                    }
+                    pub fn writeAll(_: @This(), bytes: []const u8) !void {
+                        std.fs.File.stderr().writeAll(bytes) catch {};
+                    }
+                };
+                import_parser.reporter.printErrors(StderrWriter{}) catch {};
+            }
+            return err;
+        };
 
         // Register all public events from the imported file with namespace prefix
         var event_iter = import_result.registry.events.iterator();

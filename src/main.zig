@@ -6177,12 +6177,14 @@ pub fn main() !void {
         const cargo_reqs = package_collector.getCargoRequirements();
         const go_reqs = package_collector.getGoRequirements();
         const pip_reqs = package_collector.getPipRequirements();
+        const zig_reqs = package_collector.getZigRequirements();
 
         try printStdout(allocator, "✓ Found package requirements:\n", .{});
         if (npm_reqs.len > 0) try printStdout(allocator, "  - npm: {d} package(s)\n", .{npm_reqs.len});
         if (cargo_reqs.len > 0) try printStdout(allocator, "  - cargo: {d} package(s)\n", .{cargo_reqs.len});
         if (go_reqs.len > 0) try printStdout(allocator, "  - go: {d} package(s)\n", .{go_reqs.len});
         if (pip_reqs.len > 0) try printStdout(allocator, "  - pip: {d} package(s)\n", .{pip_reqs.len});
+        if (zig_reqs.len > 0) try printStdout(allocator, "  - zig: {d} package(s)\n", .{zig_reqs.len});
 
         // Generate package files in output directory
         if (npm_reqs.len > 0) {
@@ -6211,6 +6213,56 @@ pub fn main() !void {
             defer allocator.free(requirements_txt_path);
             try emit_package_files.emitRequirementsTxt(allocator, pip_reqs, requirements_txt_path);
             try printStdout(allocator, "✓ Generated {s}\n", .{requirements_txt_path});
+        }
+
+        if (zig_reqs.len > 0) {
+            const zon_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "build.zig.zon" });
+            defer allocator.free(zon_path);
+            const project_name = std.fs.path.basename(output_dir);
+            try emit_package_files.emitBuildZigZon(allocator, zig_reqs, zon_path, project_name);
+
+            // Zig 0.15 requires a valid .fingerprint in build.zig.zon.
+            // Run a probe build to extract the correct fingerprint from zig's error message,
+            // then patch the zon file with it.
+            const probe_result = try std.process.Child.run(.{
+                .allocator = allocator,
+                .argv = &[_][]const u8{ "zig", "build", "--build-file", "build_backend.zig" },
+                .cwd = output_dir,
+            });
+            defer allocator.free(probe_result.stdout);
+            defer allocator.free(probe_result.stderr);
+
+            // Look for "use this value: 0x..." in stderr (Zig 0.15 fingerprint error)
+            if (std.mem.indexOf(u8, probe_result.stderr, "use this value: 0x")) |idx| {
+                const hex_start = idx + "use this value: ".len;
+                // Find end of hex value (next non-hex char)
+                var hex_end = hex_start + 2; // skip "0x"
+                while (hex_end < probe_result.stderr.len and
+                    (std.ascii.isHex(probe_result.stderr[hex_end]) or probe_result.stderr[hex_end] == 'x')) : (hex_end += 1)
+                {}
+                const fingerprint_str = probe_result.stderr[hex_start..hex_end];
+
+                // Read the zon, replace the placeholder fingerprint, write it back
+                const zon_file = try std.fs.cwd().openFile(zon_path, .{});
+                const zon_content = try zon_file.readToEndAlloc(allocator, 64 * 1024);
+                zon_file.close();
+                defer allocator.free(zon_content);
+
+                if (std.mem.indexOf(u8, zon_content, "0xDEAD")) |placeholder_pos| {
+                    var patched = try std.ArrayList(u8).initCapacity(allocator, zon_content.len + 20);
+                    defer patched.deinit(allocator);
+                    const w = patched.writer(allocator);
+                    try w.writeAll(zon_content[0..placeholder_pos]);
+                    try w.writeAll(fingerprint_str);
+                    try w.writeAll(zon_content[placeholder_pos + "0xDEAD".len ..]);
+
+                    const zon_out = try std.fs.cwd().createFile(zon_path, .{});
+                    defer zon_out.close();
+                    try zon_out.writeAll(patched.items);
+                }
+            }
+
+            try printStdout(allocator, "✓ Generated {s}\n", .{zon_path});
         }
 
         // Optionally run package managers if --install-packages flag is set

@@ -11,6 +11,7 @@ pub const PackageRequirementsCollector = struct {
     cargo_requirements: std.ArrayList([]const u8),
     go_requirements: std.ArrayList([]const u8),
     pip_requirements: std.ArrayList([]const u8),
+    zig_requirements: std.ArrayList([]const u8),
 
     pub fn init(allocator: std.mem.Allocator) !PackageRequirementsCollector {
         return PackageRequirementsCollector{
@@ -19,6 +20,7 @@ pub const PackageRequirementsCollector = struct {
             .cargo_requirements = try std.ArrayList([]const u8).initCapacity(allocator, 0),
             .go_requirements = try std.ArrayList([]const u8).initCapacity(allocator, 0),
             .pip_requirements = try std.ArrayList([]const u8).initCapacity(allocator, 0),
+            .zig_requirements = try std.ArrayList([]const u8).initCapacity(allocator, 0),
         };
     }
 
@@ -42,6 +44,11 @@ pub const PackageRequirementsCollector = struct {
             self.allocator.free(req);
         }
         self.pip_requirements.deinit(self.allocator);
+
+        for (self.zig_requirements.items) |req| {
+            self.allocator.free(req);
+        }
+        self.zig_requirements.deinit(self.allocator);
     }
 
     /// Collect all ~std.package:requires.* invocations from the source file
@@ -105,6 +112,20 @@ pub const PackageRequirementsCollector = struct {
                     }
                 }
             }
+
+            // Also check for std.deps:requires.zig (Zig package manager dependencies)
+            if (std.mem.eql(u8, mq, "std.deps") and
+                flow.invocation.path.segments.len == 2 and
+                std.mem.eql(u8, flow.invocation.path.segments[0], "requires") and
+                std.mem.eql(u8, flow.invocation.path.segments[1], "zig"))
+            {
+                for (flow.invocation.args) |arg| {
+                    if (std.mem.eql(u8, arg.name, "source")) {
+                        const source_copy = try self.allocator.dupe(u8, arg.value);
+                        try self.zig_requirements.append(self.allocator, source_copy);
+                    }
+                }
+            }
         }
     }
 
@@ -125,12 +146,17 @@ pub const PackageRequirementsCollector = struct {
         return self.pip_requirements.items;
     }
 
+    pub fn getZigRequirements(self: *PackageRequirementsCollector) []const []const u8 {
+        return self.zig_requirements.items;
+    }
+
     /// Check if any requirements were collected
     pub fn hasAnyRequirements(self: *PackageRequirementsCollector) bool {
         return self.npm_requirements.items.len > 0 or
             self.cargo_requirements.items.len > 0 or
             self.go_requirements.items.len > 0 or
-            self.pip_requirements.items.len > 0;
+            self.pip_requirements.items.len > 0 or
+            self.zig_requirements.items.len > 0;
     }
 };
 

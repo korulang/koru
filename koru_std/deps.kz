@@ -55,6 +55,12 @@
         apk: []const u8 = "",
     };
 
+    const ZigDep = struct {
+        name: []const u8 = "",
+        url: []const u8 = "",
+        hash: []const u8 = "",
+    };
+
     const CheckResult = struct {
         success: bool,
         output: []const u8,
@@ -233,6 +239,10 @@
     var deps_list = std.ArrayListUnmanaged(SystemDep){};
     defer deps_list.deinit(allocator);
 
+    // Collect requires.zig declarations
+    var zig_deps_list = std.ArrayListUnmanaged(ZigDep){};
+    defer zig_deps_list.deinit(allocator);
+
     // Always include Zig as a compiler requirement
     deps_list.append(allocator, SystemDep{
         .name = "zig",
@@ -304,15 +314,86 @@
                         }
                     }
                 }
+
+                // Check for requires.zig (Zig package manager dependencies)
+                if (std.mem.eql(u8, mq, "std.deps") and
+                    flow.invocation.path.segments.len == 2 and
+                    std.mem.eql(u8, flow.invocation.path.segments[0], "requires") and
+                    std.mem.eql(u8, flow.invocation.path.segments[1], "zig"))
+                {
+                    if (!matchesBuildFlags(flow.invocation.annotations)) continue;
+                    for (flow.invocation.args) |arg| {
+                        if (std.mem.eql(u8, arg.name, "source")) {
+                            var zdep = ZigDep{};
+                            zdep.name = helpers.parseJsonField(arg.value, "name");
+                            zdep.url = helpers.parseJsonField(arg.value, "url");
+                            zdep.hash = helpers.parseJsonField(arg.value, "hash");
+
+                            if (zdep.name.len > 0) {
+                                zig_deps_list.append(allocator, zdep) catch {
+                                    std.debug.print("Out of memory\n", .{});
+                                    return;
+                                };
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
-    if (deps_list.items.len == 0) {
-        std.debug.print("No system dependencies declared.\n", .{});
+    if (deps_list.items.len == 0 and zig_deps_list.items.len == 0) {
+        std.debug.print("No dependencies declared.\n", .{});
         std.debug.print("Use: ~std.deps:requires.system {{ \"name\": \"...\", \"check\": \"...\", \"brew\": \"...\" }}\n", .{});
+        std.debug.print("     ~std.deps:requires.zig {{ \"name\": \"...\", \"url\": \"...\", \"hash\": \"...\" }}\n", .{});
         return;
     }
+
+    // Display zig package dependencies
+    if (zig_deps_list.items.len > 0) {
+        std.debug.print("\nZig package dependencies:\n\n", .{});
+
+        for (zig_deps_list.items) |zdep| {
+            std.debug.print("  {s} \x1b[34m⬡\x1b[0m\n", .{zdep.name});
+            if (zdep.url.len > 0) {
+                std.debug.print("       url: {s}\n", .{zdep.url});
+            }
+            if (zdep.hash.len > 0) {
+                std.debug.print("       hash: {s}\n", .{zdep.hash});
+            }
+        }
+
+        std.debug.print("\n", .{});
+
+        if (do_install) {
+            std.debug.print("Fetching zig dependencies...\n\n", .{});
+            for (zig_deps_list.items) |zdep| {
+                if (zdep.url.len == 0) continue;
+                std.debug.print("  Fetching {s}...\n", .{zdep.name});
+                const fetch_result = std.process.Child.run(.{
+                    .allocator = allocator,
+                    .argv = &[_][]const u8{ "zig", "fetch", zdep.url },
+                }) catch {
+                    std.debug.print("    \x1b[31m✗\x1b[0m failed to run zig fetch\n", .{});
+                    continue;
+                };
+                defer allocator.free(fetch_result.stdout);
+                defer allocator.free(fetch_result.stderr);
+
+                if (fetch_result.term.Exited == 0) {
+                    std.debug.print("    \x1b[32m✓\x1b[0m fetched\n", .{});
+                } else {
+                    std.debug.print("    \x1b[31m✗\x1b[0m fetch failed\n", .{});
+                    if (fetch_result.stderr.len > 0) {
+                        std.debug.print("    {s}\n", .{helpers.firstLine(fetch_result.stderr)});
+                    }
+                }
+            }
+            std.debug.print("\n", .{});
+        }
+    }
+
+    if (deps_list.items.len == 0) return;
 
     std.debug.print("\nSystem dependencies for this project:\n\n", .{});
 
@@ -461,4 +542,14 @@
 
 ~proc requires.system {
     // Void event - collected during AST walking
+}
+
+// ============================================================
+// REQUIRES.ZIG EVENT - Declare a Zig package dependency
+// ============================================================
+
+~[comptime|norun]pub event requires.zig { source: Source }
+
+~proc requires.zig {
+    // Void event - collected during AST walking / build.zig.zon generation
 }

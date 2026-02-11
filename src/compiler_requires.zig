@@ -10,14 +10,16 @@ pub const CompilerRequiresCollector = struct {
     allocator: std.mem.Allocator,
     compiler_requirements: std.ArrayList([]const u8), // For backend.zig
     build_requirements: std.ArrayList([]const u8), // For output binary
-    seen_requirements: std.StringHashMap(void), // Deduplication
+    seen_compiler: std.StringHashMap(void), // Deduplication per target
+    seen_build: std.StringHashMap(void), // Deduplication per target
 
     pub fn init(allocator: std.mem.Allocator) !CompilerRequiresCollector {
         return CompilerRequiresCollector{
             .allocator = allocator,
             .compiler_requirements = try std.ArrayList([]const u8).initCapacity(allocator, 0),
             .build_requirements = try std.ArrayList([]const u8).initCapacity(allocator, 0),
-            .seen_requirements = std.StringHashMap(void).init(allocator),
+            .seen_compiler = std.StringHashMap(void).init(allocator),
+            .seen_build = std.StringHashMap(void).init(allocator),
         };
     }
 
@@ -31,7 +33,8 @@ pub const CompilerRequiresCollector = struct {
             self.allocator.free(req);
         }
         self.build_requirements.deinit(self.allocator);
-        self.seen_requirements.deinit();
+        self.seen_compiler.deinit();
+        self.seen_build.deinit();
     }
 
     // Legacy alias for backwards compatibility
@@ -93,29 +96,29 @@ pub const CompilerRequiresCollector = struct {
 
             if (is_build_requires) {
                 log.debug("[CompilerRequiresCollector] ✓ FOUND build:requires (for output binary)!\n", .{});
-                try self.extractAndAddSource(flow, &self.build_requirements);
+                try self.extractAndAddSource(flow, &self.build_requirements, &self.seen_build);
             } else if (is_compiler_requires) {
                 log.debug("[CompilerRequiresCollector] ✓ FOUND compiler:requires (for backend)!\n", .{});
-                try self.extractAndAddSource(flow, &self.compiler_requirements);
+                try self.extractAndAddSource(flow, &self.compiler_requirements, &self.seen_compiler);
             }
         }
     }
 
-    fn extractAndAddSource(self: *CompilerRequiresCollector, flow: *const ast.Flow, target_list: *std.ArrayList([]const u8)) !void {
+    fn extractAndAddSource(self: *CompilerRequiresCollector, flow: *const ast.Flow, target_list: *std.ArrayList([]const u8), seen: *std.StringHashMap(void)) !void {
         for (flow.invocation.args) |arg| {
             // Accept both "source" (named) and "" (anonymous block with source_value)
             if (std.mem.eql(u8, arg.name, "source") or (std.mem.eql(u8, arg.name, "") and arg.source_value != null)) {
                 const source_code = if (arg.source_value) |sv| sv.text else arg.value;
 
-                // Deduplicate by content
-                if (self.seen_requirements.contains(source_code)) {
+                // Deduplicate by content within the same target
+                if (seen.contains(source_code)) {
                     log.debug("[CompilerRequiresCollector]   Skipping duplicate requirement\n", .{});
                     continue;
                 }
 
                 const source_copy = try self.allocator.dupe(u8, source_code);
                 try target_list.append(self.allocator, source_copy);
-                try self.seen_requirements.put(source_copy, {});
+                try seen.put(source_copy, {});
                 log.debug("[CompilerRequiresCollector]   Added requirement ({d} bytes)\n", .{source_code.len});
             }
         }

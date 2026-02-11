@@ -1423,9 +1423,12 @@ pub const PhantomSemanticChecker = struct {
                 return self.validateSingleInvocation(&inv, context, event_map, current_module, location);
             },
             .label_with_invocation => |lwi| {
-                // If it's a declaration, validate the inner invocation
+                // If it's a declaration (#loop), mark parent obligations as outer scope
+                // so that @loop() jumps don't flag them as dropped.
                 if (lwi.is_declaration) {
-                    return self.validateSingleInvocation(&lwi.invocation, context, event_map, current_module, location);
+                    var scoped_context = try BindingContext.inheritWithScope(context, self.allocator);
+                    defer scoped_context.deinit();
+                    return self.validateSingleInvocation(&lwi.invocation, &scoped_context, event_map, current_module, location);
                 } else {
                     // It's a jump without semantic args (legacy)
                     return true;
@@ -1451,7 +1454,10 @@ pub const PhantomSemanticChecker = struct {
                 }
 
                 // Label jumps must not drop cleanup obligations.
-                if (context.hasUncleanedResources()) {
+                // Exception: jumps to declared labels (#loop) are backward jumps that
+                // preserve the enclosing scope — obligations survive across iterations.
+                const is_loop_jump = self.label_map.contains(lj.label);
+                if (!is_loop_jump and context.hasUncleanedResources()) {
                     const uncleaned = try context.getUncleanedResources(self.allocator);
                     defer self.allocator.free(uncleaned);
 

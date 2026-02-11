@@ -3,6 +3,7 @@ const std = @import("std");
 pub const ErrorCode = enum(u16) {
     // Construct errors
     KORU001, // Unknown construct after ~
+    KORU002, // Module not found (import resolution failed)
     KORU010, // Stray continuation (| without context)
     
     // Branch errors
@@ -215,6 +216,18 @@ pub fn unknownConstruct(reporter: *ErrorReporter, line: usize, column: usize, co
         "unknown Koru construct after '~': '{s}'",
         .{construct},
         "expected event, proc, @label, [Attr], or invocation",
+        .{},
+    );
+}
+
+pub fn moduleNotFound(reporter: *ErrorReporter, line: usize, column: usize, import_path: []const u8) !void {
+    try reporter.addErrorWithHint(
+        .KORU002,
+        line,
+        column,
+        "module not found: '{s}'",
+        .{import_path},
+        "check the import path, koru.json paths, and KORU_STDLIB/KORU_PATH environment variables",
         .{},
     );
 }

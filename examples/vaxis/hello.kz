@@ -1,17 +1,19 @@
-// Test WITH when guards
+// Hello World - Koru + Vaxis TUI
+// Press 'q' to quit.
 ~import "$vaxis"
 
-~vaxis:run(title: "Test Poll")
-| ready t |> vaxis:poll()
-    | key k when (k.codepoint == 'q') |> vaxis:cleanup(handle: t.tty)
-        | done |> _
-    | key k |> vaxis:cleanup(handle: t.tty)
-        | done |> _
-    | resize _ |> vaxis:cleanup(handle: t.tty)
-        | done |> _
-    | focus_in |> vaxis:cleanup(handle: t.tty)
-        | done |> _
-    | focus_out |> vaxis:cleanup(handle: t.tty)
-        | done |> _
-    | quit |> _
+~vaxis:run(title: "Hello World")
+| ready t |> vaxis:clear()
+    | done |> vaxis:write_at(x: 2, y: 1, text: "Hello, World!")
+        | done |> vaxis:write_at(x: 2, y: 3, text: "Press 'q' to quit.")
+            | done |> vaxis:render()
+                | done |> #loop vaxis:poll()
+                    | key k when (k.data.codepoint == 'q') |> vaxis:cleanup(handle: t.tty)
+                        | done |> _
+                    | key _ |> @loop()
+                    | resize _ |> @loop()
+                    | focus_in |> @loop()
+                    | focus_out |> @loop()
+                    | quit |> vaxis:cleanup(handle: t.tty)
+                        | done |> _
 | err _ |> _

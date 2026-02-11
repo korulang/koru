@@ -4759,8 +4759,9 @@ fn emitContinuationListWithUnreachableBranches(
     prev_result: []const u8,
     result_counter: *usize,
     unreachable_branches: []const []const u8,
+    noop_branches: []const []const u8,
 ) anyerror!void {
-    if (continuations.len == 0 and unreachable_branches.len == 0) {
+    if (continuations.len == 0 and unreachable_branches.len == 0 and noop_branches.len == 0) {
         return;
     }
 
@@ -4770,9 +4771,62 @@ fn emitContinuationListWithUnreachableBranches(
     try emitter.write(") {\n");
     emitter.indent();
 
-    // Emit actual continuation cases
-    for (continuations) |*cont| {
-        try emitContinuationCase(emitter, ctx, cont, result_counter);
+    // Group continuations by branch name (for when-clause merging)
+    const branch_groups = try groupContinuationsByBranch(std.heap.page_allocator, continuations);
+    defer {
+        for (branch_groups) |group| {
+            std.heap.page_allocator.free(group.continuations);
+        }
+        std.heap.page_allocator.free(branch_groups);
+    }
+
+    // Emit continuation cases, grouped by branch
+    for (branch_groups) |group| {
+        if (group.continuations.len == 1) {
+            // Single continuation - emit directly
+            try emitContinuationCase(emitter, ctx, group.continuations[0], result_counter);
+        } else {
+            // Multiple when-clauses for same branch - emit as if/else chain in one switch arm
+            const first_cont = group.continuations[0];
+            const binding_name = first_cont.binding orelse first_cont.branch;
+
+            try emitter.writeIndent();
+            try emitter.write(".");
+            try writeBranchName(emitter, group.branch_name);
+            try emitter.write(" => |");
+            try writeBranchName(emitter, binding_name);
+            try emitter.write("| {\n");
+            emitter.indent();
+
+            // Emit if/else chain for when-clauses
+            for (group.continuations, 0..) |cont_ptr, idx| {
+                try emitter.writeIndent();
+                if (cont_ptr.condition) |condition| {
+                    if (idx == 0) {
+                        try emitter.write("if (");
+                    } else {
+                        try emitter.write("else if (");
+                    }
+                    try emitter.write(condition);
+                    try emitter.write(") {\n");
+                } else {
+                    if (idx > 0) {
+                        try emitter.write("else {\n");
+                    }
+                }
+
+                emitter.indent();
+                try emitContinuationBody(emitter, ctx, cont_ptr, result_counter);
+                emitter.dedent();
+
+                try emitter.writeIndent();
+                try emitter.write("}\n");
+            }
+
+            emitter.dedent();
+            try emitter.writeIndent();
+            try emitter.write("},\n");
+        }
     }
 
     // Emit explicit unreachable cases for guarded branches
@@ -4788,6 +4842,21 @@ fn emitContinuationListWithUnreachableBranches(
             try emitter.write(branch);
         }
         try emitter.write(" => unreachable,\n");
+    }
+
+    // Emit no-op cases for branches that can break out of the loop
+    // (looping branches with terminal when-clause sub-paths)
+    for (noop_branches) |branch| {
+        try emitter.writeIndent();
+        try emitter.write(".");
+        if (CodeEmitter.isZigKeyword(branch)) {
+            try emitter.write("@\"");
+            try emitter.write(branch);
+            try emitter.write("\"");
+        } else {
+            try emitter.write(branch);
+        }
+        try emitter.write(" => {},\n");
     }
 
     emitter.dedent();
@@ -5083,6 +5152,35 @@ fn findLoopingBranches(
     return looping_branches.toOwnedSlice(allocator);
 }
 
+/// Check if a continuation (or its nested sub-tree) loops back to a label
+fn continuationLoopsToLabel(cont: ast.Continuation, label: []const u8) bool {
+    if (cont.node) |step| {
+        if (step == .label_jump) {
+            if (std.mem.eql(u8, step.label_jump.label, label)) return true;
+        } else if (step == .label_apply) {
+            if (std.mem.eql(u8, step.label_apply, label)) return true;
+        }
+    }
+    for (cont.continuations) |nested| {
+        if (continuationLoopsToLabel(nested, label)) return true;
+    }
+    return false;
+}
+
+/// Check if a looping branch also has when-clause paths that break out of the loop.
+/// Returns true if the branch has at least one continuation that doesn't loop back.
+fn branchHasBreakPath(
+    branch_name: []const u8,
+    label: []const u8,
+    all_continuations: []const ast.Continuation,
+) bool {
+    for (all_continuations) |cont| {
+        if (!std.mem.eql(u8, cont.branch, branch_name)) continue;
+        if (!continuationLoopsToLabel(cont, label)) return true;
+    }
+    return false;
+}
+
 /// Check if any continuation (recursively) contains a terminal step
 /// This is used to detect when taps wrap terminal branches with void continuations,
 /// which can break out of loops even though the top-level branch looks like it loops.
@@ -5145,6 +5243,10 @@ fn emitPipelineStep(
     // - inline_code: just emits verbatim code (e.g., print.ln transform)
     // - foreach: control flow with no value
     const is_void_step = step.* == .assignment or step.* == .inline_code or step.* == .foreach;
+
+    // label_jump and label_apply emit 'continue :label;' which is terminal.
+    // No code should follow — skip the result variable suppression.
+    if (step.* == .label_jump or step.* == .label_apply) return;
 
     if (needs_result and !std.mem.eql(u8, current_result, "_") and
         step.* != .conditional_block and step.* != .metatype_binding and !is_void_step)
@@ -5369,7 +5471,7 @@ pub fn emitContinuationBody(
                     }
 
                     // Emit with non-looping branches marked as unreachable
-                    try emitContinuationListWithUnreachableBranches(emitter, ctx, looping_conts.items, result_var, result_counter, non_looping_branch_names.items);
+                    try emitContinuationListWithUnreachableBranches(emitter, ctx, looping_conts.items, result_var, result_counter, non_looping_branch_names.items, &.{});
                 }
             }
         }
@@ -5426,8 +5528,21 @@ pub fn emitContinuationBody(
                     ctx.current_source_event = saved_source_2;
                 }
 
-                // Pass the looping branches so we can emit explicit unreachable cases for them
-                try emitContinuationListWithUnreachableBranches(emitter, ctx, non_looping_conts.items, result_var, result_counter, looping_branches);
+                // Split looping branches: purely-looping → unreachable, has-break-path → noop
+                var purely_looping = try std.ArrayList([]const u8).initCapacity(ctx.allocator, looping_branches.len);
+                defer purely_looping.deinit(ctx.allocator);
+                var break_path = try std.ArrayList([]const u8).initCapacity(ctx.allocator, looping_branches.len);
+                defer break_path.deinit(ctx.allocator);
+
+                for (looping_branches) |branch| {
+                    if (branchHasBreakPath(branch, lwi.label, cont.continuations)) {
+                        try break_path.append(ctx.allocator, branch);
+                    } else {
+                        try purely_looping.append(ctx.allocator, branch);
+                    }
+                }
+
+                try emitContinuationListWithUnreachableBranches(emitter, ctx, non_looping_conts.items, result_var, result_counter, purely_looping.items, break_path.items);
             }
         } else if (cont.continuations.len > 0 and looping_branches.len == cont.continuations.len) {
             // ALL top-level branches are looping - but check for nested terminals
@@ -5478,6 +5593,10 @@ pub fn emitContinuationBody(
 
         if (cont.node) |*step| {
             try emitPipelineStep(emitter, ctx, cont, step, 0, result_counter);
+
+            // label_jump and label_apply emit 'continue :label;' which is terminal.
+            // No code should follow — return immediately to avoid unreachable dead code.
+            if (step.* == .label_jump or step.* == .label_apply) return;
         }
 
         // Emit nested continuations

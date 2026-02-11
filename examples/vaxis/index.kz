@@ -22,6 +22,14 @@
 
 // Build system dependency - libvaxis from Zig package manager
 ~import "$std/build"
+~import "$std/deps"
+
+// Zig package dependency - URL+hash for build.zig.zon generation
+~std.deps:requires.zig {
+    "name": "vaxis",
+    "url": "git+https://github.com/rockorager/libvaxis.git#9fc9015d5f147568e18c5e7ca28f15bf8b293760",
+    "hash": "vaxis-0.5.1-BWNV_O8fCQAeUeVrESVc-2BdXloEXkFqReDJL7Q6XTSZ"
+}
 
 // For BACKEND compilation (so it can validate the generated code)
 ~std.compiler:requires {
@@ -98,9 +106,7 @@ const VaxisEvent = union(enum) {
 | quit {}
 
 ~proc poll {
-    std.debug.print("poll: should_quit={}, is_initialized={}\n", .{should_quit, is_initialized});
     if (should_quit or !is_initialized) {
-        std.debug.print("poll: returning quit (early exit)\n", .{});
         return .{ .quit = .{} };
     }
 
@@ -110,7 +116,6 @@ const VaxisEvent = union(enum) {
 
         switch (event) {
             .key_press => |k| {
-                std.debug.print("poll: key_press codepoint={}\n", .{k.codepoint});
                 // Skip terminal response "keys" - they have high codepoints (e.g. 57366 = 0xE006)
                 // Normal printable chars are < 0x3000. Skip anything above that.
                 if (k.codepoint > 0x3000 or k.codepoint == 0) continue;
@@ -129,7 +134,8 @@ const VaxisEvent = union(enum) {
                 }};
             },
             .winsize => |ws| {
-                vx.resize(alloc, tty.writer(), ws) catch {};
+                // NOTE: Do NOT call vx.resize() here — it wipes the screen buffers.
+                // Callers who handle .resize should resize + re-render themselves.
                 return .{ .resize = .{
                     .size = .{
                         .width = ws.cols,
@@ -149,7 +155,6 @@ const VaxisEvent = union(enum) {
 | err { message: []const u8 }
 
 ~proc run {
-    std.debug.print("run: starting\n", .{});
     alloc = std.heap.page_allocator;
 
     // Initialize TTY
@@ -189,7 +194,6 @@ const VaxisEvent = union(enum) {
     }
 
     is_initialized = true;
-    std.debug.print("run: returning ready, is_initialized={}\n", .{is_initialized});
     return .{ .ready = .{ .tty = .{} } };
 }
 
@@ -222,6 +226,7 @@ const VaxisEvent = union(enum) {
 
 ~proc render {
     if (is_initialized) {
+        vx.queueRefresh();
         vx.render(tty.writer()) catch {};
     }
     return .{ .done = .{} };
@@ -247,47 +252,11 @@ const VaxisEvent = union(enum) {
 ~pub event show_key { x: u16, y: u16, k: KeyData }
 | done {}
 
-// Debug file for write_at
-var debug_file: ?std.fs.File = null;
-
-fn debugLog(msg: []const u8) void {
-    if (debug_file == null) {
-        debug_file = std.fs.cwd().createFile("vaxis_debug.log", .{}) catch null;
-    }
-    if (debug_file) |f| {
-        f.writeAll(msg) catch {};
-    }
-}
-
 ~proc write_at {
-    debugLog("write_at called\n");
-
     if (is_initialized) {
-        debugLog("  is_initialized=true\n");
         const win = vx.window();
-
-        // Log window dimensions
-        var buf: [100]u8 = undefined;
-        const dim_msg = std.fmt.bufPrint(&buf, "  window: {}x{}\n", .{win.width, win.height}) catch "?";
-        debugLog(dim_msg);
-
-        const pos_msg = std.fmt.bufPrint(&buf, "  pos: x={}, y={}\n", .{x, y}) catch "?";
-        debugLog(pos_msg);
-
-        const len_msg = std.fmt.bufPrint(&buf, "  text len: {}\n", .{text.len}) catch "?";
-        debugLog(len_msg);
-
-        // Create child window at position (like libvaxis examples)
         const child = win.child(.{ .x_off = x, .y_off = y });
-        // Write each character as a cell
-        for (text, 0..) |_, i| {
-            child.writeCell(@intCast(i), 0, .{
-                .char = .{ .grapheme = text[i .. i + 1] },
-            });
-        }
-        debugLog("  cells written\n");
-    } else {
-        debugLog("  is_initialized=false!\n");
+        _ = child.print(&.{.{ .text = text }}, .{});
     }
     return .{ .done = .{} };
 }
