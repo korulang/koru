@@ -1,0 +1,63 @@
+// Test 918g: Optional Branches - when Guards + |? Interaction
+//
+// This test demonstrates:
+// 1. Using when guards for partial matching on optional branches
+// 2. |? catch-all handles unguarded cases
+// 3. Elegant pattern: fine-grained control without exhaustive guards
+
+const std = @import("std");
+
+// Event with required + optional branches
+~event process { value: u32 }
+| success { result: u32 }                    // REQUIRED
+| ?warning { msg: []const u8, level: u32 }   // OPTIONAL with payload
+
+~proc process {
+    const doubled = value * 2;
+
+    // Return warning with different levels based on value
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Very large", .level = 10 } };
+    }
+
+    if (value > 50) {
+        return .{ .warning = .{ .msg = "Moderately large", .level = 4 } };
+    }
+
+    if (value > 20) {
+        return .{ .warning = .{ .msg = "Slightly large", .level = 1 } };
+    }
+
+    std.debug.print("Success: {}\n", .{doubled});
+    return .{ .success = .{ .result = doubled } };
+}
+
+// Handler with when guards + |? catch-all
+// - success: always handled (required)
+// - warning with level > 5: critical handling
+// - warning with level > 2: moderate handling
+// - warning with level <= 2: caught by |? (not critical enough to care)
+
+~process(value: 10)
+| success { result } |> std.debug.print("Success: {}\n", .{result})
+| warning { msg, level } when (level > 5) |> std.debug.print("CRITICAL: {s}\n", .{msg})
+| warning { msg, level } when (level > 2) |> std.debug.print("Moderate: {s}\n", .{msg})
+|? |> std.debug.print("Optional (ignored)\n", .{})
+
+~process(value: 150)  // Returns warning level 10 → matches first when guard
+| success { result } |> std.debug.print("Success: {}\n", .{result})
+| warning { msg, level } when (level > 5) |> std.debug.print("CRITICAL: {s}\n", .{msg})
+| warning { msg, level } when (level > 2) |> std.debug.print("Moderate: {s}\n", .{msg})
+|? |> std.debug.print("Optional (ignored)\n", .{})
+
+~process(value: 60)  // Returns warning level 4 → matches second when guard
+| success { result } |> std.debug.print("Success: {}\n", .{result})
+| warning { msg, level } when (level > 5) |> std.debug.print("CRITICAL: {s}\n", .{msg})
+| warning { msg, level } when (level > 2) |> std.debug.print("Moderate: {s}\n", .{msg})
+|? |> std.debug.print("Optional (ignored)\n", .{})
+
+~process(value: 25)  // Returns warning level 1 → no guards match → caught by |?
+| success { result } |> std.debug.print("Success: {}\n", .{result})
+| warning { msg, level } when (level > 5) |> std.debug.print("CRITICAL: {s}\n", .{msg})
+| warning { msg, level } when (level > 2) |> std.debug.print("Moderate: {s}\n", .{msg})
+|? |> std.debug.print("Optional (ignored)\n", .{})
