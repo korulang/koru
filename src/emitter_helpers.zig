@@ -1882,12 +1882,12 @@ fn emitSubflowContinuationsWithDepth(
                     if (cont_ptr.condition) |condition| {
                         // When-clause - emit if or else if
                         if (idx == 0) {
-                            try emitter.write("if ");
+                            try emitter.write("if (");
                         } else {
-                            try emitter.write("else if ");
+                            try emitter.write("else if (");
                         }
                         try emitter.write(condition);
-                        try emitter.write(" {\n");
+                        try emitter.write(") {\n");
                     } else {
                         // No when-clause - this is the else case
                         try emitter.write("else {\n");
@@ -2411,12 +2411,12 @@ fn emitSubflowContinuationsWithDepth(
                 if (cont.condition) |condition| {
                     // When-clause - emit if or else if
                     if (idx == 0) {
-                        try emitter.write("if ");
+                        try emitter.write("if (");
                     } else {
-                        try emitter.write("else if ");
+                        try emitter.write("else if (");
                     }
                     try emitter.write(condition);
-                    try emitter.write(" ");
+                    try emitter.write(") ");
                 } else {
                     // No when-clause - this is the else case
                     try emitter.write("else ");
@@ -4972,12 +4972,12 @@ fn emitWhenClauseCase(
         if (cont.condition) |condition| {
             // When-clause - emit if or else if
             if (idx == 0) {
-                try emitter.write("if ");
+                try emitter.write("if (");
             } else {
-                try emitter.write("else if ");
+                try emitter.write("else if (");
             }
             try emitter.write(condition);
-            try emitter.write(" {\n");
+            try emitter.write(") {\n");
         } else {
             // No when-clause - this is the else case
             try emitter.write("else {\n");
