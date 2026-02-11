@@ -1,5 +1,0 @@
-Success: 20
-Success: 20
-CRITICAL: Very large
-Moderate: Moderately large
-Optional (ignored)
