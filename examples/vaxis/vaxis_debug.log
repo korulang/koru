@@ -1,12 +1,12 @@
 write_at called
   is_initialized=true
-  window: 168x46
-  pos: x=10, y=5
-  text len: 24
+  window: 283x79
+  pos: x=2, y=1
+  text len: 13
   cells written
 write_at called
   is_initialized=true
-  window: 168x46
-  pos: x=10, y=7
-  text len: 20
+  window: 283x79
+  pos: x=2, y=3
+  text len: 18
   cells written
