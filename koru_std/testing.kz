@@ -232,7 +232,7 @@ const validateMocks = struct {
 }
 | transformed { program: *const Program }
 
-~[comptime] pub event validate_mocks {
+~[comptime|retain] pub event validate_mocks {
     program: *const Program,
     mocks: []const Item,
     source: *const Source,

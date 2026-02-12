@@ -531,6 +531,15 @@ pub fn build(b: *std.Build) void {
     auto_discharge_inserter_module.addImport("log", log_module);
     exe.root_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
 
+    // Dead Strip pass module
+    const dead_strip_module = b.createModule(.{
+        .root_source_file = b.path("src/dead_strip.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    dead_strip_module.addImport("ast", ast_module);
+    exe.root_module.addImport("dead_strip", dead_strip_module);
+
     // Fusion Optimizer module (EXPERIMENTAL)
     const fusion_optimizer_module = b.createModule(.{
         .root_source_file = b.path("src/fusion_optimizer.zig"),

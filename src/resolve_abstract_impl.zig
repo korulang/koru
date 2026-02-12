@@ -372,6 +372,11 @@ fn createDefaultEventDecl(event: *const ast.EventDecl, allocator: std.mem.Alloca
         new_segments[i] = seg;
     }
 
+    // @retain: .default is called from override's generated Zig code (_default_handler),
+    // not from Koru flows, so the dead strip can't see the reference.
+    const retain_ann = try allocator.alloc([]const u8, 1);
+    retain_ann[0] = "retain";
+
     return ast.EventDecl{
         .path = .{
             .segments = new_segments,
@@ -379,7 +384,7 @@ fn createDefaultEventDecl(event: *const ast.EventDecl, allocator: std.mem.Alloca
         },
         .input = event.input,
         .branches = event.branches,
-        .annotations = &.{}, // No annotations on .default
+        .annotations = retain_ann,
         .is_public = false, // .default is internal
         .location = event.location,
         .module = event.module, // Same module as the abstract

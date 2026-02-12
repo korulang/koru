@@ -468,6 +468,44 @@ const koru_parser = @import("koru_parser");
                 }
             }
         }
+
+        /// Add @retain to proc_decls matching a given event_decl path
+        fn retainMatchingProc(alloc: std.mem.Allocator, prog: *const ast_reg.Program, ed: *const ast_reg.EventDecl) void {
+            retainProcInItems(alloc, prog.items, ed);
+        }
+
+        fn retainProcInItems(alloc: std.mem.Allocator, items: []const ast_reg.Item, ed: *const ast_reg.EventDecl) void {
+            for (items) |*ast_item| {
+                switch (ast_item.*) {
+                    .proc_decl => |*pd| {
+                        if (pathsMatch(&ed.path, &pd.path)) {
+                            const mpd = @constCast(pd);
+                            const new_anns = alloc.alloc([]const u8, mpd.annotations.len + 1) catch continue;
+                            @memcpy(new_anns[0..mpd.annotations.len], mpd.annotations);
+                            new_anns[mpd.annotations.len] = "retain";
+                            mpd.annotations = new_anns;
+                        }
+                    },
+                    .module_decl => |mod| retainProcInItems(alloc, mod.items, ed),
+                    else => {},
+                }
+            }
+        }
+
+        fn pathsMatch(a: *const ast_reg.DottedPath, b: *const ast_reg.DottedPath) bool {
+            // Compare module qualifiers
+            if (a.module_qualifier) |amq| {
+                if (b.module_qualifier) |bmq| {
+                    if (!std.mem.eql(u8, amq, bmq)) return false;
+                } else return false;
+            } else if (b.module_qualifier != null) return false;
+            // Compare segments
+            if (a.segments.len != b.segments.len) return false;
+            for (a.segments, b.segments) |sa, sb| {
+                if (!std.mem.eql(u8, sa, sb)) return false;
+            }
+            return true;
+        }
     };
 
     // Helper: Parse phantom string to extract obligation name and optional module qualifier
@@ -635,6 +673,22 @@ const koru_parser = @import("koru_parser");
     var visited = std.StringHashMap(void).init(allocator);
     defer visited.deinit();
     RegistryHelper.resolveScope(allocator, scope_defs, event_infos, scope_name, debug_enabled, &visited, &resolved_events);
+
+    // Add @retain annotation to registered events so dead strip preserves them.
+    // The event_infos point into the original program; replaceFlowRecursive clones
+    // them, carrying the annotations into the new program.
+    for (resolved_events.items) |resolved| {
+        const lookup_name = resolved.internal_name orelse resolved.name;
+        const info = RegistryHelper.findEventInfo(event_infos, lookup_name) orelse continue;
+        // Retain the event_decl
+        const mutable_decl = @constCast(info.event_decl);
+        const new_anns = allocator.alloc([]const u8, mutable_decl.annotations.len + 1) catch continue;
+        @memcpy(new_anns[0..mutable_decl.annotations.len], mutable_decl.annotations);
+        new_anns[mutable_decl.annotations.len] = "retain";
+        mutable_decl.annotations = new_anns;
+        // Also retain the matching proc_decl (same path)
+        RegistryHelper.retainMatchingProc(allocator, program, info.event_decl);
+    }
 
     const scope_ident = Helpers.mangleIdentifier(allocator, scope_name);
     const module_name = flow.invocation.path.module_qualifier orelse "main";
@@ -1190,7 +1244,7 @@ fn buildScopeTable() []const ScopeRuntime {
     return table[0..];
 }
 
-~pub event get_scope { name: []const u8 }
+~[retain]pub event get_scope { name: []const u8 }
 | scope {
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,

@@ -935,7 +935,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 
 // Parse and execute in one step - the main interpreter entry point
 // Use ~get_scope to get the dispatcher first, then pass it here
-~pub event run {
+~[retain]pub event run {
     source: []const u8,
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
@@ -957,7 +957,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 | dispatch_error { event_name: []const u8, message: []const u8 }
 
 // Cached parse + execute (reuses parsed flow for identical source input)
-~pub event run_cached {
+~[retain]pub event run_cached {
     source: []const u8,
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)
@@ -980,7 +980,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 
 // Execute pre-parsed AST - for benchmarks and advanced use
 // This is the fast path: no parsing overhead, just execution!
-~pub event eval {
+~[retain]pub event eval {
     flow: *const ast.Flow,
     dispatcher: DispatchFn,
     cost_fn: ?CostFn,  // Optional cost lookup (null = default cost 1)

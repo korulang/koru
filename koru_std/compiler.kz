@@ -269,6 +269,14 @@ pub const CompilerContext = struct {
     auto_discharge_inserter_module.addImport("log", log_module);
     auto_discharge_inserter_module.addImport("phantom_parser", phantom_parser_module);
 
+    // Dead strip pass - removes unreachable events/procs from AST
+    const dead_strip_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/dead_strip.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    dead_strip_module.addImport("ast", ast_module);
+
     // Codegen utilities - keyword escaping, identifier helpers
     const codegen_utils_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/codegen_utils.zig" },
@@ -445,6 +453,7 @@ pub const CompilerContext = struct {
     exe.root_module.addImport("flow_checker", flow_checker_module);
     exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
     exe.root_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
+    exe.root_module.addImport("dead_strip", dead_strip_module);
     exe.root_module.addImport("purity_analyzer", purity_analyzer_module);
     exe.root_module.addImport("errors", errors_module);
     exe.root_module.addImport("type_registry", type_registry_module);
@@ -2066,9 +2075,16 @@ const joinPathAlloc = struct {
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "dead_strip";
 
-    // TODO: Implement reachability walk
-    // For now, pass through unchanged
+    const dead_strip = @import("dead_strip");
 
+    var pass = dead_strip.DeadStripPass.init(std.heap.page_allocator);
+    defer pass.deinit();
+
+    const new_ast = pass.run(mutable_ctx.ast) catch {
+        return .{ .ctx = mutable_ctx };
+    };
+
+    mutable_ctx.ast = new_ast;
     mutable_ctx.passes_completed += 1;
     return .{ .ctx = mutable_ctx };
 }
