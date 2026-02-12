@@ -8,7 +8,7 @@
 // - Should expose ALL the bootstrap bugs at once!
 // ============================================================================
 
-const std = @import("std");
+~import "$std/io"
 
 ~event validate { value: i32 }
 | ok { result: i32 }
@@ -51,14 +51,6 @@ const std = @import("std");
     | failure b_err |> failed { reason: b_err.msg }
 | failure a_err |> failed { reason: a_err.msg }
 
-~event test_process { }
-
-~proc test_process {
-    const result = process_event.handler(.{ .input = 1 });
-    switch (result) {
-        .success => |s| std.debug.print("Success: {}\n", .{s.final}),
-        .failed => |f| std.debug.print("Failed: {s}\n", .{f.reason}),
-    }
-}
-
-~test_process()
+~process(input: 1)
+| success s |> std.io:print.ln("Success: {{ s.final:d }}")
+| failed f |> std.io:print.ln("Failed: {{ f.reason:s }}")

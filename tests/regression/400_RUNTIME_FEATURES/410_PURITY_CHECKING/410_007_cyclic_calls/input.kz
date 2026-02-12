@@ -2,6 +2,8 @@
 // Even if events call each other in cycles, purity tracking should work
 // This tests that the fixed-point algorithm handles cycles correctly
 
+~import "$std/io"
+
 const std = @import("std");
 
 // Mutually recursive pure events (theoretical - would overflow in practice)
@@ -49,20 +51,6 @@ const std = @import("std");
     return .{ .done = .{} };
 }
 
-~event main {}
-| done {}
-
-~proc main {
-    const even_result = is_even_event.handler(.{ .n = 42 });
-
-    switch (even_result) {
-        .done => |d| {
-            _ = print_bool_event.handler(.{ .value = d.result });
-        },
-    }
-
-    return .{ .done = .{} };
-}
-
-~main()
-| done |> _
+~is_even(n: 42)
+| done d |> print_bool(value: d.result)
+    | done |> _

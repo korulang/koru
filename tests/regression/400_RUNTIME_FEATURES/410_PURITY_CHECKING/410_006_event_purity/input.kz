@@ -3,6 +3,8 @@
 // If ALL procs are pure -> event is pure
 // If ANY proc is impure -> event is impure
 
+~import "$std/io"
+
 const std = @import("std");
 
 // Event with single pure implementation -> pure event
@@ -22,43 +24,13 @@ const std = @import("std");
     return .{ .done = .{} };
 }
 
-// Use both events
+// Flow that composes pure and impure events
 ~event compute { a: i32, b: i32 }
 | done { result: i32 }
 
-~proc compute {
-    const sum = pure_add_event.handler(.{ .x = a, .y = b });
+~compute = pure_add(x: a, y: b)
+| done d |> impure_log(msg: "Computed!")
+    | done |> done { result: d.result }
 
-    switch (sum) {
-        .done => |d| {
-            _ = impure_log_event.handler(.{ .msg = "Computed!" });
-            return .{ .done = .{ .result = d.result } };
-        },
-    }
-}
-
-~event print_number { n: i32 }
-| done {}
-
-~proc print_number {
-    std.debug.print("Result: {}\n", .{n});
-    return .{ .done = .{} };
-}
-
-~event main {}
-| done {}
-
-~proc main {
-    const result = compute_event.handler(.{ .a = 20, .b = 22 });
-
-    switch (result) {
-        .done => |d| {
-            _ = print_number_event.handler(.{ .n = d.result });
-        },
-    }
-
-    return .{ .done = .{} };
-}
-
-~main()
-| done |> _
+~compute(a: 20, b: 22)
+| done d |> std.io:print.ln("Result: {{ d.result:d }}")
