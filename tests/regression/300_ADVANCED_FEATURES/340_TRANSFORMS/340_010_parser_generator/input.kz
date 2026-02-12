@@ -14,7 +14,7 @@
 
 // Test the generated parser using Koru flows!
 ~token.parse(stream: "123+456")
-| number n |> std.io:print.ln("number: {{ n.value }}")
+| number n |> std.io:print.ln("number: {{ n.value:d }}")
 | plus _ |> std.io:print.ln("plus")
 | eof _ |> std.io:print.ln("eof")
-| error e |> std.io:print.ln("error: {{ e.message }}")
+| error e |> std.io:print.ln("error: {{ e.message:s }}")

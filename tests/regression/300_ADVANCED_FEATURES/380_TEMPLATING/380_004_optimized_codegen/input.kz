@@ -25,4 +25,4 @@
 const identity = mat4x4.identity();
 const det = mat3x3.identity().determinant();
 
-~std.io:print.ln("4x4 identity created, 3x3 determinant = {{ det }}")
+~std.io:print.ln("4x4 identity created, 3x3 determinant = {{ det:d }}")

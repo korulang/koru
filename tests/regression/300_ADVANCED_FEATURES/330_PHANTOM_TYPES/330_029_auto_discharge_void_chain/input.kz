@@ -28,4 +28,4 @@ const Resource = struct { id: i32 };
 // Flow ends with void event print.ln - NO explicit |> _
 // Auto-discharge should insert release() automatically
 ~acquire()
-| ok r |> std.io:print.ln("Got resource {{ r.res.id }}")
+| ok r |> std.io:print.ln("Got resource {{ r.res.id:d }}")

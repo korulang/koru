@@ -42,7 +42,7 @@ const SESSION_2 = "~close(handle: \"file_1\")\n| closed |> result {}";
 ~std.runtime:run(source: SESSION_1, scope: "files", budget: 100, handle_pool: &bridge_pool, auto_discharge: false)
 | result r1 |> run_session_2(handles_after_open: r1.handles)
     | done d |> std.io:print.ln("PASS: open={{ d.after_open:d }}, close={{ d.after_close:d }}")
-    | fail f |> std.io:print.ln("FAIL: {{ f.reason }}")
+    | fail f |> std.io:print.ln("FAIL: {{ f.reason:s }}")
 | exhausted _ |> std.io:println(text: "FAIL: session 1 exhausted")
 | parse_error _ |> std.io:println(text: "FAIL: session 1 parse_error")
 | validation_error _ |> std.io:println(text: "FAIL: session 1 validation_error")

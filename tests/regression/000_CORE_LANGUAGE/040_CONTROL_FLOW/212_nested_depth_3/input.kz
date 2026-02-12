@@ -31,4 +31,4 @@ const std = @import("std");
 ~add_one(value: 10)
 | done a |> add_two(value: a.result)
     | done b |> add_three(value: b.result)
-        | done c |> std.io:print.ln("{{c.result}}")
+        | done c |> std.io:print.ln("{{c.result:d}}")

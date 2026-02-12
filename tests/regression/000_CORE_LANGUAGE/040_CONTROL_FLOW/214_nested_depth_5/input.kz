@@ -22,4 +22,4 @@ const std = @import("std");
     | done b |> add_three(value: b.result)
         | done c |> add_four(value: c.result)
             | done d |> add_five(value: d.result)
-                | done e |> std.io:print.ln("{{e.result}}")
+                | done e |> std.io:print.ln("{{e.result:d}}")

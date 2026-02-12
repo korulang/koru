@@ -19,4 +19,4 @@
 const p = Position{ .x = 1.0, .y = 2.0 };
 const i = Internal{ .value = 42 };
 
-~print.ln("x={{ p.x }}, y={{ p.y }}, v={{ i.value }}")
+~print.ln("x={{ p.x:any }}, y={{ p.y:any }}, v={{ i.value:d }}")

@@ -53,5 +53,5 @@ const SAMPLE =
 
 // Parse and verify success
 ~std.parser:parse.source(source: SAMPLE, file_name: "auth.kz", allocator: std.heap.page_allocator)
-| parsed p |> std.io:print.ln("OK {{p.ast.source_file.items.len}} items")
-| parse_error e |> std.io:print.ln("FAIL {{e.message}}")
+| parsed p |> std.io:print.ln("OK {{p.ast.source_file.items.len:d}} items")
+| parse_error e |> std.io:print.ln("FAIL {{e.message:s}}")

@@ -26,4 +26,4 @@ const std = @import("std");
 // Test: 10 + 1 + 2 = 13
 ~add_one(value: 10)
 | done a |> add_two(value: a.result)
-    | done b |> std.io:print.ln("{{b.result}}")
+    | done b |> std.io:print.ln("{{b.result:d}}")

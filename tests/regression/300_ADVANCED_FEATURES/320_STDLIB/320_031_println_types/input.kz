@@ -11,5 +11,5 @@ const flag: bool = true;
 ~std.io:print.ln("count: {{ count:d }}")
 ~std.io:print.ln("size: {{ size:d }}")
 ~std.io:print.ln("name: {{ name:s }}")
-~std.io:print.ln("ratio: {{ ratio:d }}")
-~std.io:print.ln("flag: {{ flag }}")
+~std.io:print.ln("ratio: {{ ratio:any }}")
+~std.io:print.ln("flag: {{ flag:any }}")

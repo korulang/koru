@@ -20,5 +20,5 @@ const SAMPLE =
 ~std.parser:parse.source(source: SAMPLE, file_name: "test.kz", allocator: std.heap.page_allocator)
 | parsed p |> std.parser:dump.ast(ast: p.ast, allocator: std.heap.page_allocator)
     | dumped d |> std.io:print.ln("{{d.json:s}}")
-    | dump_error e |> std.io:print.ln("Dump error: {{e.message}}")
-| parse_error e |> std.io:print.ln("Parse error: {{e.message}}")
+    | dump_error e |> std.io:print.ln("Dump error: {{e.message:s}}")
+| parse_error e |> std.io:print.ln("Parse error: {{e.message:s}}")
