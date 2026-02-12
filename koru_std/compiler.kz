@@ -1155,8 +1155,9 @@ const emitFlowWithMocks = struct {
 | ctx { ctx: CompilerContext, code: []const u8 }
 
 ~emission = inject_ccp(ctx)
-| ctx c1 |> emit_zig(ctx: c1)
-  | ctx c2 |> ctx { ctx: c2.ctx, code: c2.code }
+| ctx c1 |> pass_dead_strip(ctx: c1)
+  | ctx c2 |> emit_zig(ctx: c2)
+    | ctx c3 |> ctx { ctx: c3.ctx, code: c3.code }
 
 // Parser service - makes the Koru parser available at backend comptime
 // This enables dynamic module loading during compilation passes
@@ -1198,6 +1199,11 @@ const emitFlowWithMocks = struct {
 ~pub event check_purity { ctx: CompilerContext }
 | ctx CompilerContext
 | failed { ctx: CompilerContext, message: []const u8 }
+
+// Dead strip pass - removes unreachable events/flows from the AST
+// Walks from entry points, marks reachable events, prunes the rest
+~pub event pass_dead_strip { ctx: CompilerContext }
+| ctx CompilerContext
 
 // CCP observability pass - injects universal observability taps into user AST
 // When enabled, this makes every compiled program self-observing by adding:
@@ -2053,6 +2059,20 @@ const joinPathAlloc = struct {
     return .{ .ctx = mutable_ctx };
 }
 
+// Dead Strip Pass
+// Removes unreachable events and flows from the AST
+// Walks from entry points (top-level flows), marks reachable events, prunes the rest
+~proc pass_dead_strip {
+    var mutable_ctx = ctx;
+    mutable_ctx.current_pass = "dead_strip";
+
+    // TODO: Implement reachability walk
+    // For now, pass through unchanged
+
+    mutable_ctx.passes_completed += 1;
+    return .{ .ctx = mutable_ctx };
+}
+
 // CCP Observability Injection Pass
 // Injects universal observability taps into the user's AST
 // This makes every compiled program self-observing by adding emit_json and ~* -> * tap
@@ -2103,7 +2123,8 @@ const joinPathAlloc = struct {
 //   3. compiler.check.structure              (validates event/branch shapes)
 //   4. compiler.check.phantom.semantic       (validates phantom types)
 //   5. compiler.passes.inject_ccp            (adds observability taps)
-//   6. compiler.emit.zig                     (generates final Zig code)
+//   6. compiler.passes.dead_strip            (removes unreachable events/flows)
+//   7. compiler.emit.zig                     (generates final Zig code)
 //
 // [expand] events are handled automatically by transform_pass_runner.zig
 // during the transform phase inside evaluate_comptime.
