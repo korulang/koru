@@ -998,10 +998,10 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\        // Fall back to direct zig build-exe (no user dependencies)
             \\        var emit_path_buf: [256]u8 = undefined;
             \\        const emit_path = try std.fmt.bufPrint(&emit_path_buf, "-femit-bin={s}", .{output_exe});
-            \\        const tiny = CompilerEnv.hasFlag("tiny");
-            \\        const argv_tiny = [_][]const u8{ "zig", "build-exe", emitted_file, "-O", "ReleaseSmall", "-fstrip", "-fno-unwind-tables", "-z", "norelro", emit_path };
-            \\        const argv_normal = [_][]const u8{ "zig", "build-exe", emitted_file, "-O", "ReleaseFast", emit_path };
-            \\        const argv: []const []const u8 = if (tiny) &argv_tiny else &argv_normal;
+            \\        const debug = CompilerEnv.hasFlag("debug");
+            \\        const argv_debug = [_][]const u8{ "zig", "build-exe", emitted_file, "-O", "ReleaseFast", emit_path };
+            \\        const argv_default = [_][]const u8{ "zig", "build-exe", emitted_file, "-O", "ReleaseSmall", "-fstrip", "-fno-unwind-tables", "-z", "norelro", emit_path };
+            \\        const argv: []const []const u8 = if (debug) &argv_debug else &argv_default;
             \\        const result = std.process.Child.run(.{
             \\            .allocator = allocator,
             \\            .argv = argv,

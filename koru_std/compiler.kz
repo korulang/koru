@@ -507,8 +507,8 @@ pub const CompilerContext = struct {
 }
 
 ~flag.declare {
-  "name": "tiny",
-  "description": "Optimize for minimal binary size (strips unwind tables and RELRO padding)",
+  "name": "debug",
+  "description": "Debug build: keep unwind tables and symbols for stack traces on panic",
   "type": "boolean"
 }
 
