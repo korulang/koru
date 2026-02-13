@@ -198,6 +198,83 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 }
 
 // ============================================================================
+// BUILD CONFIG - Key-value build parameters based on build flags
+// ============================================================================
+// Sets build-time configuration values (e.g., cross-compilation target).
+// Composes with build:variants — variants select WHICH code, config sets
+// HOW to build it. Both use the same ~[build(X)] guard system.
+//
+// Usage:
+//   ~[build("linux")]std.build:config {
+//       "target": "x86_64-linux-musl"
+//   }
+//
+// The compiler is agnostic to the keys — it just passes them through.
+// Currently the backend recognizes "target" for zig cross-compilation.
+
+~[comptime]pub event config { meta: InvocationMeta, source: Source }
+| configured { count: usize }
+| skipped { reason: []const u8 }
+
+~proc config {
+    if (!matchesFlags(meta.annotations)) {
+        return .{ .skipped = .{ .reason = "no matching build flag" } };
+    }
+
+    // Parse the source as simple JSON-like key:value pairs
+    var count: usize = 0;
+    var pos: usize = 0;
+    const text = source.text;
+
+    while (pos < text.len) {
+        // Skip whitespace and braces
+        while (pos < text.len and (text[pos] == ' ' or text[pos] == '\n' or text[pos] == '\r' or text[pos] == '\t' or text[pos] == '{' or text[pos] == '}' or text[pos] == ',')) {
+            pos += 1;
+        }
+        if (pos >= text.len) break;
+
+        // Expect opening quote for key
+        if (text[pos] != '"') {
+            pos += 1;
+            continue;
+        }
+        pos += 1;
+
+        // Read key
+        const key_start = pos;
+        while (pos < text.len and text[pos] != '"') {
+            pos += 1;
+        }
+        const key = text[key_start..pos];
+        pos += 1; // skip closing quote
+
+        // Skip colon and whitespace
+        while (pos < text.len and (text[pos] == ':' or text[pos] == ' ')) {
+            pos += 1;
+        }
+
+        // Expect opening quote for value
+        if (pos >= text.len or text[pos] != '"') continue;
+        pos += 1;
+
+        // Read value
+        const value_start = pos;
+        while (pos < text.len and text[pos] != '"') {
+            pos += 1;
+        }
+        const value = text[value_start..pos];
+        pos += 1; // skip closing quote
+
+        // Register in the build config registry
+        if (emitter_helpers.registerBuildConfig(key, value)) {
+            count += 1;
+        }
+    }
+
+    return .{ .configured = .{ .count = count } };
+}
+
+// ============================================================================
 // BUILD COMMANDS - Shell Script Execution (Frontend Optimization)
 // ============================================================================
 // FRONTEND OPTIMIZATION: Unlike most compiler features, build:command.sh

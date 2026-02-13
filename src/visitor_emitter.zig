@@ -251,6 +251,9 @@ pub const VisitorEmitter = struct {
     emit_mode: EmitMode,
     emitting_from_main: bool,  // Track if we're emitting any items from main module
     main_module_name: ?[]const u8,  // Main module name for qualifying unqualified events in taps
+    current_module_name: ?[]const u8,  // Current module being emitted (for variant registry lookups)
+    current_module_prefix: ?[]const u8,  // Current Zig module path prefix (e.g., "koru_orisha")
+    module_comptime_flows: std.ArrayList([]const u8),  // Collected comptime flow calls from modules
     koru_start_flow_name: ?[]const u8,  // Name of koru:start meta-event flow (if present)
     koru_end_flow_name: ?[]const u8,    // Name of koru:end meta-event flow (if present)
 
@@ -294,6 +297,9 @@ pub const VisitorEmitter = struct {
             .emit_mode = emit_mode,
             .emitting_from_main = false,  // Will be set during emit()
             .main_module_name = null,  // Will be set during emit()
+            .current_module_name = null,  // Set during module emission
+            .current_module_prefix = null,
+            .module_comptime_flows = .empty,
             .koru_start_flow_name = null,  // Will be set if koru:start flow is emitted
             .koru_end_flow_name = null,    // Will be set if koru:end flow is emitted
         };
@@ -699,6 +705,13 @@ pub const VisitorEmitter = struct {
                 }
             }
 
+            // Also call comptime flows from imported modules
+            for (self.module_comptime_flows.items) |call_path| {
+                try self.code_emitter.writeIndent();
+                try self.code_emitter.write(call_path);
+                try self.code_emitter.write("(program, allocator);\n");
+            }
+
             // Close comptime_main()
             self.code_emitter.dedent();
             try self.code_emitter.write("}\n");
@@ -1020,6 +1033,17 @@ pub const VisitorEmitter = struct {
                     // Emit comptime_ prefix in .comptime_only mode for comptime flows
                     if (invokes_comptime_event and self.emit_mode == .comptime_only) {
                         try self.code_emitter.write("comptime_flow");
+                        // Record module comptime flows for comptime_main generation
+                        if (self.current_module_prefix) |mod_prefix| {
+                            var call_buf: std.ArrayList(u8) = .empty;
+                            try call_buf.appendSlice(self.allocator, mod_prefix);
+                            try call_buf.appendSlice(self.allocator, ".comptime_flow");
+                            var flow_num_buf: [32]u8 = undefined;
+                            const flow_num_str = try std.fmt.bufPrint(&flow_num_buf, "{}", .{self.flow_counter});
+                            try call_buf.appendSlice(self.allocator, flow_num_str);
+                            const call_str = try call_buf.toOwnedSlice(self.allocator);
+                            try self.module_comptime_flows.append(self.allocator, call_str);
+                        }
                     } else {
                         try self.code_emitter.write("flow");
                     }
@@ -1961,11 +1985,34 @@ pub const VisitorEmitter = struct {
                             }
                         }
                         if (matches) {
-                            // Skip non-Zig variants
-                            if (proc.target) |target| {
-                                if (!eql(u8, target, "zig")) {
-                                    continue;
+                            // Variant-aware handler selection:
+                            // 1. Check variant registry for this event
+                            // 2. If variant registered, use the proc whose target matches
+                            // 3. If no variant registered, use target=null or target="zig"
+                            const registered_variant = blk: {
+                                // Use current_module_name (set during module emission) for correct canonical name
+                                const module_for_lookup = self.current_module_name orelse self.main_module_name;
+                                const canonical = emitter.buildCanonicalEventName(&event.path, self.allocator, module_for_lookup) catch break :blk @as(?[]const u8, null);
+                                defer self.allocator.free(canonical);
+                                // Copy so it outlives the defer
+                                if (emitter.getVariant(canonical)) |v| {
+                                    break :blk @as(?[]const u8, self.allocator.dupe(u8, v) catch null);
                                 }
+                                break :blk @as(?[]const u8, null);
+                            };
+                            defer if (registered_variant) |rv| self.allocator.free(rv);
+
+                            if (proc.target) |target| {
+                                if (registered_variant) |rv| {
+                                    // Variant registered: only use the proc that matches
+                                    if (!eql(u8, target, rv)) continue;
+                                } else {
+                                    // No variant registered: only use zig/default
+                                    if (!eql(u8, target, "zig")) continue;
+                                }
+                            } else {
+                                // proc.target == null (bare proc): skip if a specific variant was registered
+                                if (registered_variant != null) continue;
                             }
 
                             // Generate source marker for proc
@@ -2525,13 +2572,27 @@ pub const VisitorEmitter = struct {
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("}\n");
 
-        // Emit variant handlers for procs with non-null, non-zig targets
+        // Emit variant handlers for registry-selected variants only.
+        // Non-zig variants (gpu, js, etc.) are only emitted if explicitly
+        // selected via build:variants — their bodies may be foreign code
+        // (GLSL, JS) that would fail Zig compilation if emitted verbatim.
+        const module_for_variant_lookup = self.current_module_name orelse self.main_module_name;
+        const event_canonical = emitter.buildCanonicalEventName(&event.path, self.allocator, module_for_variant_lookup) catch null;
+        defer if (event_canonical) |ec| self.allocator.free(ec);
+
         for (items_to_search) |impl_item| {
             switch (impl_item) {
                 .proc_decl => |proc| {
                     // Only emit handlers for variant procs (target != null and target != "zig")
                     if (proc.target) |target| {
                         if (eql(u8, target, "zig")) continue;
+
+                        // Only emit if this variant is registered (selected for use)
+                        const is_registered = if (event_canonical) |ec|
+                            if (emitter.getVariant(ec)) |rv| eql(u8, rv, target) else false
+                        else
+                            false;
+                        if (!is_registered) continue;
 
                         // Check if this proc matches the event
                         if (proc.path.segments.len != event.path.segments.len) continue;
@@ -2677,6 +2738,25 @@ pub const VisitorEmitter = struct {
 
         // Then emit other items (events, procs, etc)
         for (node.modules.items) |module| {
+            // Track current module name and Zig prefix for variant registry lookups
+            const prev_module_name = self.current_module_name;
+            const prev_module_prefix = self.current_module_prefix;
+            self.current_module_name = module.logical_name;
+            // Build Zig path prefix: "orisha" → "koru_orisha", "std.build" → "koru_std.build"
+            const prefix = blk: {
+                var buf: std.ArrayList(u8) = .empty;
+                buf.appendSlice(self.allocator, "koru_") catch break :blk @as(?[]const u8, null);
+                // Replace dots in logical_name with dots in Zig path
+                buf.appendSlice(self.allocator, module.logical_name) catch break :blk @as(?[]const u8, null);
+                break :blk buf.toOwnedSlice(self.allocator) catch null;
+            };
+            self.current_module_prefix = prefix;
+            defer {
+                self.current_module_name = prev_module_name;
+                self.current_module_prefix = prev_module_prefix;
+                if (prefix) |p| self.allocator.free(p);
+            }
+
             for (module.items) |*module_item| {
                 // Skip host lines - already emitted above
                 if (module_item.* != .host_line) {

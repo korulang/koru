@@ -116,6 +116,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
     try writer.writeAll(serialized_ast);
     try writer.writeAll("\n\n");
 
+    // Import emitter_helpers at top level so build:config can be queried during compilation
+    try writer.writeAll("const emitter_helpers = @import(\"emitter_helpers\");\n\n");
+
     // Generate CompilerEnv - makes compilation context available at backend comptime
     // Made pub so backend_output_emitted.zig can access it via @import("root")
     try writer.writeAll("/// Compiler Environment - Query compilation context at backend comptime\n");
@@ -950,7 +953,10 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\    const msg = try std.fmt.bufPrint(&buf, "✓ Generated {s} ({d} bytes)\n", .{emitted_file, generated_code.len});
             \\    try stdout.writeAll(msg);
             \\
-            \\    // Now compile the emitted code using build_output.zig (which has user dependencies like vaxis)
+            \\    // Now compile the emitted code
+            \\    // Check for cross-compilation target from build:config
+            \\    const build_target = emitter_helpers.getBuildConfig("target");
+            \\
             \\    // First check if build_output.zig exists (has user build requirements)
             \\    const has_build_output = blk: {
             \\        std.fs.cwd().access("build_output.zig", .{}) catch break :blk false;
@@ -959,10 +965,20 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\
             \\    if (has_build_output) {
             \\        // Use zig build with build_output.zig (includes user dependencies)
-            \\        const argv = [_][]const u8{ "zig", "build", "--build-file", "build_output.zig" };
+            \\        var bo_argv: [5][]const u8 = undefined;
+            \\        bo_argv[0] = "zig";
+            \\        bo_argv[1] = "build";
+            \\        bo_argv[2] = "--build-file";
+            \\        bo_argv[3] = "build_output.zig";
+            \\        var bo_argc: usize = 4;
+            \\        var dt_buf: [128]u8 = undefined;
+            \\        if (build_target) |t| {
+            \\            bo_argv[4] = std.fmt.bufPrint(&dt_buf, "-Dtarget={s}", .{t}) catch "-Dtarget=native";
+            \\            bo_argc = 5;
+            \\        }
             \\        const result = std.process.Child.run(.{
             \\            .allocator = allocator,
-            \\            .argv = &argv,
+            \\            .argv = bo_argv[0..bo_argc],
             \\        }) catch |err| {
             \\            const stderr = std.fs.File.stderr();
             \\            var err_buf: [512]u8 = undefined;
@@ -999,12 +1015,29 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\        var emit_path_buf: [256]u8 = undefined;
             \\        const emit_path = try std.fmt.bufPrint(&emit_path_buf, "-femit-bin={s}", .{output_exe});
             \\        const debug = CompilerEnv.hasFlag("debug");
-            \\        const argv_debug = [_][]const u8{ "zig", "build-exe", emitted_file, "-O", "ReleaseFast", emit_path };
-            \\        const argv_default = [_][]const u8{ "zig", "build-exe", emitted_file, "-O", "ReleaseSmall", "-fstrip", "-fno-unwind-tables", "-z", "norelro", emit_path };
-            \\        const argv: []const []const u8 = if (debug) &argv_debug else &argv_default;
+            \\        var exe_argv: [14][]const u8 = undefined;
+            \\        var exe_argc: usize = 0;
+            \\        exe_argv[exe_argc] = "zig"; exe_argc += 1;
+            \\        exe_argv[exe_argc] = "build-exe"; exe_argc += 1;
+            \\        exe_argv[exe_argc] = emitted_file; exe_argc += 1;
+            \\        if (build_target) |t| {
+            \\            exe_argv[exe_argc] = "-target"; exe_argc += 1;
+            \\            exe_argv[exe_argc] = t; exe_argc += 1;
+            \\        }
+            \\        exe_argv[exe_argc] = "-O"; exe_argc += 1;
+            \\        if (debug) {
+            \\            exe_argv[exe_argc] = "ReleaseFast"; exe_argc += 1;
+            \\        } else {
+            \\            exe_argv[exe_argc] = "ReleaseSmall"; exe_argc += 1;
+            \\            exe_argv[exe_argc] = "-fstrip"; exe_argc += 1;
+            \\            exe_argv[exe_argc] = "-fno-unwind-tables"; exe_argc += 1;
+            \\            exe_argv[exe_argc] = "-z"; exe_argc += 1;
+            \\            exe_argv[exe_argc] = "norelro"; exe_argc += 1;
+            \\        }
+            \\        exe_argv[exe_argc] = emit_path; exe_argc += 1;
             \\        const result = std.process.Child.run(.{
             \\            .allocator = allocator,
-            \\            .argv = argv,
+            \\            .argv = exe_argv[0..exe_argc],
             \\        }) catch |err| {
             \\            const stderr = std.fs.File.stderr();
             \\            var err_buf: [512]u8 = undefined;

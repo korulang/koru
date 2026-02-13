@@ -53,6 +53,52 @@ pub fn getVariant(event_name: []const u8) ?[]const u8 {
     return null;
 }
 
+// ============================================================================
+// BUILD CONFIG REGISTRY - Key-value build configuration
+// ============================================================================
+// Populated by build:config, read by the backend when invoking zig build.
+// Currently supports "target" for cross-compilation, but the mechanism is
+// general: any key-value pair can be registered and queried.
+
+pub const BuildConfigEntry = struct {
+    key: []const u8,
+    value: []const u8,
+};
+
+/// Global build config registry - populated at comptime, read by build step
+pub var build_configs: [64]BuildConfigEntry = undefined;
+pub var build_config_count: usize = 0;
+
+/// Register a build config value (called by build:config)
+pub fn registerBuildConfig(key: []const u8, value: []const u8) bool {
+    if (build_config_count >= build_configs.len) {
+        return false; // Registry full
+    }
+    // Overwrite if key already exists
+    for (build_configs[0..build_config_count]) |*entry| {
+        if (std.mem.eql(u8, entry.key, key)) {
+            entry.value = value;
+            return true;
+        }
+    }
+    build_configs[build_config_count] = .{
+        .key = key,
+        .value = value,
+    };
+    build_config_count += 1;
+    return true;
+}
+
+/// Look up a build config value by key
+pub fn getBuildConfig(key: []const u8) ?[]const u8 {
+    for (build_configs[0..build_config_count]) |entry| {
+        if (std.mem.eql(u8, entry.key, key)) {
+            return entry.value;
+        }
+    }
+    return null;
+}
+
 /// Controls which modules/taps to emit based on annotations
 /// Duplicated from visitor_emitter.zig to avoid circular dependency
 pub const EmitMode = enum {
