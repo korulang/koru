@@ -117,7 +117,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
     try writer.writeAll("\n\n");
 
     // Import emitter_helpers at top level so build:config can be queried during compilation
-    try writer.writeAll("const emitter_helpers = @import(\"emitter_helpers\");\n\n");
+    try writer.writeAll("const emitter_helpers = @import(\"emitter_helpers\");\n");
+    // Standard library import — namespaced to avoid shadowing struct-scoped 'std' in modules
+    try writer.writeAll("const __koru_std = @import(\"std\");\n\n");
 
     // Generate CompilerEnv - makes compilation context available at backend comptime
     // Made pub so backend_output_emitted.zig can access it via @import("root")
@@ -141,7 +143,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         try writer.writeAll("        return false;\n");
     } else {
         try writer.writeAll("        inline for (flags) |flag| {\n");
-        try writer.writeAll("            if (std.mem.eql(u8, name, flag)) return true;\n");
+        try writer.writeAll("            if (__koru_std.mem.eql(u8, name, flag)) return true;\n");
         try writer.writeAll("        }\n");
         try writer.writeAll("        return false;\n");
     }
@@ -151,7 +153,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
     try writer.writeAll("    /// Check if a compiler flag is set (runtime)\n");
     try writer.writeAll("    pub fn hasFlagRuntime(name: []const u8) bool {\n");
     try writer.writeAll("        for (flags) |flag| {\n");
-    try writer.writeAll("            if (std.mem.eql(u8, name, flag)) return true;\n");
+    try writer.writeAll("            if (__koru_std.mem.eql(u8, name, flag)) return true;\n");
     try writer.writeAll("        }\n");
     try writer.writeAll("        return false;\n");
     try writer.writeAll("    }\n\n");
@@ -166,10 +168,10 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         var first = true;
         while (env_it.next()) |entry| {
             if (first) {
-                try writer.print("        if (std.mem.eql(u8, key, \"{s}\")) return \"{s}\";\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+                try writer.print("        if (__koru_std.mem.eql(u8, key, \"{s}\")) return \"{s}\";\n", .{ entry.key_ptr.*, entry.value_ptr.* });
                 first = false;
             } else {
-                try writer.print("        if (std.mem.eql(u8, key, \"{s}\")) return \"{s}\";\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+                try writer.print("        if (__koru_std.mem.eql(u8, key, \"{s}\")) return \"{s}\";\n", .{ entry.key_ptr.*, entry.value_ptr.* });
             }
         }
         try writer.writeAll("        return null;\n");
@@ -189,8 +191,6 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         // Use the old implementation
         try writer.writeAll("// Metacircular Code Generator\n\n");
 
-        // Standard library import - needed by compiler proc handlers (e.g., allocator in execute_module_init_flows)
-        try writer.writeAll("const std = @import(\"std\");\n");
         // Import libraries used by multiple compiler procs
         try writer.writeAll("const fusion_optimizer = @import(\"fusion_optimizer\");\n");
         try writer.writeAll("const ast_functional = @import(\"ast_functional\");\n");
@@ -752,7 +752,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\// Runtime emitter - calls the coordinate event from compiler.kz
             \\// The visitor emitter handles abstract/impl resolution automatically
             \\const RuntimeEmitter = struct {
-            \\    pub fn emit(allocator: std.mem.Allocator, source_ast: *const Program) ![]const u8 {
+            \\    pub fn emit(allocator: __koru_std.mem.Allocator, source_ast: *const Program) ![]const u8 {
             \\
         );
 
@@ -766,11 +766,11 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\        // Handle both success and error branches
             \\        switch (result) {
             \\            .coordinated => |r| {
-            \\                std.debug.print("🎯 Compiler coordination: {s}\n", .{r.metrics});
+            \\                __koru_std.debug.print("🎯 Compiler coordination: {s}\n", .{r.metrics});
             \\                return r.code;
             \\            },
             \\            .@"error" => |e| {
-            \\                std.debug.print("❌ Compiler coordination error: {s}\n", .{e.message});
+            \\                __koru_std.debug.print("❌ Compiler coordination error: {s}\n", .{e.message});
             \\                return error.CompilerCoordinationFailed;
             \\            },
             \\        }
@@ -784,9 +784,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\// AST Dump Helper - observability for compiler pipeline debugging
             \\// Note: This version doesn't serialize to JSON (ast_serializer not available in backend.zig)
             \\// Full JSON dumps are available in backend_output_emitted.zig (dump points 3-7)
-            \\fn dumpAST(program_ast: *const Program, stage: []const u8, allocator: std.mem.Allocator) void {
+            \\fn dumpAST(program_ast: *const Program, stage: []const u8, allocator: __koru_std.mem.Allocator) void {
             \\    // Check if AST dumping is enabled via environment variable
-            \\    const dump_enabled: ?[]const u8 = std.process.getEnvVarOwned(allocator, "KORU_DUMP_AST") catch |err| blk: {
+            \\    const dump_enabled: ?[]const u8 = __koru_std.process.getEnvVarOwned(allocator, "KORU_DUMP_AST") catch |err| blk: {
             \\        if (err == error.EnvironmentVariableNotFound) break :blk null;
             \\        break :blk null;
             \\    };
@@ -794,12 +794,12 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\
             \\    if (dump_enabled == null) return;  // Not enabled
             \\
-            \\    std.debug.print("\n============================================================\n", .{});
-            \\    std.debug.print("AST DUMP: {s}\n", .{stage});
-            \\    std.debug.print("============================================================\n", .{});
-            \\    std.debug.print("Items: {d}\n", .{program_ast.items.len});
-            \\    std.debug.print("Module: {s}\n", .{program_ast.main_module_name});
-            \\    std.debug.print("============================================================\n\n", .{});
+            \\    __koru_std.debug.print("\n============================================================\n", .{});
+            \\    __koru_std.debug.print("AST DUMP: {s}\n", .{stage});
+            \\    __koru_std.debug.print("============================================================\n", .{});
+            \\    __koru_std.debug.print("Items: {d}\n", .{program_ast.items.len});
+            \\    __koru_std.debug.print("Module: {s}\n", .{program_ast.main_module_name});
+            \\    __koru_std.debug.print("============================================================\n\n", .{});
             \\}
             \\
         );
@@ -811,23 +811,23 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         // Backend entry point - compiles the generated code
         try writer.writeAll(
             \\pub fn main() !void {
-            \\    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+            \\    var gpa = __koru_std.heap.GeneralPurposeAllocator(.{}){};
             \\    defer {
             \\        const leak_status = gpa.deinit();
             \\        if (leak_status == .leak) {
-            \\            std.debug.print("Memory leak detected\n", .{});
+            \\            __koru_std.debug.print("Memory leak detected\n", .{});
             \\        }
             \\    }
             \\    const allocator = gpa.allocator();
             \\
             \\    // Arena allocator for compilation phase - all compiler passes, code generation, etc.
-            \\    var compile_arena = std.heap.ArenaAllocator.init(allocator);
+            \\    var compile_arena = __koru_std.heap.ArenaAllocator.init(allocator);
             \\    defer compile_arena.deinit();
             \\    const compile_allocator = compile_arena.allocator();
             \\
             \\    // Get the output filename from argv (passed from koruc)
-            \\    const args = try std.process.argsAlloc(allocator);
-            \\    defer std.process.argsFree(allocator, args);
+            \\    const args = try __koru_std.process.argsAlloc(allocator);
+            \\    defer __koru_std.process.argsFree(allocator, args);
             \\
             \\    // Default output names
             \\    const emitted_file = "output_emitted.zig";
@@ -841,7 +841,6 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                 \\    // Check for CLI commands in argv
                 \\    // Note: backend_output is already imported at file scope
                 \\    if (args.len > 1) {
-                \\        const koru_std = backend_output.koru_std;
                 \\
             );
 
@@ -850,16 +849,17 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             for (cmd_result.commands[0..cmd_result.count]) |cmd| {
                 var buf: [1024]u8 = undefined;
                 if (cmd.module_path) |mod_path| {
-                    // Convert std.X to koru_std.X for proper Zig namespace
+                    // Convert module path to emitted Zig namespace
+                    // All module paths are prefixed with koru_ in emitted code:
+                    //   std.build → koru_std.build
+                    //   koru.docker → koru_koru.docker
+                    //   orisha → koru_orisha
                     var zig_mod_path: [256]u8 = undefined;
-                    const zig_mod = if (std.mem.startsWith(u8, mod_path, "std."))
-                        try std.fmt.bufPrint(&zig_mod_path, "koru_std.{s}", .{mod_path[4..]})
-                    else
-                        mod_path;
+                    const zig_mod = try std.fmt.bufPrint(&zig_mod_path, "backend_output.koru_{s}", .{mod_path});
 
                     const line = try std.fmt.bufPrint(&buf,
-                        \\        if (std.mem.eql(u8, args[1], "{s}")) {{
-                        \\            std.debug.print("🔧 Running command: {s}\n", .{{}});
+                        \\        if (__koru_std.mem.eql(u8, args[1], "{s}")) {{
+                        \\            __koru_std.debug.print("🔧 Running command: {s}\n", .{{}});
                         \\            _ = {s}.{s}_event.handler(.{{
                         \\                .program = &PROGRAM_AST,
                         \\                .allocator = allocator,
@@ -872,8 +872,8 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                     try writer.writeAll(line);
                 } else {
                     const line = try std.fmt.bufPrint(&buf,
-                        \\        if (std.mem.eql(u8, args[1], "{s}")) {{
-                        \\            std.debug.print("🔧 Running command: {s}\n", .{{}});
+                        \\        if (__koru_std.mem.eql(u8, args[1], "{s}")) {{
+                        \\            __koru_std.debug.print("🔧 Running command: {s}\n", .{{}});
                         \\            _ = {s}_event.handler(.{{
                         \\                .program = &PROGRAM_AST,
                         \\                .allocator = allocator,
@@ -898,7 +898,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\    // NOTE: args[1] is the output exe name when called from frontend,
             \\    // but when running backend directly, args[1] might be the input .kz file.
             \\    // Detect this case and default to "a.out" instead of overwriting the source!
-            \\    const output_exe = if (args.len > 1 and !std.mem.endsWith(u8, args[1], ".kz")) args[1] else "a.out";
+            \\    const output_exe = if (args.len > 1 and !__koru_std.mem.endsWith(u8, args[1], ".kz")) args[1] else "a.out";
             \\
             \\    // Check if fusion is enabled
             \\    const fusion_enabled = CompilerEnv.hasFlag("fusion");
@@ -927,30 +927,30 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\    const generated_code = try RuntimeEmitter.emit(compile_allocator, final_ast);
             \\
             \\    // DEBUG: Check generated_code before file write
-            \\    std.debug.print("\n[MAIN DEBUG] Before file write:\n", .{});
-            \\    std.debug.print("[MAIN DEBUG]   generated_code.len = {d}\n", .{generated_code.len});
-            \\    std.debug.print("[MAIN DEBUG]   generated_code.ptr = {*}\n", .{generated_code.ptr});
-            \\    std.debug.print("[MAIN DEBUG]   emitted_file = {s}\n", .{emitted_file});
-            \\    std.debug.print("[MAIN DEBUG]   emitted_file.ptr = {*}\n", .{emitted_file.ptr});
-            \\    std.debug.print("[MAIN DEBUG]   First 50 bytes: ", .{});
+            \\    __koru_std.debug.print("\n[MAIN DEBUG] Before file write:\n", .{});
+            \\    __koru_std.debug.print("[MAIN DEBUG]   generated_code.len = {d}\n", .{generated_code.len});
+            \\    __koru_std.debug.print("[MAIN DEBUG]   generated_code.ptr = {*}\n", .{generated_code.ptr});
+            \\    __koru_std.debug.print("[MAIN DEBUG]   emitted_file = {s}\n", .{emitted_file});
+            \\    __koru_std.debug.print("[MAIN DEBUG]   emitted_file.ptr = {*}\n", .{emitted_file.ptr});
+            \\    __koru_std.debug.print("[MAIN DEBUG]   First 50 bytes: ", .{});
             \\    for (generated_code[0..@min(50, generated_code.len)]) |byte| {
             \\        if (byte >= 32 and byte < 127) {
-            \\            std.debug.print("{c}", .{byte});
+            \\            __koru_std.debug.print("{c}", .{byte});
             \\        } else {
-            \\            std.debug.print("[{d}]", .{byte});
+            \\            __koru_std.debug.print("[{d}]", .{byte});
             \\        }
             \\    }
-            \\    std.debug.print("\n\n", .{});
+            \\    __koru_std.debug.print("\n\n", .{});
             \\
             \\    // Write the generated code to a file
-            \\    const file = try std.fs.cwd().createFile(emitted_file, .{});
+            \\    const file = try __koru_std.fs.cwd().createFile(emitted_file, .{});
             \\    defer file.close();
             \\    try file.writeAll(generated_code);
             \\
             \\    // Report what we generated
-            \\    const stdout = std.fs.File.stdout();
+            \\    const stdout = __koru_std.fs.File.stdout();
             \\    var buf: [512]u8 = undefined;
-            \\    const msg = try std.fmt.bufPrint(&buf, "✓ Generated {s} ({d} bytes)\n", .{emitted_file, generated_code.len});
+            \\    const msg = try __koru_std.fmt.bufPrint(&buf, "✓ Generated {s} ({d} bytes)\n", .{emitted_file, generated_code.len});
             \\    try stdout.writeAll(msg);
             \\
             \\    // Now compile the emitted code
@@ -959,7 +959,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\
             \\    // First check if build_output.zig exists (has user build requirements)
             \\    const has_build_output = blk: {
-            \\        std.fs.cwd().access("build_output.zig", .{}) catch break :blk false;
+            \\        __koru_std.fs.cwd().access("build_output.zig", .{}) catch break :blk false;
             \\        break :blk true;
             \\    };
             \\
@@ -973,47 +973,47 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\        var bo_argc: usize = 4;
             \\        var dt_buf: [128]u8 = undefined;
             \\        if (build_target) |t| {
-            \\            bo_argv[4] = std.fmt.bufPrint(&dt_buf, "-Dtarget={s}", .{t}) catch "-Dtarget=native";
+            \\            bo_argv[4] = __koru_std.fmt.bufPrint(&dt_buf, "-Dtarget={s}", .{t}) catch "-Dtarget=native";
             \\            bo_argc = 5;
             \\        }
-            \\        const result = std.process.Child.run(.{
+            \\        const result = __koru_std.process.Child.run(.{
             \\            .allocator = allocator,
             \\            .argv = bo_argv[0..bo_argc],
             \\        }) catch |err| {
-            \\            const stderr = std.fs.File.stderr();
+            \\            const stderr = __koru_std.fs.File.stderr();
             \\            var err_buf: [512]u8 = undefined;
-            \\            const err_msg = try std.fmt.bufPrint(&err_buf, "✗ Failed to spawn zig compiler: {}\n", .{err});
+            \\            const err_msg = try __koru_std.fmt.bufPrint(&err_buf, "✗ Failed to spawn zig compiler: {}\n", .{err});
             \\            try stderr.writeAll(err_msg);
-            \\            std.process.exit(1);
+            \\            __koru_std.process.exit(1);
             \\        };
             \\        defer allocator.free(result.stdout);
             \\        defer allocator.free(result.stderr);
             \\
-            \\        const stdout2 = std.fs.File.stdout();
+            \\        const stdout2 = __koru_std.fs.File.stdout();
             \\        var buf2: [512]u8 = undefined;
             \\        if (result.term.Exited == 0) {
             \\            // Copy from zig-out/bin/output to the requested output name
-            \\            std.fs.cwd().copyFile("zig-out/bin/output", std.fs.cwd(), output_exe, .{}) catch |copy_err| {
-            \\                const msg2 = try std.fmt.bufPrint(&buf2, "✗ Failed to copy output: {}\n", .{copy_err});
-            \\                try std.fs.File.stderr().writeAll(msg2);
-            \\                std.process.exit(1);
+            \\            __koru_std.fs.cwd().copyFile("zig-out/bin/output", __koru_std.fs.cwd(), output_exe, .{}) catch |copy_err| {
+            \\                const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ Failed to copy output: {}\n", .{copy_err});
+            \\                try __koru_std.fs.File.stderr().writeAll(msg2);
+            \\                __koru_std.process.exit(1);
             \\            };
-            \\            const msg2 = try std.fmt.bufPrint(&buf2, "✓ Compiled to {s}\n", .{output_exe});
+            \\            const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✓ Compiled to {s}\n", .{output_exe});
             \\            try stdout2.writeAll(msg2);
             \\        } else {
-            \\            const msg2 = try std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{});
+            \\            const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{});
             \\            try stdout2.writeAll(msg2);
             \\            if (result.stderr.len > 0) {
             \\                var err_buf2: [65536]u8 = undefined;
-            \\                const err_msg2 = try std.fmt.bufPrint(&err_buf2, "Error: {s}\n", .{result.stderr});
-            \\                try std.fs.File.stderr().writeAll(err_msg2);
+            \\                const err_msg2 = try __koru_std.fmt.bufPrint(&err_buf2, "Error: {s}\n", .{result.stderr});
+            \\                try __koru_std.fs.File.stderr().writeAll(err_msg2);
             \\            }
-            \\            std.process.exit(1);
+            \\            __koru_std.process.exit(1);
             \\        }
             \\    } else {
             \\        // Fall back to direct zig build-exe (no user dependencies)
             \\        var emit_path_buf: [256]u8 = undefined;
-            \\        const emit_path = try std.fmt.bufPrint(&emit_path_buf, "-femit-bin={s}", .{output_exe});
+            \\        const emit_path = try __koru_std.fmt.bufPrint(&emit_path_buf, "-femit-bin={s}", .{output_exe});
             \\        const debug = CompilerEnv.hasFlag("debug");
             \\        var exe_argv: [14][]const u8 = undefined;
             \\        var exe_argc: usize = 0;
@@ -1035,33 +1035,33 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\            exe_argv[exe_argc] = "norelro"; exe_argc += 1;
             \\        }
             \\        exe_argv[exe_argc] = emit_path; exe_argc += 1;
-            \\        const result = std.process.Child.run(.{
+            \\        const result = __koru_std.process.Child.run(.{
             \\            .allocator = allocator,
             \\            .argv = exe_argv[0..exe_argc],
             \\        }) catch |err| {
-            \\            const stderr = std.fs.File.stderr();
+            \\            const stderr = __koru_std.fs.File.stderr();
             \\            var err_buf: [512]u8 = undefined;
-            \\            const err_msg = try std.fmt.bufPrint(&err_buf, "✗ Failed to spawn zig compiler: {}\n", .{err});
+            \\            const err_msg = try __koru_std.fmt.bufPrint(&err_buf, "✗ Failed to spawn zig compiler: {}\n", .{err});
             \\            try stderr.writeAll(err_msg);
-            \\            std.process.exit(1);
+            \\            __koru_std.process.exit(1);
             \\        };
             \\        defer allocator.free(result.stdout);
             \\        defer allocator.free(result.stderr);
             \\
-            \\        const stdout2 = std.fs.File.stdout();
+            \\        const stdout2 = __koru_std.fs.File.stdout();
             \\        var buf2: [512]u8 = undefined;
             \\        if (result.term.Exited == 0) {
-            \\            const msg2 = try std.fmt.bufPrint(&buf2, "✓ Compiled to {s}\n", .{output_exe});
+            \\            const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✓ Compiled to {s}\n", .{output_exe});
             \\            try stdout2.writeAll(msg2);
             \\        } else {
-            \\            const msg2 = try std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{});
+            \\            const msg2 = try __koru_std.fmt.bufPrint(&buf2, "✗ Compilation failed\n", .{});
             \\            try stdout2.writeAll(msg2);
             \\            if (result.stderr.len > 0) {
             \\                var err_buf2: [65536]u8 = undefined;
-            \\                const err_msg2 = try std.fmt.bufPrint(&err_buf2, "Error: {s}\n", .{result.stderr});
-            \\                try std.fs.File.stderr().writeAll(err_msg2);
+            \\                const err_msg2 = try __koru_std.fmt.bufPrint(&err_buf2, "Error: {s}\n", .{result.stderr});
+            \\                try __koru_std.fs.File.stderr().writeAll(err_msg2);
             \\            }
-            \\            std.process.exit(1);
+            \\            __koru_std.process.exit(1);
             \\        }
             \\    }
             \\}
@@ -1490,9 +1490,9 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
 
         // Generate return type based on whether transform returns program
         if (event.returns_program) {
-            try writer.print("fn call_transform_{s}(invocation: *const Invocation, containing_item: *const Item, ast: *const Program, allocator: std.mem.Allocator) !struct {{ item: Item, program: *const Program }} {{\n", .{event.stub_name});
+            try writer.print("fn call_transform_{s}(invocation: *const Invocation, containing_item: *const Item, ast: *const Program, allocator: __koru_std.mem.Allocator) !struct {{ item: Item, program: *const Program }} {{\n", .{event.stub_name});
         } else {
-            try writer.print("fn call_transform_{s}(invocation: *const Invocation, containing_item: *const Item, ast: *const Program, allocator: std.mem.Allocator) !Item {{\n", .{event.stub_name});
+            try writer.print("fn call_transform_{s}(invocation: *const Invocation, containing_item: *const Item, ast: *const Program, allocator: __koru_std.mem.Allocator) !Item {{\n", .{event.stub_name});
         }
 
         // Suppress unused parameter warnings for parameters not requested by the event
@@ -1550,13 +1550,13 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
     // Third pass: Generate dispatcher function
     if (transform_count > 0) {
         try writer.writeAll("// Transform Dispatcher - orchestrates all transform calls\n");
-        try writer.writeAll("pub fn process_all_transforms(ast: *const Program, allocator: std.mem.Allocator) !*Program {\n");
+        try writer.writeAll("pub fn process_all_transforms(ast: *const Program, allocator: __koru_std.mem.Allocator) !*Program {\n");
         try writer.writeAll("    // Import joinPath helper from backend\n");
         try writer.writeAll("    const joinPath = @import(\"backend_output_emitted\").koru_std.compiler.joinPath;\n");
         try writer.writeAll("    \n");
         try writer.writeAll("    // Track current AST state (transforms may return modified AST)\n");
         try writer.writeAll("    var current_ast = ast;\n");
-        try writer.writeAll("    var items_list = std.ArrayList(Item){};\n");
+        try writer.writeAll("    var items_list = __koru_std.ArrayList(Item){};\n");
         try writer.writeAll("    defer items_list.deinit(allocator);\n");
         try writer.writeAll("    \n");
         try writer.writeAll("    for (current_ast.items) |item| {\n");
@@ -1569,9 +1569,9 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
         // Generate if/else chain for each transform event
         for (transform_events[0..transform_count], 0..) |event, i| {
             if (i == 0) {
-                try writer.print("            if (std.mem.eql(u8, inv_path, \"{s}\")) {{\n", .{event.match_name});
+                try writer.print("            if (__koru_std.mem.eql(u8, inv_path, \"{s}\")) {{\n", .{event.match_name});
             } else {
-                try writer.print("            }} else if (std.mem.eql(u8, inv_path, \"{s}\")) {{\n", .{event.match_name});
+                try writer.print("            }} else if (__koru_std.mem.eql(u8, inv_path, \"{s}\")) {{\n", .{event.match_name});
             }
 
             // Handle both program-returning and item-only transforms
@@ -2325,7 +2325,7 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
         try writer.writeAll("const type_registry_module = @import(\"type_registry\");\n\n");
 
         try writer.writeAll("const emit_zig_handler = struct {\n");
-        try writer.writeAll("    pub const Input = struct { ast: *const Program, allocator: std.mem.Allocator };\n");
+        try writer.writeAll("    pub const Input = struct { ast: *const Program, allocator: __koru_std.mem.Allocator };\n");
         try writer.writeAll("    pub const Output = union(enum) { emitted: struct { code: []const u8 } };\n");
         try writer.writeAll("    pub fn handler(__koru_event_input: Input) Output {\n");
 
@@ -2396,7 +2396,7 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
     try writer.writeAll(
         \\// Bootstrap coordinator - calls the visitor implementation
         \\const coordinate_handler = struct {
-        \\    pub const Input = struct { ast: *const Program, allocator: std.mem.Allocator };
+        \\    pub const Input = struct { ast: *const Program, allocator: __koru_std.mem.Allocator };
         \\    pub const Output = union(enum) {
         \\        coordinated: struct {
         \\            ast: *const Program,
@@ -2424,28 +2424,28 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
         \\// Compile-time execution
         \\
         \\pub fn main() !void {
-        \\    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        \\    var gpa = __koru_std.heap.GeneralPurposeAllocator(.{}){};
         \\    defer {
         \\        const leak_status = gpa.deinit();
         \\        if (leak_status == .leak) {
-        \\            std.debug.print("Memory leak detected\n", .{});
+        \\            __koru_std.debug.print("Memory leak detected\n", .{});
         \\        }
         \\    }
         \\    const allocator = gpa.allocator();
         \\
         \\    // Arena allocator for compilation phase
-        \\    var compile_arena = std.heap.ArenaAllocator.init(allocator);
+        \\    var compile_arena = __koru_std.heap.ArenaAllocator.init(allocator);
         \\    defer compile_arena.deinit();
         \\    const compile_allocator = compile_arena.allocator();
         \\
-        \\    const args = try std.process.argsAlloc(allocator);
-        \\    defer std.process.argsFree(allocator, args);
+        \\    const args = try __koru_std.process.argsAlloc(allocator);
+        \\    defer __koru_std.process.argsFree(allocator, args);
         \\
         \\    const emitted_file = "output_emitted.zig";
         \\    // NOTE: args[1] is the output exe name when called from frontend,
         \\    // but when running backend directly, args[1] might be the input .kz file.
         \\    // Detect this case and default to "a.out" instead of overwriting the source!
-        \\    const output_exe = if (args.len > 1 and !std.mem.endsWith(u8, args[1], ".kz")) args[1] else "a.out";
+        \\    const output_exe = if (args.len > 1 and !__koru_std.mem.endsWith(u8, args[1], ".kz")) args[1] else "a.out";
         \\
         \\    var actual_len: usize = generated_code.len;
         \\    while (actual_len > 0 and generated_code[actual_len - 1] == 0) {
@@ -2453,13 +2453,13 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
         \\    }
         \\    const trimmed_code = generated_code[0..actual_len];
         \\
-        \\    const file = try std.fs.cwd().createFile(emitted_file, .{});
+        \\    const file = try __koru_std.fs.cwd().createFile(emitted_file, .{});
         \\    defer file.close();
         \\    try file.writeAll(trimmed_code);
         \\
-        \\    const stdout = std.fs.File.stdout();
+        \\    const stdout = __koru_std.fs.File.stdout();
         \\    var buf: [512]u8 = undefined;
-        \\    const msg = try std.fmt.bufPrint(&buf, "✓ Generated {s} ({d} bytes)\n", .{emitted_file, actual_len});
+        \\    const msg = try __koru_std.fmt.bufPrint(&buf, "✓ Generated {s} ({d} bytes)\n", .{emitted_file, actual_len});
         \\    try stdout.writeAll(msg);
         \\}
         \\
