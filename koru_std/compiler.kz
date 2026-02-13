@@ -506,6 +506,12 @@ pub const CompilerContext = struct {
   "type": "boolean"
 }
 
+~flag.declare {
+  "name": "tiny",
+  "description": "Optimize for minimal binary size (strips unwind tables and RELRO padding)",
+  "type": "boolean"
+}
+
 // ============================================================
 // COMPILER COMMANDS - User-definable CLI commands
 // ============================================================
