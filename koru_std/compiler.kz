@@ -1526,17 +1526,21 @@ const joinPathAlloc = struct {
     // Phase 2.5: Execute comptime flows AFTER transforms (if they exist)
     // comptime_main() calls all comptime_flowN() functions at Zig RUNTIME (when ./backend runs)
     // Now sees the transformed AST, enabling comptime events to do post-transform work
-    if (@hasDecl(backend_output, "comptime_main")) {
+    // Returns *const Program — comptime flows may modify the AST
+    const comptime_updated_ctx = if (@hasDecl(backend_output, "comptime_main")) blk: {
         std.debug.print("[PHASE 2.5] Executing comptime_main() - running comptime flows\n", .{});
-        backend_output.comptime_main(transform_updated_ctx.ast, transform_updated_ctx.allocator);
-        std.debug.print("[PHASE 2.5] Comptime flows execution complete\n", .{});
-    }
+        const post_comptime_ast = backend_output.comptime_main(transform_updated_ctx.ast, transform_updated_ctx.allocator);
+        std.debug.print("[PHASE 2.5] Comptime flows complete ({} items)\n", .{post_comptime_ast.items.len});
+        var comptime_ctx = transform_updated_ctx;
+        comptime_ctx.ast = post_comptime_ast;
+        break :blk comptime_ctx;
+    } else transform_updated_ctx;
 
     // Phase 2.6: Rebuild comptime_events list from transformed AST
     // Transforms may have added/removed events, so we need to rescan
-    std.debug.print("[PHASE 2.6] Rescanning transformed AST ({} items)\n", .{transform_updated_ctx.ast.items.len});
+    std.debug.print("[PHASE 2.6] Rescanning transformed AST ({} items)\n", .{comptime_updated_ctx.ast.items.len});
     comptime_count = 0;  // Reset counter
-    for (transform_updated_ctx.ast.items) |item| {
+    for (comptime_updated_ctx.ast.items) |item| {
         switch (item) {
             .event_decl => |event_decl| {
                 // Check if this event has comptime-only parameters
@@ -1599,7 +1603,7 @@ const joinPathAlloc = struct {
     // Phase 3: Build new AST without comptime flows, procs, and modules (AST TRANSFORMATION!)
     // Count non-comptime items first
     var count_non_comptime: usize = 0;
-    for (transform_updated_ctx.ast.items) |item| {
+    for (comptime_updated_ctx.ast.items) |item| {
         var should_keep = true;
         if (item == .flow) {
             const flow = item.flow;
@@ -1651,7 +1655,7 @@ const joinPathAlloc = struct {
         return .{ .ctx = ctx };
     };
     var idx: usize = 0;
-    for (transform_updated_ctx.ast.items) |item| {
+    for (comptime_updated_ctx.ast.items) |item| {
         var should_keep = true;
         if (item == .flow) {
             const flow = item.flow;

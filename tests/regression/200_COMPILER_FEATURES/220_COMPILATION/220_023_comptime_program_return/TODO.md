@@ -48,7 +48,7 @@ Missing:
 
 ## Status
 
-- [ ] Detect Program in comptime event output
-- [ ] Thread returned Program through comptime_main
-- [ ] Update ctx.ast with returned Program
+- [x] Detect Program in comptime event output
+- [x] Thread returned Program through comptime_main
+- [x] Update ctx.ast with returned Program
 - [ ] Test with actual AST modification

@@ -253,9 +253,14 @@ pub const VisitorEmitter = struct {
     main_module_name: ?[]const u8,  // Main module name for qualifying unqualified events in taps
     current_module_name: ?[]const u8,  // Current module being emitted (for variant registry lookups)
     current_module_prefix: ?[]const u8,  // Current Zig module path prefix (e.g., "koru_orisha")
-    module_comptime_flows: std.ArrayList([]const u8),  // Collected comptime flow calls from modules
+    module_comptime_flows: std.ArrayList(ComptimeFlowCall),  // Collected comptime flow calls from modules
     koru_start_flow_name: ?[]const u8,  // Name of koru:start meta-event flow (if present)
     koru_end_flow_name: ?[]const u8,    // Name of koru:end meta-event flow (if present)
+
+    const ComptimeFlowCall = struct {
+        call_path: []const u8,
+        returns_program: bool,
+    };
 
     const ModuleNode = struct {
         name: []const u8,
@@ -655,14 +660,16 @@ pub const VisitorEmitter = struct {
         if (self.emit_mode == .comptime_only) {
             // ========================================================================
             // COMPTIME MODE: Emit comptime_main() that calls all comptime flows
-            // Accepts program AST and allocator to inject into comptime events
+            // Returns *const Program — comptime flows may modify the AST
             // ========================================================================
-            try self.code_emitter.write("pub fn comptime_main(program: *const __koru_ast.Program, allocator: __koru_std.mem.Allocator) void {\n");
+            try self.code_emitter.write("pub fn comptime_main(program: *const __koru_ast.Program, allocator: __koru_std.mem.Allocator) *const __koru_ast.Program {\n");
             self.code_emitter.indent();
 
-            // Suppress unused parameter warnings (using & works whether params are used or not)
+            // Thread program through comptime flows (program-returning flows update it)
             try self.code_emitter.writeIndent();
-            try self.code_emitter.write("_ = &program;\n");
+            try self.code_emitter.write("var current_program = program;\n");
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("_ = &current_program;\n");
             try self.code_emitter.writeIndent();
             try self.code_emitter.write("_ = &allocator;\n");
 
@@ -680,6 +687,7 @@ pub const VisitorEmitter = struct {
                     if (invokes_comptime_event) {
                         // Check if this flow invokes a [norun] or [transform] event
                         const event_decl = self.findEventDeclInItems(self.all_items, &flow.invocation.path);
+                        var flow_returns_program = false;
                         if (event_decl) |decl| {
                             const is_norun = annotation_parser.hasPart(decl.annotations, "norun");
                             if (is_norun) {
@@ -691,26 +699,51 @@ pub const VisitorEmitter = struct {
                                 // [transform] flows are handled by run_pass(), skip calling them
                                 continue;
                             }
+                            // Check if event returns a program
+                            for (decl.branches) |branch| {
+                                for (branch.payload.fields) |field| {
+                                    if (std.mem.eql(u8, field.name, "program")) {
+                                        flow_returns_program = true;
+                                        break;
+                                    }
+                                }
+                                if (flow_returns_program) break;
+                            }
                         }
 
                         try self.code_emitter.writeIndent();
-                        try self.code_emitter.write("main_module.comptime_flow");
+                        if (flow_returns_program) {
+                            // Thread program through: capture return value
+                            try self.code_emitter.write("current_program = main_module.comptime_flow");
+                        } else {
+                            try self.code_emitter.write("main_module.comptime_flow");
+                        }
                         var num_buf: [32]u8 = undefined;
                         const num_str = try std.fmt.bufPrint(&num_buf, "{}", .{i});
                         try self.code_emitter.write(num_str);
-                        // Pass program and allocator to comptime flows
-                        try self.code_emitter.write("(program, allocator);\n");
+                        if (flow_returns_program) {
+                            try self.code_emitter.write("(current_program, allocator);\n");
+                        } else {
+                            try self.code_emitter.write("(current_program, allocator);\n");
+                        }
                         i += 1;
                     }
                 }
             }
 
             // Also call comptime flows from imported modules
-            for (self.module_comptime_flows.items) |call_path| {
+            for (self.module_comptime_flows.items) |flow_info| {
                 try self.code_emitter.writeIndent();
-                try self.code_emitter.write(call_path);
-                try self.code_emitter.write("(program, allocator);\n");
+                if (flow_info.returns_program) {
+                    try self.code_emitter.write("current_program = ");
+                }
+                try self.code_emitter.write(flow_info.call_path);
+                try self.code_emitter.write("(current_program, allocator);\n");
             }
+
+            // Return the (potentially modified) program
+            try self.code_emitter.writeIndent();
+            try self.code_emitter.write("return current_program;\n");
 
             // Close comptime_main()
             self.code_emitter.dedent();
@@ -1019,6 +1052,25 @@ pub const VisitorEmitter = struct {
                     flow.invocation.path.segments.len == 1 and
                     std.mem.eql(u8, flow.invocation.path.segments[0], "end");
 
+                // Detect if this comptime event returns a program (for comptime program return)
+                var comptime_returns_program = false;
+                var comptime_program_branch: []const u8 = "";
+                if (invokes_comptime_event and self.emit_mode == .comptime_only) {
+                    const ct_event_decl = self.findEventDeclInItems(self.all_items, &flow.invocation.path);
+                    if (ct_event_decl) |ct_decl| {
+                        for (ct_decl.branches) |branch| {
+                            for (branch.payload.fields) |field| {
+                                if (std.mem.eql(u8, field.name, "program")) {
+                                    comptime_returns_program = true;
+                                    comptime_program_branch = branch.name;
+                                    break;
+                                }
+                            }
+                            if (comptime_returns_program) break;
+                        }
+                    }
+                }
+
                 // Emit flow function with appropriate name
                 try self.code_emitter.writeIndent();
                 try self.code_emitter.write("pub fn ");
@@ -1042,7 +1094,10 @@ pub const VisitorEmitter = struct {
                             const flow_num_str = try std.fmt.bufPrint(&flow_num_buf, "{}", .{self.flow_counter});
                             try call_buf.appendSlice(self.allocator, flow_num_str);
                             const call_str = try call_buf.toOwnedSlice(self.allocator);
-                            try self.module_comptime_flows.append(self.allocator, call_str);
+                            try self.module_comptime_flows.append(self.allocator, .{
+                                .call_path = call_str,
+                                .returns_program = comptime_returns_program,
+                            });
                         }
                     } else {
                         try self.code_emitter.write("flow");
@@ -1054,7 +1109,11 @@ pub const VisitorEmitter = struct {
 
                 // Comptime flows receive program and allocator for AST introspection
                 if (invokes_comptime_event and self.emit_mode == .comptime_only) {
-                    try self.code_emitter.write("(program: *const __koru_ast.Program, allocator: __koru_std.mem.Allocator) void {\n");
+                    if (comptime_returns_program) {
+                        try self.code_emitter.write("(program: *const __koru_ast.Program, allocator: __koru_std.mem.Allocator) *const __koru_ast.Program {\n");
+                    } else {
+                        try self.code_emitter.write("(program: *const __koru_ast.Program, allocator: __koru_std.mem.Allocator) void {\n");
+                    }
                 } else {
                     try self.code_emitter.write("() void {\n");
                 }
@@ -1084,6 +1143,14 @@ pub const VisitorEmitter = struct {
 
                 // Emit the flow body (invocation + continuations)
                 try emitter.emitFlow(self.code_emitter, &ctx, &flow);
+
+                // Comptime program return: extract program from handler result
+                if (comptime_returns_program and comptime_program_branch.len > 0) {
+                    try self.code_emitter.writeIndent();
+                    try self.code_emitter.write("return result_0.");
+                    try self.code_emitter.write(comptime_program_branch);
+                    try self.code_emitter.write(".program;\n");
+                }
 
                 self.code_emitter.dedent();
                 try self.code_emitter.writeIndent();
