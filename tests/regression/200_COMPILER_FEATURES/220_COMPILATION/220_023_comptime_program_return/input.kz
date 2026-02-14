@@ -30,9 +30,8 @@ const ast_functional = @import("ast_functional");
     return .{ .done = .{ .program = program } };
 }
 
-// Invoke the augmentation
+// Invoke the augmentation — no continuations needed
 ~augment_program()
-| done _ |> _
 
 // A simple runtime event to verify compilation works
 ~event hello {}

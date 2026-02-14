@@ -1398,6 +1398,26 @@ const joinPathAlloc = struct {
 // Comptime evaluation pass - executes events with Program/Source parameters
 // This runs BEFORE emission so comptime events can transform the AST
 ~proc evaluate_comptime {
+    const isProgramType = struct {
+        fn check(raw_type: []const u8) bool {
+            var t = raw_type;
+            while (true) {
+                t = std.mem.trimLeft(u8, t, " \t");
+                if (std.mem.startsWith(u8, t, "*")) {
+                    t = t[1..];
+                    continue;
+                }
+                if (std.mem.startsWith(u8, t, "const")) {
+                    t = t["const".len..];
+                    continue;
+                }
+                break;
+            }
+
+            return std.mem.endsWith(u8, t, "Program");
+        }
+    }.check;
+
     // Phase 1: Build map of comptime-only events
     // (Events that have Program or Source parameters)
     var comptime_events: [64][]const u8 = undefined;
@@ -1409,11 +1429,7 @@ const joinPathAlloc = struct {
                 // Check if this event has comptime-only parameters
                 var is_comptime = false;
                 for (event_decl.input.fields) |field| {
-                    if (field.is_source) {
-                        is_comptime = true;
-                        break;
-                    }
-                    if (std.mem.eql(u8, field.type, "Program")) {
+                    if (field.is_source or isProgramType(field.type)) {
                         is_comptime = true;
                         break;
                     }
@@ -1421,7 +1437,11 @@ const joinPathAlloc = struct {
 
                 if (is_comptime and comptime_count < 64) {
                     // Build event name from path segments using heap allocation
-                    const event_name = joinPathAlloc(ctx.allocator, event_decl.path.segments);
+                    const path_str = joinPathAlloc(ctx.allocator, event_decl.path.segments);
+                    const event_name = if (event_decl.path.module_qualifier) |mq|
+                        std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, path_str}) catch path_str
+                    else
+                        path_str;
                     comptime_events[comptime_count] = event_name;
                     comptime_count += 1;
                 }
@@ -1433,11 +1453,7 @@ const joinPathAlloc = struct {
                         const event_decl = mod_item.event_decl;
                         var is_comptime = false;
                         for (event_decl.input.fields) |field| {
-                            if (field.is_source) {
-                                is_comptime = true;
-                                break;
-                            }
-                            if (std.mem.eql(u8, field.type, "Program")) {
+                            if (field.is_source or isProgramType(field.type)) {
                                 is_comptime = true;
                                 break;
                             }
@@ -1546,11 +1562,7 @@ const joinPathAlloc = struct {
                 // Check if this event has comptime-only parameters
                 var is_comptime = false;
                 for (event_decl.input.fields) |field| {
-                    if (field.is_source) {
-                        is_comptime = true;
-                        break;
-                    }
-                    if (std.mem.eql(u8, field.type, "Program")) {
+                    if (field.is_source or isProgramType(field.type)) {
                         is_comptime = true;
                         break;
                     }
@@ -1558,7 +1570,11 @@ const joinPathAlloc = struct {
 
                 if (is_comptime and comptime_count < 64) {
                     // Use heap-allocated path string
-                    const event_name = joinPathAlloc(ctx.allocator, event_decl.path.segments);
+                    const path_str = joinPathAlloc(ctx.allocator, event_decl.path.segments);
+                    const event_name = if (event_decl.path.module_qualifier) |mq|
+                        std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, path_str}) catch path_str
+                    else
+                        path_str;
                     std.debug.print("  Found comptime event: {s} (fields: {})\n", .{event_name, event_decl.input.fields.len});
                     comptime_events[comptime_count] = event_name;
                     comptime_count += 1;
@@ -1570,11 +1586,7 @@ const joinPathAlloc = struct {
                         const event_decl = mod_item.event_decl;
                         var is_comptime = false;
                         for (event_decl.input.fields) |field| {
-                            if (field.is_source) {
-                                is_comptime = true;
-                                break;
-                            }
-                            if (std.mem.eql(u8, field.type, "Program")) {
+                            if (field.is_source or isProgramType(field.type)) {
                                 is_comptime = true;
                                 break;
                             }
@@ -1617,7 +1629,20 @@ const joinPathAlloc = struct {
             // Check if comptime flow
             for (0..comptime_count) |i| {
                 if (std.mem.eql(u8, inv_path, comptime_events[i])) {
-                    should_keep = false;
+                    var transformed = false;
+                    if (flow.inline_body != null or flow.preamble_code != null) {
+                        transformed = true;
+                    } else {
+                        for (flow.invocation.annotations) |ann| {
+                            if (std.mem.eql(u8, ann, "@pass_ran(\"transform\")")) {
+                                transformed = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!transformed) {
+                        should_keep = false;
+                    }
                     break;
                 }
             }
@@ -1629,7 +1654,11 @@ const joinPathAlloc = struct {
             const proc = item.proc_decl;
 
             // Check if this proc is comptime (in comptime_events list)
-            const proc_path = joinPathAlloc(ctx.allocator, proc.path.segments);
+            const proc_path_str = joinPathAlloc(ctx.allocator, proc.path.segments);
+            const proc_path = if (proc.path.module_qualifier) |mq|
+                std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, proc_path_str}) catch proc_path_str
+            else
+                proc_path_str;
             for (0..comptime_count) |i| {
                 if (std.mem.eql(u8, proc_path, comptime_events[i])) {
                     // This is a comptime proc - filter it out (already executed)
@@ -1669,7 +1698,20 @@ const joinPathAlloc = struct {
             // Check if comptime flow
             for (0..comptime_count) |i| {
                 if (std.mem.eql(u8, inv_path, comptime_events[i])) {
-                    should_keep = false;
+                    var transformed = false;
+                    if (flow.inline_body != null or flow.preamble_code != null) {
+                        transformed = true;
+                    } else {
+                        for (flow.invocation.annotations) |ann| {
+                            if (std.mem.eql(u8, ann, "@pass_ran(\"transform\")")) {
+                                transformed = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!transformed) {
+                        should_keep = false;
+                    }
                     break;
                 }
             }
@@ -1681,7 +1723,11 @@ const joinPathAlloc = struct {
             const proc = item.proc_decl;
 
             // Check if this proc is comptime (in comptime_events list)
-            const proc_path = joinPathAlloc(ctx.allocator, proc.path.segments);
+            const proc_path_str = joinPathAlloc(ctx.allocator, proc.path.segments);
+            const proc_path = if (proc.path.module_qualifier) |mq|
+                std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, proc_path_str}) catch proc_path_str
+            else
+                proc_path_str;
             for (0..comptime_count) |i| {
                 if (std.mem.eql(u8, proc_path, comptime_events[i])) {
                     // This is a comptime proc - filter it out (already executed)

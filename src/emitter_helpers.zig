@@ -185,6 +185,8 @@ pub const EmissionContext = struct {
     // InvocationMeta support - set when emitting a flow
     current_flow_annotations: ?[]const []const u8 = null, // Flow annotations like ["release", "debug"]
     current_flow_location: ?errors.SourceLocation = null, // Location of the flow invocation
+    // Comptime program return: use this binding instead of "_" for zero-continuation flows
+    comptime_result_binding: ?[]const u8 = null,
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -3341,7 +3343,9 @@ pub fn emitFlow(
             try emitContinuationList(emitter, ctx, flow.continuations, first_result, &result_counter, false);
         }
     } else {
-        try emitInvocation(emitter, ctx, &flow.invocation, "_");
+        // Zero continuations — use comptime_result_binding if set (for program return)
+        const binding = if (ctx.comptime_result_binding) |b| b else "_";
+        try emitInvocation(emitter, ctx, &flow.invocation, binding);
     }
 }
 

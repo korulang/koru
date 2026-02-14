@@ -1139,6 +1139,9 @@ pub const VisitorEmitter = struct {
                     .main_module_name = self.main_module_name,
                     .emit_mode = self.emit_mode,
                     .module_annotations = module_annotations,
+                    // For program-returning comptime flows with no continuations,
+                    // capture result in a named variable instead of discarding
+                    .comptime_result_binding = if (comptime_returns_program) "result_0" else null,
                 };
 
                 // Emit the flow body (invocation + continuations)
