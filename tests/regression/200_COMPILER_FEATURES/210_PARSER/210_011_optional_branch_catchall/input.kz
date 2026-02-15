@@ -18,15 +18,15 @@
 | success |> _
 |? |> _
 
-// Test 2: |? with Transition metatype binding
+// Test 2: |? with Transition metatype binding (explicit discard)
 ~process(value: 20)
 | success |> _
-|? Transition |> _
+|? Transition _ |> _
 
-// Test 3: |? with Profile metatype binding
+// Test 3: |? with Profile metatype binding (explicit discard)
 ~process(value: 30)
 | success |> _
-|? Profile |> _
+|? Profile _ |> _
 
 // Test 4: Mix explicit optional handling + catch-all
 ~process(value: 40)
@@ -37,4 +37,4 @@
 // Test 5: |? catches ALL unhandled optional branches
 ~process(value: 50)
 | success |> _
-|? Transition |> _  // Catches both warning and debug
+|? Transition _ |> _  // Catches both warning and debug

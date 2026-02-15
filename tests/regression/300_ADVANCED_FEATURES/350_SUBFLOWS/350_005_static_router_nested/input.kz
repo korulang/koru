@@ -1,0 +1,29 @@
+// ============================================================================
+// REGRESSION TEST - Static Router Nested in Dynamic Router
+// ============================================================================
+// Test: Can orisha:static_router be used as a catch-all inside orisha:router?
+// This tests the tree-structured routing pattern:
+//   ~orisha:handler = orisha:router(req)
+//   | [GET /api/health] |> response { ... }
+//   | [*] |> orisha:static_router(name: "site")
+//
+// Compile-only test — verifies the transform pipeline:
+//   1. ~orisha:static(name: ...) declaration is found
+//   2. Route collection processes the directory
+//   3. generated/site_routes.zig is created
+//   4. static_router generates inline import + lookup code
+//   5. The whole thing compiles as a nested catch-all in router
+// ============================================================================
+
+~import "$orisha"
+~import "$std/io"
+
+~orisha:static(name: "site", root: "testdata")
+
+~orisha:handler = orisha:router(req)
+| [GET /api/health] |> response { status: 200, body: "ok", content_type: "application/json" }
+| [*] |> orisha:static_router(name: "site")
+
+~orisha:serve(port: 3099)
+| shutdown s |> std.io:println(text: s.reason)
+| failed f |> std.io:println(text: f.msg)

@@ -4340,23 +4340,41 @@ pub const Parser = struct {
                     catchall_metatype = try self.allocator.dupe(u8, next);
                     _ = parts.next(); // consume metatype
 
-                    // Next token should be the binding variable
+                    // Metatype requires a binding or explicit _ discard
+                    // e.g., |? Transition t |> ... or |? Audit _ |> ...
                     if (parts.peek()) |binding_name| {
-                        if (!std.mem.startsWith(u8, binding_name, "|>")) {
-                            // Validate binding is a valid identifier
-                            if (!lexer.isValidIdentifier(binding_name)) {
-                                try self.reporter.addError(
-                                    .PARSE001,
-                                    self.current,
-                                    indent + 2,
-                                    "Invalid binding '{s}'. Bindings must be valid identifiers.",
-                                    .{binding_name},
-                                );
-                                return error.InvalidBinding;
-                            }
-                            binding = try self.allocator.dupe(u8, binding_name);
-                            _ = parts.next(); // consume binding
+                        if (std.mem.startsWith(u8, binding_name, "|>")) {
+                            try self.reporter.addError(
+                                .PARSE001,
+                                self.current,
+                                indent + 2,
+                                "Metatype '{s}' requires a binding (e.g., |? {s} t |>) or explicit discard (|? {s} _ |>).",
+                                .{ catchall_metatype.?, catchall_metatype.?, catchall_metatype.? },
+                            );
+                            return error.ParseError;
                         }
+                        // Validate binding is a valid identifier (or _ for discard)
+                        if (!std.mem.eql(u8, binding_name, "_") and !lexer.isValidIdentifier(binding_name)) {
+                            try self.reporter.addError(
+                                .PARSE001,
+                                self.current,
+                                indent + 2,
+                                "Invalid binding '{s}'. Bindings must be valid identifiers or '_' for discard.",
+                                .{binding_name},
+                            );
+                            return error.InvalidBinding;
+                        }
+                        binding = try self.allocator.dupe(u8, binding_name);
+                        _ = parts.next(); // consume binding
+                    } else {
+                        try self.reporter.addError(
+                            .PARSE001,
+                            self.current,
+                            indent + 2,
+                            "Metatype '{s}' requires a binding (e.g., |? {s} t |>) or explicit discard (|? {s} _ |>).",
+                            .{ catchall_metatype.?, catchall_metatype.?, catchall_metatype.? },
+                        );
+                        return error.ParseError;
                     }
                     rest = parts.rest();
                 }

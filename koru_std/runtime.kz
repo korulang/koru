@@ -1396,7 +1396,9 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 // ============================================================================
 
 // shape: Optional event name to validate response shape against
-~pub event run {
+// @retain: run_event is referenced from generated Zig code in user pipelines
+// (std.runtime:run invocations in continuations compile to run_event.handler(...))
+~[retain]pub event run {
     source: []const u8,
     scope: []const u8,
     budget: ?u64 = null,

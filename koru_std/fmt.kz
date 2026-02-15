@@ -527,79 +527,12 @@ pub const FormattedText = struct {
             return .{ .transformed = .{ .program = result_ptr } };
         }
     } else {
-        // Pipeline: replace the invocation node in the continuation tree.
-        // We match by content (path segments + args) rather than pointer identity,
-        // because Zig's `if (optional) |val|` captures by value — stack addresses
-        // never match heap AST pointers. Skip already-transformed invocations.
+        // Pipeline: replace the invocation node directly using the original
+        // invocation pointer. The walker found this pointer in the program's
+        // continuation tree, so replaceInvocationNodeRecursive can locate it.
         const new_node = ast.Node{ .invocation = new_invocation };
 
-        const findUntransformedLn = struct {
-            fn pathEql(a: []const []const u8, b: []const []const u8) bool {
-                if (a.len != b.len) return false;
-                for (a, b) |x, y| {
-                    if (!std.mem.eql(u8, x, y)) return false;
-                }
-                return true;
-            }
-
-            fn argsEql(a: []const ast.Arg, b: []const ast.Arg) bool {
-                if (a.len != b.len) return false;
-                for (a, b) |x, y| {
-                    if (!std.mem.eql(u8, x.value, y.value)) return false;
-                }
-                return true;
-            }
-
-            fn search(
-                alloc: std.mem.Allocator,
-                continuations: []const ast.Continuation,
-                current_path: []const usize,
-                target_segments: []const []const u8,
-                target_args: []const ast.Arg,
-            ) ?[]const usize {
-                for (continuations, 0..) |*cont, cont_idx| {
-                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
-                    @memcpy(path[0..current_path.len], current_path);
-                    path[current_path.len] = cont_idx;
-
-                    if (cont.node) |node| {
-                        if (node == .invocation) {
-                            const inv = node.invocation;
-                            if (inv.inline_body == null and
-                                pathEql(inv.path.segments, target_segments) and
-                                argsEql(inv.args, target_args))
-                            {
-                                return path;
-                            }
-                        }
-                    }
-
-                    if (search(alloc, cont.continuations, path, target_segments, target_args)) |result| {
-                        return result;
-                    }
-                    alloc.free(path);
-                }
-                return null;
-            }
-        };
-
-        const empty_path = &[_]usize{};
-        const search_path = findUntransformedLn.search(allocator, flow.continuations, empty_path, invocation.path.segments, invocation.args) orelse {
-            return .{ .transformed = .{ .program = program } };
-        };
-
-        const new_flow = ast_functional.replacePipelineStepAtPath(
-            allocator,
-            flow,
-            search_path,
-            0,
-            new_node,
-        ) catch {
-            return .{ .transformed = .{ .program = program } };
-        };
-
-        const new_item = ast.Item{ .flow = new_flow };
-        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(allocator, program, invocation, new_node) catch unreachable;
         if (maybe_new_program) |new_program| {
             const result_ptr = allocator.create(ast.Program) catch unreachable;
             result_ptr.* = new_program;

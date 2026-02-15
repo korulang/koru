@@ -298,16 +298,26 @@ fn walkNode(
         // Check if this invocation matches any transform
         for (transforms) |transform| {
             if (node.matchesTransform(transform.name)) {
-                // log.debug("[WALK] -> Matched transform: {s}\n", .{transform.name});
                 const transformed = try transform.handler_fn(node, program, allocator);
 
-                // CRITICAL: A transform MUST change the AST. If it returns the same pointer,
-                // the flow wasn't replaced and we'll infinite loop trying to transform it again.
+                // If a transform returns the same pointer, it can't/won't transform
+                // this invocation (e.g., already processed via inline_body but not
+                // annotated with @pass_ran). Instead of aborting all transforms,
+                // mark the invocation as processed so the walker skips it, and
+                // continue looking for other transforms.
                 if (transformed == program) {
-                    log.debug("ERROR: Transform '{s}' returned same program pointer!\n", .{transform.name});
-                    log.debug("ERROR: Transforms MUST replace their flow with different AST.\n", .{});
-                    log.debug("ERROR: If this is a [norun] event, remove the [transform] annotation.\n", .{});
-                    return error.TransformReturnedSamePointer;
+                    log.debug("Transform '{s}' returned same pointer, marking as processed\n", .{transform.name});
+                    const mutable_inv = @constCast(node.invocation);
+                    const new_annotations = allocator.alloc([]const u8, mutable_inv.annotations.len + 1) catch {
+                        return error.TransformReturnedSamePointer;
+                    };
+                    for (mutable_inv.annotations, 0..) |ann, ai| {
+                        new_annotations[ai] = ann;
+                    }
+                    new_annotations[mutable_inv.annotations.len] = "@pass_ran(\"transform\")";
+                    mutable_inv.annotations = new_annotations;
+                    // Continue walking — don't abort the entire transform pipeline
+                    return WalkResult{ .found = false, .program = program };
                 }
 
                 // CIRCUIT BREAKER: Verify the transform made progress.

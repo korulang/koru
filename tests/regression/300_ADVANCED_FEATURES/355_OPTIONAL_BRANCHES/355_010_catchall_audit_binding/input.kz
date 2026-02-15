@@ -1,0 +1,39 @@
+// Test 355_010: Catch-All with Audit Metatype Binding
+//
+// Verifies:
+// 1. |? Audit e |> can access e.branch to see which optional branch fired
+// 2. Required branches handled explicitly, optional caught generically
+// 3. The Audit metatype is constructed with correct branch name
+
+~import "$std/io"
+
+// Event with required + optional branches
+~event process { value: u32 }
+| success { result: u32 }          // REQUIRED
+| ?warning { msg: []const u8 }     // OPTIONAL
+| ?debug { details: []const u8 }   // OPTIONAL
+
+~proc process {
+    if (value > 100) {
+        return .{ .warning = .{ .msg = "Value too large" } };
+    }
+    if (value % 2 == 1) {
+        return .{ .debug = .{ .details = "Value is odd" } };
+    }
+    return .{ .success = .{ .result = value * 2 } };
+}
+
+// Call 1: value=10 → success (required, handled explicitly)
+~process(value: 10)
+| success _ |> std.io:print.ln("SUCCESS")
+|? Audit e |> std.io:print.ln(e.branch)
+
+// Call 2: value=150 → warning (optional, caught by |? Audit)
+~process(value: 150)
+| success _ |> std.io:print.ln("SUCCESS")
+|? Audit e |> std.io:print.ln(e.branch)
+
+// Call 3: value=7 → debug (optional, caught by |? Audit)
+~process(value: 7)
+| success _ |> std.io:print.ln("SUCCESS")
+|? Audit e |> std.io:print.ln(e.branch)

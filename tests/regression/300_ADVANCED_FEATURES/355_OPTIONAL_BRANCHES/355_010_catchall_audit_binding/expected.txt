@@ -1,0 +1,3 @@
+SUCCESS
+warning
+debug
