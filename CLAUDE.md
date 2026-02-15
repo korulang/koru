@@ -106,20 +106,17 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Finalize the AST rewrite merge (unifying Flow and SubflowImpl) and stabilize the compiler pipeline against metadata loss regressions.
+Stabilize the Koru compiler and interpreter by documenting test results and tracking regression trends via timestamped JSON snapshots.
 
 ### Decisions
-- **Include 'phantom' type annotations (e.g., File[open!]) in AST JSON serialization.**: To support downstream tools and debuggers that need to distinguish between standard types and semantic state-tracking metadata.
-- **Implemented compile-time validation for array literals assigned to non-array targets.**: To catch type mismatches early and ensure Koru's array literals ([...]) have a known element type from context, avoiding performance-degrading heuristics.
-- **Introduced deps.kz for centralized dependency management and enhanced testing.kz with mock support.**: Standardizes internal/external dependency resolution and provides better visibility into regression suite health via automated reporting (CLEANUP_TESTS.md).
-- **Refined phase annotation inheritance to allow module-level defaults (e.g., [comptime]) with item-level overrides (e.g., [runtime]).**: Enables modules like testing.kz to be comptime by default while allowing specific runtime components, preventing illegal cross-phase references of AST pointers.
-- **Established a 'Ground Truth' documentation policy, prioritizing verified tests and code over markdown.**: Prevents 'poisoning' the development process with outdated design docs. Generated llms.md as a machine-consumable spec derived strictly from SUCCESS-marked tests.
-- **Adopted the '.impl' pattern and atomic unit treatment for complex control structures (try/catch, switch).**: Ensures architectural symmetry and prevents 'Frankenstein' states where a partial block (like a catch) is executed or transformed without its parent.
-- **Standardized on Liquid-style {{ var }} syntax, deprecating ${var}.**: Provides a unified, powerful metaprogramming interface and reduces maintenance burden of dual-syntax templating.
-- **Unify 'SubflowImpl' into the 'Flow' AST node using 'impl_of' and 'is_impl' metadata.**: Reduces AST duplication and simplifies the compiler pipeline. Impls are now semantically identified as flows that exist inside event handlers rather than standalone functions.
-- **Mandate metadata preservation (impl_of, preamble_code) in all AST functional helpers (map, transformWhere).**: Prevents 'information leakage' where reconstructive compiler passes accidentally strip critical implementation metadata, causing impls to be incorrectly emitted as top-level flows.
-- **Track and use actual field names for 'Expression' parameters in transform handler codegen.**: Moves from convention-based naming (hardcoded '.expr') to metadata-driven generation, allowing DSLs like the Orisha router to use domain-specific names (e.g., '.req') in Zig glue code.
-- **Adopt a 'regression-first' metacircular workflow with a dedicated run_regression.sh suite.**: Ensures stability in a self-hosting environment where compiler changes have cascading effects on the standard library and generated artifacts.
+- **Adopted conventional commit format and timestamped JSON snapshots for regression tracking.**: Maintains a structured history and allows for historical analysis of compiler/interpreter pass rates (currently 86.2%).
+- **Implemented AST threading and 'Program' return support in the comptime execution pass.**: Turns the comptime phase into a sequential pipeline of AST-to-AST transformations, allowing user-defined flows to modify the program before final emission.
+- **Enhanced comptime type detection to normalize pointer and const variants (e.g., *const Program).**: Prevents 'KORU022' branch coverage errors and ensures comptime-only flows are correctly identified and stripped regardless of reference type.
+- **Implemented a 'transform-aware' flow stripping policy in Phase 3.**: Ensures that flows expanded into inline bodies or preambles by comptime transforms are preserved in the final AST rather than being deleted as 'used' comptime events.
+- **Introduced module-qualified event names (module:event) for comptime matching.**: Ensures uniqueness and correct lookup when comptime events are defined in or invoked from different modules.
+- **Optimized interpreter eval with a lightweight Flow parser and thread-local resource reuse.**: Achieved a ~144x speedup over the full AST parser, allowing the Koru interpreter to outperform Python and Go in wire-protocol scenarios.
+- **Renamed AST nodes: SourceFile to Program, and SubflowImpl to ImmediateImpl.**: Aligns terminology with a module-centric (rather than file-centric) logical structure and clarifies the execution semantics of immediate flows.
+- **Metacircular build dependency discovery via ~std.compiler:requires flows.**: Allows modules to declare Zig-level system requirements directly in Koru source, which the frontend uses to dynamically generate build.zig.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -161,13 +158,12 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **AST metadata (impl_of, is_impl, preamble_code) is lost during 'reconstructive' transformations in the pipeline.**: Audit and update ast_functional.zig (map/filter/transformWhere) and auto_discharge_inserter.zig to explicitly copy metadata fields when creating new node instances.
-- **Variable name collisions (e.g., result_0) in output_emitted.zig when multiple flows are transformed in the same scope.**: Use unique, prefixed naming conventions like __mock_result_* for testing transforms and restrict emission to specific source blocks.
-- **Invalid Zig syntax (. =>) generated for comptime thunks when a flow returns void.**: Skip switch generation for void continuations in the thunk generator logic.
-- **Hardcoded field names (like '.expr') in codegen break when host Zig structs use custom naming.**: Track the actual field name during the parameter detection phase and store it in the event metadata for use during emission.
-- **Stale 'koruc' binaries leading to serialization mismatches after AST schema changes.**: Enforce a 'zig build' step immediately following any changes to src/ast.zig or the parser.
+- **Comptime stripping Phase 3 was deleting transformed flows (like ~if or ~for), resulting in empty emitted code.**: Update compiler.kz to preserve flows containing 'inline_body', 'preamble_code', or '@pass_ran' metadata, even if they originated as comptime events.
+- **Comptime event detection fails when the 'Program' type is wrapped in pointers or const qualifiers (e.g., *const Program).**: Implement a type-normalizer in the compiler's stripping phase to treat pointer/const variants of Program as valid comptime return types.
+- **Module-qualified comptime flows (e.g., 'input:augment') were escaping the stripping phase because the event list didn't account for module qualifiers.**: Ensure 'path.module_qualifier' is included when building and matching the comptime event list in compiler.kz.
+- **Large test result JSON snapshots (6000+ lines) can bloat the repository history.**: Maintain a 'latest.json' reference to track the current state (86.2% pass rate) while timestamping snapshots for regression analysis.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 2/8/2026, 1:43:38 PM
+> Last updated: 2/14/2026, 9:45:36 PM
