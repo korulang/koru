@@ -293,7 +293,7 @@ function outputCLI(data) {
 	console.log('');
 	console.log('DOCUMENTATION:');
 	console.log('  tests/regression/000_CORE_LANGUAGE/SPEC.md  - Core language');
-	console.log('  tests/regression/100_IMPORTS/SPEC.md        - Module system');
+	console.log('  tests/regression/100_MODULE_SYSTEM/          - Module system');
 	console.log('  See SPEC.md for full navigation');
 }
 
