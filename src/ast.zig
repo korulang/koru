@@ -1602,10 +1602,10 @@ pub const ASTNode = union(enum) {
     /// top-level invocation or in a continuation pipeline).
     /// This is needed by transform handlers that need access to continuations.
     pub fn findContainingItem(program: *const Program, target_inv: *const Invocation) ?*const Item {
-        return findInItems(program.items, target_inv);
+        return findInItems(std.heap.page_allocator, program.items, target_inv);
     }
 
-    fn findInItems(items: []const Item, target_inv: *const Invocation) ?*const Item {
+    fn findInItems(allocator: std.mem.Allocator, items: []const Item, target_inv: *const Invocation) ?*const Item {
         for (items) |*item| {
             switch (item.*) {
                 .flow => |*f| {
@@ -1614,14 +1614,38 @@ pub const ASTNode = union(enum) {
                         return item;
                     }
                     // Check in continuations
-                    if (findInContinuations(f.continuations, target_inv)) {
-                        return item;
+                    if (findInContinuations(f.continuations, target_inv)) |cont| {
+                        // Build a virtual flow from the continuation so handlers
+                        // see the correct invocation and continuations.
+                        const virtual_item = allocator.create(Item) catch return item;
+                        const node_ptr: *const Node = @ptrCast(&cont.node);
+                        const inv = node_ptr.invocation;
+
+                        virtual_item.* = .{
+                            .flow = Flow{
+                                .invocation = inv,
+                                .continuations = cont.continuations,
+                                .annotations = &[_][]const u8{},
+                                .pre_label = null,
+                                .post_label = null,
+                                .super_shape = null,
+                                .inline_body = inv.inline_body,
+                                .preamble_code = null,
+                                .is_pure = f.is_pure,
+                                .is_transitively_pure = f.is_transitively_pure,
+                                .impl_of = null,
+                                .is_impl = false,
+                                .location = cont.location,
+                                .module = f.module,
+                            },
+                        };
+                        return virtual_item;
                     }
                 },
                 .immediate_impl => {},
                 .module_decl => |*m| {
                     // Recursively search in module items
-                    if (findInItems(m.items, target_inv)) |found| {
+                    if (findInItems(allocator, m.items, target_inv)) |found| {
                         return found;
                     }
                 },
@@ -1631,7 +1655,7 @@ pub const ASTNode = union(enum) {
         return null;
     }
 
-    fn findInContinuations(conts: []const Continuation, target_inv: *const Invocation) bool {
+    fn findInContinuations(conts: []const Continuation, target_inv: *const Invocation) ?*const Continuation {
         for (conts) |*cont| {
             // Check the node - need to get a pointer to the actual node, not a copy
             if (cont.node != null) {
@@ -1639,15 +1663,15 @@ pub const ASTNode = union(enum) {
                 const node_ptr: *const Node = @ptrCast(&cont.node);
                 if (node_ptr.* == .invocation) {
                     if (&node_ptr.invocation == target_inv) {
-                        return true;
+                        return cont;
                     }
                 }
             }
             // Check branch continuations
-            if (findInContinuations(cont.continuations, target_inv)) {
-                return true;
+            if (findInContinuations(cont.continuations, target_inv)) |found| {
+                return found;
             }
         }
-        return false;
+        return null;
     }
 };

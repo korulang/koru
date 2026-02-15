@@ -36,9 +36,36 @@ const std = @import("std");
         return .{ .transformed = .{ .program = program } };
     }
 
-    // CRITICAL: Use pointer comparison to identify if this is the top-level if
-    // The `invocation` parameter tells us EXACTLY which if is being transformed
-    const is_top_level_if = (invocation == &flow.invocation);
+    const is_same_invocation = struct {
+        fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
+            if (a.path.module_qualifier) |amq| {
+                if (b.path.module_qualifier) |bmq| {
+                    if (!std.mem.eql(u8, amq, bmq)) return false;
+                } else {
+                    return false;
+                }
+            } else if (b.path.module_qualifier != null) {
+                return false;
+            }
+
+            if (a.path.segments.len != b.path.segments.len) return false;
+            for (a.path.segments, 0..) |seg, i| {
+                if (!std.mem.eql(u8, seg, b.path.segments[i])) return false;
+            }
+
+            if (a.args.len != b.args.len) return false;
+            for (a.args, 0..) |arg, i| {
+                const other = b.args[i];
+                if (!std.mem.eql(u8, arg.name, other.name)) return false;
+                if (arg.value.len > 0 and other.value.len > 0 and !std.mem.eql(u8, arg.value, other.value)) return false;
+            }
+            return true;
+        }
+    }.check;
+
+    const is_pointer_top = (invocation == &flow.invocation);
+    // Use pointer match for real flows, value match for virtual flows.
+    const is_top_level_if = is_pointer_top or is_same_invocation(&flow.invocation, invocation);
 
     // Find | then |> and | else |> continuations
     var then_cont: ?*const ast.Continuation = null;
@@ -89,6 +116,29 @@ const std = @import("std");
                 .body = else_body,
                 .binding = ec.binding,
             };
+        }
+
+        if (!is_pointer_top) {
+            const conditional_node = ast.Node{ .conditional = .{
+                .condition = expr,
+                .condition_expr = null,
+                .branches = branches,
+            }};
+
+            const empty_conts = allocator.alloc(ast.Continuation, 0) catch unreachable;
+            const maybe_new_program = ast_functional.replaceInvocationNodeAndContinuationsRecursive(
+                allocator,
+                program,
+                invocation,
+                conditional_node,
+                empty_conts,
+            ) catch unreachable;
+            if (maybe_new_program) |new_program| {
+                const result = allocator.create(ast.Program) catch unreachable;
+                result.* = new_program;
+                return .{ .transformed = .{ .program = result } };
+            }
+            return .{ .transformed = .{ .program = program } };
         }
 
         const conditional_node = ast.Node{ .conditional = .{
@@ -339,9 +389,36 @@ const std = @import("std");
         }
     }
 
-    // CRITICAL: Use pointer comparison to identify if this is the top-level for
-    // The `invocation` parameter tells us EXACTLY which for is being transformed
-    const is_top_level_for = (invocation == &flow.invocation);
+    const is_same_invocation = struct {
+        fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
+            if (a.path.module_qualifier) |amq| {
+                if (b.path.module_qualifier) |bmq| {
+                    if (!std.mem.eql(u8, amq, bmq)) return false;
+                } else {
+                    return false;
+                }
+            } else if (b.path.module_qualifier != null) {
+                return false;
+            }
+
+            if (a.path.segments.len != b.path.segments.len) return false;
+            for (a.path.segments, 0..) |seg, i| {
+                if (!std.mem.eql(u8, seg, b.path.segments[i])) return false;
+            }
+
+            if (a.args.len != b.args.len) return false;
+            for (a.args, 0..) |arg, i| {
+                const other = b.args[i];
+                if (!std.mem.eql(u8, arg.name, other.name)) return false;
+                if (arg.value.len > 0 and other.value.len > 0 and !std.mem.eql(u8, arg.value, other.value)) return false;
+            }
+            return true;
+        }
+    }.check;
+
+    // Use pointer match for real flows, value match for virtual flows.
+    const is_pointer_top = (invocation == &flow.invocation);
+    const is_top_level_for = is_pointer_top or is_same_invocation(&flow.invocation, invocation);
 
     // Verify we have the | each |> continuation for top-level
     var has_each = false;
@@ -356,6 +433,76 @@ const std = @import("std");
 
     // If we don't have each branch for top-level, fall back to no-op
     if (is_top_level_for and !has_each) {
+        return .{ .transformed = .{ .program = program } };
+    }
+
+    if (is_top_level_for and !is_pointer_top) {
+        var each_cont: ?*const ast.Continuation = null;
+        var done_cont: ?*const ast.Continuation = null;
+        var each_binding: []const u8 = "_";
+
+        for (flow.continuations) |*cont| {
+            if (std.mem.eql(u8, cont.branch, "each")) {
+                each_cont = cont;
+                if (cont.binding) |b| {
+                    each_binding = b;
+                }
+            } else if (std.mem.eql(u8, cont.branch, "done")) {
+                done_cont = cont;
+            }
+        }
+
+        if (each_cont == null) {
+            return .{ .transformed = .{ .program = program } };
+        }
+
+        // Build ForeachNode with uniform NamedBranch structure
+        const branch_count: usize = if (done_cont != null) 2 else 1;
+        const branches = allocator.alloc(ast.NamedBranch, branch_count) catch unreachable;
+
+        const each_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
+        each_body[0] = each_cont.?.*;
+
+        const scope_annotations = allocator.alloc([]const u8, 1) catch unreachable;
+        scope_annotations[0] = allocator.dupe(u8, "@scope") catch unreachable;
+
+        branches[0] = .{
+            .name = "each",
+            .body = each_body,
+            .binding = each_binding,
+            .annotations = scope_annotations,
+        };
+
+        if (done_cont) |dc| {
+            const done_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
+            done_body[0] = dc.*;
+            branches[1] = .{
+                .name = "done",
+                .body = done_body,
+                .binding = dc.binding,
+                .is_optional = true,
+            };
+        }
+
+        const foreach_node = ast.Node{ .foreach = .{
+            .iterable = expr,
+            .element_type = null,
+            .branches = branches,
+        }};
+
+        const empty_conts = allocator.alloc(ast.Continuation, 0) catch unreachable;
+        const maybe_new_program = ast_functional.replaceInvocationNodeAndContinuationsRecursive(
+            allocator,
+            program,
+            invocation,
+            foreach_node,
+            empty_conts,
+        ) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = .{ .program = result } };
+        }
         return .{ .transformed = .{ .program = program } };
     }
 

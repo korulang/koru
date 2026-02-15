@@ -486,13 +486,35 @@ const std = @import("std");
         break :blk code.items;
     };
 
-    // Check if this is a top-level print.ln (flow.invocation IS print.ln)
-    const is_top_level = blk: {
-        const segments = flow.invocation.path.segments;
-        break :blk segments.len == 2 and
-            std.mem.eql(u8, segments[0], "print") and
-            std.mem.eql(u8, segments[1], "ln");
-    };
+    const isSameInvocation = struct {
+        fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
+            if (a.path.module_qualifier) |amq| {
+                if (b.path.module_qualifier) |bmq| {
+                    if (!std.mem.eql(u8, amq, bmq)) return false;
+                } else {
+                    return false;
+                }
+            } else if (b.path.module_qualifier != null) {
+                return false;
+            }
+
+            if (a.path.segments.len != b.path.segments.len) return false;
+            for (a.path.segments, 0..) |seg, seg_i| {
+                if (!std.mem.eql(u8, seg, b.path.segments[seg_i])) return false;
+            }
+
+            if (a.args.len != b.args.len) return false;
+            for (a.args, 0..) |arg, arg_i| {
+                const other = b.args[arg_i];
+                if (!std.mem.eql(u8, arg.name, other.name)) return false;
+                if (arg.value.len > 0 and other.value.len > 0 and !std.mem.eql(u8, arg.value, other.value)) return false;
+            }
+            return true;
+        }
+    }.check;
+
+    const is_pointer_top = invocation == &flow.invocation;
+    _ = isSameInvocation; // keep for now; value match is not a top-level signal
 
     // Re-route path to void print.impl event for shape checking
     const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
@@ -503,122 +525,9 @@ const std = @import("std");
         .segments = impl_segments,
     };
 
-    if (is_top_level) {
-        // TOP-LEVEL CASE: Set flow.inline_body
-        if (flow.inline_body != null) {
-            return .{ .transformed = .{ .program = program } };
-        }
-
-        const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
-        for (flow.invocation.annotations, 0..) |ann, idx| {
-            new_inv_annotations[idx] = ann;
-        }
-        new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
-
-        const new_invocation = ast.Invocation{
-            .path = impl_path,
-            .args = flow.invocation.args,
-            .annotations = new_inv_annotations,
-            .inserted_by_tap = flow.invocation.inserted_by_tap,
-            .from_opaque_tap = flow.invocation.from_opaque_tap,
-        };
-
-        const transformed_flow = ast.Flow{
-            .invocation = new_invocation,
-            .continuations = flow.continuations,
-            .annotations = flow.annotations,
-            .pre_label = flow.pre_label,
-            .post_label = flow.post_label,
-            .super_shape = flow.super_shape,
-            .inline_body = inline_code,
-            .is_pure = flow.is_pure,
-            .is_transitively_pure = flow.is_transitively_pure,
-            .location = flow.location,
-            .module = flow.module,
-            .impl_of = flow.impl_of,
-        };
-
-        const new_item = ast.Item{ .flow = transformed_flow };
-
-        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-        if (maybe_new_program) |new_program| {
-            const result = allocator.create(ast.Program) catch unreachable;
-            result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
-        }
-        return .{ .transformed = .{ .program = program } };
-    } else {
-        // PIPELINE CASE: Find the SPECIFIC invocation that triggered this transform
-        // We compare pointers to ensure we replace the exact invocation, not just any print.ln
-        const SearchResult = struct {
-            path: []const usize,
-            step_idx: usize,
-        };
-
-        const findInvocationByPointer = struct {
-            fn search(
-                alloc: std.mem.Allocator,
-                continuations: []const ast.Continuation,
-                current_path: []const usize,
-                target_inv: *const ast.Invocation,
-            ) ?SearchResult {
-                for (continuations, 0..) |*cont, cont_idx| {
-                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
-                    @memcpy(path[0..current_path.len], current_path);
-                    path[current_path.len] = cont_idx;
-
-                    // Get pointer to the node, not a copy
-                    if (cont.node != null) {
-                        const node_ptr: *const ast.Node = @ptrCast(&cont.node);
-                        if (node_ptr.* == .invocation) {
-                            // Compare pointers to find the exact invocation
-                            if (&node_ptr.invocation == target_inv) {
-                                return SearchResult{ .path = path, .step_idx = 0 };
-                            }
-                        }
-                    }
-
-                    if (search(alloc, cont.continuations, path, target_inv)) |result| {
-                        return result;
-                    }
-                    alloc.free(path);
-                }
-                return null;
-            }
-        }.search;
-
-        const empty_path = &[_]usize{};
-        const search_result = findInvocationByPointer(allocator, flow.continuations, empty_path, invocation) orelse {
-            return .{ .transformed = .{ .program = program } };
-        };
-
-        const new_invocation = ast.Invocation{
-            .path = impl_path,
-            .args = flow.invocation.args,
-            .annotations = flow.invocation.annotations, // Existing annotations (pipeline print.ln doesn't set @pass_ran yet)
-            .inserted_by_tap = flow.invocation.inserted_by_tap,
-            .from_opaque_tap = flow.invocation.from_opaque_tap,
-        };
-
-        const new_step = ast.Step{
-            .invocation = new_invocation,
-            // We'll also set inline_code here for the pipeline step
-        };
-        _ = new_step; // TODO: PIPELINE CASE NEEDS MORE WORK TO SUPPORT BOTH PATH RE-ROUTE AND INLINE CODE
-                      // For now, let's fix top-level first as it's the most common for println
-
+    if (!is_pointer_top) {
         const final_step = ast.Step{ .inline_code = inline_code };
-        const modified_flow = ast_functional.replacePipelineStepAtPath(
-            allocator,
-            flow,
-            search_result.path,
-            search_result.step_idx,
-            final_step,
-        ) catch unreachable;
-
-        const new_item = ast.Item{ .flow = modified_flow };
-
-        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(allocator, program, invocation, final_step) catch unreachable;
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
@@ -626,6 +535,50 @@ const std = @import("std");
         }
         return .{ .transformed = .{ .program = program } };
     }
+
+    // TOP-LEVEL CASE: Set flow.inline_body
+    if (flow.inline_body != null) {
+        return .{ .transformed = .{ .program = program } };
+    }
+
+    const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+    for (flow.invocation.annotations, 0..) |ann, idx| {
+        new_inv_annotations[idx] = ann;
+    }
+    new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    const new_invocation = ast.Invocation{
+        .path = impl_path,
+        .args = flow.invocation.args,
+        .annotations = new_inv_annotations,
+        .inserted_by_tap = flow.invocation.inserted_by_tap,
+        .from_opaque_tap = flow.invocation.from_opaque_tap,
+    };
+
+    const transformed_flow = ast.Flow{
+        .invocation = new_invocation,
+        .continuations = flow.continuations,
+        .annotations = flow.annotations,
+        .pre_label = flow.pre_label,
+        .post_label = flow.post_label,
+        .super_shape = flow.super_shape,
+        .inline_body = inline_code,
+        .is_pure = flow.is_pure,
+        .is_transitively_pure = flow.is_transitively_pure,
+        .location = flow.location,
+        .module = flow.module,
+        .impl_of = flow.impl_of,
+    };
+
+    const new_item = ast.Item{ .flow = transformed_flow };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    return .{ .transformed = .{ .program = program } };
 }
 
 // ============================================================================
@@ -719,9 +672,35 @@ const std = @import("std");
     else
         return .{ .transformed = .{ .program = program } };
 
-    // CRITICAL: Use pointer comparison to identify if this is the top-level print.blk
-    // The `invocation` parameter tells us EXACTLY which print.blk is being transformed
-    const is_top_level = (invocation == &flow.invocation);
+    const isSameInvocation = struct {
+        fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
+            if (a.path.module_qualifier) |amq| {
+                if (b.path.module_qualifier) |bmq| {
+                    if (!std.mem.eql(u8, amq, bmq)) return false;
+                } else {
+                    return false;
+                }
+            } else if (b.path.module_qualifier != null) {
+                return false;
+            }
+
+            if (a.path.segments.len != b.path.segments.len) return false;
+            for (a.path.segments, 0..) |seg, seg_i| {
+                if (!std.mem.eql(u8, seg, b.path.segments[seg_i])) return false;
+            }
+
+            if (a.args.len != b.args.len) return false;
+            for (a.args, 0..) |arg, arg_i| {
+                const other = b.args[arg_i];
+                if (!std.mem.eql(u8, arg.name, other.name)) return false;
+                if (arg.value.len > 0 and other.value.len > 0 and !std.mem.eql(u8, arg.value, other.value)) return false;
+            }
+            return true;
+        }
+    }.check;
+
+    const is_pointer_top = invocation == &flow.invocation;
+    _ = isSameInvocation; // keep for now; value match is not a top-level signal
 
     // Parse the Source content for {{ ... }} placeholders
     var format_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
@@ -1020,7 +999,7 @@ const std = @import("std");
         break :blk code.items;
     };
 
-    if (is_top_level) {
+    if (is_pointer_top) {
         // =====================================================================
         // TOP-LEVEL CASE: print.blk is the flow's invocation
         // =====================================================================
@@ -1077,64 +1056,13 @@ const std = @import("std");
         // =====================================================================
         // PIPELINE CASE: print.blk inside a continuation pipeline
         // =====================================================================
-
-        // Helper to recursively search for THIS SPECIFIC invocation in continuation tree
-        const findInvocationRecursive = struct {
-            fn search(
-                alloc: std.mem.Allocator,
-                continuations: []const ast.Continuation,
-                current_path: []const usize,
-                target_inv: *const ast.Invocation,
-            ) ?[]const usize {
-                for (continuations, 0..) |*cont, cont_idx| {
-                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
-                    @memcpy(path[0..current_path.len], current_path);
-                    path[current_path.len] = cont_idx;
-
-                    if (cont.node) |*step| {
-                        if (step.* == .invocation) {
-                            if (&step.invocation == target_inv) {
-                                return path;
-                            }
-                        }
-                    }
-
-                    if (search(alloc, cont.continuations, path, target_inv)) |result| {
-                        return result;
-                    }
-
-                    alloc.free(path);
-                }
-                return null;
-            }
-        }.search;
-
-        const empty_path = &[_]usize{};
-        const path = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation) orelse {
-            return .{ .transformed = .{ .program = program } };
-        };
-
-        // Replace the invocation with inline_code node
         const new_node = ast.Node{ .inline_code = inline_code };
-
-        const modified_flow = ast_functional.replacePipelineStepAtPath(
-            allocator,
-            flow,
-            path,
-            0,
-            new_node,
-        ) catch unreachable;
-
-        const new_item = ast.Item{ .flow = modified_flow };
-
-        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(allocator, program, invocation, new_node) catch unreachable;
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
             return .{ .transformed = .{ .program = result } };
-        } else {
-            std.debug.print("ERROR: ~print.blk transform (pipeline case) failed - flow not found in program\n", .{});
-            @panic("print.blk transform: flow not found");
         }
+        return .{ .transformed = .{ .program = program } };
     }
 }

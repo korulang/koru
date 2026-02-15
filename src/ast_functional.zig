@@ -203,12 +203,88 @@ pub fn replaceFlowRecursive(
             .allocator = allocator,
         };
     }
+
+    // Fallback: replace invocation inside continuations (nested transforms)
+    if (new_item == .flow) {
+        const replace_result = try replaceInvocationInItems(allocator, source.items, &target_flow.invocation, &new_item.flow);
+        if (replace_result.found) {
+            var new_annotations = try allocator.alloc([]const u8, source.module_annotations.len);
+            for (source.module_annotations, 0..) |annotation, i| {
+                new_annotations[i] = try allocator.dupe(u8, annotation);
+            }
+
+            return ast.Program{
+                .items = replace_result.items,
+                .module_annotations = new_annotations,
+                .main_module_name = try allocator.dupe(u8, source.main_module_name),
+                .allocator = allocator,
+            };
+        }
+    }
+    return null;
+}
+
+pub fn replaceInvocationNodeRecursive(
+    allocator: std.mem.Allocator,
+    source: *const ast.Program,
+    target_invocation: *const ast.Invocation,
+    new_node: ast.Node,
+) !?ast.Program {
+    const result = try replaceInvocationNodeInItems(allocator, source.items, target_invocation, new_node);
+    if (result.found) {
+        var new_annotations = try allocator.alloc([]const u8, source.module_annotations.len);
+        for (source.module_annotations, 0..) |annotation, i| {
+            new_annotations[i] = try allocator.dupe(u8, annotation);
+        }
+
+        return ast.Program{
+            .items = result.items,
+            .module_annotations = new_annotations,
+            .main_module_name = try allocator.dupe(u8, source.main_module_name),
+            .allocator = allocator,
+        };
+    }
+    return null;
+}
+
+pub fn replaceInvocationNodeAndContinuationsRecursive(
+    allocator: std.mem.Allocator,
+    source: *const ast.Program,
+    target_invocation: *const ast.Invocation,
+    new_node: ast.Node,
+    new_continuations: []const ast.Continuation,
+) !?ast.Program {
+    const result = try replaceInvocationNodeAndContinuationsInItems(
+        allocator,
+        source.items,
+        target_invocation,
+        new_node,
+        new_continuations,
+    );
+    if (result.found) {
+        var new_annotations = try allocator.alloc([]const u8, source.module_annotations.len);
+        for (source.module_annotations, 0..) |annotation, i| {
+            new_annotations[i] = try allocator.dupe(u8, annotation);
+        }
+
+        return ast.Program{
+            .items = result.items,
+            .module_annotations = new_annotations,
+            .main_module_name = try allocator.dupe(u8, source.main_module_name),
+            .allocator = allocator,
+        };
+    }
     return null;
 }
 
 const ReplaceResult = struct {
     found: bool,
     items: []ast.Item,
+};
+
+const ReplaceContResult = struct {
+    found: bool,
+    conts: []ast.Continuation,
 };
 
 fn replaceFlowInItems(
@@ -253,6 +329,494 @@ fn replaceFlowInItems(
     }
 
     return ReplaceResult{ .found = found, .items = new_items };
+}
+
+fn replaceInvocationNodeInItems(
+    allocator: std.mem.Allocator,
+    items: []const ast.Item,
+    target_invocation: *const ast.Invocation,
+    new_node: ast.Node,
+) !ReplaceResult {
+    var new_items = try allocator.alloc(ast.Item, items.len);
+    var found = false;
+
+    for (items, 0..) |*item, i| {
+        switch (item.*) {
+            .flow => |*flow| {
+                const cont_result = try replaceInvocationNodeInContinuations(allocator, flow.continuations, target_invocation, new_node);
+                if (cont_result.found) {
+                    new_items[i] = ast.Item{
+                        .flow = try cloneFlowWithContinuations(allocator, flow, cont_result.conts),
+                    };
+                    found = true;
+                } else {
+                    new_items[i] = try cloneItem(allocator, item);
+                }
+            },
+            .module_decl => |*mod| {
+                const sub_result = try replaceInvocationNodeInItems(allocator, mod.items, target_invocation, new_node);
+                if (sub_result.found) {
+                    new_items[i] = ast.Item{
+                        .module_decl = ast.ModuleDecl{
+                            .logical_name = try allocator.dupe(u8, mod.logical_name),
+                            .canonical_path = try allocator.dupe(u8, mod.canonical_path),
+                            .items = sub_result.items,
+                            .is_system = mod.is_system,
+                            .annotations = try cloneStringSlice(allocator, mod.annotations),
+                            .location = mod.location,
+                        },
+                    };
+                    found = true;
+                } else {
+                    new_items[i] = try cloneItem(allocator, item);
+                }
+            },
+            else => {
+                new_items[i] = try cloneItem(allocator, item);
+            },
+        }
+    }
+
+    return ReplaceResult{ .found = found, .items = new_items };
+}
+
+fn replaceInvocationNodeAndContinuationsInItems(
+    allocator: std.mem.Allocator,
+    items: []const ast.Item,
+    target_invocation: *const ast.Invocation,
+    new_node: ast.Node,
+    new_continuations: []const ast.Continuation,
+) !ReplaceResult {
+    var new_items = try allocator.alloc(ast.Item, items.len);
+    var found = false;
+
+    for (items, 0..) |*item, i| {
+        switch (item.*) {
+            .flow => |*flow| {
+                const cont_result = try replaceInvocationNodeAndContinuationsInContinuations(
+                    allocator,
+                    flow.continuations,
+                    target_invocation,
+                    new_node,
+                    new_continuations,
+                );
+                if (cont_result.found) {
+                    new_items[i] = ast.Item{
+                        .flow = try cloneFlowWithContinuations(allocator, flow, cont_result.conts),
+                    };
+                    found = true;
+                } else {
+                    new_items[i] = try cloneItem(allocator, item);
+                }
+            },
+            .module_decl => |*mod| {
+                const sub_result = try replaceInvocationNodeAndContinuationsInItems(
+                    allocator,
+                    mod.items,
+                    target_invocation,
+                    new_node,
+                    new_continuations,
+                );
+                if (sub_result.found) {
+                    new_items[i] = ast.Item{
+                        .module_decl = ast.ModuleDecl{
+                            .logical_name = try allocator.dupe(u8, mod.logical_name),
+                            .canonical_path = try allocator.dupe(u8, mod.canonical_path),
+                            .items = sub_result.items,
+                            .is_system = mod.is_system,
+                            .annotations = try cloneStringSlice(allocator, mod.annotations),
+                            .location = mod.location,
+                        },
+                    };
+                    found = true;
+                } else {
+                    new_items[i] = try cloneItem(allocator, item);
+                }
+            },
+            else => {
+                new_items[i] = try cloneItem(allocator, item);
+            },
+        }
+    }
+
+    return ReplaceResult{ .found = found, .items = new_items };
+}
+
+fn replaceInvocationNodeInContinuations(
+    allocator: std.mem.Allocator,
+    conts: []const ast.Continuation,
+    target_invocation: *const ast.Invocation,
+    new_node: ast.Node,
+) !ReplaceContResult {
+    var new_conts = try allocator.alloc(ast.Continuation, conts.len);
+    var found = false;
+
+    for (conts, 0..) |*cont, i| {
+        var replaced = false;
+        if (cont.node) |*step| {
+            if (step.* == .invocation) {
+                if (&step.invocation == target_invocation) {
+                    new_conts[i] = try cloneContinuationWithReplacedNode(allocator, cont, new_node);
+                    found = true;
+                    replaced = true;
+                }
+            }
+        }
+
+        if (!replaced) {
+            if (cont.continuations.len > 0) {
+                const sub = try replaceInvocationNodeInContinuations(allocator, cont.continuations, target_invocation, new_node);
+                if (sub.found) {
+                    new_conts[i] = try cloneContinuationWithReplacedNested(allocator, cont, sub.conts);
+                    found = true;
+                    continue;
+                }
+            }
+            new_conts[i] = try cloneContinuation(allocator, cont);
+        }
+    }
+
+    return ReplaceContResult{ .found = found, .conts = new_conts };
+}
+
+fn replaceInvocationNodeAndContinuationsInContinuations(
+    allocator: std.mem.Allocator,
+    conts: []const ast.Continuation,
+    target_invocation: *const ast.Invocation,
+    new_node: ast.Node,
+    new_continuations: []const ast.Continuation,
+) !ReplaceContResult {
+    var new_conts = try allocator.alloc(ast.Continuation, conts.len);
+    var found = false;
+
+    for (conts, 0..) |*cont, i| {
+        var replaced = false;
+        if (cont.node) |*step| {
+            if (step.* == .invocation) {
+                if (&step.invocation == target_invocation) {
+                    const cloned_conts = try cloneContinuationSlice(allocator, new_continuations);
+                    new_conts[i] = try cloneContinuationWithNodeAndContinuations(
+                        allocator,
+                        cont,
+                        new_node,
+                        cloned_conts,
+                    );
+                    found = true;
+                    replaced = true;
+                }
+            }
+        }
+
+        if (!replaced) {
+            if (cont.continuations.len > 0) {
+                const sub = try replaceInvocationNodeAndContinuationsInContinuations(
+                    allocator,
+                    cont.continuations,
+                    target_invocation,
+                    new_node,
+                    new_continuations,
+                );
+                if (sub.found) {
+                    new_conts[i] = try cloneContinuationWithReplacedNested(allocator, cont, sub.conts);
+                    found = true;
+                    continue;
+                }
+            }
+            new_conts[i] = try cloneContinuation(allocator, cont);
+        }
+    }
+
+    return ReplaceContResult{ .found = found, .conts = new_conts };
+}
+
+fn replaceInvocationInItems(
+    allocator: std.mem.Allocator,
+    items: []const ast.Item,
+    target_invocation: *const ast.Invocation,
+    new_flow: *const ast.Flow,
+) !ReplaceResult {
+    var new_items = try allocator.alloc(ast.Item, items.len);
+    var found = false;
+
+    for (items, 0..) |*item, i| {
+        switch (item.*) {
+            .flow => |*flow| {
+                const cont_result = try replaceInvocationInContinuations(allocator, flow.continuations, target_invocation, new_flow);
+                if (cont_result.found) {
+                    new_items[i] = ast.Item{
+                        .flow = try cloneFlowWithContinuations(allocator, flow, cont_result.conts),
+                    };
+                    found = true;
+                } else {
+                    new_items[i] = try cloneItem(allocator, item);
+                }
+            },
+            .module_decl => |*mod| {
+                const sub_result = try replaceInvocationInItems(allocator, mod.items, target_invocation, new_flow);
+                if (sub_result.found) {
+                    new_items[i] = ast.Item{
+                        .module_decl = ast.ModuleDecl{
+                            .logical_name = try allocator.dupe(u8, mod.logical_name),
+                            .canonical_path = try allocator.dupe(u8, mod.canonical_path),
+                            .items = sub_result.items,
+                            .is_system = mod.is_system,
+                            .annotations = try cloneStringSlice(allocator, mod.annotations),
+                            .location = mod.location,
+                        },
+                    };
+                    found = true;
+                } else {
+                    new_items[i] = try cloneItem(allocator, item);
+                }
+            },
+            else => {
+                new_items[i] = try cloneItem(allocator, item);
+            },
+        }
+    }
+
+    return ReplaceResult{ .found = found, .items = new_items };
+}
+
+fn replaceInvocationInContinuations(
+    allocator: std.mem.Allocator,
+    conts: []const ast.Continuation,
+    target_invocation: *const ast.Invocation,
+    new_flow: *const ast.Flow,
+) !ReplaceContResult {
+    if (!continuationsContainInvocation(conts, target_invocation)) {
+        return ReplaceContResult{ .found = false, .conts = &[_]ast.Continuation{} };
+    }
+
+    var new_conts = try allocator.alloc(ast.Continuation, conts.len);
+    var found = false;
+
+    for (conts, 0..) |*cont, i| {
+        var replaced = false;
+        if (cont.node) |*step| {
+            if (step.* == .invocation) {
+                if (invocationsEqual(&step.invocation, target_invocation)) {
+                    new_conts[i] = try cloneContinuationWithReplacedInvocation(allocator, cont, new_flow);
+                    found = true;
+                    replaced = true;
+                }
+            }
+        }
+
+        if (!replaced) {
+            if (cont.continuations.len > 0) {
+                const sub = try replaceInvocationInContinuations(allocator, cont.continuations, target_invocation, new_flow);
+                if (sub.found) {
+                    new_conts[i] = try cloneContinuationWithReplacedNested(allocator, cont, sub.conts);
+                    found = true;
+                    continue;
+                }
+            }
+            new_conts[i] = try cloneContinuation(allocator, cont);
+        }
+    }
+
+    return ReplaceContResult{ .found = found, .conts = new_conts };
+}
+
+fn cloneContinuationWithReplacedInvocation(
+    allocator: std.mem.Allocator,
+    cont: *const ast.Continuation,
+    new_flow: *const ast.Flow,
+) CloneError!ast.Continuation {
+    if (new_flow.inline_body != null) {
+        const empty_conts = try allocator.alloc(ast.Continuation, 0);
+        return cloneContinuationWithNodeAndContinuations(
+            allocator,
+            cont,
+            .{ .inline_code = new_flow.inline_body.? },
+            empty_conts,
+        );
+    }
+
+    var inv = new_flow.invocation;
+    if (new_flow.inline_body != null and inv.inline_body == null) {
+        inv.inline_body = new_flow.inline_body;
+    }
+    const new_node = ast.Node{ .invocation = try cloneInvocation(allocator, &inv) };
+    const new_continuations = try cloneContinuationSlice(allocator, new_flow.continuations);
+
+    var binding_annotations = try allocator.alloc([]const u8, cont.binding_annotations.len);
+    errdefer allocator.free(binding_annotations);
+    for (cont.binding_annotations, 0..) |ann, i| {
+        binding_annotations[i] = try allocator.dupe(u8, ann);
+    }
+
+    return .{
+        .branch = try allocator.dupe(u8, cont.branch),
+        .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .binding_annotations = binding_annotations,
+        .binding_type = cont.binding_type,
+        .is_catchall = cont.is_catchall,
+        .catchall_metatype = if (cont.catchall_metatype) |m| try allocator.dupe(u8, m) else null,
+        .condition = if (cont.condition) |c| try allocator.dupe(u8, c) else null,
+        .condition_expr = cont.condition_expr,
+        .node = new_node,
+        .indent = cont.indent,
+        .continuations = new_continuations,
+        .location = cont.location,
+    };
+}
+
+fn cloneContinuationWithNodeAndContinuations(
+    allocator: std.mem.Allocator,
+    cont: *const ast.Continuation,
+    new_node: ast.Node,
+    new_continuations: []const ast.Continuation,
+) CloneError!ast.Continuation {
+    var binding_annotations = try allocator.alloc([]const u8, cont.binding_annotations.len);
+    errdefer allocator.free(binding_annotations);
+    for (cont.binding_annotations, 0..) |ann, i| {
+        binding_annotations[i] = try allocator.dupe(u8, ann);
+    }
+
+    return .{
+        .branch = try allocator.dupe(u8, cont.branch),
+        .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .binding_annotations = binding_annotations,
+        .binding_type = cont.binding_type,
+        .is_catchall = cont.is_catchall,
+        .catchall_metatype = if (cont.catchall_metatype) |m| try allocator.dupe(u8, m) else null,
+        .condition = if (cont.condition) |c| try allocator.dupe(u8, c) else null,
+        .condition_expr = cont.condition_expr,
+        .node = new_node,
+        .indent = cont.indent,
+        .continuations = new_continuations,
+        .location = cont.location,
+    };
+}
+
+fn cloneContinuationWithReplacedNode(
+    allocator: std.mem.Allocator,
+    cont: *const ast.Continuation,
+    new_node: ast.Node,
+) CloneError!ast.Continuation {
+    var new_continuations = try allocator.alloc(ast.Continuation, cont.continuations.len);
+    errdefer allocator.free(new_continuations);
+
+    for (cont.continuations, 0..) |*n, i| {
+        new_continuations[i] = try cloneContinuation(allocator, n);
+    }
+
+    var binding_annotations = try allocator.alloc([]const u8, cont.binding_annotations.len);
+    errdefer allocator.free(binding_annotations);
+    for (cont.binding_annotations, 0..) |ann, i| {
+        binding_annotations[i] = try allocator.dupe(u8, ann);
+    }
+
+    return .{
+        .branch = try allocator.dupe(u8, cont.branch),
+        .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .binding_annotations = binding_annotations,
+        .binding_type = cont.binding_type,
+        .is_catchall = cont.is_catchall,
+        .catchall_metatype = if (cont.catchall_metatype) |m| try allocator.dupe(u8, m) else null,
+        .condition = if (cont.condition) |c| try allocator.dupe(u8, c) else null,
+        .condition_expr = cont.condition_expr,
+        .node = new_node,
+        .indent = cont.indent,
+        .continuations = new_continuations,
+        .location = cont.location,
+    };
+}
+
+fn cloneContinuationWithReplacedNested(
+    allocator: std.mem.Allocator,
+    cont: *const ast.Continuation,
+    new_nested: []const ast.Continuation,
+) CloneError!ast.Continuation {
+    const cloned_step = if (cont.node) |*step| try cloneStep(allocator, step) else null;
+
+    var binding_annotations = try allocator.alloc([]const u8, cont.binding_annotations.len);
+    errdefer allocator.free(binding_annotations);
+    for (cont.binding_annotations, 0..) |ann, i| {
+        binding_annotations[i] = try allocator.dupe(u8, ann);
+    }
+
+    return .{
+        .branch = try allocator.dupe(u8, cont.branch),
+        .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
+        .binding_annotations = binding_annotations,
+        .binding_type = cont.binding_type,
+        .is_catchall = cont.is_catchall,
+        .catchall_metatype = if (cont.catchall_metatype) |m| try allocator.dupe(u8, m) else null,
+        .condition = if (cont.condition) |c| try allocator.dupe(u8, c) else null,
+        .condition_expr = cont.condition_expr,
+        .node = cloned_step,
+        .indent = cont.indent,
+        .continuations = new_nested,
+        .location = cont.location,
+    };
+}
+
+fn cloneContinuationSlice(
+    allocator: std.mem.Allocator,
+    continuations: []const ast.Continuation,
+) CloneError![]ast.Continuation {
+    var cloned_conts = try allocator.alloc(ast.Continuation, continuations.len);
+    errdefer allocator.free(cloned_conts);
+    for (continuations, 0..) |*cont, i| {
+        cloned_conts[i] = try cloneContinuation(allocator, cont);
+    }
+    return cloned_conts;
+}
+
+fn cloneFlowWithContinuations(
+    allocator: std.mem.Allocator,
+    flow: *const ast.Flow,
+    continuations: []const ast.Continuation,
+) CloneError!ast.Flow {
+    return .{
+        .invocation = try cloneInvocation(allocator, &flow.invocation),
+        .continuations = continuations,
+        .pre_label = if (flow.pre_label) |l| try allocator.dupe(u8, l) else null,
+        .post_label = if (flow.post_label) |l| try allocator.dupe(u8, l) else null,
+        .super_shape = null,
+        .inline_body = if (flow.inline_body) |body| try allocator.dupe(u8, body) else null,
+        .preamble_code = if (flow.preamble_code) |preamble| try allocator.dupe(u8, preamble) else null,
+        .is_pure = flow.is_pure,
+        .is_transitively_pure = flow.is_transitively_pure,
+        .location = flow.location,
+        .module = try allocator.dupe(u8, flow.module),
+        .annotations = try cloneStringSlice(allocator, flow.annotations),
+        .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .is_impl = flow.is_impl,
+    };
+}
+
+fn invocationsEqual(a: *const ast.Invocation, b: *const ast.Invocation) bool {
+    if (!pathsEqual(a.path, b.path)) return false;
+    if (a.args.len != b.args.len) return false;
+    for (a.args, 0..) |*arg, i| {
+        const other = &b.args[i];
+        if (!std.mem.eql(u8, arg.name, other.name)) return false;
+        if (!std.mem.eql(u8, arg.value, other.value)) return false;
+    }
+    return true;
+}
+
+fn continuationsContainInvocation(
+    conts: []const ast.Continuation,
+    target_invocation: *const ast.Invocation,
+) bool {
+    for (conts) |*cont| {
+        if (cont.node) |*step| {
+            if (step.* == .invocation) {
+                if (invocationsEqual(&step.invocation, target_invocation)) {
+                    return true;
+                }
+            }
+        }
+        if (continuationsContainInvocation(cont.continuations, target_invocation)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /// Insert an item at a specific index

@@ -1,0 +1,8 @@
+{
+    "name": "nested_router",
+    "version": "0.1.0",
+    "paths": {
+        "std": "../../../../../koru_std",
+        "orisha": "../../../../../../orisha/lib"
+    }
+}

@@ -1,0 +1,3 @@
+outer: /api/health
+inner: /other
+inner: catch-all

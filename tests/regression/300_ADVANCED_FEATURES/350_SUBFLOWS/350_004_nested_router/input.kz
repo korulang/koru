@@ -1,0 +1,48 @@
+// ============================================================================
+// REGRESSION TEST - Nested Router (Tree-Structured Routing)
+// ============================================================================
+// Test: Can orisha:router be nested inside another orisha:router's catch-all?
+// This is the foundation for tree-structured routing where:
+//   ~orisha:router(req)
+//   | [GET /api/health] |> response { ... }
+//   | [*] |> orisha:router(req)        <-- nested router
+//       | [GET /other] |> response { ... }
+//       | [*] |> response { ... }       <-- inner catch-all
+// ============================================================================
+
+~import "$orisha"
+~import "$std/io"
+
+const std = @import("std");
+
+const TestRequest = struct {
+    method: []const u8,
+    path: []const u8,
+};
+
+// Test 1: Hits outer route
+const req1 = TestRequest{ .method = "GET", .path = "/api/health" };
+
+~orisha:router(req: &req1)
+| [GET /api/health] |> std.io:print.ln("outer: /api/health")
+| [*] |> orisha:router(req: &req1)
+    | [GET /other] |> std.io:print.ln("inner: /other")
+    | [*] |> std.io:print.ln("inner: catch-all")
+
+// Test 2: Falls through to inner route
+const req2 = TestRequest{ .method = "GET", .path = "/other" };
+
+~orisha:router(req: &req2)
+| [GET /api/health] |> std.io:print.ln("outer: /api/health")
+| [*] |> orisha:router(req: &req2)
+    | [GET /other] |> std.io:print.ln("inner: /other")
+    | [*] |> std.io:print.ln("inner: catch-all")
+
+// Test 3: Falls through to inner catch-all
+const req3 = TestRequest{ .method = "POST", .path = "/unknown" };
+
+~orisha:router(req: &req3)
+| [GET /api/health] |> std.io:print.ln("outer: /api/health")
+| [*] |> orisha:router(req: &req3)
+    | [GET /other] |> std.io:print.ln("inner: /other")
+    | [*] |> std.io:print.ln("inner: catch-all")
