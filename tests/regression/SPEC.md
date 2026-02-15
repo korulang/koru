@@ -4,7 +4,7 @@
 
 ---
 
-## 🧪 Test Status
+## Test Status
 
 **Current status**: Run `./run_regression.sh --status` to see test results
 
@@ -14,69 +14,107 @@ The regression tests are the source of truth. They either compile and run, or th
 # See current test status (fast!)
 ./run_regression.sh --status
 
-# List all tests
-./run_regression.sh --list
-
-# Run all regression tests (~10 minutes)
-./run_regression.sh
+# Find regressions
+./run_regression.sh --regressions
 
 # Run specific test
-./run_regression.sh 201
+./run_regression.sh 330_016
+
+# Run a range (330-339)
+./run_regression.sh 330
+
+# Check specific test history
+./run_regression.sh --history 123
 ```
 
 ---
 
-## 📚 Documentation Navigation
+## Directory Structure
 
-All detailed specifications live in `tests/regression/` directories alongside the tests that verify them.
-
-**Core Categories** (have SPEC.md files):
-- [000_CORE_LANGUAGE/SPEC.md](tests/regression/000_CORE_LANGUAGE/SPEC.md) - Events, procs, flows, type system
-- [100_IMPORTS/SPEC.md](tests/regression/100_IMPORTS/SPEC.md) - Module system, path aliases
-- [400_VALIDATION/SPEC.md](tests/regression/400_VALIDATION/SPEC.md) - Type checking, phantom states
-- [500_TAPS_OBSERVERS/SPEC.md](tests/regression/500_TAPS_OBSERVERS/SPEC.md) - Event observers, annotations
-- [600_COMPTIME/SPEC.md](tests/regression/600_COMPTIME/SPEC.md) - Metacircular compilation, FlowAST
-- [650_PHANTOM_TYPES/SPEC.md](tests/regression/650_PHANTOM_TYPES/SPEC.md) - State tracking
-- [1200_OPTIMIZATIONS/SPEC.md](tests/regression/1200_OPTIMIZATIONS/SPEC.md) - Compiler optimizations
-
-**All Categories** (run `./run_regression.sh --status` to see which have docs):
-- `000_CORE_LANGUAGE` - Core language features
-- `050_PARSER` - Parser features
-- `100_IMPORTS` - Module system
-- `200_CONTROL_FLOW` - Branches, labels, jumps
-- `300_SUBFLOWS` - Compile-time event bindings
-- `400_VALIDATION` - Type checking
-- `500_TAPS_OBSERVERS` - Event observation
-- `600_COMPTIME` - Metacircular compilation
-- `650_PHANTOM_TYPES` - State tracking
-- `700_EXPRESSIONS` - Expression handling
-- `1000_PURITY` - Purity tracking
-- `1100_FUSION` - Event fusion
-- `1200_OPTIMIZATIONS` - Optimizations
-- Plus: performance tests, benchmarks, examples, negative tests, bug reproductions
+```
+tests/regression/
+├── 000_CORE_LANGUAGE/          # Events, procs, flows, types
+│   ├── 010_BASIC_SYNTAX/
+│   ├── 020_EVENTS_FLOWS/
+│   ├── 030_TYPES_VALUES/
+│   └── 040_CONTROL_FLOW/
+├── 100_MODULE_SYSTEM/          # Imports, namespaces, packages
+│   ├── 110_IMPORTS/
+│   ├── 120_NAMESPACES/
+│   └── 130_PACKAGES/
+├── 100_PARSER/                 # Parser features (identity branches, etc.)
+├── 200_COMPILER_FEATURES/      # Parser, compilation, codegen, emitter
+│   ├── 210_PARSER/
+│   ├── 220_COMPILATION/
+│   ├── 220_FLOW_CHECKER/
+│   ├── 230_CODEGEN/
+│   ├── 230_EMITTER/
+│   ├── 240_STD_LIBRARY/
+│   └── 260_SUBFLOW/
+├── 200_SYNTAX/                 # Struct constructors
+├── 300_ADVANCED_FEATURES/      # Comptime, phantom types, taps, etc.
+│   ├── 310_COMPTIME/
+│   ├── 320_STDLIB/
+│   ├── 330_PHANTOM_TYPES/
+│   ├── 340_FUSION/
+│   ├── 340_TRANSFORMS/
+│   ├── 350_SUBFLOWS/
+│   ├── 355_OPTIONAL_BRANCHES/
+│   ├── 360_TAPS_OBSERVERS/
+│   ├── 365_INTERCEPTORS/       (design phase)
+│   ├── 370_ACTORS/             (design phase)
+│   ├── 380_TEMPLATING/
+│   └── 390_KERNEL/
+├── 320_CONTROL_FLOW/           # Expand, auto-thread pipeline
+├── 400_RUNTIME_FEATURES/       # Purity, performance, budgeted interpreter
+│   ├── 410_BUDGETED_INTERPRETER/
+│   ├── 410_PURITY_CHECKING/
+│   ├── 420_PERFORMANCE/
+│   └── 430_RUNTIME/
+├── 500_INTEGRATION_TESTING/    # Negative tests, bug reproductions, validation
+│   ├── 510_NEGATIVE_TESTS/
+│   ├── 520_BUG_REPRODUCTION/
+│   └── 540_VALIDATION/
+├── 600_STDLIB/                 # String, fmt
+├── 700_EVENT_GLOBBING/         # Generics, glob patterns
+├── 900_EXAMPLES_SHOWCASE/      # Hello world, language shootout, demos
+│   ├── 910_LANGUAGE_SHOOTOUT/
+│   └── 920_DEMO_APPLICATIONS/
+└── tour/                       # Guided tour examples
+```
 
 ---
 
-## 🎯 Quick Start
+## Specifications (SPEC.md files)
 
-**New to Koru?** Read in this order:
+| Location | Topic | Status |
+|----------|-------|--------|
+| [000_CORE_LANGUAGE/SPEC.md](000_CORE_LANGUAGE/SPEC.md) | Events, procs, flows, type system | Needs path updates |
+| [300_ADVANCED_FEATURES/310_COMPTIME/SPEC.md](300_ADVANCED_FEATURES/310_COMPTIME/SPEC.md) | Compile-time metaprogramming | Needs path updates |
+| [300_ADVANCED_FEATURES/330_PHANTOM_TYPES/SPEC.md](300_ADVANCED_FEATURES/330_PHANTOM_TYPES/SPEC.md) | Phantom type states | Needs path updates |
+| [300_ADVANCED_FEATURES/360_TAPS_OBSERVERS/SPEC.md](300_ADVANCED_FEATURES/360_TAPS_OBSERVERS/SPEC.md) | Event observation (`~tap()`) | Updated 2026-02-15 |
+| [300_ADVANCED_FEATURES/365_INTERCEPTORS/SPEC.md](300_ADVANCED_FEATURES/365_INTERCEPTORS/SPEC.md) | Payload transformation | Design phase |
+| [300_ADVANCED_FEATURES/370_ACTORS/SPEC.md](300_ADVANCED_FEATURES/370_ACTORS/SPEC.md) | Virtual actor system | Design phase |
+| [300_ADVANCED_FEATURES/380_TEMPLATING/SPEC.md](300_ADVANCED_FEATURES/380_TEMPLATING/SPEC.md) | Liquid templates (`~emit`) | OK |
+| [400_RUNTIME_FEATURES/410_BUDGETED_INTERPRETER/SPEC.md](400_RUNTIME_FEATURES/410_BUDGETED_INTERPRETER/SPEC.md) | Metered execution | Design phase |
+| [400_RUNTIME_FEATURES/420_PERFORMANCE/SPEC.md](400_RUNTIME_FEATURES/420_PERFORMANCE/SPEC.md) | Optional branches, optimizations | Needs path updates |
+| [500_INTEGRATION_TESTING/540_VALIDATION/SPEC.md](500_INTEGRATION_TESTING/540_VALIDATION/SPEC.md) | Branch coverage, phantom checking | Needs path updates |
+| [900_EXAMPLES_SHOWCASE/910_LANGUAGE_SHOOTOUT/SPEC.md](900_EXAMPLES_SHOWCASE/910_LANGUAGE_SHOOTOUT/SPEC.md) | Benchmark methodology | OK |
 
-1. [000_CORE_LANGUAGE/SPEC.md](tests/regression/000_CORE_LANGUAGE/SPEC.md) - **Start here**
-2. [100_IMPORTS/SPEC.md](tests/regression/100_IMPORTS/SPEC.md) - Multi-file programs
-3. [600_COMPTIME/SPEC.md](tests/regression/600_COMPTIME/SPEC.md) - The magic
-
-**Looking for something specific?** Use `./run_regression.sh --list` to see all tests with descriptions, or grep the regression test directories.
+> **WARNING**: Several SPEC.md files contain stale cross-references to old directory names.
+> The tests themselves are the source of truth. When in doubt, read the test code.
 
 ---
 
-## ✏️ Contributing to Documentation
+## Quick Start
 
-1. Find the test category (e.g., `200_CONTROL_FLOW/`)
-2. Edit or create the SPEC.md in that directory
-3. Add tests that verify what the spec claims
-4. Run `./run_regression.sh <number>` to verify
+**New to Koru?** Start with the tests:
 
-**Documentation that isn't verified by tests will drift.** Keep docs and tests together.
+1. `000_CORE_LANGUAGE/010_BASIC_SYNTAX/` - Hello world, simple events
+2. `100_MODULE_SYSTEM/110_IMPORTS/` - Multi-file programs
+3. `300_ADVANCED_FEATURES/310_COMPTIME/` - Compile-time metaprogramming
+
+**Looking for something specific?** Use `./run_regression.sh --status` or grep the test directories.
 
 ---
 
