@@ -10,7 +10,7 @@ The profiler in `$std/profiler` is a **working proof-of-concept** that demonstra
    - Both can be tapped like any other event
 
 2. **Universal taps work**
-   - `~* -> *` captures ALL event transitions
+   - `~tap(* -> *)` captures ALL event transitions
    - Profile metatype receives source, destination, branch, and runtime timestamp
    - Taps are inlined at compile-time (zero runtime overhead when disabled)
 

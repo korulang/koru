@@ -42,7 +42,7 @@ for (int h = 0; h < 10; h++) {
 ### Taps: Condition IS the Dispatch
 
 ```koru
-~event -> * | branch when (condition) |> handler()
+~tap(event -> *) | branch when (condition) |> handler()
 
 // Compiles to:
 if (condition) { handler(); }

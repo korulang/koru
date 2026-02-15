@@ -4,8 +4,8 @@
 
 📚 **[Back to Main Spec Index](../../../SPEC.md)**
 
-**Last Updated**: 2025-10-05
-**Test Range**: 601-609
+**Last Updated**: 2026-02-15
+**Test Range**: 501-507
 
 ---
 
@@ -27,17 +27,17 @@ Event Taps observe event transitions without interfering with the main flow. The
 
 ## Basic Syntax
 
-Event Taps use `->` to indicate observation direction:
+Event Taps use `~tap()` with `->` to indicate observation direction:
 
 ```koru
-~source_event -> destination_event
+~tap(source_event -> destination_event)
 | branch binding |> action
 ```
 
 **Example**:
 ```koru
 // Observe file.read errors
-~file.read -> *
+~tap(file.read -> *)
 | error e |> log.error("File read failed:", e.msg)
 ```
 
@@ -52,14 +52,14 @@ See: [603_event_taps](../603_event_taps/)
 Observe all outputs from a specific event:
 
 ```koru
-~source_event -> *
+~tap(source_event -> *)
 | branch binding |> action
 ```
 
 **Example**:
 ```koru
 // Log all outcomes from authentication
-~auth.check -> *
+~tap(auth.check -> *)
 | success u |> log.info("Login success:", u.username)
 | failure f |> log.warn("Login failed:", f.reason)
 ```
@@ -69,14 +69,14 @@ Observe all outputs from a specific event:
 Observe all transitions to a specific event:
 
 ```koru
-~* -> destination_event
+~tap(* -> destination_event)
 | transition t |> action
 ```
 
 **Example**:
 ```koru
 // Track all calls to send_email
-~* -> send_email
+~tap(* -> send_email)
 | transition t |> metrics.increment("emails_sent")
 ```
 
@@ -85,14 +85,14 @@ Observe all transitions to a specific event:
 Observe ALL event transitions:
 
 ```koru
-~* -> *
+~tap(* -> *)
 | transition t |> profiler.record(t)
 ```
 
 **Example**:
 ```koru
 // Universal profiling
-~* -> *
+~tap(* -> *)
 | transition t |> latency.measure(t.source, t.dest, t.duration_ns)
 ```
 
@@ -102,7 +102,7 @@ See: [605_wildcard_patterns](../605_wildcard_patterns/)
 
 ## Transition Metatype
 
-When using wildcard sources (`~* ->`), the shape is unknown at parse time. Use the `transition` metatype to access metadata:
+When using wildcard sources (`~tap(* -> ...)`), the shape is unknown at parse time. Use the `transition` metatype to access metadata:
 
 ```koru
 pub const Transition = struct {
@@ -116,7 +116,7 @@ pub const Transition = struct {
 
 **Usage**:
 ```koru
-~* -> database.query
+~tap(* -> database.query)
 | transition t |> profiler.record(
     source: t.source,
     duration: t.duration_ns
@@ -131,8 +131,10 @@ See: [608_transition_metatype](../608_transition_metatype/)
 
 Taps support annotations for conditional compilation:
 
+> **NOTE**: Annotation placement on taps is not yet verified by tests. Syntax below follows the `~[ann] keyword(...)` pattern used elsewhere (e.g., `~[opaque] event`).
+
 ```koru
-~[annotation]source_event -> destination_event
+~[annotation] tap(source_event -> destination_event)
 | branch binding |> action
 ```
 
@@ -140,19 +142,19 @@ Taps support annotations for conditional compilation:
 
 **Debug-only taps**:
 ```koru
-~[debug]* -> *
+~[debug] tap(* -> *)
 | transition t |> log.trace(t)
 ```
 
 **Profiling taps**:
 ```koru
-~[profile]auth.check -> *
+~[profile] tap(auth.check -> *)
 | result r |> metrics.record(r)
 ```
 
 **Production logging**:
 ```koru
-~[production]* -> database.query
+~[production] tap(* -> database.query)
 | error e |> alert.send("DB error:", e)
 ```
 
@@ -166,7 +168,7 @@ Unlike regular flows, taps don't need to handle all branches:
 
 ```koru
 // Only observe errors, ignore success
-~file.read -> *
+~tap(file.read -> *)
 | error e |> log.error(e.msg)
 // No need to handle 'success' branch!
 ```
@@ -174,7 +176,7 @@ Unlike regular flows, taps don't need to handle all branches:
 This makes taps perfect for focused observation:
 ```koru
 // Security audit: only track access grants
-~auth.check -> grant.access
+~tap(auth.check -> grant.access)
 | user u |> audit.log("Access granted:", u.id)
 // Don't care about denials
 ```
@@ -187,15 +189,15 @@ Multiple taps can observe the same transition:
 
 ```koru
 // Tap 1: Logging
-~auth.check -> *
+~tap(auth.check -> *)
 | success u |> log.info("Login:", u.username)
 
 // Tap 2: Metrics
-~auth.check -> *
+~tap(auth.check -> *)
 | success u |> metrics.increment("logins")
 
 // Tap 3: Analytics
-~auth.check -> *
+~tap(auth.check -> *)
 | success u |> analytics.track(u.id)
 ```
 
@@ -210,7 +212,7 @@ See: [604_multiple_taps](../604_multiple_taps/)
 Taps support conditional observation with `when` clauses:
 
 ```koru
-~http.request -> *
+~tap(http.request -> *)
 | response r when r.status >= 500 |> alert.send("Server error")
 | response r when r.status >= 400 |> log.warn("Client error")
 // No catch-all required in taps!
@@ -230,7 +232,7 @@ Taps can observe imported events:
 ~import "$std/io"
 
 // Observe io.print calls
-~* -> io.print
+~tap(* -> io.print)
 | transition t |> metrics.increment("prints")
 ```
 
@@ -244,10 +246,10 @@ Taps can observe chains of events:
 
 ```koru
 // Observe specific flow path
-~auth.check -> grant.access
+~tap(auth.check -> grant.access)
 | user u |> log.info("Access granted:", u.id)
 
-~grant.access -> database.query
+~tap(grant.access -> database.query)
 | query q |> log.debug("DB query:", q.sql)
 ```
 
@@ -267,7 +269,7 @@ Taps can observe labeled loops and jumps:
 | error e |> @retry(url: endpoint)
 
 // Observe retry attempts
-~http.get -> #retry
+~tap(http.get -> #retry)
 | error e |> metrics.increment("retries")
 ```
 
@@ -283,7 +285,7 @@ Taps compile to inline code at each transition point:
 
 ```koru
 // Source
-~file.read -> *
+~tap(file.read -> *)
 | error e |> log.error(e.msg)
 ```
 
@@ -306,7 +308,7 @@ switch (result) {
 ### Tap Registry
 
 Taps are collected during parsing and injected at code generation:
-1. Parser identifies all `~source -> dest` patterns
+1. Parser identifies all `~tap(source -> dest)` patterns
 2. Creates tap registry mapping (source, dest) → [taps]
 3. Code generator injects tap calls at matching transitions
 

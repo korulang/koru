@@ -28,7 +28,7 @@ Only even numbers are processed (filtered by when clause).
 ## The Tap Definition:
 
 ```koru
-~ring.dequeue -> *
+~tap(ring.dequeue -> *)
 | value v when v.data % 2 == 0 |> process(data: v.data)
     | done |> _
 ```

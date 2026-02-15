@@ -62,7 +62,7 @@ emit("next", value)
 
 Koru taps:
 ```
-~count -> * | next v |> accumulate(value: v.value)
+~tap(count -> *) | next v |> accumulate(value: v.value)
   → AST rewrite at compile time
   → handler code fused into producer
   → direct call, no indirection
@@ -128,10 +128,10 @@ emitter_emit_done(&emitter);
 ~event count { i: u64 } | next { value: u64 } | done {}
 
 // TAP: Observe count, accumulate on "next"
-~count -> * | next v |> accumulate(value: v.value)
+~tap(count -> *) | next v |> accumulate(value: v.value)
 
 // TAP: Observe count completion, validate
-~count -> * | done |> validate()
+~tap(count -> *) | done |> validate()
 
 ~start() | ready |> #loop count(i: 0)
     | next n |> @loop(i: n.value + 1)

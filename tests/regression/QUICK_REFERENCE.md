@@ -144,10 +144,10 @@ Subflows can also be chained (subflow calling another subflow). See `tests/regre
 
 ## Taps (Event Observers)
 
-Taps use `->` to observe events **read-only**:
+Taps use `~tap()` with `->` to observe events **read-only**:
 
 ```koru
-~source -> destination
+~tap(source -> destination)
 | branch binding |> observer_action
 ```
 
@@ -155,15 +155,15 @@ Taps use `->` to observe events **read-only**:
 
 ```koru
 // Observe specific event outputs
-~file.read -> *
+~tap(file.read -> *)
 | error e |> log.error(msg: e.reason)
 
 // Observe all transitions to an event
-~* -> send_email
+~tap(* -> send_email)
 | Transition t |> metrics.increment(counter: "emails_sent")
 
 // Universal observer (see koru_std/ccp.kz for real implementation)
-~* -> *
+~tap(* -> *)
 | Transition t |> emit_transition(
     source: t.source,
     branch: t.branch,
@@ -286,7 +286,7 @@ See [Taps & Observers](tests/regression/500_TAPS_OBSERVERS/SPEC.md#annotations)
 
 ```koru
 // Tap into all events (universal observer)
-~* -> *
+~tap(* -> *)
 | Transition t |> log.trace(
     source: t.source,
     branch: t.branch,

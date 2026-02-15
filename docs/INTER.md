@@ -18,7 +18,7 @@ Every piece already exists:
 |-----------|--------|---------|
 | Event-driven architecture | ✅ | Everything is an observable transition |
 | Immutable AST cloning | ✅ | Transform without destroying original |
-| Universal taps (`~* -> *`) | ✅ | Observe every transition |
+| Universal taps (`~tap(* -> *)`) | ✅ | Observe every transition |
 | Budgeted interpreter | ✅ | Safe, metered execution |
 | Scope system | ✅ | Register capabilities, sandbox execution |
 | HandlePool/Bridge | ✅ | State persists across calls |

@@ -4,7 +4,7 @@
 
 This test demonstrates the FULL consumer pattern combining:
 1. **Labels** (`#consume`) for loop control
-2. **Taps** (`~ring.dequeue -> *`) for observation
+2. **Taps** (`~tap(ring.dequeue -> *)`) for observation
 3. **When clauses** (`when v.data % 2 == 0`) for filtering
 
 **Expected behavior:**
@@ -87,7 +87,7 @@ Should generate code like:
 ### Bug 4: Tap Structure Not Generated
 No tap functions are generated. The tap:
 ```koru
-~ring.dequeue -> * | value v when v.data % 2 == 0 |> process(data: v.data)
+~tap(ring.dequeue -> *) | value v when v.data % 2 == 0 |> process(data: v.data)
     | done |> _
 ```
 
@@ -133,7 +133,7 @@ grep "__tap" output_emitted.zig
 
 **Test 916 tap syntax:**
 ```koru
-~ring.dequeue -> * | value v |> process(data: v.data)
+~tap(ring.dequeue -> *) | value v |> process(data: v.data)
 ```
 - NO continuation after `process`
 - Implicitly terminal
@@ -141,7 +141,7 @@ grep "__tap" output_emitted.zig
 
 **Test 914 tap syntax:**
 ```koru
-~ring.dequeue -> * | value v when v.data % 2 == 0 |> process(data: v.data)
+~tap(ring.dequeue -> *) | value v when v.data % 2 == 0 |> process(data: v.data)
     | done |> _
 ```
 - HAS continuation `| done |> _` after `process`
