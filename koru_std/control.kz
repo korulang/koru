@@ -825,9 +825,37 @@ const std = @import("std");
     else
         return .{ .transformed = .{ .program = program } };
 
+    const isSameInvocation = struct {
+        fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
+            if (a.path.module_qualifier) |amq| {
+                if (b.path.module_qualifier) |bmq| {
+                    if (!std.mem.eql(u8, amq, bmq)) return false;
+                } else {
+                    return false;
+                }
+            } else if (b.path.module_qualifier != null) {
+                return false;
+            }
+
+            if (a.path.segments.len != b.path.segments.len) return false;
+            for (a.path.segments, 0..) |seg, seg_i| {
+                if (!std.mem.eql(u8, seg, b.path.segments[seg_i])) return false;
+            }
+
+            if (a.args.len != b.args.len) return false;
+            for (a.args, 0..) |arg, arg_i| {
+                const other = b.args[arg_i];
+                if (!std.mem.eql(u8, arg.name, other.name)) return false;
+                if (arg.value.len > 0 and other.value.len > 0 and !std.mem.eql(u8, arg.value, other.value)) return false;
+            }
+            return true;
+        }
+    }.check;
+
     // Check if this is a top-level capture (flow.invocation IS the capture being transformed)
     // vs a pipeline case (capture is a step inside the flow's continuations)
-    const is_top_level = @intFromPtr(&flow.invocation) == @intFromPtr(invocation);
+    const is_pointer_top = @intFromPtr(&flow.invocation) == @intFromPtr(invocation);
+    const is_virtual_top = !is_pointer_top and isSameInvocation(&flow.invocation, invocation);
 
     // Helper struct for transforming captured blocks
     // Defined early so both nested and top-level cases can use it
@@ -1085,7 +1113,7 @@ const std = @import("std");
     // Find the continuations that belong to THIS capture invocation
     // For top-level: flow.continuations
     // For nested: the parent continuation's nested continuations
-    const capture_continuations: []const ast.Continuation = if (is_top_level) blk: {
+    const capture_continuations: []const ast.Continuation = if (is_pointer_top or is_virtual_top) blk: {
         // Check if already transformed
         if (flow.inline_body != null) {
             return .{ .transformed = .{ .program = program } };
@@ -1333,6 +1361,44 @@ const std = @import("std");
         .init_expr = init_value,
         .branches = branches,
     }};
+
+    if (is_virtual_top) {
+        const keepNotCaptureBranch = struct {
+            fn check(branch: []const u8) bool {
+                return !std.mem.eql(u8, branch, "as") and !std.mem.eql(u8, branch, "captured");
+            }
+        }.check;
+
+        var filtered_count: usize = 0;
+        for (flow.continuations) |*cont| {
+            if (keepNotCaptureBranch(cont.branch)) filtered_count += 1;
+        }
+
+        const filtered = allocator.alloc(ast.Continuation, filtered_count) catch unreachable;
+        var out_idx: usize = 0;
+        for (flow.continuations) |*cont| {
+            if (keepNotCaptureBranch(cont.branch)) {
+                filtered[out_idx] = cont.*;
+                out_idx += 1;
+            }
+        }
+
+        const maybe_new_program = ast_functional.replaceInvocationNodeAndContinuationsRecursive(
+            allocator,
+            program,
+            invocation,
+            capture_node,
+            filtered,
+        ) catch unreachable;
+
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = .{ .program = result } };
+        }
+
+        return .{ .transformed = .{ .program = program } };
+    }
 
     // Create void-chain continuation containing the CaptureNode
     const void_continuation = allocator.alloc(ast.Continuation, 1) catch unreachable;

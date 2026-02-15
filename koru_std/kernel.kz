@@ -150,78 +150,12 @@ const std = @import("std");
     // ========================================================================
     const is_top_level = (invocation == &flow.invocation);
 
-    var binding_name: []const u8 = "k"; // default fallback
     var has_kernel_continuation = false;
-    var step_path: ?[]const usize = null;
-    var step_idx: usize = 0;
-
-    if (is_top_level) {
-        for (flow.continuations) |cont| {
-            if (std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) {
-                if (cont.binding) |b| binding_name = b;
-                has_kernel_continuation = true;
-                break;
-            }
+    for (flow.continuations) |cont| {
+        if (std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) {
+            has_kernel_continuation = true;
+            break;
         }
-    } else {
-        const SearchResult = struct {
-            path: []const usize,
-            step_idx: usize,
-            binding_name: []const u8,
-            has_kernel_continuation: bool,
-        };
-
-        const findInvocationRecursive = struct {
-            fn search(
-                alloc: std.mem.Allocator,
-                continuations: []const ast.Continuation,
-                current_path: []const usize,
-                target_inv: *const ast.Invocation,
-            ) ?SearchResult {
-                for (continuations, 0..) |*cont, cont_idx| {
-                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
-                    @memcpy(path[0..current_path.len], current_path);
-                    path[current_path.len] = cont_idx;
-
-                    if (cont.node) |*step| {
-                        if (step.* == .invocation and &step.invocation == target_inv) {
-                            var binding: []const u8 = "k";
-                            var has_kernel = false;
-                            for (cont.continuations) |nested| {
-                                if (std.mem.eql(u8, std.mem.trim(u8, nested.branch, " "), "kernel")) {
-                                    if (nested.binding) |b| binding = b;
-                                    has_kernel = true;
-                                    break;
-                                }
-                            }
-                            return SearchResult{
-                                .path = path,
-                                .step_idx = 0,
-                                .binding_name = binding,
-                                .has_kernel_continuation = has_kernel,
-                            };
-                        }
-                    }
-
-                    if (search(alloc, cont.continuations, path, target_inv)) |result| {
-                        return result;
-                    }
-
-                    alloc.free(path);
-                }
-                return null;
-            }
-        }.search;
-
-        const empty_path = &[_]usize{};
-        const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation) orelse {
-            @panic("kernel.init: could not find invocation in AST");
-        };
-
-        step_path = search_result.path;
-        step_idx = search_result.step_idx;
-        binding_name = search_result.binding_name;
-        has_kernel_continuation = search_result.has_kernel_continuation;
     }
 
     // Generate a unique local event/proc name for this init
@@ -413,16 +347,103 @@ const std = @import("std");
             },
         };
     } else {
-        const new_step = ast.Step{ .invocation = init_inv };
-        const modified_flow = ast_functional.replacePipelineStepAtPath(
+        const new_node = ast.Node{ .invocation = init_inv };
+        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(
             allocator,
-            flow,
-            step_path.?,
-            step_idx,
-            new_step,
+            program,
+            invocation,
+            new_node,
         ) catch unreachable;
 
-        new_item = ast.Item{ .flow = modified_flow };
+        if (maybe_new_program) |new_program| {
+            const ptr_type = std.fmt.allocPrint(allocator, "[*]{s}", .{type_name}) catch unreachable;
+            const branch_fields = allocator.alloc(ast.Field, 4) catch unreachable;
+            branch_fields[0] = ast.Field{
+                .name = allocator.dupe(u8, "ptr") catch unreachable,
+                .type = ptr_type,
+            };
+            branch_fields[1] = ast.Field{
+                .name = allocator.dupe(u8, "len") catch unreachable,
+                .type = allocator.dupe(u8, "usize") catch unreachable,
+            };
+            branch_fields[2] = ast.Field{
+                .name = allocator.dupe(u8, "capacity") catch unreachable,
+                .type = allocator.dupe(u8, "usize") catch unreachable,
+            };
+            branch_fields[3] = ast.Field{
+                .name = allocator.dupe(u8, "layout") catch unreachable,
+                .type = allocator.dupe(u8, "[]const u8") catch unreachable,
+            };
+
+            const branches = allocator.alloc(ast.Branch, 1) catch unreachable;
+            const kernel_branch_optional = !has_kernel_continuation;
+            branches[0] = ast.Branch{
+                .name = allocator.dupe(u8, "kernel") catch unreachable,
+                .payload = ast.Shape{ .fields = branch_fields },
+                .is_optional = kernel_branch_optional,
+                .annotations = &[_][]const u8{},
+            };
+
+            const event_segments = allocator.alloc([]const u8, 1) catch unreachable;
+            event_segments[0] = allocator.dupe(u8, unique_name) catch unreachable;
+            const event_module = allocator.dupe(u8, flow.module) catch unreachable;
+            const proc_segments = allocator.alloc([]const u8, 1) catch unreachable;
+            proc_segments[0] = allocator.dupe(u8, unique_name) catch unreachable;
+            const proc_module = allocator.dupe(u8, flow.module) catch unreachable;
+
+            const local_init_item = ast.Item{
+                .event_decl = ast.EventDecl{
+                    .path = ast.DottedPath{ .module_qualifier = event_module, .segments = event_segments },
+                    .input = ast.Shape{ .fields = &[_]ast.Field{} },
+                    .branches = branches,
+                    .is_public = false,
+                    .is_implicit_flow = false,
+                    .annotations = &[_][]const u8{},
+                    .location = flow.location,
+                    .module = allocator.dupe(u8, flow.module) catch unreachable,
+                }
+            };
+
+            const local_init_proc = ast.Item{
+                .proc_decl = ast.ProcDecl{
+                    .path = ast.DottedPath{ .module_qualifier = proc_module, .segments = proc_segments },
+                    .body = proc_body,
+                    .annotations = &[_][]const u8{},
+                    .location = flow.location,
+                    .module = allocator.dupe(u8, flow.module) catch unreachable,
+                },
+            };
+            
+            var res_program = new_program;
+            var insert_index: usize = 0;
+            if (!has_host_type) {
+                const local_type_item = ast.Item{
+                    .host_type_decl = ast.HostTypeDecl{
+                        .name = allocator.dupe(u8, type_name) catch unreachable,
+                        .shape = ast.Shape{ .fields = type_fields },
+                    },
+                };
+                res_program = ast_functional.insertAt(allocator, &res_program, insert_index, local_type_item) catch unreachable;
+                insert_index = 1;
+            }
+
+            const static_item = ast.Item{
+                .host_line = ast.HostLine{
+                    .content = allocator.dupe(u8, static_decl) catch unreachable,
+                    .location = flow.location,
+                    .module = allocator.dupe(u8, flow.module) catch unreachable,
+                },
+            };
+
+            const res_prog_raw = ast_functional.insertAt(allocator, &res_program, insert_index, static_item) catch unreachable;
+            const res_prog_raw2 = ast_functional.insertAt(allocator, &res_prog_raw, insert_index + 1, local_init_item) catch unreachable;
+            const res_prog_raw3 = ast_functional.insertAt(allocator, &res_prog_raw2, insert_index + 2, local_init_proc) catch unreachable;
+            const res_program_ptr = allocator.create(ast.Program) catch unreachable;
+            res_program_ptr.* = res_prog_raw3;
+            return .{ .transformed = .{ .program = res_program_ptr } };
+        }
+
+        @panic("kernel.init: replaceInvocationNodeRecursive failed");
     }
 
     // Replace flow in program
@@ -564,27 +585,19 @@ const std = @import("std");
         @panic("kernel.pairwise: expected flow item");
 
     const SearchResult = struct {
-        path: []const usize,
-        step_idx: usize,
         binding_name: []const u8,
         kernel_init_invocation: ?*const ast.Invocation,
     };
 
     const findInvocationRecursive = struct {
-        fn search(
-            alloc: std.mem.Allocator,
+        fn searchContinuations(
             continuations: []const ast.Continuation,
-            current_path: []const usize,
             target_inv: *const ast.Invocation,
             owner_invocation: ?*const ast.Invocation,
             parent_binding: ?[]const u8,
             kernel_init_invocation: ?*const ast.Invocation,
         ) ?SearchResult {
-            for (continuations, 0..) |*cont, cont_idx| {
-                var path = alloc.alloc(usize, current_path.len + 1) catch return null;
-                @memcpy(path[0..current_path.len], current_path);
-                path[current_path.len] = cont_idx;
-
+            for (continuations) |*cont| {
                 var effective_binding = parent_binding;
                 var effective_kernel_init = kernel_init_invocation;
                 if (std.mem.eql(u8, cont.branch, "kernel")) {
@@ -600,8 +613,6 @@ const std = @import("std");
                         // CRITICAL: Compare pointers to find the EXACT invocation
                         if (&step.invocation == target_inv) {
                             return SearchResult{
-                                .path = path,
-                                .step_idx = 0,
                                 .binding_name = effective_binding orelse "k",
                                 .kernel_init_invocation = effective_kernel_init,
                             };
@@ -617,18 +628,37 @@ const std = @import("std");
                 } else null;
 
                 // Recurse into nested continuations
-                if (search(alloc, cont.continuations, path, target_inv, next_owner_invocation, effective_binding, effective_kernel_init)) |result| {
+                if (searchContinuations(cont.continuations, target_inv, next_owner_invocation, effective_binding, effective_kernel_init)) |result| {
                     return result;
                 }
-
-                alloc.free(path);
             }
             return null;
         }
-    }.search;
 
-    const empty_path = &[_]usize{};
-    const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation, &flow.invocation, null, null) orelse {
+        fn searchItems(
+            items: []const ast.Item,
+            target_inv: *const ast.Invocation,
+        ) ?SearchResult {
+            for (items) |*it| {
+                switch (it.*) {
+                    .flow => |*f| {
+                        if (searchContinuations(f.continuations, target_inv, &f.invocation, null, null)) |result| {
+                            return result;
+                        }
+                    },
+                    .module_decl => |*mod| {
+                        if (searchItems(mod.items, target_inv)) |result| {
+                            return result;
+                        }
+                    },
+                    else => {},
+                }
+            }
+            return null;
+        }
+    }.searchItems;
+
+    const search_result = findInvocationRecursive(program.items, invocation) orelse {
         @panic("kernel.pairwise: could not find invocation in AST");
     };
 
@@ -800,33 +830,24 @@ const std = @import("std");
     const code = code_buf.toOwnedSlice(allocator) catch unreachable;
 
     // ========================================================================
-    // STEP 5: Replace ONLY this step using replacePipelineStepAtPath
+    // STEP 5: Replace ONLY this step using replaceInvocationNodeRecursive
     // ========================================================================
-    // This is the key change: we replace just the pairwise step, not the whole flow
-
     // Node.inline_code expects []const u8 directly (not InlineCode struct)
     const new_node = ast.Node{ .inline_code = code };
 
-    const modified_flow = ast_functional.replacePipelineStepAtPath(
+    const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(
         allocator,
-        flow,
-        search_result.path,
-        search_result.step_idx,
+        program,
+        invocation,
         new_node,
     ) catch unreachable;
-
-    // Create new item from modified flow (impl_of is already on the flow)
-    const new_item = ast.Item{ .flow = modified_flow };
-
-    // Replace the flow in the program with the modified flow
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
         return .{ .transformed = .{ .program = result } };
     }
 
-    @panic("kernel.pairwise: replaceFlowRecursive returned null - flow not found in AST");
+    @panic("kernel.pairwise: replaceInvocationNodeRecursive returned null - flow not found in AST");
 }
 
 // ============================================================================

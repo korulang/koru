@@ -860,60 +860,14 @@ const emitFlowWithMocks = struct {
         return .{ .transformed = .{ .program = program } };
     } else {
         // Pipeline case: assert is a step inside a continuation
-        // Find the assert invocation and replace it with inline_code node
-
-        const SearchResult = struct {
-            path: []const usize,
-        };
-
-        const findInvocationRecursive = struct {
-            fn search(
-                alloc: std_import.mem.Allocator,
-                continuations: []const ast.Continuation,
-                current_path: []const usize,
-                target_inv: *const ast.Invocation,
-            ) ?SearchResult {
-                for (continuations, 0..) |*cont, cont_idx| {
-                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
-                    @memcpy(path[0..current_path.len], current_path);
-                    path[current_path.len] = cont_idx;
-
-                    if (cont.node) |*node| {
-                        if (node.* == .invocation) {
-                            if (&node.invocation == target_inv) {
-                                return SearchResult{ .path = path };
-                            }
-                        }
-                    }
-
-                    if (search(alloc, cont.continuations, path, target_inv)) |result| {
-                        return result;
-                    }
-                    alloc.free(path);
-                }
-                return null;
-            }
-        }.search;
-
-        const empty_path = &[_]usize{};
-        const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation) orelse {
-            return .{ .transformed = .{ .program = program } };
-        };
-
-        // Replace the invocation with inline_code node
+        // Replace the invocation node directly (supports nested/virtual flows).
         const inline_node = ast.Node{ .inline_code = assert_code };
-
-        const modified_flow = ast_functional.replacePipelineStepAtPath(
+        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(
             allocator,
-            flow,
-            search_result.path,
-            0,
+            program,
+            invocation,
             inline_node,
         ) catch unreachable;
-
-        const new_item = ast.Item{ .flow = modified_flow };
-
-        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
