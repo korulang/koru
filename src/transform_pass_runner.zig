@@ -15,6 +15,7 @@ const ast = @import("ast");
 const ASTNode = ast.ASTNode;
 const Program = ast.Program;
 const Invocation = ast.Invocation;
+const Arg = ast.Arg;
 const template_utils = @import("template_utils");
 const liquid = @import("liquid");
 const annotation_parser = @import("annotation_parser");
@@ -84,6 +85,25 @@ fn countMatchingInContinuations(continuations: []const ast.Continuation, transfo
     }
 
     return count;
+}
+
+/// Remove a specific flow from the program by matching the target invocation pointer.
+fn removeFlowFromProgram(allocator: std.mem.Allocator, program: *const Program, target_inv: *const Invocation) !?*const Program {
+    var new_items: std.ArrayList(ast.Item) = .empty;
+    var found = false;
+    for (program.items, 0..) |_, idx| {
+        const item_ptr = &program.items[idx];
+        if (item_ptr.* == .flow and &item_ptr.flow.invocation == target_inv) {
+            found = true;
+            continue; // Skip this flow
+        }
+        new_items.append(allocator, program.items[idx]) catch return null;
+    }
+    if (!found) return null;
+    const result = allocator.create(Program) catch return null;
+    result.* = program.*;
+    result.items = new_items.toOwnedSlice(allocator) catch unreachable;
+    return result;
 }
 
 fn flowStillMatchesTransform(inv: *const Invocation, transform_name: []const u8) bool {
@@ -316,6 +336,42 @@ fn walkNode(
                     }
                     new_annotations[mutable_inv.annotations.len] = "@pass_ran(\"transform\")";
                     mutable_inv.annotations = new_annotations;
+
+                    // Also strip Source/Expression args so the emitter doesn't see
+                    // comptime-only parameters on a passthrough transform.
+                    var clean_count: usize = 0;
+                    for (mutable_inv.args) |arg| {
+                        if (arg.source_value == null and arg.expression_value == null) {
+                            clean_count += 1;
+                        }
+                    }
+                    if (clean_count < mutable_inv.args.len) {
+                        const clean_args = allocator.alloc(Arg, clean_count) catch {
+                            return error.TransformReturnedSamePointer;
+                        };
+                        var ci: usize = 0;
+                        for (mutable_inv.args) |arg| {
+                            if (arg.source_value == null and arg.expression_value == null) {
+                                clean_args[ci] = arg;
+                                ci += 1;
+                            }
+                        }
+                        mutable_inv.args = clean_args;
+                    }
+
+                    // If this is a comptime-only invocation (had Source/Expression args),
+                    // remove the containing flow from the program so the emitter doesn't
+                    // try to generate runtime code for a comptime event.
+                    if (clean_count == 0) {
+                        // All args were comptime-only — remove this flow entirely
+                        const new_program = removeFlowFromProgram(allocator, program, node.invocation) catch {
+                            return WalkResult{ .found = false, .program = program };
+                        };
+                        if (new_program) |np| {
+                            return WalkResult{ .found = true, .program = np };
+                        }
+                    }
+
                     // Continue walking — don't abort the entire transform pipeline
                     return WalkResult{ .found = false, .program = program };
                 }
