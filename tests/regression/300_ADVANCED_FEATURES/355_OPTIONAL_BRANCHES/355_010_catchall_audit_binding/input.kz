@@ -23,17 +23,25 @@
     return .{ .success = .{ .result = value * 2 } };
 }
 
+// Helper: print a string (void event - no branches)
+~event print_str { text: []const u8 }
+
+~proc print_str {
+    _ = @import("std").posix.write(1, text) catch {};
+    _ = @import("std").posix.write(1, "\n") catch {};
+}
+
 // Call 1: value=10 → success (required, handled explicitly)
 ~process(value: 10)
 | success _ |> std.io:print.ln("SUCCESS")
-|? Audit e |> std.io:print.ln(e.branch)
+|? Audit e |> print_str(text: e.branch)
 
 // Call 2: value=150 → warning (optional, caught by |? Audit)
 ~process(value: 150)
 | success _ |> std.io:print.ln("SUCCESS")
-|? Audit e |> std.io:print.ln(e.branch)
+|? Audit e |> print_str(text: e.branch)
 
 // Call 3: value=7 → debug (optional, caught by |? Audit)
 ~process(value: 7)
 | success _ |> std.io:print.ln("SUCCESS")
-|? Audit e |> std.io:print.ln(e.branch)
+|? Audit e |> print_str(text: e.branch)

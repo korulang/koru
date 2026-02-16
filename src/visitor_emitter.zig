@@ -525,6 +525,18 @@ pub const VisitorEmitter = struct {
                     }
                 }
             }
+            // Check for catch-all metatype (|? Audit e |>, |? Profile p |>, etc.)
+            if (cont.is_catchall) {
+                if (cont.catchall_metatype) |metatype| {
+                    if (std.mem.eql(u8, metatype, "Profile")) {
+                        result.profile = true;
+                    } else if (std.mem.eql(u8, metatype, "Transition")) {
+                        result.transition = true;
+                    } else if (std.mem.eql(u8, metatype, "Audit")) {
+                        result.audit = true;
+                    }
+                }
+            }
             // Recurse into nested continuations
             if (cont.continuations.len > 0) {
                 var found = try scanContinuationsForMetatypes(cont.continuations, allocator);
@@ -631,7 +643,8 @@ pub const VisitorEmitter = struct {
 
         // Emit top-level std import for meta-event taps (Profile uses std.time.nanoTimestamp)
         // We use __koru_std to avoid shadowing std imports in modules
-        if (has_profiling_transition or has_audit_transition) {
+        // In comptime mode, the backend preamble already defines __koru_std, so skip
+        if ((has_profiling_transition or has_audit_transition) and self.emit_mode != .comptime_only) {
             try self.code_emitter.write("const __koru_std = @import(\"std\");\n");
         }
 

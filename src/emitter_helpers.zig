@@ -4762,6 +4762,11 @@ fn emitContinuationList(
             if (ctx.ast_items) |items| {
                 const event_decl = findEventByName(items, source_event, ctx.allocator, ctx.main_module_name);
                 if (event_decl) |event| {
+                    // Check if catch-all has metatype binding (|? Audit e |>)
+                    const has_metatype_binding = catchall.catchall_metatype != null and
+                        catchall.binding != null and
+                        !std.mem.eql(u8, catchall.binding.?, "_");
+
                     // Emit cases for unhandled optional branches
                     for (event.branches) |branch| {
                         if (!branch.is_optional) continue; // Only optional branches
@@ -4771,15 +4776,73 @@ fn emitContinuationList(
                         try emitter.writeIndent();
                         try emitter.write(".");
                         try writeBranchName(emitter, branch.name);
-                        try emitter.write(" => |_| {\n"); // Discard payload for now
-                        emitter.indent();
 
-                        // Execute catch-all pipeline
-                        try emitContinuationBody(emitter, ctx, catchall, result_counter);
+                        if (has_metatype_binding) {
+                            // Capture payload (unused for now), construct metatype
+                            try emitter.write(" => |_| {\n");
+                            emitter.indent();
 
-                        emitter.dedent();
-                        try emitter.writeIndent();
-                        try emitter.write("},\n");
+                            // Construct the metatype object with .branch set
+                            try emitter.writeIndent();
+                            try emitter.write("const ");
+                            try emitter.write(catchall.binding.?);
+                            try emitter.write(" = taps.");
+                            try emitter.write(catchall.catchall_metatype.?);
+                            try emitter.write("{\n");
+                            emitter.indent();
+
+                            // .source = event name
+                            try emitter.writeIndent();
+                            try emitter.write(".source = \"");
+                            try emitter.write(source_event);
+                            try emitter.write("\",\n");
+
+                            // .destination = null (terminal)
+                            try emitter.writeIndent();
+                            try emitter.write(".destination = null,\n");
+
+                            // .branch = branch name
+                            try emitter.writeIndent();
+                            try emitter.write(".branch = \"");
+                            try emitter.write(branch.name);
+                            try emitter.write("\",\n");
+
+                            // .timestamp_ns (Profile/Audit only)
+                            const is_transition = std.mem.eql(u8, catchall.catchall_metatype.?, "Transition");
+                            if (!is_transition) {
+                                try emitter.writeIndent();
+                                try emitter.write(".timestamp_ns = __koru_std.time.nanoTimestamp(),\n");
+
+                                // .payload (Audit only)
+                                const is_audit = std.mem.eql(u8, catchall.catchall_metatype.?, "Audit");
+                                if (is_audit) {
+                                    try emitter.writeIndent();
+                                    try emitter.write(".payload = null,\n");
+                                }
+                            }
+
+                            emitter.dedent();
+                            try emitter.writeIndent();
+                            try emitter.write("};\n");
+
+                            // Execute catch-all pipeline (can now reference binding)
+                            try emitContinuationBody(emitter, ctx, catchall, result_counter);
+
+                            emitter.dedent();
+                            try emitter.writeIndent();
+                            try emitter.write("},\n");
+                        } else {
+                            // No metatype binding — discard payload
+                            try emitter.write(" => |_| {\n");
+                            emitter.indent();
+
+                            // Execute catch-all pipeline
+                            try emitContinuationBody(emitter, ctx, catchall, result_counter);
+
+                            emitter.dedent();
+                            try emitter.writeIndent();
+                            try emitter.write("},\n");
+                        }
                     }
                 }
             }
