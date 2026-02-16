@@ -5355,7 +5355,8 @@ fn emitPipelineStep(
     // - assignment: just assigns to a mutable binding
     // - inline_code: just emits verbatim code (e.g., print.ln transform)
     // - foreach: control flow with no value
-    const is_void_step = step.* == .assignment or step.* == .inline_code or step.* == .foreach;
+    // - switch_result: self-contained switch with inline code (e.g., query transform)
+    const is_void_step = step.* == .assignment or step.* == .inline_code or step.* == .foreach or step.* == .switch_result;
 
     // label_jump and label_apply emit 'continue :label;' which is terminal.
     // No code should follow — skip the result variable suppression.

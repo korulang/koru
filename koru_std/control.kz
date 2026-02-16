@@ -36,36 +36,9 @@ const std = @import("std");
         return .{ .transformed = .{ .program = program } };
     }
 
-    const is_same_invocation = struct {
-        fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
-            if (a.path.module_qualifier) |amq| {
-                if (b.path.module_qualifier) |bmq| {
-                    if (!std.mem.eql(u8, amq, bmq)) return false;
-                } else {
-                    return false;
-                }
-            } else if (b.path.module_qualifier != null) {
-                return false;
-            }
-
-            if (a.path.segments.len != b.path.segments.len) return false;
-            for (a.path.segments, 0..) |seg, i| {
-                if (!std.mem.eql(u8, seg, b.path.segments[i])) return false;
-            }
-
-            if (a.args.len != b.args.len) return false;
-            for (a.args, 0..) |arg, i| {
-                const other = b.args[i];
-                if (!std.mem.eql(u8, arg.name, other.name)) return false;
-                if (arg.value.len > 0 and other.value.len > 0 and !std.mem.eql(u8, arg.value, other.value)) return false;
-            }
-            return true;
-        }
-    }.check;
-
     const is_pointer_top = (invocation == &flow.invocation);
-    // Use pointer match for real flows, value match for virtual flows.
-    const is_top_level_if = is_pointer_top or is_same_invocation(&flow.invocation, invocation);
+    // findContainingItem returns the parent flow — only pointer comparison is valid.
+    const is_top_level_if = is_pointer_top;
 
     // Find | then |> and | else |> continuations
     var then_cont: ?*const ast.Continuation = null;
@@ -389,36 +362,9 @@ const std = @import("std");
         }
     }
 
-    const is_same_invocation = struct {
-        fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
-            if (a.path.module_qualifier) |amq| {
-                if (b.path.module_qualifier) |bmq| {
-                    if (!std.mem.eql(u8, amq, bmq)) return false;
-                } else {
-                    return false;
-                }
-            } else if (b.path.module_qualifier != null) {
-                return false;
-            }
-
-            if (a.path.segments.len != b.path.segments.len) return false;
-            for (a.path.segments, 0..) |seg, i| {
-                if (!std.mem.eql(u8, seg, b.path.segments[i])) return false;
-            }
-
-            if (a.args.len != b.args.len) return false;
-            for (a.args, 0..) |arg, i| {
-                const other = b.args[i];
-                if (!std.mem.eql(u8, arg.name, other.name)) return false;
-                if (arg.value.len > 0 and other.value.len > 0 and !std.mem.eql(u8, arg.value, other.value)) return false;
-            }
-            return true;
-        }
-    }.check;
-
-    // Use pointer match for real flows, value match for virtual flows.
+    // findContainingItem returns the parent flow — only pointer comparison is valid.
     const is_pointer_top = (invocation == &flow.invocation);
-    const is_top_level_for = is_pointer_top or is_same_invocation(&flow.invocation, invocation);
+    const is_top_level_for = is_pointer_top;
 
     // Verify we have the | each |> continuation for top-level
     var has_each = false;
@@ -825,37 +771,11 @@ const std = @import("std");
     else
         return .{ .transformed = .{ .program = program } };
 
-    const isSameInvocation = struct {
-        fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
-            if (a.path.module_qualifier) |amq| {
-                if (b.path.module_qualifier) |bmq| {
-                    if (!std.mem.eql(u8, amq, bmq)) return false;
-                } else {
-                    return false;
-                }
-            } else if (b.path.module_qualifier != null) {
-                return false;
-            }
-
-            if (a.path.segments.len != b.path.segments.len) return false;
-            for (a.path.segments, 0..) |seg, seg_i| {
-                if (!std.mem.eql(u8, seg, b.path.segments[seg_i])) return false;
-            }
-
-            if (a.args.len != b.args.len) return false;
-            for (a.args, 0..) |arg, arg_i| {
-                const other = b.args[arg_i];
-                if (!std.mem.eql(u8, arg.name, other.name)) return false;
-                if (arg.value.len > 0 and other.value.len > 0 and !std.mem.eql(u8, arg.value, other.value)) return false;
-            }
-            return true;
-        }
-    }.check;
-
     // Check if this is a top-level capture (flow.invocation IS the capture being transformed)
     // vs a pipeline case (capture is a step inside the flow's continuations)
+    // findContainingItem returns the parent flow — only pointer comparison is valid.
     const is_pointer_top = @intFromPtr(&flow.invocation) == @intFromPtr(invocation);
-    const is_virtual_top = !is_pointer_top and isSameInvocation(&flow.invocation, invocation);
+    const is_virtual_top = false; // removed with virtual sub-flows
 
     // Helper struct for transforming captured blocks
     // Defined early so both nested and top-level cases can use it

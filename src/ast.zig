@@ -1613,33 +1613,10 @@ pub const ASTNode = union(enum) {
                     if (&f.invocation == target_inv) {
                         return item;
                     }
-                    // Check in continuations
-                    if (findInContinuations(f.continuations, target_inv)) |cont| {
-                        // Build a virtual flow from the continuation so handlers
-                        // see the correct invocation and continuations.
-                        const virtual_item = allocator.create(Item) catch return item;
-                        const node_ptr: *const Node = @ptrCast(&cont.node);
-                        const inv = node_ptr.invocation;
-
-                        virtual_item.* = .{
-                            .flow = Flow{
-                                .invocation = inv,
-                                .continuations = cont.continuations,
-                                .annotations = &[_][]const u8{},
-                                .pre_label = null,
-                                .post_label = null,
-                                .super_shape = null,
-                                .inline_body = inv.inline_body,
-                                .preamble_code = null,
-                                .is_pure = f.is_pure,
-                                .is_transitively_pure = f.is_transitively_pure,
-                                .impl_of = null,
-                                .is_impl = false,
-                                .location = cont.location,
-                                .module = f.module,
-                            },
-                        };
-                        return virtual_item;
+                    // Check in continuations — return the original flow item
+                    // so transform handlers can search the full continuation tree
+                    if (findInContinuations(f.continuations, target_inv)) {
+                        return item;
                     }
                 },
                 .immediate_impl => {},
@@ -1655,23 +1632,19 @@ pub const ASTNode = union(enum) {
         return null;
     }
 
-    fn findInContinuations(conts: []const Continuation, target_inv: *const Invocation) ?*const Continuation {
+    fn findInContinuations(conts: []const Continuation, target_inv: *const Invocation) bool {
         for (conts) |*cont| {
-            // Check the node - need to get a pointer to the actual node, not a copy
-            if (cont.node != null) {
-                // Use @constCast to get a pointer to the optional's value
-                const node_ptr: *const Node = @ptrCast(&cont.node);
-                if (node_ptr.* == .invocation) {
-                    if (&node_ptr.invocation == target_inv) {
-                        return cont;
+            if (cont.node) |*node| {
+                if (node.* == .invocation) {
+                    if (&node.invocation == target_inv) {
+                        return true;
                     }
                 }
             }
-            // Check branch continuations
-            if (findInContinuations(cont.continuations, target_inv)) |found| {
-                return found;
+            if (findInContinuations(cont.continuations, target_inv)) {
+                return true;
             }
         }
-        return null;
+        return false;
     }
 };
