@@ -2055,6 +2055,18 @@ pub const VisitorEmitter = struct {
                                                 }
                                                 const indent_str = indent_buf[0..indent_pos];
 
+                                                // Emit source marker for subflow impl
+                                                if (flow.location.line > 0) {
+                                                    try self.code_emitter.writeIndent();
+                                                    try self.code_emitter.write("// >>> SUBFLOW: ");
+                                                    try self.code_emitter.write(flow.location.file);
+                                                    try self.code_emitter.write(":");
+                                                    var sf_line_buf: [32]u8 = undefined;
+                                                    const sf_line_str = try std.fmt.bufPrint(&sf_line_buf, "{}", .{flow.location.line});
+                                                    try self.code_emitter.write(sf_line_str);
+                                                    try self.code_emitter.write("\n");
+                                                }
+
                                                 const source_event_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
                                                 try emitter.emitSubflowContinuations(self.code_emitter, flow.continuations, 0, indent_str, self.all_items, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "main_module");
 
@@ -2301,6 +2313,17 @@ pub const VisitorEmitter = struct {
                             }
                             if (matches) {
                                 log.debug("    Found matching impl flow!\n", .{});
+                                // Emit source marker for subflow impl
+                                if (flow.location.line > 0) {
+                                    try self.code_emitter.writeIndent();
+                                    try self.code_emitter.write("// >>> SUBFLOW: ");
+                                    try self.code_emitter.write(flow.location.file);
+                                    try self.code_emitter.write(":");
+                                    var sf_loc_buf: [32]u8 = undefined;
+                                    const sf_loc_str = try std.fmt.bufPrint(&sf_loc_buf, "{}", .{flow.location.line});
+                                    try self.code_emitter.write(sf_loc_str);
+                                    try self.code_emitter.write("\n");
+                                }
                                 // Generate implicit input bindings for consistency with procs
                                 for (event.input.fields) |field| {
                                     try self.code_emitter.writeIndent();

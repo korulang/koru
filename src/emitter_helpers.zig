@@ -1772,6 +1772,23 @@ fn emitSubflowContinuationsWithDepth(
 
                 const binding_name = cont.binding orelse cont.branch;
 
+                // Emit source marker for subflow branch
+                if (cont.location.line > 0) {
+                    try emitter.write(indent);
+                    try emitter.write("    // >>> BRANCH: ");
+                    try emitter.write(cont.location.file);
+                    try emitter.write(":");
+                    var sf_branch_line_buf: [32]u8 = undefined;
+                    const sf_branch_line_str = try std.fmt.bufPrint(&sf_branch_line_buf, "{}", .{cont.location.line});
+                    try emitter.write(sf_branch_line_str);
+                    try emitter.write("  | ");
+                    try emitter.write(cont.branch);
+                    if (cont.binding) |b| {
+                        try emitter.write(" ");
+                        try emitter.write(b);
+                    }
+                    try emitter.write(" |>\n");
+                }
                 try emitter.write(indent);
                 try emitter.write("    .");
                 try writeBranchName(emitter, cont.branch);
