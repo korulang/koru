@@ -5037,6 +5037,23 @@ fn emitContinuationCase(
     defer if (destination) |dest| ctx.allocator.free(dest);
     defer if (matching_taps.len > 0) ctx.allocator.free(matching_taps);
 
+    // Emit source marker for branch
+    if (cont.location.line > 0) {
+        try emitter.writeIndent();
+        try emitter.write("// >>> BRANCH: ");
+        try emitter.write(cont.location.file);
+        try emitter.write(":");
+        var branch_line_buf: [32]u8 = undefined;
+        const branch_line_str = try std.fmt.bufPrint(&branch_line_buf, "{}", .{cont.location.line});
+        try emitter.write(branch_line_str);
+        try emitter.write("  | ");
+        try emitter.write(cont.branch);
+        if (cont.binding) |b| {
+            try emitter.write(" ");
+            try emitter.write(b);
+        }
+        try emitter.write(" |>\n");
+    }
     try emitter.writeIndent();
     try emitter.write(".");
     try writeBranchName(emitter, cont.branch);

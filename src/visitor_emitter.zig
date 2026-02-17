@@ -1084,6 +1084,27 @@ pub const VisitorEmitter = struct {
                     }
                 }
 
+                // Emit source marker for flow
+                if (flow.location.line > 0) {
+                    try self.code_emitter.writeIndent();
+                    try self.code_emitter.write("// >>> FLOW: ");
+                    try self.code_emitter.write(flow.location.file);
+                    try self.code_emitter.write(":");
+                    var flow_line_buf: [32]u8 = undefined;
+                    const flow_line_str = try std.fmt.bufPrint(&flow_line_buf, "{}", .{flow.location.line});
+                    try self.code_emitter.write(flow_line_str);
+                    try self.code_emitter.write("  ~");
+                    if (flow.invocation.path.module_qualifier) |mq| {
+                        try self.code_emitter.write(mq);
+                        try self.code_emitter.write(":");
+                    }
+                    for (flow.invocation.path.segments, 0..) |seg, idx| {
+                        if (idx > 0) try self.code_emitter.write(".");
+                        try self.code_emitter.write(seg);
+                    }
+                    try self.code_emitter.write("()\n");
+                }
+
                 // Emit flow function with appropriate name
                 try self.code_emitter.writeIndent();
                 try self.code_emitter.write("pub fn ");
@@ -2105,6 +2126,16 @@ pub const VisitorEmitter = struct {
                                 if (idx > 0) try self.code_emitter.write(".");
                                 try self.code_emitter.write(seg);
                             }
+                            // Append source location
+                            if (proc.location.line > 0) {
+                                try self.code_emitter.write("  [");
+                                try self.code_emitter.write(proc.location.file);
+                                try self.code_emitter.write(":");
+                                var proc_line_buf: [32]u8 = undefined;
+                                const proc_line_str = try std.fmt.bufPrint(&proc_line_buf, "{}", .{proc.location.line});
+                                try self.code_emitter.write(proc_line_str);
+                                try self.code_emitter.write("]");
+                            }
                             try self.code_emitter.write("\n");
 
                             // Collect module-level names to detect shadowing
@@ -2366,7 +2397,13 @@ pub const VisitorEmitter = struct {
                                     } else {
                                         // Void/pipeline continuations -- emit inline code + branch constructors
                                         try self.code_emitter.writeIndent();
-                                        try self.code_emitter.write("// >>> INLINE: transformed subflow\n");
+                                        try self.code_emitter.write("// >>> INLINE: transformed subflow  [");
+                                        try self.code_emitter.write(flow.location.file);
+                                        try self.code_emitter.write(":");
+                                        var inline_line_buf: [32]u8 = undefined;
+                                        const inline_line_str = try std.fmt.bufPrint(&inline_line_buf, "{}", .{flow.location.line});
+                                        try self.code_emitter.write(inline_line_str);
+                                        try self.code_emitter.write("]\n");
 
                                         var indent_buf: [64]u8 = undefined;
                                         var indent_pos: usize = 0;
