@@ -1,5 +1,0 @@
-main: start
-run_handler: starting
-main: run_handler returned
-main: got error
-main: done

@@ -1,9 +1,0 @@
-{
-  "name": "day01",
-  "version": "0.1.0",
-  "description": "A Koru application",
-  "paths": {
-    "src": "src",
-    "lib": "lib"
-  }
-}
