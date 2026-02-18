@@ -1,0 +1,19 @@
+// Library module: defines tick event and owns the loop
+
+const std = @import("std");
+
+~pub event tick { n: u32 }
+| next { n: u32 }
+| done
+
+~proc tick {
+    if (n < 5) {
+        return .{ .next = .{ .n = n + 1 } };
+    }
+    return .{ .done = .{} };
+}
+
+// The loop lives here - user code taps it
+~#loop tick(n: 0)
+| next v |> @loop(n: v.n)
+| done |> _

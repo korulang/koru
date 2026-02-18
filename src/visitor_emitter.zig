@@ -254,6 +254,7 @@ pub const VisitorEmitter = struct {
     current_module_name: ?[]const u8,  // Current module being emitted (for variant registry lookups)
     current_module_prefix: ?[]const u8,  // Current Zig module path prefix (e.g., "koru_orisha")
     module_comptime_flows: std.ArrayList(ComptimeFlowCall),  // Collected comptime flow calls from modules
+    module_runtime_flows: std.ArrayList([]const u8),  // Collected runtime flow calls from library modules
     koru_start_flow_name: ?[]const u8,  // Name of koru:start meta-event flow (if present)
     koru_end_flow_name: ?[]const u8,    // Name of koru:end meta-event flow (if present)
 
@@ -305,6 +306,7 @@ pub const VisitorEmitter = struct {
             .current_module_name = null,  // Set during module emission
             .current_module_prefix = null,
             .module_comptime_flows = .empty,
+            .module_runtime_flows = .empty,
             .koru_start_flow_name = null,  // Will be set if koru:start flow is emitted
             .koru_end_flow_name = null,    // Will be set if koru:end flow is emitted
         };
@@ -901,6 +903,13 @@ pub const VisitorEmitter = struct {
                     }
                 }
 
+                // Call runtime flows from library modules
+                for (self.module_runtime_flows.items) |call| {
+                    try self.code_emitter.write("    ");
+                    try self.code_emitter.write(call);
+                    try self.code_emitter.write("();\n");
+                }
+
                 // Call koru:end meta-event flow if it exists (fires profiler footer, etc.)
                 if (self.koru_end_flow_name) |_| {
                     try self.code_emitter.write("    main_module.koru_end_flow();\n");
@@ -1135,6 +1144,28 @@ pub const VisitorEmitter = struct {
                         }
                     } else {
                         try self.code_emitter.write("flow");
+                        // Record runtime library module flows so main() can call them.
+                        // Skip if this module is the main module re-emitted via a circular import:
+                        // e.g., main = "input.kz", library module = "app.input" → skip to avoid duplicate calls.
+                        if (self.current_module_prefix) |mod_prefix| {
+                            const is_main_reimport = if (self.main_module_name) |mmn|
+                                if (self.current_module_name) |cmn| blk: {
+                                    const last_seg = if (std.mem.lastIndexOf(u8, cmn, ".")) |pos| cmn[pos + 1 ..] else cmn;
+                                    break :blk std.mem.eql(u8, last_seg, mmn);
+                                } else false
+                            else false;
+
+                            if (!is_main_reimport) {
+                                var call_buf: std.ArrayList(u8) = .empty;
+                                try call_buf.appendSlice(self.allocator, mod_prefix);
+                                try call_buf.appendSlice(self.allocator, ".flow");
+                                var flow_num_buf: [32]u8 = undefined;
+                                const flow_num_str = try std.fmt.bufPrint(&flow_num_buf, "{}", .{self.flow_counter});
+                                try call_buf.appendSlice(self.allocator, flow_num_str);
+                                const call_str = try call_buf.toOwnedSlice(self.allocator);
+                                try self.module_runtime_flows.append(self.allocator, call_str);
+                            }
+                        }
                     }
                     var num_buf: [32]u8 = undefined;
                     const num_str = try std.fmt.bufPrint(&num_buf, "{}", .{self.flow_counter});

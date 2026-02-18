@@ -1,0 +1,15 @@
+// User code: taps tick from the counter library
+// The loop lives in counter.kz - this just observes it
+
+~import "$std/taps"
+~import "$app/counter"
+
+const std = @import("std");
+
+~event log { n: u32 }
+~proc log {
+    std.debug.print("tick {}\n", .{n});
+}
+
+~tap(app.counter:tick -> *)
+| next v |> log(n: v.n)

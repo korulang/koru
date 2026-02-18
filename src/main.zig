@@ -900,7 +900,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\    // Apply compiler passes
             \\    // Each pass takes PROGRAM_AST pointer and current AST pointer
             \\    // Returns same pointer if no changes, or new heap-allocated AST if optimized
-            \\    var current_ast: *const Program = &PROGRAM_AST;
+            \\    const current_ast: *const Program = &PROGRAM_AST;
             \\
             \\    // DUMP POINT 1: Original AST at backend entry
             \\    dumpAST(&PROGRAM_AST, "1-backend-start", compile_allocator);
