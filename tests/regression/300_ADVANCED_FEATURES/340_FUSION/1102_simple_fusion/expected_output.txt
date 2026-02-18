@@ -1,3 +1,0 @@
-Result: 90
-Expected: 90
-✅ Calculation correct

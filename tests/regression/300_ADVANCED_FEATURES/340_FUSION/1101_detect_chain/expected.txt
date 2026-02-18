@@ -1,2 +1,0 @@
-Sum: 30, Product: 90
-[LOG] Done

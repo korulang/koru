@@ -540,21 +540,6 @@ pub fn build(b: *std.Build) void {
     dead_strip_module.addImport("ast", ast_module);
     exe.root_module.addImport("dead_strip", dead_strip_module);
 
-    // Fusion Optimizer module (EXPERIMENTAL)
-    const fusion_optimizer_module = b.createModule(.{
-        .root_source_file = b.path("src/fusion_optimizer.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    fusion_optimizer_module.addImport("ast", ast_module);
-    fusion_optimizer_module.addImport("ast_functional", ast_functional_module);
-    fusion_optimizer_module.addImport("fusion_detector.zig", b.createModule(.{
-        .root_source_file = b.path("src/fusion_detector.zig"),
-        .target = target,
-        .optimize = optimize,
-    }));
-    exe.root_module.addImport("fusion_optimizer.zig", fusion_optimizer_module);
-
     // Transform Collector module for two-layer AST transformation
     const transform_collector_module = b.createModule(.{
         .root_source_file = b.path("src/transform_collector.zig"),

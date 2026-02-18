@@ -1,3 +1,0 @@
-compute(42)
-[TAP] Transition: compute -> format (branch: result)
-format(84)

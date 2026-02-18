@@ -7,8 +7,6 @@ const shape_checker = @import("shape_checker");
 const ShapeChecker = shape_checker.ShapeChecker;
 const purity_checker = @import("purity_checker.zig");
 const PurityChecker = purity_checker.PurityChecker;
-const fusion_detector = @import("fusion_detector.zig");
-const FusionDetector = fusion_detector.FusionDetector;
 const compiler_feature_flags = @import("compiler_config");
 // Old Emitter no longer needed - using ComptimeEmitter
 const ast = @import("ast");
@@ -33,7 +31,7 @@ const codegen_utils = @import("codegen_utils");
 const emitter_helpers = @import("emitter_helpers");
 const ccp = @import("ccp.zig");
 
-const version = "0.1.0";
+const version = "0.1.3";
 
 /// Write a branch name, escaping Zig keywords with @"..."
 fn writeBranchName(writer: anytype, name: []const u8) !void {
@@ -192,7 +190,6 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
         try writer.writeAll("// Metacircular Code Generator\n\n");
 
         // Import libraries used by multiple compiler procs
-        try writer.writeAll("const fusion_optimizer = @import(\"fusion_optimizer\");\n");
         try writer.writeAll("const ast_functional = @import(\"ast_functional\");\n");
         // Library-first architecture: Import reusable build.zig generation library
         try writer.writeAll("const emit_build_zig = @import(\"emit_build_zig\");\n");
@@ -900,9 +897,6 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\    // Detect this case and default to "a.out" instead of overwriting the source!
             \\    const output_exe = if (args.len > 1 and !__koru_std.mem.endsWith(u8, args[1], ".kz")) args[1] else "a.out";
             \\
-            \\    // Check if fusion is enabled
-            \\    const fusion_enabled = CompilerEnv.hasFlag("fusion");
-            \\
             \\    // Apply compiler passes
             \\    // Each pass takes PROGRAM_AST pointer and current AST pointer
             \\    // Returns same pointer if no changes, or new heap-allocated AST if optimized
@@ -910,10 +904,6 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\
             \\    // DUMP POINT 1: Original AST at backend entry
             \\    dumpAST(&PROGRAM_AST, "1-backend-start", compile_allocator);
-            \\
-            \\    if (fusion_enabled) {
-            \\        current_ast = try fusion_optimizer.optimize(allocator, &PROGRAM_AST, current_ast);
-            \\    }
             \\
             \\    // More passes can go here...
             \\
@@ -4934,7 +4924,7 @@ pub fn main() !void {
     defer parse_arena.deinit();
     const parse_allocator = parse_arena.allocator();
 
-    // Arena allocator for compilation phase - purity checking, fusion detection,
+    // Arena allocator for compilation phase - purity checking,
     // code generation strings, etc. Freed after output file is written
     var compile_arena = std.heap.ArenaAllocator.init(allocator);
     defer compile_arena.deinit();
@@ -6056,30 +6046,6 @@ pub fn main() !void {
         }
         return err;
     };
-
-    // Fusion detection pass (experimental!)
-    var fusion_detect = FusionDetector.init(compile_allocator);
-    defer fusion_detect.deinit();
-    var fusion_report = try fusion_detect.detect(&source_file);
-    defer fusion_report.deinit();
-
-    if (fusion_report.total_chains > 0) {
-        log.debug("\n🔥 FUSION OPPORTUNITIES DETECTED:\n", .{});
-        log.debug("   Found {} fusable chain(s) with {} total events\n", .{
-            fusion_report.total_chains,
-            fusion_report.total_events_in_chains,
-        });
-
-        for (fusion_report.opportunities.items) |opp| {
-            log.debug("   📍 In {s}: ", .{opp.location});
-            for (opp.chain, 0..) |event, idx| {
-                if (idx > 0) log.debug(" -> ", .{});
-                log.debug("{s}", .{event});
-            }
-            log.debug(" ({} events)\n", .{opp.chain.len});
-        }
-        log.debug("\n", .{});
-    }
 
     // If check-only, we're done
     if (check_only) {

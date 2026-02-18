@@ -390,23 +390,6 @@ pub const CompilerContext = struct {
     visitor_emitter_module.addImport("annotation_parser", annotation_parser_module);
     visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
 
-    // Fusion detector and optimizer
-    const fusion_detector_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/fusion_detector.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    fusion_detector_module.addImport("ast", ast_module);
-
-    const fusion_optimizer_module = b.createModule(.{
-        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/fusion_optimizer.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    fusion_optimizer_module.addImport("ast", ast_module);
-    fusion_optimizer_module.addImport("ast_functional", ast_functional_module);
-    fusion_optimizer_module.addImport("fusion_detector.zig", fusion_detector_module);
-
     // Build.zig emission
     const emit_build_zig_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/emit_build_zig.zig" },
@@ -447,7 +430,6 @@ pub const CompilerContext = struct {
     exe.root_module.addImport("tap_transformer", tap_transformer_module);
     exe.root_module.addImport("visitor_emitter", visitor_emitter_module);
     exe.root_module.addImport("parser", parser_module);
-    exe.root_module.addImport("fusion_optimizer", fusion_optimizer_module);
     exe.root_module.addImport("emit_build_zig", emit_build_zig_module);
     exe.root_module.addImport("shape_checker", shape_checker_module);
     exe.root_module.addImport("flow_checker", flow_checker_module);
@@ -487,12 +469,6 @@ pub const CompilerContext = struct {
 
 
 ~[comptime|norun]pub event flag.declare { source: Source }
-
-~flag.declare {
-  "name": "fusion",
-  "description": "Enable event fusion optimization for zero-cost abstractions",
-  "type": "boolean"
-}
 
 ~flag.declare {
   "name": "ccp",

@@ -6,7 +6,6 @@
 // Pipeline order:
 //   1. optimize_kernels  - Kernel operation fusion (pairwise + position update)
 //   2. optimize_loops    - Recursive patterns → native for loops
-//   3. optimize_fusion   - Pure event chain fusion
 //
 // Usage:
 //   Runs automatically as part of compiler pipeline.
@@ -17,10 +16,9 @@
 ~import "$std/compiler"
 ~import "$std/optimizations/kernels"
 ~import "$std/optimizations/loops"
-~import "$std/optimizations/fusion"
 
 // Optimization segment: AST transformations for performance (abstract, can be overridden)
-// This is where we create IR nodes (NativeLoop, FusedEvent, etc.)
+// This is where we create IR nodes (NativeLoop, etc.)
 ~[comptime|abstract] pub event optimize { ctx: std.compiler:CompilerContext }
 | ctx std.compiler:CompilerContext
 
@@ -33,5 +31,4 @@
 // Default optimization pipeline - chains all optimization passes
 ~optimize = std.optimizations.kernels:optimize(ctx)
 | ctx c1 |> std.optimizations.loops:optimize(ctx: c1)
-  | ctx c2 |> std.optimizations.fusion:optimize(ctx: c2)
-    | ctx c3 |> ctx c3
+  | ctx c2 |> ctx c2

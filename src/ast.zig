@@ -329,10 +329,6 @@ pub const ProcDecl = struct {
     is_pure: bool = false,  // True if marked ~[pure] or inline-only pattern
     is_transitively_pure: bool = false,  // True if pure AND all called events are transitively pure
 
-    // EXPERIMENTAL: Optimization provenance tracking
-    derived_from: ?*const ProcDecl = null,  // Source proc this was optimized from
-    optimization_applied: ?[]const u8 = null,  // "fusion", "inline", etc.
-
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
     module: []const u8,
@@ -345,7 +341,6 @@ pub const ProcDecl = struct {
         }
         allocator.free(@constCast(self.annotations));
         if (self.target) |t| allocator.free(t);
-        if (self.optimization_applied) |opt| allocator.free(opt);
         allocator.free(self.module);
     }
 };
