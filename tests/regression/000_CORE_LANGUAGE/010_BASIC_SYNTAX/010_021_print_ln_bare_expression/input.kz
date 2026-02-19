@@ -1,0 +1,15 @@
+// Test: print.ln bare expression shorthand
+//
+// std.io:print.ln(expr:fmt) works without "{{ }}" wrapping.
+// A non-quoted argument is a bare expression, not a string literal.
+
+~import "$std/io"
+
+~event compute {}
+| done { count: i32, label: []const u8 }
+
+~compute = done { count: 7, label: "hello" }
+
+~compute()
+| done r |> std.io:print.ln(r.count:d)
+    |> std.io:print.ln(r.label:s)

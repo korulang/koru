@@ -299,11 +299,20 @@ const std = @import("std");
         "while (_lo < _hi) { const _t = _buf[_lo]; _buf[_lo] = _buf[_hi]; _buf[_hi] = _t; _lo += 1; _hi -= 1; } " ++
         "} __kz_w(_buf[0.._n]); } }; ";
 
-    // Skip leading quote if present
-    const start: usize = if (expr.len > 0 and expr[0] == '"') 1 else 0;
-    // Skip trailing quote if present
-    const end: usize = if (expr.len > 0 and expr[expr.len - 1] == '"') expr.len - 1 else expr.len;
-    const content = expr[start..end];
+    // Detect string literal vs bare expression
+    const is_string_literal = expr.len > 0 and expr[0] == '"';
+    // Skip leading/trailing quotes if string literal
+    const start: usize = if (is_string_literal) 1 else 0;
+    const end: usize = if (is_string_literal and expr[expr.len - 1] == '"') expr.len - 1 else expr.len;
+    const raw_content = expr[start..end];
+    // Bare expression (not a string literal): wrap as {{ raw_content }} for single-value interpolation
+    const content = if (!is_string_literal and raw_content.len > 0) blk: {
+        var wrapped = std.ArrayList(u8).initCapacity(allocator, raw_content.len + 6) catch unreachable;
+        wrapped.appendSlice(allocator, "{{ ") catch unreachable;
+        wrapped.appendSlice(allocator, raw_content) catch unreachable;
+        wrapped.appendSlice(allocator, " }}") catch unreachable;
+        break :blk wrapped.items;
+    } else raw_content;
 
     while (i < content.len) {
         // Look for {% if var %}...{% endif %} control blocks
