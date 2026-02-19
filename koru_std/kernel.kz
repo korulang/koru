@@ -765,72 +765,67 @@ const std = @import("std");
         }
     }.call;
 
-    // Read init source from the kernel:init invocation in the original AST.
-    // If parser didn't capture source_value, this stays null and we fall back to loops.
     const init_source = extractKernelInitSource(kernel_init_invocation);
     const known_len = if (init_source) |text| countInitElements(text) else null;
 
-
-    // Ensure body_code ends with semicolon (single-line bodies may not have one)
+    // Ensure body_code ends with semicolon
     const body_trimmed = std.mem.trimRight(u8, body_code.items, " \t\n\r");
     const needs_semi = body_trimmed.len == 0 or body_trimmed[body_trimmed.len - 1] != ';';
     if (needs_semi) {
         body_code.append(allocator, ';') catch unreachable;
     }
 
-    var code_buf = std.ArrayList(u8).initCapacity(allocator, body_code.items.len + 256) catch unreachable;
-    defer code_buf.deinit(allocator);
+    // ========================================================================
+    // STEP 3: Emit noalias helper + N²/2 loop (true pairwise semantics)
+    //
+    // self_name and other_name (already unique hashed identifiers from step 1)
+    // become the parameter names of an inline fn with:
+    //   noalias self_name: *@TypeOf(ptr[0])  — writable, unique
+    //   noalias other_name: *@TypeOf(ptr[0]) — writable, unique (symmetric updates allowed)
+    //
+    // Both pointers are mutable because pairwise is a symmetric interaction —
+    // both elements of a pair can be updated in one visit.
+    //
+    // noalias is valid because i < j guarantees ptr[i] != ptr[j].
+    // LLVM can eliminate aliasing checks and optimize reads/writes independently.
+    //
+    // GPU translation: strip k.other writes, emit N² per-element loop.
+    // The symmetric writes become implicit when j is the outer element.
+    // ========================================================================
+    const fn_name = std.fmt.allocPrint(allocator, "__koru_pair_{d}", .{hash}) catch unreachable;
 
-    // NEW: Inline code directly without struct wrapper
-    // Transform self_name -> ptr[i] and other_name -> ptr[j] in body
-    var inlined_body = std.ArrayList(u8).initCapacity(allocator, body_code.items.len * 2) catch unreachable;
-    var j_idx: usize = 0;
-    while (j_idx < body_code.items.len) {
-        if (j_idx + other_name.len <= body_code.items.len and std.mem.eql(u8, body_code.items[j_idx..j_idx+other_name.len], other_name)) {
-            inlined_body.appendSlice(allocator, ptr_name) catch unreachable;
-            inlined_body.appendSlice(allocator, "[j]") catch unreachable;
-            j_idx += other_name.len;
-        } else if (j_idx + self_name.len <= body_code.items.len and std.mem.eql(u8, body_code.items[j_idx..j_idx+self_name.len], self_name)) {
-            inlined_body.appendSlice(allocator, ptr_name) catch unreachable;
-            inlined_body.appendSlice(allocator, "[i]") catch unreachable;
-            j_idx += self_name.len;
-        } else {
-            inlined_body.append(allocator, body_code.items[j_idx]) catch unreachable;
-            j_idx += 1;
-        }
-    }
-
-    if (known_len) |len| {
-        const loop_code = std.fmt.allocPrint(
-            allocator,
+    const code = if (known_len) |len|
+        std.fmt.allocPrint(allocator,
             \\const {0s} = {1s}.ptr;
-            \\for (0..{2d}) |i| {{
-            \\    for (i + 1..{2d}) |j| {{
-            \\        {3s}
+            \\const {4s} = struct {{
+            \\    inline fn call(noalias {2s}: *@TypeOf({0s}[0]), noalias {3s}: *@TypeOf({0s}[0])) void {{
+            \\        {5s}
+            \\    }}
+            \\}};
+            \\for (0..{6d}) |i| {{
+            \\    for (i + 1..{6d}) |j| {{
+            \\        {4s}.call(&{0s}[i], &{0s}[j]);
             \\    }}
             \\}}
             ,
-            .{ ptr_name, binding_name, len, inlined_body.items }
-        ) catch unreachable;
-        defer allocator.free(loop_code);
-        code_buf.appendSlice(allocator, loop_code) catch unreachable;
-    } else {
-        const loop_code = std.fmt.allocPrint(
-            allocator,
+            .{ ptr_name, binding_name, self_name, other_name, fn_name, body_code.items, len }
+        ) catch unreachable
+    else
+        std.fmt.allocPrint(allocator,
             \\const {0s} = {1s}.ptr;
+            \\const {4s} = struct {{
+            \\    inline fn call(noalias {2s}: *@TypeOf({0s}[0]), noalias {3s}: *@TypeOf({0s}[0])) void {{
+            \\        {5s}
+            \\    }}
+            \\}};
             \\for (0..{1s}.len) |i| {{
             \\    for (i + 1..{1s}.len) |j| {{
-            \\        {2s}
+            \\        {4s}.call(&{0s}[i], &{0s}[j]);
             \\    }}
             \\}}
             ,
-            .{ ptr_name, binding_name, inlined_body.items }
+            .{ ptr_name, binding_name, self_name, other_name, fn_name, body_code.items }
         ) catch unreachable;
-        defer allocator.free(loop_code);
-        code_buf.appendSlice(allocator, loop_code) catch unreachable;
-    }
-
-    const code = code_buf.toOwnedSlice(allocator) catch unreachable;
 
     // Detect outer range: only true if an explicit (range) expression was provided,
     // e.g. pairwise(0..N) { ... }.

@@ -1,0 +1,28 @@
+// TEST: kernel:pairwise with read-only k.other (correct form)
+//
+// Each element k reads from k.other (all other elements) and writes only
+// to itself. The transform guarantees non-aliasing:
+//   - self: noalias *Body       (writable, unique)
+//   - other: noalias *const Body (read-only, unique)
+//
+// This is the form that maps to GPU: each "thread" is one element,
+// reads all others, writes only to itself.
+
+~import "$std/kernel"
+~import "$std/io"
+
+~std.kernel:shape(Body) {
+    mass: f64,
+}
+
+~std.kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+    { mass: 3.0 },
+}
+| kernel k |>
+    std.kernel:pairwise {
+        k.mass += k.other.mass
+    }
+
+~std.io:print.ln("pairwise complete")

@@ -4,16 +4,12 @@
 // Each body exerts gravitational force on every other body.
 //
 // Algorithm (pairwise):
-//   For each pair (i, j) where i < j:
-//     dx = x[j] - x[i]
-//     dy = y[j] - y[i]
+//   For each unique pair (i, j) where i < j:
+//     dx = x[j] - x[i], dy = y[j] - y[i]
 //     dist_sq = dx*dx + dy*dy + softening
 //     force = mass[i] * mass[j] / dist_sq
-//     // Update velocities (simplified - just accumulate force for now)
-//     vx[i] += force * dx
-//     vx[j] -= force * dx
-//     vy[i] += force * dy
-//     vy[j] -= force * dy
+//     vx[i] += force * dx,  vy[i] += force * dy   (body i)
+//     vx[j] -= force * dx,  vy[j] -= force * dy   (body j, symmetric)
 
 ~import "$std/kernel"
 ~import "$std/io"

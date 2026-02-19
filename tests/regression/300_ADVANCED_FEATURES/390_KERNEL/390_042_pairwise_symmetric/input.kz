@@ -1,0 +1,25 @@
+// TEST: kernel:pairwise symmetric updates (both k and k.other writable)
+//
+// pairwise = true N²/2 semantics: each unique pair (i,j) visited once.
+// Both elements of the pair can be updated in one visit.
+// noalias on both pointers — LLVM knows ptr[i] and ptr[j] are distinct.
+//
+// This is the correct model for physics: force on i from j
+// is equal and opposite to force on j from i.
+
+~import "$std/kernel"
+~import "$std/io"
+
+~std.kernel:shape(Body) {
+    mass: f64,
+}
+
+~std.kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+    { mass: 3.0 },
+}
+| kernel k |>
+    std.kernel:pairwise { k.mass += k.other.mass; k.other.mass += k.mass; }
+
+~std.io:print.ln("pairwise symmetric complete")
