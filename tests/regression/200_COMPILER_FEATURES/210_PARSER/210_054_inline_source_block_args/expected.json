@@ -200,7 +200,20 @@
                 "args": [
                     {
                         "name": "expr",
-                        "value": "show"
+                        "value": "show",
+                        "expression_value": {
+                            "text": "show",
+                            "location": {
+                                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                                "line": 28,
+                                "col": 0
+                            },
+                            "scope": {
+                                "bindings": [
+
+                                ]
+                            }
+                        }
                     },
                     {
                         "name": "source",
@@ -277,7 +290,20 @@
                             "args": [
                                 {
                                     "name": "expr",
-                                    "value": "show"
+                                    "value": "show",
+                                    "expression_value": {
+                                        "text": "show",
+                                        "location": {
+                                            "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
+                                            "line": 33,
+                                            "col": 0
+                                        },
+                                        "scope": {
+                                            "bindings": [
+
+                                            ]
+                                        }
+                                    }
                                 },
                                 {
                                     "name": "source",

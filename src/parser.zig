@@ -3207,70 +3207,24 @@ pub const Parser = struct {
 
             const source_text = lexer.trim(invocation_part[b_idx + 1 .. close_brace_idx.?]);
 
-            // Parse the event path (and args if present)
-            var parsed_path: ast.DottedPath = undefined;
-            var existing_args: []const ast.Arg = &[_]ast.Arg{};
-
-            if (std.mem.indexOf(u8, before_brace, "(")) |paren_idx| {
-                const event_name = lexer.trim(before_brace[0..paren_idx]);
-                parsed_path = try lexer.parseQualifiedPath(self.allocator, event_name, ast);
-
-                // Find the matching closing parenthesis for this opening one
-                var depth: usize = 1;
-                var args_end = paren_idx + 1;
-                while (args_end < before_brace.len and depth > 0) : (args_end += 1) {
-                    if (before_brace[args_end] == '(') depth += 1;
-                    if (before_brace[args_end] == ')') depth -= 1;
-                }
-
-                if (depth != 0) {
-                    try self.reporter.addError(
-                        .PARSE001,
-                        self.current,
-                        0,
-                        "Source block invocation has unclosed '('",
-                        .{},
-                    );
-                    return error.ParseError;
-                }
-
-                const args_str = before_brace[paren_idx..args_end];
-                const parsed_args = try lexer.parseArgs(self.allocator, args_str);
-                defer self.allocator.free(parsed_args);
-
-                var args_list = try std.ArrayList(ast.Arg).initCapacity(self.allocator, parsed_args.len);
-                defer args_list.deinit(self.allocator);
-                for (parsed_args) |arg| {
-                    try args_list.append(self.allocator, ast.Arg{
-                        .name = arg.name,
-                        .value = arg.value,
-                    });
-                }
-
-                existing_args = try args_list.toOwnedSlice(self.allocator);
-            } else {
-                parsed_path = try lexer.parseQualifiedPath(self.allocator, before_brace, ast);
-            }
+            // Parse the base invocation (before the brace) via the normal path so that
+            // expr-remapping, expression_value capture, and all other arg processing
+            // happens correctly. before_brace has no { so this won't recurse.
+            const base_invocation = try self.parseEventInvocation(before_brace);
 
             // Build path string for registry lookup
-            const path_str = try self.pathToString(parsed_path);
+            const path_str = try self.pathToString(base_invocation.path);
             defer self.allocator.free(path_str);
 
             // Look up event type
             if (self.registry.getEventType(path_str)) |event_type| {
-                // Create base invocation with no args
-                const base_invocation = ast.Invocation{
-                    .path = parsed_path,
-                    .args = existing_args,
-                };
-
                 // Create invocation with implicit Source parameter (no phantom type)
                 return try self.createImplicitSourceInvocation(base_invocation, source_text, null, // No phantom type for bare source blocks
                     event_type);
             } else {
                 // Event not found in registry - create source arg manually
-                var args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, existing_args.len + 1);
-                for (existing_args) |arg| {
+                var args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, base_invocation.args.len + 1);
+                for (base_invocation.args) |arg| {
                     try args.append(self.allocator, arg);
                 }
                 const source_obj = try self.allocator.create(ast.Source);
@@ -3286,7 +3240,7 @@ pub const Parser = struct {
                     .source_value = source_obj,
                 });
                 return ast.Invocation{
-                    .path = parsed_path,
+                    .path = base_invocation.path,
                     .args = try args.toOwnedSlice(self.allocator),
                 };
             }

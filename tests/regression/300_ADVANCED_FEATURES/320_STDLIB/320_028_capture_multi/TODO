@@ -1,1 +1,0 @@
-Feature: ~capture with multi-field struct accumulator (sum + max in one pass)
