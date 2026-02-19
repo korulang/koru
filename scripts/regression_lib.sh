@@ -732,15 +732,21 @@ EOF
                             cat "$test_dir/backend.err" | sed 's/^/  /'
                             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                         else
-                            # Normal mode: show truncated error (6 lines around errors)
-                            ERROR_LINES=$(grep -A 2 "error:" "$test_dir/backend.err" | head -6)
-                            if [ -n "$ERROR_LINES" ]; then
-                                echo "$ERROR_LINES" | sed 's/^/  /'
-                                echo "  (Use --verbose to see full stderr output)"
-                            else
-                                echo "  Error: $(head -1 "$test_dir/backend.err")"
-                                echo "  (Use --verbose to see full stderr output)"
+                            # Normal mode: KORU error codes first, then coordination summary
+                            KORU_ERRORS=$(grep "error\[KORU[0-9]*\]:" "$test_dir/backend.err" | head -3)
+                            SUMMARY=$(grep "Compiler coordination error:" "$test_dir/backend.err" | head -1)
+                            ZIG_ERRORS=$(grep "output_emitted\.zig.*error:\|error:.*output_emitted\.zig" "$test_dir/backend.err" | head -3)
+                            if [ -n "$KORU_ERRORS" ]; then
+                                echo "$KORU_ERRORS" | sed 's/^/  ❌ /'
                             fi
+                            if [ -n "$SUMMARY" ]; then
+                                echo "  $SUMMARY"
+                            elif [ -n "$ZIG_ERRORS" ]; then
+                                echo "$ZIG_ERRORS" | sed 's/^/  /'
+                            elif [ -z "$KORU_ERRORS" ]; then
+                                echo "  Error: $(head -1 "$test_dir/backend.err")"
+                            fi
+                            echo "  (Use --verbose or: cat $test_dir/backend.err)"
                         fi
                     fi
                     # Save output_emitted.zig for debugging even on failure
@@ -768,14 +774,20 @@ EOF
                     cat "$test_dir/compile_backend.err" | sed 's/^/  /'
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 else
-                    # Normal mode: show truncated error (8 lines around backend.zig errors)
-                    ERROR_LINES=$(grep -B 1 "error:" "$test_dir/compile_backend.err" | grep -A 1 "backend.zig" | head -8)
-                    if [ -n "$ERROR_LINES" ]; then
-                        echo "$ERROR_LINES" | sed 's/^/  /'
-                        echo "  (Use --verbose to see full stderr output)"
+                    # Normal mode: prefer output_emitted.zig errors (user code) over backend machinery
+                    EMITTED_ERRORS=$(grep "output_emitted\.zig.*error:" "$test_dir/compile_backend.err" | head -4)
+                    if [ -n "$EMITTED_ERRORS" ]; then
+                        echo "$EMITTED_ERRORS" | sed 's/^/  /'
+                        echo "  (Use --verbose or: cat $test_dir/compile_backend.err)"
                     else
-                        echo "  Error: $(head -3 "$test_dir/compile_backend.err")"
-                        echo "  (Use --verbose to see full stderr output)"
+                        # Fall back to any error lines referencing known files
+                        ERROR_LINES=$(grep "error:" "$test_dir/compile_backend.err" | grep -v "^--$\|build command failed" | head -4)
+                        if [ -n "$ERROR_LINES" ]; then
+                            echo "$ERROR_LINES" | sed 's/^/  /'
+                        else
+                            head -3 "$test_dir/compile_backend.err" | sed 's/^/  /'
+                        fi
+                        echo "  (Use --verbose or: cat $test_dir/compile_backend.err)"
                     fi
                 fi
             fi
