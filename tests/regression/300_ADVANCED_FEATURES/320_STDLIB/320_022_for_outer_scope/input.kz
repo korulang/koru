@@ -24,13 +24,11 @@ const std = @import("std");
     return .{ .result = .{ .count = 3, .items = .{ 10, 20, 30, 40, 50 } } };
 }
 
-// Event to process items
+// Event to process items (void - no branches, for use inside for loop)
 ~event process_item { value: i32 }
-| done {}
 
 ~proc process_item {
     std.debug.print("Processing: {d}\n", .{value});
-    return .{ .done = .{} };
 }
 
 // The critical pattern: ~for in pipeline with outer scope reference

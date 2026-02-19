@@ -4650,6 +4650,18 @@ fn emitContinuationList(
     if (continuations.len == 1) {
         const cont = &continuations[0];
 
+        // Special case: |? catch-all as the sole continuation (all branches optional).
+        // There is no "?" field on the union — every result IS an optional branch, so
+        // the body always fires unconditionally.  Discard the result and execute directly.
+        if (cont.is_catchall and std.mem.eql(u8, cont.branch, "?") and cont.catchall_metatype == null) {
+            try emitter.writeIndent();
+            try emitter.write("_ = &");
+            try emitter.write(prev_result);
+            try emitter.write(";\n");
+            try emitContinuationBody(emitter, ctx, cont, result_counter);
+            return;
+        }
+
         // Use explicit binding if provided, otherwise generate unique name to avoid collisions
         // (multiple events may have same branch name like ".done")
         // Special case: if binding is "_" (discard), treat as no binding
