@@ -915,9 +915,254 @@ const std = @import("std");
 }
 
 // ============================================================================
-// FUTURE: kernel.self, kernel.reduce, kernel.cross
+// KERNEL.SELF - Per-element operation over kernel data (TRANSFORM)
+// ============================================================================
+//
+// Iterates over every element individually.
+// k.X refers to the current element (no k.other).
+//
+// Example:
+//   std.kernel:self { k.vel += k.force * dt }
+//
+// Generated code:
+//   const ptr = k.ptr;
+//   for (0..N) |i| {
+//       ptr[i].vel += ptr[i].force * dt;
+//   }
+
+~[comptime|transform]pub event self {
+    expr: Expression,
+    source: Source,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc self {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        @panic("kernel.self: expected flow item");
+
+    const SearchResult = struct {
+        binding_name: []const u8,
+        kernel_init_invocation: ?*const ast.Invocation,
+        sub_continuations: []const ast.Continuation,
+    };
+
+    const findInvocationRecursive = struct {
+        fn searchContinuations(
+            continuations: []const ast.Continuation,
+            target_inv: *const ast.Invocation,
+            owner_invocation: ?*const ast.Invocation,
+            parent_binding: ?[]const u8,
+            kernel_init_invocation: ?*const ast.Invocation,
+        ) ?SearchResult {
+            for (continuations) |*cont| {
+                var effective_binding = parent_binding;
+                var effective_kernel_init = kernel_init_invocation;
+                if (std.mem.eql(u8, cont.branch, "kernel")) {
+                    effective_binding = cont.binding orelse "k";
+                    if (owner_invocation) |inv| {
+                        effective_kernel_init = inv;
+                    }
+                }
+                if (cont.node) |*step| {
+                    if (step.* == .invocation) {
+                        if (&step.invocation == target_inv) {
+                            return SearchResult{
+                                .binding_name = effective_binding orelse "k",
+                                .kernel_init_invocation = effective_kernel_init,
+                                .sub_continuations = cont.continuations,
+                            };
+                        }
+                    }
+                }
+                const next_owner_invocation = if (cont.node) |*step| blk: {
+                    if (step.* == .invocation) break :blk &step.invocation;
+                    break :blk null;
+                } else null;
+                if (searchContinuations(cont.continuations, target_inv, next_owner_invocation, effective_binding, effective_kernel_init)) |result| {
+                    return result;
+                }
+            }
+            return null;
+        }
+
+        fn searchItems(
+            items: []const ast.Item,
+            target_inv: *const ast.Invocation,
+        ) ?SearchResult {
+            for (items) |*it| {
+                switch (it.*) {
+                    .flow => |*f| {
+                        if (searchContinuations(f.continuations, target_inv, &f.invocation, null, null)) |result| {
+                            return result;
+                        }
+                    },
+                    .module_decl => |*mod| {
+                        if (searchItems(mod.items, target_inv)) |result| {
+                            return result;
+                        }
+                    },
+                    else => {},
+                }
+            }
+            return null;
+        }
+    }.searchItems;
+
+    const search_result = findInvocationRecursive(program.items, invocation) orelse {
+        @panic("kernel.self: could not find invocation in AST");
+    };
+
+    const binding_name = search_result.binding_name;
+    const kernel_init_invocation = search_result.kernel_init_invocation;
+
+    // Unique identifiers to avoid collisions in generated Zig
+    var hash: u32 = 0;
+    for (flow.module) |c| hash = hash *% 31 +% c;
+    hash = hash *% 31 +% @as(u32, @intCast(flow.location.line));
+    hash = hash *% 31 +% @as(u32, @intCast(flow.location.column));
+    for (source.text) |c| hash = hash *% 31 +% c;
+    const elem_name = std.fmt.allocPrint(allocator, "__koru_self_elem_{d}", .{hash}) catch unreachable;
+    const ptr_name = std.fmt.allocPrint(allocator, "__koru_kernel_ptr_{d}", .{hash}) catch unreachable;
+
+    // ========================================================================
+    // STEP 1: Transform body — replace binding with elem_name
+    // k.X → elem_name.X
+    // ========================================================================
+    const binding_len = binding_name.len;
+    var body_code = std.ArrayList(u8).initCapacity(allocator, source.text.len * 2) catch unreachable;
+    var i: usize = 0;
+    while (i < source.text.len) {
+        if (i + binding_len <= source.text.len and std.mem.eql(u8, source.text[i..i+binding_len], binding_name)) {
+            const at_end = (i + binding_len >= source.text.len);
+            const next_ok = at_end or (!std.ascii.isAlphanumeric(source.text[i + binding_len]) and source.text[i + binding_len] != '_');
+            const prev_ok = (i == 0) or (!std.ascii.isAlphanumeric(source.text[i - 1]) and source.text[i - 1] != '_');
+            if (next_ok and prev_ok) {
+                body_code.appendSlice(allocator, elem_name) catch unreachable;
+                i += binding_len;
+            } else {
+                body_code.append(allocator, source.text[i]) catch unreachable;
+                i += 1;
+            }
+        } else {
+            body_code.append(allocator, source.text[i]) catch unreachable;
+            i += 1;
+        }
+    }
+
+    // Ensure body ends with semicolon
+    const body_trimmed = std.mem.trimRight(u8, body_code.items, " \t\n\r");
+    const needs_semi = body_trimmed.len == 0 or body_trimmed[body_trimmed.len - 1] != ';';
+    if (needs_semi) {
+        body_code.append(allocator, ';') catch unreachable;
+    }
+
+    // ========================================================================
+    // STEP 2: Inline — replace elem_name with ptr_name[i]
+    // ========================================================================
+    var inlined_body = std.ArrayList(u8).initCapacity(allocator, body_code.items.len * 2) catch unreachable;
+    var j: usize = 0;
+    while (j < body_code.items.len) {
+        if (j + elem_name.len <= body_code.items.len and std.mem.eql(u8, body_code.items[j..j+elem_name.len], elem_name)) {
+            inlined_body.appendSlice(allocator, ptr_name) catch unreachable;
+            inlined_body.appendSlice(allocator, "[i]") catch unreachable;
+            j += elem_name.len;
+        } else {
+            inlined_body.append(allocator, body_code.items[j]) catch unreachable;
+            j += 1;
+        }
+    }
+
+    // ========================================================================
+    // STEP 3: Known-len optimization (compile-time constant loop bound)
+    // ========================================================================
+    const extractKernelInitSource = struct {
+        fn call(inv_opt: ?*const ast.Invocation) ?[]const u8 {
+            const inv = inv_opt orelse return null;
+            for (inv.args) |arg| {
+                if (arg.source_value) |src_val| return src_val.text;
+            }
+            return null;
+        }
+    }.call;
+
+    const countInitElements = struct {
+        fn call(text: []const u8) ?usize {
+            var depth: i32 = 0;
+            var count: usize = 0;
+            var in_string: bool = false;
+            var escaped: bool = false;
+            for (text) |c| {
+                if (in_string) {
+                    if (escaped) { escaped = false; continue; }
+                    if (c == '\\') { escaped = true; continue; }
+                    if (c == '"') in_string = false;
+                    continue;
+                } else if (c == '"') { in_string = true; continue; }
+                if (c == '{') {
+                    depth += 1;
+                } else if (c == '}') {
+                    if (depth == 1) count += 1;
+                    depth -= 1;
+                }
+            }
+            if (count > 0) return count;
+            return null;
+        }
+    }.call;
+
+    const init_source = extractKernelInitSource(kernel_init_invocation);
+    const known_len = if (init_source) |text| countInitElements(text) else null;
+
+    // ========================================================================
+    // STEP 4: Emit single for loop
+    // ========================================================================
+    const loop_code = if (known_len) |len|
+        std.fmt.allocPrint(allocator,
+            \\const {0s} = {1s}.ptr;
+            \\for (0..{2d}) |i| {{
+            \\    {3s}
+            \\}}
+            ,
+            .{ ptr_name, binding_name, len, inlined_body.items }
+        ) catch unreachable
+    else
+        std.fmt.allocPrint(allocator,
+            \\const {0s} = {1s}.ptr;
+            \\for (0..{1s}.len) |i| {{
+            \\    {2s}
+            \\}}
+            ,
+            .{ ptr_name, binding_name, inlined_body.items }
+        ) catch unreachable;
+
+    // Replace invocation with inline code
+    const new_node = ast.Node{ .inline_code = loop_code };
+    const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(
+        allocator,
+        program,
+        invocation,
+        new_node,
+    ) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    @panic("kernel.self: replaceInvocationNodeRecursive returned null - flow not found in AST");
+}
+
+// ============================================================================
+// FUTURE: kernel.reduce, kernel.cross
 // ============================================================================
 
-// ~[comptime|transform]pub event self { ... }
 // ~[comptime|transform]pub event reduce { ... }
 // ~[comptime|transform]pub event cross { ... }
