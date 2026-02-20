@@ -43,11 +43,11 @@ if [ -f "$test_dir/TODO" ]; then
     exit 0
 fi
 if [ -f "$CATEGORY_DIR/SKIP" ]; then
-    echo -e "${CYAN}⏭️  SKIP ${NC}  ${DIM}$TEST_NAME${NC}"
+    echo -e "${CYAN}⏭️ SKIP${NC}  ${DIM}$TEST_NAME${NC}"
     exit 0
 fi
 if [ -f "$test_dir/SKIP" ]; then
-    echo -e "${CYAN}⏭️  SKIP ${NC}  ${DIM}$TEST_NAME${NC}"
+    echo -e "${CYAN}⏭️ SKIP${NC}  ${DIM}$TEST_NAME${NC}"
     exit 0
 fi
 if [ -f "$test_dir/BROKEN" ]; then
