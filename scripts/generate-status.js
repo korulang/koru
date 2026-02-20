@@ -2,11 +2,9 @@
 /**
  * Koru Regression Test Status Generator
  *
- * Scans tests/regression/ for test status markers and generates:
- * - status.json (for website/API consumption)
- * - Beautiful CLI output (when --format=cli)
- *
- * The regression tests are the source of truth - they cannot lie.
+ * Reads from test-results/latest.json (written by full regression runs) for
+ * accurate counts, then outputs CLI or JSON. Falls back to filesystem scan
+ * if no snapshot exists yet.
  */
 
 import { readdir, stat, access, writeFile, readFile } from 'fs/promises';
@@ -17,6 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const REGRESSION_PATH = join(__dirname, '../tests/regression');
+const SNAPSHOT_PATH = join(__dirname, '../test-results/latest.json');
 const OUTPUT_JSON_PATH = join(__dirname, '../status.json');
 
 // Parse command line args
@@ -41,10 +40,32 @@ async function readFirstLine(path) {
 	}
 }
 
-/**
- * Recursively gather all test cases with full hierarchy paths.
- * categorySlugPath is the full hierarchy, e.g. "000_CORE_LANGUAGE/010_BASIC_SYNTAX"
- */
+// ---------------------------------------------------------------------------
+// Snapshot-based path (preferred)
+// ---------------------------------------------------------------------------
+
+async function loadFromSnapshot() {
+	const raw = await readFile(SNAPSHOT_PATH, 'utf-8');
+	const snap = JSON.parse(raw);
+	const { summary, categories, timestamp } = snap;
+
+	return {
+		categories,
+		totalTests: summary.total,
+		passedTests: summary.passed,
+		failedTests: summary.failed,
+		todoTests: summary.todo,
+		skippedTests: summary.skipped,
+		brokenTests: summary.broken,
+		untestedTests: summary.untested,
+		generatedAt: timestamp,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Filesystem fallback (used when no snapshot exists)
+// ---------------------------------------------------------------------------
+
 async function getTestCases(categoryPath, categorySlugPath, categorySkipped = false) {
 	const tests = [];
 	const entries = await readdir(categoryPath);
@@ -53,10 +74,7 @@ async function getTestCases(categoryPath, categorySlugPath, categorySkipped = fa
 		const testPath = join(categoryPath, entry);
 		const stats = await stat(testPath);
 
-		// Skip non-test directories (category dirs with README/SPEC)
-		// Match test directories like "608_test_name" or "608b_test_name" (with optional letter suffix)
 		if (stats.isDirectory() && /^\d+[a-z]?_/.test(entry)) {
-			// Check for input file and markers
 			const hasInput = await fileExists(join(testPath, 'input.kz'));
 			const mustRun = await fileExists(join(testPath, 'MUST_RUN'));
 			const success = await fileExists(join(testPath, 'SUCCESS'));
@@ -65,11 +83,7 @@ async function getTestCases(categoryPath, categorySlugPath, categorySkipped = fa
 			const skip = await fileExists(join(testPath, 'SKIP'));
 			const broken = await fileExists(join(testPath, 'BROKEN'));
 
-			// CRITICAL: Match bash script filtering (run_regression.sh:257-260)
-			// Only count this directory as a test if it has input.kz OR any marker
 			if (!hasInput && !todo && !skip && !broken) {
-				// This might be a subcategory - recurse into it
-				// Build full hierarchy path: parent/child
 				const subCategorySkipped = categorySkipped || skip;
 				const subCategorySlugPath = categorySlugPath ? `${categorySlugPath}/${entry}` : entry;
 				const subTests = await getTestCases(testPath, subCategorySlugPath, subCategorySkipped);
@@ -77,54 +91,31 @@ async function getTestCases(categoryPath, categorySlugPath, categorySkipped = fa
 				continue;
 			}
 
-			// Read failure reason if present
 			let failureReason = '';
-			if (failure) {
-				failureReason = await readFirstLine(join(testPath, 'FAILURE'));
-			}
-
-			// Read descriptions from marker files
+			if (failure) failureReason = await readFirstLine(join(testPath, 'FAILURE'));
 			const todoDesc = todo ? await readFirstLine(join(testPath, 'TODO')) : '';
 			const skipReason = skip ? await readFirstLine(join(testPath, 'SKIP')) : '';
 			const brokenReason = broken ? await readFirstLine(join(testPath, 'BROKEN')) : '';
 
-			// Determine status with proper precedence (matches bash script order)
-			// 1. TODO (highest priority - run_regression.sh:302-309)
-			// 2. Category-level SKIP (run_regression.sh:311-316)
-			// 3. Individual SKIP (run_regression.sh:318-326)
-			// 4. BROKEN (run_regression.sh:328-338)
-			// 5. Test results (SUCCESS/FAILURE)
 			let status = 'untested';
-			if (todo) {
-				status = 'todo';
-			} else if (categorySkipped) {
-				// Category is skipped - mark this test as skipped
-				status = 'skipped';
-			} else if (skip) {
-				status = 'skipped';
-			} else if (broken) {
-				status = 'broken';
-			} else if (success && failure) {
-				status = 'unknown'; // Both exist - weird state
-			} else if (success) {
-				status = 'success';
-			} else if (failure) {
-				status = 'failure';
-			}
+			if (todo) status = 'todo';
+			else if (categorySkipped) status = 'skipped';
+			else if (skip) status = 'skipped';
+			else if (broken) status = 'broken';
+			else if (success && failure) status = 'unknown';
+			else if (success) status = 'success';
+			else if (failure) status = 'failure';
 
 			tests.push({
 				name: entry.replace(/^\d+[a-z]?_/, '').replace(/_/g, ' '),
 				directory: entry,
 				categorySlug: categorySlugPath,
 				mustRun,
-				todo,
-				skip: skip || categorySkipped, // Mark as skipped if category is skipped
-				broken,
 				status,
 				failureReason,
 				todoDesc,
 				skipReason: categorySkipped && !skip ? 'Category skipped' : skipReason,
-				brokenReason
+				brokenReason,
 			});
 		}
 	}
@@ -132,101 +123,72 @@ async function getTestCases(categoryPath, categorySlugPath, categorySkipped = fa
 	return tests.sort((a, b) => a.directory.localeCompare(b.directory));
 }
 
-async function checkForSpec(categoryPath) {
-	const hasSpec = await fileExists(join(categoryPath, 'SPEC.md'));
-	const hasReadme = await fileExists(join(categoryPath, 'README.md'));
-	return { hasSpec, hasReadme };
+async function loadFromFilesystem() {
+	const allTests = [];
+	const entries = await readdir(REGRESSION_PATH);
+
+	for (const entry of entries) {
+		const categoryPath = join(REGRESSION_PATH, entry);
+		const stats = await stat(categoryPath);
+		if (stats.isDirectory() && /^\d+[a-z]?_/.test(entry)) {
+			const categorySkipped = await fileExists(join(categoryPath, 'SKIP'));
+			const tests = await getTestCases(categoryPath, entry, categorySkipped);
+			allTests.push(...tests);
+		}
+	}
+
+	const categoryMap = new Map();
+	for (const test of allTests) {
+		if (!categoryMap.has(test.categorySlug)) categoryMap.set(test.categorySlug, []);
+		categoryMap.get(test.categorySlug).push(test);
+	}
+
+	const categories = Array.from(categoryMap.entries())
+		.filter(([slug]) => slug !== null)
+		.map(([slug, tests]) => ({
+			name: slug.split('/').pop().replace(/^\d+[a-z]?_/, '').replace(/_/g, ' '),
+			slug,
+			categorySkipped: tests.some(t => t.skipReason === 'Category skipped'),
+			tests: tests.sort((a, b) => a.directory.localeCompare(b.directory)),
+		}));
+
+	categories.sort((a, b) => a.slug.localeCompare(b.slug));
+
+	const count = (status) => categories.reduce((s, c) => s + c.tests.filter(t => t.status === status).length, 0);
+
+	return {
+		categories,
+		totalTests: allTests.length,
+		passedTests: count('success'),
+		failedTests: count('failure'),
+		todoTests: count('todo'),
+		skippedTests: count('skipped'),
+		brokenTests: count('broken'),
+		untestedTests: count('untested'),
+		generatedAt: new Date().toISOString(),
+		fromFilesystem: true,
+	};
 }
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
 
 async function generateStatus() {
 	try {
-		// First, gather ALL tests recursively with their full category paths
-		const allTests = [];
-		const entries = await readdir(REGRESSION_PATH);
-
-		for (const entry of entries) {
-			const categoryPath = join(REGRESSION_PATH, entry);
-			const stats = await stat(categoryPath);
-
-			// Match category directories like "600_COMPTIME" (letter suffixes unlikely but supported)
-			if (stats.isDirectory() && /^\d+[a-z]?_/.test(entry)) {
-				// Check for category-level SKIP marker (run_regression.sh:283-297)
-				const categorySkipped = await fileExists(join(categoryPath, 'SKIP'));
-
-				const tests = await getTestCases(categoryPath, entry, categorySkipped);
-				allTests.push(...tests);
-			}
+		let data;
+		if (await fileExists(SNAPSHOT_PATH)) {
+			data = await loadFromSnapshot();
+		} else {
+			data = await loadFromFilesystem();
 		}
 
-		// Group tests by their categorySlug to build categories (matching save-snapshot.js)
-		const categoryMap = new Map();
-		for (const test of allTests) {
-			if (!categoryMap.has(test.categorySlug)) {
-				categoryMap.set(test.categorySlug, []);
-			}
-			categoryMap.get(test.categorySlug).push(test);
-		}
-
-		// Build category objects from the grouped tests
-		const categories = Array.from(categoryMap.entries())
-			.filter(([slug]) => slug !== null)
-			.map(([slug, tests]) => ({
-				name: slug.split('/').pop().replace(/^\d+[a-z]?_/, '').replace(/_/g, ' '),
-				slug,
-				hasSpec: false,  // TODO: could check for SPEC.md in category dir
-				hasReadme: false,
-				categorySkipped: tests.some(t => t.skipReason === 'Category skipped'),
-				tests: tests.sort((a, b) => a.directory.localeCompare(b.directory))
-			}));
-
-		categories.sort((a, b) => a.slug.localeCompare(b.slug));
-
-		// Calculate aggregates
-		const totalTests = categories.reduce((sum, cat) => sum + cat.tests.length, 0);
-		const passedTests = categories.reduce(
-			(sum, cat) => sum + cat.tests.filter((t) => t.status === 'success').length,
-			0
-		);
-		const failedTests = categories.reduce(
-			(sum, cat) => sum + cat.tests.filter((t) => t.status === 'failure').length,
-			0
-		);
-		const todoTests = categories.reduce(
-			(sum, cat) => sum + cat.tests.filter((t) => t.status === 'todo').length,
-			0
-		);
-		const skippedTests = categories.reduce(
-			(sum, cat) => sum + cat.tests.filter((t) => t.status === 'skipped').length,
-			0
-		);
-		const brokenTests = categories.reduce(
-			(sum, cat) => sum + cat.tests.filter((t) => t.status === 'broken').length,
-			0
-		);
-		const untestedTests = categories.reduce(
-			(sum, cat) => sum + cat.tests.filter((t) => t.status === 'untested').length,
-			0
-		);
-
-		const data = {
-			categories,
-			totalTests,
-			passedTests,
-			failedTests,
-			todoTests,
-			skippedTests,
-			brokenTests,
-			untestedTests,
-			generatedAt: new Date().toISOString()
-		};
-
-		// Always write JSON
 		await writeFile(OUTPUT_JSON_PATH, JSON.stringify(data, null, 2));
 
-		// Output format
 		if (format === 'cli') {
 			outputCLI(data);
 		} else {
+			const { passedTests, totalTests, failedTests, categories } = data;
 			console.log(`✓ Generated status.json: ${categories.length} categories, ${totalTests} tests (${passedTests} passed, ${failedTests} failed)`);
 		}
 	} catch (error) {
@@ -236,11 +198,12 @@ async function generateStatus() {
 }
 
 function outputCLI(data) {
-	const { categories, totalTests, passedTests, failedTests, todoTests, skippedTests, brokenTests, untestedTests } = data;
+	const { categories, totalTests, passedTests, failedTests, todoTests, skippedTests, brokenTests, untestedTests, generatedAt, fromFilesystem } = data;
 
 	console.log('═══════════════════════════════════════════════════════════');
 	console.log('KORU REGRESSION TEST STATUS');
-	console.log(`Last generated: ${new Date(data.generatedAt).toLocaleString()}`);
+	const sourceLabel = fromFilesystem ? 'filesystem scan (no snapshot yet)' : `snapshot ${new Date(generatedAt).toLocaleString()}`;
+	console.log(`Source: ${sourceLabel}`);
 	console.log('═══════════════════════════════════════════════════════════');
 	console.log('');
 
@@ -254,47 +217,33 @@ function outputCLI(data) {
 	if (untestedTests > 0) console.log(`  ❔ ${untestedTests} untested`);
 	console.log('');
 
-	// Show by category
 	console.log('BY CATEGORY:');
 	for (const cat of categories) {
 		const catPassed = cat.tests.filter(t => t.status === 'success').length;
 		const catTotal = cat.tests.length;
 		const catPercent = catTotal > 0 ? ((catPassed / catTotal) * 100).toFixed(0) : '0';
-		const docStatus = cat.hasSpec ? '[SPEC.md ✓]' : (cat.hasReadme ? '[README.md ℹ]' : '[no docs ✗]');
 		const statusEmoji = catPercent >= 80 ? '✅' : catPercent >= 50 ? '⚠️' : '❌';
-
-		console.log(`  ${statusEmoji} ${cat.slug.padEnd(30)} ${catPassed}/${catTotal} ${catPercent.padStart(3)}% ${docStatus}`);
+		console.log(`  ${statusEmoji} ${cat.slug.padEnd(50)} ${catPassed}/${catTotal} ${catPercent.padStart(3)}%`);
 	}
 	console.log('');
 
-	// Show failed tests
-	const failedTestsList = [];
-	for (const cat of categories) {
-		for (const test of cat.tests) {
-			if (test.status === 'failure') {
-				failedTestsList.push(`${test.directory}${test.failureReason ? ` (${test.failureReason})` : ''}`);
-			}
-		}
-	}
+	const failedTestsList = categories.flatMap(cat =>
+		cat.tests
+			.filter(t => t.status === 'failure')
+			.map(t => `${t.directory}${t.failureReason ? ` (${t.failureReason})` : ''}`)
+	);
 
 	if (failedTestsList.length > 0) {
 		console.log('FAILED TESTS:');
-		for (const test of failedTestsList) {
-			console.log(`  ❌ ${test}`);
-		}
+		for (const test of failedTestsList) console.log(`  ❌ ${test}`);
 		console.log('');
 	}
 
 	console.log('USAGE:');
-	console.log('  ./run_regression.sh              Run all tests (~10 min)');
+	console.log('  ./run_regression.sh              Run all tests');
 	console.log('  ./run_regression.sh <number>     Run specific test');
 	console.log('  ./run_regression.sh --status     Show this status');
 	console.log('  ./run_regression.sh --list       List all tests');
-	console.log('');
-	console.log('DOCUMENTATION:');
-	console.log('  tests/regression/000_CORE_LANGUAGE/SPEC.md  - Core language');
-	console.log('  tests/regression/100_MODULE_SYSTEM/          - Module system');
-	console.log('  See SPEC.md for full navigation');
 }
 
 generateStatus();

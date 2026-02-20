@@ -288,7 +288,7 @@ const std = @import("std");
     // Raw I/O: the __kio helper struct emitted inline for raw write mode
     const raw_io_prefix =
         "//@koru:inline_stmt\n{ const __kio = struct { " ++
-        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(2, __kz_b) catch {}; } " ++
+        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(1, __kz_b) catch {}; } " ++
         "fn __kz_wd(__kz_v: i64) void { " ++
         "var _buf: [20]u8 = undefined; var _n: usize = 0; var _v: u64 = undefined; " ++
         "if (__kz_v < 0) { __kz_w(\"-\"); _v = @intCast(-(__kz_v + 1)); _v += 1; " ++
@@ -738,7 +738,7 @@ const std = @import("std");
     // Raw I/O: the __kio helper struct emitted inline for raw write mode
     const raw_io_prefix =
         "//@koru:inline_stmt\n{ const __kio = struct { " ++
-        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(2, __kz_b) catch {}; } " ++
+        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(1, __kz_b) catch {}; } " ++
         "fn __kz_wd(__kz_v: i64) void { " ++
         "var _buf: [20]u8 = undefined; var _n: usize = 0; var _v: u64 = undefined; " ++
         "if (__kz_v < 0) { __kz_w(\"-\"); _v = @intCast(-(__kz_v + 1)); _v += 1; " ++
