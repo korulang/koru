@@ -15,6 +15,13 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./scripts/regression_lib.sh
 source "$SCRIPT_DIR/scripts/regression_lib.sh"
 
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+DIM='\033[2m'
+NC='\033[0m'
+
 # Ensure category logic starts clean when invoked per-test.
 CURRENT_CATEGORY=""
 
@@ -28,39 +35,39 @@ TEST_NAME=$(basename "$test_dir")
 CATEGORY_DIR="$(dirname "$test_dir")"
 
 if [ -f "$test_dir/BENCHMARK" ]; then
-    echo "BENCHMARK: $TEST_NAME"
+    echo -e "${CYAN}📊 BENCH${NC}  ${DIM}$TEST_NAME${NC}"
     exit 0
 fi
 if [ -f "$test_dir/TODO" ]; then
-    echo "TODO: $TEST_NAME"
+    echo -e "${YELLOW}📝 TODO ${NC}  ${DIM}$TEST_NAME${NC}"
     exit 0
 fi
 if [ -f "$CATEGORY_DIR/SKIP" ]; then
-    echo "SKIP: $TEST_NAME"
+    echo -e "${CYAN}⏭️  SKIP ${NC}  ${DIM}$TEST_NAME${NC}"
     exit 0
 fi
 if [ -f "$test_dir/SKIP" ]; then
-    echo "SKIP: $TEST_NAME"
+    echo -e "${CYAN}⏭️  SKIP ${NC}  ${DIM}$TEST_NAME${NC}"
     exit 0
 fi
 if [ -f "$test_dir/BROKEN" ]; then
     reason=$(head -1 "$test_dir/FAILURE" 2>/dev/null || echo "broken-test")
-    echo "FAIL: $TEST_NAME ($reason)"
+    echo -e "${RED}🔧 BROKEN${NC} $TEST_NAME ${DIM}($reason)${NC}"
     exit 1
 fi
 if [ -f "$test_dir/FAILURE" ]; then
     reason=$(head -1 "$test_dir/FAILURE" 2>/dev/null)
     if [ -n "$reason" ]; then
-        echo "FAIL: $TEST_NAME ($reason)"
+        echo -e "${RED}❌ FAIL ${NC}  $TEST_NAME ${DIM}($reason)${NC}"
     else
-        echo "FAIL: $TEST_NAME"
+        echo -e "${RED}❌ FAIL ${NC}  $TEST_NAME"
     fi
     exit 1
 fi
 if [ -f "$test_dir/SUCCESS" ]; then
-    echo "PASS: $TEST_NAME"
+    echo -e "${GREEN}✅ PASS ${NC}  ${DIM}$TEST_NAME${NC}"
     exit 0
 fi
 
-echo "FAIL: $TEST_NAME (unknown)"
+echo -e "${RED}❌ FAIL ${NC}  $TEST_NAME ${DIM}(unknown)${NC}"
 exit 1
