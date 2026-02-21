@@ -20,5 +20,5 @@
 | kernel k |>
     std.kernel:self { k.mass *= 2.0 }
     |> std.io:print.blk {
-        mass[0]={{ k.ptr[0].mass:f }} mass[1]={{ k.ptr[1].mass:f }} mass[2]={{ k.ptr[2].mass:f }}
+        mass[0]={{ k[0].mass:f }} mass[1]={{ k[1].mass:f }} mass[2]={{ k[2].mass:f }}
     }

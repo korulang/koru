@@ -1424,7 +1424,11 @@ pub const VisitorEmitter = struct {
             } else if (field.is_source) {
                 try self.code_emitter.write("__koru_ast.Source");  // Full Source struct with .text, .scope.bindings, .phantom_type
             } else if (field.is_expression) {
-                try self.code_emitter.write("[]const u8");  // Expression captured as string literal
+                if (std.mem.startsWith(u8, field.type, "?")) {
+                    try self.code_emitter.write("?[]const u8 = null");  // Optional expression, defaults to null
+                } else {
+                    try self.code_emitter.write("[]const u8");  // Expression captured as string literal
+                }
             } else if (eql(u8, field.type, "Program")) {
                 try self.code_emitter.write("*const __koru_ast.Program");
             } else {

@@ -1,0 +1,52 @@
+// TEST: Optional Expression parameter (?Expression)
+//
+// Verifies that a comptime transform can declare an optional expression field.
+// When called with (value), expr is the value string.
+// When called without (), expr is null.
+
+~import "$std/io"
+
+const std = @import("std");
+
+~[comptime|transform]pub event labeled {
+    expr: ?Expression,
+    invocation: *const Invocation,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc labeled {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    // expr is ?[]const u8 — null when called without (), non-null otherwise
+    const text: []const u8 = if (expr != null) "yes" else "no";
+    const code = std.fmt.allocPrint(allocator,
+        \\_ = @import("std").posix.write(1, "{s}\n") catch {{}};
+        , .{text}) catch unreachable;
+
+    const new_node = ast.Node{ .inline_code = code };
+    const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(
+        allocator, program, invocation, new_node,
+    ) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    @panic("labeled: replacement failed");
+}
+
+// Use a simple noop event to create a continuation context — labeled must be
+// inside a continuation for replaceInvocationNodeRecursive to find it.
+~event noop {}
+| done {}
+
+~proc noop { return .{ .done = .{} }; }
+
+~noop
+| done |> labeled("hello")
+~noop
+| done |> labeled()

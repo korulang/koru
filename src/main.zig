@@ -1159,6 +1159,7 @@ const TransformEvent = struct {
     module_path: ?[]const u8, // e.g., "koru_std.control" for stdlib, null for main_module
     has_source: bool, // Event accepts source: Source[T] parameter
     has_expression: bool, // Event accepts expr: Expression parameter
+    has_optional_expression: bool = false, // Event accepts expr: ?Expression parameter (optional, may be null)
     expression_field_name: ?[]const u8 = null, // Actual field name for Expression parameter
     has_invocation: bool, // Event accepts invocation: *const Invocation parameter
     has_event_decl: bool, // Event accepts event_decl: *const EventDecl parameter
@@ -1257,6 +1258,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                 // Detect what parameters this event accepts
                 var has_source = false;
                 var has_expression = false;
+                var has_optional_expression = false;
                 var expression_field_name: ?[]const u8 = null;
                 var has_invocation = false;
                 var has_program_ast = false;
@@ -1266,7 +1268,11 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                     if (field.is_source) {
                         has_source = true;
                     } else if (field.is_expression) {
-                        has_expression = true;
+                        if (std.mem.startsWith(u8, field.type, "?")) {
+                            has_optional_expression = true;
+                        } else {
+                            has_expression = true;
+                        }
                         expression_field_name = field.name;
                     } else if (std.mem.eql(u8, field.name, "invocation")) {
                         has_invocation = true;
@@ -1303,6 +1309,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                     .module_path = null, // Top-level events are in main_module
                     .has_source = has_source,
                     .has_expression = has_expression,
+                    .has_optional_expression = has_optional_expression,
                     .expression_field_name = expression_field_name,
                     .has_invocation = has_invocation,
                     .has_event_decl = false,
@@ -1383,6 +1390,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                         // Detect what parameters this event accepts
                         var has_source = false;
                         var has_expression = false;
+                        var has_optional_expression = false;
                         var expression_field_name: ?[]const u8 = null;
                         var has_invocation = false;
                         var has_program_ast = false;
@@ -1392,7 +1400,11 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                             if (field.is_source) {
                                 has_source = true;
                             } else if (field.is_expression) {
-                                has_expression = true;
+                                if (std.mem.startsWith(u8, field.type, "?")) {
+                                    has_optional_expression = true;
+                                } else {
+                                    has_expression = true;
+                                }
                                 expression_field_name = field.name;
                             } else if (std.mem.eql(u8, field.name, "invocation")) {
                                 has_invocation = true;
@@ -1432,6 +1444,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                             .module_path = module_path, // Transform is in imported module
                             .has_source = has_source,
                             .has_expression = has_expression,
+                            .has_optional_expression = has_optional_expression,
                             .expression_field_name = expression_field_name,
                             .has_invocation = has_invocation,
                             .has_event_decl = false,
@@ -1614,6 +1627,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             // The frontend is agnostic to [transform]/[derive] annotations - that's backend dispatch
             var has_source_param = false;
             var has_expression_param = false;
+            var has_optional_expression_param = false;
             var expression_field_name_param: ?[]const u8 = null;
             var has_invocation_param = false;
             var has_item_param = false;
@@ -1623,7 +1637,11 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 if (field.is_source) {
                     has_source_param = true;
                 } else if (field.is_expression) {
-                    has_expression_param = true;
+                    if (std.mem.startsWith(u8, field.type, "?")) {
+                        has_optional_expression_param = true;
+                    } else {
+                        has_expression_param = true;
+                    }
                     expression_field_name_param = field.name;
                 } else if (std.mem.eql(u8, field.type, "*const Invocation")) {
                     has_invocation_param = true;
@@ -1705,6 +1723,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     .module_path = null, // Top-level events are in main_module
                     .has_source = has_source_param,
                     .has_expression = has_expression_param,
+                    .has_optional_expression = has_optional_expression_param,
                     .expression_field_name = expression_field_name_param,
                     .has_invocation = has_invocation_param,
                     .has_event_decl = has_event_decl_param,
@@ -1730,6 +1749,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     // TYPE-DRIVEN DETECTION: Check if this event consumes AST types
                     var has_source_param = false;
                     var has_expression_param = false;
+                    var has_optional_expression_param = false;
                     var expression_field_name_param: ?[]const u8 = null;
                     var has_invocation_param = false;
                     var has_item_param = false;
@@ -1739,7 +1759,11 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         if (field.is_source) {
                             has_source_param = true;
                         } else if (field.is_expression) {
-                            has_expression_param = true;
+                            if (std.mem.startsWith(u8, field.type, "?")) {
+                                has_optional_expression_param = true;
+                            } else {
+                                has_expression_param = true;
+                            }
                             expression_field_name_param = field.name;
                         } else if (std.mem.eql(u8, field.type, "*const Invocation")) {
                             has_invocation_param = true;
@@ -1846,6 +1870,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .module_path = module_path,
                             .has_source = has_source_param,
                             .has_expression = has_expression_param,
+                            .has_optional_expression = has_optional_expression_param,
                             .expression_field_name = expression_field_name_param,
                             .has_invocation = has_invocation_param,
                             .has_event_decl = has_event_decl_param,
@@ -2036,6 +2061,12 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 try code_emitter.write("    if (source_opt) |source| {\n");
                 try code_emitter.write("        const input = handler.Input{\n");
                 try code_emitter.write("            .source = source,\n");
+            } else if (event.has_optional_expression) {
+                try code_emitter.write("    {\n");
+                try code_emitter.write("        const input = handler.Input{\n");
+                try code_emitter.write("            .");
+                try code_emitter.write(event.expression_field_name orelse "expr");
+                try code_emitter.write(" = extractExprFromArgs(invocation.args),\n");
             } else if (event.has_expression) {
                 try code_emitter.write("    if (expr_opt) |expr_text| {\n");
                 try code_emitter.write("        const input = handler.Input{\n");

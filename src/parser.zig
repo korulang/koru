@@ -6191,7 +6191,8 @@ pub const Parser = struct {
             var is_invocation_meta = false;
             if (std.mem.eql(u8, field_type, "Source") or std.mem.startsWith(u8, field_type, "Source[")) {
                 is_source = true;
-            } else if (std.mem.eql(u8, field_type, "Expression") or std.mem.startsWith(u8, field_type, "Expression[")) {
+            } else if (std.mem.eql(u8, field_type, "Expression") or std.mem.startsWith(u8, field_type, "Expression[") or
+                       std.mem.eql(u8, field_type, "?Expression") or std.mem.startsWith(u8, field_type, "?Expression[")) {
                 is_expression = true;
             } else if (std.mem.eql(u8, field_type, "File")) {
                 is_file = true;
