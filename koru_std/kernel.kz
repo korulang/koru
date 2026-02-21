@@ -542,7 +542,7 @@ const std = @import("std");
 //   }
 
 ~[comptime|transform]pub event pairwise {
-    expr: Expression,
+    expr: ?Expression,
     source: Source,
     invocation: *const Invocation,
     item: *const Item,
@@ -805,11 +805,7 @@ const std = @import("std");
 
     // Detect outer range: only true if an explicit (range) expression was provided,
     // e.g. pairwise(0..N) { ... }.
-    // When a () arg is present it appears as args[0] with source_value == null.
-    // When only { body } is given, args[0] IS the source block (source_value != null).
-    // We cannot rely on expr.len > 0 because extractExprFromArgs falls back to
-    // args[0].value (the body text) even when no () argument exists.
-    const has_outer_range = invocation.args.len > 0 and invocation.args[0].source_value == null;
+    const has_outer_range = expr != null;
 
     if (!has_outer_range) {
         // ====================================================================
@@ -863,7 +859,7 @@ const std = @import("std");
     };
 
     const foreach_node = ast.Node{ .foreach = .{
-        .iterable = allocator.dupe(u8, expr) catch unreachable,
+        .iterable = allocator.dupe(u8, expr.?) catch unreachable,
         .element_type = null,
         .branches = branches,
     }};

@@ -1939,6 +1939,15 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
     try code_emitter.write("    }\n");
     try code_emitter.write("    return null;\n");
     try code_emitter.write("}\n\n");
+    // Strict variant for ?Expression parameters: no fallback, only explicit expression_value
+    try code_emitter.write("fn extractOptionalExprFromArgs(args: []const Arg) ?[]const u8 {\n");
+    try code_emitter.write("    for (args) |arg| {\n");
+    try code_emitter.write("        if (arg.expression_value) |expr| {\n");
+    try code_emitter.write("            return expr.text;\n");
+    try code_emitter.write("        }\n");
+    try code_emitter.write("    }\n");
+    try code_emitter.write("    return null;\n");
+    try code_emitter.write("}\n\n");
 
     // Individual stubs - called on flows that invoke transform events
     // NEW: Uses unified ASTNode interface - handlers receive (node, program, allocator)
@@ -2057,6 +2066,13 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 try code_emitter.write("            .");
                 try code_emitter.write(event.expression_field_name orelse "expr");
                 try code_emitter.write(" = expr_text,\n");
+            } else if (event.has_source and event.has_optional_expression) {
+                try code_emitter.write("    if (source_opt) |source| {\n");
+                try code_emitter.write("        const input = handler.Input{\n");
+                try code_emitter.write("            .source = source,\n");
+                try code_emitter.write("            .");
+                try code_emitter.write(event.expression_field_name orelse "expr");
+                try code_emitter.write(" = extractOptionalExprFromArgs(invocation.args),\n");
             } else if (event.has_source) {
                 try code_emitter.write("    if (source_opt) |source| {\n");
                 try code_emitter.write("        const input = handler.Input{\n");
@@ -2066,7 +2082,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 try code_emitter.write("        const input = handler.Input{\n");
                 try code_emitter.write("            .");
                 try code_emitter.write(event.expression_field_name orelse "expr");
-                try code_emitter.write(" = extractExprFromArgs(invocation.args),\n");
+                try code_emitter.write(" = extractOptionalExprFromArgs(invocation.args),\n");
             } else if (event.has_expression) {
                 try code_emitter.write("    if (expr_opt) |expr_text| {\n");
                 try code_emitter.write("        const input = handler.Input{\n");
