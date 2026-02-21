@@ -1,0 +1,9 @@
+~import "$std/kernel"
+
+~std.kernel:shape(Body) { mass: f64 }
+
+~pub event main {}
+~proc main {
+    ~std.kernel:init(Body) { mass: 1.0 }
+    | kernel k |> std.io:print.ln("k slice len: {{ k.len:d }}")
+}

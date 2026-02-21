@@ -7382,20 +7382,29 @@ fn emitEventDeclForModuleFromType(
         for (event_type.branches) |branch| {
             try code_emitter.writeIndent();
             try writeBranchName(code_emitter, branch.name);
-            try code_emitter.write(": struct {\n");
-            code_emitter.indent_level += 1;
+            
             if (branch.payload) |payload| {
-                for (payload.fields) |field| {
-                    try code_emitter.writeIndent();
-                    try writeBranchName(code_emitter, field.name);
+                if (payload.fields.len == 1 and std.mem.eql(u8, payload.fields[0].name, "__type_ref")) {
                     try code_emitter.write(": ");
-                    try writeFieldType(code_emitter, field, ctx.main_module_name);
+                    try writeFieldType(code_emitter, payload.fields[0], ctx.main_module_name);
                     try code_emitter.write(",\n");
+                } else {
+                    try code_emitter.write(": struct {\n");
+                    code_emitter.indent_level += 1;
+                    for (payload.fields) |field| {
+                        try code_emitter.writeIndent();
+                        try writeBranchName(code_emitter, field.name);
+                        try code_emitter.write(": ");
+                        try writeFieldType(code_emitter, field, ctx.main_module_name);
+                        try code_emitter.write(",\n");
+                    }
+                    code_emitter.indent_level -= 1;
+                    try code_emitter.writeIndent();
+                    try code_emitter.write("},\n");
                 }
+            } else {
+                try code_emitter.write(": struct {},\n");
             }
-            code_emitter.indent_level -= 1;
-            try code_emitter.writeIndent();
-            try code_emitter.write("},\n");
         }
         code_emitter.indent_level -= 1;
         try code_emitter.writeIndent();
@@ -7485,18 +7494,26 @@ fn emitEventDeclForModule(
         for (event.branches) |branch| {
             try code_emitter.writeIndent();
             try writeBranchName(code_emitter, branch.name);
-            try code_emitter.write(": struct {\n");
-            code_emitter.indent_level += 1;
-            for (branch.payload.fields) |field| {
-                try code_emitter.writeIndent();
-                try writeBranchName(code_emitter, field.name);
+            
+            if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
                 try code_emitter.write(": ");
-                try writeFieldType(code_emitter, field, ctx.main_module_name);
+                // For emitter_helpers, we ignore is_source and just use the type string
+                try writeFieldType(code_emitter, branch.payload.fields[0], ctx.main_module_name);
                 try code_emitter.write(",\n");
+            } else {
+                try code_emitter.write(": struct {\n");
+                code_emitter.indent_level += 1;
+                for (branch.payload.fields) |field| {
+                    try code_emitter.writeIndent();
+                    try writeBranchName(code_emitter, field.name);
+                    try code_emitter.write(": ");
+                    try writeFieldType(code_emitter, field, ctx.main_module_name);
+                    try code_emitter.write(",\n");
+                }
+                code_emitter.indent_level -= 1;
+                try code_emitter.writeIndent();
+                try code_emitter.write("},\n");
             }
-            code_emitter.indent_level -= 1;
-            try code_emitter.writeIndent();
-            try code_emitter.write("},\n");
         }
         code_emitter.indent_level -= 1;
         try code_emitter.writeIndent();

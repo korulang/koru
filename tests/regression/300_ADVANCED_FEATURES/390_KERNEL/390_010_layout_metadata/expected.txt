@@ -1,1 +1,1 @@
-layout=aos
+slice len=2

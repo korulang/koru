@@ -20,4 +20,4 @@
     { x: 1.0, y: 0.0, mass: 2.0 },
 }
 | kernel k |>
-    std.io:print.ln("layout={{ k.layout:s }}")
+    std.io:print.ln("slice len={{ k.len:d }}")
