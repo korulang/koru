@@ -1,0 +1,27 @@
+// Test 225b: Binding name appears in string literal but is not used as a variable
+//
+// Regression: continuationUsesBinding had a false positive when the binding
+// name appeared as a whole word inside a string literal. This caused the
+// emitter to skip the `_ = &binding;` suppressor, resulting in a Zig
+// "unused local constant" error.
+//
+// The binding `name` is never referenced as a variable in the continuation
+// body — it only appears inside the string literal "no name given".
+
+~import "$std/io"
+
+~event greet { id: u32 }
+| ok { label: []const u8 }
+
+~proc greet {
+    return .{ .ok = .{ .label = "Alice" } };
+}
+
+// Binding is `name` — NOT used as a variable.
+// But the word "name" appears in the string "no name given".
+// Bug: containsIdentifier matches "name" inside the string literal
+//      → continuationUsesBinding returns true (false positive)
+//      → emitter skips `_ = &name;` suppressor
+//      → Zig: "unused local constant 'name'"
+~greet(id: 1)
+| ok name |> std.io:print.ln("no name given")

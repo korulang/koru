@@ -14,8 +14,6 @@
 ~import "$std/io"
 ~import "$std/control"
 
-const std = @import("std");
-
 ~event compute_stats {}
 | result { sum: i32, max: i32 }
 

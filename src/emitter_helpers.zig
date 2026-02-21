@@ -1508,24 +1508,38 @@ fn bindingIsUsedInContinuations(binding_name: []const u8, continuations: []const
     return false;
 }
 
-/// Check if a string contains a specific identifier (whole-word match)
+/// Check if a string contains a specific identifier (whole-word match),
+/// skipping string literal contents to avoid false positives.
 fn containsIdentifier(text: []const u8, ident: []const u8) bool {
     var idx: usize = 0;
     while (idx < text.len) {
-        const remaining = text[idx..];
-        const pos_opt = std.mem.indexOf(u8, remaining, ident) orelse return false;
-        const start = idx + pos_opt;
-        const end = start + ident.len;
-
-        // Check if this is a whole identifier (not part of another identifier)
-        const valid_start = start == 0 or !isIdentifierChar(text[start - 1]);
-        const valid_end = end >= text.len or !isIdentifierChar(text[end]);
-
-        if (valid_start and valid_end) {
-            return true;
+        // Skip over string literals to avoid matching identifiers inside them
+        if (text[idx] == '"') {
+            idx += 1;
+            while (idx < text.len) {
+                if (text[idx] == '\\') {
+                    idx += 2; // skip escape sequence
+                } else if (text[idx] == '"') {
+                    idx += 1;
+                    break;
+                } else {
+                    idx += 1;
+                }
+            }
+            continue;
         }
 
-        idx = end;
+        // Check if ident starts at this position (character-by-character to
+        // respect the string-skipping above — indexOf would scan past literals)
+        if (idx + ident.len <= text.len and std.mem.eql(u8, text[idx .. idx + ident.len], ident)) {
+            const valid_start = idx == 0 or !isIdentifierChar(text[idx - 1]);
+            const valid_end = idx + ident.len >= text.len or !isIdentifierChar(text[idx + ident.len]);
+            if (valid_start and valid_end) {
+                return true;
+            }
+        }
+
+        idx += 1;
     }
     return false;
 }

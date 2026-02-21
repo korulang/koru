@@ -1,0 +1,13 @@
+// Hello World in pure Koru — no Zig required.
+// This is the frontpage example from korulang.org.
+
+~import "$std/io"
+
+const name = "World";
+const debug = true;
+const count: i32 = 42;
+
+~std.io:print.blk {
+    {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
+    The answer is {{ count:d }}.
+}

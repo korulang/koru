@@ -11,7 +11,7 @@
 
 // Invalid: Two when-clauses but NO else case (non-exhaustive)
 ~check(x: 10, y: 5)
-| high h when (h.x > 10) |> _
-| high h when (h.x > 5) |> _
+| high h when h.x > 10 |> _
+| high h when h.x > 5 |> _
 // Missing: | high h |> _ (else case)
 | low |> _

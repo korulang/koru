@@ -3,16 +3,7 @@
 ~import "$std/io"
 ~import "$std/control"
 
-const std = @import("std");
-
-// Simple test helper to print an integer
-~event print_int { value: i32 }
-
-~proc print_int {
-    std.debug.print("{d}\n", .{value});
-}
-
 // Struct capture with typed init
 ~capture(expr: { total: @as(i32, 0) })
 | as |> captured { total: 42 }
-| captured final |> print_int(value: final.total)
+| captured final |> std.io:print.ln("{{ final.total:d }}")

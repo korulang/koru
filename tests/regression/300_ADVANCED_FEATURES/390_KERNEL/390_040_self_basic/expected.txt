@@ -1,1 +1,1 @@
-self complete
+mass[0]=2 mass[1]=4 mass[2]=6

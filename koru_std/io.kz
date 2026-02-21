@@ -430,8 +430,10 @@ const std = @import("std");
                     missing_spec = placeholder;
                 }
 
+                // :f maps to {} in Zig (default float format — Zig has no {f})
+                const zig_fmt_spec_ln = if (std.mem.eql(u8, format_spec, "f")) "" else format_spec;
                 format_buf.append(allocator, '{') catch unreachable;
-                format_buf.appendSlice(allocator, format_spec) catch unreachable;
+                format_buf.appendSlice(allocator, zig_fmt_spec_ln) catch unreachable;
                 format_buf.append(allocator, '}') catch unreachable;
 
                 if (!first_arg) {
@@ -477,7 +479,7 @@ const std = @import("std");
     const inline_code = if (missing_spec) |placeholder|
         std.fmt.allocPrint(
             allocator,
-            "@compileError(\"std.io:print.ln: '{{{{ {s} }}}}' requires a format specifier (:d, :s, or :any)\");",
+            "@compileError(\"std.io:print.ln: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
             .{placeholder}
         ) catch unreachable
     else if (needs_fmt)
@@ -889,8 +891,10 @@ const std = @import("std");
                     missing_spec = placeholder;
                 }
 
+                // :f maps to {} in Zig (default float format — Zig has no {f})
+                const zig_fmt_spec_blk = if (std.mem.eql(u8, format_spec, "f")) "" else format_spec;
                 format_buf.append(allocator, '{') catch unreachable;
-                format_buf.appendSlice(allocator, format_spec) catch unreachable;
+                format_buf.appendSlice(allocator, zig_fmt_spec_blk) catch unreachable;
                 format_buf.append(allocator, '}') catch unreachable;
 
                 if (!first_arg) {
@@ -990,7 +994,7 @@ const std = @import("std");
     const inline_code = if (missing_spec) |placeholder|
         std.fmt.allocPrint(
             allocator,
-            "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, or :any)\");",
+            "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
             .{placeholder}
         ) catch unreachable
     else if (needs_fmt)

@@ -13,7 +13,7 @@
 
 ~std.compiler:coordinate = std.time:now()
 | t pipeline_start |> std.compiler:coordinate.default(program_ast, allocator)
-    | coordinated c |> std.time:elapsed(start: pipeline_start.ns, label: "TOTAL PIPELINE")
+    | coordinated c |> std.time:report(start: pipeline_start.ns, label: "TOTAL PIPELINE")
         |> coordinated { c.ast, c.code, c.metrics }
     | error e |> error { message: e.message }
 
@@ -23,7 +23,7 @@
 
 ~std.compiler:frontend = std.time:now()
 | t start |> std.compiler:frontend.default(ctx)
-    | ctx c |> std.time:elapsed(start: start.ns, label: "  frontend") |> ctx c
+    | ctx c |> std.time:report(start: start.ns, label: "  frontend") |> ctx c
 
 // ============================================================================
 // THE PROGRAM

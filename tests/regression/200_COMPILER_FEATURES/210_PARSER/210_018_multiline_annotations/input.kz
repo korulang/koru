@@ -12,7 +12,7 @@ std.build:step(name: "compile") {
 }
 
 // Flow call with compound annotation on separate line
-~[default, depends_on("compile")]
+~[default|depends_on("compile")]
 std.build:step(name: "run") {
     ./zig-out/bin/main
 }

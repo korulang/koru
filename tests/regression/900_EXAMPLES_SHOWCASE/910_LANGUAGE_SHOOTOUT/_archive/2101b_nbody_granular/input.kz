@@ -188,10 +188,10 @@ const Body = struct {
 ~event offset_momentum { bodies: [5]Body }
 | adjusted { bodies: [5]Body }
 
-~offset_momentum = calculate_momentum_x(bodies: bodies)
-| computed cx |> calculate_momentum_y(bodies: cx.bodies)
-    | computed cy |> calculate_momentum_z(bodies: cy.bodies)
-        | computed cz |> apply_sun_offset(bodies: cz.bodies, px: cx.px, py: cy.py, pz: cz.pz)
+~offset_momentum = calculate_momentum_x(bodies)
+| computed cx |> calculate_momentum_y(cx.bodies)
+    | computed cy |> calculate_momentum_z(cy.bodies)
+        | computed cz |> apply_sun_offset(cz.bodies, cx.px, cy.py, cz.pz)
             | adjusted a |> adjusted { bodies: a.bodies }
 
 // ============================================================================
@@ -302,10 +302,10 @@ const Body = struct {
 ~event process_body_pair { b1: Body, b2: Body, dt: f64 }
 | updated { b1: Body, b2: Body }
 
-~process_body_pair = calculate_distance_vector(b1: b1, b2: b2)
-| computed dv |> calculate_distance_scalar(dx: dv.dx, dy: dv.dy, dz: dv.dz)
-    | computed ds |> calculate_gravitational_magnitude(distance: ds.distance, dt: dt)
-        | computed gm |> update_body_pair_velocities(b1: dv.b1, b2: dv.b2, dx: ds.dx, dy: ds.dy, dz: ds.dz, mag: gm.mag)
+~process_body_pair = calculate_distance_vector(b1, b2)
+| computed dv |> calculate_distance_scalar(dv.dx, dv.dy, dv.dz)
+    | computed ds |> calculate_gravitational_magnitude(ds.distance, dt)
+        | computed gm |> update_body_pair_velocities(dv.b1, dv.b2, ds.dx, ds.dy, ds.dz, gm.mag)
             | updated u |> updated { b1: u.b1, b2: u.b2 }
 
 ~event calculate_all_interactions { bodies: [5]Body, dt: f64 }
