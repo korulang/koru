@@ -1,0 +1,4 @@
+Connecting to: postgres://localhost/test
+Query: SELECT * FROM users
+Committing transaction
+Disconnecting

@@ -1,0 +1,2 @@
+Opening file: data.txt
+Closing file

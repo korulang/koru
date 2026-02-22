@@ -106,17 +106,18 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Stabilize the Koru compiler and interpreter by documenting test results and tracking regression trends via timestamped JSON snapshots.
+Implement and verify functional-style data parallelism in the Koru standard library kernel via AST-aware comptime transformations.
 
 ### Decisions
-- **Adopted conventional commit format and timestamped JSON snapshots for regression tracking.**: Maintains a structured history and allows for historical analysis of compiler/interpreter pass rates (currently 86.2%).
-- **Implemented AST threading and 'Program' return support in the comptime execution pass.**: Turns the comptime phase into a sequential pipeline of AST-to-AST transformations, allowing user-defined flows to modify the program before final emission.
-- **Enhanced comptime type detection to normalize pointer and const variants (e.g., *const Program).**: Prevents 'KORU022' branch coverage errors and ensures comptime-only flows are correctly identified and stripped regardless of reference type.
-- **Implemented a 'transform-aware' flow stripping policy in Phase 3.**: Ensures that flows expanded into inline bodies or preambles by comptime transforms are preserved in the final AST rather than being deleted as 'used' comptime events.
-- **Introduced module-qualified event names (module:event) for comptime matching.**: Ensures uniqueness and correct lookup when comptime events are defined in or invoked from different modules.
-- **Optimized interpreter eval with a lightweight Flow parser and thread-local resource reuse.**: Achieved a ~144x speedup over the full AST parser, allowing the Koru interpreter to outperform Python and Go in wire-protocol scenarios.
-- **Renamed AST nodes: SourceFile to Program, and SubflowImpl to ImmediateImpl.**: Aligns terminology with a module-centric (rather than file-centric) logical structure and clarifies the execution semantics of immediate flows.
-- **Metacircular build dependency discovery via ~std.compiler:requires flows.**: Allows modules to declare Zig-level system requirements directly in Koru source, which the frontend uses to dynamically generate build.zig.
+- **Crystallized 'Negative-Cost Abstraction' as Koru's core design philosophy.**: Koru's abstractions (print.blk, phantoms, kernels) actively remove runtime cost and defensive code, often producing better output than hand-written Zig.
+- **Implementation of kernel.self and pairwise as [comptime|transform] events with AST fusion.**: Allows per-element operations over kernel data to emit optimized Zig for-loops with known-length bounds and hoisted pointer extraction, outperforming standard runtime iteration.
+- **Adopted ast_functional.replaceInvocationNodeAndContinuationsRecursive for pipeline-aware AST surgery.**: Ensures that transformations (like loop fusion) can 'swallow' downstream continuations to maintain correct scoping and flow in the generated code.
+- **Standardized on Liquid-style {{ var }} and {% if %} syntax, deprecating ${var}.**: Provides a unified, powerful metaprogramming interface and avoids developer confusion across the language and standard library.
+- **Implemented '//@koru:inline_stmt' marker in the Zig emitter.**: Allows transforms to inject multi-statement blocks (like if/return chains) into generated Zig without the emitter forcing invalid trailing semicolons.
+- **Shifted to a 'Post-modern compiler' philosophy: Design for AI data over human display.**: AI agents are the primary debuggers; embedding file:line source markers in emitted Zig code provides high-bandwidth traceability without complex sourcemaps.
+- **Automated npm release process with scripts/release.sh and AI-generated changelogs.**: Ensures reproducible cross-compilation for 5 targets and synchronizes versions across Zig and Node ecosystems.
+- **Removed the redundant 'Fusion' optimization system in favor of LLVM's native capabilities.**: Analysis showed LLVM already performs the same inlining and constant-folding on generated Zig, making Koru-level fusion unnecessary overhead.
+- **Implemented two-phase 'auto-discharge' for resource cleanup via phantom obligations.**: Automates resource management at scope boundaries, reducing boilerplate and preventing leaks by treating cleanup as a type-level requirement.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -159,11 +160,12 @@ This context prevents you from writing code that contradicts established design 
 
 ### Active Gotchas
 - **Comptime stripping Phase 3 was deleting transformed flows (like ~if or ~for), resulting in empty emitted code.**: Update compiler.kz to preserve flows containing 'inline_body', 'preamble_code', or '@pass_ran' metadata, even if they originated as comptime events.
-- **Comptime event detection fails when the 'Program' type is wrapped in pointers or const qualifiers (e.g., *const Program).**: Implement a type-normalizer in the compiler's stripping phase to treat pointer/const variants of Program as valid comptime return types.
-- **Module-qualified comptime flows (e.g., 'input:augment') were escaping the stripping phase because the event list didn't account for module qualifiers.**: Ensure 'path.module_qualifier' is included when building and matching the comptime event list in compiler.kz.
-- **Large test result JSON snapshots (6000+ lines) can bloat the repository history.**: Maintain a 'latest.json' reference to track the current state (86.2% pass rate) while timestamping snapshots for regression analysis.
+- **AI 'hallucination' of progress and unauthorized code generation in sensitive library code (e.g., vaxis).**: Enforce minimal, targeted changes and verify against actual test results rather than aspirational specs. Use Sonnet for higher-fidelity reasoning.
+- **Zig keyword escaping collisions (e.g., .@"error") in the backend emitter.**: Refine escaping logic in the Zig emitter and update runtime.kz error names to avoid reserved keywords.
+- **Outdated documentation (SPEC.md) causing context poisoning for AI agents.**: Treat tests as the primary source of truth; delete stale documentation (like KORU_SYNTAX.md) and use automated test-result snapshots.
+- **Shadowing errors in generated Zig code when inlining loops or variables.**: Ensure generated code snippets in stdlib use unique or prefixed variable names to avoid collisions with outer scopes.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 2/14/2026, 9:45:36 PM
+> Last updated: 2/22/2026, 7:49:07 AM

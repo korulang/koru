@@ -22,19 +22,17 @@ struct planet {
   double mass;
 };
 
-/* Use static inline with fixed bounds for loop unrolling */
-static inline void advance(struct planet * restrict bodies, double dt)
+static inline void advance(struct planet bodies[restrict 5], double dt)
 {
   int i, j;
 
-  /* Update velocities based on gravitational interactions */
   for (i = 0; i < 5; i++) {
     for (j = i + 1; j < 5; j++) {
       double dx = bodies[i].x - bodies[j].x;
       double dy = bodies[i].y - bodies[j].y;
       double dz = bodies[i].z - bodies[j].z;
       double dsq = dx * dx + dy * dy + dz * dz;
-      double mag = dt / (dsq * sqrt(dsq));  /* Optimized: dsq * sqrt(dsq) = distance^3 */
+      double mag = dt / (dsq * sqrt(dsq));
       bodies[i].vx -= dx * bodies[j].mass * mag;
       bodies[i].vy -= dy * bodies[j].mass * mag;
       bodies[i].vz -= dz * bodies[j].mass * mag;
@@ -44,7 +42,6 @@ static inline void advance(struct planet * restrict bodies, double dt)
     }
   }
 
-  /* Update positions based on velocities */
   for (i = 0; i < 5; i++) {
     bodies[i].x += dt * bodies[i].vx;
     bodies[i].y += dt * bodies[i].vy;
@@ -52,32 +49,31 @@ static inline void advance(struct planet * restrict bodies, double dt)
   }
 }
 
-double energy(int nbodies, struct planet * bodies)
+double energy(struct planet bodies[restrict 5])
 {
   double e;
   int i, j;
 
   e = 0.0;
-  for (i = 0; i < nbodies; i++) {
+  for (i = 0; i < 5; i++) {
     struct planet * b = &(bodies[i]);
     e += 0.5 * b->mass * (b->vx * b->vx + b->vy * b->vy + b->vz * b->vz);
-    for (j = i + 1; j < nbodies; j++) {
-      struct planet * b2 = &(bodies[j]);
-      double dx = b->x - b2->x;
-      double dy = b->y - b2->y;
-      double dz = b->z - b2->z;
+    for (j = i + 1; j < 5; j++) {
+      double dx = b->x - bodies[j].x;
+      double dy = b->y - bodies[j].y;
+      double dz = b->z - bodies[j].z;
       double distance = sqrt(dx * dx + dy * dy + dz * dz);
-      e -= (b->mass * b2->mass) / distance;
+      e -= (b->mass * bodies[j].mass) / distance;
     }
   }
   return e;
 }
 
-void offset_momentum(int nbodies, struct planet * bodies)
+void offset_momentum(struct planet bodies[restrict 5])
 {
   double px = 0.0, py = 0.0, pz = 0.0;
   int i;
-  for (i = 0; i < nbodies; i++) {
+  for (i = 0; i < 5; i++) {
     px += bodies[i].vx * bodies[i].mass;
     py += bodies[i].vy * bodies[i].mass;
     pz += bodies[i].vz * bodies[i].mass;
@@ -135,10 +131,10 @@ int main(int argc, char ** argv)
   int n = atoi(argv[1]);
   int i;
 
-  offset_momentum(NBODIES, bodies);
-  printf ("%.9f\n", energy(NBODIES, bodies));
+  offset_momentum(bodies);
+  printf ("%.9f\n", energy(bodies));
   for (i = 1; i <= n; i++)
     advance(bodies, 0.01);
-  printf ("%.9f\n", energy(NBODIES, bodies));
+  printf ("%.9f\n", energy(bodies));
   return 0;
 }

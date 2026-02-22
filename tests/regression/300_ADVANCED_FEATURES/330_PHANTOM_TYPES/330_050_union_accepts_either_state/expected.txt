@@ -1,0 +1,16 @@
+Creating connection
+Connecting: 1
+Resuming/continuing: 1
+Closing: 1
+Creating connection
+Connecting: 1
+Pausing: 1
+Resuming/continuing: 1
+Closing: 1
+Creating connection
+Connecting: 1
+Closing: 1
+Creating connection
+Connecting: 1
+Pausing: 1
+Closing: 1

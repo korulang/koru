@@ -34,7 +34,7 @@ const Body = struct {
     mass: f64,
 };
 
-fn advance(bodies: *[5]Body, dt: f64) void {
+fn advance(noalias bodies: *[5]Body, dt: f64) void {
     // Update velocities based on gravitational interactions
     for (0..5) |i| {
         for (i + 1..5) |j| {

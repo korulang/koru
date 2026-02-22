@@ -1,0 +1,5 @@
+Opening handle
+Finalizing handle: 42
+Opening handle
+Starting close: 42
+Finalizing handle: 42

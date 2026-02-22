@@ -19,6 +19,7 @@ pub const Handle = struct {
 | ok *Handle[open!]
 
 ~proc open {
+    std.debug.print("opened\n", .{});
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .id = 42 };
     return .{ .ok = h };
@@ -28,6 +29,7 @@ pub const Handle = struct {
 ~event close_quiet { h: *Handle[!open] }
 
 ~proc close_quiet {
+    std.debug.print("closed quietly\n", .{});
     std.heap.page_allocator.destroy(h);
 }
 

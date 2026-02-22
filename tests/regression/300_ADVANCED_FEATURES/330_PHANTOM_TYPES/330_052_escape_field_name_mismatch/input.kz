@@ -20,6 +20,7 @@ const File = struct { handle: i32 };
 | opened { file: *File[opened!] }
 
 ~proc open {
+    std.debug.print("opened: {s}\n", .{path});
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
     return .{ .opened = .{ .file = f } };
@@ -29,6 +30,7 @@ const File = struct { handle: i32 };
 | closed {}
 
 ~proc close {
+    std.debug.print("closed\n", .{});
     std.heap.page_allocator.destroy(file);
     return .{ .closed = .{} };
 }

@@ -22,6 +22,7 @@ const File = struct { handle: i32, dirty: bool };
 ~[!]event close { file: *File[!opened] }
 
 ~proc close {
+    std.debug.print("closed\n", .{});
     std.heap.page_allocator.destroy(file);
 }
 
