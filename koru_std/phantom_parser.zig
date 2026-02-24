@@ -29,19 +29,21 @@ pub const PhantomState = union(enum) {
             }};
         }
 
-        // Check for consumption marker (! prefix)
-        // Example: !opened, !fs:opened, !open|closing
+        // Check for state union (contains |) BEFORE stripping !
+        // Per-member ! is handled inside parseUnionMember - no union-level ! prefix.
+        // [!opened|closing]  = discharge `opened`, just accept `closing` (no discharge)
+        // [!opened|!closing] = discharge whichever state the resource is in
+        if (std.mem.indexOf(u8, phantom_str, "|")) |_| {
+            return parseUnion(allocator, phantom_str);
+        }
+
+        // Check for consumption marker (! prefix) - only for concrete states
+        // Example: !opened, !fs:opened
         var remaining = phantom_str;
         const consumes_obligation = if (remaining.len > 0 and remaining[0] == '!') blk: {
             remaining = remaining[1..];  // Strip the !
             break :blk true;
         } else false;
-
-        // Check for state union (contains | without ')
-        // Example: open|closing, fs:open|gzip:compressed, !open|closing
-        if (std.mem.indexOf(u8, remaining, "|")) |_| {
-            return parseUnion(allocator, remaining, consumes_obligation);
-        }
 
         // Check for module-qualified state (uses : like events)
         // Example: mipmap:open, fs:closed, fs:opened!
@@ -144,9 +146,9 @@ pub const StateVariable = struct {
 /// State union for input flexibility (e.g., "open|closing", "fs:open|gzip:compressed")
 /// Unions accept ANY of the listed states - used for flexible input handling
 /// Unions CANNOT appear in output position (a resource is always in ONE known state)
+/// To check if a union discharges an obligation, inspect each member.consumes_obligation.
 pub const StateUnion = struct {
     members: []ConcreteState,       // Each member can have its own module_path
-    consumes_obligation: bool = false,  // ! prefix applies to whole union
 
     pub fn deinit(self: *StateUnion, allocator: std.mem.Allocator) void {
         for (self.members) |*member| {
@@ -175,8 +177,9 @@ pub const StateUnion = struct {
     }
 };
 
-/// Parse a state union (e.g., "open|closing", "fs:open|gzip:compressed")
-fn parseUnion(allocator: std.mem.Allocator, str: []const u8, consumes_obligation: bool) !PhantomState {
+/// Parse a state union (e.g., "open|closing", "fs:open|gzip:compressed", "!opened|!closing")
+/// The ! prefix is per-member only - handled inside parseUnionMember.
+fn parseUnion(allocator: std.mem.Allocator, str: []const u8) !PhantomState {
     var members: std.ArrayListUnmanaged(ConcreteState) = .{};
     errdefer {
         for (members.items) |*m| m.deinit(allocator);
@@ -206,13 +209,20 @@ fn parseUnion(allocator: std.mem.Allocator, str: []const u8, consumes_obligation
 
     return .{ .state_union = .{
         .members = try members.toOwnedSlice(allocator),
-        .consumes_obligation = consumes_obligation,
     } };
 }
 
-/// Parse a single member of a state union (no ! prefix - that's handled at union level)
+/// Parse a single member of a state union.
+/// Members may carry ! prefix (e.g. "!closing" in "opened|!closing") to indicate
+/// per-member obligation consumption, or ! may be handled at the union level.
 fn parseUnionMember(allocator: std.mem.Allocator, str: []const u8) !ConcreteState {
     var state_str = str;
+
+    // Check for per-member consumption marker (! prefix)
+    const consumes_obligation = if (state_str.len > 0 and state_str[0] == '!') blk: {
+        state_str = state_str[1..];
+        break :blk true;
+    } else false;
 
     // Check for module qualifier
     if (std.mem.indexOf(u8, state_str, ":")) |colon_idx| {
@@ -225,11 +235,13 @@ fn parseUnionMember(allocator: std.mem.Allocator, str: []const u8) !ConcreteStat
             break :blk true;
         } else false;
 
+        if (consumes_obligation and requires_cleanup) return error.InvalidPhantomState;
+
         return .{
             .module_path = try allocator.dupe(u8, module_path),
             .name = try allocator.dupe(u8, state_name),
             .requires_cleanup = requires_cleanup,
-            .consumes_obligation = false, // Handled at union level
+            .consumes_obligation = consumes_obligation,
         };
     }
 
@@ -240,11 +252,13 @@ fn parseUnionMember(allocator: std.mem.Allocator, str: []const u8) !ConcreteStat
         break :blk true;
     } else false;
 
+    if (consumes_obligation and requires_cleanup) return error.InvalidPhantomState;
+
     return .{
         .module_path = null,
         .name = try allocator.dupe(u8, state_name),
         .requires_cleanup = requires_cleanup,
-        .consumes_obligation = false, // Handled at union level
+        .consumes_obligation = consumes_obligation,
     };
 }
 
@@ -361,13 +375,8 @@ pub fn isSameVariable(phantom1: []const u8, phantom2: []const u8) bool {
 /// Check if a phantom string represents a state union
 pub fn isStateUnion(phantom_str: []const u8) bool {
     // Union has | but no ' (apostrophe indicates state variable)
-    if (std.mem.indexOf(u8, phantom_str, "'") != null) return false;
-    // Strip optional ! prefix before checking for |
-    const str = if (phantom_str.len > 0 and phantom_str[0] == '!')
-        phantom_str[1..]
-    else
-        phantom_str;
-    return std.mem.indexOf(u8, str, "|") != null;
+    return std.mem.indexOf(u8, phantom_str, "'") == null
+        and std.mem.indexOf(u8, phantom_str, "|") != null;
 }
 
 // Tests
@@ -584,20 +593,22 @@ test "parse simple union" {
     try std.testing.expectEqual(@as(std.meta.Tag(PhantomState), .state_union), @as(std.meta.Tag(PhantomState), state));
     const u = state.state_union;
     try std.testing.expectEqual(@as(usize, 2), u.members.len);
-    try std.testing.expect(!u.consumes_obligation);
 
-    // First member: open
+    // First member: open (no !)
     try std.testing.expect(u.members[0].module_path == null);
     try std.testing.expectEqualStrings("open", u.members[0].name);
+    try std.testing.expect(!u.members[0].consumes_obligation);
 
-    // Second member: closing
+    // Second member: closing (no !)
     try std.testing.expect(u.members[1].module_path == null);
     try std.testing.expectEqualStrings("closing", u.members[1].name);
+    try std.testing.expect(!u.members[1].consumes_obligation);
 }
 
 test "parse union with consumption marker" {
     const allocator = std.testing.allocator;
 
+    // !open|closing: only the first member carries !, second does not
     const state = try PhantomState.parse(allocator, "!open|closing");
     defer {
         var s = state;
@@ -606,8 +617,58 @@ test "parse union with consumption marker" {
 
     try std.testing.expectEqual(@as(std.meta.Tag(PhantomState), .state_union), @as(std.meta.Tag(PhantomState), state));
     const u = state.state_union;
-    try std.testing.expect(u.consumes_obligation); // ! prefix on whole union
     try std.testing.expectEqual(@as(usize, 2), u.members.len);
+
+    // First member "open" has per-member !
+    try std.testing.expectEqualStrings("open", u.members[0].name);
+    try std.testing.expect(u.members[0].consumes_obligation);
+
+    // Second member "closing" has no !
+    try std.testing.expectEqualStrings("closing", u.members[1].name);
+    try std.testing.expect(!u.members[1].consumes_obligation);
+}
+
+test "parse union with per-member consumption markers" {
+    const allocator = std.testing.allocator;
+
+    // !opened|!closing - both members have explicit ! prefix, both discharge
+    const state = try PhantomState.parse(allocator, "!opened|!closing");
+    defer {
+        var s = state;
+        s.deinit(allocator);
+    }
+
+    try std.testing.expectEqual(@as(std.meta.Tag(PhantomState), .state_union), @as(std.meta.Tag(PhantomState), state));
+    const u = state.state_union;
+    try std.testing.expectEqual(@as(usize, 2), u.members.len);
+
+    // Both members carry their own !
+    try std.testing.expectEqualStrings("opened", u.members[0].name);
+    try std.testing.expect(u.members[0].consumes_obligation);
+
+    try std.testing.expectEqualStrings("closing", u.members[1].name);
+    try std.testing.expect(u.members[1].consumes_obligation);
+}
+
+test "parse union with partial per-member consumption marker" {
+    const allocator = std.testing.allocator;
+
+    // opened|!closing - only second member has ! prefix, no outer !
+    const state = try PhantomState.parse(allocator, "opened|!closing");
+    defer {
+        var s = state;
+        s.deinit(allocator);
+    }
+
+    try std.testing.expectEqual(@as(std.meta.Tag(PhantomState), .state_union), @as(std.meta.Tag(PhantomState), state));
+    const u = state.state_union;
+    try std.testing.expectEqual(@as(usize, 2), u.members.len);
+
+    try std.testing.expectEqualStrings("opened", u.members[0].name);
+    try std.testing.expect(!u.members[0].consumes_obligation);
+
+    try std.testing.expectEqualStrings("closing", u.members[1].name);
+    try std.testing.expect(u.members[1].consumes_obligation);
 }
 
 test "parse three-member union" {

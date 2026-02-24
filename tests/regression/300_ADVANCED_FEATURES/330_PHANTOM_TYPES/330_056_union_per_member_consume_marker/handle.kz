@@ -1,5 +1,6 @@
 // Library module: handle
-// Demonstrates phantom state unions - events that accept multiple states
+// Demonstrates per-member consume markers in phantom state unions
+// Each union member carries its own ! prefix to indicate obligation discharge
 
 const std = @import("std");
 
@@ -29,12 +30,11 @@ const Handle = struct {
     return .{ .closing = .{ .h = h } };
 }
 
-// Finalize - accepts EITHER opened OR closing, discharging whichever obligation exists
-~pub event finalize { h: *Handle[!opened|closing] }
+// Finalize - per-member consume markers: !opened discharges opened!, !closing discharges closing!
+~pub event finalize { h: *Handle[!opened|!closing] }
 | done {}
 
 ~proc finalize {
     std.debug.print("Finalizing handle: {d}\n", .{h.id});
-    // Clean up the handle
     return .{ .done = .{} };
 }

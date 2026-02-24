@@ -242,13 +242,10 @@ pub const PhantomSemanticChecker = struct {
                 var result: std.ArrayListUnmanaged(u8) = .{};
                 errdefer result.deinit(self.allocator);
 
-                // Add consume prefix if present
-                if (u.consumes_obligation) {
-                    try result.append(self.allocator, '!');
-                }
-
                 for (u.members, 0..) |member, i| {
                     if (i > 0) try result.append(self.allocator, '|');
+                    // Per-member ! prefix
+                    if (member.consumes_obligation) try result.append(self.allocator, '!');
 
                     const canonical_module = if (member.module_path) |mod_path| blk: {
                         if (self.module_map.get(mod_path)) |canonical| {
@@ -1859,11 +1856,11 @@ pub const PhantomSemanticChecker = struct {
             },
             .variable => {},
             .state_union => |u| {
-                if (u.consumes_obligation) {
-                    log.debug("[CLEANUP] Event parameter has union with [!] - consumes obligation\n", .{});
-                    // Union with consume marker - clear the cleanup obligation
+                var any_consumes = false;
+                for (u.members) |m| if (m.consumes_obligation) { any_consumes = true; break; };
+                if (any_consumes) {
+                    log.debug("[CLEANUP] Event parameter has union member with [!] - consumes obligation\n", .{});
                     context.clearCleanupObligation(arg.value);
-                    // Mark the binding as disposed
                     try context.markDisposed(arg.value);
                 }
             },

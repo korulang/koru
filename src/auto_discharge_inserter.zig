@@ -1386,10 +1386,14 @@ pub const AutoDischargeInserter = struct {
                         var parsed = phantom_parser.PhantomState.parse(self.allocator, phantom_str) catch continue;
                         defer parsed.deinit(self.allocator);
 
-                        // Check if parameter consumes obligation (concrete or union with ! prefix)
+                        // Check if parameter consumes obligation (concrete or any union member with ! prefix)
                         const consumes = switch (parsed) {
                             .concrete => |c| c.consumes_obligation,
-                            .state_union => |u| u.consumes_obligation,
+                            .state_union => |u| blk: {
+                                var any = false;
+                                for (u.members) |m| if (m.consumes_obligation) { any = true; break; };
+                                break :blk any;
+                            },
                             .variable => false,
                         };
 
@@ -1609,24 +1613,23 @@ pub const AutoDischargeInserter = struct {
                         },
                         .variable => {},
                         .state_union => |u| {
-                            if (u.consumes_obligation) {
-                                // Check if any member of the union matches the base_state
-                                for (u.members) |member| {
-                                    const consumer_state = if (member.module_path) |mod|
-                                        try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ mod, member.name })
-                                    else
-                                        try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ entry.value_ptr.module_name, member.name });
-                                    defer self.allocator.free(consumer_state);
+                            // Only members with ! can discharge an obligation
+                            for (u.members) |member| {
+                                if (!member.consumes_obligation) continue;
+                                const consumer_state = if (member.module_path) |mod|
+                                    try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ mod, member.name })
+                                else
+                                    try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ entry.value_ptr.module_name, member.name });
+                                defer self.allocator.free(consumer_state);
 
-                                    if (std.mem.eql(u8, consumer_state, base_state)) {
-                                        try results.append(self.allocator, .{
-                                            .qualified_name = try self.allocator.dupe(u8, entry.key_ptr.*),
-                                            .event_decl = event_decl,
-                                            .field_name = try self.allocator.dupe(u8, field.name),
-                                            .is_default = is_default,
-                                        });
-                                        break; // Found a match, don't add duplicates
-                                    }
+                                if (std.mem.eql(u8, consumer_state, base_state)) {
+                                    try results.append(self.allocator, .{
+                                        .qualified_name = try self.allocator.dupe(u8, entry.key_ptr.*),
+                                        .event_decl = event_decl,
+                                        .field_name = try self.allocator.dupe(u8, field.name),
+                                        .is_default = is_default,
+                                    });
+                                    break; // Found a match, don't add duplicates
                                 }
                             }
                         },
