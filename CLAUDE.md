@@ -106,18 +106,19 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Implement and verify functional-style data parallelism in the Koru standard library kernel via AST-aware comptime transformations.
+Hardening the Koru toolchain and releasing v0.1.4 with auto-discharge resource management and Liquid-style templates.
 
 ### Decisions
+- **Implementation of a two-phase 'auto-discharge' system for phantom obligations.**: Ensures resource cleanup (files, handles) occurs automatically at scope exit or budget exhaustion. The two-phase approach handles nested scopes correctly without premature disposal during complex control flow.
+- **Adopted 'Interpretation C' for Phantom Obligation Semantics: Explicit discharge with explicit union members.**: Rejects 'Interpretation B' (implicit transfer) to avoid fragile heuristics. Requires explicit consumption ([!state]) and production ([state!]) markers, now supported at the per-member level in unions for granular lifecycle control.
 - **Crystallized 'Negative-Cost Abstraction' as Koru's core design philosophy.**: Koru's abstractions (print.blk, phantoms, kernels) actively remove runtime cost and defensive code, often producing better output than hand-written Zig.
-- **Implementation of kernel.self and pairwise as [comptime|transform] events with AST fusion.**: Allows per-element operations over kernel data to emit optimized Zig for-loops with known-length bounds and hoisted pointer extraction, outperforming standard runtime iteration.
-- **Adopted ast_functional.replaceInvocationNodeAndContinuationsRecursive for pipeline-aware AST surgery.**: Ensures that transformations (like loop fusion) can 'swallow' downstream continuations to maintain correct scoping and flow in the generated code.
-- **Standardized on Liquid-style {{ var }} and {% if %} syntax, deprecating ${var}.**: Provides a unified, powerful metaprogramming interface and avoids developer confusion across the language and standard library.
-- **Implemented '//@koru:inline_stmt' marker in the Zig emitter.**: Allows transforms to inject multi-statement blocks (like if/return chains) into generated Zig without the emitter forcing invalid trailing semicolons.
-- **Shifted to a 'Post-modern compiler' philosophy: Design for AI data over human display.**: AI agents are the primary debuggers; embedding file:line source markers in emitted Zig code provides high-bandwidth traceability without complex sourcemaps.
-- **Automated npm release process with scripts/release.sh and AI-generated changelogs.**: Ensures reproducible cross-compilation for 5 targets and synchronizes versions across Zig and Node ecosystems.
-- **Removed the redundant 'Fusion' optimization system in favor of LLVM's native capabilities.**: Analysis showed LLVM already performs the same inlining and constant-folding on generated Zig, making Koru-level fusion unnecessary overhead.
-- **Implemented two-phase 'auto-discharge' for resource cleanup via phantom obligations.**: Automates resource management at scope boundaries, reducing boilerplate and preventing leaks by treating cleanup as a type-level requirement.
+- **Standardized on Liquid-style {{ var }} and {% if %} syntax across the language and templates.**: Provides a unified, powerful metaprogramming interface and avoids developer confusion by deprecating the older ${var} interpolation.
+- **Refactored kernel.pairwise codegen to use 'noalias' inline function wrappers.**: Allows LLVM to eliminate aliasing checks in N²/2 physics loops where i < j guarantees distinct memory, achieving parity with high-performance Rust/C code.
+- **Simplified kernel type representation to use native Zig slices ([]T) via the '__type_ref' sentinel.**: Reduces boilerplate and allows the emitter to unwrap union struct cases into direct Zig slices, enabling natural indexing (k[0]) and .len access.
+- **Shifted to a 'Post-modern compiler' philosophy: Design for AI data over human display.**: AI agents are the primary debuggers; embedding file:line source markers in emitted Zig and maintaining high-volume JSON test snapshots (500+ cases) provides high-bandwidth traceability.
+- **Removed the internal fusion optimization system in favor of LLVM's native capabilities.**: Analysis showed LLVM already performs the same inlining and constant-folding on generated Zig; removing it simplifies the compiler core.
+- **Implemented parallel test execution and shared Zig cache.**: Critical for maintaining a fast feedback loop as the regression suite grew to nearly 600 tests.
+- **Introduced support for optional Expression parameters (?Expression) in comptime transforms.**: Allows transforms like 'pairwise' to handle optional range arguments without failing or requiring multiple overloads.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -159,13 +160,13 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **Comptime stripping Phase 3 was deleting transformed flows (like ~if or ~for), resulting in empty emitted code.**: Update compiler.kz to preserve flows containing 'inline_body', 'preamble_code', or '@pass_ran' metadata, even if they originated as comptime events.
-- **AI 'hallucination' of progress and unauthorized code generation in sensitive library code (e.g., vaxis).**: Enforce minimal, targeted changes and verify against actual test results rather than aspirational specs. Use Sonnet for higher-fidelity reasoning.
-- **Zig keyword escaping collisions (e.g., .@"error") in the backend emitter.**: Refine escaping logic in the Zig emitter and update runtime.kz error names to avoid reserved keywords.
-- **Outdated documentation (SPEC.md) causing context poisoning for AI agents.**: Treat tests as the primary source of truth; delete stale documentation (like KORU_SYNTAX.md) and use automated test-result snapshots.
+- **The 'auto-discharge' system requires a two-phase approach in nested scopes.**: Ensure obligations are satisfied correctly without premature disposal during complex control flow transitions by implementing a two-phase discharge mechanism.
+- **Tap transforms can cause infinite recursion if inserted invocations are not explicitly marked.**: Implement a marking mechanism (like `is_inserted` or `skip_transform`) on AST nodes generated by the tap pass to prevent re-tapping.
+- **Zig keyword escaping collisions (e.g., .@"error") in the backend emitter.**: Refine escaping logic in the Zig emitter and update runtime.kz error names to avoid reserved keywords. Use reserved prefixes like `__koru_std` for compiler-injected references.
 - **Shadowing errors in generated Zig code when inlining loops or variables.**: Ensure generated code snippets in stdlib use unique or prefixed variable names to avoid collisions with outer scopes.
+- **Implicit obligation transfer (Interpretation B) leads to 'invisible magic' and breaks local reasoning.**: Adopt 'Interpretation C': obligations are strictly keyed to bindings. To transfer, the API must explicitly consume the old state ([!state]) and produce a new one ([new_state!]).
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 2/22/2026, 7:49:07 AM
+> Last updated: 2/24/2026, 1:36:30 PM
