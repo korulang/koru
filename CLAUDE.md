@@ -106,19 +106,22 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Hardening the Koru toolchain and releasing v0.1.4 with auto-discharge resource management and Liquid-style templates.
+Wrap the libpq C library in Koru using semantic phantom types as a pristine example of 'semantic space lifting'.
 
 ### Decisions
-- **Implementation of a two-phase 'auto-discharge' system for phantom obligations.**: Ensures resource cleanup (files, handles) occurs automatically at scope exit or budget exhaustion. The two-phase approach handles nested scopes correctly without premature disposal during complex control flow.
-- **Adopted 'Interpretation C' for Phantom Obligation Semantics: Explicit discharge with explicit union members.**: Rejects 'Interpretation B' (implicit transfer) to avoid fragile heuristics. Requires explicit consumption ([!state]) and production ([state!]) markers, now supported at the per-member level in unions for granular lifecycle control.
-- **Crystallized 'Negative-Cost Abstraction' as Koru's core design philosophy.**: Koru's abstractions (print.blk, phantoms, kernels) actively remove runtime cost and defensive code, often producing better output than hand-written Zig.
-- **Standardized on Liquid-style {{ var }} and {% if %} syntax across the language and templates.**: Provides a unified, powerful metaprogramming interface and avoids developer confusion by deprecating the older ${var} interpolation.
-- **Refactored kernel.pairwise codegen to use 'noalias' inline function wrappers.**: Allows LLVM to eliminate aliasing checks in N²/2 physics loops where i < j guarantees distinct memory, achieving parity with high-performance Rust/C code.
-- **Simplified kernel type representation to use native Zig slices ([]T) via the '__type_ref' sentinel.**: Reduces boilerplate and allows the emitter to unwrap union struct cases into direct Zig slices, enabling natural indexing (k[0]) and .len access.
-- **Shifted to a 'Post-modern compiler' philosophy: Design for AI data over human display.**: AI agents are the primary debuggers; embedding file:line source markers in emitted Zig and maintaining high-volume JSON test snapshots (500+ cases) provides high-bandwidth traceability.
-- **Removed the internal fusion optimization system in favor of LLVM's native capabilities.**: Analysis showed LLVM already performs the same inlining and constant-folding on generated Zig; removing it simplifies the compiler core.
-- **Implemented parallel test execution and shared Zig cache.**: Critical for maintaining a fast feedback loop as the regression suite grew to nearly 600 tests.
-- **Introduced support for optional Expression parameters (?Expression) in comptime transforms.**: Allows transforms like 'pairwise' to handle optional range arguments without failing or requiring multiple overloads.
+- **Implementation of a two-phase 'auto-discharge' system for phantom obligations.**: Ensures resource cleanup (files, handles) occurs automatically at scope exit or budget exhaustion. The two-phase approach handles nested scopes correctly without premature disposal during complex control flow. Renamed from 'auto-dispose' to align with linear logic terminology.
+- **Adopted 'Interpretation C' for Phantom Obligation Semantics: Explicit discharge with explicit union members.**: Rejects 'Interpretation B' (implicit transfer) to avoid fragile heuristics. Requires explicit consumption ([!state]) and production ([state!]) markers at the per-member level in unions. This ensures local reasoning and avoids 'compiler magic' in state transitions.
+- **Crystallized 'Negative-Cost Abstraction' as Koru's core design philosophy.**: Koru's abstractions (print.blk, phantoms, kernels) actively remove runtime cost and defensive code. By providing LLVM with better hints (noalias, inline blocks), we often produce better output than hand-written Zig.
+- **Standardized on Liquid-style {{ var }} and {% if %} syntax across the language and templates.**: Provides a unified, powerful metaprogramming interface and avoids developer confusion by deprecating the older ${var} interpolation. Used for both code generation and runtime expansion.
+- **Refactored kernel.pairwise codegen to use 'noalias' inline function wrappers.**: Allows LLVM to eliminate aliasing checks in N²/2 physics loops where i < j guarantees distinct memory, achieving parity with high-performance Rust/C code. This was a breakthrough for n-body benchmarks.
+- **Simplified kernel type representation to use native Zig slices ([]T) via the '__type_ref' sentinel.**: Reduces boilerplate and allows the emitter to unwrap union struct cases into direct Zig slices, enabling natural indexing (k[0]) and .len access without leaking internal implementation details (.ptr).
+- **Shifted to a 'Post-modern compiler' philosophy: Design for AI data over human display.**: AI agents are the primary debuggers; embedding file:line source markers in emitted Zig and maintaining high-volume JSON test snapshots (600+ cases) provides high-bandwidth traceability for automated tools.
+- **Removed the internal fusion optimization system in favor of LLVM's native capabilities.**: Analysis showed LLVM already performs the same inlining and constant-folding on generated Zig; removing it simplifies the compiler core and follows the 'dumb boundaries, smart middles' principle.
+- **Implemented parallel test execution (--parallel N) and shared Zig cache.**: Critical for maintaining a fast feedback loop as the regression suite grew to nearly 600 tests. Sharing the cache prevents redundant compilation across threads.
+- **Introduced support for optional Expression parameters (?Expression) in comptime transforms.**: Allows transforms like 'pairwise' or 'reduce' to handle optional range/initialization arguments without failing or requiring multiple overloads. Uses a specialized 'extractOptionalExprFromArgs' to avoid brittle fallbacks.
+- **Implementation of pairwise(0..N) outer-range syntax in kernel transforms.**: Ergonomically eliminates one level of nesting and enables the transform to hoist pointer extraction and pull continuations inside the loop for performance parity with Zig.
+- **Selection of libpq (PostgreSQL) for full semantic space lifting.**: Chosen specifically to stress-test Koru's ability to wrap a complex, real-world C API with full phantom semantics (async, transactions, COPY protocol), proving the 'bootstrap machine' model.
+- **Standardized print.ln and print.blk to write to stdout (fd 1) and supported bare expression shorthand.**: Corrects a bug where output went to stderr and reduces noise by auto-wrapping non-string-literal arguments in interpolation braces.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -163,10 +166,12 @@ This context prevents you from writing code that contradicts established design 
 - **The 'auto-discharge' system requires a two-phase approach in nested scopes.**: Ensure obligations are satisfied correctly without premature disposal during complex control flow transitions by implementing a two-phase discharge mechanism.
 - **Tap transforms can cause infinite recursion if inserted invocations are not explicitly marked.**: Implement a marking mechanism (like `is_inserted` or `skip_transform`) on AST nodes generated by the tap pass to prevent re-tapping.
 - **Zig keyword escaping collisions (e.g., .@"error") in the backend emitter.**: Refine escaping logic in the Zig emitter and update runtime.kz error names to avoid reserved keywords. Use reserved prefixes like `__koru_std` for compiler-injected references.
-- **Shadowing errors in generated Zig code when inlining loops or variables.**: Ensure generated code snippets in stdlib use unique or prefixed variable names to avoid collisions with outer scopes.
-- **Implicit obligation transfer (Interpretation B) leads to 'invisible magic' and breaks local reasoning.**: Adopt 'Interpretation C': obligations are strictly keyed to bindings. To transfer, the API must explicitly consume the old state ([!state]) and produce a new one ([new_state!]).
+- **Shadowing errors in generated Zig code when inlining loops or variables.**: Ensure generated code snippets in stdlib use unique or prefixed variable names to avoid collisions with outer scopes. Use `__koru_` prefixes for compiler-generated identifiers.
+- **Implicit obligation transfer (Interpretation B) leads to 'invisible magic' and breaks local reasoning.**: Adopt 'Interpretation C': obligations are strictly keyed to bindings. To transfer, the API must explicitly consume the old state ([!state]) and produce a new one ([new_state!]). Union-level ! prefixes are deprecated in favor of per-member markers.
+- **The `extractExprFromArgs` function in the generated backend returns source body text as a fallback, making null-checks for optional arguments unreliable.**: Use the new `extractOptionalExprFromArgs` function in the backend generator, which returns `null` when no parentheses/arguments are provided at the call site.
+- **Comptime transforms called as bare identifiers (e.g., |> labeled) are parsed as branch_constructors rather than invocations.**: Force explicit empty parentheses at the call site (e.g., |> labeled()) to ensure the parser creates an `invocation` node for the transform runner.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 2/24/2026, 1:36:30 PM
+> Last updated: 2/28/2026, 12:38:03 PM
