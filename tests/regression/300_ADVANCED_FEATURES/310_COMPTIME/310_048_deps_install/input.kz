@@ -1,0 +1,32 @@
+// Test 648: deps install - subcommand forwarding to backend
+//
+// Verifies that `koruc input.kz deps install` correctly forwards the "install"
+// subcommand to the backend handler (do_install = true), rather than printing
+// the "To install missing dependencies" hint and returning.
+//
+// The dep has no brew package defined, so no actual installation is attempted —
+// the output is fully deterministic and proves the install path was reached.
+//
+// Run: koruc input.kz deps install
+// Expected: "Installing 1 missing dependencies" (NOT "To install missing dependencies:")
+
+~import "$std/deps"
+
+// A dep that is definitely not installed, with no brew package defined.
+// This ensures: (1) it shows as missing, (2) no actual brew call is made,
+// (3) the output is deterministic.
+~std.deps:requires.system {
+    "name": "nonexistent-no-brew",
+    "check": "nonexistent-check-command --version",
+    "apt": "nonexistent-apt-pkg"
+}
+
+~event main {}
+| done {}
+
+~proc main {
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

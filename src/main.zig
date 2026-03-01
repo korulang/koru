@@ -5526,6 +5526,7 @@ pub fn main() !void {
     // NOTE: comptime_cmd_result is collected AFTER imports are processed
     var detected_comptime_command: ?[]const u8 = null;
     var potential_command_arg: ?[]const u8 = null;
+    var command_trailing_args: []const []const u8 = &.{};
 
     // Check if there's a potential command name in args
     // Args pattern: koruc input.kz <command> <...args for command>
@@ -5753,6 +5754,10 @@ pub fn main() !void {
                 // Store potential command for later checking (after imports are processed)
                 // Comptime commands are defined in imported modules, so we check after imports
                 potential_command_arg = potential_command;
+                // Capture any trailing args after the command (subcommands/flags like "install", "--pm")
+                if (arg_idx + 2 < args.len) {
+                    command_trailing_args = args[arg_idx + 2..];
+                }
             }
             break;
         }
@@ -6464,6 +6469,10 @@ pub fn main() !void {
         if (detected_comptime_command) |cmd| {
             // Pass command as first argument (backend checks args[1] for commands)
             try backend_args_list.append(allocator, cmd);
+            // Forward trailing args (subcommands/flags like "install", "--pm brew")
+            for (command_trailing_args) |trailing| {
+                try backend_args_list.append(allocator, trailing);
+            }
         } else {
             // Normal compilation - pass output exe name
             try backend_args_list.append(allocator, exe_name);
