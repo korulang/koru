@@ -706,8 +706,14 @@ pub const VisitorEmitter = struct {
                         if (event_decl) |decl| {
                             const is_norun = annotation_parser.hasPart(decl.annotations, "norun");
                             if (is_norun) {
-                                // [norun] flows are never emitted, skip calling them
-                                continue;
+                                // Only allow [comptime|norun] events that have proc handlers.
+                                // Data-storage events (template:define, build:command.sh) have no proc.
+                                const is_comptime_event = annotation_parser.hasPart(decl.annotations, "comptime");
+                                const has_proc = self.eventHasProcHandler(&flow.invocation.path);
+                                if (!(is_comptime_event and has_proc)) {
+                                    continue;
+                                }
+                                // [comptime|norun] with proc: allow — should be called from comptime_main
                             }
                             const is_transform = annotation_parser.hasPart(decl.annotations, "transform");
                             if (is_transform) {
@@ -1033,9 +1039,15 @@ pub const VisitorEmitter = struct {
                 if (event_decl) |decl| {
                     const is_norun = annotation_parser.hasPart(decl.annotations, "norun");
                     if (is_norun and !is_transformed) {
-                        // [norun] events are metadata - NEVER emit as Zig code in ANY mode
-                        // They're in the AST and executed by the backend
-                        return;
+                        // [norun] events should not be emitted as runtime code.
+                        // BUT [comptime|norun] events WITH proc handlers need comptime emission.
+                        // Events without procs (e.g. template:define) are data-storage only.
+                        const is_comptime_event = annotation_parser.hasPart(decl.annotations, "comptime");
+                        const has_proc = self.eventHasProcHandler(&flow.invocation.path);
+                        if (!(is_comptime_event and has_proc and self.emit_mode == .comptime_only)) {
+                            return;
+                        }
+                        // Fall through to emit as comptime_flowN
                     }
                     const is_transform = annotation_parser.hasPart(decl.annotations, "transform");
                     if (is_transform and !is_transformed) {
@@ -3010,6 +3022,40 @@ pub const VisitorEmitter = struct {
         }
 
         return null;
+    }
+
+    /// Check if an event has a corresponding proc handler in the AST.
+    /// Events like template:define have no proc (handled by the comptime backend),
+    /// while events like setup in 210_056 have a proc that needs Zig emission.
+    fn eventHasProcHandler(
+        self: *VisitorEmitter,
+        event_path: *const ast.DottedPath,
+    ) bool {
+        return self.findProcInItems(self.all_items, event_path, null);
+    }
+
+    fn findProcInItems(
+        self: *VisitorEmitter,
+        items: []const ast.Item,
+        event_path: *const ast.DottedPath,
+        current_module: ?[]const u8,
+    ) bool {
+        for (items) |item| {
+            switch (item) {
+                .proc_decl => |proc| {
+                    if (self.pathsEqualWithModule(&proc.path, event_path, current_module)) {
+                        return true;
+                    }
+                },
+                .module_decl => |module| {
+                    if (self.findProcInItems(module.items, event_path, module.logical_name)) {
+                        return true;
+                    }
+                },
+                else => {},
+            }
+        }
+        return false;
     }
 
     fn pathsEqual(self: *VisitorEmitter, a: *const ast.DottedPath, b: *const ast.DottedPath) bool {

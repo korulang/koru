@@ -1,0 +1,30 @@
+// TEST: KORU100 false positive — binding used in string interpolation inside for loop
+//
+// BUG: The flow checker emits KORU100 (unused binding) for a binding that IS
+// used inside {{ }} string interpolation, when the branch appears inside a
+// std.control:for loop body.
+//
+// The same pattern compiles correctly at the top level of a flow (outside any
+// for loop). The for transform rewrites the AST during the comptime pass, and
+// the binding-use tracker appears to lose the interpolation→binding association
+// in the post-transform AST.
+//
+// Discovered while building the @korulang/postgres library: the pattern
+//   | some name |> std.io:print.ln("row {{ i }}: {{ name:s }}")
+// inside a for loop triggers KORU100 for 'name', despite it being used.
+//
+// Expected: Compiles successfully — 'val' IS used in {{ val:s }}
+// Actual:   error[KORU100]: unused binding 'val'
+
+~import "$std/io"
+~import "$std/control"
+~import "$app/source"
+
+~std.control:for(0..3)
+| each _ |>
+    source:maybe_str()
+    | none |> std.io:print.ln("nothing")
+    | some val |> std.io:print.ln("got: {{ val:s }}")
+| done |> _
+
+pub fn main() void {}

@@ -1,0 +1,27 @@
+// Mock PQ library - simplified connect/disconnect with phantom obligations
+//
+// Mirrors the real @korulang/postgres pattern:
+//   connect() → *Conn[connected!]  (creates obligation)
+//   disconnect() → void            (consumes obligation)
+
+const std = @import("std");
+
+const Conn = struct { handle: i32 };
+
+// Connect to database - returns connected! obligation
+~pub event connect { conninfo: []const u8 }
+| ok *Conn[connected!]
+| err []const u8
+
+~proc connect {
+    const conn = std.heap.page_allocator.create(Conn) catch unreachable;
+    conn.* = Conn{ .handle = 42 };
+    return .{ .ok = conn };
+}
+
+// Disconnect - consumes connected obligation (void return)
+~pub event disconnect { conn: *Conn[!connected] }
+
+~proc disconnect {
+    std.heap.page_allocator.destroy(conn);
+}

@@ -1,0 +1,10 @@
+// Helper module: an event that optionally returns a string.
+// Used by 220_003 to trigger the for-loop binding-use bug.
+
+~pub event maybe_str {}
+| some []const u8
+| none
+
+~proc maybe_str {
+    return .{ .some = "hello" };
+}

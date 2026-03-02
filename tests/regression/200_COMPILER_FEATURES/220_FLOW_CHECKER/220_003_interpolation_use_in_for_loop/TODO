@@ -1,0 +1,1 @@
+KORU100 false positive: string interpolation reference not counted as binding use inside for loop body (post-transform AST loses interpolation→binding association)

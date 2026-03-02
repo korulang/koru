@@ -1,0 +1,13 @@
+// TEST: Auto-discharge emission parity
+//
+// Auto-discharge version. The [connected!] obligation on conn is discharged
+// automatically at scope exit — the compiler inserts the disconnect call.
+//
+// This should emit IDENTICAL Zig code to input.kz (explicit disconnect).
+
+~import "$app/pq"
+~import "$std/io"
+
+~app.pq:connect(conninfo: "host=localhost dbname=test")
+| ok conn |> std.io:print.ln("Connected!")
+| err msg |> std.io:print.ln("Failed: {{ msg:s }}")

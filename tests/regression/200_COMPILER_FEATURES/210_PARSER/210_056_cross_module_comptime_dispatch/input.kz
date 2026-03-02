@@ -1,0 +1,19 @@
+// TEST: Cross-module comptime dispatch with [norun]
+//
+// When a [comptime|norun] event is declared in an imported module and
+// invoked from user code, comptime_main should generate a comptime_flowN
+// call for it in backend_output_emitted.zig.
+//
+// KNOWN BUG: The frontend doesn't generate comptime_flowN calls when
+// the event has [norun] and is cross-module. The event handler IS
+// correctly emitted, but comptime_main is empty and never calls it.
+// Note: [comptime] alone (without norun) works fine cross-module.
+//
+// Same-file comptime works: see 210_030_comptime_flows.
+// Real-world reproducer: koru-libs/pq/examples/02_sql.kz
+//   ~[comptime|norun]pub event sql { conninfo: ..., source: Source }
+
+~import "$app/comptime_lib"
+
+~[comptime] app.comptime_lib:setup(config: "test-config")
+| ok _ |> _

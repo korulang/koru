@@ -1,0 +1,15 @@
+// TEST: Auto-discharge emission parity
+//
+// Explicit disconnect version. The auto-discharge version (input_auto.kz)
+// should emit IDENTICAL Zig code — the compiler-inserted disconnect call
+// must inline exactly the same way as a hand-written one.
+//
+// See post.sh for the comparison logic.
+
+~import "$app/pq"
+~import "$std/io"
+
+~app.pq:connect(conninfo: "host=localhost dbname=test")
+| ok conn |> std.io:print.ln("Connected!")
+    |> app.pq:disconnect(conn: conn)
+| err msg |> std.io:print.ln("Failed: {{ msg:s }}")
