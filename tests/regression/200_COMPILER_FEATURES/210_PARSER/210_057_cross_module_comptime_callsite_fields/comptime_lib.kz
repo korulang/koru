@@ -1,0 +1,15 @@
+// Library module with a [comptime|norun] event that has branches.
+//
+// The flow in input.kz uses a continuation (print.ln) after the | ok branch.
+// This forces the emitter to generate a call site for print.ln inside
+// the comptime flow — which is where the missing fields bug manifests.
+
+const std = @import("std");
+
+~[comptime|norun] pub event greet { name: []const u8 }
+| ok { msg: []const u8 }
+
+~proc greet {
+    _ = name;
+    return .{ .ok = .{ .msg = "hello" } };
+}

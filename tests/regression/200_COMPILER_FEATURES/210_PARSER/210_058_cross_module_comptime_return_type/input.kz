@@ -1,0 +1,20 @@
+// TEST: Cross-module [comptime] proc with _ = param; discard pattern
+//
+// When a [comptime|norun] event is declared in an imported module and
+// the proc body uses `_ = param;` to discard a parameter, the emitter
+// must translate it to `_ = &param;` to avoid Zig 0.15's "pointless
+// discard of local constant" error (since the emitter already generates
+// `_ = &param;` for unused suppression).
+//
+// Originally predicted as a void-return-type bug, but the return type
+// was always correct — both same-file and cross-module procs go through
+// the same emitEventDecl() path.
+//
+// See also: 210_056 (dispatch fix), 210_057 (call site fields fix)
+// Real-world reproducer: koru-libs/pq sql event
+
+~import "$app/comptime_lib"
+
+~[comptime] app.comptime_lib:sql(query: "CREATE TABLE test (id int)")
+| ok _ |> _
+| err _ |> _

@@ -1,0 +1,1 @@
+Cross-module comptime continuation missing raw AST fields (invocation, item) — emitArgs() injects program/allocator by name but has no mechanism for *const Invocation/*const Item pointers that transform events require

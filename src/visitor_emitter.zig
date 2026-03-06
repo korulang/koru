@@ -1668,6 +1668,14 @@ pub const VisitorEmitter = struct {
                             try self.code_emitter.writeIndent();
                             try self.code_emitter.write("_ = &__koru_event_input;\n");
 
+                            // Rewrite _ = field to _ = &field (see main handler comment)
+                            var default_proc_body: []const u8 = proc.body;
+                            for (event.input.fields) |field| {
+                                const discard_old = try std.fmt.allocPrint(self.allocator, "_ = {s}", .{field.name});
+                                const discard_new = try std.fmt.allocPrint(self.allocator, "_ = &{s}", .{field.name});
+                                default_proc_body = try replaceIdentifier(self.allocator, default_proc_body, discard_old, discard_new);
+                            }
+
                             var indent_buf: [64]u8 = undefined;
                             var indent_pos: usize = 0;
                             var idx: usize = 0;
@@ -1677,7 +1685,7 @@ pub const VisitorEmitter = struct {
                             }
                             const indent_str = indent_buf[0..indent_pos];
 
-                            try self.code_emitter.emitReindentedText(proc.body, indent_str);
+                            try self.code_emitter.emitReindentedText(default_proc_body, indent_str);
                             try self.code_emitter.write("\n");
 
                             self.code_emitter.indent_level -= 1;
@@ -2232,6 +2240,18 @@ pub const VisitorEmitter = struct {
                                 if (nameIsShadowed(field.name, declared_names.items)) {
                                     const replacement = try std.fmt.allocPrint(self.allocator, "__koru_event_input.{s}", .{field.name});
                                     proc_body = try replaceIdentifier(self.allocator, proc_body, field.name, replacement);
+                                }
+                            }
+
+                            // Rewrite _ = field to _ = &field in proc body.
+                            // The emitter generates `_ = &field;` for unused suppression,
+                            // so user's `_ = field;` must also use & to avoid Zig's
+                            // "pointless discard of local constant" error.
+                            for (event.input.fields) |field| {
+                                if (!nameIsShadowed(field.name, declared_names.items)) {
+                                    const discard_old = try std.fmt.allocPrint(self.allocator, "_ = {s}", .{field.name});
+                                    const discard_new = try std.fmt.allocPrint(self.allocator, "_ = &{s}", .{field.name});
+                                    proc_body = try replaceIdentifier(self.allocator, proc_body, discard_old, discard_new);
                                 }
                             }
 
@@ -2823,6 +2843,14 @@ pub const VisitorEmitter = struct {
                         try self.code_emitter.writeIndent();
                         try self.code_emitter.write("_ = &__koru_event_input;\n");
 
+                        // Rewrite _ = field to _ = &field (see main handler comment)
+                        var variant_proc_body: []const u8 = proc.body;
+                        for (event.input.fields) |field| {
+                            const discard_old = try std.fmt.allocPrint(self.allocator, "_ = {s}", .{field.name});
+                            const discard_new = try std.fmt.allocPrint(self.allocator, "_ = &{s}", .{field.name});
+                            variant_proc_body = try replaceIdentifier(self.allocator, variant_proc_body, discard_old, discard_new);
+                        }
+
                         // Emit proc body
                         var indent_buf: [64]u8 = undefined;
                         var indent_pos: usize = 0;
@@ -2832,7 +2860,7 @@ pub const VisitorEmitter = struct {
                             indent_pos += 4;
                         }
                         const indent_str = indent_buf[0..indent_pos];
-                        try self.code_emitter.emitReindentedText(proc.body, indent_str);
+                        try self.code_emitter.emitReindentedText(variant_proc_body, indent_str);
                         try self.code_emitter.write("\n");
 
                         // Close variant handler

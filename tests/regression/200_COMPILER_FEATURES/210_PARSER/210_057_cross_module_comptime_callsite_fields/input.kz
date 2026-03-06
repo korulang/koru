@@ -1,0 +1,22 @@
+// TEST: Cross-module comptime call site must include all handler fields
+//
+// When a [comptime|norun] event is in an imported module and its flow
+// contains continuations that call other events (e.g. std.io:print.ln),
+// the emitted comptime call site must pass ALL fields the handler expects.
+//
+// KNOWN BUG: Same-file comptime calls pass all five fields:
+//   .{ .expr = "...", .program = program, .allocator = allocator,
+//      .invocation = ..., .item = ... }
+// But cross-module comptime calls only emit three:
+//   .{ .expr = "...", .program = program, .allocator = allocator }
+// Missing: invocation and item.
+//
+// This is Bug 1 from the cross-module comptime emission path.
+// See also: 210_056 (dispatch fix), 210_058 (return type fix)
+// Real-world reproducer: koru-libs/pq/examples/02_sql.kz
+
+~import "$app/comptime_lib"
+~import "$std/io"
+
+~[comptime] app.comptime_lib:greet(name: "world")
+| ok msg |> std.io:print.ln("{{msg}}")

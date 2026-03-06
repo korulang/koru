@@ -1,0 +1,16 @@
+// Library module with a [comptime|norun] event that returns a union.
+//
+// The proc returns Output (ok/err union), but the cross-module emitter
+// generates the handler with void return type, causing a type mismatch
+// on the return statement.
+
+const std = @import("std");
+
+~[comptime|norun] pub event sql { query: []const u8 }
+| ok {}
+| err { message: []const u8 }
+
+~proc sql {
+    _ = query;
+    return .{ .ok = .{} };
+}

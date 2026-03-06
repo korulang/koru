@@ -1,6 +1,6 @@
 {
   "name": "koru",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "paths": {
     "std": "./koru_std",
     "lib": "./lib",
