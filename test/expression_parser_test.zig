@@ -86,11 +86,11 @@ test "parse binary addition" {
     try testing.expect(expr.node == .binary);
     try testing.expect(expr.node.binary.op == .add);
     
-    try testing.expect(expr.node.binary.left.* == .literal);
-    try testing.expectEqualStrings("1", expr.node.binary.left.literal.number);
-    
-    try testing.expect(expr.node.binary.right.* == .literal);
-    try testing.expectEqualStrings("2", expr.node.binary.right.literal.number);
+    try testing.expect(expr.node.binary.left.node == .literal);
+    try testing.expectEqualStrings("1", expr.node.binary.left.node.literal.number);
+
+    try testing.expect(expr.node.binary.right.node == .literal);
+    try testing.expectEqualStrings("2", expr.node.binary.right.node.literal.number);
 }
 
 test "parse arithmetic precedence" {
@@ -103,8 +103,8 @@ test "parse arithmetic precedence" {
 
     // Should parse as 1 + (2 * 3)
     try testing.expect(expr.node == .binary);
-    if (expr.* != .binary) {
-        std.debug.print("Expected binary, got: {}\n", .{expr.*});
+    if (expr.node != .binary) {
+        std.debug.print("Expected binary, got: {}\n", .{expr.node});
         return error.TestUnexpectedResult;
     }
     if (expr.node.binary.op != .add) {
@@ -113,13 +113,13 @@ test "parse arithmetic precedence" {
     }
     try testing.expect(expr.node.binary.op == .add);
     
-    try testing.expect(expr.node.binary.left.* == .literal);
-    try testing.expectEqualStrings("1", expr.node.binary.left.literal.number);
-    
-    try testing.expect(expr.node.binary.right.* == .binary);
-    try testing.expect(expr.node.binary.right.binary.op == .multiply);
-    try testing.expectEqualStrings("2", expr.node.binary.right.binary.left.literal.number);
-    try testing.expectEqualStrings("3", expr.node.binary.right.binary.right.literal.number);
+    try testing.expect(expr.node.binary.left.node == .literal);
+    try testing.expectEqualStrings("1", expr.node.binary.left.node.literal.number);
+
+    try testing.expect(expr.node.binary.right.node == .binary);
+    try testing.expect(expr.node.binary.right.node.binary.op == .multiply);
+    try testing.expectEqualStrings("2", expr.node.binary.right.node.binary.left.node.literal.number);
+    try testing.expectEqualStrings("3", expr.node.binary.right.node.binary.right.node.literal.number);
 }
 
 test "parse comparison operators" {
@@ -127,13 +127,13 @@ test "parse comparison operators" {
     
     const test_cases = [_]struct {
         input: []const u8,
-        expected_op: expression_parser.Operator,
+        expected_op: expression_parser.BinaryOperator,
     }{
         .{ .input = "a == b", .expected_op = .equal },
         .{ .input = "a != b", .expected_op = .not_equal },
-        .{ .input = "a < b", .expected_op = .less_than },
+        .{ .input = "a < b", .expected_op = .less },
         .{ .input = "a <= b", .expected_op = .less_equal },
-        .{ .input = "a > b", .expected_op = .greater_than },
+        .{ .input = "a > b", .expected_op = .greater },
         .{ .input = "a >= b", .expected_op = .greater_equal },
     };
     
@@ -146,8 +146,8 @@ test "parse comparison operators" {
         
         try testing.expect(expr.node == .binary);
         try testing.expect(expr.node.binary.op == tc.expected_op);
-        try testing.expectEqualStrings("a", expr.node.binary.left.identifier);
-        try testing.expectEqualStrings("b", expr.node.binary.right.identifier);
+        try testing.expectEqualStrings("a", expr.node.binary.left.node.identifier);
+        try testing.expectEqualStrings("b", expr.node.binary.right.node.identifier);
     }
 }
 
@@ -191,8 +191,8 @@ test "parse unary operators" {
         defer freeExpression(allocator, expr);
         
         try testing.expect(expr.node == .unary);
-        try testing.expect(expr.node.unary.op == .subtract);
-        try testing.expectEqualStrings("42", expr.node.unary.operand.literal.number);
+        try testing.expect(expr.node.unary.op == .negate);
+        try testing.expectEqualStrings("42", expr.node.unary.operand.node.literal.number);
     }
     
     // Test logical NOT
@@ -204,8 +204,8 @@ test "parse unary operators" {
         defer freeExpression(allocator, expr);
         
         try testing.expect(expr.node == .unary);
-        try testing.expect(expr.node.unary.op == .not_op);
-        try testing.expect(expr.node.unary.operand.literal.boolean == true);
+        try testing.expect(expr.node.unary.op == .not);
+        try testing.expect(expr.node.unary.operand.node.literal.boolean == true);
     }
 }
 
@@ -218,7 +218,7 @@ test "parse field access" {
     defer freeExpression(allocator, expr);
 
     try testing.expect(expr.node == .field_access);
-    try testing.expectEqualStrings("obj", expr.node.field_access.object.identifier);
+    try testing.expectEqualStrings("obj", expr.node.field_access.object.node.identifier);
     try testing.expectEqualStrings("field", expr.node.field_access.field);
 }
 
@@ -234,9 +234,9 @@ test "parse chained field access" {
     try testing.expectEqualStrings("c", expr.node.field_access.field);
     
     const inner = expr.node.field_access.object;
-    try testing.expect(inner.* == .field_access);
-    try testing.expectEqualStrings("b", inner.field_access.field);
-    try testing.expectEqualStrings("a", inner.field_access.object.identifier);
+    try testing.expect(inner.node == .field_access);
+    try testing.expectEqualStrings("b", inner.node.field_access.field);
+    try testing.expectEqualStrings("a", inner.node.field_access.object.node.identifier);
 }
 
 
@@ -252,14 +252,14 @@ test "parse grouped expression" {
     try testing.expect(expr.node == .binary);
     try testing.expect(expr.node.binary.op == .multiply);
     
-    try testing.expect(expr.node.binary.left.* == .grouped);
-    const inner = expr.node.binary.left.grouped;
-    try testing.expect(inner.* == .binary);
-    try testing.expect(inner.binary.op == .add);
-    try testing.expectEqualStrings("1", inner.binary.left.literal.number);
-    try testing.expectEqualStrings("2", inner.binary.right.literal.number);
-    
-    try testing.expectEqualStrings("3", expr.node.binary.right.literal.number);
+    try testing.expect(expr.node.binary.left.node == .grouped);
+    const inner = expr.node.binary.left.node.grouped;
+    try testing.expect(inner.node == .binary);
+    try testing.expect(inner.node.binary.op == .add);
+    try testing.expectEqualStrings("1", inner.node.binary.left.node.literal.number);
+    try testing.expectEqualStrings("2", inner.node.binary.right.node.literal.number);
+
+    try testing.expectEqualStrings("3", expr.node.binary.right.node.literal.number);
 }
 
 test "parse complex expression with precedence" {
@@ -276,27 +276,27 @@ test "parse complex expression with precedence" {
     
     // Left side: (a.status == 200) && b.valid
     const left = expr.node.binary.left;
-    try testing.expect(left.* == .binary);
-    try testing.expect(left.binary.op == .and_op);
-    
+    try testing.expect(left.node == .binary);
+    try testing.expect(left.node.binary.op == .and_op);
+
     // Left-left: a.status == 200
-    const ll = left.binary.left;
-    try testing.expect(ll.* == .binary);
-    try testing.expect(ll.binary.op == .equal);
-    try testing.expect(ll.binary.left.* == .field_access);
-    try testing.expectEqualStrings("200", ll.binary.right.literal.number);
-    
+    const ll = left.node.binary.left;
+    try testing.expect(ll.node == .binary);
+    try testing.expect(ll.node.binary.op == .equal);
+    try testing.expect(ll.node.binary.left.node == .field_access);
+    try testing.expectEqualStrings("200", ll.node.binary.right.node.literal.number);
+
     // Left-right: b.valid
-    const lr = left.binary.right;
-    try testing.expect(lr.* == .field_access);
-    try testing.expectEqualStrings("valid", lr.field_access.field);
-    
+    const lr = left.node.binary.right;
+    try testing.expect(lr.node == .field_access);
+    try testing.expectEqualStrings("valid", lr.node.field_access.field);
+
     // Right side: c > 0
     const right = expr.node.binary.right;
-    try testing.expect(right.* == .binary);
-    try testing.expect(right.binary.op == .greater_than);
-    try testing.expectEqualStrings("c", right.binary.left.identifier);
-    try testing.expectEqualStrings("0", right.binary.right.literal.number);
+    try testing.expect(right.node == .binary);
+    try testing.expect(right.node.binary.op == .greater);
+    try testing.expectEqualStrings("c", right.node.binary.left.node.identifier);
+    try testing.expectEqualStrings("0", right.node.binary.right.node.literal.number);
 }
 
 test "parse string concatenation" {
@@ -309,19 +309,160 @@ test "parse string concatenation" {
 
     // Should parse as ("hello" ++ " ") ++ "world"
     try testing.expect(expr.node == .binary);
-    try testing.expect(expr.node.binary.op == .concat);
-    try testing.expectEqualStrings("world", expr.node.binary.right.literal.string);
-    
+    try testing.expect(expr.node.binary.op == .string_concat);
+    try testing.expectEqualStrings("world", expr.node.binary.right.node.literal.string);
+
     const left = expr.node.binary.left;
-    try testing.expect(left.* == .binary);
-    try testing.expect(left.binary.op == .concat);
-    try testing.expectEqualStrings("hello", left.binary.left.literal.string);
-    try testing.expectEqualStrings(" ", left.binary.right.literal.string);
+    try testing.expect(left.node == .binary);
+    try testing.expect(left.node.binary.op == .string_concat);
+    try testing.expectEqualStrings("hello", left.node.binary.left.node.literal.string);
+    try testing.expectEqualStrings(" ", left.node.binary.right.node.literal.string);
 }
 
 
+test "parse builtin call @as" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "@as(i32, 5)");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .builtin_call);
+    try testing.expectEqualStrings("as", expr.node.builtin_call.name);
+    try testing.expect(expr.node.builtin_call.args.len == 2);
+    try testing.expect(expr.node.builtin_call.args[0].node == .identifier);
+    try testing.expectEqualStrings("i32", expr.node.builtin_call.args[0].node.identifier);
+    try testing.expect(expr.node.builtin_call.args[1].node == .literal);
+    try testing.expectEqualStrings("5", expr.node.builtin_call.args[1].node.literal.number);
+}
+
+test "parse builtin call @intCast" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "@intCast(x)");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .builtin_call);
+    try testing.expectEqualStrings("intCast", expr.node.builtin_call.name);
+    try testing.expect(expr.node.builtin_call.args.len == 1);
+    try testing.expect(expr.node.builtin_call.args[0].node == .identifier);
+}
+
+test "parse array indexing" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "arr[0]");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .array_index);
+    try testing.expect(expr.node.array_index.object.node == .identifier);
+    try testing.expectEqualStrings("arr", expr.node.array_index.object.node.identifier);
+    try testing.expect(expr.node.array_index.index.node == .literal);
+    try testing.expectEqualStrings("0", expr.node.array_index.index.node.literal.number);
+}
+
+test "parse nested array indexing with field access" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "acc.dv[i][0]");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    // acc.dv[i][0] → array_index(array_index(field_access(acc, dv), i), 0)
+    try testing.expect(expr.node == .array_index);
+    try testing.expectEqualStrings("0", expr.node.array_index.index.node.literal.number);
+
+    const inner = expr.node.array_index.object;
+    try testing.expect(inner.node == .array_index);
+    try testing.expect(inner.node.array_index.index.node == .identifier);
+    try testing.expectEqualStrings("i", inner.node.array_index.index.node.identifier);
+
+    const fa = inner.node.array_index.object;
+    try testing.expect(fa.node == .field_access);
+    try testing.expectEqualStrings("dv", fa.node.field_access.field);
+    try testing.expectEqualStrings("acc", fa.node.field_access.object.node.identifier);
+}
+
+test "parse conditional expression" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "if(x > 5) a else b");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .conditional);
+    try testing.expect(expr.node.conditional.condition.node == .binary);
+    try testing.expect(expr.node.conditional.then_expr.node == .identifier);
+    try testing.expectEqualStrings("a", expr.node.conditional.then_expr.node.identifier);
+    try testing.expect(expr.node.conditional.else_expr.node == .identifier);
+    try testing.expectEqualStrings("b", expr.node.conditional.else_expr.node.identifier);
+}
+
+test "parse complex expression with builtin" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "acc.sum + @as(i64, item) * cfg.multiplier");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    // acc.sum + (@as(i64, item) * cfg.multiplier)
+    try testing.expect(expr.node == .binary);
+    try testing.expect(expr.node.binary.op == .add);
+    try testing.expect(expr.node.binary.left.node == .field_access);
+
+    const right = expr.node.binary.right;
+    try testing.expect(right.node == .binary);
+    try testing.expect(right.node.binary.op == .multiply);
+    try testing.expect(right.node.binary.left.node == .builtin_call);
+    try testing.expectEqualStrings("as", right.node.binary.left.node.builtin_call.name);
+}
+
+test "parse function call" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "foo(x, y)");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expr.node == .function_call);
+    try testing.expect(expr.node.function_call.args.len == 2);
+    try testing.expect(expr.node.function_call.callee.node == .identifier);
+    try testing.expectEqualStrings("foo", expr.node.function_call.callee.node.identifier);
+}
+
+test "containsFunctionCall returns false for pure expressions" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "acc.sum + @as(i64, item)");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(!expression_parser.containsFunctionCall(expr));
+}
+
+test "containsFunctionCall returns true for function calls" {
+    const allocator = testing.allocator;
+    var parser = ExpressionParser.init(allocator, "foo(x)");
+    defer parser.deinit();
+
+    const expr = try parser.parse();
+    defer freeExpression(allocator, expr);
+
+    try testing.expect(expression_parser.containsFunctionCall(expr));
+}
+
 fn freeExpression(allocator: std.mem.Allocator, expr: *Expression) void {
-    switch (expr.*) {
+    switch (expr.node) {
         .literal => |lit| {
             switch (lit) {
                 .number => |n| allocator.free(n),
@@ -343,6 +484,29 @@ fn freeExpression(allocator: std.mem.Allocator, expr: *Expression) void {
         },
         .grouped => |g| {
             freeExpression(allocator, g);
+        },
+        .builtin_call => |bc| {
+            for (bc.args) |arg| {
+                freeExpression(allocator, arg);
+            }
+            allocator.free(bc.args);
+            allocator.free(bc.name);
+        },
+        .array_index => |ai| {
+            freeExpression(allocator, ai.object);
+            freeExpression(allocator, ai.index);
+        },
+        .conditional => |c| {
+            freeExpression(allocator, c.condition);
+            freeExpression(allocator, c.then_expr);
+            freeExpression(allocator, c.else_expr);
+        },
+        .function_call => |fc| {
+            freeExpression(allocator, fc.callee);
+            for (fc.args) |arg| {
+                freeExpression(allocator, arg);
+            }
+            allocator.free(fc.args);
         },
     }
     allocator.destroy(expr);

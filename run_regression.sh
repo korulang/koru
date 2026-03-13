@@ -679,6 +679,11 @@ PY
                 --commit="$GIT_COMMIT" 2>&1 | while read line; do
                 echo "  $line"
             done
+
+            # Generate test index for easy lookup
+            node scripts/generate-test-index.js 2>&1 | while read line; do
+                echo "  $line"
+            done
         fi
     fi
 
@@ -875,6 +880,11 @@ if [ ${#TEST_FILTERS[@]} -eq 0 ] && [ "$SMOKE_MODE" = false ]; then
             --total="$TOTAL_TESTS" \
             --flags="$CMD_FLAGS" \
             --commit="$GIT_COMMIT" 2>&1 | while read line; do
+            echo "  $line"
+        done
+
+        # Generate test index for easy lookup
+        node scripts/generate-test-index.js 2>&1 | while read line; do
             echo "  $line"
         done
     fi

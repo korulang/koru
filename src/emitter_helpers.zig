@@ -4604,6 +4604,39 @@ fn emitExpression(
             try emitExpression(emitter, ctx, g, binding_substitution);
             try emitter.write(")");
         },
+        .builtin_call => |bc| {
+            try emitter.write("@");
+            try emitter.write(bc.name);
+            try emitter.write("(");
+            for (bc.args, 0..) |arg, i| {
+                if (i > 0) try emitter.write(", ");
+                try emitExpression(emitter, ctx, arg, binding_substitution);
+            }
+            try emitter.write(")");
+        },
+        .array_index => |ai| {
+            try emitExpression(emitter, ctx, ai.object, binding_substitution);
+            try emitter.write("[");
+            try emitExpression(emitter, ctx, ai.index, binding_substitution);
+            try emitter.write("]");
+        },
+        .conditional => |c| {
+            try emitter.write("if (");
+            try emitExpression(emitter, ctx, c.condition, binding_substitution);
+            try emitter.write(") ");
+            try emitExpression(emitter, ctx, c.then_expr, binding_substitution);
+            try emitter.write(" else ");
+            try emitExpression(emitter, ctx, c.else_expr, binding_substitution);
+        },
+        .function_call => |fc| {
+            try emitExpression(emitter, ctx, fc.callee, binding_substitution);
+            try emitter.write("(");
+            for (fc.args, 0..) |arg, i| {
+                if (i > 0) try emitter.write(", ");
+                try emitExpression(emitter, ctx, arg, binding_substitution);
+            }
+            try emitter.write(")");
+        },
     }
 }
 

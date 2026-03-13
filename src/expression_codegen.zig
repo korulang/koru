@@ -37,6 +37,39 @@ pub const ExpressionCodegen = struct {
                 try self.generateExpr(g);
                 try self.buffer.append(self.allocator, ')');
             },
+            .builtin_call => |bc| {
+                try self.buffer.append(self.allocator, '@');
+                try self.buffer.appendSlice(self.allocator, bc.name);
+                try self.buffer.append(self.allocator, '(');
+                for (bc.args, 0..) |arg, i| {
+                    if (i > 0) try self.buffer.appendSlice(self.allocator, ", ");
+                    try self.generateExpr(arg);
+                }
+                try self.buffer.append(self.allocator, ')');
+            },
+            .array_index => |ai| {
+                try self.generateExpr(ai.object);
+                try self.buffer.append(self.allocator, '[');
+                try self.generateExpr(ai.index);
+                try self.buffer.append(self.allocator, ']');
+            },
+            .conditional => |c| {
+                try self.buffer.appendSlice(self.allocator, "if (");
+                try self.generateExpr(c.condition);
+                try self.buffer.appendSlice(self.allocator, ") ");
+                try self.generateExpr(c.then_expr);
+                try self.buffer.appendSlice(self.allocator, " else ");
+                try self.generateExpr(c.else_expr);
+            },
+            .function_call => |fc| {
+                try self.generateExpr(fc.callee);
+                try self.buffer.append(self.allocator, '(');
+                for (fc.args, 0..) |arg, i| {
+                    if (i > 0) try self.buffer.appendSlice(self.allocator, ", ");
+                    try self.generateExpr(arg);
+                }
+                try self.buffer.append(self.allocator, ')');
+            },
         }
     }
     

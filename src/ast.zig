@@ -20,7 +20,11 @@ pub const ExprNode = union(enum) {
     unary: UnaryOp,
     field_access: FieldAccess,
     grouped: *Expression,
-    
+    builtin_call: BuiltinCall,
+    array_index: ArrayIndex,
+    conditional: Conditional,
+    function_call: FunctionCall,
+
     pub fn deinit(self: *ExprNode, allocator: std.mem.Allocator) void {
         switch (self.*) {
             .literal => |*l| l.deinit(allocator),
@@ -31,6 +35,10 @@ pub const ExprNode = union(enum) {
             .grouped => |g| {
                 g.deinit(allocator);
             },
+            .builtin_call => |*bc| bc.deinit(allocator),
+            .array_index => |*ai| ai.deinit(allocator),
+            .conditional => |*c| c.deinit(allocator),
+            .function_call => |*fc| fc.deinit(allocator),
         }
     }
 };
@@ -83,10 +91,58 @@ pub const UnaryOperator = enum {
 pub const FieldAccess = struct {
     object: *Expression,
     field: []const u8,
-    
+
     pub fn deinit(self: *FieldAccess, allocator: std.mem.Allocator) void {
         self.object.deinit(allocator);
         allocator.free(self.field);
+    }
+};
+
+pub const BuiltinCall = struct {
+    name: []const u8, // "as", "intCast", etc.
+    args: []const *Expression,
+
+    pub fn deinit(self: *BuiltinCall, allocator: std.mem.Allocator) void {
+        for (self.args) |arg| {
+            arg.deinit(allocator);
+        }
+        allocator.free(self.args);
+        allocator.free(self.name);
+    }
+};
+
+pub const ArrayIndex = struct {
+    object: *Expression,
+    index: *Expression,
+
+    pub fn deinit(self: *ArrayIndex, allocator: std.mem.Allocator) void {
+        self.object.deinit(allocator);
+        self.index.deinit(allocator);
+    }
+};
+
+pub const Conditional = struct {
+    condition: *Expression,
+    then_expr: *Expression,
+    else_expr: *Expression,
+
+    pub fn deinit(self: *Conditional, allocator: std.mem.Allocator) void {
+        self.condition.deinit(allocator);
+        self.then_expr.deinit(allocator);
+        self.else_expr.deinit(allocator);
+    }
+};
+
+pub const FunctionCall = struct {
+    callee: *Expression,
+    args: []const *Expression,
+
+    pub fn deinit(self: *FunctionCall, allocator: std.mem.Allocator) void {
+        self.callee.deinit(allocator);
+        for (self.args) |arg| {
+            arg.deinit(allocator);
+        }
+        allocator.free(self.args);
     }
 };
 

@@ -1,0 +1,30 @@
+// Test: Parser should reject function calls in branch constructors
+//
+// Branch constructors must contain only pure values: literals, bindings,
+// field access, and expressions. Function calls introduce side effects
+// and are not allowed. Use event chaining instead:
+//
+//   WRONG:  | ok x |> result { value: computeIt(x) }
+//   RIGHT:  | ok x |> compute(input: x)
+//                     | value v |> result { value: v }
+
+~import "$std/io"
+
+const std = @import("std");
+
+fn helper(x: []const u8) []const u8 { return x; }
+
+~event greet { name: []const u8 }
+| greeting { msg: []const u8 }
+
+~proc greet {
+    const buf = std.fmt.comptimePrint("Hello {s}", .{name});
+    return .{ .greeting = .{ .msg = buf } };
+}
+
+~event transform { input: []const u8 }
+| result { value: []const u8 }
+
+// INVALID: function call helper() inside branch constructor
+~greet(name: "world")
+| greeting g |> result { value: helper(g.msg) }

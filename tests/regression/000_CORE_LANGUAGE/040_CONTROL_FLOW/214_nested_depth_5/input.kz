@@ -2,19 +2,24 @@
 const std = @import("std");
 ~import "$std/io"
 
-~event add_one { value: i32 } | done { result: i32 }
+~event add_one { value: i32 }
+| done { result: i32 }
 ~add_one = done { result: value + 1 }
 
-~event add_two { value: i32 } | done { result: i32 }
+~event add_two { value: i32 }
+| done { result: i32 }
 ~add_two = done { result: value + 2 }
 
-~event add_three { value: i32 } | done { result: i32 }
+~event add_three { value: i32 }
+| done { result: i32 }
 ~add_three = done { result: value + 3 }
 
-~event add_four { value: i32 } | done { result: i32 }
+~event add_four { value: i32 }
+| done { result: i32 }
 ~add_four = done { result: value + 4 }
 
-~event add_five { value: i32 } | done { result: i32 }
+~event add_five { value: i32 }
+| done { result: i32 }
 ~add_five = done { result: value + 5 }
 
 ~add_one(value: 10)

@@ -1,0 +1,28 @@
+// TEST: Transaction started but never committed or rolled back
+//
+// Starting a transaction creates an obligation to END it meaningfully.
+// You must either commit() or rollback(). Letting it drop implicitly
+// (which typically means rollback) is a semantic error - you should
+// be EXPLICIT about your intent.
+//
+// EXPECTED: Compiler error - Transaction[active!] obligation not satisfied
+//
+// Compare to Rust:
+//   let mut conn = Connection::open_in_memory().unwrap();
+//   let tx = conn.transaction().unwrap();
+//   // tx drops here - Rust implicitly rolls back, says "fine"
+//   // Koru says "ERROR: you must explicitly commit or rollback"
+
+~import "$app/db"
+
+~app.db:connect(host: "localhost")
+| ok conn |>
+    app.db:begin(conn: conn.conn)
+    | ok tx |>
+        // We started a transaction... but we don't end it!
+        // No commit, no rollback - this is a semantic error.
+        _
+    | err e |>
+        _
+| err e |>
+    _

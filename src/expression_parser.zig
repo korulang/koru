@@ -6,8 +6,10 @@ pub const ParseError = error{
     OutOfMemory,
     UnexpectedToken,
     MissingClosingParen,
+    MissingClosingBracket,
     ExpectedOpenParen,
     ExpectedCloseParen,
+    ExpectedElse,
     UnknownOperator,
     InvalidNumber,
     InvalidCharLiteral,
@@ -31,6 +33,10 @@ pub const Literal = ast.Literal;
 pub const BinaryOp = ast.BinaryOp;
 pub const UnaryOp = ast.UnaryOp;
 pub const FieldAccess = ast.FieldAccess;
+pub const BuiltinCall = ast.BuiltinCall;
+pub const ArrayIndex = ast.ArrayIndex;
+pub const Conditional = ast.Conditional;
+pub const FunctionCall = ast.FunctionCall;
 pub const BinaryOperator = ast.BinaryOperator;
 pub const UnaryOperator = ast.UnaryOperator;
 
@@ -182,7 +188,7 @@ pub const ExpressionParser = struct {
 
         // Check for unary operators
         if (self.peek() == '!' or self.peek() == '-') {
-            const op = if (self.peek() == '!') Operator.not_op else Operator.subtract;
+            const op = if (self.peek() == '!') Operator.not_op else Operator.negate;
             self.advance();
             const operand = try self.parsePrimary();
 
@@ -193,6 +199,16 @@ pub const ExpressionParser = struct {
                 .operand = operand,
             } } };
             return unary;
+        }
+
+        // Check for builtin call (@as, @intCast, etc.)
+        if (self.peek() == '@') {
+            return try self.parseBuiltinCall();
+        }
+
+        // Check for conditional expression (if(cond) then else else_expr)
+        if (self.matchKeywordBoundary("if")) {
+            return try self.parseConditional();
         }
 
         // Check for char literal
@@ -229,23 +245,11 @@ pub const ExpressionParser = struct {
         // Must be an identifier
         const ident = try self.parseIdentifier();
 
-        self.skipWhitespace();
-
-        // Check for field access
         var result = try self.allocator.create(Expression);
         result.* = .{ .node = .{ .identifier = ident } };
 
-        while (self.peek() == '.') {
-            self.advance();
-            const field = try self.parseIdentifier();
-
-            const field_access = try self.allocator.create(Expression);
-            field_access.* = .{ .node = .{ .field_access = .{
-                .object = result,
-                .field = field,
-            } } };
-            result = field_access;
-        }
+        // Parse postfix operators: field access, array indexing, function calls
+        result = try self.parsePostfix(result);
 
         return result;
     }
@@ -397,6 +401,143 @@ pub const ExpressionParser = struct {
         return try self.allocator.dupe(u8, self.input[start..self.pos]);
     }
 
+    /// Parse postfix operators: field access (.field), array indexing ([i]),
+    /// and function calls (args). These chain left-to-right.
+    fn parsePostfix(self: *ExpressionParser, initial: *Expression) ParseError!*Expression {
+        var result = initial;
+        while (true) {
+            self.skipWhitespace();
+            if (self.peek() == '.') {
+                self.advance();
+                const field = try self.parseIdentifier();
+
+                const field_access = try self.allocator.create(Expression);
+                field_access.* = .{ .node = .{ .field_access = .{
+                    .object = result,
+                    .field = field,
+                } } };
+                result = field_access;
+            } else if (self.peek() == '[') {
+                self.advance();
+                const index = try self.parseExpression(.lowest);
+                self.skipWhitespace();
+                if (self.peek() != ']') {
+                    return error.MissingClosingBracket;
+                }
+                self.advance();
+
+                const array_index = try self.allocator.create(Expression);
+                array_index.* = .{ .node = .{ .array_index = .{
+                    .object = result,
+                    .index = index,
+                } } };
+                result = array_index;
+            } else if (self.peek() == '(') {
+                // Function call
+                const args = try self.parseArgList();
+
+                const function_call = try self.allocator.create(Expression);
+                function_call.* = .{ .node = .{ .function_call = .{
+                    .callee = result,
+                    .args = args,
+                } } };
+                result = function_call;
+            } else {
+                break;
+            }
+        }
+        return result;
+    }
+
+    /// Parse a builtin call: @name(args...)
+    fn parseBuiltinCall(self: *ExpressionParser) ParseError!*Expression {
+        self.advance(); // skip '@'
+
+        const name = try self.parseIdentifier();
+
+        self.skipWhitespace();
+        if (self.peek() != '(') return error.ExpectedOpenParen;
+        const args = try self.parseArgList();
+
+        const result = try self.allocator.create(Expression);
+        result.* = .{ .node = .{ .builtin_call = .{
+            .name = name,
+            .args = args,
+        } } };
+        return result;
+    }
+
+    /// Parse a conditional: if(cond) then_expr else else_expr
+    fn parseConditional(self: *ExpressionParser) ParseError!*Expression {
+        self.pos += 2; // skip "if"
+        self.skipWhitespace();
+
+        // Parse condition in parens
+        if (self.peek() != '(') return error.ExpectedOpenParen;
+        self.advance();
+        const condition = try self.parseExpression(.lowest);
+        self.skipWhitespace();
+        if (self.peek() != ')') return error.ExpectedCloseParen;
+        self.advance();
+
+        // Parse then expression
+        self.skipWhitespace();
+        const then_expr = try self.parseExpression(.lowest);
+
+        // Expect 'else' keyword
+        self.skipWhitespace();
+        if (!self.matchKeywordBoundary("else")) {
+            return error.ExpectedElse;
+        }
+        self.pos += 4; // skip "else"
+
+        // Parse else expression (may be another if-else)
+        self.skipWhitespace();
+        const else_expr = try self.parseExpression(.lowest);
+
+        const result = try self.allocator.create(Expression);
+        result.* = .{ .node = .{ .conditional = .{
+            .condition = condition,
+            .then_expr = then_expr,
+            .else_expr = else_expr,
+        } } };
+        return result;
+    }
+
+    /// Parse a comma-separated argument list: (expr, expr, ...)
+    fn parseArgList(self: *ExpressionParser) ParseError![]const *Expression {
+        if (self.peek() != '(') return error.ExpectedOpenParen;
+        self.advance(); // skip '('
+
+        var args = try std.ArrayList(*Expression).initCapacity(self.allocator, 0);
+
+        self.skipWhitespace();
+        if (self.peek() == ')') {
+            self.advance();
+            return try args.toOwnedSlice(self.allocator);
+        }
+
+        // Parse first argument
+        try args.append(self.allocator, try self.parseExpression(.lowest));
+
+        // Parse remaining arguments
+        while (true) {
+            self.skipWhitespace();
+            if (self.peek() == ')') {
+                self.advance();
+                break;
+            }
+            if (self.peek() != ',') {
+                return error.ExpectedCloseParen;
+            }
+            self.advance(); // skip ','
+            self.skipWhitespace();
+            try args.append(self.allocator, try self.parseExpression(.lowest));
+        }
+
+        return try args.toOwnedSlice(self.allocator);
+    }
+
     fn parseOperator(self: *ExpressionParser) ParseError!Operator {
         self.skipWhitespace();
 
@@ -494,6 +635,16 @@ pub const ExpressionParser = struct {
         return std.mem.eql(u8, self.input[self.pos .. self.pos + keyword.len], keyword);
     }
 
+    /// Like matchKeyword but also checks that the next character after the keyword
+    /// is not alphanumeric or underscore (word boundary check).
+    fn matchKeywordBoundary(self: *ExpressionParser, keyword: []const u8) bool {
+        if (!self.matchKeyword(keyword)) return false;
+        const end = self.pos + keyword.len;
+        if (end >= self.input.len) return true;
+        const next = self.input[end];
+        return !std.ascii.isAlphanumeric(next) and next != '_';
+    }
+
     fn isRightAssociative(op: Operator) bool {
         _ = op;
         return false; // All our operators are left-associative
@@ -508,9 +659,33 @@ pub const ExpressionParser = struct {
     }
 };
 
+/// Walk the AST and return true if any node is a function_call.
+/// Builtin calls (@as, @intCast) are NOT considered function calls.
+pub fn containsFunctionCall(expr: *const Expression) bool {
+    switch (expr.node) {
+        .function_call => return true,
+        .literal => return false,
+        .identifier => return false,
+        .binary => |bin| return containsFunctionCall(bin.left) or containsFunctionCall(bin.right),
+        .unary => |un| return containsFunctionCall(un.operand),
+        .field_access => |fa| return containsFunctionCall(fa.object),
+        .grouped => |g| return containsFunctionCall(g),
+        .builtin_call => |bc| {
+            for (bc.args) |arg| {
+                if (containsFunctionCall(arg)) return true;
+            }
+            return false;
+        },
+        .array_index => |ai| return containsFunctionCall(ai.object) or containsFunctionCall(ai.index),
+        .conditional => |c| return containsFunctionCall(c.condition) or
+            containsFunctionCall(c.then_expr) or
+            containsFunctionCall(c.else_expr),
+    }
+}
+
 /// Convert an expression to a string (for code generation)
 pub fn expressionToString(expr: *const Expression, writer: anytype) !void {
-    switch (expr.node) { // Fixed: switch on expr.node, not expr.*
+    switch (expr.node) {
         .literal => |lit| {
             switch (lit) {
                 .number => |n| try writer.print("{s}", .{n}),
@@ -534,10 +709,40 @@ pub fn expressionToString(expr: *const Expression, writer: anytype) !void {
             try expressionToString(fa.object, writer);
             try writer.print(".{s}", .{fa.field});
         },
-        // Removed function_call case - it doesn't exist in the AST
         .grouped => |g| {
             try writer.print("(", .{});
             try expressionToString(g, writer);
+            try writer.print(")", .{});
+        },
+        .builtin_call => |bc| {
+            try writer.print("@{s}(", .{bc.name});
+            for (bc.args, 0..) |arg, i| {
+                if (i > 0) try writer.print(", ", .{});
+                try expressionToString(arg, writer);
+            }
+            try writer.print(")", .{});
+        },
+        .array_index => |ai| {
+            try expressionToString(ai.object, writer);
+            try writer.print("[", .{});
+            try expressionToString(ai.index, writer);
+            try writer.print("]", .{});
+        },
+        .conditional => |c| {
+            try writer.print("if(", .{});
+            try expressionToString(c.condition, writer);
+            try writer.print(") ", .{});
+            try expressionToString(c.then_expr, writer);
+            try writer.print(" else ", .{});
+            try expressionToString(c.else_expr, writer);
+        },
+        .function_call => |fc| {
+            try expressionToString(fc.callee, writer);
+            try writer.print("(", .{});
+            for (fc.args, 0..) |arg, i| {
+                if (i > 0) try writer.print(", ", .{});
+                try expressionToString(arg, writer);
+            }
             try writer.print(")", .{});
         },
     }

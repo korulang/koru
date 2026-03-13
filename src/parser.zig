@@ -3450,7 +3450,7 @@ pub const Parser = struct {
 
                     if (closing_idx != null and closing_idx.? > b_idx) {
                         // Single-line, complete branch constructor
-                        const branch_constructor = try self.parseBranchConstructor(body_str);
+                        const branch_constructor = try self.parseBranchConstructorWithContext(body_str, true);
                         return ast.Item{ .immediate_impl = .{
                             .event_path = event_path,
                             .value = branch_constructor,
@@ -3488,7 +3488,7 @@ pub const Parser = struct {
                         }
 
                         // Parse the complete constructor
-                        const branch_constructor = try self.parseBranchConstructor(constructor_content.items);
+                        const branch_constructor = try self.parseBranchConstructorWithContext(constructor_content.items, true);
                         return ast.Item{ .immediate_impl = .{
                             .event_path = event_path,
                             .value = branch_constructor,
@@ -3611,7 +3611,7 @@ pub const Parser = struct {
                 if (closing_idx != null and closing_idx.? > b_idx) {
                     // Single-line branch constructor
                     self.current += 1;
-                    const branch_constructor = try self.parseBranchConstructor(trimmed_body);
+                    const branch_constructor = try self.parseBranchConstructorWithContext(trimmed_body, true);
                     return ast.Item{ .immediate_impl = .{
                         .event_path = event_path,
                         .value = branch_constructor,
@@ -3650,7 +3650,7 @@ pub const Parser = struct {
                     }
 
                     // Parse the complete constructor
-                    const branch_constructor = try self.parseBranchConstructor(constructor_content.items);
+                    const branch_constructor = try self.parseBranchConstructorWithContext(constructor_content.items, true);
                     return ast.Item{ .immediate_impl = .{
                         .event_path = event_path,
                         .value = branch_constructor,
@@ -5410,7 +5410,7 @@ pub const Parser = struct {
         return self.parseBranchConstructorWithContext(content, self.isInProc());
     }
 
-    fn parseBranchConstructorWithContext(self: *Parser, content: []const u8, _: bool) !ast.BranchConstructor {
+    fn parseBranchConstructorWithContext(self: *Parser, content: []const u8, in_proc: bool) !ast.BranchConstructor {
         // Format: branch_name { field: value, field: value }
         // OR shorthand: .{ .branch_name = .{ fields } }
         const brace_idx = std.mem.indexOf(u8, content, "{") orelse {
@@ -5596,9 +5596,29 @@ pub const Parser = struct {
                 else
                     trimmed; // The whole expression becomes the value
 
-                // Expressions are allowed everywhere - they're pure by construction
-                // (no arbitrary function calls, side effects controlled by event system)
-                const is_complex_expr = !self.isValidBranchConstructorValue(field_value);
+                // Structural validation: reject function calls in branch constructors
+                // outside proc bodies. Builtins (@as, @intCast), arithmetic, array
+                // indexing, and conditionals are all allowed.
+                if (!in_proc) {
+                    var expr_parser = expression_parser.ExpressionParser.init(self.allocator, field_value);
+                    defer expr_parser.deinit();
+                    if (expr_parser.parse()) |expr| {
+                        defer expr.deinit(self.allocator);
+                        if (expression_parser.containsFunctionCall(expr)) {
+                            try self.reporter.addError(
+                                .PARSE003,
+                                self.current + 1,
+                                1,
+                                "branch constructor field '{s}' contains a function call — use event chaining instead.",
+                                .{field_name},
+                            );
+                            return error.ParseError;
+                        }
+                    } else |_| {
+                        // Expression didn't parse — pass through as opaque string.
+                        // The Zig backend will catch actual syntax errors.
+                    }
+                }
 
                 // Always store expression string for code generation
                 try fields.append(self.allocator, ast.Field{
@@ -5608,8 +5628,6 @@ pub const Parser = struct {
                     .expression = null,
                     .owns_expression = false,
                 });
-
-                _ = is_complex_expr; // May be useful for optimization hints later
             }
         }
 
@@ -6331,95 +6349,8 @@ pub const Parser = struct {
         return ast.Shape{ .fields = try fields.toOwnedSlice(self.allocator) };
     }
 
-    fn isValidBranchConstructorValue(self: *Parser, value: []const u8) bool {
-        _ = self;
-        const trimmed = lexer.trim(value);
-
-        // Allow string literals
-        if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
-            return true;
-        }
-
-        // Allow nested objects { ... }
-        if (trimmed.len >= 2 and trimmed[0] == '{' and trimmed[trimmed.len - 1] == '}') {
-            // TODO: Could validate the object contents recursively
-            return true;
-        }
-
-        // Allow array literals [ ... ]
-        if (trimmed.len >= 2 and trimmed[0] == '[' and trimmed[trimmed.len - 1] == ']') {
-            // TODO: Could validate the array contents recursively
-            return true;
-        }
-
-        // Allow number literals
-        if (trimmed.len > 0) {
-            var all_numeric = true;
-            var has_one_dot = false;
-            for (trimmed, 0..) |c, i| {
-                if (c == '.' and !has_one_dot) {
-                    has_one_dot = true;
-                } else if (c == '-' and i == 0) {
-                    // Allow negative sign at start
-                } else if (!std.ascii.isDigit(c)) {
-                    all_numeric = false;
-                    break;
-                }
-            }
-            if (all_numeric) return true;
-        }
-
-        // Allow field access (including chained access like r.user.id)
-        if (std.mem.indexOf(u8, trimmed, ".")) |_| {
-            // But make sure it doesn't start with { or [ (those are handled above)
-            if (trimmed[0] != '{' and trimmed[0] != '[') {
-                // Split by dots and check each part is a valid identifier
-                var parts_iter = std.mem.tokenizeScalar(u8, trimmed, '.');
-                var valid_chain = true;
-                var part_count: u32 = 0;
-
-                while (parts_iter.next()) |part| {
-                    if (!isValidIdentifier(part)) {
-                        valid_chain = false;
-                        break;
-                    }
-                    part_count += 1;
-                }
-
-                // Must have at least 2 parts (binding.field)
-                if (valid_chain and part_count >= 2) {
-                    return true;
-                }
-            }
-        }
-
-        // Allow bare identifiers (for passing through values)
-        if (isValidIdentifier(trimmed)) {
-            return true;
-        }
-
-        // Reject anything with operators or function calls
-        const forbidden = [_][]const u8{
-            "+", "*", "/", "%", // Arithmetic (but minus is allowed at start for negatives)
-            "(", ")", // Function calls (unless part of nested structure)
-            "&&", "||", "!", // Logic
-            "<", ">", "==", "!=", // Comparison
-            "?", ":", // Ternary
-        };
-
-        for (forbidden) |op| {
-            // Skip minus at start (negative numbers)
-            if (std.mem.eql(u8, op, "-") and trimmed.len > 0 and trimmed[0] == '-') {
-                if (std.mem.indexOf(u8, trimmed[1..], op) != null) {
-                    return false;
-                }
-            } else if (std.mem.indexOf(u8, trimmed, op) != null) {
-                return false;
-            }
-        }
-
-        return false;
-    }
+    // isValidBranchConstructorValue removed — replaced by expression parser
+    // structural validation (containsFunctionCall check) at the call site.
 
     fn parseLabelAnchor(self: *Parser) !ast.Item {
         const line = self.lines[self.current];

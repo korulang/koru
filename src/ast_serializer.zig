@@ -1547,6 +1547,44 @@ pub const AstSerializer = struct {
                 try self.serializeExpression(g);
                 try self.write(" }");
             },
+            .builtin_call => |bc| {
+                try self.write(".{ .builtin_call = BuiltinCall{ .name = ");
+                try self.writeString(bc.name);
+                try self.write(", .args = &[_]*Expression{");
+                for (bc.args, 0..) |arg, i| {
+                    if (i > 0) try self.write(", ");
+                    try self.write("&");
+                    try self.serializeExpression(arg);
+                }
+                try self.write("} } }");
+            },
+            .array_index => |ai| {
+                try self.write(".{ .array_index = ArrayIndex{ .object = &");
+                try self.serializeExpression(ai.object);
+                try self.write(", .index = &");
+                try self.serializeExpression(ai.index);
+                try self.write(" } }");
+            },
+            .conditional => |c| {
+                try self.write(".{ .conditional = Conditional{ .condition = &");
+                try self.serializeExpression(c.condition);
+                try self.write(", .then_expr = &");
+                try self.serializeExpression(c.then_expr);
+                try self.write(", .else_expr = &");
+                try self.serializeExpression(c.else_expr);
+                try self.write(" } }");
+            },
+            .function_call => |fc| {
+                try self.write(".{ .function_call = FunctionCall{ .callee = &");
+                try self.serializeExpression(fc.callee);
+                try self.write(", .args = &[_]*Expression{");
+                for (fc.args, 0..) |arg, i| {
+                    if (i > 0) try self.write(", ");
+                    try self.write("&");
+                    try self.serializeExpression(arg);
+                }
+                try self.write("} } }");
+            },
         }
     }
 

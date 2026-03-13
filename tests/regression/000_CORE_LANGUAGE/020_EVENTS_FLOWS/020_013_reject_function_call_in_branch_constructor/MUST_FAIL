@@ -1,0 +1,1 @@
+Function calls are not allowed in branch constructors - only pure values (literals, bindings, field access)

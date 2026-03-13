@@ -1,0 +1,70 @@
+// Database module demonstrating phantom obligation semantics
+//
+// The key insight: acquiring a resource creates an OBLIGATION to USE it meaningfully.
+// Automatic cleanup (RAII, IDisposable, use statements) doesn't satisfy this -
+// you must actually DO something with the resource.
+//
+// State machine:
+//   connect()  → Connection[open!]           -- creates obligation to use connection
+//   begin()    → Transaction[active!]        -- consumes connection, creates tx obligation  
+//   execute()  → Transaction[active]         -- uses tx without consuming (can execute many)
+//   commit()   → void                        -- consumes tx obligation (meaningful end)
+//   rollback() → void                        -- consumes tx obligation (meaningful end)
+//
+// The [!] marker on commit/rollback means they are the DEFAULT discharge for
+// Transaction[active!] obligations - but auto-discharge still requires the
+// programmer to have USED the transaction for something.
+
+const std = @import("std");
+
+const Connection = struct { handle: i32 };
+const Transaction = struct { conn_handle: i32 };
+const QueryResult = struct { rows: i32 };
+
+// connect: creates connection with obligation to use it
+~pub event connect { host: []const u8 }
+| ok { conn: Connection[open!] }
+| err { msg: []const u8 }
+
+~proc connect {
+    return .{ .ok = .{ .conn = .{ .handle = 42 } } };
+}
+
+// begin: consumes connection obligation, creates transaction obligation
+~pub event begin { conn: Connection[!open] }
+| ok { tx: Transaction[active!] }
+| err { msg: []const u8 }
+
+~proc begin {
+    return .{ .ok = .{ .tx = .{ .conn_handle = conn.handle } } };
+}
+
+// execute: uses transaction WITHOUT consuming it (can call multiple times)
+~pub event execute { tx: Transaction[active], sql: []const u8 }
+| ok { tx: Transaction[active], result: QueryResult }
+| err { tx: Transaction[active], msg: []const u8 }
+
+~proc execute {
+    std.debug.print("Executing: {s}\n", .{sql});
+    return .{ .ok = .{ .tx = tx, .result = .{ .rows = 1 } } };
+}
+
+// commit: consumes transaction obligation - this is a MEANINGFUL END
+~[!]pub event commit { tx: Transaction[!active] }
+| ok
+| err { msg: []const u8 }
+
+~proc commit {
+    std.debug.print("COMMIT\n", .{});
+    return .ok;
+}
+
+// rollback: consumes transaction obligation - this is also a MEANINGFUL END
+~[!]pub event rollback { tx: Transaction[!active] }
+| ok
+| err { msg: []const u8 }
+
+~proc rollback {
+    std.debug.print("ROLLBACK\n", .{});
+    return .ok;
+}

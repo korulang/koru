@@ -1,0 +1,23 @@
+// TEST: Connection opened but never used meaningfully
+//
+// This is the core thesis: acquiring a resource creates an OBLIGATION
+// to use it meaningfully. We connect but never start a transaction -
+// the [open!] obligation isn't satisfied.
+//
+// EXPECTED: Compiler error - Connection[open!] obligation not satisfied
+//
+// Compare to Rust:
+//   let conn = Connection::open_in_memory().unwrap();
+//   // conn drops here - Rust says "fine, cleanup happened"
+//   // Koru says "ERROR: you didn't DO anything meaningful with this connection"
+
+~import "$app/db"
+
+~app.db:connect(host: "localhost")
+| ok _ |>
+    // We got a connection with phantom obligation [open!]
+    // But we never call begin() to start a transaction!
+    // The phantom obligation is NOT satisfied - should error.
+    _
+| err _ |>
+    _

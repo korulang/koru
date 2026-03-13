@@ -756,6 +756,9 @@ fn evaluateExprNode(node: *const ast.ExprNode, bindings: *const ExprBindings) Ex
         .unary => |un| evaluateExprUnaryOp(&un, bindings),
         .field_access => |fa| evaluateExprFieldAccess(&fa, bindings),
         .grouped => |g| evaluateExpression(g, bindings),
+        // Structural node types — pass through as opaque strings,
+        // handled by the Zig backend, not the runtime interpreter.
+        .builtin_call, .array_index, .conditional, .function_call => ExprEvalError.InvalidExpression,
     };
 }
 
