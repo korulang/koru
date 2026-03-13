@@ -792,6 +792,7 @@ pub fn executeFlow(
                     .value = evaluateExpr(arg.value, ctx.env, ctx.allocator) catch return ExecuteFlowError.OutOfMemory,
                     .source_value = arg.source_value,
                     .expression_value = arg.expression_value,
+                    .parsed_expression = arg.parsed_expression,
                 };
             }
 

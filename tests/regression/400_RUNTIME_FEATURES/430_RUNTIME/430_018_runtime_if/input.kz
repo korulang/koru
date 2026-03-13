@@ -83,6 +83,7 @@ fn evaluateNode(node: *const ast.ExprNode, bindings: *const Bindings) EvalError!
         .unary => |un| evaluateUnaryOp(&un, bindings),
         .field_access => |fa| evaluateFieldAccess(&fa, bindings),
         .grouped => |g| evaluate(g, bindings),
+        .builtin_call, .array_index, .conditional, .function_call => EvalError.InvalidExpression,
     };
 }
 

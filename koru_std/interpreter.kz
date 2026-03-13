@@ -142,6 +142,7 @@ const flow_parser = @import("flow_parser");
     flow_parser_module.addImport("ast", ast_module);
     flow_parser_module.addImport("lexer", lexer_module);
     flow_parser_module.addImport("errors", errors_module);
+    flow_parser_module.addImport("expression_parser", expression_parser_module);
 
     // Add to executable
     exe.root_module.addImport("koru_parser", parser_module);

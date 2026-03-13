@@ -412,6 +412,7 @@ pub fn build(b: *std.Build) void {
     flow_parser_module.addImport("ast", ast_module);
     flow_parser_module.addImport("lexer", lexer_module);
     flow_parser_module.addImport("errors", errors_module);
+    flow_parser_module.addImport("expression_parser", expression_parser_module);
 
     // Interpreter module - core interpreter for [frontend] execution mode
     const interpreter_module = b.createModule(.{
@@ -930,6 +931,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     expression_parser_tests.root_module.addImport("expression_parser", expression_parser_module);
+    expression_parser_tests.root_module.addImport("ast", ast_module);
     const run_expression_parser_tests = b.addRunArtifact(expression_parser_tests);
     
     // Expression purity tests

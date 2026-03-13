@@ -1108,6 +1108,7 @@ pub const Arg = struct {
     value: []const u8,
     source_value: ?*const Source = null,  // For Source arguments - holds text + location + scope (const in PROGRAM_AST)
     expression_value: ?*const CapturedExpression = null,  // For Expression arguments - holds text + location + scope
+    parsed_expression: ?*const Expression = null,  // Value parsed through expression parser (when parseable)
 
     pub fn deinit(self: *Arg, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -1122,6 +1123,10 @@ pub const Arg = struct {
             var mutable_expr = @constCast(expr);
             mutable_expr.deinit(allocator);
             allocator.destroy(mutable_expr);
+        }
+        if (self.parsed_expression) |parsed| {
+            var mutable_parsed = @constCast(parsed);
+            mutable_parsed.deinit(allocator);
         }
     }
 };

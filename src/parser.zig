@@ -15,6 +15,31 @@ fn log_debug(comptime fmt: []const u8, args: anytype) void {
     if (DEBUG) std.debug.print(fmt, args);
 }
 
+/// Attempt to parse an arg's value as an expression and store the result.
+/// Values that don't parse (types, source blocks, module paths, partial matches) silently remain null.
+pub fn tryParseArgExpression(allocator: std.mem.Allocator, arg: *ast.Arg) void {
+    const trimmed = std.mem.trim(u8, arg.value, " \t");
+    // Skip source blocks — not expressions
+    if (trimmed.len >= 1 and trimmed[0] == '{') return;
+    // Skip empty values
+    if (trimmed.len == 0) return;
+
+    var expr_parser = expression_parser.ExpressionParser.init(allocator, arg.value);
+    defer expr_parser.deinit();
+
+    if (expr_parser.parse()) |expr| {
+        // Verify parser consumed ALL input (avoid partial matches like "i32" → "i" + leftover "32")
+        const remaining = std.mem.trim(u8, expr_parser.input[expr_parser.pos..], " \t");
+        if (remaining.len == 0) {
+            arg.parsed_expression = expr;
+        } else {
+            // Partial parse — not a valid expression, free it
+            var mutable_expr = @constCast(expr);
+            mutable_expr.deinit(allocator);
+        }
+    } else |_| {}
+}
+
 /// Check if line has a source block pattern: `eventName { ... }` or `eventName(args) { ... }`
 /// Source blocks are opaque - their content should not affect parsing decisions.
 /// Returns true if there's a `{` that's NOT inside parentheses AND no `=` before it.
@@ -3291,10 +3316,12 @@ pub const Parser = struct {
 
                 // Transfer ownership of the strings to the AST
                 for (parsed_args) |arg| {
-                    try args.append(self.allocator, ast.Arg{
+                    var ast_arg = ast.Arg{
                         .name = arg.name,
                         .value = arg.value,
-                    });
+                    };
+                    tryParseArgExpression(self.allocator, &ast_arg);
+                    try args.append(self.allocator, ast_arg);
                 }
             }
         }
@@ -4192,10 +4219,12 @@ pub const Parser = struct {
             // Transfer ownership of the strings to the AST
             var args_list = try std.ArrayList(ast.Arg).initCapacity(self.allocator, parsed_args.len);
             for (parsed_args) |arg| {
-                try args_list.append(self.allocator, ast.Arg{
+                var ast_arg = ast.Arg{
                     .name = arg.name,
                     .value = arg.value,
-                });
+                };
+                tryParseArgExpression(self.allocator, &ast_arg);
+                try args_list.append(self.allocator, ast_arg);
             }
             args = try args_list.toOwnedSlice(self.allocator);
         }
@@ -5262,10 +5291,12 @@ pub const Parser = struct {
                 var arg_list = try std.ArrayList(ast.Arg).initCapacity(self.allocator, parsed_args.len);
                 defer arg_list.deinit(self.allocator);
                 for (parsed_args) |arg| {
-                    try arg_list.append(self.allocator, ast.Arg{
+                    var ast_arg = ast.Arg{
                         .name = arg.name,
                         .value = arg.value,
-                    });
+                    };
+                    tryParseArgExpression(self.allocator, &ast_arg);
+                    try arg_list.append(self.allocator, ast_arg);
                 }
 
                 return ast.Step{ .label_jump = .{

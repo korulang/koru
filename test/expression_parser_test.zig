@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const expression_parser = @import("expression_parser");
+const ast = @import("ast");
 const ExpressionParser = expression_parser.ExpressionParser;
 const Expression = expression_parser.Expression;
 const BinaryOp = expression_parser.BinaryOp;
@@ -459,6 +460,121 @@ test "containsFunctionCall returns true for function calls" {
     defer freeExpression(allocator, expr);
 
     try testing.expect(expression_parser.containsFunctionCall(expr));
+}
+
+// ============================================================================
+// tryParseArgExpression tests
+// ============================================================================
+
+/// Local test helper: attempt to parse an arg's value as an expression.
+/// Mirrors the logic in parser.tryParseArgExpression / flow_parser.tryParseArgExpr.
+fn tryParseArgExpression(allocator: std.mem.Allocator, arg: *ast.Arg) void {
+    const trimmed = std.mem.trim(u8, arg.value, " \t");
+    if (trimmed.len == 0 or trimmed[0] == '{') return;
+
+    var expr_p = ExpressionParser.init(allocator, arg.value);
+    defer expr_p.deinit();
+
+    if (expr_p.parse()) |expr| {
+        const remaining = std.mem.trim(u8, expr_p.input[expr_p.pos..], " \t");
+        if (remaining.len == 0) {
+            arg.parsed_expression = expr;
+        } else {
+            var mutable_expr = @constCast(expr);
+            mutable_expr.deinit(allocator);
+        }
+    } else |_| {}
+}
+
+test "tryParseArgExpression parses number literal" {
+    const allocator = testing.allocator;
+    var arg = ast.Arg{
+        .name = try allocator.dupe(u8, "x"),
+        .value = try allocator.dupe(u8, "42"),
+    };
+    tryParseArgExpression(allocator, &arg);
+    defer arg.deinit(allocator);
+
+    try testing.expect(arg.parsed_expression != null);
+    try testing.expect(arg.parsed_expression.?.node == .literal);
+    try testing.expect(arg.parsed_expression.?.node.literal == .number);
+}
+
+test "tryParseArgExpression parses binary expression" {
+    const allocator = testing.allocator;
+    var arg = ast.Arg{
+        .name = try allocator.dupe(u8, "x"),
+        .value = try allocator.dupe(u8, "a + b"),
+    };
+    tryParseArgExpression(allocator, &arg);
+    defer arg.deinit(allocator);
+
+    try testing.expect(arg.parsed_expression != null);
+    try testing.expect(arg.parsed_expression.?.node == .binary);
+}
+
+test "tryParseArgExpression parses field access" {
+    const allocator = testing.allocator;
+    var arg = ast.Arg{
+        .name = try allocator.dupe(u8, "x"),
+        .value = try allocator.dupe(u8, "obj.field"),
+    };
+    tryParseArgExpression(allocator, &arg);
+    defer arg.deinit(allocator);
+
+    try testing.expect(arg.parsed_expression != null);
+    try testing.expect(arg.parsed_expression.?.node == .field_access);
+}
+
+test "tryParseArgExpression parses builtin call" {
+    const allocator = testing.allocator;
+    var arg = ast.Arg{
+        .name = try allocator.dupe(u8, "x"),
+        .value = try allocator.dupe(u8, "@as(i32, x)"),
+    };
+    tryParseArgExpression(allocator, &arg);
+    defer arg.deinit(allocator);
+
+    try testing.expect(arg.parsed_expression != null);
+    try testing.expect(arg.parsed_expression.?.node == .builtin_call);
+}
+
+test "tryParseArgExpression skips source blocks" {
+    const allocator = testing.allocator;
+    var arg = ast.Arg{
+        .name = try allocator.dupe(u8, "source"),
+        .value = try allocator.dupe(u8, "{ some source block }"),
+    };
+    tryParseArgExpression(allocator, &arg);
+    defer arg.deinit(allocator);
+
+    try testing.expect(arg.parsed_expression == null);
+}
+
+test "tryParseArgExpression leaves null for unparseable values" {
+    const allocator = testing.allocator;
+    // Module path with colons — not a valid expression
+    var arg = ast.Arg{
+        .name = try allocator.dupe(u8, "target"),
+        .value = try allocator.dupe(u8, "std.io:write"),
+    };
+    tryParseArgExpression(allocator, &arg);
+    defer arg.deinit(allocator);
+
+    // Should be null because ":write" remains after parsing "std.io"
+    try testing.expect(arg.parsed_expression == null);
+}
+
+test "tryParseArgExpression leaves null for empty value" {
+    const allocator = testing.allocator;
+    var arg = ast.Arg{
+        .name = try allocator.dupe(u8, "x"),
+        .value = try allocator.dupe(u8, ""),
+    };
+    tryParseArgExpression(allocator, &arg);
+    defer arg.deinit(allocator);
+
+    try testing.expect(arg.parsed_expression == null);
 }
 
 fn freeExpression(allocator: std.mem.Allocator, expr: *Expression) void {

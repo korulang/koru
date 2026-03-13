@@ -875,6 +875,8 @@ pub const AstSerializer = struct {
         } else {
             try self.write("null");
         }
+        // Note: parsed_expression is intentionally NOT serialized here.
+        // It's an AST enrichment for internal analysis only — not valid in generated Zig backend code.
         try self.write(" }");
     }
 

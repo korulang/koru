@@ -10,6 +10,7 @@ const std = @import("std");
 const ast = @import("ast");
 const lexer = @import("lexer");
 const errors = @import("errors");
+const expression_parser = @import("expression_parser");
 
 // ============================================================================
 // Public API
@@ -310,12 +311,33 @@ fn findTopLevelParen(text: []const u8) ?usize {
 fn convertArgPairs(allocator: std.mem.Allocator, pairs: []const lexer.ArgPair) ParseError![]const ast.Arg {
     var args = try std.ArrayList(ast.Arg).initCapacity(allocator, pairs.len);
     for (pairs) |pair| {
-        try args.append(allocator, .{
+        var arg = ast.Arg{
             .name = try allocator.dupe(u8, pair.name),
             .value = try allocator.dupe(u8, pair.value),
-        });
+        };
+        tryParseArgExpr(allocator, &arg);
+        try args.append(allocator, arg);
     }
     return args.toOwnedSlice(allocator);
+}
+
+/// Attempt to parse an arg's value as an expression. Unparseable values silently remain null.
+fn tryParseArgExpr(allocator: std.mem.Allocator, arg: *ast.Arg) void {
+    const trimmed = std.mem.trim(u8, arg.value, " \t");
+    if (trimmed.len == 0 or trimmed[0] == '{') return;
+
+    var expr_p = expression_parser.ExpressionParser.init(allocator, arg.value);
+    defer expr_p.deinit();
+
+    if (expr_p.parse()) |expr| {
+        const remaining = std.mem.trim(u8, expr_p.input[expr_p.pos..], " \t");
+        if (remaining.len == 0) {
+            arg.parsed_expression = expr;
+        } else {
+            var mutable_expr = @constCast(expr);
+            mutable_expr.deinit(allocator);
+        }
+    } else |_| {}
 }
 
 // ============================================================================

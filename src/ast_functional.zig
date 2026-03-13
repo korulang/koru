@@ -1431,13 +1431,14 @@ pub fn cloneInvocation(allocator: std.mem.Allocator, invocation: *const ast.Invo
 }
 
 fn cloneArg(allocator: std.mem.Allocator, arg: *const ast.Arg) CloneError!ast.Arg {
-    // Copy pointers for source_value and expression_value - the original data
-    // in PROGRAM_AST persists, so pointer copies are safe for read-only access
+    // Copy pointers for source_value, expression_value, and parsed_expression -
+    // the original data in PROGRAM_AST persists, so pointer copies are safe for read-only access
     return .{
         .name = try allocator.dupe(u8, arg.name),
         .value = try allocator.dupe(u8, arg.value),
         .source_value = arg.source_value,
         .expression_value = arg.expression_value,
+        .parsed_expression = arg.parsed_expression,
     };
 }
 
