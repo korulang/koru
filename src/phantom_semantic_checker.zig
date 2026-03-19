@@ -1209,12 +1209,21 @@ pub const PhantomSemanticChecker = struct {
                         };
 
                         // Report error - obligation was not satisfied
+                        // Format names for display - extract field name from paths like "_.conn"
+                        const display_name = if (std.mem.indexOf(u8, resource, ".")) |dot_idx|
+                            resource[dot_idx + 1 ..]
+                        else
+                            resource;
+                        const display_state = if (std.mem.lastIndexOf(u8, phantom_state, ":")) |colon_idx|
+                            phantom_state[colon_idx + 1 ..]
+                        else
+                            phantom_state;
                         try self.reporter.addError(
                             .KORU030,
                             location.line,
                             location.column,
-                            "Resource '{s}' with cleanup obligation '{s}' was not disposed. Call the disposal event explicitly.",
-                            .{resource, phantom_state}
+                            "Resource '{s}' with phantom state [{s}] was not disposed.",
+                            .{display_name, display_state}
                         );
                         has_errors = true;
                     }

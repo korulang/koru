@@ -1,0 +1,36 @@
+// TEST: Serial transactions on the same connection
+//
+// After commit, we get Connection[active!] back.
+// begin() accepts [!connected|!active], so we can start another transaction!
+// This enables connection reuse for multiple transactions.
+//
+// EXPECTED: Compiles and runs successfully
+
+~import "$app/db"
+
+~app.db:connect(host: "localhost")
+| ok c |>
+    // First transaction
+    app.db:begin(conn: c.conn)
+    | ok t1 |>
+        app.db:exec(tx: t1.tx, sql: "INSERT INTO users VALUES (1, 'alice')")
+        | ok r1 |>
+            app.db:commit(tx: r1.tx)
+            | ok conn1 |>
+                // Second transaction on same connection!
+                app.db:begin(conn: conn1.conn)
+                | ok t2 |>
+                    app.db:exec(tx: t2.tx, sql: "INSERT INTO users VALUES (2, 'bob')")
+                    | ok r2 |>
+                        app.db:commit(tx: r2.tx)
+                        | ok conn2 |>
+                            app.db:close(conn: conn2.conn)
+                            | ok _ |> _
+                            | err _ |> _
+                        | err _ |> _
+                    | err _ |> _
+                | err _ |> _
+            | err _ |> _
+        | err _ |> _
+    | err _ |> _
+| err _ |> _

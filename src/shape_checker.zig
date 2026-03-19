@@ -537,6 +537,7 @@ pub const ShapeChecker = struct {
                 };
                 // Check branch coverage (with terminal marker awareness)
                 const covered = try self.checkBranchCoverageWithTerminals(
+                    event_name,
                     event.decl.branches,
                     flow.continuations,
                     location,
@@ -560,6 +561,7 @@ pub const ShapeChecker = struct {
         
         // Check branch coverage (with terminal marker awareness)
         const covered = try self.checkBranchCoverageWithTerminals(
+            event_name,
             final_event_info.decl.branches,
             flow.continuations,
             location,
@@ -741,6 +743,7 @@ pub const ShapeChecker = struct {
     
     fn checkBranchCoverageWithTerminals(
         self: *ShapeChecker,
+        event_name: []const u8,
         event_branches: []const ast.Branch,
         continuations: []const ast.Continuation,
         location: errors.SourceLocation,
@@ -819,8 +822,19 @@ pub const ShapeChecker = struct {
 
         for (result.unknown_branches) |branch_name| {
             log.debug("ERROR: Continuation references unknown branch '{s}'\n", .{branch_name});
+            // Build list of available branches for helpful error message
+            var available_branches = try std.ArrayList(u8).initCapacity(self.allocator, 64);
+            defer available_branches.deinit(self.allocator);
+            for (event_branches, 0..) |branch, i| {
+                if (i > 0) try available_branches.appendSlice(self.allocator, ", ");
+                try available_branches.appendSlice(self.allocator, branch.name);
+            }
+            const available_str = if (available_branches.items.len > 0)
+                available_branches.items
+            else
+                "(none)";
             try self.reporter.addError(.KORU021, location.line, location.column,
-                "continuation references unknown branch '{s}'", .{branch_name});
+                "event '{s}' has no branch '{s}' (available: {s})", .{ event_name, branch_name, available_str });
             has_errors = true;
         }
 
@@ -943,6 +957,7 @@ pub const ShapeChecker = struct {
 
                     // Recursively check nested continuation coverage
                     const nested_covered = try self.checkBranchCoverageWithTerminals(
+                        nested_event_name,
                         nested_event_info.decl.branches,
                         cont.continuations,
                         location,
@@ -1061,6 +1076,7 @@ pub const ShapeChecker = struct {
                             all_valid = false;
                         } else {
                             const covered = try self.checkBranchCoverageWithTerminals(
+                                nested_event_name,
                                 nested_event_info.decl.branches,
                                 cont.continuations,
                                 location,
@@ -1174,6 +1190,7 @@ pub const ShapeChecker = struct {
 
         // Check branch coverage for the inline flow using the version with proper error reporting
         const covered = try self.checkBranchCoverageWithTerminals(
+            event_name,
             event_info.decl.branches,
             flow.continuations,
             flow.location,

@@ -1,3 +1,5 @@
 Executing: INSERT INTO users VALUES (1, 'alice')
-ROLLBACK
+COMMIT
+Executing: INSERT INTO users VALUES (2, 'bob')
+COMMIT
 Connection closed

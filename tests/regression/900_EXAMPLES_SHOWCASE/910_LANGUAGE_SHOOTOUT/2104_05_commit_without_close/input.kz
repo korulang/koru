@@ -1,0 +1,24 @@
+// TEST: Commit but forget to close the connection
+//
+// After commit, we get Connection[active!] back.
+// If we don't close it, that's a resource leak!
+//
+// EXPECTED: Compiler error - Connection[active!] obligation not discharged
+
+~import "$app/db"
+
+~app.db:connect(host: "localhost")
+| ok c |>
+    app.db:begin(conn: c.conn)
+    | ok t |>
+        app.db:exec(tx: t.tx, sql: "INSERT INTO users VALUES (1, 'alice')")
+        | ok r |>
+            app.db:commit(tx: r.tx)
+            | ok _ |>
+                // Got connection back but forgot to close it!
+                // Connection[active!] obligation not discharged.
+                _
+            | err _ |> _
+        | err _ |> _
+    | err _ |> _
+| err _ |> _

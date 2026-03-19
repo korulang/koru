@@ -1,25 +1,25 @@
-// TEST: Valid usage - connection → transaction → rollback
+// TEST: Valid usage - connection → transaction → execute → rollback → close
 //
 // Rollback is also a valid way to end a transaction. The key is
 // that it must be EXPLICIT - the programmer states their intent.
 //
-// EXPECTED: Compiles successfully, outputs "ROLLBACK"
+// EXPECTED: Compiles and runs successfully
 
 ~import "$app/db"
 
-const std = @import("std");
-
 ~app.db:connect(host: "localhost")
-| ok conn |>
-    app.db:begin(conn: conn.conn)
-    | ok tx |>
-        // Decided not to proceed - explicitly rollback
-        app.db:rollback(tx: tx.tx)
-        | ok |>
-            std.io:print.ln("Transaction rolled back")
-        | err e |>
-            std.io:print.ln("Rollback failed: {{ e.msg:s }}")
-    | err e |>
-        std.io:print.ln("Begin failed: {{ e.msg:s }}")
-| err e |>
-    std.io:print.ln("Connect failed: {{ e.msg:s }}")
+| ok c |>
+    app.db:begin(conn: c.conn)
+    | ok t |>
+        app.db:exec(tx: t.tx, sql: "INSERT INTO users VALUES (1, 'alice')")
+        | ok r |>
+            // Decided to rollback instead of commit
+            app.db:rollback(tx: r.tx)
+            | ok conn |>
+                app.db:close(conn: conn.conn)
+                | ok _ |> _
+                | err _ |> _
+            | err _ |> _
+        | err _ |> _
+    | err _ |> _
+| err _ |> _

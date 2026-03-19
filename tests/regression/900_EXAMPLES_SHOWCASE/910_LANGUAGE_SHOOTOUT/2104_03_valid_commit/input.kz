@@ -1,30 +1,24 @@
-// TEST: Valid usage - connection → transaction → execute → commit
+// TEST: Valid usage - connection → transaction → execute → commit → close
 //
 // This is the happy path: open a connection, start a transaction,
-// do some work, and commit. All obligations are satisfied.
+// do some work, commit, and close. All obligations are satisfied.
 //
-// EXPECTED: Compiles successfully, outputs "COMMIT"
+// EXPECTED: Compiles and runs successfully
 
 ~import "$app/db"
 
-const std = @import("std");
-
 ~app.db:connect(host: "localhost")
-| ok conn |>
-    app.db:begin(conn: conn.conn)
-    | ok tx |>
-        app.db:execute(tx: tx.tx, sql: "INSERT INTO users VALUES (1, 'alice')")
-        | ok result |>
-            app.db:commit(tx: result.tx)
-            | ok |>
-                std.io:print.ln("Transaction committed successfully")
-            | err e |>
-                std.io:print.ln("Commit failed: {{ e.msg:s }}")
-        | err e |>
-            app.db:rollback(tx: e.tx)
-            | ok |> _
+| ok c |>
+    app.db:begin(conn: c.conn)
+    | ok t |>
+        app.db:exec(tx: t.tx, sql: "INSERT INTO users VALUES (1, 'alice')")
+        | ok r |>
+            app.db:commit(tx: r.tx)
+            | ok conn |>
+                app.db:close(conn: conn.conn)
+                | ok _ |> _
+                | err _ |> _
             | err _ |> _
-    | err e |>
-        std.io:print.ln("Begin failed: {{ e.msg:s }}")
-| err e |>
-    std.io:print.ln("Connect failed: {{ e.msg:s }}")
+        | err _ |> _
+    | err _ |> _
+| err _ |> _

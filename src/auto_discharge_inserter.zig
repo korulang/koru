@@ -637,21 +637,35 @@ pub const AutoDischargeInserter = struct {
                             defer self.allocator.free(disposals);
 
                             const disposal = selectDisposal(disposals) orelse {
+                                const display_name = formatBindingForError(binding_name, info.field_name);
+                                const display_state = formatStateForError(info.phantom_state);
                                 if (disposals.len == 0) {
                                     try self.reporter.addError(
                                         .KORU030,
                                         flow.location.line,
                                         flow.location.column,
-                                        "No disposal event found for resource '{s}' with state '{s}' at scope exit.",
-                                        .{ binding_name, info.phantom_state },
+                                        "Resource '{s}' with phantom state [{s}] was not disposed at scope exit.",
+                                        .{ display_name, display_state },
                                     );
                                 } else {
+                                    // Build list of disposal options
+                                    var options_buf: [512]u8 = undefined;
+                                    var fbs = std.io.fixedBufferStream(&options_buf);
+                                    for (disposals, 0..) |d, i| {
+                                        if (i > 0) fbs.writer().writeAll(", ") catch {};
+                                        // Extract just event name from qualified name
+                                        const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
+                                            d.qualified_name[idx + 1 ..]
+                                        else
+                                            d.qualified_name;
+                                        fbs.writer().writeAll(disp_name) catch {};
+                                    }
                                     try self.reporter.addError(
                                         .KORU030,
                                         flow.location.line,
                                         flow.location.column,
-                                        "Multiple disposal options for resource '{s}' at scope exit. Discharge explicitly in your code.",
-                                        .{binding_name},
+                                        "Resource '{s}' [{s}] has multiple disposal options: {s}. Discharge explicitly.",
+                                        .{ display_name, display_state, fbs.getWritten() },
                                     );
                                 }
                                 return error.ValidationFailed;
@@ -978,21 +992,33 @@ pub const AutoDischargeInserter = struct {
                             defer self.allocator.free(disposals);
 
                             const disposal = selectDisposal(disposals) orelse {
+                                const display_name = formatBindingForError(binding_name, info.field_name);
+                                const display_state = formatStateForError(info.phantom_state);
                                 if (disposals.len == 0) {
                                     try self.reporter.addError(
                                         .KORU030,
                                         flow.location.line,
                                         flow.location.column,
-                                        "No disposal event found for resource '{s}' with state '{s}' at scope exit.",
-                                        .{ binding_name, info.phantom_state },
+                                        "Resource '{s}' with phantom state [{s}] was not disposed at scope exit.",
+                                        .{ display_name, display_state },
                                     );
                                 } else {
+                                    var options_buf: [512]u8 = undefined;
+                                    var fbs = std.io.fixedBufferStream(&options_buf);
+                                    for (disposals, 0..) |d, i| {
+                                        if (i > 0) fbs.writer().writeAll(", ") catch {};
+                                        const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
+                                            d.qualified_name[idx + 1 ..]
+                                        else
+                                            d.qualified_name;
+                                        fbs.writer().writeAll(disp_name) catch {};
+                                    }
                                     try self.reporter.addError(
                                         .KORU030,
                                         flow.location.line,
                                         flow.location.column,
-                                        "Multiple disposal options for resource '{s}' at scope exit. Discharge explicitly in your code.",
-                                        .{binding_name},
+                                        "Resource '{s}' [{s}] has multiple disposal options: {s}. Discharge explicitly.",
+                                        .{ display_name, display_state, fbs.getWritten() },
                                     );
                                 }
                                 return error.ValidationFailed;
@@ -1294,27 +1320,33 @@ pub const AutoDischargeInserter = struct {
                 // Use selectDisposal to handle [!] default annotation
                 const disposal = selectDisposal(disposals) orelse {
                     // Ambiguous or no disposal found
+                    const display_name = formatBindingForError(binding_path, info.field_name);
+                    const display_state = formatStateForError(info.phantom_state);
                     if (disposals.len == 0) {
                         try self.reporter.addError(
                             .KORU030,
                             flow.location.line,
                             flow.location.column,
-                            "No disposal event found for resource '{s}' with state '{s}'.",
-                            .{ binding_path, info.phantom_state },
+                            "Resource '{s}' with phantom state [{s}] was not disposed.",
+                            .{ display_name, display_state },
                         );
                     } else {
                         var options_buf: [1024]u8 = undefined;
                         var fbs = std.io.fixedBufferStream(&options_buf);
                         for (disposals, 0..) |d, i| {
-                            if (i > 0) try fbs.writer().writeAll(", ");
-                            try fbs.writer().writeAll(d.qualified_name);
+                            if (i > 0) fbs.writer().writeAll(", ") catch {};
+                            const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
+                                d.qualified_name[idx + 1 ..]
+                            else
+                                d.qualified_name;
+                            fbs.writer().writeAll(disp_name) catch {};
                         }
                         try self.reporter.addError(
                             .KORU030,
                             flow.location.line,
                             flow.location.column,
-                            "Multiple disposal options for resource '{s}': {s}. Discharge explicitly in your code.",
-                            .{ binding_path, fbs.getWritten() },
+                            "Resource '{s}' [{s}] has multiple disposal options: {s}. Discharge explicitly.",
+                            .{ display_name, display_state, fbs.getWritten() },
                         );
                     }
                     return error.ValidationFailed;
@@ -1460,27 +1492,33 @@ pub const AutoDischargeInserter = struct {
             // Use selectDisposal to handle [!] default annotation
             const disposal = selectDisposal(disposals) orelse {
                 // Ambiguous or no disposal found
+                const display_name = formatBindingForError(binding_path, info.field_name);
+                const display_state = formatStateForError(info.phantom_state);
                 if (disposals.len == 0) {
                     try self.reporter.addError(
                         .KORU030,
                         flow.location.line,
                         flow.location.column,
-                        "No disposal event found for resource '{s}' with state '{s}'. Library must define an event with [!{s}] parameter.",
-                        .{ binding_path, info.phantom_state, info.phantom_state },
+                        "Resource '{s}' with phantom state [{s}] was not disposed. No event accepts [!{s}].",
+                        .{ display_name, display_state, display_state },
                     );
                 } else {
                     var options_buf: [1024]u8 = undefined;
                     var fbs = std.io.fixedBufferStream(&options_buf);
                     for (disposals, 0..) |d, i| {
-                        if (i > 0) try fbs.writer().writeAll(", ");
-                        try fbs.writer().writeAll(d.qualified_name);
+                        if (i > 0) fbs.writer().writeAll(", ") catch {};
+                        const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
+                            d.qualified_name[idx + 1 ..]
+                        else
+                            d.qualified_name;
+                        fbs.writer().writeAll(disp_name) catch {};
                     }
                     try self.reporter.addError(
                         .KORU030,
                         flow.location.line,
                         flow.location.column,
-                        "Multiple disposal options for resource '{s}': {s}. Discharge explicitly in your code.",
-                        .{ binding_path, fbs.getWritten() },
+                        "Resource '{s}' [{s}] has multiple disposal options: {s}. Discharge explicitly.",
+                        .{ display_name, display_state, fbs.getWritten() },
                     );
                 }
                 return error.ValidationFailed;
@@ -2376,6 +2414,33 @@ pub const AutoDischargeInserter = struct {
         const name = try std.fmt.allocPrint(self.allocator, "_auto_{d}", .{self.synthetic_binding_counter});
         self.synthetic_binding_counter += 1;
         return name;
+    }
+
+    /// Format a binding name for display in error messages.
+    /// Converts synthetic names like "_auto_0.conn" to cleaner forms like "conn"
+    /// and extracts just the field name when available.
+    fn formatBindingForError(binding_name: []const u8, field_name: []const u8) []const u8 {
+        // If we have a field_name, prefer that (it's the actual payload field)
+        if (field_name.len > 0) {
+            return field_name;
+        }
+        // If binding is synthetic (_auto_N), try to extract the field part after the dot
+        if (std.mem.startsWith(u8, binding_name, "_auto_")) {
+            if (std.mem.indexOf(u8, binding_name, ".")) |dot_idx| {
+                return binding_name[dot_idx + 1 ..];
+            }
+        }
+        // Otherwise use the binding name as-is
+        return binding_name;
+    }
+
+    /// Format phantom state for display - extract just the state name without module prefix
+    fn formatStateForError(phantom_state: []const u8) []const u8 {
+        // phantom_state is like "app.db:started!" - extract just "started!"
+        if (std.mem.lastIndexOf(u8, phantom_state, ":")) |colon_idx| {
+            return phantom_state[colon_idx + 1 ..];
+        }
+        return phantom_state;
     }
 
     /// Clone a continuation with a new binding name

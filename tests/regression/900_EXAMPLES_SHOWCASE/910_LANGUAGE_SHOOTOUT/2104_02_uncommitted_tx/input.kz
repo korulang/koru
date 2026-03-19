@@ -1,28 +1,19 @@
-// TEST: Transaction started but never committed or rolled back
+// TEST: Transaction started but never executed or committed
 //
-// Starting a transaction creates an obligation to END it meaningfully.
-// You must either commit() or rollback(). Letting it drop implicitly
-// (which typically means rollback) is a semantic error - you should
-// be EXPLICIT about your intent.
+// begin() produces Transaction[started!]
+// We never call exec(), so we can't call commit() (needs [!active])
+// The [started!] obligation is never discharged.
 //
-// EXPECTED: Compiler error - Transaction[active!] obligation not satisfied
-//
-// Compare to Rust:
-//   let mut conn = Connection::open_in_memory().unwrap();
-//   let tx = conn.transaction().unwrap();
-//   // tx drops here - Rust implicitly rolls back, says "fine"
-//   // Koru says "ERROR: you must explicitly commit or rollback"
+// EXPECTED: Compiler error - Transaction[started!] obligation not satisfied
 
 ~import "$app/db"
 
 ~app.db:connect(host: "localhost")
-| ok conn |>
-    app.db:begin(conn: conn.conn)
-    | ok tx |>
-        // We started a transaction... but we don't end it!
-        // No commit, no rollback - this is a semantic error.
+| ok c |>
+    app.db:begin(conn: c.conn)
+    | ok _ |>
+        // We have Transaction[started!] but never exec or commit!
+        // This should be a phantom obligation error at backend stage.
         _
-    | err e |>
-        _
-| err e |>
-    _
+    | err _ |> _
+| err _ |> _
