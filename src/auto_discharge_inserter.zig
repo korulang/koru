@@ -640,13 +640,36 @@ pub const AutoDischargeInserter = struct {
                                 const display_name = formatBindingForError(binding_name, info.field_name);
                                 const display_state = formatStateForError(info.phantom_state);
                                 if (disposals.len == 0) {
-                                    try self.reporter.addError(
-                                        .KORU030,
-                                        flow.location.line,
-                                        flow.location.column,
-                                        "Resource '{s}' with phantom state [{s}] was not disposed at scope exit.",
-                                        .{ display_name, display_state },
-                                    );
+                                    // Check for multi-branch events that could dispose this
+                                    const all_disposals = try self.findAllDisposalEvents(info.phantom_state);
+                                    defer self.allocator.free(all_disposals);
+                                    if (all_disposals.len > 0) {
+                                        var options_buf: [512]u8 = undefined;
+                                        var fbs = std.io.fixedBufferStream(&options_buf);
+                                        for (all_disposals, 0..) |d, i| {
+                                            if (i > 0) fbs.writer().writeAll(", ") catch {};
+                                            const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
+                                                d.qualified_name[idx + 1 ..]
+                                            else
+                                                d.qualified_name;
+                                            fbs.writer().writeAll(disp_name) catch {};
+                                        }
+                                        try self.reporter.addError(
+                                            .KORU030,
+                                            flow.location.line,
+                                            flow.location.column,
+                                            "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
+                                            .{ display_name, display_state, fbs.getWritten() },
+                                        );
+                                    } else {
+                                        try self.reporter.addError(
+                                            .KORU030,
+                                            flow.location.line,
+                                            flow.location.column,
+                                            "Resource '{s}' with phantom state [{s}] was not disposed at scope exit.",
+                                            .{ display_name, display_state },
+                                        );
+                                    }
                                 } else {
                                     // Build list of disposal options
                                     var options_buf: [512]u8 = undefined;
@@ -995,13 +1018,36 @@ pub const AutoDischargeInserter = struct {
                                 const display_name = formatBindingForError(binding_name, info.field_name);
                                 const display_state = formatStateForError(info.phantom_state);
                                 if (disposals.len == 0) {
-                                    try self.reporter.addError(
-                                        .KORU030,
-                                        flow.location.line,
-                                        flow.location.column,
-                                        "Resource '{s}' with phantom state [{s}] was not disposed at scope exit.",
-                                        .{ display_name, display_state },
-                                    );
+                                    // Check for multi-branch events that could dispose this
+                                    const all_disposals = try self.findAllDisposalEvents(info.phantom_state);
+                                    defer self.allocator.free(all_disposals);
+                                    if (all_disposals.len > 0) {
+                                        var options_buf: [512]u8 = undefined;
+                                        var fbs = std.io.fixedBufferStream(&options_buf);
+                                        for (all_disposals, 0..) |d, i| {
+                                            if (i > 0) fbs.writer().writeAll(", ") catch {};
+                                            const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
+                                                d.qualified_name[idx + 1 ..]
+                                            else
+                                                d.qualified_name;
+                                            fbs.writer().writeAll(disp_name) catch {};
+                                        }
+                                        try self.reporter.addError(
+                                            .KORU030,
+                                            flow.location.line,
+                                            flow.location.column,
+                                            "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
+                                            .{ display_name, display_state, fbs.getWritten() },
+                                        );
+                                    } else {
+                                        try self.reporter.addError(
+                                            .KORU030,
+                                            flow.location.line,
+                                            flow.location.column,
+                                            "Resource '{s}' with phantom state [{s}] was not disposed at scope exit.",
+                                            .{ display_name, display_state },
+                                        );
+                                    }
                                 } else {
                                     var options_buf: [512]u8 = undefined;
                                     var fbs = std.io.fixedBufferStream(&options_buf);
@@ -1323,13 +1369,36 @@ pub const AutoDischargeInserter = struct {
                     const display_name = formatBindingForError(binding_path, info.field_name);
                     const display_state = formatStateForError(info.phantom_state);
                     if (disposals.len == 0) {
-                        try self.reporter.addError(
-                            .KORU030,
-                            flow.location.line,
-                            flow.location.column,
-                            "Resource '{s}' with phantom state [{s}] was not disposed.",
-                            .{ display_name, display_state },
-                        );
+                        // Check for multi-branch events that could dispose this
+                        const all_disposals = try self.findAllDisposalEvents(info.phantom_state);
+                        defer self.allocator.free(all_disposals);
+                        if (all_disposals.len > 0) {
+                            var options_buf: [1024]u8 = undefined;
+                            var fbs = std.io.fixedBufferStream(&options_buf);
+                            for (all_disposals, 0..) |d, i| {
+                                if (i > 0) fbs.writer().writeAll(", ") catch {};
+                                const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
+                                    d.qualified_name[idx + 1 ..]
+                                else
+                                    d.qualified_name;
+                                fbs.writer().writeAll(disp_name) catch {};
+                            }
+                            try self.reporter.addError(
+                                .KORU030,
+                                flow.location.line,
+                                flow.location.column,
+                                "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
+                                .{ display_name, display_state, fbs.getWritten() },
+                            );
+                        } else {
+                            try self.reporter.addError(
+                                .KORU030,
+                                flow.location.line,
+                                flow.location.column,
+                                "Resource '{s}' with phantom state [{s}] was not disposed.",
+                                .{ display_name, display_state },
+                            );
+                        }
                     } else {
                         var options_buf: [1024]u8 = undefined;
                         var fbs = std.io.fixedBufferStream(&options_buf);
@@ -1495,13 +1564,36 @@ pub const AutoDischargeInserter = struct {
                 const display_name = formatBindingForError(binding_path, info.field_name);
                 const display_state = formatStateForError(info.phantom_state);
                 if (disposals.len == 0) {
-                    try self.reporter.addError(
-                        .KORU030,
-                        flow.location.line,
-                        flow.location.column,
-                        "Resource '{s}' with phantom state [{s}] was not disposed. No event accepts [!{s}].",
-                        .{ display_name, display_state, display_state },
-                    );
+                    // No auto-dischargeable events - check if there are multi-branch events that accept this state
+                    const all_disposals = try self.findAllDisposalEvents(info.phantom_state);
+                    defer self.allocator.free(all_disposals);
+                    if (all_disposals.len > 0) {
+                        var options_buf: [1024]u8 = undefined;
+                        var fbs = std.io.fixedBufferStream(&options_buf);
+                        for (all_disposals, 0..) |d, i| {
+                            if (i > 0) fbs.writer().writeAll(", ") catch {};
+                            const disp_name = if (std.mem.lastIndexOf(u8, d.qualified_name, ":")) |idx|
+                                d.qualified_name[idx + 1 ..]
+                            else
+                                d.qualified_name;
+                            fbs.writer().writeAll(disp_name) catch {};
+                        }
+                        try self.reporter.addError(
+                            .KORU030,
+                            flow.location.line,
+                            flow.location.column,
+                            "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
+                            .{ display_name, display_state, fbs.getWritten() },
+                        );
+                    } else {
+                        try self.reporter.addError(
+                            .KORU030,
+                            flow.location.line,
+                            flow.location.column,
+                            "Resource '{s}' with phantom state [{s}] was not disposed. No event accepts [!{s}].",
+                            .{ display_name, display_state, display_state },
+                        );
+                    }
                 } else {
                     var options_buf: [1024]u8 = undefined;
                     var fbs = std.io.fixedBufferStream(&options_buf);
@@ -1602,7 +1694,8 @@ pub const AutoDischargeInserter = struct {
     }
 
     /// Find all events that can dispose a given phantom state
-    fn findDisposalEvents(self: *AutoDischargeInserter, phantom_state: []const u8) ![]DisposalEvent {
+    /// If include_multi_branch is true, includes events with multiple branches (for error reporting)
+    fn findDisposalEventsEx(self: *AutoDischargeInserter, phantom_state: []const u8, include_multi_branch: bool) ![]DisposalEvent {
         var results = try std.ArrayList(DisposalEvent).initCapacity(self.allocator, 4);
 
         // Strip the ! suffix to get base state
@@ -1616,9 +1709,10 @@ pub const AutoDischargeInserter = struct {
         while (iter.next()) |entry| {
             const event_decl = entry.value_ptr.decl;
 
-            // Skip events with multiple branches - they require manual handling
+            // Skip events with multiple branches unless explicitly included
             // Events with 0 branches (void) or 1 branch (single outcome) can be auto-discharged
-            if (event_decl.branches.len > 1) continue;
+            // Events with multiple branches require manual handling but can still be suggested
+            if (!include_multi_branch and event_decl.branches.len > 1) continue;
 
             const is_default = eventHasDefaultAnnotation(event_decl);
 
@@ -1677,6 +1771,16 @@ pub const AutoDischargeInserter = struct {
         }
 
         return results.toOwnedSlice(self.allocator);
+    }
+
+    /// Find all events that can dispose a given phantom state (auto-dischargeable only)
+    fn findDisposalEvents(self: *AutoDischargeInserter, phantom_state: []const u8) ![]DisposalEvent {
+        return self.findDisposalEventsEx(phantom_state, false);
+    }
+
+    /// Find all events that accept a given phantom state (including multi-branch, for error messages)
+    fn findAllDisposalEvents(self: *AutoDischargeInserter, phantom_state: []const u8) ![]DisposalEvent {
+        return self.findDisposalEventsEx(phantom_state, true);
     }
 
     /// Create a new continuation with disposal call inserted at the end
