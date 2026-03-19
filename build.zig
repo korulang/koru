@@ -1091,6 +1091,23 @@ pub fn build(b: *std.Build) void {
     phantom_semantic_checker_tests.root_module.addImport("log", log_module);
     const run_phantom_semantic_checker_tests = b.addRunArtifact(phantom_semantic_checker_tests);
 
+    // Auto-discharge inserter tests - core phantom obligation matching tests
+    const auto_discharge_inserter_tests = b.addTest(.{
+        .name = "auto_discharge_inserter_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/auto_discharge_inserter_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    auto_discharge_inserter_tests.root_module.addImport("ast", ast_module);
+    auto_discharge_inserter_tests.root_module.addImport("parser", parser_module);
+    auto_discharge_inserter_tests.root_module.addImport("errors", errors_module);
+    auto_discharge_inserter_tests.root_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
+    const run_auto_discharge_inserter_tests = b.addRunArtifact(auto_discharge_inserter_tests);
+    const auto_discharge_test_step = b.step("test-auto-discharge", "Run auto-discharge inserter tests");
+    auto_discharge_test_step.dependOn(&run_auto_discharge_inserter_tests.step);
+
     const flow_parser_tests = b.addTest(.{
         .name = "flow_parser_tests",
         .root_module = flow_parser_module,
@@ -1108,6 +1125,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_tap_codegen_tests.step);
     test_step.dependOn(&run_tap_transformer_tests.step);
     test_step.dependOn(&run_phantom_semantic_checker_tests.step);
+    test_step.dependOn(&run_auto_discharge_inserter_tests.step);
     test_step.dependOn(&run_visitor_emitter_tests.step);
     test_step.dependOn(&run_integration_tests.step);
     test_step.dependOn(&run_shape_checker_integration_tests.step);

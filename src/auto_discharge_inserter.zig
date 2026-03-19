@@ -455,7 +455,7 @@ pub const AutoDischargeInserter = struct {
     }
 
     /// Build map of all events and their phantom annotations
-    fn buildEventMap(self: *AutoDischargeInserter, program: *const ast.Program) !void {
+    pub fn buildEventMap(self: *AutoDischargeInserter, program: *const ast.Program) !void {
         // IMPORTANT: Use |*item| to get pointers into the actual slice, not copies!
         for (program.items) |*item| {
             switch (item.*) {
@@ -1826,7 +1826,7 @@ pub const AutoDischargeInserter = struct {
     }
 
     /// Find all events that can dispose a given phantom state (auto-dischargeable only)
-    fn findDisposalEvents(self: *AutoDischargeInserter, phantom_state: []const u8, base_type: []const u8) ![]DisposalEvent {
+    pub fn findDisposalEvents(self: *AutoDischargeInserter, phantom_state: []const u8, base_type: []const u8) ![]DisposalEvent {
         return self.findDisposalEventsEx(phantom_state, base_type, false);
     }
 
