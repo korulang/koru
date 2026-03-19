@@ -88,6 +88,7 @@ pub const AutoDischargeInserter = struct {
         const BindingInfo = struct {
             phantom_state: []const u8,
             field_name: []const u8, // e.g., "file" for f.file
+            base_type: []const u8, // e.g., "*Connection" - used to filter disposal events by type
             scope_depth: u32, // Scope where obligation was created
         };
 
@@ -115,12 +116,13 @@ pub const AutoDischargeInserter = struct {
                 self.allocator.free(entry.key_ptr.*);
                 self.allocator.free(entry.value_ptr.phantom_state);
                 self.allocator.free(entry.value_ptr.field_name);
+                self.allocator.free(entry.value_ptr.base_type);
             }
             self.cleanup_obligations.deinit();
         }
 
-        /// Add a binding with its phantom state
-        fn addBinding(self: *BindingContext, name: []const u8, phantom_state: []const u8, field_name: []const u8) !void {
+        /// Add a binding with its phantom state and base type
+        fn addBinding(self: *BindingContext, name: []const u8, phantom_state: []const u8, field_name: []const u8, base_type: []const u8) !void {
             const name_copy = try self.allocator.dupe(u8, name);
             const phantom_copy = try self.allocator.dupe(u8, phantom_state);
 
@@ -129,10 +131,12 @@ pub const AutoDischargeInserter = struct {
             // Check if this has a cleanup obligation (! suffix)
             if (std.mem.endsWith(u8, phantom_state, "!")) {
                 const field_copy = try self.allocator.dupe(u8, field_name);
+                const type_copy = try self.allocator.dupe(u8, base_type);
                 const obl_key = try self.allocator.dupe(u8, name);
                 try self.cleanup_obligations.put(obl_key, .{
                     .phantom_state = try self.allocator.dupe(u8, phantom_state),
                     .field_name = field_copy,
+                    .base_type = type_copy,
                     .scope_depth = self.scope_depth, // Record which scope created this obligation
                 });
             }
@@ -144,6 +148,7 @@ pub const AutoDischargeInserter = struct {
                 self.allocator.free(kv.key);
                 self.allocator.free(kv.value.phantom_state);
                 self.allocator.free(kv.value.field_name);
+                self.allocator.free(kv.value.base_type);
             }
         }
 
@@ -177,6 +182,7 @@ pub const AutoDischargeInserter = struct {
                 try new_ctx.cleanup_obligations.put(key, .{
                     .phantom_state = try allocator.dupe(u8, entry.value_ptr.phantom_state),
                     .field_name = try allocator.dupe(u8, entry.value_ptr.field_name),
+                    .base_type = try allocator.dupe(u8, entry.value_ptr.base_type),
                     .scope_depth = entry.value_ptr.scope_depth,
                 });
             }
@@ -633,7 +639,7 @@ pub const AutoDischargeInserter = struct {
                             const binding_name = entry.key_ptr.*;
                             const info = entry.value_ptr.*;
 
-                            const disposals = try self.findDisposalEvents(info.phantom_state);
+                            const disposals = try self.findDisposalEvents(info.phantom_state, info.base_type);
                             defer self.allocator.free(disposals);
 
                             const disposal = selectDisposal(disposals) orelse {
@@ -641,7 +647,7 @@ pub const AutoDischargeInserter = struct {
                                 const display_state = formatStateForError(info.phantom_state);
                                 if (disposals.len == 0) {
                                     // Check for multi-branch events that could dispose this
-                                    const all_disposals = try self.findAllDisposalEvents(info.phantom_state);
+                                    const all_disposals = try self.findAllDisposalEvents(info.phantom_state, info.base_type);
                                     defer self.allocator.free(all_disposals);
                                     if (all_disposals.len > 0) {
                                         var options_buf: [512]u8 = undefined;
@@ -799,7 +805,7 @@ pub const AutoDischargeInserter = struct {
                             const canonical = try self.canonicalizePhantom(phantom_str, module_name);
                             defer self.allocator.free(canonical);
 
-                            try context.addBinding(field_path, canonical, field.name);
+                            try context.addBinding(field_path, canonical, field.name, field.type);
                         }
                     }
                     break;
@@ -1021,7 +1027,7 @@ pub const AutoDischargeInserter = struct {
                             const info = entry.value_ptr.*;
 
                             // Find disposal event for this obligation
-                            const disposals = try self.findDisposalEvents(info.phantom_state);
+                            const disposals = try self.findDisposalEvents(info.phantom_state, info.base_type);
                             defer self.allocator.free(disposals);
 
                             const disposal = selectDisposal(disposals) orelse {
@@ -1029,7 +1035,7 @@ pub const AutoDischargeInserter = struct {
                                 const display_state = formatStateForError(info.phantom_state);
                                 if (disposals.len == 0) {
                                     // Check for multi-branch events that could dispose this
-                                    const all_disposals = try self.findAllDisposalEvents(info.phantom_state);
+                                    const all_disposals = try self.findAllDisposalEvents(info.phantom_state, info.base_type);
                                     defer self.allocator.free(all_disposals);
                                     if (all_disposals.len > 0) {
                                         var options_buf: [512]u8 = undefined;
@@ -1273,7 +1279,7 @@ pub const AutoDischargeInserter = struct {
                                             const canonical = try self.canonicalizePhantom(phantom_str, info.module_name);
                                             defer self.allocator.free(canonical);
 
-                                            try context.addBinding(field_path, canonical, field.name);
+                                            try context.addBinding(field_path, canonical, field.name, field.type);
                                         }
                                     }
                                     break;
@@ -1380,7 +1386,7 @@ pub const AutoDischargeInserter = struct {
                 const binding_path = entry.key_ptr.*;
                 const info = entry.value_ptr.*;
 
-                const disposals = try self.findDisposalEvents(info.phantom_state);
+                const disposals = try self.findDisposalEvents(info.phantom_state, info.base_type);
                 defer self.allocator.free(disposals);
 
                 // Use selectDisposal to handle [!] default annotation
@@ -1390,7 +1396,7 @@ pub const AutoDischargeInserter = struct {
                     const display_state = formatStateForError(info.phantom_state);
                     if (disposals.len == 0) {
                         // Check for multi-branch events that could dispose this
-                        const all_disposals = try self.findAllDisposalEvents(info.phantom_state);
+                        const all_disposals = try self.findAllDisposalEvents(info.phantom_state, info.base_type);
                         defer self.allocator.free(all_disposals);
                         if (all_disposals.len > 0) {
                             var options_buf: [1024]u8 = undefined;
@@ -1585,7 +1591,7 @@ pub const AutoDischargeInserter = struct {
                 continue;
             }
 
-            const disposals = try self.findDisposalEvents(info.phantom_state);
+            const disposals = try self.findDisposalEvents(info.phantom_state, info.base_type);
             defer self.allocator.free(disposals);
 
             // Use selectDisposal to handle [!] default annotation
@@ -1595,7 +1601,7 @@ pub const AutoDischargeInserter = struct {
                 const display_state = formatStateForError(info.phantom_state);
                 if (disposals.len == 0) {
                     // No auto-dischargeable events - check if there are multi-branch events that accept this state
-                    const all_disposals = try self.findAllDisposalEvents(info.phantom_state);
+                    const all_disposals = try self.findAllDisposalEvents(info.phantom_state, info.base_type);
                     defer self.allocator.free(all_disposals);
                     if (all_disposals.len > 0) {
                         var options_buf: [1024]u8 = undefined;
@@ -1733,9 +1739,10 @@ pub const AutoDischargeInserter = struct {
         return null;
     }
 
-    /// Find all events that can dispose a given phantom state
+    /// Find all events that can dispose a given phantom state for a given base type
     /// If include_multi_branch is true, includes events with multiple branches (for error reporting)
-    fn findDisposalEventsEx(self: *AutoDischargeInserter, phantom_state: []const u8, include_multi_branch: bool) ![]DisposalEvent {
+    /// base_type filters to events where the parameter type matches (e.g., "*Connection")
+    fn findDisposalEventsEx(self: *AutoDischargeInserter, phantom_state: []const u8, base_type: []const u8, include_multi_branch: bool) ![]DisposalEvent {
         var results = try std.ArrayList(DisposalEvent).initCapacity(self.allocator, 4);
 
         // Strip the ! suffix to get base state
@@ -1758,6 +1765,11 @@ pub const AutoDischargeInserter = struct {
 
             for (event_decl.input.fields) |field| {
                 if (field.phantom) |field_phantom| {
+                    // Filter by base type: the field's type must match the obligation's base type
+                    // This ensures close(*Connection[!active]) only matches *Connection obligations,
+                    // not *Transaction obligations that also have an "active" phantom state
+                    if (!std.mem.eql(u8, field.type, base_type)) continue;
+
                     // Parse to check if it consumes this state
                     var parsed = phantom_parser.PhantomState.parse(self.allocator, field_phantom) catch continue;
                     defer parsed.deinit(self.allocator);
@@ -1814,13 +1826,13 @@ pub const AutoDischargeInserter = struct {
     }
 
     /// Find all events that can dispose a given phantom state (auto-dischargeable only)
-    fn findDisposalEvents(self: *AutoDischargeInserter, phantom_state: []const u8) ![]DisposalEvent {
-        return self.findDisposalEventsEx(phantom_state, false);
+    fn findDisposalEvents(self: *AutoDischargeInserter, phantom_state: []const u8, base_type: []const u8) ![]DisposalEvent {
+        return self.findDisposalEventsEx(phantom_state, base_type, false);
     }
 
     /// Find all events that accept a given phantom state (including multi-branch, for error messages)
-    fn findAllDisposalEvents(self: *AutoDischargeInserter, phantom_state: []const u8) ![]DisposalEvent {
-        return self.findDisposalEventsEx(phantom_state, true);
+    fn findAllDisposalEvents(self: *AutoDischargeInserter, phantom_state: []const u8, base_type: []const u8) ![]DisposalEvent {
+        return self.findDisposalEventsEx(phantom_state, base_type, true);
     }
 
     /// Create a new continuation with disposal call inserted at the end
