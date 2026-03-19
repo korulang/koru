@@ -117,7 +117,9 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
     // Import emitter_helpers at top level so build:config can be queried during compilation
     try writer.writeAll("const emitter_helpers = @import(\"emitter_helpers\");\n");
     // Standard library import — namespaced to avoid shadowing struct-scoped 'std' in modules
-    try writer.writeAll("const __koru_std = @import(\"std\");\n\n");
+    try writer.writeAll("const __koru_std = @import(\"std\");\n");
+    // Log module for conditional debug output
+    try writer.writeAll("const log = @import(\"log\");\n\n");
 
     // Generate CompilerEnv - makes compilation context available at backend comptime
     // Made pub so backend_output_emitted.zig can access it via @import("root")
@@ -917,20 +919,20 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\    const generated_code = try RuntimeEmitter.emit(compile_allocator, final_ast);
             \\
             \\    // DEBUG: Check generated_code before file write
-            \\    __koru_std.debug.print("\n[MAIN DEBUG] Before file write:\n", .{});
-            \\    __koru_std.debug.print("[MAIN DEBUG]   generated_code.len = {d}\n", .{generated_code.len});
-            \\    __koru_std.debug.print("[MAIN DEBUG]   generated_code.ptr = {*}\n", .{generated_code.ptr});
-            \\    __koru_std.debug.print("[MAIN DEBUG]   emitted_file = {s}\n", .{emitted_file});
-            \\    __koru_std.debug.print("[MAIN DEBUG]   emitted_file.ptr = {*}\n", .{emitted_file.ptr});
-            \\    __koru_std.debug.print("[MAIN DEBUG]   First 50 bytes: ", .{});
+            \\    log.debug("\n[MAIN DEBUG] Before file write:\n", .{});
+            \\    log.debug("[MAIN DEBUG]   generated_code.len = {d}\n", .{generated_code.len});
+            \\    log.debug("[MAIN DEBUG]   generated_code.ptr = {*}\n", .{generated_code.ptr});
+            \\    log.debug("[MAIN DEBUG]   emitted_file = {s}\n", .{emitted_file});
+            \\    log.debug("[MAIN DEBUG]   emitted_file.ptr = {*}\n", .{emitted_file.ptr});
+            \\    log.debug("[MAIN DEBUG]   First 50 bytes: ", .{});
             \\    for (generated_code[0..@min(50, generated_code.len)]) |byte| {
             \\        if (byte >= 32 and byte < 127) {
-            \\            __koru_std.debug.print("{c}", .{byte});
+            \\            log.debug("{c}", .{byte});
             \\        } else {
-            \\            __koru_std.debug.print("[{d}]", .{byte});
+            \\            log.debug("[{d}]", .{byte});
             \\        }
             \\    }
-            \\    __koru_std.debug.print("\n\n", .{});
+            \\    log.debug("\n\n", .{});
             \\
             \\    // Write the generated code to a file
             \\    const file = try __koru_std.fs.cwd().createFile(emitted_file, .{});

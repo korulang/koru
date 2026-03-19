@@ -36,14 +36,14 @@ const std = @import("std");
 
 ~proc start {
     // Always print to verify the integration works
-    std.debug.print("\n[INTER] inter:start called with {d} contexts\n", .{contexts.len});
+    log.debug("\n[INTER] inter:start called with {d} contexts\n", .{contexts.len});
 
     // CompilerEnv is provided globally by the compiler backend
     const env = @import("root").CompilerEnv;
 
     // Check if --inter flag is set
     if (!env.hasFlag("inter")) {
-        std.debug.print("[INTER] --inter flag not set, skipping\n", .{});
+        log.debug("[INTER] --inter flag not set, skipping\n", .{});
         return .{ .skipped = .{} };
     }
 

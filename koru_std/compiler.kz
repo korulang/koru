@@ -276,6 +276,7 @@ pub const CompilerContext = struct {
         .optimize = optimize,
     });
     dead_strip_module.addImport("ast", ast_module);
+    dead_strip_module.addImport("log", log_module);
 
     // Codegen utilities - keyword escaping, identifier helpers
     const codegen_utils_module = b.createModule(.{
@@ -724,7 +725,7 @@ pub const CompilerContext = struct {
 
     // If we found tests, build new AST with them replaced
     if (test_flows_to_remove.items.len > 0) {
-        std.debug.print("[TEST-GEN] Found {} test(s) to generate\n", .{test_flows_to_remove.items.len});
+        log.verbose("[TEST-GEN] Found {} test(s) to generate\n", .{test_flows_to_remove.items.len});
 
         // Build new items array with test flows replaced by inline_codes
         var new_items = std.ArrayList(ast_mod.Item).initCapacity(mutable_ctx.allocator, mutable_ctx.ast.items.len) catch unreachable;
@@ -822,21 +823,21 @@ const processTestFlow = struct {
         }
 
         if (source_text.len == 0) {
-            std.debug.print("[TEST-GEN] Warning: No source body found for test '{s}'\n", .{test_name});
+            log.verbose("[TEST-GEN] Warning: No source body found for test '{s}'\n", .{test_name});
             return null;
         }
 
-        std.debug.print("[TEST-GEN] Processing test '{s}' with {d} bytes of source\n", .{test_name, source_text.len});
+        log.verbose("[TEST-GEN] Processing test '{s}' with {d} bytes of source\n", .{test_name, source_text.len});
 
         // Parse the source body
         var parser = parser_impl.Parser.init(allocator, source_text, "__test__.kz", &[_][]const u8{}, null) catch {
-            std.debug.print("[TEST-GEN] Failed to init parser for test '{s}'\n", .{test_name});
+            log.verbose("[TEST-GEN] Failed to init parser for test '{s}'\n", .{test_name});
             return null;
         };
         defer parser.deinit();
 
         var parse_result = parser.parse() catch {
-            std.debug.print("[TEST-GEN] Failed to parse source for test '{s}'\n", .{test_name});
+            log.verbose("[TEST-GEN] Failed to parse source for test '{s}'\n", .{test_name});
             return null;
         };
         defer parse_result.deinit();
@@ -861,7 +862,7 @@ const processTestFlow = struct {
             }
         }
 
-        std.debug.print("[TEST-GEN] Parsed {d} mocks and {d} flows\n", .{mocks.items.len, test_flows.items.len});
+        log.verbose("[TEST-GEN] Parsed {d} mocks and {d} flows\n", .{mocks.items.len, test_flows.items.len});
 
         // Validate mock shapes via testing module
         if (source_ptr) |src| {
@@ -1227,17 +1228,17 @@ const emitFlowWithMocks = struct {
     var code_emitter = emitter_lib.CodeEmitter.init(buffer);
 
     // DEBUG: Check buffer state after init
-    std.debug.print("\n[BUFFER DEBUG] After CodeEmitter.init:\n", .{});
-    std.debug.print("[BUFFER DEBUG]   code_emitter.pos = {d}\n", .{code_emitter.pos});
-    std.debug.print("[BUFFER DEBUG]   First 50 bytes: ", .{});
+    log.debug("\n[BUFFER DEBUG] After CodeEmitter.init:\n", .{});
+    log.debug("[BUFFER DEBUG]   code_emitter.pos = {d}\n", .{code_emitter.pos});
+    log.debug("[BUFFER DEBUG]   First 50 bytes: ", .{});
     for (buffer[0..@min(50, buffer.len)]) |byte| {
         if (byte >= 32 and byte < 127) {
-            std.debug.print("{c}", .{byte});
+            log.debug("{c}", .{byte});
         } else {
-            std.debug.print("[{d}]", .{byte});
+            log.debug("[{d}]", .{byte});
         }
     }
-    std.debug.print("\n", .{});
+    log.debug("\n", .{});
 
     // Use tap registry from context (built during transform_taps pass)
     // If no registry exists, build one from current AST (shouldn't happen in normal flow)
@@ -1274,31 +1275,31 @@ const emitFlowWithMocks = struct {
     visitor_emitter.emit(ctx.ast) catch unreachable;
 
     // DEBUG: Check buffer after emission
-    std.debug.print("\n[BUFFER DEBUG] After visitor_emitter.emit:\n", .{});
-    std.debug.print("[BUFFER DEBUG]   code_emitter.pos = {d}\n", .{code_emitter.pos});
-    std.debug.print("[BUFFER DEBUG]   First 50 bytes of buffer: ", .{});
+    log.debug("\n[BUFFER DEBUG] After visitor_emitter.emit:\n", .{});
+    log.debug("[BUFFER DEBUG]   code_emitter.pos = {d}\n", .{code_emitter.pos});
+    log.debug("[BUFFER DEBUG]   First 50 bytes of buffer: ", .{});
     for (buffer[0..@min(50, buffer.len)]) |byte| {
         if (byte >= 32 and byte < 127) {
-            std.debug.print("{c}", .{byte});
+            log.debug("{c}", .{byte});
         } else {
-            std.debug.print("[{d}]", .{byte});
+            log.debug("[{d}]", .{byte});
         }
     }
-    std.debug.print("\n", .{});
+    log.debug("\n", .{});
 
     // Get the emitted code
     const final_code = code_emitter.getOutput();
 
-    std.debug.print("[BUFFER DEBUG] final_code length = {d}\n", .{final_code.len});
-    std.debug.print("[BUFFER DEBUG]   First 50 bytes of final_code: ", .{});
+    log.debug("[BUFFER DEBUG] final_code length = {d}\n", .{final_code.len});
+    log.debug("[BUFFER DEBUG]   First 50 bytes of final_code: ", .{});
     for (final_code[0..@min(50, final_code.len)]) |byte| {
         if (byte >= 32 and byte < 127) {
-            std.debug.print("{c}", .{byte});
+            log.debug("{c}", .{byte});
         } else {
-            std.debug.print("[{d}]", .{byte});
+            log.debug("[{d}]", .{byte});
         }
     }
-    std.debug.print("\n\n", .{});
+    log.debug("\n\n", .{});
 
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
@@ -1496,14 +1497,14 @@ const joinPathAlloc = struct {
     // NOTE: Transforms run BEFORE comptime events so that comptime events
     // (like tap injection) can see the fully-transformed AST
     const transform_updated_ctx = if (@hasDecl(backend_output, "run_pass")) blk: {
-        std.debug.print("[PHASE 2.4] Calling run_pass for transforms\\n", .{});
+        log.debug("[PHASE 2.4] Calling run_pass for transforms\\n", .{});
 
         // DUMP POINT 3: AST before transform handlers
         backend_output.dumpAST(ctx.ast, "3-pre-transform", ctx.allocator);
 
         const post_transform_ast = backend_output.run_pass("transform", ctx.ast, ctx.allocator) catch |err| {
             // Transformation failed - return original AST unchanged
-            std.debug.print("WARNING: Transform execution failed ({s})\n", .{@errorName(err)});
+            log.err("WARNING: Transform execution failed ({s})\n", .{@errorName(err)});
             return .{ .ctx = ctx };
         };
 
@@ -1520,9 +1521,9 @@ const joinPathAlloc = struct {
     // Now sees the transformed AST, enabling comptime events to do post-transform work
     // Returns *const Program — comptime flows may modify the AST
     const comptime_updated_ctx = if (@hasDecl(backend_output, "comptime_main")) blk: {
-        std.debug.print("[PHASE 2.5] Executing comptime_main() - running comptime flows\n", .{});
+        log.debug("[PHASE 2.5] Executing comptime_main() - running comptime flows\n", .{});
         const post_comptime_ast = backend_output.comptime_main(transform_updated_ctx.ast, transform_updated_ctx.allocator);
-        std.debug.print("[PHASE 2.5] Comptime flows complete ({} items)\n", .{post_comptime_ast.items.len});
+        log.debug("[PHASE 2.5] Comptime flows complete ({} items)\n", .{post_comptime_ast.items.len});
         var comptime_ctx = transform_updated_ctx;
         comptime_ctx.ast = post_comptime_ast;
         break :blk comptime_ctx;
@@ -1530,7 +1531,7 @@ const joinPathAlloc = struct {
 
     // Phase 2.6: Rebuild comptime_events list from transformed AST
     // Transforms may have added/removed events, so we need to rescan
-    std.debug.print("[PHASE 2.6] Rescanning transformed AST ({} items)\n", .{comptime_updated_ctx.ast.items.len});
+    log.debug("[PHASE 2.6] Rescanning transformed AST ({} items)\n", .{comptime_updated_ctx.ast.items.len});
     comptime_count = 0;  // Reset counter
     for (comptime_updated_ctx.ast.items) |item| {
         switch (item) {
@@ -1551,7 +1552,7 @@ const joinPathAlloc = struct {
                         std.fmt.allocPrint(ctx.allocator, "{s}:{s}", .{mq, path_str}) catch path_str
                     else
                         path_str;
-                    std.debug.print("  Found comptime event: {s} (fields: {})\n", .{event_name, event_decl.input.fields.len});
+                    log.debug("  Found comptime event: {s} (fields: {})\n", .{event_name, event_decl.input.fields.len});
                     comptime_events[comptime_count] = event_name;
                     comptime_count += 1;
                 }
@@ -1583,9 +1584,9 @@ const joinPathAlloc = struct {
             else => {},
         }
     }
-    std.debug.print("[PHASE 2.6] Rescan complete: {} comptime events found\n", .{comptime_count});
+    log.debug("[PHASE 2.6] Rescan complete: {} comptime events found\n", .{comptime_count});
     for (0..comptime_count) |i| {
-        std.debug.print("  [{}] {s}\n", .{i, comptime_events[i]});
+        log.debug("  [{}] {s}\n", .{i, comptime_events[i]});
     }
 
     // Phase 3: Build new AST without comptime flows, procs, and modules (AST TRANSFORMATION!)
@@ -2011,7 +2012,7 @@ const joinPathAlloc = struct {
 // Semantic phantom type checker implementation
 // Validates module-qualified phantom states and their compatibility
 ~proc check_phantom_semantic {
-    std.debug.print("\n[PHANTOM-KORU] Starting phantom check proc...\n", .{});
+    log.debug("\n[PHANTOM-KORU] Starting phantom check proc...\n", .{});
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "check_phantom";

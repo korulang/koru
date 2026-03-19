@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("log");
 const ast = @import("ast");
 
 /// Dead Strip Pass
@@ -45,7 +46,7 @@ pub const DeadStripPass = struct {
         new_program.* = program.*;
         new_program.items = new_items;
 
-        std.debug.print("[DEAD-STRIP] Stripped {d} unreachable items\n", .{self.stripped_count});
+        log.debug("[DEAD-STRIP] Stripped {d} unreachable items\n", .{self.stripped_count});
 
         return new_program;
     }
@@ -198,7 +199,7 @@ pub const DeadStripPass = struct {
                     } else {
                         const name = try self.pathToString(&decl.path);
                         defer self.allocator.free(name);
-                        std.debug.print("[DEAD-STRIP] Removing event_decl: {s}\n", .{name});
+                        log.debug("[DEAD-STRIP] Removing event_decl: {s}\n", .{name});
                         self.stripped_count += 1;
                     }
                 },
@@ -208,7 +209,7 @@ pub const DeadStripPass = struct {
                     } else {
                         const name = try self.pathToString(&decl.path);
                         defer self.allocator.free(name);
-                        std.debug.print("[DEAD-STRIP] Removing proc_decl: {s}\n", .{name});
+                        log.debug("[DEAD-STRIP] Removing proc_decl: {s}\n", .{name});
                         self.stripped_count += 1;
                     }
                 },

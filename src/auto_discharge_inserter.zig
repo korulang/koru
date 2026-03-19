@@ -654,13 +654,23 @@ pub const AutoDischargeInserter = struct {
                                                 d.qualified_name;
                                             fbs.writer().writeAll(disp_name) catch {};
                                         }
-                                        try self.reporter.addError(
-                                            .KORU030,
-                                            flow.location.line,
-                                            flow.location.column,
-                                            "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
-                                            .{ display_name, display_state, fbs.getWritten() },
-                                        );
+                                        if (all_disposals.len == 1) {
+                                            try self.reporter.addError(
+                                                .KORU030,
+                                                flow.location.line,
+                                                flow.location.column,
+                                                "Resource '{s}' [{s}] was not disposed. Call: {s}",
+                                                .{ display_name, display_state, fbs.getWritten() },
+                                            );
+                                        } else {
+                                            try self.reporter.addError(
+                                                .KORU030,
+                                                flow.location.line,
+                                                flow.location.column,
+                                                "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
+                                                .{ display_name, display_state, fbs.getWritten() },
+                                            );
+                                        }
                                     } else {
                                         try self.reporter.addError(
                                             .KORU030,
@@ -1032,13 +1042,23 @@ pub const AutoDischargeInserter = struct {
                                                 d.qualified_name;
                                             fbs.writer().writeAll(disp_name) catch {};
                                         }
-                                        try self.reporter.addError(
-                                            .KORU030,
-                                            flow.location.line,
-                                            flow.location.column,
-                                            "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
-                                            .{ display_name, display_state, fbs.getWritten() },
-                                        );
+                                        if (all_disposals.len == 1) {
+                                            try self.reporter.addError(
+                                                .KORU030,
+                                                flow.location.line,
+                                                flow.location.column,
+                                                "Resource '{s}' [{s}] was not disposed. Call: {s}",
+                                                .{ display_name, display_state, fbs.getWritten() },
+                                            );
+                                        } else {
+                                            try self.reporter.addError(
+                                                .KORU030,
+                                                flow.location.line,
+                                                flow.location.column,
+                                                "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
+                                                .{ display_name, display_state, fbs.getWritten() },
+                                            );
+                                        }
                                     } else {
                                         try self.reporter.addError(
                                             .KORU030,
@@ -1383,13 +1403,23 @@ pub const AutoDischargeInserter = struct {
                                     d.qualified_name;
                                 fbs.writer().writeAll(disp_name) catch {};
                             }
-                            try self.reporter.addError(
-                                .KORU030,
-                                flow.location.line,
-                                flow.location.column,
-                                "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
-                                .{ display_name, display_state, fbs.getWritten() },
-                            );
+                            if (all_disposals.len == 1) {
+                                try self.reporter.addError(
+                                    .KORU030,
+                                    flow.location.line,
+                                    flow.location.column,
+                                    "Resource '{s}' [{s}] was not disposed. Call: {s}",
+                                    .{ display_name, display_state, fbs.getWritten() },
+                                );
+                            } else {
+                                try self.reporter.addError(
+                                    .KORU030,
+                                    flow.location.line,
+                                    flow.location.column,
+                                    "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
+                                    .{ display_name, display_state, fbs.getWritten() },
+                                );
+                            }
                         } else {
                             try self.reporter.addError(
                                 .KORU030,
@@ -1578,13 +1608,23 @@ pub const AutoDischargeInserter = struct {
                                 d.qualified_name;
                             fbs.writer().writeAll(disp_name) catch {};
                         }
-                        try self.reporter.addError(
-                            .KORU030,
-                            flow.location.line,
-                            flow.location.column,
-                            "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
-                            .{ display_name, display_state, fbs.getWritten() },
-                        );
+                        if (all_disposals.len == 1) {
+                            try self.reporter.addError(
+                                .KORU030,
+                                flow.location.line,
+                                flow.location.column,
+                                "Resource '{s}' [{s}] was not disposed. Call: {s}",
+                                .{ display_name, display_state, fbs.getWritten() },
+                            );
+                        } else {
+                            try self.reporter.addError(
+                                .KORU030,
+                                flow.location.line,
+                                flow.location.column,
+                                "Resource '{s}' [{s}] was not disposed. Call one of: {s}",
+                                .{ display_name, display_state, fbs.getWritten() },
+                            );
+                        }
                     } else {
                         try self.reporter.addError(
                             .KORU030,
