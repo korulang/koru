@@ -3270,7 +3270,8 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
     }
 }
 
-const usage =
+// Split usage into header and footer for dynamic command insertion
+const usage_header =
     \\koruc - The Koru Compiler
     \\
     \\Usage: koruc [options] <input.kz> [command]
@@ -3286,10 +3287,9 @@ const usage =
     \\  -v, --version        Show version
     \\  -h, --help           Show this help message
     \\
-    \\Commands:
-    \\  init                 Initialize a new Koru project in the current directory
-    \\  zen                  Display the Zen of Koru
-    \\  i, install           Install npm packages from ~std.package:requires.npm
+;
+
+const usage_footer =
     \\
     \\Examples:
     \\  koruc init                  # Initialize project in current directory
@@ -3300,6 +3300,14 @@ const usage =
     \\  koruc zen                   # Display Koru philosophy
     \\
 ;
+
+// Full usage for basic help (no input file)
+const usage = usage_header ++
+    \\Commands:
+    \\  init                 Initialize a new Koru project in the current directory
+    \\  zen                  Display the Zen of Koru
+    \\  i, install           Install npm packages from ~std.package:requires.npm
+++ usage_footer;
 
 const zen_text =
     \\
@@ -3460,10 +3468,10 @@ fn collectFlagDeclarations(allocator: std.mem.Allocator, program: *const ast.Pro
             for (module.items) |mod_item| {
                 if (mod_item == .flow) {
                     const flow = mod_item.flow;
-                    if (flow.invocation.path.segments.len == 3 and
-                        std.mem.eql(u8, flow.invocation.path.segments[0], "compiler") and
-                        std.mem.eql(u8, flow.invocation.path.segments[1], "flags") and
-                        std.mem.eql(u8, flow.invocation.path.segments[2], "declare"))
+                    // Check for flag.declare (same pattern as top-level)
+                    if (flow.invocation.path.segments.len == 2 and
+                        std.mem.eql(u8, flow.invocation.path.segments[0], "flag") and
+                        std.mem.eql(u8, flow.invocation.path.segments[1], "declare"))
                     {
                         for (flow.invocation.args) |arg| {
                             if (std.mem.eql(u8, arg.name, "source")) {
@@ -3478,6 +3486,220 @@ fn collectFlagDeclarations(allocator: std.mem.Allocator, program: *const ast.Pro
     }
 
     return try flags.toOwnedSlice(allocator);
+}
+
+// ============================================================
+// COMMAND DISCOVERY - Collect command.declare from AST
+// ============================================================
+
+const CommandDeclaration = struct {
+    name: []const u8,
+    description: []const u8,
+    alias: ?[]const u8,
+
+    fn deinit(self: *CommandDeclaration, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        allocator.free(self.description);
+        if (self.alias) |a| allocator.free(a);
+    }
+};
+
+/// Simple JSON extraction for command declarations
+/// Expects: { "name": "...", "description": "...", "alias": "..." }
+fn parseCommandDeclaration(allocator: std.mem.Allocator, json_text: []const u8) !CommandDeclaration {
+    var name: ?[]const u8 = null;
+    var description: ?[]const u8 = null;
+    var alias: ?[]const u8 = null;
+
+    // Extract name
+    if (std.mem.indexOf(u8, json_text, "\"name\"")) |name_start| {
+        const after_name = json_text[name_start + 6 ..];
+        if (std.mem.indexOf(u8, after_name, "\"")) |open_quote| {
+            const value_start = after_name[open_quote + 1 ..];
+            if (std.mem.indexOf(u8, value_start, "\"")) |close_quote| {
+                name = try allocator.dupe(u8, value_start[0..close_quote]);
+            }
+        }
+    }
+
+    // Extract description
+    if (std.mem.indexOf(u8, json_text, "\"description\"")) |desc_start| {
+        const after_desc = json_text[desc_start + 13 ..];
+        if (std.mem.indexOf(u8, after_desc, "\"")) |open_quote| {
+            const value_start = after_desc[open_quote + 1 ..];
+            if (std.mem.indexOf(u8, value_start, "\"")) |close_quote| {
+                description = try allocator.dupe(u8, value_start[0..close_quote]);
+            }
+        }
+    }
+
+    // Extract alias (optional)
+    if (std.mem.indexOf(u8, json_text, "\"alias\"")) |alias_start| {
+        const after_alias = json_text[alias_start + 7 ..];
+        if (std.mem.indexOf(u8, after_alias, "\"")) |open_quote| {
+            const value_start = after_alias[open_quote + 1 ..];
+            if (std.mem.indexOf(u8, value_start, "\"")) |close_quote| {
+                alias = try allocator.dupe(u8, value_start[0..close_quote]);
+            }
+        }
+    }
+
+    return CommandDeclaration{
+        .name = name orelse try allocator.dupe(u8, "unknown"),
+        .description = description orelse try allocator.dupe(u8, ""),
+        .alias = alias,
+    };
+}
+
+/// Collect all compiler.command.declare invocations from AST
+fn collectCommandDeclarations(allocator: std.mem.Allocator, program: *const ast.Program) ![]CommandDeclaration {
+    var commands = try std.ArrayList(CommandDeclaration).initCapacity(allocator, 4);
+    errdefer {
+        for (commands.items) |*cmd| {
+            cmd.deinit(allocator);
+        }
+        commands.deinit(allocator);
+    }
+
+    // Walk top-level items
+    for (program.items) |item| {
+        if (item == .flow) {
+            const flow = item.flow;
+            // Check if this is command.declare (could be std.compiler:command.declare or just command.declare)
+            if (flow.invocation.path.segments.len == 2 and
+                std.mem.eql(u8, flow.invocation.path.segments[0], "command") and
+                std.mem.eql(u8, flow.invocation.path.segments[1], "declare"))
+            {
+                for (flow.invocation.args) |arg| {
+                    if (std.mem.eql(u8, arg.name, "source")) {
+                        const cmd = try parseCommandDeclaration(allocator, arg.value);
+                        try commands.append(allocator, cmd);
+                    }
+                }
+            }
+        } else if (item == .module_decl) {
+            // Check imported modules
+            const module = item.module_decl;
+            for (module.items) |mod_item| {
+                if (mod_item == .flow) {
+                    const flow = mod_item.flow;
+                    // Check for command.declare in module
+                    if (flow.invocation.path.segments.len == 2 and
+                        std.mem.eql(u8, flow.invocation.path.segments[0], "command") and
+                        std.mem.eql(u8, flow.invocation.path.segments[1], "declare"))
+                    {
+                        for (flow.invocation.args) |arg| {
+                            if (std.mem.eql(u8, arg.name, "source")) {
+                                const cmd = try parseCommandDeclaration(allocator, arg.value);
+                                try commands.append(allocator, cmd);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return try commands.toOwnedSlice(allocator);
+}
+
+/// Print basic help flags from compiler.kz (when no input file provided)
+fn printBasicHelpFlags(allocator: std.mem.Allocator) !void {
+    // Use arena allocator for parsing - all memory freed at once
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+
+    // Try to discover backend flags from compiler.kz
+    const compiler_kz_path = "koru_std/compiler.kz";
+    const compiler_source = std.fs.cwd().readFileAlloc(
+        arena_allocator,
+        compiler_kz_path,
+        10 * 1024 * 1024,
+    ) catch |err| {
+        if (err != error.FileNotFound) {
+            log.debug("Warning: Could not read {s}: {}\n", .{ compiler_kz_path, err });
+        }
+        return;
+    };
+
+    var help_parser = Parser.init(
+        arena_allocator,
+        compiler_source,
+        "compiler.kz",
+        &.{},
+        null,
+    ) catch return;
+    defer help_parser.deinit();
+
+    const parse_result = help_parser.parse() catch return;
+
+    const flags = collectFlagDeclarations(allocator, &parse_result.source_file) catch return;
+    defer {
+        for (flags) |*flag| {
+            var mutable_flag = flag.*;
+            mutable_flag.deinit(allocator);
+        }
+        allocator.free(flags);
+    }
+
+    if (flags.len > 0) {
+        try printStdout(allocator, "\nBackend Compiler Flags (discovered from compiler.kz):\n", .{});
+        for (flags) |flag| {
+            try printStdout(allocator, "  --{s:<15} {s}\n", .{ flag.name, flag.description });
+        }
+    }
+}
+
+/// Print dynamic help from full AST (when input file provided)
+fn printDynamicHelp(allocator: std.mem.Allocator, program: *const ast.Program) !void {
+    // Print base usage (but without hardcoded commands section)
+    try printStdout(allocator, "{s}", .{usage_header});
+
+    // Collect and print commands from AST
+    const commands = collectCommandDeclarations(allocator, program) catch &[_]CommandDeclaration{};
+    defer {
+        for (commands) |*cmd| {
+            var mutable_cmd = cmd.*;
+            mutable_cmd.deinit(allocator);
+        }
+        allocator.free(commands);
+    }
+
+    try printStdout(allocator, "Commands:\n", .{});
+    // Always show built-in commands
+    try printStdout(allocator, "  {s:<20} {s}\n", .{ "init", "Initialize a new Koru project in the current directory" });
+    try printStdout(allocator, "  {s:<20} {s}\n", .{ "zen", "Display the Zen of Koru" });
+
+    // Print discovered commands
+    for (commands) |cmd| {
+        if (cmd.alias) |alias| {
+            var buf: [64]u8 = undefined;
+            const name_with_alias = std.fmt.bufPrint(&buf, "{s}, {s}", .{ alias, cmd.name }) catch cmd.name;
+            try printStdout(allocator, "  {s:<20} {s}\n", .{ name_with_alias, cmd.description });
+        } else {
+            try printStdout(allocator, "  {s:<20} {s}\n", .{ cmd.name, cmd.description });
+        }
+    }
+
+    try printStdout(allocator, "{s}", .{usage_footer});
+
+    // Collect and print flags from AST
+    const flags = collectFlagDeclarations(allocator, program) catch &[_]FlagDeclaration{};
+    defer {
+        for (flags) |*flag| {
+            var mutable_flag = flag.*;
+            mutable_flag.deinit(allocator);
+        }
+        allocator.free(flags);
+    }
+
+    if (flags.len > 0) {
+        try printStdout(allocator, "\nBackend Compiler Flags:\n", .{});
+        for (flags) |flag| {
+            try printStdout(allocator, "  --{s:<15} {s}\n", .{ flag.name, flag.description });
+        }
+    }
 }
 
 const ShellCommand = struct {
@@ -5156,6 +5378,7 @@ pub fn main() !void {
     var ccp_mode = false; // CCP daemon mode for Studio integration
     var fail_fast = false; // Stop at first parse error (default: lenient mode)
     var install_packages = false; // Run package managers (npm install, cargo fetch, etc.)
+    var show_help = false; // Defer help display until after AST parsing
 
     // Initialize compiler configuration
     var compiler_config = try CompilerConfig.init(allocator);
@@ -5166,65 +5389,8 @@ pub fn main() !void {
         const arg = args[i];
 
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            // Print basic usage
-            try printStdout(allocator, "{s}", .{usage});
-
-            // Use arena allocator for parsing - all memory freed at once
-            var arena = std.heap.ArenaAllocator.init(allocator);
-            defer arena.deinit();
-            const arena_allocator = arena.allocator();
-
-            // Try to discover backend flags from compiler.kz
-            const compiler_kz_path = "koru_std/compiler.kz";
-            const compiler_source = std.fs.cwd().readFileAlloc(
-                arena_allocator,
-                compiler_kz_path,
-                10 * 1024 * 1024, // 10MB max
-            ) catch |err| {
-                // If we can't read compiler.kz, just show basic help
-                if (err != error.FileNotFound) {
-                    log.debug("Warning: Could not read {s}: {}\n", .{ compiler_kz_path, err });
-                }
-                return;
-            };
-
-            // Quick-parse compiler.kz to extract flag declarations
-            var help_parser = Parser.init(
-                arena_allocator,
-                compiler_source,
-                "compiler.kz",
-                &.{}, // No flags needed for parsing
-                null, // No resolver needed for help text parsing
-            ) catch {
-                return; // Parsing failed, just show basic help
-            };
-            defer help_parser.deinit();
-
-            const parse_result = help_parser.parse() catch {
-                return; // Parse error, just show basic help
-            };
-
-            // Collect flag declarations (uses main allocator for returned flags)
-            const flags = collectFlagDeclarations(allocator, &parse_result.source_file) catch {
-                return; // Collection failed, just show basic help
-            };
-            defer {
-                for (flags) |*flag| {
-                    var mutable_flag = flag.*;
-                    mutable_flag.deinit(allocator);
-                }
-                allocator.free(flags);
-            }
-
-            // Print discovered backend flags
-            if (flags.len > 0) {
-                try printStdout(allocator, "\nBackend Compiler Flags (discovered from compiler.kz):\n", .{});
-                for (flags) |flag| {
-                    try printStdout(allocator, "  --{s:<15} {s}\n", .{ flag.name, flag.description });
-                }
-            }
-
-            return;
+            show_help = true;
+            // Continue parsing to find input file - we'll show help after AST is built
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--version")) {
             try printStdout(allocator, "koruc {s}\n", .{version});
             return;
@@ -5303,6 +5469,12 @@ pub fn main() !void {
     }
 
     if (input_file == null) {
+        if (show_help) {
+            // No input file - show basic help with flags from compiler.kz
+            try printStdout(allocator, "{s}", .{usage});
+            try printBasicHelpFlags(allocator);
+            return;
+        }
         try printStderr(allocator, "Error: no input file specified\n\n{s}", .{usage});
         return;
     }
@@ -5978,6 +6150,12 @@ pub fn main() !void {
     // No manual cleanup needed for AST nodes - parse_arena.deinit() will free them all
 
     log.debug("AST combined with {} imported modules\n", .{imported_modules.items.len});
+
+    // Handle --help with full AST (discovers all flags and commands from imports)
+    if (show_help) {
+        try printDynamicHelp(allocator, &source_file);
+        return;
+    }
 
     // Now check for comptime commands (after imports are processed)
     if (potential_command_arg) |potential_command| {
