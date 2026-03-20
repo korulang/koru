@@ -3,7 +3,9 @@
 // command.declare should support nested subcommands so that complex CLI tools
 // can be expressed declaratively. For example, `deps` has subcommands like `install`.
 //
-// ASPIRATIONAL SYNTAX:
+// ============================================================
+// ASPIRATIONAL SYNTAX FOR command.declare
+// ============================================================
 //
 //   ~std.compiler:command.declare {
 //       "name": "deps",
@@ -23,24 +25,64 @@
 //       ]
 //   }
 //
-// The help output should then show:
+// ============================================================
+// WHAT deps.kz WOULD LOOK LIKE
+// ============================================================
+//
+// Current deps.kz has:
+//
+//   ~std.compiler:command.declare {
+//       "name": "deps",
+//       "description": "Check and install system dependencies..."
+//   }
+//
+// It would become:
+//
+//   ~std.compiler:command.declare {
+//       "name": "deps",
+//       "description": "Manage system dependencies",
+//       "subcommands": [
+//           { "name": "install", "description": "Install missing dependencies" },
+//           { "name": "check", "description": "Check dependency status" }
+//       ]
+//   }
+//
+// ============================================================
+// IMPLEMENTATION CHECKLIST
+// ============================================================
+//
+// 1. Update CommandDeclaration struct in src/main.zig:
+//      const CommandDeclaration = struct {
+//          name: []const u8,
+//          description: []const u8,
+//          alias: ?[]const u8,
+//          subcommands: []SubcommandDeclaration,  // <-- ADD THIS
+//      };
+//
+//      const SubcommandDeclaration = struct {
+//          name: []const u8,
+//          description: []const u8,
+//      };
+//
+// 2. Update parseCommandDeclaration() to extract "subcommands" array
+//
+// 3. Update printDynamicHelp() to render subcommands, e.g.:
+//      deps [install|check]   Manage system dependencies
+//    or:
+//      deps                   Manage system dependencies
+//        deps install         Install missing dependencies
+//        deps check           Check dependency status
+//
+// 4. Update koru_std/deps.kz to declare its subcommands
+//
+// ============================================================
+// EXPECTED HELP OUTPUT
+// ============================================================
 //
 //   Commands:
-//     deps                   Manage system dependencies
-//       deps install         Install missing dependencies
-//         --pm <manager>     Force package manager
-//       deps check           Check dependency status (default)
-//
-// Or in a compact form:
-//
-//   Commands:
+//     init                   Initialize a new Koru project
+//     zen                    Display the Zen of Koru
 //     deps [install|check]   Manage system dependencies
-//
-// This enables:
-// - Third-party libraries to define rich CLI tools
-// - Auto-generated help for subcommands
-// - Validation of subcommand names at parse time
-// - Flags scoped to specific subcommands
 //
 // Run: koruc input.kz --help
 // Expected: Help shows "deps" with indication of its subcommands
