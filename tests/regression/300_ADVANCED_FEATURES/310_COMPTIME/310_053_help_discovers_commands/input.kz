@@ -1,0 +1,23 @@
+// Test 653: Help discovers commands from input file
+//
+// When running `koruc input.kz --help`, the help output should include
+// commands declared via ~std.compiler:command.declare in the input file
+// and its imports.
+//
+// This test imports $std/deps which declares the "deps" command.
+// The help output should show "deps" in the Commands section.
+//
+// Run: koruc input.kz --help
+// Expected: Help output includes "deps" command
+
+~import "$std/deps"
+
+~event main {}
+| done {}
+
+~proc main {
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

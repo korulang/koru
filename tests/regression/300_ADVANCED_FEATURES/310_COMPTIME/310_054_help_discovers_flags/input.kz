@@ -1,0 +1,23 @@
+// Test 654: Help discovers flags from input file
+//
+// When running `koruc input.kz --help`, the help output should include
+// flags declared via ~std.compiler:flag.declare in the input file
+// and its imports.
+//
+// This test imports $std/compiler which declares flags like --ccp, --verbose.
+// The help output should show these in the Backend Compiler Flags section.
+//
+// Run: koruc input.kz --help
+// Expected: Help output includes backend flags like --ccp, --verbose
+
+~import "$std/compiler"
+
+~event main {}
+| done {}
+
+~proc main {
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

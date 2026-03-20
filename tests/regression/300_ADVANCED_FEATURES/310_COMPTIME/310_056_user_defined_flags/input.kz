@@ -1,0 +1,35 @@
+// Test 656: User-defined flags appear in help
+//
+// Any library (not just stdlib) should be able to declare flags via
+// ~std.compiler:flag.declare and have them show up in --help.
+//
+// This enables third-party libraries and user code to extend the CLI.
+//
+// Run: koruc input.kz --help
+// Expected: Help shows --my-custom-flag in Backend Compiler Flags
+
+~import "$std/compiler"
+
+// User-defined flag
+~std.compiler:flag.declare {
+    "name": "my-custom-flag",
+    "description": "A custom flag defined in user code",
+    "type": "boolean"
+}
+
+// Another user flag with a value
+~std.compiler:flag.declare {
+    "name": "optimization-level",
+    "description": "Set optimization level (0-3)",
+    "type": "string"
+}
+
+~event main {}
+| done {}
+
+~proc main {
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _
