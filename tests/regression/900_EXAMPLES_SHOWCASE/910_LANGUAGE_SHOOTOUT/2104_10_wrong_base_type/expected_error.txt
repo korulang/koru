@@ -1,1 +1,1 @@
-error[KORU030]: Type mismatch: expected '*Connection[!active]' but got '*Transaction[app.db:active!]' for argument 'conn'
+error[KORU030]: Type mismatch: expected 'app.db:*Connection[!active]' but got 'app.db:*Transaction[app.db:active!]' for argument 'conn'

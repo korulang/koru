@@ -5,6 +5,16 @@ const ast = @import("ast");
 const errors = @import("errors");
 const phantom_parser = @import("phantom_parser");
 
+// Access compiler flags via root (backend.zig generates CompilerEnv)
+const root = @import("root");
+const CompilerEnv = if (@hasDecl(root, "CompilerEnv")) root.CompilerEnv else struct {
+    // Fallback for unit tests where CompilerEnv doesn't exist
+    // Returns false - strict-base-types is off by default
+    pub fn hasFlag(_: []const u8) bool {
+        return false;
+    }
+};
+
 /// Checks that module-qualified phantom states reference valid imported modules
 pub const PhantomSemanticChecker = struct {
     allocator: std.mem.Allocator,
@@ -325,6 +335,38 @@ pub const PhantomSemanticChecker = struct {
     // ========================================================================
     // Pass 2: Flow Analysis - Phantom State Compatibility Checking
     // ========================================================================
+
+    /// Canonicalize a base type to its fully-qualified form
+    ///
+    /// Examples:
+    ///   - "*Connection" in module "app.db" → "app.db:*Connection"
+    ///   - "*User" with field.module_path "app.users" → "app.users:*User"
+    ///
+    /// This ensures base types from different modules with the same name
+    /// are correctly distinguished during comparison.
+    fn canonicalizeBaseType(
+        self: *PhantomSemanticChecker,
+        base_type: []const u8,
+        field_module_path: ?[]const u8,
+        defining_module: []const u8,
+    ) ![]const u8 {
+        // If the field has an explicit module path (cross-module type reference),
+        // resolve it through module_map. Otherwise use the defining module.
+        const canonical_module = if (field_module_path) |mod_path| blk: {
+            if (self.module_map.get(mod_path)) |canonical| {
+                break :blk canonical;
+            } else {
+                // Module not found in map - use as-is
+                break :blk mod_path;
+            }
+        } else defining_module;
+
+        return try std.fmt.allocPrint(
+            self.allocator,
+            "{s}:{s}",
+            .{ canonical_module, base_type },
+        );
+    }
 
     /// Canonicalize a phantom state to its fully-qualified form
     ///
@@ -1103,8 +1145,16 @@ pub const PhantomSemanticChecker = struct {
                     );
                     defer self.allocator.free(canonical_phantom);
 
-                    // Store both phantom state AND base type
-                    try context.setWithType(field_path, canonical_phantom, field.type);
+                    // Canonicalize base type using field's module_path or defining module
+                    const canonical_base_type = try self.canonicalizeBaseType(
+                        field.type,
+                        field.module_path,
+                        module_for_canon,
+                    );
+                    defer self.allocator.free(canonical_base_type);
+
+                    // Store both phantom state AND base type (both canonicalized)
+                    try context.setWithType(field_path, canonical_phantom, canonical_base_type);
                 }
             }
         }
@@ -1985,11 +2035,13 @@ pub const PhantomSemanticChecker = struct {
     ) !bool {
         // Find the field in event input - get both phantom AND base type
         var expected_phantom: ?[]const u8 = null;
-        var expected_base_type: ?[]const u8 = null;
+        var expected_base_type_raw: ?[]const u8 = null;
+        var expected_module_path: ?[]const u8 = null;
         for (event_decl.input.fields) |field| {
             if (std.mem.eql(u8, field.name, arg.name)) {
                 expected_phantom = field.phantom;
-                expected_base_type = field.type;
+                expected_base_type_raw = field.type;
+                expected_module_path = field.module_path;
                 break;
             }
         }
@@ -1999,9 +2051,18 @@ pub const PhantomSemanticChecker = struct {
             return true;
         }
 
+        // Canonicalize expected base type
+        const module_for_canon = event_module orelse event_decl.module;
+        const expected_base_type = try self.canonicalizeBaseType(
+            expected_base_type_raw.?,
+            expected_module_path,
+            module_for_canon,
+        );
+        defer self.allocator.free(expected_base_type);
+
         // Debug: print what we're looking for
         log.debug("[PHANTOM-FLOW] Checking arg '{s}' with value '{s}'\n", .{ arg.name, arg.value });
-        log.debug("[PHANTOM-FLOW]   Expected type: '{s}[{s}]'\n", .{ expected_base_type orelse "?", expected_phantom.? });
+        log.debug("[PHANTOM-FLOW]   Expected type: '{s}[{s}]'\n", .{ expected_base_type, expected_phantom.? });
 
         // Check if the binding has been disposed
         if (context.isDisposed(arg.value)) {
@@ -2028,17 +2089,19 @@ pub const PhantomSemanticChecker = struct {
 
         log.debug("[PHANTOM-FLOW]   Provided type: '{s}[{s}]'\n", .{ provided_base_type, provided_phantom });
 
-        // CRITICAL: Check base type FIRST
-        // *Connection[active] and *Transaction[active] are DIFFERENT types!
-        if (expected_base_type) |expected_type| {
-            if (provided_base_type.len > 0 and !std.mem.eql(u8, expected_type, provided_base_type)) {
+        // Base type checking (when --strict-base-types flag is set)
+        // Without this flag, we rely on Zig's type system to catch mismatches lazily,
+        // which is more accurate than our string-based comparison (handles type aliases, etc.)
+        // With this flag, we check eagerly but may have false positives/negatives.
+        if (comptime CompilerEnv.hasFlag("strict-base-types")) {
+            if (provided_base_type.len > 0 and !std.mem.eql(u8, expected_base_type, provided_base_type)) {
                 log.debug("[PHANTOM-FLOW] ❌ BASE TYPE MISMATCH!\n", .{});
                 try self.reporter.addError(
                     .KORU030,
                     location.line,
                     location.column,
                     "Type mismatch: expected '{s}[{s}]' but got '{s}[{s}]' for argument '{s}'",
-                    .{ expected_type, expected_phantom.?, provided_base_type, provided_phantom, arg.name },
+                    .{ expected_base_type, expected_phantom.?, provided_base_type, provided_phantom, arg.name },
                 );
                 return false;
             }
@@ -2046,7 +2109,6 @@ pub const PhantomSemanticChecker = struct {
 
         // Canonicalize both phantom states for proper comparison
         // Use event_module (qualified module name from lookup) for proper canonicalization
-        const module_for_canon = event_module orelse event_decl.module;
         const canonical_expected = try self.canonicalizePhantomState(
             expected_phantom.?,
             module_for_canon,

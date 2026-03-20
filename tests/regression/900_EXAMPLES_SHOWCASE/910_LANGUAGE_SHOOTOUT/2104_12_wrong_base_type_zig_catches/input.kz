@@ -1,0 +1,30 @@
+// TEST: Pass a Transaction where Connection is expected (WITHOUT --strict-base-types)
+//
+// Without --strict-base-types, Koru only checks phantom states.
+// Zig's actual type system catches the mismatch during compilation.
+//
+// This is the DEFAULT behavior and is MORE ACCURATE than Koru's
+// string-based type comparison because Zig handles:
+// - Type aliases (const Conn = Connection)
+// - Module-qualified types correctly
+// - All the nuances of its own type system
+//
+// close() expects: *Connection[!active]
+// We're passing: *Transaction[active!]
+//
+// Koru phantom checker passes (both have [active] state)
+// Zig type checker fails (Transaction != Connection)
+
+~import "$app/db"
+
+~app.db:connect(host: "localhost")
+| ok c |>
+    app.db:begin(conn: c.conn)
+    | ok t |>
+        // BUG: Passing t.tx (*Transaction) to close() which expects *Connection
+        // Koru won't catch this without --strict-base-types
+        // Zig WILL catch this during compilation
+        app.db:close(conn: t.tx)
+        |> _
+    | err _ |> _
+| err _ |> _

@@ -1,0 +1,16 @@
+// TEST: Pass a Connection where Transaction is expected (WITHOUT --strict-base-types)
+//
+// Reverse of 2104_12: commit() expects *Transaction, we pass *Connection
+//
+// Without --strict-base-types, Zig catches this during compilation.
+
+~import "$app/db"
+
+~app.db:connect(host: "localhost")
+| ok c |>
+    // BUG: Passing c.conn (*Connection) to commit() which expects *Transaction
+    // Koru won't catch this without --strict-base-types
+    // Zig WILL catch this during compilation
+    app.db:commit(tx: c.conn)
+    |> _
+| err _ |> _

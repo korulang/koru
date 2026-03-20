@@ -1,0 +1,51 @@
+// Database module with Connection and Transaction as IDENTICAL struct layout
+// Both have phantom states with the SAME NAME
+// The ONLY difference is the semantic TYPE NAME
+
+const std = @import("std");
+
+// BOTH are structurally identical - just an i32 handle!
+const Connection = struct { handle: i32 };
+const Transaction = struct { handle: i32 };  // Same layout as Connection!
+
+// connect: produces *Connection[active!]
+~pub event connect { host: []const u8 }
+| ok { conn: *Connection[active!] }
+| err { msg: []const u8 }
+
+~proc connect {
+    const c = std.heap.page_allocator.create(Connection) catch unreachable;
+    c.* = Connection{ .handle = 42 };
+    return .{ .ok = .{ .conn = c } };
+}
+
+// begin: consumes *Connection[!active], produces *Transaction[active!]
+// NOTE: Transaction also has [active!] - same state name as Connection!
+~pub event begin { conn: *Connection[!active] }
+| ok { tx: *Transaction[active!] }
+| err { msg: []const u8 }
+
+~proc begin {
+    const tx = std.heap.page_allocator.create(Transaction) catch unreachable;
+    tx.* = Transaction{ .handle = conn.handle };
+    std.heap.page_allocator.destroy(conn);
+    return .{ .ok = .{ .tx = tx } };
+}
+
+// close: consumes *Connection[!active]
+// This should ONLY accept Connection, NOT Transaction!
+~[!]pub event close { conn: *Connection[!active] }
+
+~proc close {
+    std.debug.print("Connection closed (handle={})\n", .{conn.handle});
+    std.heap.page_allocator.destroy(conn);
+}
+
+// commit: consumes *Transaction[!active]
+// This should ONLY accept Transaction, NOT Connection!
+~[!]pub event commit { tx: *Transaction[!active] }
+
+~proc commit {
+    std.debug.print("COMMIT (handle={})\n", .{tx.handle});
+    std.heap.page_allocator.destroy(tx);
+}
