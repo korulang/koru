@@ -11,6 +11,13 @@ pub const PhantomSemanticChecker = struct {
     reporter: *errors.ErrorReporter,
     module_map: std.StringHashMap([]const u8),
     label_map: std.StringHashMap(*const ast.EventDecl),
+    disposal_event_map: std.StringHashMap(DisposalEventInfo),
+
+    /// Information about an event for disposal suggestions
+    const DisposalEventInfo = struct {
+        decl: *const ast.EventDecl,
+        module_name: []const u8,
+    };
 
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) !PhantomSemanticChecker {
         return PhantomSemanticChecker{
@@ -18,10 +25,17 @@ pub const PhantomSemanticChecker = struct {
             .reporter = reporter,
             .module_map = std.StringHashMap([]const u8).init(allocator),
             .label_map = std.StringHashMap(*const ast.EventDecl).init(allocator),
+            .disposal_event_map = std.StringHashMap(DisposalEventInfo).init(allocator),
         };
     }
 
     pub fn deinit(self: *PhantomSemanticChecker) void {
+        // Free allocated disposal event map keys
+        var iter = self.disposal_event_map.iterator();
+        while (iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+        }
+        self.disposal_event_map.deinit();
         self.module_map.deinit();
         self.label_map.deinit();
     }
@@ -34,6 +48,9 @@ pub const PhantomSemanticChecker = struct {
 
         // Pass 1: Build module resolution map from imports
         try self.buildModuleMap(source_ast);
+
+        // Build event map for disposal suggestions
+        try self.buildDisposalEventMap(source_ast);
 
         // Reset label map for this run
         self.label_map.clearRetainingCapacity();
@@ -79,6 +96,119 @@ pub const PhantomSemanticChecker = struct {
         }
     }
 
+    /// Build a map of all events for disposal suggestions
+    fn buildDisposalEventMap(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !void {
+        for (source_ast.items) |item| {
+            switch (item) {
+                .event_decl => |*event_decl| {
+                    const qualified_name = try self.buildDisposalQualifiedEventName(event_decl);
+                    try self.disposal_event_map.put(qualified_name, .{
+                        .decl = event_decl,
+                        .module_name = event_decl.module,
+                    });
+                },
+                .module_decl => |mod| {
+                    // Add events from submodules - use module's logical_name for full path
+                    // Use index-based iteration to get stable pointers
+                    for (mod.items, 0..) |_, idx| {
+                        switch (mod.items[idx]) {
+                            .event_decl => |*event_decl| {
+                                const qualified_name = try self.buildDisposalQualifiedEventNameWithModule(event_decl, mod.logical_name);
+                                try self.disposal_event_map.put(qualified_name, .{
+                                    .decl = event_decl,
+                                    .module_name = mod.logical_name,
+                                });
+                            },
+                            else => {},
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
+    /// Build qualified event name like "module:event" or "module:event[!]"
+    fn buildDisposalQualifiedEventName(self: *PhantomSemanticChecker, event_decl: *const ast.EventDecl) ![]const u8 {
+        return self.buildDisposalQualifiedEventNameWithModule(event_decl, event_decl.module);
+    }
+
+    /// Build qualified event name with explicit module name
+    fn buildDisposalQualifiedEventNameWithModule(self: *PhantomSemanticChecker, event_decl: *const ast.EventDecl, module_name: []const u8) ![]const u8 {
+        const event_name = event_decl.path.segments[0];
+        const has_default = for (event_decl.annotations) |ann| {
+            if (std.mem.eql(u8, ann, "!")) break true;
+        } else false;
+
+        if (has_default) {
+            return std.fmt.allocPrint(self.allocator, "{s}:{s}[!]", .{ module_name, event_name });
+        } else {
+            return std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ module_name, event_name });
+        }
+    }
+
+    /// Find events that can discharge a given phantom state obligation
+    /// Returns a list of event names that consume the given phantom state
+    fn findDisposalEventsForState(self: *PhantomSemanticChecker, phantom_state: []const u8) !std.ArrayList([]const u8) {
+        var results = try std.ArrayList([]const u8).initCapacity(self.allocator, 4);
+
+        // Strip the ! suffix to get base state
+        var base_state = phantom_state;
+        if (std.mem.endsWith(u8, base_state, "!")) {
+            base_state = base_state[0 .. base_state.len - 1];
+        }
+
+        // Search all events for [!state] parameters
+        var iter = self.disposal_event_map.iterator();
+        while (iter.next()) |entry| {
+            const event_decl = entry.value_ptr.decl;
+
+            for (event_decl.input.fields) |field| {
+                if (field.phantom) |field_phantom| {
+                    // Parse to check if it consumes this state
+                    var parsed = phantom_parser.PhantomState.parse(self.allocator, field_phantom) catch continue;
+                    defer parsed.deinit(self.allocator);
+
+                    switch (parsed) {
+                        .concrete => |concrete| {
+                            if (concrete.consumes_obligation) {
+                                // Build full state name - canonicalize using event's module if no module specified
+                                const consumer_state = if (concrete.module_path) |mod|
+                                    try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ mod, concrete.name })
+                                else
+                                    try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ entry.value_ptr.module_name, concrete.name });
+                                defer self.allocator.free(consumer_state);
+
+                                if (std.mem.eql(u8, consumer_state, base_state)) {
+                                    // Use full qualified name (e.g., "app.db:begin")
+                                    try results.append(self.allocator, try self.allocator.dupe(u8, entry.key_ptr.*));
+                                }
+                            }
+                        },
+                        .variable => {},
+                        .state_union => |u| {
+                            for (u.members) |member| {
+                                if (!member.consumes_obligation) continue;
+                                const consumer_state = if (member.module_path) |mod|
+                                    try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ mod, member.name })
+                                else
+                                    try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ entry.value_ptr.module_name, member.name });
+                                defer self.allocator.free(consumer_state);
+
+                                if (std.mem.eql(u8, consumer_state, base_state)) {
+                                    // Use full qualified name (e.g., "app.db:begin")
+                                    try results.append(self.allocator, try self.allocator.dupe(u8, entry.key_ptr.*));
+                                    break;
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+        }
+
+        return results;
+    }
 
     fn validatePhantomAnnotations(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !bool {
         var has_errors = false;
@@ -269,8 +399,15 @@ pub const PhantomSemanticChecker = struct {
     }
 
     /// Binding context tracks phantom states of variables in scope
+    /// Each binding tracks BOTH the phantom state AND the base type
     const BindingContext = struct {
-        bindings: std.StringHashMap([]const u8), // variable name → phantom state string
+        /// Full type information for a binding
+        const BindingInfo = struct {
+            phantom_state: []const u8, // e.g., "app.db:active!"
+            base_type: []const u8, // e.g., "*Connection"
+        };
+
+        bindings: std.StringHashMap(BindingInfo), // variable name → full type info
         cleanup_obligations: std.StringHashMap(void), // track bindings with ! states that need cleanup
         disposed_bindings: std.StringHashMap(void), // track bindings that have been disposed (poisoned)
         outer_scope_obligations: std.StringHashMap(void), // track obligations from outside @scope boundary
@@ -278,7 +415,7 @@ pub const PhantomSemanticChecker = struct {
 
         fn init(allocator: std.mem.Allocator) BindingContext {
             return BindingContext{
-                .bindings = std.StringHashMap([]const u8).init(allocator),
+                .bindings = std.StringHashMap(BindingInfo).init(allocator),
                 .cleanup_obligations = std.StringHashMap(void).init(allocator),
                 .disposed_bindings = std.StringHashMap(void).init(allocator),
                 .outer_scope_obligations = std.StringHashMap(void).init(allocator),
@@ -290,7 +427,8 @@ pub const PhantomSemanticChecker = struct {
             var iter = self.bindings.iterator();
             while (iter.next()) |entry| {
                 self.allocator.free(entry.key_ptr.*);
-                self.allocator.free(entry.value_ptr.*);
+                self.allocator.free(entry.value_ptr.phantom_state);
+                self.allocator.free(entry.value_ptr.base_type);
             }
             self.bindings.deinit();
 
@@ -316,17 +454,23 @@ pub const PhantomSemanticChecker = struct {
             self.outer_scope_obligations.deinit();
         }
 
-        fn set(self: *BindingContext, name: []const u8, phantom_state: []const u8) !void {
+        /// Set a binding with both phantom state and base type
+        fn setWithType(self: *BindingContext, name: []const u8, phantom_state: []const u8, base_type: []const u8) !void {
             // Remove old binding if exists
             if (self.bindings.fetchRemove(name)) |kv| {
                 self.allocator.free(kv.key);
-                self.allocator.free(kv.value);
+                self.allocator.free(kv.value.phantom_state);
+                self.allocator.free(kv.value.base_type);
             }
 
             // Add new binding
             const name_copy = try self.allocator.dupe(u8, name);
             const phantom_copy = try self.allocator.dupe(u8, phantom_state);
-            try self.bindings.put(name_copy, phantom_copy);
+            const type_copy = try self.allocator.dupe(u8, base_type);
+            try self.bindings.put(name_copy, .{
+                .phantom_state = phantom_copy,
+                .base_type = type_copy,
+            });
 
             // Check if this phantom state has cleanup obligation (! suffix)
             var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_state);
@@ -338,7 +482,7 @@ pub const PhantomSemanticChecker = struct {
                         // Track this binding as requiring cleanup
                         const obligation_key = try self.allocator.dupe(u8, name);
                         try self.cleanup_obligations.put(obligation_key, {});
-                        log.debug("[CLEANUP] Tracking cleanup obligation for '{s}' with state '{s}'\n", .{name, phantom_state});
+                        log.debug("[CLEANUP] Tracking cleanup obligation for '{s}' with type '{s}[{s}]'\n", .{ name, base_type, phantom_state });
                     }
                 },
                 .variable => {},
@@ -350,20 +494,47 @@ pub const PhantomSemanticChecker = struct {
             }
         }
 
-        fn get(self: *BindingContext, name: []const u8) ?[]const u8 {
+        /// Legacy set function - calls setWithType with empty base type
+        /// TODO: Remove this once all callers are updated to use setWithType
+        fn set(self: *BindingContext, name: []const u8, phantom_state: []const u8) !void {
+            try self.setWithType(name, phantom_state, "");
+        }
+
+        /// Get full binding info (phantom state + base type)
+        fn getInfo(self: *BindingContext, name: []const u8) ?BindingInfo {
             return self.bindings.get(name);
+        }
+
+        /// Get just the phantom state (for backwards compatibility)
+        fn get(self: *BindingContext, name: []const u8) ?[]const u8 {
+            if (self.bindings.get(name)) |info| {
+                return info.phantom_state;
+            }
+            return null;
+        }
+
+        /// Get the base type for a binding
+        fn getBaseType(self: *BindingContext, name: []const u8) ?[]const u8 {
+            if (self.bindings.get(name)) |info| {
+                return info.base_type;
+            }
+            return null;
         }
 
         /// Create a child context that inherits parent's state
         fn inherit(parent: *const BindingContext, allocator: std.mem.Allocator) !BindingContext {
             var child = BindingContext.init(allocator);
 
-            // Inherit all bindings
+            // Inherit all bindings (copy full BindingInfo)
             var bind_iter = parent.bindings.iterator();
             while (bind_iter.next()) |entry| {
                 const key = try allocator.dupe(u8, entry.key_ptr.*);
-                const value = try allocator.dupe(u8, entry.value_ptr.*);
-                try child.bindings.put(key, value);
+                const phantom_copy = try allocator.dupe(u8, entry.value_ptr.phantom_state);
+                const type_copy = try allocator.dupe(u8, entry.value_ptr.base_type);
+                try child.bindings.put(key, .{
+                    .phantom_state = phantom_copy,
+                    .base_type = type_copy,
+                });
             }
 
             // Inherit cleanup obligations
@@ -395,12 +566,16 @@ pub const PhantomSemanticChecker = struct {
         fn inheritWithScope(parent: *const BindingContext, allocator: std.mem.Allocator) !BindingContext {
             var child = BindingContext.init(allocator);
 
-            // Inherit all bindings
+            // Inherit all bindings (copy full BindingInfo)
             var bind_iter = parent.bindings.iterator();
             while (bind_iter.next()) |entry| {
                 const key = try allocator.dupe(u8, entry.key_ptr.*);
-                const value = try allocator.dupe(u8, entry.value_ptr.*);
-                try child.bindings.put(key, value);
+                const phantom_copy = try allocator.dupe(u8, entry.value_ptr.phantom_state);
+                const type_copy = try allocator.dupe(u8, entry.value_ptr.base_type);
+                try child.bindings.put(key, .{
+                    .phantom_state = phantom_copy,
+                    .base_type = type_copy,
+                });
             }
 
             // Inherit cleanup obligations AND mark them as outer scope
@@ -928,7 +1103,8 @@ pub const PhantomSemanticChecker = struct {
                     );
                     defer self.allocator.free(canonical_phantom);
 
-                    try context.set(field_path, canonical_phantom);
+                    // Store both phantom state AND base type
+                    try context.setWithType(field_path, canonical_phantom, field.type);
                 }
             }
         }
@@ -1218,13 +1394,53 @@ pub const PhantomSemanticChecker = struct {
                             phantom_state[colon_idx + 1 ..]
                         else
                             phantom_state;
-                        try self.reporter.addError(
-                            .KORU030,
-                            location.line,
-                            location.column,
-                            "Resource '{s}' with phantom state [{s}] was not disposed.",
-                            .{display_name, display_state}
-                        );
+
+                        // Find events that could discharge this obligation
+                        var disposal_events = try self.findDisposalEventsForState(phantom_state);
+                        defer {
+                            for (disposal_events.items) |item| {
+                                self.allocator.free(item);
+                            }
+                            disposal_events.deinit(self.allocator);
+                        }
+
+                        if (disposal_events.items.len == 0) {
+                            // Strip ! suffix from display_state for the [!state] suggestion
+                            const state_without_bang = if (std.mem.endsWith(u8, display_state, "!"))
+                                display_state[0 .. display_state.len - 1]
+                            else
+                                display_state;
+                            try self.reporter.addError(
+                                .KORU030,
+                                location.line,
+                                location.column,
+                                "Resource '{s}' [{s}] was not discharged. No event accepts [!{s}].",
+                                .{ display_name, display_state, state_without_bang },
+                            );
+                        } else if (disposal_events.items.len == 1) {
+                            try self.reporter.addError(
+                                .KORU030,
+                                location.line,
+                                location.column,
+                                "Resource '{s}' [{s}] was not discharged. Call: {s}",
+                                .{ display_name, display_state, disposal_events.items[0] },
+                            );
+                        } else {
+                            // Build comma-separated list of disposal options
+                            var options_buf: [512]u8 = undefined;
+                            var fbs = std.io.fixedBufferStream(&options_buf);
+                            for (disposal_events.items, 0..) |event_name, i| {
+                                if (i > 0) fbs.writer().writeAll(", ") catch {};
+                                fbs.writer().writeAll(event_name) catch {};
+                            }
+                            try self.reporter.addError(
+                                .KORU030,
+                                location.line,
+                                location.column,
+                                "Resource '{s}' [{s}] was not discharged. Call one of: {s}",
+                                .{ display_name, display_state, fbs.getWritten() },
+                            );
+                        }
                         has_errors = true;
                     }
                 } else {
@@ -1767,11 +1983,13 @@ pub const PhantomSemanticChecker = struct {
         context: *BindingContext,
         location: errors.SourceLocation
     ) !bool {
-        // Find the field in event input
+        // Find the field in event input - get both phantom AND base type
         var expected_phantom: ?[]const u8 = null;
+        var expected_base_type: ?[]const u8 = null;
         for (event_decl.input.fields) |field| {
             if (std.mem.eql(u8, field.name, arg.name)) {
                 expected_phantom = field.phantom;
+                expected_base_type = field.type;
                 break;
             }
         }
@@ -1782,8 +2000,8 @@ pub const PhantomSemanticChecker = struct {
         }
 
         // Debug: print what we're looking for
-        log.debug("[PHANTOM-FLOW] Checking arg '{s}' with value '{s}'\n", .{arg.name, arg.value});
-        log.debug("[PHANTOM-FLOW]   Expected phantom: '{s}'\n", .{expected_phantom.?});
+        log.debug("[PHANTOM-FLOW] Checking arg '{s}' with value '{s}'\n", .{ arg.name, arg.value });
+        log.debug("[PHANTOM-FLOW]   Expected type: '{s}[{s}]'\n", .{ expected_base_type orelse "?", expected_phantom.? });
 
         // Check if the binding has been disposed
         if (context.isDisposed(arg.value)) {
@@ -1793,26 +2011,45 @@ pub const PhantomSemanticChecker = struct {
                 location.line,
                 location.column,
                 "Use-after-disposal: binding '{s}' was already disposed and cannot be used",
-                .{arg.value}
+                .{arg.value},
             );
             return false;
         }
 
-        // Get the provided phantom state from context
-        const provided_phantom = context.get(arg.value) orelse {
+        // Get the full binding info (phantom state + base type) from context
+        const binding_info = context.getInfo(arg.value) orelse {
             log.debug("[PHANTOM-FLOW]   No binding found for '{s}' in context\n", .{arg.value});
             // Value is not a tracked binding - might be a literal
             return true;
         };
 
-        log.debug("[PHANTOM-FLOW]   Provided phantom: '{s}'\n", .{provided_phantom});
+        const provided_phantom = binding_info.phantom_state;
+        const provided_base_type = binding_info.base_type;
+
+        log.debug("[PHANTOM-FLOW]   Provided type: '{s}[{s}]'\n", .{ provided_base_type, provided_phantom });
+
+        // CRITICAL: Check base type FIRST
+        // *Connection[active] and *Transaction[active] are DIFFERENT types!
+        if (expected_base_type) |expected_type| {
+            if (provided_base_type.len > 0 and !std.mem.eql(u8, expected_type, provided_base_type)) {
+                log.debug("[PHANTOM-FLOW] ❌ BASE TYPE MISMATCH!\n", .{});
+                try self.reporter.addError(
+                    .KORU030,
+                    location.line,
+                    location.column,
+                    "Type mismatch: expected '{s}[{s}]' but got '{s}[{s}]' for argument '{s}'",
+                    .{ expected_type, expected_phantom.?, provided_base_type, provided_phantom, arg.name },
+                );
+                return false;
+            }
+        }
 
         // Canonicalize both phantom states for proper comparison
         // Use event_module (qualified module name from lookup) for proper canonicalization
         const module_for_canon = event_module orelse event_decl.module;
         const canonical_expected = try self.canonicalizePhantomState(
             expected_phantom.?,
-            module_for_canon
+            module_for_canon,
         );
         defer self.allocator.free(canonical_expected);
 
@@ -1820,7 +2057,7 @@ pub const PhantomSemanticChecker = struct {
         // We need to parse it to get its module, then resolve through module_map
         const canonical_provided = try self.canonicalizePhantomState(
             provided_phantom,
-            module_for_canon  // Use event's qualified module as fallback if provided has no module
+            module_for_canon, // Use event's qualified module as fallback if provided has no module
         );
         defer self.allocator.free(canonical_provided);
 
@@ -1831,23 +2068,23 @@ pub const PhantomSemanticChecker = struct {
         const compatible = try phantom_parser.areCompatible(
             self.allocator,
             canonical_expected,
-            canonical_provided
+            canonical_provided,
         );
 
         if (!compatible) {
-            log.debug("[PHANTOM-FLOW] ❌ MISMATCH DETECTED!\n", .{});
+            log.debug("[PHANTOM-FLOW] ❌ PHANTOM STATE MISMATCH!\n", .{});
             try self.reporter.addError(
-                .KORU030, // Shape mismatch
+                .KORU030,
                 location.line,
                 location.column,
                 "Phantom state mismatch: expected '{s}' but got '{s}' for argument '{s}'",
-                .{canonical_expected, canonical_provided, arg.name}
+                .{ canonical_expected, canonical_provided, arg.name },
             );
             // Return false to indicate error, but don't stop checking
             return false;
         }
 
-        log.debug("[PHANTOM-FLOW]   ✓ Compatible\n", .{});
+        log.debug("[PHANTOM-FLOW]   ✓ Type and phantom state compatible\n", .{});
 
         // Check if this event consumes the obligation (marked with ! prefix)
         var expected_phantom_parsed = try phantom_parser.PhantomState.parse(self.allocator, expected_phantom.?);

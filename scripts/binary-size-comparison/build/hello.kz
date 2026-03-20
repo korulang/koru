@@ -1,0 +1,2 @@
+~import "$std/io"
+~std.io:print.ln("Hello, World!")

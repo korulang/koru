@@ -130,6 +130,18 @@ pub const ErrorReporter = struct {
     
     pub fn addError(self: *ErrorReporter, code: ErrorCode, line: usize, column: usize, comptime fmt: []const u8, args: anytype) !void {
         const message = try std.fmt.allocPrint(self.allocator, fmt, args);
+        
+        // Deduplicate: don't add if exact same error already exists
+        for (self.errors.items) |existing| {
+            if (existing.code == code and 
+                existing.location.line == line and 
+                existing.location.column == column and
+                std.mem.eql(u8, existing.message, message)) {
+                self.allocator.free(message);
+                return;
+            }
+        }
+        
         try self.errors.append(self.allocator, .{
             .code = code,
             .message = message,

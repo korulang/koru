@@ -1108,6 +1108,23 @@ pub fn build(b: *std.Build) void {
     const auto_discharge_test_step = b.step("test-auto-discharge", "Run auto-discharge inserter tests");
     auto_discharge_test_step.dependOn(&run_auto_discharge_inserter_tests.step);
 
+    // Phantom semantic checker integration tests - validates full type checking (base type + phantom state)
+    const phantom_checker_integration_tests = b.addTest(.{
+        .name = "phantom_checker_integration_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/phantom_semantic_checker_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    phantom_checker_integration_tests.root_module.addImport("ast", ast_module);
+    phantom_checker_integration_tests.root_module.addImport("parser", parser_module);
+    phantom_checker_integration_tests.root_module.addImport("errors", errors_module);
+    phantom_checker_integration_tests.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
+    const run_phantom_checker_integration_tests = b.addRunArtifact(phantom_checker_integration_tests);
+    const phantom_checker_test_step = b.step("test-phantom-checker", "Run phantom semantic checker integration tests");
+    phantom_checker_test_step.dependOn(&run_phantom_checker_integration_tests.step);
+
     const flow_parser_tests = b.addTest(.{
         .name = "flow_parser_tests",
         .root_module = flow_parser_module,

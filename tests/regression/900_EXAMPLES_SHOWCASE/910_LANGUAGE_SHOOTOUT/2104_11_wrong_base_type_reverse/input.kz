@@ -1,0 +1,15 @@
+// TEST: Pass a Connection where Transaction is expected (reverse direction)
+//
+// commit() expects: *Transaction[!active]
+// We're passing: *Connection[active!]
+//
+// Both have [active] state, but base types differ!
+
+~import "$app/db"
+
+~app.db:connect(host: "localhost")
+| ok c |>
+    // BUG: Passing c.conn (*Connection) to commit() which expects *Transaction
+    app.db:commit(tx: c.conn)
+    |> _
+| err _ |> _
