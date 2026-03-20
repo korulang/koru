@@ -1,18 +1,49 @@
 // Test 655: Command declarations with subcommands
 //
-// command.declare should support subcommands so that complex CLI tools
-// can be expressed. For example, `deps` has subcommands like `install`.
+// command.declare should support nested subcommands so that complex CLI tools
+// can be expressed declaratively. For example, `deps` has subcommands like `install`.
 //
-// The help output should show:
-//   deps                 Check and install system dependencies
-//     deps install       Install missing dependencies
-//     deps check         Check dependency status (default)
+// ASPIRATIONAL SYNTAX:
 //
-// Or alternatively:
-//   deps [install|check] Check and install system dependencies
+//   ~std.compiler:command.declare {
+//       "name": "deps",
+//       "description": "Manage system dependencies",
+//       "subcommands": [
+//           {
+//               "name": "install",
+//               "description": "Install missing dependencies",
+//               "flags": [
+//                   { "name": "pm", "description": "Force package manager", "type": "string" }
+//               ]
+//           },
+//           {
+//               "name": "check",
+//               "description": "Check dependency status (default)"
+//           }
+//       ]
+//   }
+//
+// The help output should then show:
+//
+//   Commands:
+//     deps                   Manage system dependencies
+//       deps install         Install missing dependencies
+//         --pm <manager>     Force package manager
+//       deps check           Check dependency status (default)
+//
+// Or in a compact form:
+//
+//   Commands:
+//     deps [install|check]   Manage system dependencies
+//
+// This enables:
+// - Third-party libraries to define rich CLI tools
+// - Auto-generated help for subcommands
+// - Validation of subcommand names at parse time
+// - Flags scoped to specific subcommands
 //
 // Run: koruc input.kz --help
-// Expected: Help shows "deps" with indication of subcommands
+// Expected: Help shows "deps" with indication of its subcommands
 
 ~import "$std/deps"
 
