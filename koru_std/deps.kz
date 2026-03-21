@@ -31,7 +31,11 @@
 
 ~std.compiler:command.declare {
     "name": "deps",
-    "description": "Check and install system dependencies from requires.system declarations"
+    "description": "Manage system dependencies",
+    "subcommands": [
+        { "name": "check", "description": "Check dependency status (default)" },
+        { "name": "install", "description": "Install missing dependencies" }
+    ]
 }
 
 ~[comptime|command]pub event deps {

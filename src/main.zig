@@ -3492,62 +3492,130 @@ fn collectFlagDeclarations(allocator: std.mem.Allocator, program: *const ast.Pro
 // COMMAND DISCOVERY - Collect command.declare from AST
 // ============================================================
 
+const SubcommandDeclaration = struct {
+    name: []const u8,
+    description: []const u8,
+
+    fn deinit(self: *SubcommandDeclaration, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        allocator.free(self.description);
+    }
+};
+
 const CommandDeclaration = struct {
     name: []const u8,
     description: []const u8,
     alias: ?[]const u8,
+    subcommands: []SubcommandDeclaration,
 
     fn deinit(self: *CommandDeclaration, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
         allocator.free(self.description);
         if (self.alias) |a| allocator.free(a);
+        for (self.subcommands) |*sub| {
+            var mutable_sub = sub.*;
+            mutable_sub.deinit(allocator);
+        }
+        allocator.free(self.subcommands);
     }
 };
 
+/// Extract a JSON string field value (simple extraction, not full JSON parser)
+fn extractJsonStringField(json_text: []const u8, field: []const u8) ?[]const u8 {
+    // Build search pattern: "field":
+    var search_buf: [64]u8 = undefined;
+    const search_pattern = std.fmt.bufPrint(&search_buf, "\"{s}\"", .{field}) catch return null;
+
+    if (std.mem.indexOf(u8, json_text, search_pattern)) |field_start| {
+        const after_field = json_text[field_start + search_pattern.len ..];
+        // Skip : and whitespace
+        var i: usize = 0;
+        while (i < after_field.len and (after_field[i] == ':' or after_field[i] == ' ' or after_field[i] == '\t' or after_field[i] == '\n')) : (i += 1) {}
+        if (i >= after_field.len or after_field[i] != '"') return null;
+        i += 1; // Skip opening quote
+        const value_start = i;
+        while (i < after_field.len and after_field[i] != '"') : (i += 1) {}
+        return after_field[value_start..i];
+    }
+    return null;
+}
+
+/// Parse subcommands array from JSON
+/// Expects: "subcommands": [ { "name": "...", "description": "..." }, ... ]
+fn parseSubcommands(allocator: std.mem.Allocator, json_text: []const u8) ![]SubcommandDeclaration {
+    var subcommands = std.ArrayListUnmanaged(SubcommandDeclaration){};
+    errdefer {
+        for (subcommands.items) |*sub| {
+            sub.deinit(allocator);
+        }
+        subcommands.deinit(allocator);
+    }
+
+    // Find "subcommands": [
+    const subcommands_key = "\"subcommands\"";
+    if (std.mem.indexOf(u8, json_text, subcommands_key)) |key_start| {
+        const after_key = json_text[key_start + subcommands_key.len ..];
+
+        // Find opening bracket
+        if (std.mem.indexOf(u8, after_key, "[")) |bracket_start| {
+            var rest = after_key[bracket_start + 1 ..];
+
+            // Parse each object in the array
+            while (std.mem.indexOf(u8, rest, "{")) |obj_start| {
+                // Find matching closing brace
+                var brace_depth: usize = 1;
+                var i: usize = obj_start + 1;
+                while (i < rest.len and brace_depth > 0) : (i += 1) {
+                    if (rest[i] == '{') brace_depth += 1;
+                    if (rest[i] == '}') brace_depth -= 1;
+                }
+
+                if (brace_depth == 0) {
+                    const obj_text = rest[obj_start .. i];
+
+                    // Extract name and description from this object
+                    const sub_name = extractJsonStringField(obj_text, "name");
+                    const sub_desc = extractJsonStringField(obj_text, "description");
+
+                    if (sub_name) |n| {
+                        try subcommands.append(allocator, .{
+                            .name = try allocator.dupe(u8, n),
+                            .description = try allocator.dupe(u8, sub_desc orelse ""),
+                        });
+                    }
+
+                    rest = rest[i..];
+                } else {
+                    break;
+                }
+
+                // Check if we hit the end of the array
+                if (std.mem.indexOf(u8, rest, "]")) |close_bracket| {
+                    if (std.mem.indexOf(u8, rest, "{")) |next_obj| {
+                        if (next_obj > close_bracket) break;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return try subcommands.toOwnedSlice(allocator);
+}
+
 /// Simple JSON extraction for command declarations
-/// Expects: { "name": "...", "description": "...", "alias": "..." }
+/// Expects: { "name": "...", "description": "...", "alias": "...", "subcommands": [...] }
 fn parseCommandDeclaration(allocator: std.mem.Allocator, json_text: []const u8) !CommandDeclaration {
-    var name: ?[]const u8 = null;
-    var description: ?[]const u8 = null;
-    var alias: ?[]const u8 = null;
-
-    // Extract name
-    if (std.mem.indexOf(u8, json_text, "\"name\"")) |name_start| {
-        const after_name = json_text[name_start + 6 ..];
-        if (std.mem.indexOf(u8, after_name, "\"")) |open_quote| {
-            const value_start = after_name[open_quote + 1 ..];
-            if (std.mem.indexOf(u8, value_start, "\"")) |close_quote| {
-                name = try allocator.dupe(u8, value_start[0..close_quote]);
-            }
-        }
-    }
-
-    // Extract description
-    if (std.mem.indexOf(u8, json_text, "\"description\"")) |desc_start| {
-        const after_desc = json_text[desc_start + 13 ..];
-        if (std.mem.indexOf(u8, after_desc, "\"")) |open_quote| {
-            const value_start = after_desc[open_quote + 1 ..];
-            if (std.mem.indexOf(u8, value_start, "\"")) |close_quote| {
-                description = try allocator.dupe(u8, value_start[0..close_quote]);
-            }
-        }
-    }
-
-    // Extract alias (optional)
-    if (std.mem.indexOf(u8, json_text, "\"alias\"")) |alias_start| {
-        const after_alias = json_text[alias_start + 7 ..];
-        if (std.mem.indexOf(u8, after_alias, "\"")) |open_quote| {
-            const value_start = after_alias[open_quote + 1 ..];
-            if (std.mem.indexOf(u8, value_start, "\"")) |close_quote| {
-                alias = try allocator.dupe(u8, value_start[0..close_quote]);
-            }
-        }
-    }
+    const name = extractJsonStringField(json_text, "name");
+    const description = extractJsonStringField(json_text, "description");
+    const alias = extractJsonStringField(json_text, "alias");
 
     return CommandDeclaration{
-        .name = name orelse try allocator.dupe(u8, "unknown"),
-        .description = description orelse try allocator.dupe(u8, ""),
-        .alias = alias,
+        .name = try allocator.dupe(u8, name orelse "unknown"),
+        .description = try allocator.dupe(u8, description orelse ""),
+        .alias = if (alias) |a| try allocator.dupe(u8, a) else null,
+        .subcommands = try parseSubcommands(allocator, json_text),
     };
 }
 
@@ -3673,12 +3741,42 @@ fn printDynamicHelp(allocator: std.mem.Allocator, program: *const ast.Program) !
 
     // Print discovered commands
     for (commands) |cmd| {
+        // Format command name with subcommand hints if present
+        var name_buf: [64]u8 = undefined;
+        const display_name = if (cmd.subcommands.len > 0) blk: {
+            // Build compact subcommand list: "deps [install|check]"
+            var sub_buf: [128]u8 = undefined;
+            var sub_len: usize = 0;
+            sub_buf[sub_len] = '[';
+            sub_len += 1;
+            for (cmd.subcommands, 0..) |sub, idx| {
+                if (idx > 0) {
+                    sub_buf[sub_len] = '|';
+                    sub_len += 1;
+                }
+                const sub_name_len = @min(sub.name.len, sub_buf.len - sub_len - 2);
+                @memcpy(sub_buf[sub_len..][0..sub_name_len], sub.name[0..sub_name_len]);
+                sub_len += sub_name_len;
+            }
+            sub_buf[sub_len] = ']';
+            sub_len += 1;
+
+            break :blk std.fmt.bufPrint(&name_buf, "{s} {s}", .{ cmd.name, sub_buf[0..sub_len] }) catch cmd.name;
+        } else cmd.name;
+
         if (cmd.alias) |alias| {
-            var buf: [64]u8 = undefined;
-            const name_with_alias = std.fmt.bufPrint(&buf, "{s}, {s}", .{ alias, cmd.name }) catch cmd.name;
+            var alias_buf: [96]u8 = undefined;
+            const name_with_alias = std.fmt.bufPrint(&alias_buf, "{s}, {s}", .{ alias, display_name }) catch display_name;
             try printStdout(allocator, "  {s:<20} {s}\n", .{ name_with_alias, cmd.description });
         } else {
-            try printStdout(allocator, "  {s:<20} {s}\n", .{ cmd.name, cmd.description });
+            try printStdout(allocator, "  {s:<20} {s}\n", .{ display_name, cmd.description });
+        }
+
+        // Print subcommand details indented
+        for (cmd.subcommands) |sub| {
+            var sub_cmd_buf: [64]u8 = undefined;
+            const sub_cmd_name = std.fmt.bufPrint(&sub_cmd_buf, "{s} {s}", .{ cmd.name, sub.name }) catch sub.name;
+            try printStdout(allocator, "    {s:<18} {s}\n", .{ sub_cmd_name, sub.description });
         }
     }
 
