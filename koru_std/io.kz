@@ -305,12 +305,15 @@ const std = @import("std");
     const start: usize = if (is_string_literal) 1 else 0;
     const end: usize = if (is_string_literal and expr[expr.len - 1] == '"') expr.len - 1 else expr.len;
     const raw_content = expr[start..end];
-    // Bare expression (not a string literal): wrap as {{ raw_content:s }} for single-value string interpolation
+    // Bare expression (not a string literal): wrap as {{ raw_content }} for single-value interpolation
+    // If expression already has a format spec (contains :), don't add :s
     const content = if (!is_string_literal and raw_content.len > 0) blk: {
+        const has_format_spec = std.mem.indexOf(u8, raw_content, ":") != null;
+        const suffix = if (has_format_spec) " }}" else ":s }}";
         var wrapped = std.ArrayList(u8).initCapacity(allocator, raw_content.len + 8) catch unreachable;
         wrapped.appendSlice(allocator, "{{ ") catch unreachable;
         wrapped.appendSlice(allocator, raw_content) catch unreachable;
-        wrapped.appendSlice(allocator, ":s }}") catch unreachable;
+        wrapped.appendSlice(allocator, suffix) catch unreachable;
         break :blk wrapped.items;
     } else raw_content;
 
