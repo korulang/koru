@@ -6,14 +6,12 @@ Koru is an event continuation language that compiles to Zig. It provides a struc
 
 ```koru
 ~event greet { name: []const u8 }
-| done { message: []const u8 }
+| greeting []const u8
+
+~greet = greeting "Hello, " ++ e.name ++ "!"
 
 ~greet ("World")
-| done d |> print(d.message)
-
-~proc greet {
-    return .{ .done = .{ .message = "Hello, " ++ e.name ++ "!" } };
-}
+| greeting msg |> print(msg)
 ```
 
 ## Key Concepts
