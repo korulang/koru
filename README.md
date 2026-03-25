@@ -2,62 +2,41 @@
 
 Koru is an event continuation language that compiles to Zig. It provides a structured way to handle asynchronous control flow through events, continuations, and taps.
 
-## Quick Example
-
 ```koru
 ~event greet { name: []const u8 }
 | greeting []const u8
 
-~greet = greeting "Hello, " ++ e.name ++ "!"
+~greet = greeting "Hello, " ++ name ++ "!"
 
 ~greet ("World")
 | greeting msg |> print(msg)
 ```
 
-## Key Concepts
+This example doesn't compile yet. We're working on it.
 
-- **Events** define typed messages with named branches for different outcomes
-- **Continuations** chain event handlers using `|>` syntax
-- **Taps** intercept and transform events across modules with `~tap(source -> dest)`
-- **Procs** implement the actual logic for events
+## What Does Work
+
+- Event declarations with typed branches
+- Continuations chaining with `|>`
+- Event taps for cross-cutting concerns
+- Phantom types for compile-time resource tracking
+- Liquid-style templating with zero overhead
+- Metacircular compiler (parts of the compiler written in Koru)
+- 500+ regression tests
 
 ## Building
 
-Koru requires Zig 0.15.1 or later.
+Requires Zig 0.15.1 or later.
 
 ```bash
 zig build
 ```
 
-This produces the `koruc` compiler in `zig-out/bin/`.
-
-## Usage
-
-```bash
-# Compile a Koru file to Zig
-./zig-out/bin/koruc myfile.kz
-
-# Initialize a new project
-./zig-out/bin/koruc init myproject
-```
-
-## Project Structure
-
-```
-src/           # Compiler source (Zig)
-koru_std/      # Standard library (Koru + Zig)
-tests/         # Test suite
-docs/          # Documentation
-```
-
-## Status
-
-Koru is in active development. See the [changelog](CHANGELOG.md) for recent updates and the [status page](https://korulang.org/status) for current test coverage.
-
 ## Links
 
 - [Website](https://korulang.org)
 - [Learn Koru](https://korulang.org/learn)
+- [Status](https://korulang.org/status)
 - [Discord](https://discord.gg/tYWvdrda8h)
 
 ## License

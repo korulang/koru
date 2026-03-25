@@ -1,0 +1,17 @@
+// Test: Pure subflow implementation (no proc needed)
+// From the README example - this is idiomatic Koru
+const std = @import("std");
+
+~event greet { name: []const u8 }
+| greeting []const u8
+
+~greet = greeting "Hello, " ++ name ++ "!"
+
+~event print { msg: []const u8 }
+
+~proc print {
+    std.debug.print("{s}\n", .{e.msg});
+}
+
+~greet ("World")
+| greeting msg |> print(msg)
