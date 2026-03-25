@@ -3594,13 +3594,23 @@ fn emitInvocation(
             // e.g., for ~double(n: 5) with ~double = result { n * 2 }
             // we need: const n = 5;
             // Skip if:
-            //   - arg.name == arg.value (already in scope, would shadow)
+            //   - arg.name == arg.value AND it's not a positional arg (already in scope, would shadow)
             //   - arg.name is not referenced in the immediate expression (avoid shadowing outer scope)
-            for (invocation.args) |arg| {
-                // Skip binding if name equals value (e.g., path: path) - already in scope
-                if (std.mem.eql(u8, arg.name, arg.value)) {
+            for (invocation.args, 0..) |arg, arg_idx| {
+                // Resolve actual parameter name for positional args
+                // e.g., ~greet("World") where arg.name == arg.value == "\"World\""
+                // but event signature has { name: []const u8 } -> use "name"
+                const param_name = if (std.mem.eql(u8, arg.name, arg.value)) blk_name: {
+                    // Positional arg - look up name from event signature
+                    if (event_decl) |ev| {
+                        if (arg_idx < ev.input.fields.len) {
+                            break :blk_name ev.input.fields[arg_idx].name;
+                        }
+                    }
+                    // No event decl or out of bounds - skip this arg (can't resolve)
                     continue;
-                }
+                } else arg.name;
+
                 // Check if this parameter is actually used in the immediate expression
                 // If not, skip it to avoid shadowing outer scope variables
                 const expr_to_check = if (immediate_bc.plain_value) |pv| pv else blk2: {
@@ -3608,7 +3618,7 @@ fn emitInvocation(
                     var is_used = false;
                     for (immediate_bc.fields) |field| {
                         const field_val = if (field.expression_str) |e| e else field.type;
-                        if (containsIdentifier(field_val, arg.name)) {
+                        if (containsIdentifier(field_val, param_name)) {
                             is_used = true;
                             break;
                         }
@@ -3616,19 +3626,19 @@ fn emitInvocation(
                     if (!is_used) continue;
                     break :blk2 "";
                 };
-                if (expr_to_check.len > 0 and !containsIdentifier(expr_to_check, arg.name)) {
+                if (expr_to_check.len > 0 and !containsIdentifier(expr_to_check, param_name)) {
                     continue;
                 }
                 try emitter.writeIndent();
                 try emitter.write("const ");
-                try emitter.write(arg.name);
+                try emitter.write(param_name);
                 try emitter.write(" = ");
                 try emitValue(emitter, ctx, arg.value);
                 try emitter.write(";\n");
                 // Suppress unused variable warning (for mocks that return constants)
                 try emitter.writeIndent();
                 try emitter.write("_ = &");
-                try emitter.write(arg.name);
+                try emitter.write(param_name);
                 try emitter.write(";\n");
             }
 

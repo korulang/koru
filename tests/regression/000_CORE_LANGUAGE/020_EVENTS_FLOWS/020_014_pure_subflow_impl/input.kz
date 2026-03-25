@@ -10,7 +10,7 @@ const std = @import("std");
 ~event print { msg: []const u8 }
 
 ~proc print {
-    std.debug.print("{s}\n", .{e.msg});
+    std.debug.print("{s}\n", .{msg});
 }
 
 ~greet ("World")

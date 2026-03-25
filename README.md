@@ -12,8 +12,6 @@ Koru is an event continuation language that compiles to Zig. It provides a struc
 | greeting msg |> print(msg)
 ```
 
-This example doesn't compile yet. We're working on it.
-
 ## What Does Work
 
 - Event declarations with typed branches
