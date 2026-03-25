@@ -11,7 +11,7 @@ Koru is an event continuation language that compiles to Zig. It provides a struc
 ~greet = greeting "Hello, " ++ name ++ "!"
 
 ~greet ("World")
-| greeting msg |> std.io:print.ln("{{ msg:s }}")
+| greeting msg |> std.io:print.ln(msg)
 ```
 
 ## What Does Work
