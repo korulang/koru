@@ -3,13 +3,15 @@
 Koru is an event continuation language that compiles to Zig. It provides a structured way to handle asynchronous control flow through events, continuations, and taps.
 
 ```koru
+~import "$std/io"
+
 ~event greet { name: []const u8 }
 | greeting []const u8
 
 ~greet = greeting "Hello, " ++ name ++ "!"
 
 ~greet ("World")
-| greeting msg |> print(msg)
+| greeting msg |> std.io:print.ln("{{ msg:s }}")
 ```
 
 ## What Does Work
