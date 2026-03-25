@@ -14,16 +14,6 @@ Koru is an event continuation language that compiles to Zig. It provides a struc
 | greeting msg |> std.io:print.ln(msg)
 ```
 
-## What Does Work
-
-- Event declarations with typed branches
-- Continuations chaining with `|>`
-- Event taps for cross-cutting concerns
-- Phantom types for compile-time resource tracking
-- Liquid-style templating with zero overhead
-- Metacircular compiler (parts of the compiler written in Koru)
-- 500+ regression tests
-
 ## Building
 
 Requires Zig 0.15.1 or later.
@@ -35,7 +25,7 @@ zig build
 ## Links
 
 - [Website](https://korulang.org)
-- [Learn Koru](https://korulang.org/learn)
+- [Learn](https://korulang.org/learn)
 - [Status](https://korulang.org/status)
 - [Discord](https://discord.gg/tYWvdrda8h)
 
