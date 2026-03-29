@@ -1,0 +1,23 @@
+// TEST: ~float creates a nominal floating-point type
+//
+// ~float(Temperature) creates a distinct type that wraps f64
+// Koru tracks it as a separate type for type checking purposes.
+//
+// Expected: Compiles and runs, Temperature is usable as a float
+
+~import "$std/types"
+
+const std = @import("std");
+
+~float(Temperature)
+
+~event report_temp { temp: Temperature }
+| reported {}
+
+~proc report_temp {
+    std.debug.print("Temperature: {d:.1}\n", .{temp});
+    return .{ .reported = .{} };
+}
+
+~report_temp(temp: 98.6)
+| reported |> _

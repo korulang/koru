@@ -1,0 +1,29 @@
+// TEST: ~struct with single type parameter
+//
+// ~struct(Option<T>) { value: ?T = null } defines a generic struct
+// Koru parses <T> from the expression and tracks T as a type parameter.
+//
+// Expected: Compiles and runs with instantiated generic
+
+~import "$std/types"
+
+const std = @import("std");
+
+~struct(Option<T>) { value: ?T = null }
+
+// Instantiate it
+~struct(OptionalInt = Option<i32>) {}
+
+~event test_option {}
+| done {}
+
+~proc test_option {
+    const opt = OptionalInt{ .value = 42 };
+    if (opt.value) |v| {
+        std.debug.print("Got: {d}\n", .{v});
+    }
+    return .{ .done = .{} };
+}
+
+~test_option()
+| done |> _

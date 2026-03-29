@@ -1,0 +1,24 @@
+// TEST: Instantiate generic with two type parameters
+//
+// ~struct(StringIntEntry = Entry<[]const u8, i32>) {} substitutes both params.
+//
+// Expected: Compiles with both type parameters substituted
+
+~import "$std/types"
+
+const std = @import("std");
+
+~struct(Entry<K, V>) { key: K, value: V }
+~struct(StringIntEntry = Entry<[]const u8, i32>) {}
+
+~event test_entry {}
+| done {}
+
+~proc test_entry {
+    const e = StringIntEntry{ .key = "count", .value = 42 };
+    std.debug.print("{s} = {d}\n", .{ e.key, e.value });
+    return .{ .done = .{} };
+}
+
+~test_entry()
+| done |> _

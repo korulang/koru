@@ -1,0 +1,32 @@
+// TEST: MUST_FAIL - Instantiated generics with different params are distinct
+//
+// Option<i32> and Option<f32> are different types.
+// Koru should reject passing one where the other is expected.
+//
+// Expected: Compilation error - type mismatch
+
+~import "$std/types"
+
+~struct(Option<T>) { some: T, none }
+~struct(OptionalInt = Option<i32>)
+~struct(OptionalFloat = Option<f32>)
+
+~event process_int { val: OptionalInt }
+| done {}
+
+~proc process_int {
+    return .{ .done = .{} };
+}
+
+~event main {}
+| done {}
+
+~proc main {
+    // ERROR: Passing OptionalFloat where OptionalInt is expected
+    const f = OptionalFloat{ .some = 3.14 };
+    ~process_int(val: f)
+    | done |> done {}
+}
+
+~main()
+| done |> _

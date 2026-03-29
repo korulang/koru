@@ -75,42 +75,312 @@ const std = @import("std");
         }
     }
 
-    // Build the Zig struct declaration with clean formatting
     const pub_prefix = if (is_pub) "pub " else "";
 
-    // Re-indent source body: trim each line and add consistent 4-space indent
-    // First pass: calculate needed size
-    var needed: usize = 0;
-    var lines = std.mem.splitScalar(u8, source.text, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0) continue;
-        needed += 8 + trimmed.len + 1; // "        " + content + "\n"
+    // ==========================================================================
+    // GENERIC TYPE HANDLING
+    // ==========================================================================
+    // Three cases:
+    // 1. "Option<T>"           -> generic definition, store but don't emit
+    // 2. "OptionalInt = Option<i32>" -> instantiation, substitute and emit
+    // 3. "Player"              -> normal struct, emit as-is
+
+    // Helper: format body with consistent indentation (inline)
+    const formatBodyFn = struct {
+        fn format(alloc: std.mem.Allocator, text: []const u8) []const u8 {
+            var needed: usize = 0;
+            var lines_iter = std.mem.splitScalar(u8, text, '\n');
+            while (lines_iter.next()) |line| {
+                const trimmed = std.mem.trim(u8, line, " \t\r");
+                if (trimmed.len == 0) continue;
+                needed += 8 + trimmed.len + 1;
+            }
+
+            const body_buf = alloc.alloc(u8, needed) catch unreachable;
+            var write_pos: usize = 0;
+            var lines2_iter = std.mem.splitScalar(u8, text, '\n');
+            while (lines2_iter.next()) |line| {
+                const trimmed = std.mem.trim(u8, line, " \t\r");
+                if (trimmed.len == 0) continue;
+                @memcpy(body_buf[write_pos..][0..8], "        ");
+                write_pos += 8;
+                @memcpy(body_buf[write_pos..][0..trimmed.len], trimmed);
+                write_pos += trimmed.len;
+                body_buf[write_pos] = '\n';
+                write_pos += 1;
+            }
+            return body_buf[0..write_pos];
+        }
+    }.format;
+
+    // Helper: replace all occurrences with word boundary check
+    const replaceAllFn = struct {
+        fn replace(alloc: std.mem.Allocator, text: []const u8, old: []const u8, new: []const u8) []const u8 {
+            const isIdentChar = struct {
+                fn check(c: u8) bool {
+                    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '_';
+                }
+            }.check;
+
+            var count: usize = 0;
+            var idx: usize = 0;
+            while (idx + old.len <= text.len) {
+                if (std.mem.eql(u8, text[idx..][0..old.len], old)) {
+                    const before_ok = idx == 0 or !isIdentChar(text[idx - 1]);
+                    const after_ok = idx + old.len >= text.len or !isIdentChar(text[idx + old.len]);
+                    if (before_ok and after_ok) {
+                        count += 1;
+                    }
+                }
+                idx += 1;
+            }
+
+            if (count == 0) return text;
+
+            // Calculate new length carefully to avoid overflow
+            const additions = count * new.len;
+            const removals = count * old.len;
+            const new_len = text.len + additions - removals;
+            const result_buf = alloc.alloc(u8, new_len) catch unreachable;
+
+            var src_pos: usize = 0;
+            var dst_pos: usize = 0;
+            while (src_pos < text.len) {
+                if (src_pos + old.len <= text.len and std.mem.eql(u8, text[src_pos..][0..old.len], old)) {
+                    const before_ok = src_pos == 0 or !isIdentChar(text[src_pos - 1]);
+                    const after_ok = src_pos + old.len >= text.len or !isIdentChar(text[src_pos + old.len]);
+                    if (before_ok and after_ok) {
+                        @memcpy(result_buf[dst_pos..][0..new.len], new);
+                        dst_pos += new.len;
+                        src_pos += old.len;
+                        continue;
+                    }
+                }
+                result_buf[dst_pos] = text[src_pos];
+                dst_pos += 1;
+                src_pos += 1;
+            }
+            return result_buf[0..dst_pos];
+        }
+    }.replace;
+
+    // Check for instantiation syntax: "NewName = Generic<Type>"
+    var equals_pos: ?usize = null;
+    for (type_name, 0..) |c, i| {
+        if (c == '=') {
+            equals_pos = i;
+            break;
+        }
     }
 
-    // Second pass: build indented body
-    const body = allocator.alloc(u8, needed) catch unreachable;
-    var pos: usize = 0;
-    var lines2 = std.mem.splitScalar(u8, source.text, '\n');
-    while (lines2.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0) continue;
-        @memcpy(body[pos..][0..8], "        ");
-        pos += 8;
-        @memcpy(body[pos..][0..trimmed.len], trimmed);
-        pos += trimmed.len;
-        body[pos] = '\n';
-        pos += 1;
+    if (equals_pos) |eq_idx| {
+        // INSTANTIATION: "OptionalInt = Option<i32>"
+        const new_name = std.mem.trim(u8, type_name[0..eq_idx], " ");
+        const generic_spec = std.mem.trim(u8, type_name[eq_idx + 1 ..], " ");
+
+        // Parse generic_spec: "Option<i32>" -> base="Option", args=["i32"]
+        var angle_start: ?usize = null;
+        for (generic_spec, 0..) |c, i| {
+            if (c == '<') {
+                angle_start = i;
+                break;
+            }
+        }
+
+        if (angle_start) |a_start| {
+            const base_name = generic_spec[0..a_start];
+            const args_str = generic_spec[a_start + 1 .. generic_spec.len - 1]; // strip < and >
+
+            // Find the generic definition in the program
+            // Search both flows (not yet transformed) and inline_code (__GENERIC__ comments)
+            var generic_source: ?[]const u8 = null;
+            var type_params_buf: [16][]const u8 = undefined;
+            var type_params_count: usize = 0;
+            
+            for (program.items) |itm| {
+                // Check flows (untransformed generic definitions)
+                if (itm == .flow) {
+                    const f = &itm.flow;
+                    if (f.invocation.path.segments.len > 0) {
+                        const last_seg = f.invocation.path.segments[f.invocation.path.segments.len - 1];
+                        if (std.mem.eql(u8, last_seg, "struct")) {
+                            for (f.invocation.args) |arg| {
+                                if (arg.source_value) |src| {
+                                    const arg_val = arg.value;
+                                    var ap: ?usize = null;
+                                    for (arg_val, 0..) |ch, idx| {
+                                        if (ch == '<') {
+                                            ap = idx;
+                                            break;
+                                        }
+                                    }
+                                    if (ap) |angle_pos| {
+                                        const name_part = arg_val[0..angle_pos];
+                                        if (std.mem.eql(u8, name_part, base_name)) {
+                                            generic_source = src.text;
+                                            // Extract type params
+                                            const params_str = arg_val[angle_pos + 1 .. arg_val.len - 1];
+                                            var param_iter = std.mem.splitScalar(u8, params_str, ',');
+                                            while (param_iter.next()) |p| {
+                                                if (type_params_count < 16) {
+                                                    type_params_buf[type_params_count] = std.mem.trim(u8, p, " ");
+                                                    type_params_count += 1;
+                                                }
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Check inline_code for __GENERIC__ markers (already transformed)
+                if (itm == .inline_code) {
+                    const ic = &itm.inline_code;
+                    // Format: // __GENERIC__:Option<T>:{ some: T, none }
+                    if (std.mem.startsWith(u8, ic.code, "// __GENERIC__:")) {
+                        const rest = ic.code["// __GENERIC__:".len..];
+                        // Find first colon after the name
+                        var colon_pos: ?usize = null;
+                        var in_angle: usize = 0;
+                        for (rest, 0..) |ch, idx| {
+                            if (ch == '<') in_angle += 1;
+                            if (ch == '>') in_angle -= 1;
+                            if (ch == ':' and in_angle == 0) {
+                                colon_pos = idx;
+                                break;
+                            }
+                        }
+                        if (colon_pos) |cp| {
+                            const type_spec = rest[0..cp];
+                            const body_escaped = rest[cp + 1 ..];
+                            
+                            // Parse name from type_spec: "Option<T>" -> "Option"
+                            var angle_idx: ?usize = null;
+                            for (type_spec, 0..) |ch, idx| {
+                                if (ch == '<') {
+                                    angle_idx = idx;
+                                    break;
+                                }
+                            }
+                            if (angle_idx) |ai| {
+                                const name_part = type_spec[0..ai];
+                                if (std.mem.eql(u8, name_part, base_name)) {
+                                    // Unescape body
+                                    generic_source = std.mem.replaceOwned(u8, allocator, body_escaped, "\\n", "\n") catch unreachable;
+                                    // Extract params
+                                    const params_str = type_spec[ai + 1 .. type_spec.len - 1];
+                                    var param_iter = std.mem.splitScalar(u8, params_str, ',');
+                                    while (param_iter.next()) |p| {
+                                        if (type_params_count < 16) {
+                                            type_params_buf[type_params_count] = std.mem.trim(u8, p, " ");
+                                            type_params_count += 1;
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (generic_source) |gen_src| {
+                const type_params = type_params_buf[0..type_params_count];
+
+                // Parse concrete args (split by comma)
+                var concrete_args_buf: [16][]const u8 = undefined;
+                var concrete_args_count: usize = 0;
+                var arg_iter = std.mem.splitScalar(u8, args_str, ',');
+                while (arg_iter.next()) |arg| {
+                    if (concrete_args_count < 16) {
+                        concrete_args_buf[concrete_args_count] = std.mem.trim(u8, arg, " ");
+                        concrete_args_count += 1;
+                    }
+                }
+                const concrete_args = concrete_args_buf[0..concrete_args_count];
+
+                // Substitute: replace each type param with corresponding concrete arg
+                var substituted: []const u8 = gen_src;
+                for (type_params, 0..) |param, i| {
+                    if (i < concrete_args.len) {
+                        substituted = replaceAllFn(allocator, substituted, param, concrete_args[i]);
+                    }
+                }
+
+                // Build the struct with substituted body
+                const body = formatBodyFn(allocator, substituted);
+                const code = std.fmt.allocPrint(
+                    allocator,
+                    "{s}const {s} = struct {{\n{s}    }};",
+                    .{ pub_prefix, new_name, body }
+                ) catch unreachable;
+
+                const inline_code_item = ast.Item{
+                    .inline_code = ast.InlineCode{
+                        .code = code,
+                        .location = flow.location,
+                        .module = allocator.dupe(u8, flow.module) catch unreachable,
+                    },
+                };
+
+                const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
+                if (maybe_new_program) |new_program| {
+                    const result = allocator.create(ast.Program) catch unreachable;
+                    result.* = new_program;
+                    return .{ .transformed = .{ .program = result } };
+                }
+            }
+        }
+        return .{ .transformed = .{ .program = program } };
     }
 
+    // Check for generic definition: contains < but no =
+    var has_angle = false;
+    for (type_name) |c| {
+        if (c == '<') {
+            has_angle = true;
+            break;
+        }
+    }
+
+    if (has_angle) {
+        // GENERIC DEFINITION: "Option<T>" - don't emit Zig code
+        // Store the definition as a special comment that instantiation can parse
+        // Format: // __GENERIC__:Name<Params>:Body
+        const escaped_body = std.mem.replaceOwned(u8, allocator, source.text, "\n", "\\n") catch unreachable;
+        const code = std.fmt.allocPrint(
+            allocator,
+            "// __GENERIC__:{s}:{s}",
+            .{ type_name, escaped_body }
+        ) catch unreachable;
+
+        const inline_code_item = ast.Item{
+            .inline_code = ast.InlineCode{
+                .code = code,
+                .location = flow.location,
+                .module = allocator.dupe(u8, flow.module) catch unreachable,
+            },
+        };
+
+        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = .{ .program = result } };
+        }
+        return .{ .transformed = .{ .program = program } };
+    }
+
+    // NORMAL STRUCT: no generics, emit as-is
+    const body = formatBodyFn(allocator, source.text);
     const code = std.fmt.allocPrint(
         allocator,
         "{s}const {s} = struct {{\n{s}    }};",
-        .{ pub_prefix, type_name, body[0..pos] }
+        .{ pub_prefix, type_name, body }
     ) catch unreachable;
 
-    // Create an InlineCode item to replace the flow
-    // InlineCode items are emitted directly at module level (no function wrapper)
     const inline_code_item = ast.Item{
         .inline_code = ast.InlineCode{
             .code = code,
@@ -119,7 +389,6 @@ const std = @import("std");
         },
     };
 
-    // Replace the flow with the inline_code item
     const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
@@ -142,5 +411,247 @@ const std = @import("std");
 ~proc union {
     // Emits: `pub const Name = union { ...source... };` (or without pub)
     // Or: `pub const Name = union(EnumType) { ...source... };` for tagged unions
+}
+
+// ============================================================================
+// NOMINAL PRIMITIVE TYPES
+// ============================================================================
+// These create distinct named types that wrap Zig primitives.
+// Koru tracks them as separate types for type checking.
+//
+// USAGE:
+//   ~string(EmailAddress)    // wraps []const u8
+//   ~int(UserId)             // wraps i64
+//   ~float(Temperature)      // wraps f64
+//   ~bool(IsActive)          // wraps bool
+
+// Declare a nominal string type (wraps []const u8)
+~[keyword|comptime|transform]pub event string {
+    expr: Expression,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc string {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    // Parse type name from expr (strip quotes if present)
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+
+    // Check for [pub] annotation
+    var is_pub = false;
+    for (flow.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "pub")) {
+            is_pub = true;
+            break;
+        }
+    }
+
+    const pub_prefix = if (is_pub) "pub " else "";
+
+    // Emit: const EmailAddress = []const u8;
+    const code = std.fmt.allocPrint(
+        allocator,
+        "{s}const {s} = []const u8;",
+        .{ pub_prefix, type_name }
+    ) catch unreachable;
+
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    return .{ .transformed = .{ .program = program } };
+}
+
+// Declare a nominal integer type (wraps i64)
+~[keyword|comptime|transform]pub event int {
+    expr: Expression,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc int {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+
+    var is_pub = false;
+    for (flow.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "pub")) {
+            is_pub = true;
+            break;
+        }
+    }
+
+    const pub_prefix = if (is_pub) "pub " else "";
+
+    // Emit: const UserId = i64;
+    const code = std.fmt.allocPrint(
+        allocator,
+        "{s}const {s} = i64;",
+        .{ pub_prefix, type_name }
+    ) catch unreachable;
+
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    return .{ .transformed = .{ .program = program } };
+}
+
+// Declare a nominal float type (wraps f64)
+~[keyword|comptime|transform]pub event float {
+    expr: Expression,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc float {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+
+    var is_pub = false;
+    for (flow.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "pub")) {
+            is_pub = true;
+            break;
+        }
+    }
+
+    const pub_prefix = if (is_pub) "pub " else "";
+
+    // Emit: const Temperature = f64;
+    const code = std.fmt.allocPrint(
+        allocator,
+        "{s}const {s} = f64;",
+        .{ pub_prefix, type_name }
+    ) catch unreachable;
+
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    return .{ .transformed = .{ .program = program } };
+}
+
+// Declare a nominal bool type (wraps bool)
+~[keyword|comptime|transform]pub event bool {
+    expr: Expression,
+    item: *const Item,
+    program: *const Program,
+    allocator: std.mem.Allocator
+}
+| transformed { program: *const Program }
+
+~proc bool {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{ .transformed = .{ .program = program } };
+
+    var type_name = expr;
+    if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
+        type_name = type_name[1 .. type_name.len - 1];
+    }
+
+    var is_pub = false;
+    for (flow.annotations) |ann| {
+        if (std.mem.eql(u8, ann, "pub")) {
+            is_pub = true;
+            break;
+        }
+    }
+
+    const pub_prefix = if (is_pub) "pub " else "";
+
+    // Emit: const IsActive = bool;
+    const code = std.fmt.allocPrint(
+        allocator,
+        "{s}const {s} = bool;",
+        .{ pub_prefix, type_name }
+    ) catch unreachable;
+
+    const inline_code_item = ast.Item{
+        .inline_code = ast.InlineCode{
+            .code = code,
+            .location = flow.location,
+            .module = allocator.dupe(u8, flow.module) catch unreachable,
+        },
+    };
+
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch unreachable;
+    if (maybe_new_program) |new_program| {
+        const result = allocator.create(ast.Program) catch unreachable;
+        result.* = new_program;
+        return .{ .transformed = .{ .program = result } };
+    }
+    return .{ .transformed = .{ .program = program } };
 }
 

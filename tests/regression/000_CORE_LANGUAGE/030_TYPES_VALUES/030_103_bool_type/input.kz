@@ -1,0 +1,30 @@
+// TEST: ~bool creates a nominal boolean type
+//
+// ~bool(IsActive) creates a distinct type that wraps bool
+// Koru tracks it as a separate type for type checking purposes.
+//
+// Expected: Compiles and runs, IsActive is usable as a bool
+
+~import "$std/types"
+
+const std = @import("std");
+
+~bool(IsActive)
+
+~event check_status { active: IsActive }
+| active {}
+| inactive {}
+
+~proc check_status {
+    if (active) {
+        std.debug.print("User is active\n", .{});
+        return .{ .active = .{} };
+    } else {
+        std.debug.print("User is inactive\n", .{});
+        return .{ .inactive = .{} };
+    }
+}
+
+~check_status(active: true)
+| active |> _
+| inactive |> _

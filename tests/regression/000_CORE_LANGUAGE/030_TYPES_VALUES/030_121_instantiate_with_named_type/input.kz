@@ -1,0 +1,27 @@
+// TEST: Generic instantiation with a Koru-defined named type
+//
+// ~struct(UserIdBox = Box<UserId>) {} uses a ~int defined type.
+// The instantiation substitutes the nominal type.
+//
+// Expected: Compiles and emits struct with the nominal type
+
+~import "$std/types"
+
+const std = @import("std");
+
+~int(UserId)
+~struct(Box<T>) { value: T }
+~struct(UserIdBox = Box<UserId>) {}
+
+~event test_box {}
+| done {}
+
+~proc test_box {
+    const uid: UserId = 999;
+    const box = UserIdBox{ .value = uid };
+    std.debug.print("UserId: {d}\n", .{box.value});
+    return .{ .done = .{} };
+}
+
+~test_box()
+| done |> _

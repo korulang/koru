@@ -644,39 +644,43 @@ const std = @import("std");
     const binding_name = search_result.binding_name;
     const kernel_init_invocation = search_result.kernel_init_invocation;
 
-    // Unique helper identifiers to avoid collisions in generated Zig
+    // Unique identifier for ptr to avoid collisions in generated Zig
     var hash: u32 = 0;
     for (flow.module) |c| hash = hash *% 31 +% c;
     hash = hash *% 31 +% @as(u32, @intCast(flow.location.line));
     hash = hash *% 31 +% @as(u32, @intCast(flow.location.column));
     for (source.text) |c| hash = hash *% 31 +% c;
-    const self_name = std.fmt.allocPrint(allocator, "__koru_pair_self_{d}", .{hash}) catch unreachable;
-    const other_name = std.fmt.allocPrint(allocator, "__koru_pair_other_{d}", .{hash}) catch unreachable;
     const ptr_name = std.fmt.allocPrint(allocator, "__koru_kernel_ptr_{d}", .{hash}) catch unreachable;
 
     // ========================================================================
     // STEP 2: Transform DSL body
     // ========================================================================
-    // k.other.X -> other
-    // k.X -> self
+    // k.other.X -> ptr[j].X  (direct array access)
+    // k.X -> ptr[i].X        (direct array access)
+    //
+    // This produces a tight loop without function call overhead.
 
     const binding_other = std.fmt.allocPrint(allocator, "{s}.other", .{binding_name}) catch unreachable;
     const binding_other_len = binding_other.len;
     const binding_len = binding_name.len;
+
+    // Direct array index references for tight loop
+    const self_ref = std.fmt.allocPrint(allocator, "{s}[i]", .{ptr_name}) catch unreachable;
+    const other_ref = std.fmt.allocPrint(allocator, "{s}[j]", .{ptr_name}) catch unreachable;
 
     var body_code = std.ArrayList(u8).initCapacity(allocator, source.text.len * 2) catch unreachable;
 
     var i: usize = 0;
     while (i < source.text.len) {
         if (i + binding_other_len <= source.text.len and std.mem.eql(u8, source.text[i..i+binding_other_len], binding_other)) {
-            body_code.appendSlice(allocator, other_name) catch unreachable;
+            body_code.appendSlice(allocator, other_ref) catch unreachable;
             i += binding_other_len;
         } else if (i + binding_len <= source.text.len and std.mem.eql(u8, source.text[i..i+binding_len], binding_name)) {
             const at_end = (i + binding_len >= source.text.len);
             const next_ok = at_end or (!std.ascii.isAlphanumeric(source.text[i + binding_len]) and source.text[i + binding_len] != '_');
             const prev_ok = (i == 0) or (!std.ascii.isAlphanumeric(source.text[i - 1]) and source.text[i - 1] != '_');
             if (next_ok and prev_ok) {
-                body_code.appendSlice(allocator, self_name) catch unreachable;
+                body_code.appendSlice(allocator, self_ref) catch unreachable;
                 i += binding_len;
             } else {
                 body_code.append(allocator, source.text[i]) catch unreachable;
@@ -752,55 +756,39 @@ const std = @import("std");
     }
 
     // ========================================================================
-    // STEP 3: Emit noalias helper + N²/2 loop (true pairwise semantics)
+    // STEP 3: Emit tight N²/2 loop (direct array access)
     //
-    // self_name and other_name (already unique hashed identifiers from step 1)
-    // become the parameter names of an inline fn with:
-    //   noalias self_name: *@TypeOf(ptr[0])  — writable, unique
-    //   noalias other_name: *@TypeOf(ptr[0]) — writable, unique (symmetric updates allowed)
+    // Body already transformed: k -> ptr[i], k.other -> ptr[j]
+    // No function call wrapper - just direct nested loops.
     //
-    // Both pointers are mutable because pairwise is a symmetric interaction —
-    // both elements of a pair can be updated in one visit.
-    //
-    // noalias is valid because i < j guarantees ptr[i] != ptr[j].
-    // LLVM can eliminate aliasing checks and optimize reads/writes independently.
+    // The i < j iteration order guarantees ptr[i] != ptr[j], so LLVM
+    // can optimize without aliasing concerns.
     //
     // GPU translation: strip k.other writes, emit N² per-element loop.
     // The symmetric writes become implicit when j is the outer element.
     // ========================================================================
-    const fn_name = std.fmt.allocPrint(allocator, "__koru_pair_{d}", .{hash}) catch unreachable;
 
     const code = if (known_len) |len|
         std.fmt.allocPrint(allocator,
             \\const {0s} = {1s}.ptr;
-            \\const {4s} = struct {{
-            \\    inline fn call(noalias {2s}: *@TypeOf({0s}[0]), noalias {3s}: *@TypeOf({0s}[0])) void {{
-            \\        {5s}
-            \\    }}
-            \\}};
-            \\for (0..{6d}) |i| {{
-            \\    for (i + 1..{6d}) |j| {{
-            \\        {4s}.call(&{0s}[i], &{0s}[j]);
+            \\for (0..{2d}) |i| {{
+            \\    for (i + 1..{2d}) |j| {{
+            \\        {3s}
             \\    }}
             \\}}
             ,
-            .{ ptr_name, binding_name, self_name, other_name, fn_name, body_code.items, len }
+            .{ ptr_name, binding_name, len, body_code.items }
         ) catch unreachable
     else
         std.fmt.allocPrint(allocator,
             \\const {0s} = {1s}.ptr;
-            \\const {4s} = struct {{
-            \\    inline fn call(noalias {2s}: *@TypeOf({0s}[0]), noalias {3s}: *@TypeOf({0s}[0])) void {{
-            \\        {5s}
-            \\    }}
-            \\}};
             \\for (0..{1s}.len) |i| {{
             \\    for (i + 1..{1s}.len) |j| {{
-            \\        {4s}.call(&{0s}[i], &{0s}[j]);
+            \\        {2s}
             \\    }}
             \\}}
             ,
-            .{ ptr_name, binding_name, self_name, other_name, fn_name, body_code.items }
+            .{ ptr_name, binding_name, body_code.items }
         ) catch unreachable;
 
     // Detect outer range: only true if an explicit (range) expression was provided,

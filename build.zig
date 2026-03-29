@@ -1076,6 +1076,22 @@ pub fn build(b: *std.Build) void {
     tap_transformer_tests.root_module.addImport("tap_registry", tap_registry_module);
     const run_tap_transformer_tests = b.addRunArtifact(tap_transformer_tests);
 
+    // Transform pass runner tests - nested transform ordering and ownership boundaries
+    const transform_pass_runner_tests = b.addTest(.{
+        .name = "transform_pass_runner_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/transform_pass_runner_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    transform_pass_runner_tests.root_module.addImport("ast", ast_module);
+    transform_pass_runner_tests.root_module.addImport("ast_functional", ast_functional_module);
+    transform_pass_runner_tests.root_module.addImport("transform_pass_runner", transform_pass_runner_module);
+    const run_transform_pass_runner_tests = b.addRunArtifact(transform_pass_runner_tests);
+    const transform_pass_runner_test_step = b.step("test-transform-pass-runner", "Run transform pass runner tests");
+    transform_pass_runner_test_step.dependOn(&run_transform_pass_runner_tests.step);
+
     // Phantom semantic checker tests - obligation tracking and @scope boundaries
     const phantom_semantic_checker_tests = b.addTest(.{
         .name = "phantom_semantic_checker_tests",
@@ -1141,6 +1157,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_purity_checker_tests.step);
     test_step.dependOn(&run_tap_codegen_tests.step);
     test_step.dependOn(&run_tap_transformer_tests.step);
+    test_step.dependOn(&run_transform_pass_runner_tests.step);
     test_step.dependOn(&run_phantom_semantic_checker_tests.step);
     test_step.dependOn(&run_auto_discharge_inserter_tests.step);
     test_step.dependOn(&run_visitor_emitter_tests.step);

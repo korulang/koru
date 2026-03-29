@@ -1,0 +1,27 @@
+// TEST: Generic struct instantiated with nominal primitive types
+//
+// Combines ~string nominal types with generic structs.
+// ~struct(MaybeEmail = Box<EmailAddress>) uses a Koru-defined type.
+//
+// Expected: Compiles and runs with nominal type inside generic
+
+~import "$std/types"
+
+const std = @import("std");
+
+~string(EmailAddress)
+~struct(Box<T>) { value: T }
+~struct(EmailBox = Box<EmailAddress>) {}
+
+~event test_email {}
+| done {}
+
+~proc test_email {
+    const email: EmailAddress = "test@example.com";
+    const box = EmailBox{ .value = email };
+    std.debug.print("Email: {s}\n", .{box.value});
+    return .{ .done = .{} };
+}
+
+~test_email()
+| done |> _

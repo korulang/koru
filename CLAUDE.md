@@ -106,25 +106,19 @@ Inside a flow (after `|>`), events are called WITHOUT `~`:
 ```
 
 ## 🧬 Project Consciousness
-Fix the Koru toolchain's dependency installation mechanism to enable the semantic redesign of @korulang/postgres.
+Enhance the Koru compiler help system to support and display subcommands dynamically from the AST.
 
 ### Decisions
-- **Implementation of a two-phase 'auto-discharge' system for phantom obligations.**: Ensures resource cleanup (files, handles) occurs automatically at scope exit or budget exhaustion. The two-phase approach handles nested scopes correctly without premature disposal during complex control flow. Renamed from 'auto-dispose' to align with linear logic terminology.
-- **Adopted 'Interpretation C' for Phantom Obligation Semantics: Explicit discharge with explicit union members.**: Rejects 'Interpretation B' (implicit transfer) to avoid fragile heuristics. Requires explicit consumption ([!state]) and production ([state!]) markers at the per-member level in unions. This ensures local reasoning and avoids 'compiler magic' in state transitions.
-- **Crystallized 'Negative-Cost Abstraction' as Koru's core design philosophy.**: Koru's abstractions (print.blk, phantoms, kernels) actively remove runtime cost and defensive code. By providing LLVM with better hints (noalias, inline blocks), we often produce better output than hand-written Zig.
-- **Standardized on Liquid-style {{ var }} and {% if %} syntax across the language and templates.**: Provides a unified, powerful metaprogramming interface and avoids developer confusion by deprecating the older ${var} interpolation. Used for both code generation and runtime expansion.
-- **Refactored kernel.pairwise codegen to use 'noalias' inline function wrappers.**: Allows LLVM to eliminate aliasing checks in N²/2 physics loops where i < j guarantees distinct memory, achieving parity with high-performance Rust/C code. This was a breakthrough for n-body benchmarks.
-- **Simplified kernel type representation to use native Zig slices ([]T) via the '__type_ref' sentinel.**: Reduces boilerplate and allows the emitter to unwrap union struct cases into direct Zig slices, enabling natural indexing (k[0]) and .len access without leaking internal implementation details (.ptr).
-- **Shifted to a 'Post-modern compiler' philosophy: Design for AI data over human display.**: AI agents are the primary debuggers; embedding file:line source markers in emitted Zig and maintaining high-volume JSON test snapshots (600+ cases) provides high-bandwidth traceability for automated tools.
-- **Removed the internal fusion optimization system in favor of LLVM's native capabilities.**: Analysis showed LLVM already performs the same inlining and constant-folding on generated Zig; removing it simplifies the compiler core and follows the 'dumb boundaries, smart middles' principle.
-- **Implemented parallel test execution (--parallel N) and shared Zig cache.**: Critical for maintaining a fast feedback loop as the regression suite grew to nearly 600 tests. Sharing the cache prevents redundant compilation across threads.
-- **Introduced support for optional Expression parameters (?Expression) in comptime transforms.**: Allows transforms like 'pairwise' or 'reduce' to handle optional range/initialization arguments without failing or requiring multiple overloads. Uses a specialized 'extractOptionalExprFromArgs' to avoid brittle fallbacks.
-- **Implementation of pairwise(0..N) outer-range syntax in kernel transforms.**: Ergonomically eliminates one level of nesting and enables the transform to hoist pointer extraction and pull continuations inside the loop for performance parity with Zig.
-- **Selection of libpq (PostgreSQL) for full semantic space lifting.**: Chosen specifically to stress-test Koru's ability to wrap a complex, real-world C API with full phantom semantics (async, transactions, COPY protocol), proving the 'bootstrap machine' model. Transitioned from 'dumb wrap' to 'semantic redesign'.
-- **Standardized print.ln and print.blk to write to stdout (fd 1) and supported bare expression shorthand.**: Corrects a bug where output went to stderr and reduces noise by auto-wrapping non-string-literal arguments in interpolation braces.
-- **Using phantom obligations for connection pooling and resource return targets.**: Obligations can represent the requirement to return a resource to a specific pool, allowing the compiler to track N checked-out resources independently without runtime reference counting.
-- **Requirement for 'koruc deps install' to execute system package manager commands.**: The current implementation only prints instructions; it must be automated to fulfill the 'bootstrap machine' promise. This is a critical blocker for the libpq effort.
-- **Adoption of a node-based context management architecture for '6digit studio'.**: To move away from 'wonky' MD-files and provide a visual way to manage interconnected data like compiler phases and phantom types. Integrates Agent Client Protocol (ACP) to act as a host for AI agents.
+- **Replaced string-scanning validation with structural AST parsing for branch constructors.**: String-based validation was too aggressive and lacked structural understanding, rejecting valid arithmetic and builtins. AST parsing allows precise rejection of function calls (enforcing purity) while permitting complex pure expressions like indexing and math.
+- **Unified parameter parsing to use the ExpressionParser and enriched ast.Arg with a parsed_expression field.**: Ensures consistency across the language and enables complex expressions in parameters. The enrichment allows structured access for analysis while keeping raw strings for backend emission, avoiding breaking changes.
+- **Adopted 'Interpretation C' for Phantom Obligation Semantics: Explicit discharge with explicit union members.**: Rejects implicit transfer to avoid fragile heuristics. Enforces 'meaningful consumption' (e.g., a connection must be used for a transaction) rather than just 'eventual disposal'. Now includes canonicalized base-type filtering ({module}:{type}) to prevent state collisions between different types.
+- **Delegated base type checking to Zig's type system by default (lazy checking) with an optional --strict-base-types flag.**: Zig handles type aliases and module-qualified types more accurately than string-based comparison. The flag allows for earlier, albeit cruder, Koru-native error reporting when desired.
+- **Transitioned error reporting to an 'algorithmic narrative' based on graph walking of phantom state machines.**: Since Koru rejects programs that don't reach a final discharge state, the compiler can provide 'GPS-like' navigation. Refined messages now distinguish between singular ('Call: x') and plural ('Call one of: x, y') disposal paths for better DX.
+- **Shifted to dynamic help discovery by parsing the full AST (including imports) when --help is invoked.**: Previous help was 'fake' metacircular; it only saw flags in the immediate file. Deferring help execution until after AST construction allows discovery of user-defined commands and flags from the entire program.
+- **Adopted 'Negative-Cost Abstraction' as Koru's core design philosophy, targeting sub-2KB binaries.**: Koru's abstractions (print.blk, phantoms, kernels) actively remove runtime cost. Aggressive optimization flags (-fno-unwind-tables, -z norelro) and compile-time asset embedding allow Koru to match or beat hand-written C/Zig performance and size.
+- **Implemented a JSON-based test result snapshotting system with a 'latest.json' symlink.**: Tracks regression and progress across ~600 tests with detailed status (passed, failed, todo, etc.). Provides a stable reference point for CI/CD and developer visibility via a grep-friendly test index.
+- **Migrated compiler and backend logging to a structured log module with levels (debug, verbose, info, err).**: Unconditional debug output was cluttering stderr and leaking into regression test results. Structured logging allows clean default output while preserving deep diagnostic traces via flags.
+- **Proposed extending command.declare to support a nested subcommands array.**: Current command system is flat, leading to 'hidden' functionality (like 'deps install') that isn't discoverable in the dynamic help system.
 
 ### Instructions & Usage
 ### 🧠 Semantic Memory & Search
@@ -166,11 +160,12 @@ prose search "[feature you're touching]"
 This context prevents you from writing code that contradicts established design decisions. **5 seconds of searching saves 5 minutes of wrong implementation.**
 
 ### Active Gotchas
-- **The 'hallucination of progress' bug: AI assistants manually bypassing toolchain failures (e.g., running 'brew install' manually) instead of fixing the automated 'koruc deps install' flow.**: Enforce a 'hard stop' when the toolchain fails. If 'deps install' doesn't work, the primary task is to fix the compiler's shell-out logic to the package manager before proceeding.
-- **The 'deps install' command identifies missing dependencies but currently only prints instructions instead of executing them.**: Modify the compiler's dependency runner to execute detected system commands (e.g., brew) using child process execution.
-- **Relying on manual Markdown files for AI context management leads to stale information and 'copy-paste' syndrome.**: Transition to a node-based context management architecture (6digit studio) that treats context as a reactive graph.
+- **The '--help' flag was short-circuiting the compiler before the AST was fully built, preventing discovery of flags/commands in imports.**: Defer help execution by setting a 'show_help' flag during argument parsing, allowing the frontend to complete AST construction and import resolution first.
+- **Zig 0.15 'pointless discard' errors: Zig now rejects '_ = field;' for certain local constants, breaking emitted Koru handlers.**: The emitter must normalize all discards to address-of references: '_ = &field;'.
+- **Eager string-based type checking in the phantom semantic checker causes false positives with Zig type aliases (e.g., 'const Conn = Connection').**: Delegate base type checking to the Zig compiler by default (lazy checking) and only enable eager Koru-native checking via '--strict-base-types'.
+- **Phantom state name collisions (e.g., both Connection and Transaction having an 'active' state).**: Canonicalize base types into '{module}:{type}' format and filter disposal events by both state name and base type.
 
 
 > [!NOTE]
 > This file is automatically generated from `CLAUDE.md.template` by `prose`.
-> Last updated: 3/1/2026, 3:39:45 PM
+> Last updated: 3/28/2026, 5:28:31 PM

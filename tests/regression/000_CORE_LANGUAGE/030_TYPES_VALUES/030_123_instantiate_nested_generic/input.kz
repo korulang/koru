@@ -1,0 +1,28 @@
+// TEST: Instantiate generic with another instantiated generic as parameter
+//
+// Uses an already-instantiated type as a type argument.
+//
+// Expected: Compiles with nested instantiation
+
+~import "$std/types"
+
+const std = @import("std");
+
+~struct(Box<T>) { value: T }
+~struct(Wrapper<T>) { inner: T }
+
+~struct(IntBox = Box<i32>) {}
+~struct(WrappedIntBox = Wrapper<IntBox>) {}
+
+~event test_nested {}
+| done {}
+
+~proc test_nested {
+    const inner = IntBox{ .value = 77 };
+    const wrapped = WrappedIntBox{ .inner = inner };
+    std.debug.print("Nested value: {d}\n", .{wrapped.inner.value});
+    return .{ .done = .{} };
+}
+
+~test_nested()
+| done |> _

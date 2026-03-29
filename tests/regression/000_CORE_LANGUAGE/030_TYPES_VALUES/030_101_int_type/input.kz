@@ -1,0 +1,23 @@
+// TEST: ~int creates a nominal integer type
+//
+// ~int(UserId) creates a distinct type that wraps i64
+// Koru tracks it as a separate type for type checking purposes.
+//
+// Expected: Compiles and runs, UserId is usable as an integer
+
+~import "$std/types"
+
+const std = @import("std");
+
+~int(UserId)
+
+~event lookup_user { id: UserId }
+| found {}
+
+~proc lookup_user {
+    std.debug.print("Looking up user: {d}\n", .{id});
+    return .{ .found = .{} };
+}
+
+~lookup_user(id: 42)
+| found |> _

@@ -1,0 +1,31 @@
+// TEST: MUST_FAIL - Nominal string types are distinct
+//
+// EmailAddress and UserName are both strings, but Koru should reject
+// passing one where the other is expected.
+//
+// Expected: Compilation error - type mismatch
+
+~import "$std/types"
+
+~string(EmailAddress)
+~string(UserName)
+
+~event send_email { to: EmailAddress }
+| sent {}
+
+~proc send_email {
+    return .{ .sent = .{} };
+}
+
+~event main {}
+| done {}
+
+~proc main {
+    // ERROR: Passing UserName where EmailAddress is expected
+    const name: UserName = "alice";
+    ~send_email(to: name)
+    | sent |> done {}
+}
+
+~main()
+| done |> _

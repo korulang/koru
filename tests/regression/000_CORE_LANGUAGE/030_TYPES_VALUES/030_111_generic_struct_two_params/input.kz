@@ -1,0 +1,26 @@
+// TEST: ~struct with two type parameters
+//
+// ~struct(Pair<A, B>) { first: A, second: B } defines a generic struct
+// with multiple type parameters.
+//
+// Expected: Compiles and runs with instantiated Pair
+
+~import "$std/types"
+
+const std = @import("std");
+
+~struct(Pair<A, B>) { first: A, second: B }
+
+~struct(StringIntPair = Pair<[]const u8, i32>) {}
+
+~event test_pair {}
+| done {}
+
+~proc test_pair {
+    const p = StringIntPair{ .first = "answer", .second = 42 };
+    std.debug.print("{s}: {d}\n", .{ p.first, p.second });
+    return .{ .done = .{} };
+}
+
+~test_pair()
+| done |> _

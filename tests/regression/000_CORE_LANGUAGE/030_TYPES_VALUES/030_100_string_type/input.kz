@@ -1,0 +1,23 @@
+// TEST: ~string creates a nominal string type
+//
+// ~string(EmailAddress) creates a distinct type that wraps []const u8
+// Koru tracks it as a separate type for type checking purposes.
+//
+// Expected: Compiles and runs, EmailAddress is usable as a string
+
+~import "$std/types"
+
+const std = @import("std");
+
+~string(EmailAddress)
+
+~event send_email { to: EmailAddress }
+| sent {}
+
+~proc send_email {
+    std.debug.print("Sending to: {s}\n", .{to});
+    return .{ .sent = .{} };
+}
+
+~send_email(to: "user@example.com")
+| sent |> _

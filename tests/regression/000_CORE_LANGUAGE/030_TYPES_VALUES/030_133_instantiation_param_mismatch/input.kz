@@ -1,0 +1,23 @@
+// TEST: MUST_FAIL - Wrong number of type parameters in instantiation
+//
+// Pair<A, B> requires two type params, but only one is provided.
+// Koru should reject this at compile time.
+//
+// Expected: Compilation error - wrong number of type parameters
+
+~import "$std/types"
+
+~struct(Pair<A, B>) { first: A, second: B }
+
+// ERROR: Pair needs 2 type params, only 1 provided
+~struct(BadPair = Pair<i32>)
+
+~event main {}
+| done {}
+
+~proc main {
+    return .{ .done = .{} };
+}
+
+~main()
+| done |> _

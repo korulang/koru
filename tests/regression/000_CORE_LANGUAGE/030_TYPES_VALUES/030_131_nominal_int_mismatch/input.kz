@@ -1,0 +1,31 @@
+// TEST: MUST_FAIL - Nominal int types are distinct
+//
+// UserId and ProductId are both ints, but Koru should reject
+// passing one where the other is expected.
+//
+// Expected: Compilation error - type mismatch
+
+~import "$std/types"
+
+~int(UserId)
+~int(ProductId)
+
+~event get_user { id: UserId }
+| found { name: []const u8 }
+
+~proc get_user {
+    return .{ .found = .{ .name = "Alice" } };
+}
+
+~event main {}
+| done {}
+
+~proc main {
+    // ERROR: Passing ProductId where UserId is expected
+    const pid: ProductId = 42;
+    ~get_user(id: pid)
+    | found |> done {}
+}
+
+~main()
+| done |> _

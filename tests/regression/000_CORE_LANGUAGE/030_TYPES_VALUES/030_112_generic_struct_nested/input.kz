@@ -1,0 +1,26 @@
+// TEST: Generic struct with two type parameters (Result pattern)
+//
+// ~struct(Result<T, E>) is a common pattern for error handling.
+//
+// Expected: Compiles and runs with Result<i32, []const u8>
+
+~import "$std/types"
+
+const std = @import("std");
+
+~struct(Result<T, E>) { ok: ?T = null, err: ?E = null }
+~struct(IntResult = Result<i32, []const u8>) {}
+
+~event test_result {}
+| done {}
+
+~proc test_result {
+    const success = IntResult{ .ok = 42, .err = null };
+    if (success.ok) |val| {
+        std.debug.print("Ok: {d}\n", .{val});
+    }
+    return .{ .done = .{} };
+}
+
+~test_result()
+| done |> _
