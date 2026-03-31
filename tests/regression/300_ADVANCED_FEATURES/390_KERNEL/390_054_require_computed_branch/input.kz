@@ -5,18 +5,11 @@
 // exit from the kernel region — it receives the final data after kernel ops
 // complete and runs normal (non-kernel) post-processing code.
 //
-// This test verifies that init rejects the pattern:
-//   ~std.kernel:init(Body) { ... }
-//   | kernel k |>
-//       ...
-//   // missing: | computed c |>
+// Each kernel:init checks itself. claims_descendants ensures the outer init
+// runs before inner inits, so the outer init enforces this on itself first.
 //
-// Correct form:
-//   ~std.kernel:init(Body) { ... }
-//   | kernel k |>
-//       ...
-//   | computed c |>
-//       // post-processing with access to final data
+// Future: nested/inner kernels may relax this requirement once we understand
+// the GPU/CPU segmentation tradeoffs. For now, computed is required.
 
 ~import "$std/kernel"
 

@@ -335,10 +335,11 @@ const std = @import("std");
 
     // Enforce: if kernel branch is present, computed branch is required
     // Without computed, kernel results are trapped with no way to exit the scope
+    // Each init checks itself — claims_descendants ensures outer init runs first
     if (has_kernel_continuation and !has_computed_continuation) {
         const computed_error = std.fmt.allocPrint(
             allocator,
-            "comptime {{ @compileError(\"kernel:init requires | computed |> branch — without it, kernel results are trapped inside the kernel scope with no way to access them in normal code\"); }}",
+            "comptime {{ @compileError(\"kernel:init requires | computed |> branch — without it, kernel results are trapped inside the kernel scope\"); }}",
             .{},
         ) catch unreachable;
 
