@@ -1,1 +1,1 @@
-mass[0]=2.4 mass[1]=4.4 mass[2]=6.4
+mass[0]=3 mass[1]=4.6 mass[2]=6
