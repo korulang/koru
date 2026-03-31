@@ -5,6 +5,7 @@
 // 2. The compiler should fill this from analysis of the continuation subtree
 //
 // NOTE: layout is currently stubbed to "aos" until analysis is implemented.
+// This test verifies that computed branch receives correct slice length.
 
 ~import "$std/kernel"
 ~import "$std/io"
@@ -20,8 +21,8 @@
     { x: 1.0, y: 0.0, mass: 2.0 },
 }
 | kernel k |>
-    std.io:print.ln("slice len={{ k.len:d }}")
+    std.kernel:self { k.mass *= 1.0 }
 | computed c |>
     std.io:print.blk {
-        done, mass[0]={{ c[0].mass:f }}
+        slice len={{ c.len:d }}, mass[0]={{ c[0].mass:f }}
     }

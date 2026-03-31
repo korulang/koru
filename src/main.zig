@@ -1723,12 +1723,14 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     }
                 }
 
+                const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
+
                 transform_events[transform_count] = .{
                     .stub_name = stub_name,
                     .match_name = match_name,
                     .event_name = stub_name, // For top-level, stub_name = event_name
                     .module_path = null, // Top-level events are in main_module
-                    .claims_descendants = false,
+                    .claims_descendants = claims_descendants,
                     .has_source = has_source_param,
                     .has_expression = has_expression_param,
                     .has_optional_expression = has_optional_expression_param,
@@ -1871,12 +1873,14 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             }
                         }
 
+                        const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
+
                         transform_events[transform_count] = .{
                             .stub_name = stub_name,
                             .match_name = match_name,
                             .event_name = event_name, // Original event name for handler lookup
                             .module_path = module_path,
-                            .claims_descendants = false,
+                            .claims_descendants = claims_descendants,
                             .has_source = has_source_param,
                             .has_expression = has_expression_param,
                             .has_optional_expression = has_optional_expression_param,

@@ -282,6 +282,113 @@ const std = @import("std");
         }
     }.call;
 
+    // Collect kernel ops (pairwise, self) from the kernel subtree for fusion
+    const KernelOp = struct {
+        op_type: []const u8,  // "pairwise" or "self"
+        body_text: []const u8,
+    };
+
+    const collectKernelOps = struct {
+        fn call(
+            alloc: std.mem.Allocator,
+            flow_internal: *const ast.Flow,
+            target_invocation: *const ast.Invocation,
+            top_level: bool,
+        ) []KernelOp {
+            const owner_continuations = if (top_level)
+                flow_internal.continuations
+            else blk: {
+                const owner_cont = ast_functional.findContinuationContainingInvocation(
+                    flow_internal.continuations,
+                    target_invocation,
+                ) orelse return &[_]KernelOp{};
+                break :blk owner_cont.continuations;
+            };
+
+            const kernel_cont = ast_functional.findContinuationByBranchInSlice(owner_continuations, "kernel") orelse return &[_]KernelOp{};
+
+            var ops = std.ArrayList(KernelOp).initCapacity(alloc, 4) catch unreachable;
+
+            const collectFromContinuations = struct {
+                fn callInner(
+                    alloc_inner: std.mem.Allocator,
+                    continuations: []const ast.Continuation,
+                    ops_list: *std.ArrayList(KernelOp),
+                ) void {
+                    for (continuations) |*cont| {
+                        if (cont.node) |*step| {
+                            if (step.* == .invocation) {
+                                const inv = &step.invocation;
+                                const is_pairwise = inv.path.segments.len == 1 and
+                                    std.mem.eql(u8, inv.path.segments[0], "pairwise") and
+                                    inv.path.module_qualifier != null and
+                                    std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
+                                const is_self = inv.path.segments.len == 1 and
+                                    std.mem.eql(u8, inv.path.segments[0], "self") and
+                                    inv.path.module_qualifier != null and
+                                    std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
+
+                                if (is_pairwise or is_self) {
+                                    // Extract source text from the invocation's args
+                                    var body_text: ?[]const u8 = null;
+                                    for (inv.args) |arg| {
+                                        if (arg.source_value) |src_val| {
+                                            body_text = src_val.text;
+                                        }
+                                    }
+                                    if (body_text) |bt| {
+                                        ops_list.append(alloc_inner, .{
+                                            .op_type = if (is_pairwise) "pairwise" else "self",
+                                            .body_text = bt,
+                                        }) catch unreachable;
+                                    }
+                                }
+                            }
+                        }
+                        // Recurse into nested continuations (for |> chaining)
+                        if (cont.continuations.len > 0) {
+                            callInner(alloc_inner, cont.continuations, ops_list);
+                        }
+                    }
+                }
+            }.callInner;
+
+            // First check the kernel continuation's direct node (handles simple case like | kernel k |> pairwise {...})
+            if (kernel_cont.node) |*step| {
+                if (step.* == .invocation) {
+                    const inv = &step.invocation;
+                    const is_pairwise = inv.path.segments.len == 1 and
+                        std.mem.eql(u8, inv.path.segments[0], "pairwise") and
+                        inv.path.module_qualifier != null and
+                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
+                    const is_self = inv.path.segments.len == 1 and
+                        std.mem.eql(u8, inv.path.segments[0], "self") and
+                        inv.path.module_qualifier != null and
+                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
+
+                    if (is_pairwise or is_self) {
+                        var body_text: ?[]const u8 = null;
+                        for (inv.args) |arg| {
+                            if (arg.source_value) |src_val| {
+                                body_text = src_val.text;
+                            }
+                        }
+                        if (body_text) |bt| {
+                            ops.append(alloc, .{
+                                .op_type = if (is_pairwise) "pairwise" else "self",
+                                .body_text = bt,
+                            }) catch unreachable;
+                        }
+                    }
+                }
+            }
+
+            // Then recurse into nested continuations (for chained ops)
+            collectFromContinuations(alloc, kernel_cont.continuations, &ops);
+            return ops.toOwnedSlice(alloc) catch unreachable;
+        }
+    }.call;
+
     if (has_kernel_continuation) {
         if (validateKernelSubtree(allocator, flow, invocation, is_top_level)) |msg| {
             const compile_error_code = std.fmt.allocPrint(
@@ -381,6 +488,12 @@ const std = @import("std");
         }
     }
 
+    // Collect kernel ops for fusion
+    const kernel_ops = if (has_kernel_continuation)
+        collectKernelOps(allocator, flow, invocation, is_top_level)
+    else
+        &[_]KernelOp{};
+
     // Generate a unique local event/proc name for this init
     var hash: u32 = 0;
     for (flow.module) |c| hash = hash *% 31 +% c;
@@ -472,6 +585,130 @@ const std = @import("std");
     else
         &[_]ast.Field{};
 
+    // Get kernel binding name for codegen
+    const kernel_binding_name = if (has_kernel_continuation) blk: {
+        const owner_conts = if (is_top_level)
+            flow.continuations
+        else inner_blk: {
+            const owner_cont = ast_functional.findContinuationContainingInvocation(
+                flow.continuations,
+                invocation,
+            ) orelse break :blk "k";
+            break :inner_blk owner_cont.continuations;
+        };
+        const k_cont = ast_functional.findContinuationByBranchInSlice(owner_conts, "kernel");
+        break :blk if (k_cont) |kc| (kc.binding orelse "k") else "k";
+    } else "k";
+
+    // Generate inline Zig for collected kernel ops
+    const generateKernelOpsCode = struct {
+        fn call(
+            alloc: std.mem.Allocator,
+            ops: []const KernelOp,
+            binding: []const u8,
+            static_name_ref: []const u8,
+            elem_count: usize,
+        ) []const u8 {
+            if (ops.len == 0) return "";
+
+            var code = std.ArrayList(u8).initCapacity(alloc, 512) catch unreachable;
+            const ptr_name = "__koru_fused_ptr";
+
+            code.appendSlice(alloc, std.fmt.allocPrint(alloc,
+                \\const {s} = {s}[0..].ptr;
+                ,
+                .{ ptr_name, static_name_ref }
+            ) catch unreachable) catch unreachable;
+
+            for (ops) |op| {
+                if (std.mem.eql(u8, op.op_type, "pairwise")) {
+                    // Transform body: k.other.X -> ptr[j].X, k.X -> ptr[i].X
+                    const binding_other = std.fmt.allocPrint(alloc, "{s}.other", .{binding}) catch unreachable;
+                    const self_ref = std.fmt.allocPrint(alloc, "{s}[i]", .{ptr_name}) catch unreachable;
+                    const other_ref = std.fmt.allocPrint(alloc, "{s}[j]", .{ptr_name}) catch unreachable;
+
+                    var body = std.ArrayList(u8).initCapacity(alloc, op.body_text.len * 2) catch unreachable;
+                    var idx: usize = 0;
+                    while (idx < op.body_text.len) {
+                        if (idx + binding_other.len <= op.body_text.len and std.mem.eql(u8, op.body_text[idx..idx + binding_other.len], binding_other)) {
+                            body.appendSlice(alloc, other_ref) catch unreachable;
+                            idx += binding_other.len;
+                        } else if (idx + binding.len <= op.body_text.len and std.mem.eql(u8, op.body_text[idx..idx + binding.len], binding)) {
+                            const at_end = (idx + binding.len >= op.body_text.len);
+                            const next_ok = at_end or (!std.ascii.isAlphanumeric(op.body_text[idx + binding.len]) and op.body_text[idx + binding.len] != '_');
+                            const prev_ok = (idx == 0) or (!std.ascii.isAlphanumeric(op.body_text[idx - 1]) and op.body_text[idx - 1] != '_');
+                            if (next_ok and prev_ok) {
+                                body.appendSlice(alloc, self_ref) catch unreachable;
+                                idx += binding.len;
+                            } else {
+                                body.append(alloc, op.body_text[idx]) catch unreachable;
+                                idx += 1;
+                            }
+                        } else {
+                            body.append(alloc, op.body_text[idx]) catch unreachable;
+                            idx += 1;
+                        }
+                    }
+
+                    const body_trimmed = std.mem.trimRight(u8, body.items, " \t\n\r");
+                    if (body_trimmed.len == 0 or body_trimmed[body_trimmed.len - 1] != ';') {
+                        body.append(alloc, ';') catch unreachable;
+                    }
+
+                    code.appendSlice(alloc, std.fmt.allocPrint(alloc,
+                        \\
+                        \\for (0..{d}) |i| {{
+                        \\    for (i + 1..{d}) |j| {{
+                        \\        {s}
+                        \\    }}
+                        \\}}
+                        ,
+                        .{ elem_count, elem_count, body.items }
+                    ) catch unreachable) catch unreachable;
+                } else if (std.mem.eql(u8, op.op_type, "self")) {
+                    // Transform body: k.X -> ptr[i].X
+                    const self_ref = std.fmt.allocPrint(alloc, "{s}[i]", .{ptr_name}) catch unreachable;
+
+                    var body = std.ArrayList(u8).initCapacity(alloc, op.body_text.len * 2) catch unreachable;
+                    var idx: usize = 0;
+                    while (idx < op.body_text.len) {
+                        if (idx + binding.len <= op.body_text.len and std.mem.eql(u8, op.body_text[idx..idx + binding.len], binding)) {
+                            const at_end = (idx + binding.len >= op.body_text.len);
+                            const next_ok = at_end or (!std.ascii.isAlphanumeric(op.body_text[idx + binding.len]) and op.body_text[idx + binding.len] != '_');
+                            const prev_ok = (idx == 0) or (!std.ascii.isAlphanumeric(op.body_text[idx - 1]) and op.body_text[idx - 1] != '_');
+                            if (next_ok and prev_ok) {
+                                body.appendSlice(alloc, self_ref) catch unreachable;
+                                idx += binding.len;
+                            } else {
+                                body.append(alloc, op.body_text[idx]) catch unreachable;
+                                idx += 1;
+                            }
+                        } else {
+                            body.append(alloc, op.body_text[idx]) catch unreachable;
+                            idx += 1;
+                        }
+                    }
+
+                    const body_trimmed = std.mem.trimRight(u8, body.items, " \t\n\r");
+                    if (body_trimmed.len == 0 or body_trimmed[body_trimmed.len - 1] != ';') {
+                        body.append(alloc, ';') catch unreachable;
+                    }
+
+                    code.appendSlice(alloc, std.fmt.allocPrint(alloc,
+                        \\
+                        \\for (0..{d}) |i| {{
+                        \\    {s}
+                        \\}}
+                        ,
+                        .{ elem_count, body.items }
+                    ) catch unreachable) catch unreachable;
+                }
+            }
+
+            return code.toOwnedSlice(alloc) catch unreachable;
+        }
+    }.call;
+
     var proc_body: []const u8 = undefined;
     var static_decl: []const u8 = "";
 
@@ -505,12 +742,14 @@ const std = @import("std");
         ) catch unreachable;
 
         // Generate static-backed initialization (proof-of-concept)
+        const fused_code = generateKernelOpsCode(allocator, kernel_ops, kernel_binding_name, static_name, count);
         const return_branch = if (has_computed_continuation) "computed" else "kernel";
         proc_body = std.fmt.allocPrint(
             allocator,
+            \\{s}
             \\return .{{ .{s} = {s}[0..] }};
             ,
-            .{ return_branch, static_name }
+            .{ fused_code, return_branch, static_name }
         ) catch unreachable;
     } else {
         // Single mode: just one struct instance
@@ -522,12 +761,14 @@ const std = @import("std");
             ,
             .{ static_name, type_name, single_init }
         ) catch unreachable;
+        const fused_code = generateKernelOpsCode(allocator, kernel_ops, kernel_binding_name, static_name, 1);
         const return_branch = if (has_computed_continuation) "computed" else "kernel";
         proc_body = std.fmt.allocPrint(
             allocator,
+            \\{s}
             \\return .{{ .{s} = {s}[0..] }};
             ,
-            .{ return_branch, static_name }
+            .{ fused_code, return_branch, static_name }
         ) catch unreachable;
     }
 

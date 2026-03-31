@@ -1,2 +1,1 @@
 mass=1
-done, mass[0]=1

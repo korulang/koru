@@ -1,8 +1,9 @@
-// TEST: kernel view binding can flow into an arbitrary user event
+// TEST: kernel view binding flows to computed branch for user events
 //
 // Verifies:
 // 1. kernel:init creates a view binding
-// 2. user-defined events can consume values derived from that binding
+// 2. computed branch receives the kernel data
+// 3. user-defined events can consume values from computed data
 
 ~import "$std/kernel"
 ~import "$std/io"
@@ -21,8 +22,7 @@
     { mass: 1.0 },
     { mass: 2.0 },
 }
-| kernel k |> print_mass(value: k.ptr[0].mass)
+| kernel k |>
+    std.kernel:self { k.mass *= 1.0 }
 | computed c |>
-    std.io:print.blk {
-        done, mass[0]={{ c[0].mass:f }}
-    }
+    print_mass(value: c[0].mass)
