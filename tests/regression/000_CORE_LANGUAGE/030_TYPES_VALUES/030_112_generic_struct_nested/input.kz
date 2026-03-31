@@ -9,7 +9,7 @@
 const std = @import("std");
 
 ~struct(Result<T, E>) { ok: ?T = null, err: ?E = null }
-~struct(IntResult = Result<i32, []const u8>) {}
+~type(IntResult = Result<i32, []const u8>)
 
 ~event test_result {}
 | done {}

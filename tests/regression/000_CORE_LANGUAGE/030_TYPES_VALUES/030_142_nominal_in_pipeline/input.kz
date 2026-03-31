@@ -1,0 +1,30 @@
+// TEST: Using nominal types in event pipelines
+//
+// Define nominal types ~string and ~int, then use them
+// as event parameters in a pipeline.
+//
+// Expected: Compiles and runs with nominal types in events
+
+~import "$std/types"
+~import "$std/io"
+~import "$std/control"
+
+const std = @import("std");
+
+// Define nominal types
+~string(Username)
+~int(UserId)
+
+// Event that takes nominal types
+~event greet_user { name: Username, id: UserId }
+| greeted {}
+
+~proc greet_user {
+    std.debug.print("Hello {s} (ID: {d})\n", .{ name, id });
+    return .{ .greeted = .{} };
+}
+
+// Use in a pipeline
+~const({ user: "alice", uid: @as(i64, 42) })
+| as data |> greet_user(name: data.user, id: data.uid)
+    | greeted |> _

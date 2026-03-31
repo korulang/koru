@@ -1,6 +1,6 @@
-// TEST: Basic generic instantiation with = syntax
+// TEST: Basic generic instantiation with ~type
 //
-// ~struct(OptionalInt = Option<i32>) {} creates a concrete type
+// ~type(OptionalInt = Option<i32>) creates a concrete type
 // by substituting i32 for T in Option<T>.
 //
 // Expected: Compiles and emits a concrete Zig struct
@@ -10,7 +10,7 @@
 const std = @import("std");
 
 ~struct(Option<T>) { value: ?T = null }
-~struct(OptionalInt = Option<i32>) {}
+~type(OptionalInt = Option<i32>)
 
 ~event test_opt {}
 | done {}

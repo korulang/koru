@@ -1,0 +1,14 @@
+// TEST: branch constructors are rejected inside kernel scope
+
+~import "$std/kernel"
+
+~std.kernel:shape(Body) {
+    mass: f64,
+}
+
+~std.kernel:init(Body) {
+    { mass: 1.0 },
+}
+| kernel k |>
+    std.kernel:self { k.mass *= 2.0 }
+    |> done {}

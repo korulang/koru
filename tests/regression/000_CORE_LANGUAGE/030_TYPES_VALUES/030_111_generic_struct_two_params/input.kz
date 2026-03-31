@@ -11,7 +11,7 @@ const std = @import("std");
 
 ~struct(Pair<A, B>) { first: A, second: B }
 
-~struct(StringIntPair = Pair<[]const u8, i32>) {}
+~type(StringIntPair = Pair<[]const u8, i32>)
 
 ~event test_pair {}
 | done {}

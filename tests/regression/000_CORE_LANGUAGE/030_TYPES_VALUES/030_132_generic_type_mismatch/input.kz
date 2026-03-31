@@ -8,8 +8,8 @@
 ~import "$std/types"
 
 ~struct(Option<T>) { some: T, none }
-~struct(OptionalInt = Option<i32>)
-~struct(OptionalFloat = Option<f32>)
+~type(OptionalInt = Option<i32>)
+~type(OptionalFloat = Option<f32>)
 
 ~event process_int { val: OptionalInt }
 | done {}

@@ -7,10 +7,12 @@ const transform_pass_runner = @import("transform_pass_runner");
 var observed_order: [8][]const u8 = undefined;
 var observed_count: usize = 0;
 var outer_saw_inner_inline = false;
+var outer_saw_raw_inner_invocation = false;
 
 fn resetObservations() void {
     observed_count = 0;
     outer_saw_inner_inline = false;
+    outer_saw_raw_inner_invocation = false;
 }
 
 fn recordObservation(name: []const u8) void {
@@ -18,23 +20,32 @@ fn recordObservation(name: []const u8) void {
     observed_count += 1;
 }
 
-fn makeInvocation(allocator: std.mem.Allocator, name: []const u8) !ast.Invocation {
+fn makeInvocation(allocator: std.mem.Allocator, name: []const u8, has_runtime_arg: bool) !ast.Invocation {
     const segments = try allocator.alloc([]const u8, 1);
     segments[0] = try allocator.dupe(u8, name);
+
+    const args = if (has_runtime_arg) blk: {
+        const runtime_args = try allocator.alloc(ast.Arg, 1);
+        runtime_args[0] = ast.Arg{
+            .name = try allocator.dupe(u8, "x"),
+            .value = try allocator.dupe(u8, "1"),
+        };
+        break :blk runtime_args;
+    } else try allocator.alloc(ast.Arg, 0);
 
     return ast.Invocation{
         .path = ast.DottedPath{
             .module_qualifier = null,
             .segments = segments,
         },
-        .args = try allocator.alloc(ast.Arg, 0),
+        .args = args,
         .annotations = try allocator.alloc([]const u8, 0),
     };
 }
 
 fn makeProgramWithNestedInvocation(allocator: std.mem.Allocator) !*ast.Program {
-    const inner_invocation = try makeInvocation(allocator, "inner");
-    const outer_invocation = try makeInvocation(allocator, "outer");
+    const inner_invocation = try makeInvocation(allocator, "inner", false);
+    const outer_invocation = try makeInvocation(allocator, "outer", true);
 
     const conts = try allocator.alloc(ast.Continuation, 1);
     conts[0] = ast.Continuation{
@@ -94,6 +105,21 @@ fn outerTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std
     return program;
 }
 
+fn outerClaimingTransform(node: ast.ASTNode, program: *const ast.Program, allocator: std.mem.Allocator) !*const ast.Program {
+    _ = node;
+    _ = allocator;
+
+    recordObservation("outer");
+
+    const flow = program.items[0].flow;
+    const child_node = flow.continuations[0].node orelse return error.MissingChildNode;
+    if (child_node == .invocation) {
+        outer_saw_raw_inner_invocation = std.mem.eql(u8, child_node.invocation.path.segments[0], "inner");
+    }
+
+    return program;
+}
+
 test "transform runner prefers nested transform before outer owner candidate" {
     resetObservations();
 
@@ -112,5 +138,26 @@ test "transform runner prefers nested transform before outer owner candidate" {
     try testing.expectEqualStrings("inner", observed_order[0]);
     try testing.expectEqualStrings("outer", observed_order[1]);
     try testing.expect(outer_saw_inner_inline);
+    _ = transformed;
+}
+
+test "claimed transform checks self before descendants and sees raw child invocation" {
+    resetObservations();
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const original = try makeProgramWithNestedInvocation(allocator);
+    const transforms = [_]transform_pass_runner.TransformEntry{
+        .{ .name = "inner", .handler_fn = innerTransform },
+        .{ .name = "outer", .claims_descendants = true, .handler_fn = outerClaimingTransform },
+    };
+
+    const transformed = try transform_pass_runner.walkAndTransform(original, &transforms, allocator);
+
+    try testing.expectEqual(@as(usize, 2), observed_count);
+    try testing.expectEqualStrings("outer", observed_order[0]);
+    try testing.expectEqualStrings("inner", observed_order[1]);
+    try testing.expect(outer_saw_raw_inner_invocation);
     _ = transformed;
 }

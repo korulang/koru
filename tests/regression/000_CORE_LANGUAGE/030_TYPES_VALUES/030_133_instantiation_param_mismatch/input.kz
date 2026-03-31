@@ -10,7 +10,7 @@
 ~struct(Pair<A, B>) { first: A, second: B }
 
 // ERROR: Pair needs 2 type params, only 1 provided
-~struct(BadPair = Pair<i32>)
+~type(BadPair = Pair<i32>)
 
 ~event main {}
 | done {}

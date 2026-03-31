@@ -1,0 +1,22 @@
+// TEST: Using generic types with ~capture
+//
+// Define a generic accumulator, instantiate it with ~type,
+// then use it with ~capture in a fold pipeline.
+//
+// Expected: Compiles and runs, demonstrating types + capture integration
+
+~import "$std/types"
+~import "$std/io"
+~import "$std/control"
+
+// Define a generic accumulator
+~struct(Acc<T>) { total: T, count: i32 = 0 }
+
+// Instantiate with i64
+~type(IntAcc = Acc<i64>)
+
+// Use with capture in a fold
+~capture({ acc: IntAcc{ .total = 0, .count = 0 } })
+| as state |> for(&[_]i32{10, 20, 30, 40})
+    | each n |> captured { acc: IntAcc{ .total = state.acc.total + n, .count = state.acc.count + 1 } }
+| captured final |> std.io:print.ln("Total: {{ final.acc.total:d }}, Count: {{ final.acc.count:d }}")

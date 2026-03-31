@@ -11,7 +11,7 @@ const std = @import("std");
 
 ~string(EmailAddress)
 ~struct(Box<T>) { value: T }
-~struct(EmailBox = Box<EmailAddress>) {}
+~type(EmailBox = Box<EmailAddress>)
 
 ~event test_email {}
 | done {}

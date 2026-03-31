@@ -1,6 +1,6 @@
 // TEST: Instantiate generic with two type parameters
 //
-// ~struct(StringIntEntry = Entry<[]const u8, i32>) {} substitutes both params.
+// ~type(StringIntEntry = Entry<[]const u8, i32>) substitutes both params.
 //
 // Expected: Compiles with both type parameters substituted
 
@@ -9,7 +9,7 @@
 const std = @import("std");
 
 ~struct(Entry<K, V>) { key: K, value: V }
-~struct(StringIntEntry = Entry<[]const u8, i32>) {}
+~type(StringIntEntry = Entry<[]const u8, i32>)
 
 ~event test_entry {}
 | done {}

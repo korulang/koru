@@ -77,7 +77,7 @@ const std = @import("std");
 //   3. Generates a local init event+proc that allocates kernel data and returns a view
 //   4. Rewrites the flow to call that init event
 
-~[comptime|transform]pub event init {
+~[comptime|transform|claims_descendants]pub event init {
     expr: Expression,
     source: Source,
     invocation: *const Invocation,
@@ -155,6 +155,177 @@ const std = @import("std");
         if (std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) {
             has_kernel_continuation = true;
             break;
+        }
+    }
+
+    const validateKernelSubtree = struct {
+        fn call(
+            alloc: std.mem.Allocator,
+            flow_internal: *const ast.Flow,
+            target_invocation: *const ast.Invocation,
+            top_level: bool,
+        ) ?[]const u8 {
+            const owner_continuations = if (top_level)
+                flow_internal.continuations
+            else blk: {
+                const owner_cont = ast_functional.findContinuationContainingInvocation(
+                    flow_internal.continuations,
+                    target_invocation,
+                ) orelse @panic("kernel.init: could not find owning continuation");
+                break :blk owner_cont.continuations;
+            };
+
+            const kernel_cont = ast_functional.findContinuationByBranchInSlice(owner_continuations, "kernel") orelse return null;
+
+            const isNamedInvocation = struct {
+                fn call(inv: *const ast.Invocation, module_name: ?[]const u8, event_name: []const u8) bool {
+                    if (inv.path.segments.len != 1) return false;
+                    if (!std.mem.eql(u8, inv.path.segments[0], event_name)) return false;
+
+                    if (module_name) |expected_module| {
+                        return inv.path.module_qualifier != null and
+                            std.mem.eql(u8, inv.path.module_qualifier.?, expected_module);
+                    }
+
+                    return inv.path.module_qualifier == null;
+                }
+            }.call;
+
+            const ValidationContext = struct {
+                allocator: std.mem.Allocator,
+                violation: ?[]const u8 = null,
+
+                fn fail(
+                    self: *@This(),
+                    continuation: ?*const ast.Continuation,
+                    construct_name: []const u8,
+                ) ast_functional.LexicalSubtreeWalkControl {
+                    self.violation = if (continuation) |cont|
+                        std.fmt.allocPrint(
+                            self.allocator,
+                            "unsupported construct '{s}' inside kernel scope at {s}:{d}:{d}; kernel scope currently allows only std.kernel:pairwise and std.kernel:self",
+                            .{ construct_name, cont.location.file, cont.location.line, cont.location.column },
+                        ) catch "unsupported construct inside kernel scope"
+                    else
+                        std.fmt.allocPrint(
+                            self.allocator,
+                            "unsupported construct '{s}' inside kernel scope; kernel scope currently allows only std.kernel:pairwise and std.kernel:self",
+                            .{construct_name},
+                        ) catch "unsupported construct inside kernel scope";
+                    return .stop;
+                }
+
+                fn visit(
+                    self: *@This(),
+                    visit_info: ast_functional.LexicalSubtreeVisit,
+                ) !ast_functional.LexicalSubtreeWalkControl {
+                    switch (visit_info) {
+                        .continuation => return .continue_walk,
+                        .invocation => |info| {
+                            const inv = info.invocation;
+                            if (
+                                isNamedInvocation(inv, "std.kernel", "pairwise") or
+                                isNamedInvocation(inv, "std.kernel", "self")
+                            ) {
+                                return .continue_walk;
+                            }
+
+                            if (
+                                isNamedInvocation(inv, null, "for") or
+                                isNamedInvocation(inv, null, "if") or
+                                isNamedInvocation(inv, null, "capture") or
+                                isNamedInvocation(inv, null, "const") or
+                                isNamedInvocation(inv, "std.control", "for") or
+                                isNamedInvocation(inv, "std.control", "if") or
+                                isNamedInvocation(inv, "std.control", "capture") or
+                                isNamedInvocation(inv, "std.control", "const")
+                            ) {
+                                return self.fail(info.continuation, inv.path.segments[0]);
+                            }
+
+                            return .continue_walk;
+                        },
+                        .node => |info| switch (info.node.*) {
+                            .branch_constructor => return self.fail(info.continuation, "branch constructor"),
+                            .foreach => return self.fail(info.continuation, "for"),
+                            .conditional => return self.fail(info.continuation, "if"),
+                            .capture => return self.fail(info.continuation, "capture"),
+                            .switch_result => return self.fail(info.continuation, "switch_result"),
+                            .label_apply => return self.fail(info.continuation, "label_apply"),
+                            .label_with_invocation => return self.fail(info.continuation, "label_with_invocation"),
+                            .label_jump => return self.fail(info.continuation, "label_jump"),
+                            .deref => return self.fail(info.continuation, "deref"),
+                            .conditional_block => return self.fail(info.continuation, "conditional_block"),
+                            .metatype_binding => return self.fail(info.continuation, "metatype_binding"),
+                            .assignment => return self.fail(info.continuation, "assignment"),
+                            .inline_code => return .continue_walk,
+                            .terminal => return .continue_walk,
+                            .invocation => unreachable,
+                        },
+                    }
+                }
+            };
+
+            var validation = ValidationContext{ .allocator = alloc };
+            ast_functional.walkLexicalContinuationSubtree(
+                ValidationContext,
+                kernel_cont,
+                &validation,
+                ValidationContext.visit,
+            ) catch @panic("kernel.init: subtree validation failed");
+
+            return validation.violation;
+        }
+    }.call;
+
+    if (has_kernel_continuation) {
+        if (validateKernelSubtree(allocator, flow, invocation, is_top_level)) |msg| {
+            const compile_error_code = std.fmt.allocPrint(
+                allocator,
+                "comptime {{ @compileError(\"{s}\"); }}",
+                .{msg},
+            ) catch unreachable;
+
+            if (is_top_level) {
+                const compile_error_item = ast.Item{
+                    .inline_code = ast.InlineCode{
+                        .code = compile_error_code,
+                        .location = flow.location,
+                        .module = allocator.dupe(u8, flow.module) catch unreachable,
+                    },
+                };
+
+                const maybe_error_program = ast_functional.replaceFlowRecursive(
+                    allocator,
+                    program,
+                    flow,
+                    compile_error_item,
+                ) catch unreachable;
+
+                if (maybe_error_program) |error_program| {
+                    const result = allocator.create(ast.Program) catch unreachable;
+                    result.* = error_program;
+                    return .{ .transformed = .{ .program = result } };
+                }
+
+                @panic("kernel.init: compile error flow replacement failed");
+            } else {
+                const compile_error_node = ast.Node{ .inline_code = compile_error_code };
+                const maybe_error_program = ast_functional.replaceInvocationNodeRecursive(
+                    allocator,
+                    program,
+                    invocation,
+                    compile_error_node,
+                ) catch unreachable;
+
+                if (maybe_error_program) |error_program| {
+                    const result = allocator.create(ast.Program) catch unreachable;
+                    result.* = error_program;
+                    return .{ .transformed = .{ .program = result } };
+                }
+
+                @panic("kernel.init: compile error invocation replacement failed");
+            }
         }
     }
 

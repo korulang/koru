@@ -10,19 +10,18 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    
+
     const lexer_module = b.createModule(.{
         .root_source_file = b.path("src/lexer.zig"),
         .target = target,
         .optimize = optimize,
     });
-    
+
     const errors_module = b.createModule(.{
         .root_source_file = b.path("src/errors.zig"),
         .target = target,
         .optimize = optimize,
     });
-
 
     // Log module for compiler verbosity control
     const log_module = b.createModule(.{
@@ -65,7 +64,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    
+
     // Parser module with dependencies
     const parser_module = b.createModule(.{
         .root_source_file = b.path("src/parser.zig"),
@@ -78,7 +77,7 @@ pub fn build(b: *std.Build) void {
     parser_module.addImport("type_registry", type_registry_module);
     parser_module.addImport("module_resolver", module_resolver_module);
     parser_module.addImport("log", log_module);
-    
+
     // Expression parser module
     const expression_parser_module = b.createModule(.{
         .root_source_file = b.path("src/expression_parser.zig"),
@@ -87,7 +86,7 @@ pub fn build(b: *std.Build) void {
     });
     expression_parser_module.addImport("lexer", lexer_module);
     expression_parser_module.addImport("ast", ast_module);
-    
+
     // Expression code generator module
     const expression_codegen_module = b.createModule(.{
         .root_source_file = b.path("src/expression_codegen.zig"),
@@ -95,7 +94,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     expression_codegen_module.addImport("ast", ast_module);
-    
+
     // Union collector module for inline flows
     const union_collector_module = b.createModule(.{
         .root_source_file = b.path("src/union_collector.zig"),
@@ -103,7 +102,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     union_collector_module.addImport("ast", ast_module);
-    
+
     // Codegen utilities module (Zig keyword escaping, etc.)
     const codegen_utils_module = b.createModule(.{
         .root_source_file = b.path("src/codegen_utils.zig"),
@@ -120,19 +119,19 @@ pub fn build(b: *std.Build) void {
     union_codegen_module.addImport("ast", ast_module);
     union_codegen_module.addImport("expression_codegen", expression_codegen_module);
     union_codegen_module.addImport("codegen_utils", codegen_utils_module);
-    
+
     // Add expression parser and union modules to parser module
     parser_module.addImport("expression_parser", expression_parser_module);
     parser_module.addImport("union_collector", union_collector_module);
     parser_module.addImport("union_codegen", union_codegen_module);
-    
+
     // Phantom parser library module
     const phantom_parser_module = b.createModule(.{
         .root_source_file = b.path("koru_std/phantom_parser.zig"),
         .target = target,
         .optimize = optimize,
     });
-    
+
     // Branch checker module
     const branch_checker_module = b.createModule(.{
         .root_source_file = b.path("src/branch_checker.zig"),
@@ -181,7 +180,7 @@ pub fn build(b: *std.Build) void {
     });
     type_context_module.addImport("ast", ast_module);
     type_context_module.addImport("type_registry", type_registry_module);
-    
+
     // Type inference module with dependencies (defined first as it's used by others)
     const type_inference_module = b.createModule(.{
         .root_source_file = b.path("src/type_inference.zig"),
@@ -190,10 +189,10 @@ pub fn build(b: *std.Build) void {
     });
     type_inference_module.addImport("ast", ast_module);
     type_inference_module.addImport("errors", errors_module);
-    
+
     // Update shape checker to include type inference
     shape_checker_module.addImport("type_inference", type_inference_module);
-    
+
     // Tap collector module for Event Taps
     const tap_collector_module = b.createModule(.{
         .root_source_file = b.path("src/tap_collector.zig"),
@@ -202,7 +201,7 @@ pub fn build(b: *std.Build) void {
     });
     tap_collector_module.addImport("ast", ast_module);
     tap_collector_module.addImport("log", log_module);
-    
+
     // Tap codegen module for Event Tap code generation
     const tap_codegen_module = b.createModule(.{
         .root_source_file = b.path("src/tap_codegen.zig"),
@@ -255,9 +254,9 @@ pub fn build(b: *std.Build) void {
     shape_analyzer_module.addImport("type_registry", type_registry_module);
     shape_analyzer_module.addImport("type_context", type_context_module);
     shape_analyzer_module.addImport("log", log_module);
-    
+
     // Note: Old emitter.zig removed - we use ast_serializer now for metacircular compilation
-    
+
     // AST Transformation module (moved up for main exe)
     const ast_transform_module = b.createModule(.{
         .root_source_file = b.path("src/ast_transform.zig"),
@@ -265,7 +264,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     ast_transform_module.addImport("ast", ast_module);
-    
+
     // AST Visitor module (moved up for main exe)
     const ast_visitor_module = b.createModule(.{
         .root_source_file = b.path("src/ast_visitor.zig"),
@@ -274,7 +273,7 @@ pub fn build(b: *std.Build) void {
     });
     ast_visitor_module.addImport("ast", ast_module);
     ast_visitor_module.addImport("ast_transform", ast_transform_module);
-    
+
     // Inline transformation module (moved up for main exe)
     const inline_transform_module = b.createModule(.{
         .root_source_file = b.path("src/transforms/inline_small_events.zig"),
@@ -284,7 +283,7 @@ pub fn build(b: *std.Build) void {
     inline_transform_module.addImport("ast", ast_module);
     inline_transform_module.addImport("ast_transform", ast_transform_module);
     inline_transform_module.addImport("ast_visitor", ast_visitor_module);
-    
+
     // AST Serializer module for Phase 2
     const ast_serializer_module = b.createModule(.{
         .root_source_file = b.path("src/ast_serializer.zig"),
@@ -449,7 +448,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    
+
     // Add module imports to koruc
     exe.root_module.addImport("parser", parser_module);
     exe.root_module.addImport("log", log_module);
@@ -505,7 +504,7 @@ pub fn build(b: *std.Build) void {
     });
     transform_functional_module.addImport("ast", ast_module);
     transform_functional_module.addImport("ast_functional", ast_functional_module);
-    
+
     const inline_functional_module = b.createModule(.{
         .root_source_file = b.path("src/transforms/inline_small_events_functional.zig"),
         .target = target,
@@ -514,7 +513,7 @@ pub fn build(b: *std.Build) void {
     inline_functional_module.addImport("ast", ast_module);
     inline_functional_module.addImport("ast_functional", ast_functional_module);
     inline_functional_module.addImport("transform_functional", transform_functional_module);
-    
+
     exe.root_module.addImport("ast_functional", ast_functional_module);
     exe.root_module.addImport("transform_functional", transform_functional_module);
     exe.root_module.addImport("transforms/inline_small_events_functional", inline_functional_module);
@@ -596,7 +595,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     // Tests - simpler approach
-    
+
     // Compiler Coordinator module for multi-pass optimization
     const coordinator_module = b.createModule(.{
         .root_source_file = b.path("src/compiler_coordinator.zig"),
@@ -607,17 +606,17 @@ pub fn build(b: *std.Build) void {
     coordinator_module.addImport("ast_transform", ast_transform_module);
     coordinator_module.addImport("ast_visitor", ast_visitor_module);
     coordinator_module.addImport("transforms/inline_small_events.zig", inline_transform_module);
-    
+
     const parser_tests = b.addTest(.{
         .name = "parser_tests",
         .root_module = parser_module,
     });
-    
+
     const ast_serializer_tests = b.addTest(.{
         .name = "ast_serializer_tests",
         .root_module = ast_serializer_module,
     });
-    
+
     const lexer_tests = b.addTest(.{
         .name = "lexer_tests",
         .root_module = b.createModule(.{
@@ -626,17 +625,17 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    
+
     const shape_checker_tests = b.addTest(.{
         .name = "shape_checker_tests",
         .root_module = shape_checker_module,
     });
-    
+
     const tap_collector_tests = b.addTest(.{
         .name = "tap_collector_tests",
         .root_module = tap_collector_module,
     });
-    
+
     const tap_codegen_tests = b.addTest(.{
         .name = "tap_codegen_tests",
         .root_module = b.createModule(.{
@@ -671,14 +670,14 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    
+
     // Need to add dependencies for the integration test
     integration_tests.root_module.addImport("parser", parser_module);
     integration_tests.root_module.addImport("ast", ast_module);
     integration_tests.root_module.addImport("lexer", lexer_module);
     integration_tests.root_module.addImport("errors", errors_module);
     integration_tests.root_module.addImport("type_registry", type_registry_module);
-    
+
     // Shape checker integration tests
     const shape_checker_integration_tests = b.addTest(.{
         .name = "shape_checker_integration_tests",
@@ -688,7 +687,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    
+
     // Inline flow extraction tests
     const inline_flow_tests = b.addTest(.{
         .name = "inline_flow_tests",
@@ -701,7 +700,7 @@ pub fn build(b: *std.Build) void {
     inline_flow_tests.root_module.addImport("parser", parser_module);
     inline_flow_tests.root_module.addImport("ast", ast_module);
     const run_inline_flow_tests = b.addRunArtifact(inline_flow_tests);
-    
+
     // Purity helpers module (shared)
     const purity_helpers_module = b.createModule(.{
         .root_source_file = b.path("src/compiler_passes/purity_helpers.zig"),
@@ -724,7 +723,7 @@ pub fn build(b: *std.Build) void {
     purity_analyzer_module.addImport("ast", ast_module);
     purity_analyzer_module.addImport("lexer", lexer_module);
     purity_analyzer_module.addImport("purity_helpers", purity_helpers_module);
-    
+
     const effect_analyzer_module = b.createModule(.{
         .root_source_file = b.path("src/compiler_passes/effect_analyzer.zig"),
         .target = target,
@@ -733,7 +732,7 @@ pub fn build(b: *std.Build) void {
     effect_analyzer_module.addImport("ast", ast_module);
     effect_analyzer_module.addImport("purity_helpers", purity_helpers_module);
     effect_analyzer_module.addImport("purity_analyzer", purity_analyzer_module);
-    
+
     // Enhanced AST visitor module
     const ast_visitor_enhanced_module = b.createModule(.{
         .root_source_file = b.path("src/compiler_passes/ast_visitor_enhanced.zig"),
@@ -741,7 +740,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     ast_visitor_enhanced_module.addImport("ast", ast_module);
-    
+
     // Metadata aggregator module
     const metadata_aggregator_module = b.createModule(.{
         .root_source_file = b.path("src/compiler_passes/metadata_aggregator.zig"),
@@ -751,7 +750,7 @@ pub fn build(b: *std.Build) void {
     metadata_aggregator_module.addImport("ast", ast_module);
     metadata_aggregator_module.addImport("purity_analyzer", purity_analyzer_module);
     metadata_aggregator_module.addImport("effect_analyzer", effect_analyzer_module);
-    
+
     // Purity analyzer tests
     const purity_analyzer_tests = b.addTest(.{
         .name = "purity_analyzer_tests",
@@ -765,7 +764,7 @@ pub fn build(b: *std.Build) void {
     purity_analyzer_tests.root_module.addImport("ast", ast_module);
     purity_analyzer_tests.root_module.addImport("purity_analyzer", purity_analyzer_module);
     const run_purity_analyzer_tests = b.addRunArtifact(purity_analyzer_tests);
-    
+
     // Compiler passes integration tests
     const compiler_passes_tests = b.addTest(.{
         .name = "compiler_passes_tests",
@@ -780,7 +779,7 @@ pub fn build(b: *std.Build) void {
     compiler_passes_tests.root_module.addImport("purity_analyzer", purity_analyzer_module);
     compiler_passes_tests.root_module.addImport("effect_analyzer", effect_analyzer_module);
     const run_compiler_passes_tests = b.addRunArtifact(compiler_passes_tests);
-    
+
     // Enhanced visitor tests
     const visitor_enhanced_tests = b.addTest(.{
         .name = "visitor_enhanced_tests",
@@ -797,11 +796,11 @@ pub fn build(b: *std.Build) void {
     visitor_enhanced_tests.root_module.addImport("effect_analyzer", effect_analyzer_module);
     visitor_enhanced_tests.root_module.addImport("metadata_aggregator", metadata_aggregator_module);
     const run_visitor_enhanced_tests = b.addRunArtifact(visitor_enhanced_tests);
-    
+
     shape_checker_integration_tests.root_module.addImport("parser", parser_module);
     shape_checker_integration_tests.root_module.addImport("shape_checker", shape_checker_module);
     shape_checker_integration_tests.root_module.addImport("ast", ast_module);
-    
+
     // Full pipeline integration tests
     const full_pipeline_tests = b.addTest(.{
         .name = "full_pipeline_tests",
@@ -811,11 +810,11 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    
+
     full_pipeline_tests.root_module.addImport("parser", parser_module);
     full_pipeline_tests.root_module.addImport("shape_checker", shape_checker_module);
     full_pipeline_tests.root_module.addImport("ast_serializer", ast_serializer_module);
-    
+
     const run_parser_tests = b.addRunArtifact(parser_tests);
     const run_ast_serializer_tests = b.addRunArtifact(ast_serializer_tests);
     const run_lexer_tests = b.addRunArtifact(lexer_tests);
@@ -826,7 +825,7 @@ pub fn build(b: *std.Build) void {
     const run_integration_tests = b.addRunArtifact(integration_tests);
     const run_shape_checker_integration_tests = b.addRunArtifact(shape_checker_integration_tests);
     const run_full_pipeline_tests = b.addRunArtifact(full_pipeline_tests);
-    
+
     // Add immediate return tests
     const immediate_return_tests = b.addTest(.{
         .name = "immediate_return_tests",
@@ -842,7 +841,7 @@ pub fn build(b: *std.Build) void {
     immediate_return_tests.root_module.addImport("errors", errors_module);
     immediate_return_tests.root_module.addImport("type_registry", type_registry_module);
     const run_immediate_return_tests = b.addRunArtifact(immediate_return_tests);
-    
+
     // Add vertical POC tests
     const vertical_poc_tests = b.addTest(.{
         .name = "vertical_poc_tests",
@@ -855,7 +854,7 @@ pub fn build(b: *std.Build) void {
     vertical_poc_tests.root_module.addImport("parser", parser_module);
     vertical_poc_tests.root_module.addImport("ast", ast_module);
     const run_vertical_poc_tests = b.addRunArtifact(vertical_poc_tests);
-    
+
     // Add compile-time POC tests
     const comptime_poc_simple_tests = b.addTest(.{
         .name = "comptime_poc_simple_tests",
@@ -866,7 +865,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const run_comptime_poc_simple_tests = b.addRunArtifact(comptime_poc_simple_tests);
-    
+
     // Add coordinator tests
     const coordinator_tests = b.addTest(.{
         .name = "coordinator_tests",
@@ -879,7 +878,7 @@ pub fn build(b: *std.Build) void {
     coordinator_tests.root_module.addImport("compiler_coordinator", coordinator_module);
     coordinator_tests.root_module.addImport("ast", ast_module);
     const run_coordinator_tests = b.addRunArtifact(coordinator_tests);
-    
+
     // Add transform tests
     const transform_tests = b.addTest(.{
         .name = "transform_tests",
@@ -894,7 +893,7 @@ pub fn build(b: *std.Build) void {
     transform_tests.root_module.addImport("ast_visitor", ast_visitor_module);
     transform_tests.root_module.addImport("transforms/inline_small_events.zig", inline_transform_module);
     const run_transform_tests = b.addRunArtifact(transform_tests);
-    
+
     // Add file types tests
     const file_types_tests = b.addTest(.{
         .name = "file_types_tests",
@@ -907,7 +906,7 @@ pub fn build(b: *std.Build) void {
     file_types_tests.root_module.addImport("parser", parser_module);
     file_types_tests.root_module.addImport("ast_serializer", ast_serializer_module);
     const run_file_types_tests = b.addRunArtifact(file_types_tests);
-    
+
     // Where clause tests
     const where_clause_tests = b.addTest(.{
         .name = "where_clause_tests",
@@ -920,7 +919,7 @@ pub fn build(b: *std.Build) void {
     where_clause_tests.root_module.addImport("parser", parser_module);
     where_clause_tests.root_module.addImport("ast", ast_module);
     const run_where_clause_tests = b.addRunArtifact(where_clause_tests);
-    
+
     // Expression parser tests
     const expression_parser_tests = b.addTest(.{
         .name = "expression_parser_tests",
@@ -933,7 +932,7 @@ pub fn build(b: *std.Build) void {
     expression_parser_tests.root_module.addImport("expression_parser", expression_parser_module);
     expression_parser_tests.root_module.addImport("ast", ast_module);
     const run_expression_parser_tests = b.addRunArtifact(expression_parser_tests);
-    
+
     // Expression purity tests
     const expression_purity_tests = b.addTest(.{
         .name = "expression_purity_tests",
@@ -945,7 +944,7 @@ pub fn build(b: *std.Build) void {
     });
     expression_purity_tests.root_module.addImport("expression_parser", expression_parser_module);
     const run_expression_purity_tests = b.addRunArtifact(expression_purity_tests);
-    
+
     // Expression codegen tests
     const expression_codegen_tests = b.addTest(.{
         .name = "expression_codegen_tests",
@@ -958,7 +957,7 @@ pub fn build(b: *std.Build) void {
     expression_codegen_tests.root_module.addImport("ast", ast_module);
     expression_codegen_tests.root_module.addImport("expression_codegen", expression_codegen_module);
     const run_expression_codegen_tests = b.addRunArtifact(expression_codegen_tests);
-    
+
     // Expression codegen compile tests (verifies generated code compiles)
     const expression_codegen_compile_tests = b.addTest(.{
         .name = "expression_codegen_compile_tests",
@@ -971,7 +970,7 @@ pub fn build(b: *std.Build) void {
     expression_codegen_compile_tests.root_module.addImport("ast", ast_module);
     expression_codegen_compile_tests.root_module.addImport("expression_codegen", expression_codegen_module);
     const run_expression_codegen_compile_tests = b.addRunArtifact(expression_codegen_compile_tests);
-    
+
     // Where clause integration tests
     const where_clause_integration_tests = b.addTest(.{
         .name = "where_clause_integration_tests",
@@ -985,7 +984,7 @@ pub fn build(b: *std.Build) void {
     where_clause_integration_tests.root_module.addImport("ast", ast_module);
     where_clause_integration_tests.root_module.addImport("expression_codegen", expression_codegen_module);
     const run_where_clause_integration_tests = b.addRunArtifact(where_clause_integration_tests);
-    
+
     // Inline flow extraction tests
     const inline_flow_extraction_tests = b.addTest(.{
         .name = "inline_flow_extraction_tests",
@@ -998,7 +997,7 @@ pub fn build(b: *std.Build) void {
     inline_flow_extraction_tests.root_module.addImport("parser", parser_module);
     inline_flow_extraction_tests.root_module.addImport("ast", ast_module);
     const run_inline_flow_extraction_tests = b.addRunArtifact(inline_flow_extraction_tests);
-    
+
     // Branch constructor expression tests
     const branch_constructor_expr_tests = b.addTest(.{
         .name = "branch_constructor_expr_tests",
@@ -1011,7 +1010,7 @@ pub fn build(b: *std.Build) void {
     branch_constructor_expr_tests.root_module.addImport("parser", parser_module);
     branch_constructor_expr_tests.root_module.addImport("ast", ast_module);
     const run_branch_constructor_expr_tests = b.addRunArtifact(branch_constructor_expr_tests);
-    
+
     // Branch constructor edge case tests
     const branch_constructor_edge_tests = b.addTest(.{
         .name = "branch_constructor_edge_tests",
@@ -1024,7 +1023,7 @@ pub fn build(b: *std.Build) void {
     branch_constructor_edge_tests.root_module.addImport("parser", parser_module);
     branch_constructor_edge_tests.root_module.addImport("ast", ast_module);
     const run_branch_constructor_edge_tests = b.addRunArtifact(branch_constructor_edge_tests);
-    
+
     // Bootstrap constraint tests
     const bootstrap_constraint_tests = b.addTest(.{
         .name = "bootstrap_constraint_tests",
@@ -1048,7 +1047,7 @@ pub fn build(b: *std.Build) void {
     bootstrap_constraint_tests.root_module.addImport("union_codegen", union_codegen_module);
     bootstrap_constraint_tests.root_module.addImport("expression_codegen", expression_codegen_module);
     const run_bootstrap_constraint_tests = b.addRunArtifact(bootstrap_constraint_tests);
-    
+
     // Purity checker tests
     const purity_checker_tests = b.addTest(.{
         .name = "purity_checker_tests",
@@ -1091,6 +1090,20 @@ pub fn build(b: *std.Build) void {
     const run_transform_pass_runner_tests = b.addRunArtifact(transform_pass_runner_tests);
     const transform_pass_runner_test_step = b.step("test-transform-pass-runner", "Run transform pass runner tests");
     transform_pass_runner_test_step.dependOn(&run_transform_pass_runner_tests.step);
+
+    const ast_functional_tests = b.addTest(.{
+        .name = "ast_functional_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/ast_functional_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    ast_functional_tests.root_module.addImport("ast", ast_module);
+    ast_functional_tests.root_module.addImport("ast_functional", ast_functional_module);
+    const run_ast_functional_tests = b.addRunArtifact(ast_functional_tests);
+    const ast_functional_test_step = b.step("test-ast-functional", "Run ast_functional tests");
+    ast_functional_test_step.dependOn(&run_ast_functional_tests.step);
 
     // Phantom semantic checker tests - obligation tracking and @scope boundaries
     const phantom_semantic_checker_tests = b.addTest(.{
@@ -1158,6 +1171,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_tap_codegen_tests.step);
     test_step.dependOn(&run_tap_transformer_tests.step);
     test_step.dependOn(&run_transform_pass_runner_tests.step);
+    test_step.dependOn(&run_ast_functional_tests.step);
     test_step.dependOn(&run_phantom_semantic_checker_tests.step);
     test_step.dependOn(&run_auto_discharge_inserter_tests.step);
     test_step.dependOn(&run_visitor_emitter_tests.step);
@@ -1184,7 +1198,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_branch_constructor_expr_tests.step);
     test_step.dependOn(&run_branch_constructor_edge_tests.step);
     test_step.dependOn(&run_bootstrap_constraint_tests.step);
-    
+
     // End-to-end branch constructor test
     const end_to_end_branch_tests = b.addTest(.{
         .name = "end_to_end_branch_tests",

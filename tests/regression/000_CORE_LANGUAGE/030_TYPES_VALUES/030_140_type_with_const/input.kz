@@ -1,0 +1,22 @@
+// TEST: Using generic types with ~const
+//
+// Define a generic Config struct, instantiate it with ~type,
+// then use it with ~const in a pipeline.
+//
+// Expected: Compiles and runs, demonstrating types + const integration
+
+~import "$std/types"
+~import "$std/io"
+~import "$std/control"
+
+// Define a generic config container
+~struct(Config<T>) { value: T, enabled: bool = true }
+
+// Instantiate with i32
+~type(IntConfig = Config<i32>)
+
+// Use typed struct literal directly in ~const
+~const({ cfg: IntConfig{ value: 42, enabled: true } })
+| as settings |> if(settings.cfg.enabled)
+    | then |> std.io:print.ln("Value: {{ settings.cfg.value:d }}")
+    | else |> _

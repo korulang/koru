@@ -11,8 +11,8 @@ const std = @import("std");
 ~struct(Box<T>) { value: T }
 ~struct(Wrapper<T>) { inner: T }
 
-~struct(IntBox = Box<i32>) {}
-~struct(WrappedIntBox = Wrapper<IntBox>) {}
+~type(IntBox = Box<i32>)
+~type(WrappedIntBox = Wrapper<IntBox>)
 
 ~event test_nested {}
 | done {}

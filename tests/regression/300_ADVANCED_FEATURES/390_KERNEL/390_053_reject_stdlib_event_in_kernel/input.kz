@@ -1,0 +1,15 @@
+// TEST: aspirational - arbitrary stdlib events should be rejected inside kernel scope
+
+~import "$std/kernel"
+~import "$std/io"
+
+~std.kernel:shape(Body) {
+    mass: f64,
+}
+
+~std.kernel:init(Body) {
+    { mass: 1.0 },
+}
+| kernel k |>
+    std.kernel:self { k.mass *= 2.0 }
+    |> std.io:print.ln("mass updated")

@@ -7,7 +7,7 @@ const CloneError = error{
 };
 
 /// Functional AST Manipulation
-/// 
+///
 /// This module provides purely functional operations for AST transformation.
 /// All operations are immutable - they create new AST nodes rather than mutating existing ones.
 /// This enables:
@@ -15,9 +15,8 @@ const CloneError = error{
 /// - Transformation composition
 /// - Source features
 /// - Undo/redo capabilities
-/// 
+///
 /// Core principle: AST in → AST out, no side effects
-
 /// Result type for transformations that might fail
 pub const TransformResult = union(enum) {
     ok: ast.Program,
@@ -897,7 +896,7 @@ pub fn removeAt(
     }
 
     // Copy items after removal point
-    for (source.items[index + 1..], 0..) |*item, i| {
+    for (source.items[index + 1 ..], 0..) |*item, i| {
         new_items[index + i] = try cloneItem(allocator, item);
     }
 
@@ -1319,13 +1318,13 @@ fn cloneImportDecl(allocator: std.mem.Allocator, import: *const ast.ImportDecl) 
 fn cloneEventTap(allocator: std.mem.Allocator, tap: *const ast.EventTap) !ast.EventTap {
     const source = if (tap.source) |s| try cloneDottedPath(allocator, &s) else null;
     const destination = if (tap.destination) |d| try cloneDottedPath(allocator, &d) else null;
-    
+
     var continuations = try allocator.alloc(ast.Continuation, tap.continuations.len);
     errdefer allocator.free(continuations);
     for (tap.continuations, 0..) |cont, i| {
         continuations[i] = try cloneContinuation(allocator, &cont);
     }
-    
+
     return .{
         .source = source,
         .destination = destination,
@@ -1372,9 +1371,9 @@ fn cloneField(allocator: std.mem.Allocator, field: *const ast.Field) !ast.Field 
         .is_file = field.is_file,
         .is_embed_file = field.is_embed_file,
         .is_expression = field.is_expression,
-        .expression = field.expression,  // Pointer copy - original persists
+        .expression = field.expression, // Pointer copy - original persists
         .expression_str = if (field.expression_str) |e| try allocator.dupe(u8, e) else null,
-        .owns_expression = false,  // Cloned fields don't own the expression
+        .owns_expression = false, // Cloned fields don't own the expression
     };
 }
 
@@ -1488,7 +1487,7 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
                 .label = try allocator.dupe(u8, lwi.label),
                 .invocation = try cloneInvocation(allocator, &lwi.invocation),
                 .is_declaration = lwi.is_declaration,
-            }};
+            } };
         },
         .label_jump => |lj| {
             var cloned_args = try allocator.alloc(ast.Arg, lj.args.len);
@@ -1498,7 +1497,7 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
             return .{ .label_jump = .{
                 .label = try allocator.dupe(u8, lj.label),
                 .args = cloned_args,
-            }};
+            } };
         },
         .terminal => {
             return .terminal;
@@ -1515,7 +1514,7 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
             return .{ .deref = .{
                 .target = try allocator.dupe(u8, d.target),
                 .args = args,
-            }};
+            } };
         },
         .branch_constructor => |bc| {
             return .{ .branch_constructor = try cloneBranchConstructor(allocator, &bc) };
@@ -1529,11 +1528,13 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
                 cloned_nodes[i] = try cloneStep(allocator, inner_step);
             }
 
-            return .{ .conditional_block = .{
-                .condition = if (cb.condition) |c| try allocator.dupe(u8, c) else null,
-                .condition_expr = cb.condition_expr, // Expression cloning is complex, for now just copy pointer
-                .nodes = cloned_nodes,
-            }};
+            return .{
+                .conditional_block = .{
+                    .condition = if (cb.condition) |c| try allocator.dupe(u8, c) else null,
+                    .condition_expr = cb.condition_expr, // Expression cloning is complex, for now just copy pointer
+                    .nodes = cloned_nodes,
+                },
+            };
         },
         .metatype_binding => |mb| {
             // Clone metatype binding (Profile/Transition/Audit struct construction)
@@ -1543,7 +1544,7 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
                 .source_event = try allocator.dupe(u8, mb.source_event),
                 .dest_event = if (mb.dest_event) |dest| try allocator.dupe(u8, dest) else null,
                 .branch = try allocator.dupe(u8, mb.branch),
-            }};
+            } };
         },
         .inline_code => |code| {
             return .{ .inline_code = try allocator.dupe(u8, code) };
@@ -1554,29 +1555,31 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
                 .iterable = try allocator.dupe(u8, fe.iterable),
                 .element_type = if (fe.element_type) |et| try allocator.dupe(u8, et) else null,
                 .branches = try cloneNamedBranches(allocator, fe.branches),
-            }};
+            } };
         },
         .conditional => |cond| {
             // Clone conditional - uses uniform NamedBranch structure
-            return .{ .conditional = .{
-                .condition = try allocator.dupe(u8, cond.condition),
-                .condition_expr = cond.condition_expr, // Expression cloning is complex, for now just copy pointer
-                .branches = try cloneNamedBranches(allocator, cond.branches),
-            }};
+            return .{
+                .conditional = .{
+                    .condition = try allocator.dupe(u8, cond.condition),
+                    .condition_expr = cond.condition_expr, // Expression cloning is complex, for now just copy pointer
+                    .branches = try cloneNamedBranches(allocator, cond.branches),
+                },
+            };
         },
         .capture => |cap| {
             // Clone capture - uses uniform NamedBranch structure
             return .{ .capture = .{
                 .init_expr = try allocator.dupe(u8, cap.init_expr),
                 .branches = try cloneNamedBranches(allocator, cap.branches),
-            }};
+            } };
         },
         .switch_result => |sr| {
             // Clone switch_result - uses uniform NamedBranch structure
             return .{ .switch_result = .{
                 .expression = try allocator.dupe(u8, sr.expression),
                 .branches = try cloneNamedBranches(allocator, sr.branches),
-            }};
+            } };
         },
         .assignment => |asgn| {
             // Clone assignment - fields need recursive cloning
@@ -1588,7 +1591,7 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
             return .{ .assignment = .{
                 .target = try allocator.dupe(u8, asgn.target),
                 .fields = cloned_fields,
-            }};
+            } };
         },
     }
 }
@@ -2240,14 +2243,7 @@ pub fn pruneBackendOnly(
                     return true;
                 },
                 // All other item types are kept (no annotations to check)
-                .module_decl,
-                .flow,
-                .event_tap,
-                .label_decl,
-                .immediate_impl,
-                .import_decl,
-                .host_line,
-                .host_type_decl => return true,
+                .module_decl, .flow, .event_tap, .label_decl, .immediate_impl, .import_decl, .host_line, .host_type_decl => return true,
             }
         }
     };
@@ -2339,12 +2335,176 @@ pub fn findContinuationByBranch(
     flow: *const ast.Flow,
     branch_name: []const u8,
 ) ?*const ast.Continuation {
-    for (flow.continuations) |*cont| {
+    return findContinuationByBranchInSlice(flow.continuations, branch_name);
+}
+
+/// Find a continuation branch by name in an arbitrary continuation slice
+/// Returns the first continuation matching the branch name, or null if not found
+pub fn findContinuationByBranchInSlice(
+    continuations: []const ast.Continuation,
+    branch_name: []const u8,
+) ?*const ast.Continuation {
+    for (continuations) |*cont| {
         if (std.mem.eql(u8, cont.branch, branch_name)) {
             return cont;
         }
     }
     return null;
+}
+
+/// Find the continuation whose node is the target invocation.
+/// Recurses into nested continuations.
+pub fn findContinuationContainingInvocation(
+    continuations: []const ast.Continuation,
+    target_invocation: *const ast.Invocation,
+) ?*const ast.Continuation {
+    for (continuations) |*cont| {
+        if (cont.node) |*node| {
+            if (node.* == .invocation and &node.invocation == target_invocation) {
+                return cont;
+            }
+        }
+
+        if (findContinuationContainingInvocation(cont.continuations, target_invocation)) |found| {
+            return found;
+        }
+    }
+
+    return null;
+}
+
+pub const LexicalSubtreeWalkControl = enum {
+    continue_walk,
+    stop,
+};
+
+pub const LexicalSubtreeVisit = union(enum) {
+    continuation: *const ast.Continuation,
+    node: struct {
+        continuation: ?*const ast.Continuation,
+        node: *const ast.Node,
+    },
+    invocation: struct {
+        continuation: ?*const ast.Continuation,
+        invocation: *const ast.Invocation,
+    },
+};
+
+/// Walk a lexical continuation subtree in source order.
+///
+/// Visits:
+/// - the continuation itself
+/// - its node/invocation (if present)
+/// - any nested continuation bodies reachable through the continuation tree
+/// - branch bodies nested inside structured AST nodes (foreach/conditional/capture/switch_result)
+pub fn walkLexicalContinuationSubtree(
+    comptime Context: type,
+    root: *const ast.Continuation,
+    context: *Context,
+    visitor: fn (context: *Context, visit: LexicalSubtreeVisit) anyerror!LexicalSubtreeWalkControl,
+) anyerror!void {
+    _ = try walkLexicalContinuationSubtreeInner(Context, root, context, visitor);
+}
+
+fn walkLexicalContinuationSubtreeInner(
+    comptime Context: type,
+    continuation: *const ast.Continuation,
+    context: *Context,
+    visitor: fn (context: *Context, visit: LexicalSubtreeVisit) anyerror!LexicalSubtreeWalkControl,
+) anyerror!bool {
+    if (try visitor(context, .{ .continuation = continuation }) == .stop) {
+        return true;
+    }
+
+    if (continuation.node) |*node| {
+        if (try walkLexicalNodeInner(Context, node, continuation, context, visitor)) {
+            return true;
+        }
+    }
+
+    for (continuation.continuations) |*nested| {
+        if (try walkLexicalContinuationSubtreeInner(Context, nested, context, visitor)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn walkLexicalNodeInner(
+    comptime Context: type,
+    node: *const ast.Node,
+    owning_continuation: ?*const ast.Continuation,
+    context: *Context,
+    visitor: fn (context: *Context, visit: LexicalSubtreeVisit) anyerror!LexicalSubtreeWalkControl,
+) anyerror!bool {
+    switch (node.*) {
+        .invocation => |*invocation| {
+            if (try visitor(context, .{ .invocation = .{
+                .continuation = owning_continuation,
+                .invocation = invocation,
+            } }) == .stop) {
+                return true;
+            }
+        },
+        else => {
+            if (try visitor(context, .{ .node = .{
+                .continuation = owning_continuation,
+                .node = node,
+            } }) == .stop) {
+                return true;
+            }
+        },
+    }
+
+    switch (node.*) {
+        .conditional_block => |*cb| {
+            for (cb.nodes) |*child_node| {
+                if (try walkLexicalNodeInner(Context, child_node, owning_continuation, context, visitor)) {
+                    return true;
+                }
+            }
+        },
+        .foreach => |*fe| {
+            for (fe.branches) |*branch| {
+                for (branch.body) |*cont| {
+                    if (try walkLexicalContinuationSubtreeInner(Context, cont, context, visitor)) {
+                        return true;
+                    }
+                }
+            }
+        },
+        .conditional => |*cond| {
+            for (cond.branches) |*branch| {
+                for (branch.body) |*cont| {
+                    if (try walkLexicalContinuationSubtreeInner(Context, cont, context, visitor)) {
+                        return true;
+                    }
+                }
+            }
+        },
+        .capture => |*cap| {
+            for (cap.branches) |*branch| {
+                for (branch.body) |*cont| {
+                    if (try walkLexicalContinuationSubtreeInner(Context, cont, context, visitor)) {
+                        return true;
+                    }
+                }
+            }
+        },
+        .switch_result => |*sr| {
+            for (sr.branches) |*branch| {
+                for (branch.body) |*cont| {
+                    if (try walkLexicalContinuationSubtreeInner(Context, cont, context, visitor)) {
+                        return true;
+                    }
+                }
+            }
+        },
+        else => {},
+    }
+
+    return false;
 }
 
 /// Get all continuation branches from a flow (cloned)
@@ -2767,10 +2927,10 @@ fn cloneInlinedEvent(allocator: std.mem.Allocator, inlined: *const ast.InlinedEv
 
 /// Result of binding type resolution
 pub const ResolvedBinding = struct {
-    event_name: []const u8,     // Name of the event that produced this binding (e.g., "getUserData")
-    branch_name: []const u8,    // Branch name that produced this binding (e.g., "data")
-    fields: []const ast.Field,  // Fields from the branch payload
-    module: []const u8,         // Module containing the event
+    event_name: []const u8, // Name of the event that produced this binding (e.g., "getUserData")
+    branch_name: []const u8, // Branch name that produced this binding (e.g., "data")
+    fields: []const ast.Field, // Fields from the branch payload
+    module: []const u8, // Module containing the event
 };
 
 /// Find the flow that contains a specific invocation by walking the AST

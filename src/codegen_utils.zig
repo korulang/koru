@@ -255,20 +255,26 @@ fn parseValue(
         }
 
         if (c == '{') {
-            // Check if this is an array initializer (preceded by type like [3]i32)
-            // Array literals: [3]i32{ 0, 0, 0 } - don't add '.'
-            // Struct literals: { field: value } - add '.'
-            const is_array_init = blk: {
-                if (i == 0) break :blk false;
+            // Check what precedes the '{':
+            // Array literals: [3]i32{ 0, 0, 0 } - no '.', no field parsing
+            // Typed struct literals: IntConfig{ value: 42 } - no '.', YES field parsing  
+            // Anonymous struct literals: { field: value } - add '.', YES field parsing
+            var is_array_init = false;
+            var is_typed_struct = false;
+            if (i > 0) {
                 var j = i - 1;
-                // Skip backwards over type name (identifier chars)
-                while (j > 0 and (std.ascii.isAlphanumeric(input[j]) or input[j] == '_')) {
+                // Skip whitespace
+                while (j > 0 and (input[j] == ' ' or input[j] == '\t')) {
                     j -= 1;
                 }
-                break :blk input[j] == ']';
-            };
+                if (input[j] == ']') {
+                    is_array_init = true;
+                } else if (std.ascii.isAlphanumeric(input[j]) or input[j] == '_') {
+                    is_typed_struct = true;
+                }
+            }
             brace_depth += 1;
-            if (!is_array_init) {
+            if (!is_array_init and !is_typed_struct) {
                 try result.append(allocator, '.');
             }
             try result.append(allocator, '{');
@@ -278,7 +284,7 @@ fn parseValue(
                 try result.append(allocator, input[i]);
                 i += 1;
             }
-            // Parse nested fields ONLY for struct literals, not array initializers
+            // Parse nested fields for struct literals (typed or anonymous), NOT for array initializers
             if (!is_array_init and i < input.len and input[i] != '}') {
                 i = try parseFieldAndValue(allocator, input, i, result);
             }

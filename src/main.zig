@@ -1159,6 +1159,7 @@ const TransformEvent = struct {
     match_name: []const u8, // e.g., "if" - event name with dots for matching
     event_name: []const u8, // e.g., "if" - original event name for handler struct lookup
     module_path: ?[]const u8, // e.g., "koru_std.control" for stdlib, null for main_module
+    claims_descendants: bool = false, // Transform should run before walking lexical descendants
     has_source: bool, // Event accepts source: Source[T] parameter
     has_expression: bool, // Event accepts expr: Expression parameter
     has_optional_expression: bool = false, // Event accepts expr: ?Expression parameter (optional, may be null)
@@ -1252,6 +1253,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
 
             // Check if this event has [transform] annotation
             const has_transform = annotation_parser.hasPart(event_decl.annotations, "transform");
+            const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
 
             if (has_transform and transform_count < 16) {
                 const stub_name = try joinPathSegments(allocator, event_decl.path.segments);
@@ -1309,6 +1311,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                     .match_name = match_name,
                     .event_name = stub_name, // For top-level, stub_name = event_name
                     .module_path = null, // Top-level events are in main_module
+                    .claims_descendants = claims_descendants,
                     .has_source = has_source,
                     .has_expression = has_expression,
                     .has_optional_expression = has_optional_expression,
@@ -1336,6 +1339,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
 
                     // Check if this event has [transform] annotation
                     const has_transform = annotation_parser.hasPart(event_decl.annotations, "transform");
+                    const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
 
                     if (has_transform and transform_count < 16) {
                         const event_name = try joinPathSegments(allocator, event_decl.path.segments);
@@ -1444,6 +1448,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                             .match_name = match_name,
                             .event_name = event_name_duped,
                             .module_path = module_path, // Transform is in imported module
+                            .claims_descendants = claims_descendants,
                             .has_source = has_source,
                             .has_expression = has_expression,
                             .has_optional_expression = has_optional_expression,
@@ -1723,6 +1728,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     .match_name = match_name,
                     .event_name = stub_name, // For top-level, stub_name = event_name
                     .module_path = null, // Top-level events are in main_module
+                    .claims_descendants = false,
                     .has_source = has_source_param,
                     .has_expression = has_expression_param,
                     .has_optional_expression = has_optional_expression_param,
@@ -1870,6 +1876,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .match_name = match_name,
                             .event_name = event_name, // Original event name for handler lookup
                             .module_path = module_path,
+                            .claims_descendants = false,
                             .has_source = has_source_param,
                             .has_expression = has_expression_param,
                             .has_optional_expression = has_optional_expression_param,
@@ -2197,7 +2204,11 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
     // Generate dispatch table entries for Koru-defined handlers (both transform and derive)
     for (transform_events[0..transform_count]) |event| {
-        const entry_line = try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .handler_fn = call_handler_{s} }},\n", .{ event.match_name, event.stub_name });
+        const entry_line = try std.fmt.bufPrint(&buf, "        .{{ .name = \"{s}\", .claims_descendants = {s}, .handler_fn = call_handler_{s} }},\n", .{
+            event.match_name,
+            if (event.claims_descendants) "true" else "false",
+            event.stub_name,
+        });
         try code_emitter.write(entry_line);
     }
 
@@ -2289,7 +2300,6 @@ fn joinPathSegmentsWithDots(allocator: std.mem.Allocator, segments: []const []co
 
 /// Match a pattern against a value using glob semantics
 /// Patterns can use * for wildcards (e.g., log.* matches log.info)
-
 /// Generate the visitor pattern backend
 fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_file: *ast.Program) !void {
     _ = allocator;
@@ -2715,10 +2725,7 @@ fn installZigDirect(allocator: std.mem.Allocator) !void {
     const zig_version = "0.15.1";
 
     // Build download URL (format: zig-{arch}-{os}-{version}.tar.xz)
-    const url = std.fmt.allocPrint(allocator,
-        "https://ziglang.org/download/{s}/zig-{s}-{s}-{s}.{s}",
-        .{ zig_version, arch_str, os_str, zig_version, ext }
-    ) catch {
+    const url = std.fmt.allocPrint(allocator, "https://ziglang.org/download/{s}/zig-{s}-{s}-{s}.{s}", .{ zig_version, arch_str, os_str, zig_version, ext }) catch {
         std.debug.print("  \x1b[31m✗\x1b[0m Failed to build download URL\n", .{});
         return;
     };
@@ -2737,7 +2744,7 @@ fn installZigDirect(allocator: std.mem.Allocator) !void {
     };
     defer allocator.free(install_dir);
 
-    const zig_dir = std.fmt.allocPrint(allocator, "zig-{s}-{s}-{s}", .{arch_str, os_str, zig_version}) catch {
+    const zig_dir = std.fmt.allocPrint(allocator, "zig-{s}-{s}-{s}", .{ arch_str, os_str, zig_version }) catch {
         std.debug.print("  \x1b[31m✗\x1b[0m Failed to build zig dir name\n", .{});
         return;
     };
@@ -2756,15 +2763,9 @@ fn installZigDirect(allocator: std.mem.Allocator) !void {
 
     // Download and extract
     const download_cmd = if (builtin.os.tag == .windows)
-        std.fmt.allocPrint(allocator,
-            "cd {s} && curl -LSso zig.zip {s} && unzip -o zig.zip && del zig.zip",
-            .{ install_dir, url }
-        ) catch return
+        std.fmt.allocPrint(allocator, "cd {s} && curl -LSso zig.zip {s} && unzip -o zig.zip && del zig.zip", .{ install_dir, url }) catch return
     else
-        std.fmt.allocPrint(allocator,
-            "cd {s} && curl -LSs {s} | tar -xJ",
-            .{ install_dir, url }
-        ) catch return;
+        std.fmt.allocPrint(allocator, "cd {s} && curl -LSs {s} | tar -xJ", .{ install_dir, url }) catch return;
     defer allocator.free(download_cmd);
 
     const result = std.process.Child.run(.{
@@ -2787,7 +2788,7 @@ fn installZigDirect(allocator: std.mem.Allocator) !void {
         return;
     }
 
-    const zig_path = std.fmt.allocPrint(allocator, "{s}/{s}", .{install_dir, zig_dir}) catch return;
+    const zig_path = std.fmt.allocPrint(allocator, "{s}/{s}", .{ install_dir, zig_dir }) catch return;
     defer allocator.free(zig_path);
 
     std.debug.print("  \x1b[32m✓\x1b[0m Installed to {s}\n", .{zig_path});
@@ -3571,7 +3572,7 @@ fn parseSubcommands(allocator: std.mem.Allocator, json_text: []const u8) ![]Subc
                 }
 
                 if (brace_depth == 0) {
-                    const obj_text = rest[obj_start .. i];
+                    const obj_text = rest[obj_start..i];
 
                     // Extract name and description from this object
                     const sub_name = extractJsonStringField(obj_text, "name");
@@ -6028,7 +6029,7 @@ pub fn main() !void {
                 potential_command_arg = potential_command;
                 // Capture any trailing args after the command (subcommands/flags like "install", "--pm")
                 if (arg_idx + 2 < args.len) {
-                    command_trailing_args = args[arg_idx + 2..];
+                    command_trailing_args = args[arg_idx + 2 ..];
                 }
             }
             break;
@@ -6762,7 +6763,7 @@ pub fn main() !void {
         // Use ChildProcess directly to allow stdin inheritance for interactive features like --inter
         var child = std.process.Child.init(backend_args_list.items, allocator);
         child.cwd = output_dir_for_build;
-        child.stdin_behavior = .Inherit;  // Allow interactive stdin for --inter REPL
+        child.stdin_behavior = .Inherit; // Allow interactive stdin for --inter REPL
         child.stdout_behavior = .Inherit; // Stream output directly
         child.stderr_behavior = .Inherit; // Stream errors directly
 

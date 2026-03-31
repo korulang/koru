@@ -188,6 +188,11 @@ pub const TransformEntry = struct {
     /// Name of the transform event (e.g., "std.control.if", "renderHTML")
     name: []const u8,
 
+    /// When true, this transform claims its lexical descendants and is checked
+    /// before child traversal. This lets region-owning constructs see raw
+    /// downstream structure before peer transforms rewrite it.
+    claims_descendants: bool = false,
+
     /// Handler function that takes (node, program, allocator) and returns transformed program
     /// - node: The ASTNode being transformed (will be .invocation for transforms)
     /// - program: The current program AST
@@ -280,6 +285,25 @@ fn walkNode(
     transforms: []const TransformEntry,
     allocator: std.mem.Allocator,
 ) !WalkResult {
+    // Claimed-region transforms are checked BEFORE children on the nearest
+    // lexical container that owns the invocation. This is the one place where
+    // we intentionally violate normal depth-first ordering.
+    if (getClaimCandidate(node)) |candidate| {
+        if (!candidate.isAlreadyTransformed()) {
+            for (transforms) |transform| {
+                if (!transform.claims_descendants) continue;
+                if (!candidate.matchesTransform(transform.name)) continue;
+
+                const claim_result = try applyTransform(candidate, program, transform, allocator);
+                if (claim_result.found) {
+                    return claim_result;
+                }
+
+                break;
+            }
+        }
+    }
+
     // DEPTH-FIRST: Walk children first
     const children = try node.children(allocator);
     defer allocator.free(children);
@@ -317,88 +341,9 @@ fn walkNode(
 
         // Check if this invocation matches any transform
         for (transforms) |transform| {
+            if (transform.claims_descendants) continue;
             if (node.matchesTransform(transform.name)) {
-                const transformed = try transform.handler_fn(node, program, allocator);
-
-                // If a transform returns the same pointer, it can't/won't transform
-                // this invocation (e.g., already processed via inline_body but not
-                // annotated with @pass_ran). Instead of aborting all transforms,
-                // mark the invocation as processed so the walker skips it, and
-                // continue looking for other transforms.
-                if (transformed == program) {
-                    log.debug("Transform '{s}' returned same pointer, marking as processed\n", .{transform.name});
-                    const mutable_inv = @constCast(node.invocation);
-                    const new_annotations = allocator.alloc([]const u8, mutable_inv.annotations.len + 1) catch {
-                        return error.TransformReturnedSamePointer;
-                    };
-                    for (mutable_inv.annotations, 0..) |ann, ai| {
-                        new_annotations[ai] = ann;
-                    }
-                    new_annotations[mutable_inv.annotations.len] = "@pass_ran(\"transform\")";
-                    mutable_inv.annotations = new_annotations;
-
-                    // Also strip Source/Expression args so the emitter doesn't see
-                    // comptime-only parameters on a passthrough transform.
-                    var clean_count: usize = 0;
-                    for (mutable_inv.args) |arg| {
-                        if (arg.source_value == null and arg.expression_value == null) {
-                            clean_count += 1;
-                        }
-                    }
-                    if (clean_count < mutable_inv.args.len) {
-                        const clean_args = allocator.alloc(Arg, clean_count) catch {
-                            return error.TransformReturnedSamePointer;
-                        };
-                        var ci: usize = 0;
-                        for (mutable_inv.args) |arg| {
-                            if (arg.source_value == null and arg.expression_value == null) {
-                                clean_args[ci] = arg;
-                                ci += 1;
-                            }
-                        }
-                        mutable_inv.args = clean_args;
-                    }
-
-                    // If this is a comptime-only invocation (had Source/Expression args),
-                    // remove the containing flow from the program so the emitter doesn't
-                    // try to generate runtime code for a comptime event.
-                    if (clean_count == 0) {
-                        // All args were comptime-only — remove this flow entirely
-                        const new_program = removeFlowFromProgram(allocator, program, node.invocation) catch {
-                            return WalkResult{ .found = false, .program = program };
-                        };
-                        if (new_program) |np| {
-                            return WalkResult{ .found = true, .program = np };
-                        }
-                    }
-
-                    // Continue walking — don't abort the entire transform pipeline
-                    return WalkResult{ .found = false, .program = program };
-                }
-
-                // CIRCUIT BREAKER: Verify the transform made progress.
-                // Count matching flows before and after - if count didn't decrease,
-                // the transform isn't making progress (infinite loop).
-                const count_before = countMatchingFlowsInProgram(transform.name, program);
-                const count_after = countMatchingFlowsInProgram(transform.name, transformed);
-
-                if (count_after >= count_before and count_before > 0) {
-                    log.debug("\n", .{});
-                    log.debug("╔══════════════════════════════════════════════════════════════════╗\n", .{});
-                    log.debug("║  TRANSFORM ERROR: Invocation not replaced!                       ║\n", .{});
-                    log.debug("╚══════════════════════════════════════════════════════════════════╝\n", .{});
-                    log.debug("\n", .{});
-                    log.debug("Transform '{s}' returned a new program, but matching invocations\n", .{transform.name});
-                    log.debug("didn't decrease ({d} before, {d} after) - infinite loop detected.\n", .{count_before, count_after});
-                    log.debug("\n", .{});
-                    log.debug("FIX: Your transform must either:\n", .{});
-                    log.debug("  1. Change the invocation path (e.g., 'query.src' -> 'query.src.impl')\n", .{});
-                    log.debug("  2. Add @pass_ran(\"transform\") annotation to the new invocation\n", .{});
-                    log.debug("\n", .{});
-                    return error.TransformDidNotReplace;
-                }
-
-                return WalkResult{ .found = true, .program = transformed };
+                return try applyTransform(node, program, transform, allocator);
             }
         }
 
@@ -454,6 +399,111 @@ fn walkNode(
 
     // No transform found at this node
     return WalkResult{ .found = false, .program = program };
+}
+
+fn getClaimCandidate(node: ASTNode) ?ASTNode {
+    return switch (node) {
+        .flow => |flow| ASTNode{ .invocation = @constCast(&flow.invocation) },
+        .continuation => |cont| blk: {
+            if (cont.node) |*step| {
+                if (step.* == .invocation) {
+                    break :blk ASTNode{ .invocation = @constCast(&step.invocation) };
+                }
+            }
+            break :blk null;
+        },
+        .invocation => node,
+        else => null,
+    };
+}
+
+fn applyTransform(
+    node: ASTNode,
+    program: *const Program,
+    transform: TransformEntry,
+    allocator: std.mem.Allocator,
+) !WalkResult {
+    const transformed = try transform.handler_fn(node, program, allocator);
+
+    // If a transform returns the same pointer, it can't/won't transform
+    // this invocation (e.g., already processed via inline_body but not
+    // annotated with @pass_ran). Instead of aborting all transforms,
+    // mark the invocation as processed so the walker skips it, and
+    // continue looking for other transforms.
+    if (transformed == program) {
+        log.debug("Transform '{s}' returned same pointer, marking as processed\n", .{transform.name});
+        const mutable_inv = @constCast(node.invocation);
+        const new_annotations = allocator.alloc([]const u8, mutable_inv.annotations.len + 1) catch {
+            return error.TransformReturnedSamePointer;
+        };
+        for (mutable_inv.annotations, 0..) |ann, ai| {
+            new_annotations[ai] = ann;
+        }
+        new_annotations[mutable_inv.annotations.len] = "@pass_ran(\"transform\")";
+        mutable_inv.annotations = new_annotations;
+
+        // Also strip Source/Expression args so the emitter doesn't see
+        // comptime-only parameters on a passthrough transform.
+        var clean_count: usize = 0;
+        for (mutable_inv.args) |arg| {
+            if (arg.source_value == null and arg.expression_value == null) {
+                clean_count += 1;
+            }
+        }
+        if (clean_count < mutable_inv.args.len) {
+            const clean_args = allocator.alloc(Arg, clean_count) catch {
+                return error.TransformReturnedSamePointer;
+            };
+            var ci: usize = 0;
+            for (mutable_inv.args) |arg| {
+                if (arg.source_value == null and arg.expression_value == null) {
+                    clean_args[ci] = arg;
+                    ci += 1;
+                }
+            }
+            mutable_inv.args = clean_args;
+        }
+
+        // If this is a comptime-only invocation (had Source/Expression args),
+        // remove the containing flow from the program so the emitter doesn't
+        // try to generate runtime code for a comptime event.
+        if (clean_count == 0) {
+            // All args were comptime-only — remove this flow entirely
+            const new_program = removeFlowFromProgram(allocator, program, node.invocation) catch {
+                return WalkResult{ .found = false, .program = program };
+            };
+            if (new_program) |np| {
+                return WalkResult{ .found = true, .program = np };
+            }
+        }
+
+        // Continue walking — don't abort the entire transform pipeline
+        return WalkResult{ .found = false, .program = program };
+    }
+
+    // CIRCUIT BREAKER: Verify the transform made progress.
+    // Count matching flows before and after - if count didn't decrease,
+    // the transform isn't making progress (infinite loop).
+    const count_before = countMatchingFlowsInProgram(transform.name, program);
+    const count_after = countMatchingFlowsInProgram(transform.name, transformed);
+
+    if (count_after >= count_before and count_before > 0) {
+        log.debug("\n", .{});
+        log.debug("╔══════════════════════════════════════════════════════════════════╗\n", .{});
+        log.debug("║  TRANSFORM ERROR: Invocation not replaced!                       ║\n", .{});
+        log.debug("╚══════════════════════════════════════════════════════════════════╝\n", .{});
+        log.debug("\n", .{});
+        log.debug("Transform '{s}' returned a new program, but matching invocations\n", .{transform.name});
+        log.debug("didn't decrease ({d} before, {d} after) - infinite loop detected.\n", .{ count_before, count_after });
+        log.debug("\n", .{});
+        log.debug("FIX: Your transform must either:\n", .{});
+        log.debug("  1. Change the invocation path (e.g., 'query.src' -> 'query.src.impl')\n", .{});
+        log.debug("  2. Add @pass_ran(\"transform\") annotation to the new invocation\n", .{});
+        log.debug("\n", .{});
+        return error.TransformDidNotReplace;
+    }
+
+    return WalkResult{ .found = true, .program = transformed };
 }
 
 /// Check if an invocation matches an [expand] event and handle it
@@ -616,12 +666,12 @@ fn applyExpandTemplate(
     // Create new flow with inline_body set (emitter handles the switch generation)
     const new_flow = ast.Flow{
         .invocation = new_invocation,
-        .continuations = flow.continuations,  // Keep original continuations
+        .continuations = flow.continuations, // Keep original continuations
         .annotations = flow.annotations,
         .pre_label = flow.pre_label,
         .post_label = flow.post_label,
         .super_shape = flow.super_shape,
-        .inline_body = inline_body,  // Template output becomes inline_body
+        .inline_body = inline_body, // Template output becomes inline_body
         .preamble_code = flow.preamble_code,
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,
