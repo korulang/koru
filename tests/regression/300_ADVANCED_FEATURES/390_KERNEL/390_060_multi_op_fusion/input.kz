@@ -1,0 +1,34 @@
+// TEST: kernel/computed split — kernel ops in kernel branch, post-processing in computed
+//
+// The kernel branch is a closed region: only kernel:pairwise and kernel:self allowed.
+// The computed branch is normal code that runs after, with access to the final data.
+//
+// Today these emit separate code blocks (two ptr extractions, two loop nests).
+// Future: init should fuse the kernel branch into one block with one ptr extraction.
+//
+// Data: 3 bodies with mass = 1.0, 2.0, 3.0
+// After pairwise { k.mass += k.other.mass * 0.1 }:
+//   Each body is in 2 pairs, so each gets +0.2
+//   → 1.2, 2.2, 3.2
+// After self { k.mass *= 2.0 }:
+//   → 2.4, 4.4, 6.4
+
+~import "$std/kernel"
+~import "$std/io"
+
+~std.kernel:shape(Body) {
+    mass: f64,
+}
+
+~std.kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+    { mass: 3.0 },
+}
+| kernel k |>
+    std.kernel:pairwise { k.mass += k.other.mass * 0.1 }
+    |> std.kernel:self { k.mass *= 2.0 }
+| computed c |>
+    std.io:print.blk {
+        mass[0]={{ c[0].mass:f }} mass[1]={{ c[1].mass:f }} mass[2]={{ c[2].mass:f }}
+    }

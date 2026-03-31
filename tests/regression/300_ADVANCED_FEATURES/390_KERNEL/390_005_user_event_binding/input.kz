@@ -22,5 +22,7 @@
     { mass: 2.0 },
 }
 | kernel k |> print_mass(value: k.ptr[0].mass)
-
-~std.io:print.ln("done")
+| computed c |>
+    std.io:print.blk {
+        done, mass[0]={{ c[0].mass:f }}
+    }

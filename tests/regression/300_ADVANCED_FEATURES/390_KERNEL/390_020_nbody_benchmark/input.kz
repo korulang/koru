@@ -32,6 +32,7 @@
 }
 | kernel k |>
     std.kernel:pairwise { const dx = k.other.x - k.x; const dy = k.other.y - k.y; const dist_sq = dx*dx + dy*dy + 0.01; const f = k.mass * k.other.mass / dist_sq; k.vx += f * dx; k.vy += f * dy; k.other.vx -= f * dx; k.other.vy -= f * dy }
-
-// Print results
-~std.io:print.ln("nbody simulation complete")
+| computed c |>
+    std.io:print.blk {
+        nbody simulation complete, mass[0]={{ c[0].mass:f }}
+    }

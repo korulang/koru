@@ -1,1 +1,2 @@
 slice len=2
+done, mass[0]=1

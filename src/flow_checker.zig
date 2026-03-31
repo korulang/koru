@@ -146,7 +146,7 @@ pub const FlowChecker = struct {
                         cont.location.column,
                         "unused binding '{s}'",
                         .{binding},
-                        "remove the binding if not needed",
+                        "discard the binding using `_` if not needed",
                         .{},
                     );
                 }

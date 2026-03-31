@@ -1,1 +1,1 @@
-nbody simulation complete
+nbody simulation complete, mass[0]=1

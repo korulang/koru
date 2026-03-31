@@ -13,5 +13,7 @@
     std.kernel:pairwise {
         k.mass += k.other.mass
     }
-
-~std.io:print.ln("done")
+| computed c |>
+    std.io:print.blk {
+        done, mass[0]={{ c[0].mass:f }}
+    }

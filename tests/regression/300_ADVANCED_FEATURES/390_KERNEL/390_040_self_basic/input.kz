@@ -19,6 +19,7 @@
 }
 | kernel k |>
     std.kernel:self { k.mass *= 2.0 }
-    |> std.io:print.blk {
-        mass[0]={{ k[0].mass:f }} mass[1]={{ k[1].mass:f }} mass[2]={{ k[2].mass:f }}
+| computed c |>
+    std.io:print.blk {
+        mass[0]={{ c[0].mass:f }} mass[1]={{ c[1].mass:f }} mass[2]={{ c[2].mass:f }}
     }

@@ -1,1 +1,1 @@
-pairwise complete
+pairwise complete, mass[0]=6

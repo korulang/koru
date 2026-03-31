@@ -151,10 +151,14 @@ const std = @import("std");
     const is_top_level = (invocation == &flow.invocation);
 
     var has_kernel_continuation = false;
+    var has_computed_continuation = false;
     for (flow.continuations) |cont| {
-        if (std.mem.eql(u8, std.mem.trim(u8, cont.branch, " "), "kernel")) {
+        const branch = std.mem.trim(u8, cont.branch, " ");
+        if (std.mem.eql(u8, branch, "kernel")) {
             has_kernel_continuation = true;
-            break;
+        }
+        if (std.mem.eql(u8, branch, "computed")) {
+            has_computed_continuation = true;
         }
     }
 
@@ -329,6 +333,53 @@ const std = @import("std");
         }
     }
 
+    // Enforce: if kernel branch is present, computed branch is required
+    // Without computed, kernel results are trapped with no way to exit the scope
+    if (has_kernel_continuation and !has_computed_continuation) {
+        const computed_error = std.fmt.allocPrint(
+            allocator,
+            "comptime {{ @compileError(\"kernel:init requires | computed |> branch — without it, kernel results are trapped inside the kernel scope with no way to access them in normal code\"); }}",
+            .{},
+        ) catch unreachable;
+
+        if (is_top_level) {
+            const compile_error_item = ast.Item{
+                .inline_code = ast.InlineCode{
+                    .code = computed_error,
+                    .location = flow.location,
+                    .module = allocator.dupe(u8, flow.module) catch unreachable,
+                },
+            };
+
+            const maybe_error_program = ast_functional.replaceFlowRecursive(
+                allocator,
+                program,
+                flow,
+                compile_error_item,
+            ) catch unreachable;
+
+            if (maybe_error_program) |error_program| {
+                const result = allocator.create(ast.Program) catch unreachable;
+                result.* = error_program;
+                return .{ .transformed = .{ .program = result } };
+            }
+        } else {
+            const compile_error_node = ast.Node{ .inline_code = computed_error };
+            const maybe_error_program = ast_functional.replaceInvocationNodeRecursive(
+                allocator,
+                program,
+                invocation,
+                compile_error_node,
+            ) catch unreachable;
+
+            if (maybe_error_program) |error_program| {
+                const result = allocator.create(ast.Program) catch unreachable;
+                result.* = error_program;
+                return .{ .transformed = .{ .program = result } };
+            }
+        }
+    }
+
     // Generate a unique local event/proc name for this init
     var hash: u32 = 0;
     for (flow.module) |c| hash = hash *% 31 +% c;
@@ -453,11 +504,12 @@ const std = @import("std");
         ) catch unreachable;
 
         // Generate static-backed initialization (proof-of-concept)
+        const return_branch = if (has_computed_continuation) "computed" else "kernel";
         proc_body = std.fmt.allocPrint(
             allocator,
-            \\return .{{ .kernel = {s}[0..] }};
+            \\return .{{ .{s} = {s}[0..] }};
             ,
-            .{ static_name }
+            .{ return_branch, static_name }
         ) catch unreachable;
     } else {
         // Single mode: just one struct instance
@@ -469,11 +521,12 @@ const std = @import("std");
             ,
             .{ static_name, type_name, single_init }
         ) catch unreachable;
+        const return_branch = if (has_computed_continuation) "computed" else "kernel";
         proc_body = std.fmt.allocPrint(
             allocator,
-            \\return .{{ .kernel = {s}[0..] }};
+            \\return .{{ .{s} = {s}[0..] }};
             ,
-            .{ static_name }
+            .{ return_branch, static_name }
         ) catch unreachable;
     }
 
@@ -534,12 +587,23 @@ const std = @import("std");
                 .type = slice_type,
             };
 
-            const branches = allocator.alloc(ast.Branch, 1) catch unreachable;
-            const kernel_branch_optional = !has_kernel_continuation;
+            const computed_fields = allocator.alloc(ast.Field, 1) catch unreachable;
+            computed_fields[0] = ast.Field{
+                .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+                .type = slice_type,
+            };
+
+            const branches = allocator.alloc(ast.Branch, 2) catch unreachable;
             branches[0] = ast.Branch{
                 .name = allocator.dupe(u8, "kernel") catch unreachable,
                 .payload = ast.Shape{ .fields = branch_fields },
-                .is_optional = kernel_branch_optional,
+                .is_optional = !has_kernel_continuation,
+                .annotations = &[_][]const u8{},
+            };
+            branches[1] = ast.Branch{
+                .name = allocator.dupe(u8, "computed") catch unreachable,
+                .payload = ast.Shape{ .fields = computed_fields },
+                .is_optional = true,
                 .annotations = &[_][]const u8{},
             };
 
@@ -615,12 +679,23 @@ const std = @import("std");
             .type = slice_type,
         };
 
-        const branches = allocator.alloc(ast.Branch, 1) catch unreachable;
-        const kernel_branch_optional = !has_kernel_continuation;
+        const computed_fields = allocator.alloc(ast.Field, 1) catch unreachable;
+        computed_fields[0] = ast.Field{
+            .name = allocator.dupe(u8, "__type_ref") catch unreachable,
+            .type = slice_type,
+        };
+
+        const branches = allocator.alloc(ast.Branch, 2) catch unreachable;
         branches[0] = ast.Branch{
             .name = allocator.dupe(u8, "kernel") catch unreachable,
             .payload = ast.Shape{ .fields = branch_fields },
-            .is_optional = kernel_branch_optional,
+            .is_optional = !has_kernel_continuation,
+            .annotations = &[_][]const u8{},
+        };
+        branches[1] = ast.Branch{
+            .name = allocator.dupe(u8, "computed") catch unreachable,
+            .payload = ast.Shape{ .fields = computed_fields },
+            .is_optional = true,
             .annotations = &[_][]const u8{},
         };
 

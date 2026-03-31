@@ -1,0 +1,32 @@
+// TEST: kernel:init requires | computed |> branch
+//
+// Without | computed |>, kernel results are trapped inside the kernel scope
+// with no way to access them in normal code. The computed branch is the
+// exit from the kernel region — it receives the final data after kernel ops
+// complete and runs normal (non-kernel) post-processing code.
+//
+// This test verifies that init rejects the pattern:
+//   ~std.kernel:init(Body) { ... }
+//   | kernel k |>
+//       ...
+//   // missing: | computed c |>
+//
+// Correct form:
+//   ~std.kernel:init(Body) { ... }
+//   | kernel k |>
+//       ...
+//   | computed c |>
+//       // post-processing with access to final data
+
+~import "$std/kernel"
+
+~std.kernel:shape(Body) {
+    mass: f64,
+}
+
+~std.kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+}
+| kernel k |>
+    std.kernel:self { k.mass *= 2.0 }

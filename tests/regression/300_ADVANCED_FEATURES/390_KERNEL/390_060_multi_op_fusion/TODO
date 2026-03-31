@@ -1,0 +1,1 @@
+kernel/computed wiring: kernel ops must be fused into flow before computed branch. Requires init to collect ops and emit them inline.

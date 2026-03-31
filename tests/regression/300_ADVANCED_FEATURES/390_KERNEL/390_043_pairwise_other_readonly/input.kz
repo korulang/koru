@@ -24,5 +24,7 @@
     std.kernel:pairwise {
         k.mass += k.other.mass
     }
-
-~std.io:print.ln("pairwise complete")
+| computed c |>
+    std.io:print.blk {
+        pairwise complete, mass[0]={{ c[0].mass:f }}
+    }
