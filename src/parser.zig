@@ -4717,12 +4717,52 @@ pub const Parser = struct {
 
                     // This is the step content - consume it
                     self.current += 1;
+                    const step_indent = next_indent;
 
                     // Build full_rest as "|> " + next line content
                     var next_buf = try std.ArrayList(u8).initCapacity(self.allocator, 256);
                     defer next_buf.deinit(self.allocator);
                     try next_buf.appendSlice(self.allocator, "|> ");
                     try next_buf.appendSlice(self.allocator, next_trimmed);
+
+                    // Also consume any subsequent |> pipeline steps at the same indent
+                    // This handles three-level chains: step(0..N) |> pairwise { } |> self { }
+                    while (self.current < self.lines.len) {
+                        const chain_line = self.lines[self.current];
+                        const chain_indent = lexer.getIndent(chain_line);
+                        const chain_trimmed = lexer.trim(chain_line);
+
+                        // Must be at the same indent level as the step line and start with |>
+                        if (chain_indent != step_indent) break;
+                        if (chain_trimmed.len < 2 or chain_trimmed[0] != '|' or chain_trimmed[1] != '>') break;
+
+                        // Consume this |> step line
+                        self.current += 1;
+
+                        // Check if this step has a Source block (opening brace without closing)
+                        // If so, we need to collect the multi-line body
+                        const step_content = lexer.trim(chain_trimmed[2..]);
+                        const has_open_brace = std.mem.indexOf(u8, step_content, "{") != null;
+                        const has_close_brace = std.mem.indexOf(u8, step_content, "}") != null;
+
+                        try next_buf.appendSlice(self.allocator, "\n");
+                        try next_buf.appendSlice(self.allocator, chain_trimmed);
+
+                        if (has_open_brace and !has_close_brace) {
+                            // Multi-line Source block - collect lines until closing brace
+                            var brace_depth: i32 = 1;
+                            while (self.current < self.lines.len and brace_depth > 0) {
+                                const body_line = self.lines[self.current];
+                                const body_trimmed = lexer.trim(body_line);
+
+                                try next_buf.appendSlice(self.allocator, "\n");
+                                try next_buf.appendSlice(self.allocator, body_line);
+                                self.current += 1;
+
+                                brace_depth += lexer.countBraceDepthChange(body_trimmed);
+                            }
+                        }
+                    }
 
                     if (allocated_rest) |ar| self.allocator.free(ar);
                     allocated_rest = try next_buf.toOwnedSlice(self.allocator);

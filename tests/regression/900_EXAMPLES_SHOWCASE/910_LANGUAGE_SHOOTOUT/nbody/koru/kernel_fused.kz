@@ -1,8 +1,12 @@
-// N-body: Pure kernel single-step benchmark
+// N-body: Pure kernel benchmark
 // Forces: kernel:pairwise (symmetric, noalias)
 // Positions: kernel:self
-// Everything fused by init.
+// Everything fused by init into one handler.
 // Zero user events. Zero ~proc.
+//
+// Multi-step iteration blocked by parser bug (210_023):
+// step(N) |> pairwise { multi-line } |> self { } fails.
+// Once fixed, add: std.kernel:step(0..N) before pairwise.
 
 const std = @import("std");
 ~import "$std/kernel"
@@ -44,7 +48,11 @@ const DT: f64 = 0.01;
         k.other.vy += dy * k.mass * mag;
         k.other.vz += dz * k.mass * mag;
     }
-    |> std.kernel:self { k.x += DT * k.vx; k.y += DT * k.vy; k.z += DT * k.vz; }
+    |> std.kernel:self {
+        k.x += DT * k.vx;
+        k.y += DT * k.vy;
+        k.z += DT * k.vz;
+    }
 | computed c |>
     std.io:print.blk {
         vx[0]={{ c[0].vx:f }}

@@ -1,0 +1,32 @@
+// TEST: Parser bug — three-level |> chain with Source body fails
+//
+// Pattern (kernel-style but simplified):
+//   | branch |>
+//       event_a(0..N)
+//       |> event_b { multi-line source }
+//       |> event_c { source }
+//   | other_branch |>
+//       ...
+//
+// Parser error: branch '' has 2 continuations without 'when'
+// This blocks: step(N) |> pairwise { } |> self { }
+
+~import "$std/kernel"
+~import "$std/io"
+
+~std.kernel:shape(Body) {
+    mass: f64,
+}
+
+~std.kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+}
+| kernel k |>
+    std.kernel:step(0..3)
+    |> std.kernel:pairwise { k.mass += k.other.mass * 0.0 }
+    |> std.kernel:self { k.mass += 0.1 }
+| computed c |>
+    std.io:print.blk {
+        mass[0]={{ c[0].mass:f }}
+    }
