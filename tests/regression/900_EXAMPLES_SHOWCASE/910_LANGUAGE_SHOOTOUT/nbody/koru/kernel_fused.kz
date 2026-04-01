@@ -1,12 +1,9 @@
-// N-body: Pure kernel benchmark
+// N-body: Pure kernel multi-step benchmark
 // Forces: kernel:pairwise (symmetric, noalias)
 // Positions: kernel:self
+// Iteration: step(0..N) wrapping both ops
 // Everything fused by init into one handler.
 // Zero user events. Zero ~proc.
-//
-// Multi-step iteration blocked by parser bug (210_023):
-// step(N) |> pairwise { multi-line } |> self { } fails.
-// Once fixed, add: std.kernel:step(0..N) before pairwise.
 
 const std = @import("std");
 ~import "$std/kernel"
@@ -35,7 +32,8 @@ const DT: f64 = 0.01;
     { x: 1.53796971148509165e+01, y: -2.59193146099879641e+01, z: 1.79258772950371181e-01, vx: 2.68067772490389322e-03 * DAYS_PER_YEAR, vy: 1.62824170038242295e-03 * DAYS_PER_YEAR, vz: -9.51592254519715870e-05 * DAYS_PER_YEAR, mass: 5.15138902046611451e-05 * SOLAR_MASS },
 }
 | kernel k |>
-    std.kernel:pairwise {
+    std.kernel:step(0..50000000)
+    |> std.kernel:pairwise {
         const dx = k.x - k.other.x;
         const dy = k.y - k.other.y;
         const dz = k.z - k.other.z;
