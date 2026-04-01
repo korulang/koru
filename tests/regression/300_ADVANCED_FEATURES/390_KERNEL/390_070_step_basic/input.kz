@@ -1,0 +1,27 @@
+// TEST: kernel:step - kernel-native iteration wrapping kernel ops
+// step(0..N) wraps the kernel ops that follow it in the continuation chain.
+//
+// Data: 3 bodies with mass = 1.0, 2.0, 3.0
+// step(0..3) wrapping self { k.mass += 0.2 }
+// Each iteration: each body gains +0.2
+// After 3 iterations: 1.6, 2.6, 3.6
+
+~import "$std/kernel"
+~import "$std/io"
+
+~std.kernel:shape(Body) {
+    mass: f64,
+}
+
+~std.kernel:init(Body) {
+    { mass: 1.0 },
+    { mass: 2.0 },
+    { mass: 3.0 },
+}
+| kernel k |>
+    std.kernel:step(0..3)
+    |> std.kernel:self { k.mass += 0.2 }
+| computed c |>
+    std.io:print.blk {
+        mass[0]={{ c[0].mass:f }} mass[1]={{ c[1].mass:f }} mass[2]={{ c[2].mass:f }}
+    }

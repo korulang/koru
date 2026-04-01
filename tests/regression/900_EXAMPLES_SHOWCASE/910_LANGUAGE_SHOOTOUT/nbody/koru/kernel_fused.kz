@@ -1,6 +1,8 @@
-// N-body: Kernel/Computed single-step demo
-// Demonstrates fused kernel:pairwise via init + computed.
-// Multi-step iteration needs the kernel:step construct (not yet implemented).
+// N-body: Pure kernel single-step benchmark
+// Forces: kernel:pairwise (symmetric, noalias)
+// Positions: kernel:self
+// Everything fused by init.
+// Zero user events. Zero ~proc.
 
 const std = @import("std");
 ~import "$std/kernel"
@@ -42,7 +44,8 @@ const DT: f64 = 0.01;
         k.other.vy += dy * k.mass * mag;
         k.other.vz += dz * k.mass * mag;
     }
+    |> std.kernel:self { k.x += DT * k.vx; k.y += DT * k.vy; k.z += DT * k.vz; }
 | computed c |>
     std.io:print.blk {
-        pairwise fused, vx[0]={{ c[0].vx:f }}
+        vx[0]={{ c[0].vx:f }}
     }

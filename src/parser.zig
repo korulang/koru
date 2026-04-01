@@ -1665,15 +1665,15 @@ pub const Parser = struct {
         }
 
         const delimiter_idx = brace_idx_opt orelse {
-                try self.reporter.addError(
-                    .PARSE003,
-                    self.current - 1,
-                    1,
-                    "proc declaration missing body",
-                    .{},
-                );
-                return error.ParseError;
-            };
+            try self.reporter.addError(
+                .PARSE003,
+                self.current - 1,
+                1,
+                "proc declaration missing body",
+                .{},
+            );
+            return error.ParseError;
+        };
 
         const parsed_path_str = lexer.trim(after_proc[0..delimiter_idx]);
 
@@ -2737,7 +2737,7 @@ pub const Parser = struct {
                 if (has_source_param) {
                     // Parse as Source block (raw text) - used by both implicit flow and templates
                     uses_implicit_source = true;
-                    const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), null);
+                    const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), null, false);
                     implicit_source_text = result.source;
                     implicit_source_phantom_type = result.phantom_type;
                     continuations = result.continuations;
@@ -2751,7 +2751,7 @@ pub const Parser = struct {
                 // Assume it takes a Source parameter (optimistic parsing).
                 // If it's truly invalid, later passes will catch it after keyword resolution.
                 uses_implicit_source = true;
-                const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), null);
+                const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), null, false);
                 implicit_source_text = result.source;
                 implicit_source_phantom_type = result.phantom_type;
                 continuations = result.continuations;
@@ -3834,7 +3834,7 @@ pub const Parser = struct {
         return all_continuations.toOwnedSlice(self.allocator);
     }
 
-    fn parseImplicitSourceBlock(self: *Parser, base_indent: usize, phantom_type: ?[]const u8) !struct { source: []const u8, continuations: []ast.Continuation, phantom_type: ?[]const u8 } {
+    fn parseImplicitSourceBlock(self: *Parser, base_indent: usize, phantom_type: ?[]const u8, strict: bool) !struct { source: []const u8, continuations: []ast.Continuation, phantom_type: ?[]const u8 } {
         // Parse Source content inside {} as raw text, then any output continuations after
         // Source is captured as a string - no parsing of flows inside
         //
@@ -3915,8 +3915,12 @@ pub const Parser = struct {
         const source = source_buf[0..pos];
 
         // Now parse any output continuations after the }
-        // These are DIRECT continuations of the invocation (not siblings), so use normal mode
-        const output_continuations = try self.parseContinuations(base_indent);
+        // In strict mode (pipeline context), only collect continuations MORE indented than base_indent
+        // This prevents sibling branches at the pipeline level from being consumed as children
+        const output_continuations = if (strict)
+            try self.parseContinuationsWithMode(base_indent, true)
+        else
+            try self.parseContinuations(base_indent);
 
         return .{
             .source = source,
@@ -4957,7 +4961,7 @@ pub const Parser = struct {
             if (has_source_param) {
                 // This IS a Source block - parse it properly!
                 log_debug("[DEBUG] parsePipelineContinuationBase: has_source_param=true, path={s}\n", .{path_str});
-                const result = try self.parseImplicitSourceBlock(indent, null);
+                const result = try self.parseImplicitSourceBlock(indent, null, true);
                 log_debug("[DEBUG] parseImplicitSourceBlock returned source len={d}\n", .{result.source.len});
 
                 // Create the invocation with source_value
@@ -6241,7 +6245,8 @@ pub const Parser = struct {
             if (std.mem.eql(u8, field_type, "Source") or std.mem.startsWith(u8, field_type, "Source[")) {
                 is_source = true;
             } else if (std.mem.eql(u8, field_type, "Expression") or std.mem.startsWith(u8, field_type, "Expression[") or
-                       std.mem.eql(u8, field_type, "?Expression") or std.mem.startsWith(u8, field_type, "?Expression[")) {
+                std.mem.eql(u8, field_type, "?Expression") or std.mem.startsWith(u8, field_type, "?Expression["))
+            {
                 is_expression = true;
             } else if (std.mem.eql(u8, field_type, "File")) {
                 is_file = true;
@@ -6864,7 +6869,7 @@ test "parser handles complex nested proc body extraction" {
 test "parser handles import statement" {
     const allocator = std.testing.allocator;
 
-    const source = 
+    const source =
         \\~import math = "std/math.kz"
     ;
 
