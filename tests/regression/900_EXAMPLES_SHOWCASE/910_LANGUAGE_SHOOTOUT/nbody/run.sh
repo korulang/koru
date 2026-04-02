@@ -29,6 +29,10 @@ echo "  Koru arrayed_capture..."
 (cd ../_archive/2101f_nbody_arrayed_capture && zig build -Doptimize=ReleaseFast 2>/dev/null)
 zig build-exe ../_archive/2101f_nbody_arrayed_capture/output_emitted.zig -O ReleaseFast -fno-emit-bin -femit-bin=bin/koru-arrayed-capture 2>/dev/null
 
+echo "  Koru kernel_fused (step+pairwise+self)..."
+koruc koru/kernel_fused.kz 2>/dev/null
+zig build-exe koru/output_emitted.zig -O ReleaseFast -fno-emit-bin -femit-bin=bin/koru-kernel-fused 2>/dev/null
+
 # Reference implementations
 echo "  Zig..."
 zig build-exe reference/nbody.zig -O ReleaseFast -fno-emit-bin -femit-bin=bin/zig-nbody 2>/dev/null
@@ -46,6 +50,7 @@ echo "Verifying outputs (1000 iterations)..."
 
 KORU_KP=$(bin/koru-kernel-pairwise 1000 2>&1)
 KORU_AC=$(bin/koru-arrayed-capture 1000 2>&1)
+KORU_KF=$(bin/koru-kernel-fused 1000 2>&1)
 ZIG=$(bin/zig-nbody 1000 2>&1)
 RUST=$(bin/rust-nbody 1000 2>&1)
 C=$(bin/c-nbody 1000 2>&1)
@@ -53,6 +58,7 @@ C=$(bin/c-nbody 1000 2>&1)
 MISMATCH=""
 [ "$KORU_KP" != "$ZIG" ] && MISMATCH="$MISMATCH koru-kernel-pairwise"
 [ "$KORU_AC" != "$ZIG" ] && MISMATCH="$MISMATCH koru-arrayed-capture"
+[ "$KORU_KF" != "$ZIG" ] && MISMATCH="$MISMATCH koru-kernel-fused"
 [ "$RUST" != "$ZIG" ] && MISMATCH="$MISMATCH rust"
 [ "$C" != "$ZIG" ] && MISMATCH="$MISMATCH c"
 
@@ -62,6 +68,7 @@ if [ -n "$MISMATCH" ]; then
     echo "Zig:               $ZIG"
     echo "Koru kernel:       $KORU_KP"
     echo "Koru arrayed:      $KORU_AC"
+    echo "Koru fused:        $KORU_KF"
     echo "Rust:              $RUST"
     echo "C:                 $C"
     exit 1
@@ -81,6 +88,7 @@ hyperfine \
     --export-json "results.json" \
     -n "Koru (kernel:pairwise)" "bin/koru-kernel-pairwise $ITERS" \
     -n "Koru (arrayed capture)" "bin/koru-arrayed-capture $ITERS" \
+    -n "Koru (kernel fused)" "bin/koru-kernel-fused $ITERS" \
     -n "Zig" "bin/zig-nbody $ITERS" \
     -n "Rust" "bin/rust-nbody $ITERS" \
     -n "C" "bin/c-nbody $ITERS"
