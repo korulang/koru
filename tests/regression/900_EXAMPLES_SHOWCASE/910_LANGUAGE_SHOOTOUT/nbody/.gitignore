@@ -1,0 +1,9 @@
+bin/
+results.json
+# Build artifacts
+reference/*.fasl
+# Whitelist reference source files hidden by parent gitignore
+!reference/*.zig
+!reference/*.rs
+!reference/*.lisp
+!reference/*.hs
