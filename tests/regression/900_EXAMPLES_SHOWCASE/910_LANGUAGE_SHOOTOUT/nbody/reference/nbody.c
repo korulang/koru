@@ -81,8 +81,6 @@ int main(int argc, char *argv[]) {
     }
     int n = atoi(argv[1]);
 
-    offset_momentum(bodies);
-    fprintf(stderr, "%.9f\n", energy(bodies));
     for (int i = 0; i < n; i++) advance(bodies, 0.01);
     fprintf(stderr, "%.9f\n", energy(bodies));
     return 0;

@@ -77,5 +77,5 @@ var iterations: usize = 50000000;
                     captured { energy: acc.energy - c[i].mass*c[j].mass / @sqrt((c[i].x-c[j].x)*(c[i].x-c[j].x)+(c[i].y-c[j].y)*(c[i].y-c[j].y)+(c[i].z-c[j].z)*(c[i].z-c[j].z)) }
     | captured final |>
         std.io:print.blk {
-            {{ final.energy:f }}
+            {{ final.energy:d:.9 }}
         }
