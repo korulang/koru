@@ -102,9 +102,9 @@ pub fn getBuildConfig(key: []const u8) ?[]const u8 {
 /// Controls which modules/taps to emit based on annotations
 /// Duplicated from visitor_emitter.zig to avoid circular dependency
 pub const EmitMode = enum {
-    all,            // Emit everything (no filtering based on comptime/runtime)
-    comptime_only,  // Emit only modules with [comptime] annotation
-    runtime_only,   // Emit only modules WITHOUT [comptime] annotation (default)
+    all, // Emit everything (no filtering based on comptime/runtime)
+    comptime_only, // Emit only modules with [comptime] annotation
+    runtime_only, // Emit only modules WITHOUT [comptime] annotation (default)
 };
 
 /// Check if an item should be filtered out based on emit mode and annotations
@@ -417,7 +417,7 @@ fn resolveModuleAlias(alias: []const u8, items: []const ast.Item) ?[]const u8 {
                 else blk: {
                     // Infer alias from path (e.g., "$std/build" -> "build")
                     if (std.mem.lastIndexOfScalar(u8, import.path, '/')) |last_slash| {
-                        break :blk import.path[last_slash + 1..];
+                        break :blk import.path[last_slash + 1 ..];
                     } else {
                         break :blk import.path;
                     }
@@ -591,41 +591,41 @@ pub fn writeFieldType(emitter: *CodeEmitter, field: ast.Field, main_module_name:
         // Regular type - apply prefixes for known AST/Std types to avoid shadowing
         // We use string replacement to handle pointers (*const Program) and slices ([]Item)
         const type_name = field.type;
-        
+
         // Allocator -> __koru_std.mem.Allocator
         const needle_alloc = "Allocator";
         if (std.mem.indexOf(u8, type_name, needle_alloc) != null) {
             // Check if it's explicitly std.mem.Allocator, ignore if so
-            if (std.mem.indexOf(u8, type_name, "std.mem.Allocator") == null and 
-                std.mem.indexOf(u8, type_name, "__koru_std") == null) 
+            if (std.mem.indexOf(u8, type_name, "std.mem.Allocator") == null and
+                std.mem.indexOf(u8, type_name, "__koru_std") == null)
             {
-                 const replacement = "__koru_std.mem.Allocator";
-                 var buf: [256]u8 = undefined;
-                 const count = std.mem.replace(u8, type_name, needle_alloc, replacement, &buf);
-                 const final_len = type_name.len + count * (replacement.len - needle_alloc.len);
-                 try emitter.write(buf[0..final_len]);
-                 return;
+                const replacement = "__koru_std.mem.Allocator";
+                var buf: [256]u8 = undefined;
+                const count = std.mem.replace(u8, type_name, needle_alloc, replacement, &buf);
+                const final_len = type_name.len + count * (replacement.len - needle_alloc.len);
+                try emitter.write(buf[0..final_len]);
+                return;
             }
         }
-        
+
         // AST Types -> __koru_ast.Type
         const ast_types = [_][]const u8{ "Program", "Item", "Source", "Invocation", "ASTNode", "EventDecl", "ProcDecl", "Flow", "Branch", "Continuation" };
         inline for (ast_types) |ast_type| {
-             if (std.mem.indexOf(u8, type_name, ast_type) != null) {
-                 // Avoid double prefixing
-                 if (std.mem.indexOf(u8, type_name, "ast.") == null and 
-                     std.mem.indexOf(u8, type_name, "__koru_ast") == null)
-                 {
-                     const prefixed = "__koru_ast." ++ ast_type;
-                     var buf: [256]u8 = undefined;
-                     const count = std.mem.replace(u8, type_name, ast_type, prefixed, &buf);
-                     const final_len = type_name.len + count * (prefixed.len - ast_type.len);
-                     try emitter.write(buf[0..final_len]);
-                     return;
-                 }
-             }
+            if (std.mem.indexOf(u8, type_name, ast_type) != null) {
+                // Avoid double prefixing
+                if (std.mem.indexOf(u8, type_name, "ast.") == null and
+                    std.mem.indexOf(u8, type_name, "__koru_ast") == null)
+                {
+                    const prefixed = "__koru_ast." ++ ast_type;
+                    var buf: [256]u8 = undefined;
+                    const count = std.mem.replace(u8, type_name, ast_type, prefixed, &buf);
+                    const final_len = type_name.len + count * (prefixed.len - ast_type.len);
+                    try emitter.write(buf[0..final_len]);
+                    return;
+                }
+            }
         }
-        
+
         // Fallback
         try emitter.write(type_name);
     }
@@ -1185,14 +1185,7 @@ fn emitStructLiteral(emitter: *CodeEmitter, ctx: *EmissionContext, value: []cons
                 while (i < inner.len) {
                     const c = inner[i];
                     if (!in_string) {
-                        if (c == '"') in_string = true
-                        else if (c == '(') paren_depth += 1
-                        else if (c == ')' and paren_depth > 0) paren_depth -= 1
-                        else if (c == '{') brace_depth += 1
-                        else if (c == '}' and brace_depth > 0) brace_depth -= 1
-                        else if (c == '[') bracket_depth += 1
-                        else if (c == ']' and bracket_depth > 0) bracket_depth -= 1
-                        else if (c == ',' and paren_depth == 0 and brace_depth == 0 and bracket_depth == 0) {
+                        if (c == '"') in_string = true else if (c == '(') paren_depth += 1 else if (c == ')' and paren_depth > 0) paren_depth -= 1 else if (c == '{') brace_depth += 1 else if (c == '}' and brace_depth > 0) brace_depth -= 1 else if (c == '[') bracket_depth += 1 else if (c == ']' and bracket_depth > 0) bracket_depth -= 1 else if (c == ',' and paren_depth == 0 and brace_depth == 0 and bracket_depth == 0) {
                             break;
                         }
                     } else {
@@ -1266,14 +1259,7 @@ pub fn emitArrayContents(emitter: *CodeEmitter, ctx: *EmissionContext, contents:
         while (i < contents.len) {
             const c = contents[i];
             if (!in_string) {
-                if (c == '"') in_string = true
-                else if (c == '(') paren_depth += 1
-                else if (c == ')' and paren_depth > 0) paren_depth -= 1
-                else if (c == '{') brace_depth += 1
-                else if (c == '}' and brace_depth > 0) brace_depth -= 1
-                else if (c == '[') bracket_depth += 1
-                else if (c == ']' and bracket_depth > 0) bracket_depth -= 1
-                else if (c == ',' and paren_depth == 0 and brace_depth == 0 and bracket_depth == 0) {
+                if (c == '"') in_string = true else if (c == '(') paren_depth += 1 else if (c == ')' and paren_depth > 0) paren_depth -= 1 else if (c == '{') brace_depth += 1 else if (c == '}' and brace_depth > 0) brace_depth -= 1 else if (c == '[') bracket_depth += 1 else if (c == ']' and bracket_depth > 0) bracket_depth -= 1 else if (c == ',' and paren_depth == 0 and brace_depth == 0 and bracket_depth == 0) {
                     break;
                 }
             } else {
@@ -1497,6 +1483,25 @@ fn bindingIsUsedInContinuations(binding_name: []const u8, continuations: []const
                         }
                     }
                 },
+                .capture => |cap| {
+                    if (valueReferencesBinding(cap.init_expr, binding_name)) {
+                        return true;
+                    }
+                    for (cap.branches) |*branch| {
+                        if (bindingIsUsedInContinuations(binding_name, branch.body)) {
+                            return true;
+                        }
+                    }
+                },
+                .assignment => |asgn| {
+                    for (asgn.fields) |field| {
+                        if (field.expression_str) |expr| {
+                            if (valueReferencesBinding(expr, binding_name)) {
+                                return true;
+                            }
+                        }
+                    }
+                },
                 else => {},
             }
         }
@@ -1569,7 +1574,7 @@ fn valueReferencesBinding(value: []const u8, binding_name: []const u8) bool {
             }
             if (end < value.len) {
                 const next_char = value[end];
-                if (next_char == ' ' or next_char == '+' or next_char == '-' or next_char == ')' or next_char == ',' or next_char == '*' or next_char == '/' or next_char == '%') {
+                if (next_char == ' ' or next_char == '+' or next_char == '-' or next_char == ')' or next_char == ',' or next_char == '*' or next_char == '/' or next_char == '%' or next_char == '[') {
                     return true;
                 }
             }
@@ -1584,9 +1589,9 @@ fn valueReferencesBinding(value: []const u8, binding_name: []const u8) bool {
 
 fn isIdentifierChar(c: u8) bool {
     return (c >= 'a' and c <= 'z') or
-           (c >= 'A' and c <= 'Z') or
-           (c >= '0' and c <= '9') or
-           c == '_';
+        (c >= 'A' and c <= 'Z') or
+        (c >= '0' and c <= '9') or
+        c == '_';
 }
 
 // Branch group for when-clause emission
@@ -1603,7 +1608,7 @@ fn groupContinuationsByBranch(
 ) ![]BranchGroup {
     // Use StringHashMap to group by branch name
     var branch_map = std.StringHashMap(std.ArrayList(*const ast.Continuation)).init(allocator);
-    defer branch_map.deinit();  // Only deinit the map, not the ArrayList values (ownership transferred)
+    defer branch_map.deinit(); // Only deinit the map, not the ArrayList values (ownership transferred)
 
     // Group continuations by branch
     for (continuations) |*cont| {
@@ -1746,13 +1751,13 @@ fn emitSubflowContinuationsWithDepth(
         // Use normal continuation emission which handles labels via emitContinuationBody
         var ctx = EmissionContext{
             .allocator = std.heap.page_allocator, // temp allocator for result vars
-            .indent_level = 0,  // Will use emitter's indent
+            .indent_level = 0, // Will use emitter's indent
             .ast_items = all_items,
             .is_sync = true,
-            .tap_registry = tap_registry,  // Pass through tap registry for inline taps!
+            .tap_registry = tap_registry, // Pass through tap registry for inline taps!
             .type_registry = type_registry,
-            .main_module_name = main_module_name,  // Pass through for canonical event naming
-            .current_source_event = source_event_name,  // Set source event for inline tap emission!
+            .main_module_name = main_module_name, // Pass through for canonical event naming
+            .current_source_event = source_event_name, // Set source event for inline tap emission!
         };
         var result_counter: usize = depth;
         const result_var = if (depth == 0) "result" else blk: {
@@ -1761,10 +1766,7 @@ fn emitSubflowContinuationsWithDepth(
         };
 
         // Group continuations by branch name to handle when-clauses
-        const normal_branch_groups = try groupContinuationsByBranch(
-            std.heap.page_allocator,
-            continuations[start_idx..]
-        );
+        const normal_branch_groups = try groupContinuationsByBranch(std.heap.page_allocator, continuations[start_idx..]);
         defer {
             for (normal_branch_groups) |group| {
                 std.heap.page_allocator.free(group.continuations);
@@ -1808,81 +1810,89 @@ fn emitSubflowContinuationsWithDepth(
                 try writeBranchName(emitter, cont.branch);
                 try emitter.write(" => ");
 
-                            // Check if THIS binding is actually referenced in the step
-                            // CRITICAL: Only set needs_binding if binding_name is used, not just any "."
-                            var needs_binding = false;
-                            if (cont.node) |step| {
-                                switch (step) {
-                                    .invocation => |inv| {
-                                        for (inv.args) |arg| {
-                                            if (valueReferencesBinding(arg.value, binding_name)) {
-                                                needs_binding = true;
-                                                break;
-                                            }
-                                        }
-                                    },
-                                    .label_with_invocation => |lwi| {
-                                        for (lwi.invocation.args) |arg| {
-                                            if (valueReferencesBinding(arg.value, binding_name)) {
-                                                needs_binding = true;
-                                                break;
-                                            }
-                                        }
-                                    },
-                                    .branch_constructor => |bc| {
-                                        // Check plain value first (identity branch constructor)
-                                        if (bc.plain_value) |pv| {
-                                            if (valueReferencesBinding(pv, binding_name)) {
-                                                needs_binding = true;
-                                            }
-                                        }
-                                        if (!needs_binding) {
-                                            for (bc.fields) |field| {
-                                                const value = if (field.expression_str) |expr| expr else field.type;
-                                                if (valueReferencesBinding(value, binding_name)) {
-                                                    needs_binding = true;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    },
-                                    else => {},
+                // Check if THIS binding is actually referenced in the step
+                // CRITICAL: Only set needs_binding if binding_name is used, not just any "."
+                var needs_binding = false;
+                if (cont.node) |step| {
+                    switch (step) {
+                        .invocation => |inv| {
+                            for (inv.args) |arg| {
+                                if (valueReferencesBinding(arg.value, binding_name)) {
+                                    needs_binding = true;
+                                    break;
                                 }
                             }
-                            // Also check nested continuations for binding usage
+                        },
+                        .label_with_invocation => |lwi| {
+                            for (lwi.invocation.args) |arg| {
+                                if (valueReferencesBinding(arg.value, binding_name)) {
+                                    needs_binding = true;
+                                    break;
+                                }
+                            }
+                        },
+                        .branch_constructor => |bc| {
+                            // Check plain value first (identity branch constructor)
+                            if (bc.plain_value) |pv| {
+                                if (valueReferencesBinding(pv, binding_name)) {
+                                    needs_binding = true;
+                                }
+                            }
                             if (!needs_binding) {
-                                needs_binding = bindingIsUsedInContinuations(binding_name, cont.continuations);
+                                for (bc.fields) |field| {
+                                    const value = if (field.expression_str) |expr| expr else field.type;
+                                    if (valueReferencesBinding(value, binding_name)) {
+                                        needs_binding = true;
+                                        break;
+                                    }
+                                }
                             }
-                
-                            // Check if branch has payload fields - empty payloads shouldn't be captured
-                            const has_payload_fields = if (source_event_name) |event_name|
-                                branchHasPayloadFieldsFromItems(all_items, event_name, cont.branch, main_module_name)
-                            else
-                                true;
+                        },
+                        else => {},
+                    }
+                }
+                // Also check nested continuations for binding usage
+                if (!needs_binding) {
+                    needs_binding = bindingIsUsedInContinuations(binding_name, cont.continuations);
+                }
 
-                            if (needs_binding and has_payload_fields) {
-                                try emitter.write("|");
-                                try writeBranchName(emitter, binding_name);
-                                try emitter.write("| ");
-                            }
+                // Check if branch has payload fields - empty payloads shouldn't be captured
+                const has_payload_fields = if (source_event_name) |event_name|
+                    branchHasPayloadFieldsFromItems(all_items, event_name, cont.branch, main_module_name)
+                else
+                    true;
 
-                            try emitter.write("{\n");
+                if (has_payload_fields) {
+                    try emitter.write("|");
+                    try writeBranchName(emitter, binding_name);
+                    try emitter.write("| ");
+                }
 
-                            // Use emitContinuationBody which handles labels!
-                            var deeper_indent_buf: [128]u8 = undefined;
-                            @memcpy(deeper_indent_buf[0..indent.len], indent);
-                            const extra = "        ";
-                            @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
-                
-                            const old_indent = emitter.indent_level;
-                            emitter.indent_level = 0;  // Reset to use manual indenting
-                
-                            try emitContinuationBody(emitter, &ctx, cont, &result_counter);
-                
-                            emitter.indent_level = old_indent;
+                try emitter.write("{\n");
 
-                            try emitter.write(indent);
-                            try emitter.write("    },\n");
+                // Suppress unused binding warning — safe even if binding IS used
+                if (has_payload_fields) {
+                    try emitter.write(indent);
+                    try emitter.write("    _ = &");
+                    try emitter.write(binding_name);
+                    try emitter.write(";\n");
+                }
+
+                // Use emitContinuationBody which handles labels!
+                var deeper_indent_buf: [128]u8 = undefined;
+                @memcpy(deeper_indent_buf[0..indent.len], indent);
+                const extra = "        ";
+                @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
+
+                const old_indent = emitter.indent_level;
+                emitter.indent_level = 0; // Reset to use manual indenting
+
+                try emitContinuationBody(emitter, &ctx, cont, &result_counter);
+
+                emitter.indent_level = old_indent;
+
+                try emitter.write(indent);
+                try emitter.write("    },\n");
             } else {
                 // Multiple continuations for same branch - emit if/else chain for when-clauses
 
@@ -1945,7 +1955,7 @@ fn emitSubflowContinuationsWithDepth(
                     true;
 
                 // Add binding if needed
-                if (needs_binding and has_payload_fields) {
+                if (has_payload_fields) {
                     try emitter.write("|");
                     try writeBranchName(emitter, binding_name);
                     try emitter.write("| ");
@@ -1979,7 +1989,7 @@ fn emitSubflowContinuationsWithDepth(
                     @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
 
                     const old_indent = emitter.indent_level;
-                    emitter.indent_level = 0;  // Reset to use manual indenting
+                    emitter.indent_level = 0; // Reset to use manual indenting
 
                     try emitContinuationBody(emitter, &ctx, cont_ptr, &result_counter);
 
@@ -2000,10 +2010,7 @@ fn emitSubflowContinuationsWithDepth(
     }
 
     // Group continuations by branch name to handle when-clauses
-    const branch_groups = try groupContinuationsByBranch(
-        std.heap.page_allocator,
-        continuations[start_idx..]
-    );
+    const branch_groups = try groupContinuationsByBranch(std.heap.page_allocator, continuations[start_idx..]);
     defer {
         for (branch_groups) |group| {
             std.heap.page_allocator.free(group.continuations);
@@ -2088,12 +2095,6 @@ fn emitSubflowContinuationsWithDepth(
             else
                 true;
 
-            if (needs_binding and has_payload_fields) {
-                try emitter.write("|");
-                try writeBranchName(emitter, actual_binding);
-                try emitter.write("| ");
-            }
-
             // Check what's in the step - check for invocations
             // (metatype_binding might be first, so can't just check step directly)
             var has_invocation = false;
@@ -2103,313 +2104,334 @@ fn emitSubflowContinuationsWithDepth(
                 }
             }
 
+            // Block path (has_invocation): capture binding when needed, suppress unused
+            // Expression path (terminal): only capture if actually needed (can't suppress in expression)
             if (has_invocation) {
                 // Step contains invocation - emit the step
                 // This handles taps inserted by AST transformation (tap + branch constructor)
+                if (needs_binding and has_payload_fields) {
+                    try emitter.write("|");
+                    try writeBranchName(emitter, actual_binding);
+                    try emitter.write("| ");
+                }
                 try emitter.write("{\n");
 
-                    // Track the index of the last invocation result for nested continuation switching
-                    var last_result_idx: usize = depth;
+                // Suppress unused binding warning — safe even if binding IS used
+                if (needs_binding and has_payload_fields) {
+                    try emitter.write(indent);
+                    try emitter.write("        _ = &");
+                    try writeBranchName(emitter, actual_binding);
+                    try emitter.write(";\n");
+                }
 
-                    // Emit the step
-                    if (cont.node) |step| {
-                        const step_idx: usize = 0;
-                        switch (step) {
-                            .invocation => |inv| {
-                                // Track this as the last result index
-                                last_result_idx = depth + step_idx;
-                                // Emit invocation step (could be a tap or regular invocation)
-                                try emitter.write(indent);
-                                var buf: [64]u8 = undefined;
-                                const var_name = try std.fmt.bufPrint(&buf, "        const nested_result_{d} = ", .{depth + step_idx});
-                                try emitter.write(var_name);
-            
-                                // Emit module qualifier if present
-                                if (inv.path.module_qualifier) |mq| {
-                                    try writeModulePath(emitter, mq, main_module_name);
-                                    try emitter.write(".");
-                                }
-                                // Join all segments with underscores
-                                for (inv.path.segments, 0..) |seg, i| {
-                                    if (i > 0) try emitter.write("_");
-                                    try emitter.write(seg);
-                                }
-                                try emitter.write("_event.handler(.{");
+                // Track the index of the last invocation result for nested continuation switching
+                var last_result_idx: usize = depth;
 
-                                // Look up event signature for positional arg name resolution
-                                var event_name_buf: [256]u8 = undefined;
-                                var event_name_pos: usize = 0;
-                                // Build canonical event name: module:segment.segment
-                                if (inv.path.module_qualifier) |mq| {
-                                    @memcpy(event_name_buf[event_name_pos..event_name_pos + mq.len], mq);
-                                    event_name_pos += mq.len;
-                                    event_name_buf[event_name_pos] = ':';
+                // Emit the step
+                if (cont.node) |step| {
+                    const step_idx: usize = 0;
+                    switch (step) {
+                        .invocation => |inv| {
+                            // Track this as the last result index
+                            last_result_idx = depth + step_idx;
+                            // Emit invocation step (could be a tap or regular invocation)
+                            try emitter.write(indent);
+                            var buf: [64]u8 = undefined;
+                            const var_name = try std.fmt.bufPrint(&buf, "        const nested_result_{d} = ", .{depth + step_idx});
+                            try emitter.write(var_name);
+
+                            // Emit module qualifier if present
+                            if (inv.path.module_qualifier) |mq| {
+                                try writeModulePath(emitter, mq, main_module_name);
+                                try emitter.write(".");
+                            }
+                            // Join all segments with underscores
+                            for (inv.path.segments, 0..) |seg, i| {
+                                if (i > 0) try emitter.write("_");
+                                try emitter.write(seg);
+                            }
+                            try emitter.write("_event.handler(.{");
+
+                            // Look up event signature for positional arg name resolution
+                            var event_name_buf: [256]u8 = undefined;
+                            var event_name_pos: usize = 0;
+                            // Build canonical event name: module:segment.segment
+                            if (inv.path.module_qualifier) |mq| {
+                                @memcpy(event_name_buf[event_name_pos .. event_name_pos + mq.len], mq);
+                                event_name_pos += mq.len;
+                                event_name_buf[event_name_pos] = ':';
+                                event_name_pos += 1;
+                            } else if (main_module_name) |mmn| {
+                                @memcpy(event_name_buf[event_name_pos .. event_name_pos + mmn.len], mmn);
+                                event_name_pos += mmn.len;
+                                event_name_buf[event_name_pos] = ':';
+                                event_name_pos += 1;
+                            }
+                            for (inv.path.segments, 0..) |seg, seg_i| {
+                                if (seg_i > 0) {
+                                    event_name_buf[event_name_pos] = '.';
                                     event_name_pos += 1;
-                                } else if (main_module_name) |mmn| {
-                                    @memcpy(event_name_buf[event_name_pos..event_name_pos + mmn.len], mmn);
-                                    event_name_pos += mmn.len;
-                                    event_name_buf[event_name_pos] = ':';
-                                    event_name_pos += 1;
                                 }
-                                for (inv.path.segments, 0..) |seg, seg_i| {
-                                    if (seg_i > 0) {
-                                        event_name_buf[event_name_pos] = '.';
-                                        event_name_pos += 1;
-                                    }
-                                    @memcpy(event_name_buf[event_name_pos..event_name_pos + seg.len], seg);
-                                    event_name_pos += seg.len;
-                                }
-                                const event_canonical = event_name_buf[0..event_name_pos];
-                                const event_type = type_registry.getEventType(event_canonical);
-                                var value_ctx = EmissionContext{
-                                    .allocator = std.heap.page_allocator,
-                                    .main_module_name = main_module_name,
-                                };
+                                @memcpy(event_name_buf[event_name_pos .. event_name_pos + seg.len], seg);
+                                event_name_pos += seg.len;
+                            }
+                            const event_canonical = event_name_buf[0..event_name_pos];
+                            const event_type = type_registry.getEventType(event_canonical);
+                            var value_ctx = EmissionContext{
+                                .allocator = std.heap.page_allocator,
+                                .main_module_name = main_module_name,
+                            };
 
-                                for (inv.args, 0..) |arg, idx| {
-                                    if (idx > 0) try emitter.write(", ");
-                                    try emitter.write(" .");
+                            for (inv.args, 0..) |arg, idx| {
+                                if (idx > 0) try emitter.write(", ");
+                                try emitter.write(" .");
 
-                                    // Check if this is a positional arg (name == value indicates synthesized name)
-                                    // If so, use the parameter name from the event signature
-                                    const param_name = if (std.mem.eql(u8, arg.name, arg.value)) blk: {
-                                        // Positional arg - get name from event signature
-                                        if (event_type) |et| {
-                                            if (et.input_shape) |shape| {
-                                                if (idx < shape.fields.len) {
-                                                    break :blk shape.fields[idx].name;
-                                                }
+                                // Check if this is a positional arg (name == value indicates synthesized name)
+                                // If so, use the parameter name from the event signature
+                                const param_name = if (std.mem.eql(u8, arg.name, arg.value)) blk: {
+                                    // Positional arg - get name from event signature
+                                    if (event_type) |et| {
+                                        if (et.input_shape) |shape| {
+                                            if (idx < shape.fields.len) {
+                                                break :blk shape.fields[idx].name;
                                             }
                                         }
-                                        // Fallback: use arg.name (might produce invalid Zig)
-                                        break :blk arg.name;
-                                    } else arg.name;
+                                    }
+                                    // Fallback: use arg.name (might produce invalid Zig)
+                                    break :blk arg.name;
+                                } else arg.name;
 
-                                    try emitter.write(param_name);
-                                    try emitter.write(" = ");
+                                try emitter.write(param_name);
+                                try emitter.write(" = ");
 
-                                    // Check for Koru array literal syntax: [a, b, c]
-                                    if (arg.value.len >= 2 and arg.value[0] == '[' and arg.value[arg.value.len - 1] == ']') {
-                                        const field = blk: {
-                                            if (event_type) |et| {
-                                                if (et.input_shape) |shape| {
-                                                    for (shape.fields) |*field| {
-                                                        if (std.mem.eql(u8, field.name, param_name)) {
-                                                            break :blk field;
-                                                        }
+                                // Check for Koru array literal syntax: [a, b, c]
+                                if (arg.value.len >= 2 and arg.value[0] == '[' and arg.value[arg.value.len - 1] == ']') {
+                                    const field = blk: {
+                                        if (event_type) |et| {
+                                            if (et.input_shape) |shape| {
+                                                for (shape.fields) |*field| {
+                                                    if (std.mem.eql(u8, field.name, param_name)) {
+                                                        break :blk field;
                                                     }
                                                 }
                                             }
-                                            break :blk null;
-                                        };
-                                        if (field) |field_info| {
-                                            try emitArrayLiteralForField(emitter, &value_ctx, field_info, arg.value);
-                                        } else {
-                                            return error.ArrayLiteralMissingType;
                                         }
+                                        break :blk null;
+                                    };
+                                    if (field) |field_info| {
+                                        try emitArrayLiteralForField(emitter, &value_ctx, field_info, arg.value);
                                     } else {
-                                        try emitter.write(arg.value);
+                                        return error.ArrayLiteralMissingType;
                                     }
+                                } else {
+                                    try emitter.write(arg.value);
                                 }
-                                try emitter.write(" });\n");
-            
-                                // Suppress unused variable warning (result might not be used, e.g., for taps)
-                                try emitter.write(indent);
-                                const suppress_unused = try std.fmt.bufPrint(&buf, "        _ = &nested_result_{d};\n", .{depth + step_idx});
-                                try emitter.write(suppress_unused);
-                            },
-                            .metatype_binding => |mb| {
-                                // Emit metatype construction (Profile/Transition/Audit)
-                                // Transition uses enum literals (fast), Profile uses strings (heavier with timing)
-                                // Scope block uses the AST-provided binding (already made unique by tap transform).
-                                try emitter.write(indent);
-                                try emitter.write("        {\n");
-                                try emitter.write(indent);
-                                try emitter.write("            const ");
-                                try emitter.write(mb.binding);
-                                try emitter.write(" = taps.");
-                                try emitter.write(mb.metatype);
-                                try emitter.write("{\n");
+                            }
+                            try emitter.write(" });\n");
 
-                                const is_transition = std.mem.eql(u8, mb.metatype, "Transition");
-            
-                                // .source field - enum literal for Transition, string for Profile
-                                try emitter.write(indent);
+                            // Suppress unused variable warning (result might not be used, e.g., for taps)
+                            try emitter.write(indent);
+                            const suppress_unused = try std.fmt.bufPrint(&buf, "        _ = &nested_result_{d};\n", .{depth + step_idx});
+                            try emitter.write(suppress_unused);
+                        },
+                        .metatype_binding => |mb| {
+                            // Emit metatype construction (Profile/Transition/Audit)
+                            // Transition uses enum literals (fast), Profile uses strings (heavier with timing)
+                            // Scope block uses the AST-provided binding (already made unique by tap transform).
+                            try emitter.write(indent);
+                            try emitter.write("        {\n");
+                            try emitter.write(indent);
+                            try emitter.write("            const ");
+                            try emitter.write(mb.binding);
+                            try emitter.write(" = taps.");
+                            try emitter.write(mb.metatype);
+                            try emitter.write("{\n");
+
+                            const is_transition = std.mem.eql(u8, mb.metatype, "Transition");
+
+                            // .source field - enum literal for Transition, string for Profile
+                            try emitter.write(indent);
+                            if (is_transition) {
+                                // Transition: .source = .compiler_context_create (enum literal)
+                                try emitter.write("            .source = .");
+                                try canonicalNameToEnumTag(emitter, mb.source_event);
+                                try emitter.write(",\n");
+                            } else {
+                                // Profile/Audit: .source = "main:http.request" (string literal)
+                                try emitter.write("            .source = \"");
+                                try emitter.write(mb.source_event);
+                                try emitter.write("\",\n");
+                            }
+
+                            // .destination field (null for terminal)
+                            try emitter.write(indent);
+                            if (mb.dest_event) |dest| {
                                 if (is_transition) {
-                                    // Transition: .source = .compiler_context_create (enum literal)
-                                    try emitter.write("            .source = .");
-                                    try canonicalNameToEnumTag(emitter, mb.source_event);
+                                    // Transition: .destination = .compiler_coordinate_frontend (enum literal)
+                                    try emitter.write("            .destination = .");
+                                    try canonicalNameToEnumTag(emitter, dest);
                                     try emitter.write(",\n");
                                 } else {
-                                    // Profile/Audit: .source = "main:http.request" (string literal)
-                                    try emitter.write("            .source = \"");
-                                    try emitter.write(mb.source_event);
+                                    // Profile/Audit: .destination = "main:http.response" (string literal)
+                                    try emitter.write("            .destination = \"");
+                                    try emitter.write(dest);
                                     try emitter.write("\",\n");
                                 }
-            
-                                // .destination field (null for terminal)
-                                try emitter.write(indent);
-                                if (mb.dest_event) |dest| {
-                                    if (is_transition) {
-                                        // Transition: .destination = .compiler_coordinate_frontend (enum literal)
-                                        try emitter.write("            .destination = .");
-                                        try canonicalNameToEnumTag(emitter, dest);
-                                        try emitter.write(",\n");
-                                    } else {
-                                        // Profile/Audit: .destination = "main:http.response" (string literal)
-                                        try emitter.write("            .destination = \"");
-                                        try emitter.write(dest);
-                                        try emitter.write("\",\n");
-                                    }
+                            } else {
+                                try emitter.write("            .destination = null,\n");
+                            }
+
+                            // .branch field - enum literal for Transition, string for Profile
+                            try emitter.write(indent);
+                            if (is_transition) {
+                                // Transition: .branch = .created (enum literal)
+                                // Use __void for empty branches (void event completion)
+                                try emitter.write("            .branch = .");
+                                if (mb.branch.len == 0) {
+                                    try emitter.write("__void");
                                 } else {
-                                    try emitter.write("            .destination = null,\n");
-                                }
-            
-                                // .branch field - enum literal for Transition, string for Profile
-                                try emitter.write(indent);
-                                if (is_transition) {
-                                    // Transition: .branch = .created (enum literal)
-                                    // Use __void for empty branches (void event completion)
-                                    try emitter.write("            .branch = .");
-                                    if (mb.branch.len == 0) {
-                                        try emitter.write("__void");
-                                    } else {
-                                        // Escape keywords (e.g., .@"error" for error branch)
-                                        if (codegen_utils.needsEscaping(mb.branch)) {
-                                            try emitter.write("@\"");
-                                            try emitter.write(mb.branch);
-                                            try emitter.write("\"");
-                                        } else {
-                                            try emitter.write(mb.branch);
-                                        }
-                                    }
-                                    try emitter.write(",\n");
-                                } else {
-                                    // Profile/Audit: .branch = "done" (string literal)
-                                    try emitter.write("            .branch = \"");
-                                    if (mb.branch.len == 0) {
-                                        try emitter.write("__void");
+                                    // Escape keywords (e.g., .@"error" for error branch)
+                                    if (codegen_utils.needsEscaping(mb.branch)) {
+                                        try emitter.write("@\"");
+                                        try emitter.write(mb.branch);
+                                        try emitter.write("\"");
                                     } else {
                                         try emitter.write(mb.branch);
                                     }
-                                    try emitter.write("\",\n");
                                 }
-            
-                                // .timestamp_ns field - ONLY for Profile/Audit (not Transition)
-                                if (!is_transition) {
+                                try emitter.write(",\n");
+                            } else {
+                                // Profile/Audit: .branch = "done" (string literal)
+                                try emitter.write("            .branch = \"");
+                                if (mb.branch.len == 0) {
+                                    try emitter.write("__void");
+                                } else {
+                                    try emitter.write(mb.branch);
+                                }
+                                try emitter.write("\",\n");
+                            }
+
+                            // .timestamp_ns field - ONLY for Profile/Audit (not Transition)
+                            if (!is_transition) {
+                                try emitter.write(indent);
+                                try emitter.write("            .timestamp_ns = __koru_std.time.nanoTimestamp(),\n");
+
+                                // .payload field - ONLY for Audit
+                                const is_audit = std.mem.eql(u8, mb.metatype, "Audit");
+                                if (is_audit) {
                                     try emitter.write(indent);
-                                    try emitter.write("            .timestamp_ns = __koru_std.time.nanoTimestamp(),\n");
-
-                                    // .payload field - ONLY for Audit
-                                    const is_audit = std.mem.eql(u8, mb.metatype, "Audit");
-                                    if (is_audit) {
-                                        try emitter.write(indent);
-                                        try emitter.write("            .payload = null,  // TODO: Serialize continuation payload\n");
-                                    }
+                                    try emitter.write("            .payload = null,  // TODO: Serialize continuation payload\n");
                                 }
+                            }
 
-                                try emitter.write(indent);
-                                try emitter.write("        };\n");
+                            try emitter.write(indent);
+                            try emitter.write("        };\n");
 
-                                // Emit continuations inside the scope block
-                                if (cont.continuations.len > 0) {
-                                    var deeper_indent_buf: [128]u8 = undefined;
-                                    @memcpy(deeper_indent_buf[0..indent.len], indent);
-                                    const extra = "            ";
-                                    @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
-                                    const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
-                                    try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix);
-                                }
+                            // Emit continuations inside the scope block
+                            if (cont.continuations.len > 0) {
+                                var deeper_indent_buf: [128]u8 = undefined;
+                                @memcpy(deeper_indent_buf[0..indent.len], indent);
+                                const extra = "            ";
+                                @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
+                                const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
+                                try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix);
+                            }
 
-                                try emitter.write(indent);
-                                try emitter.write("        }\n");  // Close scope block
-                            },
-                            .branch_constructor => |bc| {
-                                // Branch constructor - emit return statement
-                                try emitter.write(indent);
-                                try emitter.write("        return .{ .");
-                                try writeBranchName(emitter, bc.branch_name);
-                                try emitter.write(" = ");
-                                // Check for plain value (identity branch constructor)
-                                if (bc.plain_value) |pv| {
-                                    try emitter.write(pv);
-                                } else {
-                                    try emitter.write(".{");
-                                    for (bc.fields, 0..) |field, idx| {
-                                        if (idx > 0) try emitter.write(", ");
-                                        try emitter.write(" .");
-                                        try emitter.write(field.name);
-                                        try emitter.write(" = ");
-                                        if (field.expression_str) |expr| {
-                                            try emitter.write(expr);
-                                        } else {
-                                            try emitter.write(field.type);
-                                        }
+                            try emitter.write(indent);
+                            try emitter.write("        }\n"); // Close scope block
+                        },
+                        .branch_constructor => |bc| {
+                            // Branch constructor - emit return statement
+                            try emitter.write(indent);
+                            try emitter.write("        return .{ .");
+                            try writeBranchName(emitter, bc.branch_name);
+                            try emitter.write(" = ");
+                            // Check for plain value (identity branch constructor)
+                            if (bc.plain_value) |pv| {
+                                try emitter.write(pv);
+                            } else {
+                                try emitter.write(".{");
+                                for (bc.fields, 0..) |field, idx| {
+                                    if (idx > 0) try emitter.write(", ");
+                                    try emitter.write(" .");
+                                    try emitter.write(field.name);
+                                    try emitter.write(" = ");
+                                    if (field.expression_str) |expr| {
+                                        try emitter.write(expr);
+                                    } else {
+                                        try emitter.write(field.type);
                                     }
-                                    try emitter.write(" }");
-                                }
-                                try emitter.write(" };\n");
-                            },
-                            else => {
-                                // Other step types - not expected in return switch optimization path
-                                // If we encounter them, this indicates AST structure we don't handle yet
-                            },
-                        }
-                    }
-            
-                    // After emitting the step, recurse into nested continuations if present
-                    // Exception: metatype_binding handles its own continuation recursion inside its scope block
-                    // This must be OUTSIDE the step check so it runs regardless of what the step type was
-                    // Use last_result_idx + 1 as the depth for nested continuations (not depth + 1)
-                    // because metatype_binding steps don't create result variables
-                    const is_metatype_binding = if (cont.node) |step| step == .metatype_binding else false;
-                    if (cont.continuations.len > 0 and !is_metatype_binding) {
-                        var deeper_indent_buf: [128]u8 = undefined;
-                        @memcpy(deeper_indent_buf[0..indent.len], indent);
-                        const extra = "        ";
-                        @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
-                        const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
-                        try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix);
-                    }
-            
-                    try emitter.write(indent);
-                    try emitter.write("    },\n");
-                } else {
-                    // Terminal case - branch constructor
-                    // Taps are now in the AST via tap_transformer, so just emit inline
-                    if (cont.node) |step| {
-                        switch (step) {
-                            .branch_constructor => |bc2| {
-                                try emitter.write(".{ .");
-                                try writeBranchName(emitter, bc2.branch_name);
-                                try emitter.write(" = ");
-                                // Check for plain value (identity branch constructor)
-                                if (bc2.plain_value) |pv| {
-                                    try emitter.write(pv);
-                                } else {
-                                    try emitter.write(".{");
-                                    for (bc2.fields, 0..) |field2, idx| {
-                                        if (idx > 0) try emitter.write(", ");
-                                        try emitter.write(" .");
-                                        try emitter.write(field2.name);
-                                        try emitter.write(" = ");
-                                        if (field2.expression_str) |expr| {
-                                            try emitter.write(expr);
-                                        } else {
-                                            try emitter.write(field2.type);
-                                        }
-                                    }
-                                    try emitter.write(" }");
                                 }
                                 try emitter.write(" }");
-                            },
-                            else => {},
-                        }
-                    } else {
-                        try emitter.write("{}");
+                            }
+                            try emitter.write(" };\n");
+                        },
+                        else => {
+                            // Other step types - not expected in return switch optimization path
+                            // If we encounter them, this indicates AST structure we don't handle yet
+                        },
                     }
-                    try emitter.write(",\n");
-    }  // End of if (has_invocation)
+                }
+
+                // After emitting the step, recurse into nested continuations if present
+                // Exception: metatype_binding handles its own continuation recursion inside its scope block
+                // This must be OUTSIDE the step check so it runs regardless of what the step type was
+                // Use last_result_idx + 1 as the depth for nested continuations (not depth + 1)
+                // because metatype_binding steps don't create result variables
+                const is_metatype_binding = if (cont.node) |step| step == .metatype_binding else false;
+                if (cont.continuations.len > 0 and !is_metatype_binding) {
+                    var deeper_indent_buf: [128]u8 = undefined;
+                    @memcpy(deeper_indent_buf[0..indent.len], indent);
+                    const extra = "        ";
+                    @memcpy(deeper_indent_buf[indent.len .. indent.len + extra.len], extra);
+                    const deeper_indent = deeper_indent_buf[0 .. indent.len + extra.len];
+                    try emitSubflowContinuationsWithDepth(emitter, cont.continuations, 0, deeper_indent, all_items, last_result_idx + 1, tap_registry, type_registry, main_module_name, source_event_name, module_prefix);
+                }
+
+                try emitter.write(indent);
+                try emitter.write("    },\n");
+            } else {
+                // Terminal case - branch constructor (expression path, no block)
+                // Only capture binding if actually used — can't suppress unused in expression
+                if (needs_binding and has_payload_fields) {
+                    try emitter.write("|");
+                    try writeBranchName(emitter, actual_binding);
+                    try emitter.write("| ");
+                }
+                // Taps are now in the AST via tap_transformer, so just emit inline
+                if (cont.node) |step| {
+                    switch (step) {
+                        .branch_constructor => |bc2| {
+                            try emitter.write(".{ .");
+                            try writeBranchName(emitter, bc2.branch_name);
+                            try emitter.write(" = ");
+                            // Check for plain value (identity branch constructor)
+                            if (bc2.plain_value) |pv| {
+                                try emitter.write(pv);
+                            } else {
+                                try emitter.write(".{");
+                                for (bc2.fields, 0..) |field2, idx| {
+                                    if (idx > 0) try emitter.write(", ");
+                                    try emitter.write(" .");
+                                    try emitter.write(field2.name);
+                                    try emitter.write(" = ");
+                                    if (field2.expression_str) |expr| {
+                                        try emitter.write(expr);
+                                    } else {
+                                        try emitter.write(field2.type);
+                                    }
+                                }
+                                try emitter.write(" }");
+                            }
+                            try emitter.write(" }");
+                        },
+                        else => {},
+                    }
+                } else {
+                    try emitter.write("{}");
+                }
+                try emitter.write(",\n");
+            } // End of if (has_invocation)
         } else {
             // Multiple continuations for same branch - emit if/else chain for when-clauses
 
@@ -2469,7 +2491,6 @@ fn emitSubflowContinuationsWithDepth(
             else
                 true;
 
-            // Add binding if needed
             if (needs_binding and has_payload_fields) {
                 try emitter.write("|");
                 try writeBranchName(emitter, actual_binding);
@@ -2541,8 +2562,8 @@ fn emitSubflowContinuationsWithDepth(
             }
 
             try emitter.write(",\n");
-        }  // End of if (single vs multiple continuations)
-    }  // End of for loop over all branch groups
+        } // End of if (single vs multiple continuations)
+    } // End of for loop over all branch groups
 
     // Close the switch
     try emitter.write(indent);
@@ -3012,7 +3033,7 @@ pub fn emitFlow(
         for (flow.continuations) |*cont| {
             try emitContinuationBody(emitter, ctx, cont, &result_counter);
         }
-        return;  // Done - don't emit the invocation
+        return; // Done - don't emit the invocation
     }
 
     // Zero-overhead control flow: if inline_body is set, emit it directly
@@ -3023,7 +3044,7 @@ pub fn emitFlow(
         var is_inline_stmt = false;
         if (std.mem.indexOf(u8, inline_code, inline_stmt_marker)) |marker_idx| {
             is_inline_stmt = true;
-            inline_code = inline_code[marker_idx + inline_stmt_marker.len..];
+            inline_code = inline_code[marker_idx + inline_stmt_marker.len ..];
         }
 
         const trimmed_inline = std.mem.trimRight(u8, inline_code, " \t\r\n");
@@ -3031,7 +3052,7 @@ pub fn emitFlow(
         const is_comment_only = blk: {
             const trimmed_left = std.mem.trimLeft(u8, trimmed_inline, " \t");
             break :blk trimmed_left.len == 0 or
-                       (trimmed_left.len >= 2 and std.mem.eql(u8, trimmed_left[0..2], "//"));
+                (trimmed_left.len >= 2 and std.mem.eql(u8, trimmed_left[0..2], "//"));
         };
         const inline_is_statement = is_comment_only or is_inline_stmt or
             (trimmed_inline.len > 0 and trimmed_inline[trimmed_inline.len - 1] == ';');
@@ -3202,10 +3223,10 @@ pub fn emitFlow(
     if (flow.continuations.len > 0) {
         // Check if this is a void event (empty branch) - if so, discard result
         const is_void_event = flow.continuations.len == 1 and
-                              std.mem.eql(u8, flow.continuations[0].branch, "");
+            std.mem.eql(u8, flow.continuations[0].branch, "");
 
         const first_result = if (is_void_event)
-            "_"  // Discard void result
+            "_" // Discard void result
         else
             try std.fmt.allocPrint(ctx.allocator, "result_{}", .{result_counter});
 
@@ -3219,7 +3240,7 @@ pub fn emitFlow(
 
             // Emit FIRST invocation before the loop (to get initial result)
             try emitter.writeIndent();
-            try emitter.write("var ");  // var, not const - we'll update it in the loop!
+            try emitter.write("var "); // var, not const - we'll update it in the loop!
             try emitter.write(first_result);
             try emitter.write(" = ");
             if (!ctx.is_sync) {
@@ -3330,44 +3351,44 @@ pub fn emitFlow(
                     try emitContinuationList(emitter, ctx, looping_conts.items, first_result, &result_counter, false);
                 }
 
-            // Clear label context after looping continuations
-            ctx.label_handler_invocation = null;
-            ctx.label_result_var = null;
+                // Clear label context after looping continuations
+                ctx.label_handler_invocation = null;
+                ctx.label_result_var = null;
 
-            // Close the while loop
-            emitter.dedent();
-            try emitter.writeIndent();
-            try emitter.write("}\n");
+                // Close the while loop
+                emitter.dedent();
+                try emitter.writeIndent();
+                try emitter.write("}\n");
 
-            // NOW emit switch for NON-LOOPING branches (after the while)
-            if (looping_branches.len < flow.continuations.len) {
-                // Build list of non-looping continuations
-                var non_looping_conts = try std.ArrayList(ast.Continuation).initCapacity(ctx.allocator, flow.continuations.len - looping_branches.len);
-                defer non_looping_conts.deinit(ctx.allocator);
+                // NOW emit switch for NON-LOOPING branches (after the while)
+                if (looping_branches.len < flow.continuations.len) {
+                    // Build list of non-looping continuations
+                    var non_looping_conts = try std.ArrayList(ast.Continuation).initCapacity(ctx.allocator, flow.continuations.len - looping_branches.len);
+                    defer non_looping_conts.deinit(ctx.allocator);
 
-                for (flow.continuations) |cont| {
-                    // Check if this continuation is NOT in the looping branches list
-                    var is_looping = false;
-                    for (looping_branches) |loop_branch| {
-                        if (std.mem.eql(u8, cont.branch, loop_branch)) {
-                            is_looping = true;
-                            break;
+                    for (flow.continuations) |cont| {
+                        // Check if this continuation is NOT in the looping branches list
+                        var is_looping = false;
+                        for (looping_branches) |loop_branch| {
+                            if (std.mem.eql(u8, cont.branch, loop_branch)) {
+                                is_looping = true;
+                                break;
+                            }
+                        }
+
+                        if (!is_looping) {
+                            try non_looping_conts.append(ctx.allocator, cont);
                         }
                     }
 
-                    if (!is_looping) {
-                        try non_looping_conts.append(ctx.allocator, cont);
+                    // Emit switch with only non-looping branches
+                    // NOTE: After the while loop guard, looping branches are IMPOSSIBLE.
+                    // Zig 0.15+ knows this and considers the switch exhaustive, so we must NOT
+                    // emit else => unreachable (it would be "unreachable else prong; all cases handled")
+                    if (non_looping_conts.items.len > 0) {
+                        try emitContinuationList(emitter, ctx, non_looping_conts.items, first_result, &result_counter, false);
                     }
                 }
-
-                // Emit switch with only non-looping branches
-                // NOTE: After the while loop guard, looping branches are IMPOSSIBLE.
-                // Zig 0.15+ knows this and considers the switch exhaustive, so we must NOT
-                // emit else => unreachable (it would be "unreachable else prong; all cases handled")
-                if (non_looping_conts.items.len > 0) {
-                    try emitContinuationList(emitter, ctx, non_looping_conts.items, first_result, &result_counter, false);
-                }
-            }
             }
         } else {
             // No pre_label - emit all continuations normally
@@ -3964,7 +3985,7 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
                 var event_name_len: usize = 0;
 
                 if (invocation_path.module_qualifier) |mq| {
-                    @memcpy(event_name_buf[event_name_len..event_name_len + mq.len], mq);
+                    @memcpy(event_name_buf[event_name_len .. event_name_len + mq.len], mq);
                     event_name_len += mq.len;
                     event_name_buf[event_name_len] = ':';
                     event_name_len += 1;
@@ -3975,7 +3996,7 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
                         event_name_buf[event_name_len] = '.';
                         event_name_len += 1;
                     }
-                    @memcpy(event_name_buf[event_name_len..event_name_len + seg.len], seg);
+                    @memcpy(event_name_buf[event_name_len .. event_name_len + seg.len], seg);
                     event_name_len += seg.len;
                 }
 
@@ -4020,7 +4041,7 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
                 var event_name_len: usize = 0;
 
                 if (invocation_path.module_qualifier) |mq| {
-                    @memcpy(event_name_buf[event_name_len..event_name_len + mq.len], mq);
+                    @memcpy(event_name_buf[event_name_len .. event_name_len + mq.len], mq);
                     event_name_len += mq.len;
                     event_name_buf[event_name_len] = ':';
                     event_name_len += 1;
@@ -4031,7 +4052,7 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
                         event_name_buf[event_name_len] = '.';
                         event_name_len += 1;
                     }
-                    @memcpy(event_name_buf[event_name_len..event_name_len + seg.len], seg);
+                    @memcpy(event_name_buf[event_name_len .. event_name_len + seg.len], seg);
                     event_name_len += seg.len;
                 }
 
@@ -4422,7 +4443,7 @@ fn emitValueWithBindingSubstitution(
         // Track string literals
         if (!in_char and c == '"' and !isEscaped(value, i)) {
             in_string = !in_string;
-            try emitter.write(value[i..i+1]);
+            try emitter.write(value[i .. i + 1]);
             i += 1;
             continue;
         }
@@ -4430,14 +4451,14 @@ fn emitValueWithBindingSubstitution(
         // Track char literals
         if (!in_string and c == '\'' and !isEscaped(value, i)) {
             in_char = !in_char;
-            try emitter.write(value[i..i+1]);
+            try emitter.write(value[i .. i + 1]);
             i += 1;
             continue;
         }
 
         // If we're in a string or char literal, just emit as-is
         if (in_string or in_char) {
-            try emitter.write(value[i..i+1]);
+            try emitter.write(value[i .. i + 1]);
             i += 1;
             continue;
         }
@@ -4455,7 +4476,7 @@ fn emitValueWithBindingSubstitution(
             // Check if this matches the binding we want to substitute
             if (std.mem.eql(u8, identifier, sub.from)) {
                 // Check word boundaries
-                const before_ok = i == 0 or (!isIdentChar(value[i-1]) and value[i-1] != '@');
+                const before_ok = i == 0 or (!isIdentChar(value[i - 1]) and value[i - 1] != '@');
                 const after_ok = j >= value.len or !isIdentChar(value[j]);
 
                 if (before_ok and after_ok) {
@@ -4473,7 +4494,7 @@ fn emitValueWithBindingSubstitution(
         }
 
         // Not an identifier, just emit the character
-        try emitter.write(value[i..i+1]);
+        try emitter.write(value[i .. i + 1]);
         i += 1;
     }
 }
@@ -4495,7 +4516,7 @@ fn emitValueWithInputPrefixing(
         // Track string literals
         if (!in_char and c == '"' and !isEscaped(value, i)) {
             in_string = !in_string;
-            try emitter.write(value[i..i+1]);
+            try emitter.write(value[i .. i + 1]);
             i += 1;
             continue;
         }
@@ -4503,14 +4524,14 @@ fn emitValueWithInputPrefixing(
         // Track char literals
         if (!in_string and c == '\'' and !isEscaped(value, i)) {
             in_char = !in_char;
-            try emitter.write(value[i..i+1]);
+            try emitter.write(value[i .. i + 1]);
             i += 1;
             continue;
         }
 
         // If we're in a string or char literal, just emit as-is
         if (in_string or in_char) {
-            try emitter.write(value[i..i+1]);
+            try emitter.write(value[i .. i + 1]);
             i += 1;
             continue;
         }
@@ -4539,7 +4560,7 @@ fn emitValueWithInputPrefixing(
         }
 
         // Not an identifier, just emit the character
-        try emitter.write(value[i..i+1]);
+        try emitter.write(value[i .. i + 1]);
         i += 1;
     }
 }
@@ -4694,7 +4715,7 @@ fn emitContinuationList(
     // Check if this is a void event continuation (empty branch name)
     // For void events, we don't emit a switch - just execute the pipeline directly
     const is_void_continuation = continuations.len == 1 and
-                                  std.mem.eql(u8, continuations[0].branch, "");
+        std.mem.eql(u8, continuations[0].branch, "");
 
     if (is_void_continuation) {
         // Void event - execute pipeline directly without switch
@@ -4729,7 +4750,7 @@ fn emitContinuationList(
                 }
             }
             // No binding or "_" - generate unique binding: prev_result + "_" + branch
-            const unique = try std.fmt.allocPrint(ctx.allocator, "{s}_{s}", .{prev_result, cont.branch});
+            const unique = try std.fmt.allocPrint(ctx.allocator, "{s}_{s}", .{ prev_result, cont.branch });
             break :blk unique;
         };
 
@@ -4791,10 +4812,7 @@ fn emitContinuationList(
     }
 
     // Group continuations by branch name to handle when-clauses
-    const continuation_branch_groups = try groupContinuationsByBranch(
-        ctx.allocator,
-        continuations
-    );
+    const continuation_branch_groups = try groupContinuationsByBranch(ctx.allocator, continuations);
     defer {
         for (continuation_branch_groups) |group| {
             ctx.allocator.free(group.continuations);
@@ -5094,8 +5112,8 @@ fn emitContinuationCase(
             for (matching_taps) |tap| {
                 // Check if this tap uses a metatype branch
                 const is_metatype_tap = std.mem.eql(u8, tap.branch, "Transition") or
-                                       std.mem.eql(u8, tap.branch, "Profile") or
-                                       std.mem.eql(u8, tap.branch, "Audit");
+                    std.mem.eql(u8, tap.branch, "Profile") or
+                    std.mem.eql(u8, tap.branch, "Audit");
 
                 // Metatype taps don't use the continuation payload
                 if (is_metatype_tap) continue;
@@ -5154,7 +5172,7 @@ fn emitContinuationCase(
     const has_payload_fields = if (ctx.current_source_event) |event_name|
         branchHasPayloadFields(ctx, event_name, cont.branch)
     else
-        true; // Conservative: assume has fields if we can't check
+        false; // Can't verify — omit capture to avoid shadowing
 
     // Only emit capture syntax if the branch has payload fields
     if (has_payload_fields) {
@@ -5438,7 +5456,7 @@ fn emitPipelineStep(
     ctx: *EmissionContext,
     cont: *const ast.Continuation,
     step: *const ast.Step,
-    _: usize,  // absolute_idx - not used with single step design
+    _: usize, // absolute_idx - not used with single step design
     result_counter: *usize,
 ) !void {
     // Note: With single step design, is_last_step and next_is_terminal are always true/false
@@ -5541,7 +5559,7 @@ pub fn emitContinuationBody(
                 }
 
                 if (!found_field) {
-                    std.debug.panic("COMPILER BUG: Field '{s}' not found in event after checking {} fields!", .{arg.name, event.input.fields.len});
+                    std.debug.panic("COMPILER BUG: Field '{s}' not found in event after checking {} fields!", .{ arg.name, event.input.fields.len });
                 }
             }
 
@@ -5555,7 +5573,7 @@ pub fn emitContinuationBody(
         defer ctx.allocator.free(result_var);
 
         try emitter.writeIndent();
-        try emitter.write("var ");  // var, not const - we'll update it in the loop!
+        try emitter.write("var "); // var, not const - we'll update it in the loop!
         try emitter.write(result_var);
         try emitter.write(" = ");
         if (!ctx.is_sync) {
@@ -6445,7 +6463,7 @@ fn emitStep(
                 emitter.indent();
                 try emitter.writeIndent();
                 try emitter.write("const info = @typeInfo(@TypeOf(");
-                try emitter.write(cap.init_expr);  // Already in Zig syntax: .{ .field = value }
+                try emitter.write(cap.init_expr); // Already in Zig syntax: .{ .field = value }
                 try emitter.write("));\n");
                 try emitter.writeIndent();
                 try emitter.write("var fields: [info.@\"struct\".fields.len]@import(\"std\").builtin.Type.StructField = undefined;\n");
@@ -6496,7 +6514,7 @@ fn emitStep(
                 try emitter.write(": ");
                 try emitter.write(type_name_buf);
                 try emitter.write(" = ");
-                try emitter.write(cap.init_expr);  // Already in Zig syntax: .{ .field = value }
+                try emitter.write(cap.init_expr); // Already in Zig syntax: .{ .field = value }
                 try emitter.write(";\n");
             }
 
@@ -6607,7 +6625,7 @@ fn emitStep(
                         defer ctx.result_prefix = saved_prefix;
 
                         var inner_result_buf: [64]u8 = undefined;
-                        const inner_result = std.fmt.bufPrint(&inner_result_buf, "{s}{d}", .{branch_prefix, step_idx}) catch "_";
+                        const inner_result = std.fmt.bufPrint(&inner_result_buf, "{s}{d}", .{ branch_prefix, step_idx }) catch "_";
                         try emitStep(emitter, ctx, &node, inner_result);
                         if (node == .invocation) {
                             try emitter.writeIndent();
@@ -6830,7 +6848,7 @@ fn emitStepWithBindingSubstitution(
                     try emitter.write(arg.name);
                     try emitter.write(" = ");
                     // Build state variable name and apply substitution if needed
-                    const state_var = try std.fmt.allocPrint(ctx.allocator, "{s}_{s}", .{label_name, arg.name});
+                    const state_var = try std.fmt.allocPrint(ctx.allocator, "{s}_{s}", .{ label_name, arg.name });
                     defer ctx.allocator.free(state_var);
                     try emitValueWithBindingSubstitution(emitter, state_var, substitution);
                 }
@@ -7276,6 +7294,30 @@ fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) b
                     }
                 }
             },
+            .capture => |cap| {
+                // Check init expression
+                if (containsIdentifier(cap.init_expr, binding)) {
+                    return true;
+                }
+                // Check all branches recursively (as, captured, etc.)
+                for (cap.branches) |*branch| {
+                    for (branch.body) |*body_cont| {
+                        if (continuationUsesBinding(body_cont, binding)) {
+                            return true;
+                        }
+                    }
+                }
+            },
+            .assignment => |asgn| {
+                // Check all field expressions for binding reference
+                for (asgn.fields) |field| {
+                    if (field.expression_str) |expr| {
+                        if (containsIdentifier(expr, binding)) {
+                            return true;
+                        }
+                    }
+                }
+            },
             else => {},
         }
     }
@@ -7425,7 +7467,7 @@ fn emitEventDeclForModuleFromType(
         for (event_type.branches) |branch| {
             try code_emitter.writeIndent();
             try writeBranchName(code_emitter, branch.name);
-            
+
             if (branch.payload) |payload| {
                 if (payload.fields.len == 1 and std.mem.eql(u8, payload.fields[0].name, "__type_ref")) {
                     try code_emitter.write(": ");
@@ -7537,7 +7579,7 @@ fn emitEventDeclForModule(
         for (event.branches) |branch| {
             try code_emitter.writeIndent();
             try writeBranchName(code_emitter, branch.name);
-            
+
             if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
                 try code_emitter.write(": ");
                 // For emitter_helpers, we ignore is_source and just use the type string
