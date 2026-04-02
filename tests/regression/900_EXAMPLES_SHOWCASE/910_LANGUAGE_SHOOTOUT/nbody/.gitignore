@@ -2,6 +2,8 @@ bin/
 results.json
 # Build artifacts
 reference/*.fasl
+reference/*.o
+reference/*.hi
 # Whitelist reference source files hidden by parent gitignore
 !reference/*.zig
 !reference/*.rs

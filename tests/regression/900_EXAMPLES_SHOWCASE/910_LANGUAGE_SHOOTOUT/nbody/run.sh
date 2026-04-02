@@ -39,6 +39,9 @@ sbcl --noinform --non-interactive \
     --eval '(load "reference/nbody.fasl")' \
     --eval '(sb-ext:save-lisp-and-die "bin/sbcl-nbody" :toplevel (function main) :executable t)' 2>/dev/null
 
+echo "  GHC..."
+ghc -O2 -o bin/ghc-nbody reference/nbody.hs 2>/dev/null
+
 echo ""
 
 # --- Verify correctness ---
@@ -49,12 +52,14 @@ ZIG=$(bin/zig-nbody 1000 2>&1)
 RUST=$(bin/rust-nbody 1000 2>&1)
 C=$(bin/c-nbody 1000 2>&1)
 SBCL=$(bin/sbcl-nbody 1000 2>&1)
+GHC=$(bin/ghc-nbody 1000 2>&1)
 
 MISMATCH=""
 [ "$KORU_KF" != "$ZIG" ] && MISMATCH="$MISMATCH koru-kernel-fused"
 [ "$RUST" != "$ZIG" ] && MISMATCH="$MISMATCH rust"
 [ "$C" != "$ZIG" ] && MISMATCH="$MISMATCH c"
 [ "$SBCL" != "$ZIG" ] && MISMATCH="$MISMATCH sbcl"
+[ "$GHC" != "$ZIG" ] && MISMATCH="$MISMATCH ghc"
 
 if [ -n "$MISMATCH" ]; then
     echo "ERROR: Output mismatch for:$MISMATCH"
@@ -64,6 +69,7 @@ if [ -n "$MISMATCH" ]; then
     echo "Rust:              $RUST"
     echo "C:                 $C"
     echo "SBCL:              $SBCL"
+    echo "GHC:               $GHC"
     exit 1
 fi
 
@@ -83,7 +89,8 @@ hyperfine \
     -n "Zig" "bin/zig-nbody $ITERS" \
     -n "Rust" "bin/rust-nbody $ITERS" \
     -n "C" "bin/c-nbody $ITERS" \
-    -n "SBCL" "bin/sbcl-nbody $ITERS"
+    -n "SBCL" "bin/sbcl-nbody $ITERS" \
+    -n "GHC" "bin/ghc-nbody $ITERS"
 
 echo ""
 echo "Results saved to: results.md, results.json"
