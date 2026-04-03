@@ -5154,6 +5154,15 @@ pub const Parser = struct {
                     .location = location,
                 };
             }
+
+            try self.reporter.addError(
+                .PARSE001,
+                self.current,
+                indent,
+                "Pipeline continuation '|>' requires a step. Nested flows (~) are not allowed here.",
+                .{},
+            );
+            return error.ParseError;
         }
 
         const steps = try self.parsePipelineSteps(full_content);

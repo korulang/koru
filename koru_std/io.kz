@@ -267,37 +267,7 @@ const std = @import("std");
     var i: usize = 0;
     var first_arg = true;
 
-    // Raw I/O: track whether we can use raw writes instead of std.debug.print
-    var needs_fmt = false;
     var missing_spec: ?[]const u8 = null;
-    var raw_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-    var literal_run = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
-
-    // Helper: flush accumulated literal text as a raw write call
-    const flushLiteralFn = struct {
-        fn flush(rb: *std.ArrayList(u8), lr: *std.ArrayList(u8), alloc: std.mem.Allocator) void {
-            if (lr.items.len > 0) {
-                rb.appendSlice(alloc, "__kio.__kz_w(\"") catch unreachable;
-                rb.appendSlice(alloc, lr.items) catch unreachable;
-                rb.appendSlice(alloc, "\"); ") catch unreachable;
-                lr.clearRetainingCapacity();
-            }
-        }
-    }.flush;
-
-    // Raw I/O: the __kio helper struct emitted inline for raw write mode
-    const raw_io_prefix =
-        "//@koru:inline_stmt\n{ const __kio = struct { " ++
-        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(1, __kz_b) catch {}; } " ++
-        "fn __kz_wd(__kz_v: i64) void { " ++
-        "var _buf: [20]u8 = undefined; var _n: usize = 0; var _v: u64 = undefined; " ++
-        "if (__kz_v < 0) { __kz_w(\"-\"); _v = @intCast(-(__kz_v + 1)); _v += 1; " ++
-        "} else { _v = @intCast(__kz_v); } " ++
-        "if (_v == 0) { _buf[0] = '0'; _n = 1; } else { " ++
-        "while (_v > 0) : (_n += 1) { _buf[_n] = @intCast('0' + _v % 10); _v /= 10; } " ++
-        "var _lo: usize = 0; var _hi = _n - 1; " ++
-        "while (_lo < _hi) { const _t = _buf[_lo]; _buf[_lo] = _buf[_hi]; _buf[_hi] = _t; _lo += 1; _hi -= 1; } " ++
-        "} __kz_w(_buf[0.._n]); } }; ";
 
     // Detect string literal vs bare expression
     const is_string_literal = expr.len > 0 and expr[0] == '"';
@@ -373,23 +343,6 @@ const std = @import("std");
                         args_buf.appendSlice(allocator, "\" else \"\"") catch unreachable;
                         first_arg = false;
 
-                        // Raw I/O: conditional string write
-                        flushLiteralFn(&raw_buf, &literal_run, allocator);
-                        raw_buf.appendSlice(allocator, "__kio.__kz_w(if (") catch unreachable;
-                        appendEscapedPath(&raw_buf, allocator, cond_var);
-                        raw_buf.appendSlice(allocator, ") \"") catch unreachable;
-                        for (body_content) |c| {
-                            switch (c) {
-                                '"' => raw_buf.appendSlice(allocator, "\\\"") catch unreachable,
-                                '\\' => raw_buf.appendSlice(allocator, "\\\\") catch unreachable,
-                                '\n' => raw_buf.appendSlice(allocator, "\\n") catch unreachable,
-                                '\r' => raw_buf.appendSlice(allocator, "\\r") catch unreachable,
-                                '\t' => raw_buf.appendSlice(allocator, "\\t") catch unreachable,
-                                else => raw_buf.append(allocator, c) catch unreachable,
-                            }
-                        }
-                        raw_buf.appendSlice(allocator, "\" else \"\"); ") catch unreachable;
-
                         i = body_end + endif_marker.len;
                         continue;
                     }
@@ -397,7 +350,6 @@ const std = @import("std");
             }
             // Not a recognized tag, treat as literal
             format_buf.append(allocator, content[i]) catch unreachable;
-            literal_run.append(allocator, content[i]) catch unreachable;
             i += 1;
         }
         // Look for {{ ... }} placeholders (Liquid-style syntax)
@@ -446,38 +398,18 @@ const std = @import("std");
                 appendEscapedPath(&args_buf, allocator, var_name);
                 first_arg = false;
 
-                // Raw I/O tracking
-                if (!std.mem.eql(u8, format_spec, "d") and !std.mem.eql(u8, format_spec, "s")) {
-                    needs_fmt = true;
-                }
-
-                // Raw I/O: emit expression write
-                flushLiteralFn(&raw_buf, &literal_run, allocator);
-                if (std.mem.eql(u8, format_spec, "d")) {
-                    raw_buf.appendSlice(allocator, "__kio.__kz_wd(@as(i64, @intCast(") catch unreachable;
-                    appendEscapedPath(&raw_buf, allocator, var_name);
-                    raw_buf.appendSlice(allocator, "))); ") catch unreachable;
-                } else if (std.mem.eql(u8, format_spec, "s")) {
-                    raw_buf.appendSlice(allocator, "__kio.__kz_w(") catch unreachable;
-                    appendEscapedPath(&raw_buf, allocator, var_name);
-                    raw_buf.appendSlice(allocator, "); ") catch unreachable;
-                }
-
                 i = j + 2; // Skip past }}
             } else {
                 format_buf.append(allocator, content[i]) catch unreachable;
-                literal_run.append(allocator, content[i]) catch unreachable;
                 i += 1;
             }
         } else {
             format_buf.append(allocator, content[i]) catch unreachable;
-            literal_run.append(allocator, content[i]) catch unreachable;
             i += 1;
         }
     }
 
     format_buf.appendSlice(allocator, "\\n") catch unreachable;
-    literal_run.appendSlice(allocator, "\\n") catch unreachable;
 
     const inline_code = if (missing_spec) |placeholder|
         std.fmt.allocPrint(
@@ -485,20 +417,12 @@ const std = @import("std");
             "@compileError(\"std.io:print.ln: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
             .{placeholder}
         ) catch unreachable
-    else if (needs_fmt)
+    else
         std.fmt.allocPrint(
             allocator,
             "@import(\"std\").debug.print(\"{s}\", .{{{s}}});",
             .{ format_buf.items, args_buf.items }
-        ) catch unreachable
-    else blk: {
-        flushLiteralFn(&raw_buf, &literal_run, allocator);
-        var code = std.ArrayList(u8).initCapacity(allocator, raw_buf.items.len + 1024) catch unreachable;
-        code.appendSlice(allocator, raw_io_prefix) catch unreachable;
-        code.appendSlice(allocator, raw_buf.items) catch unreachable;
-        code.appendSlice(allocator, "}") catch unreachable;
-        break :blk code.items;
-    };
+        ) catch unreachable;
 
     const isSameInvocation = struct {
         fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
@@ -722,37 +646,7 @@ const std = @import("std");
     var i: usize = 0;
     var first_arg = true;
 
-    // Raw I/O: track whether we can use raw writes instead of std.debug.print
-    var needs_fmt = false;
     var missing_spec: ?[]const u8 = null;
-    var raw_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-    var literal_run = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
-
-    // Helper: flush accumulated literal text as a raw write call
-    const flushLiteralFn = struct {
-        fn flush(rb: *std.ArrayList(u8), lr: *std.ArrayList(u8), alloc: std.mem.Allocator) void {
-            if (lr.items.len > 0) {
-                rb.appendSlice(alloc, "__kio.__kz_w(\"") catch unreachable;
-                rb.appendSlice(alloc, lr.items) catch unreachable;
-                rb.appendSlice(alloc, "\"); ") catch unreachable;
-                lr.clearRetainingCapacity();
-            }
-        }
-    }.flush;
-
-    // Raw I/O: the __kio helper struct emitted inline for raw write mode
-    const raw_io_prefix =
-        "//@koru:inline_stmt\n{ const __kio = struct { " ++
-        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(1, __kz_b) catch {}; } " ++
-        "fn __kz_wd(__kz_v: i64) void { " ++
-        "var _buf: [20]u8 = undefined; var _n: usize = 0; var _v: u64 = undefined; " ++
-        "if (__kz_v < 0) { __kz_w(\"-\"); _v = @intCast(-(__kz_v + 1)); _v += 1; " ++
-        "} else { _v = @intCast(__kz_v); } " ++
-        "if (_v == 0) { _buf[0] = '0'; _n = 1; } else { " ++
-        "while (_v > 0) : (_n += 1) { _buf[_n] = @intCast('0' + _v % 10); _v /= 10; } " ++
-        "var _lo: usize = 0; var _hi = _n - 1; " ++
-        "while (_lo < _hi) { const _t = _buf[_lo]; _buf[_lo] = _buf[_hi]; _buf[_hi] = _t; _lo += 1; _hi -= 1; } " ++
-        "} __kz_w(_buf[0.._n]); } }; ";
 
     const content = source.text;
 
@@ -810,23 +704,6 @@ const std = @import("std");
                         args_buf.appendSlice(allocator, "\" else \"\"") catch unreachable;
                         first_arg = false;
 
-                        // Raw I/O: conditional string write
-                        flushLiteralFn(&raw_buf, &literal_run, allocator);
-                        raw_buf.appendSlice(allocator, "__kio.__kz_w(if (") catch unreachable;
-                        appendEscapedPath(&raw_buf, allocator, cond_var);
-                        raw_buf.appendSlice(allocator, ") \"") catch unreachable;
-                        for (body_content) |c| {
-                            switch (c) {
-                                '"' => raw_buf.appendSlice(allocator, "\\\"") catch unreachable,
-                                '\\' => raw_buf.appendSlice(allocator, "\\\\") catch unreachable,
-                                '\n' => raw_buf.appendSlice(allocator, "\\n") catch unreachable,
-                                '\r' => raw_buf.appendSlice(allocator, "\\r") catch unreachable,
-                                '\t' => raw_buf.appendSlice(allocator, "\\t") catch unreachable,
-                                else => raw_buf.append(allocator, c) catch unreachable,
-                            }
-                        }
-                        raw_buf.appendSlice(allocator, "\" else \"\"); ") catch unreachable;
-
                         i = body_end + endif_marker.len;
                         continue;
                     }
@@ -836,28 +713,20 @@ const std = @import("std");
             switch (content[i]) {
                 '"' => {
                     format_buf.appendSlice(allocator, "\\\"") catch unreachable;
-                    literal_run.appendSlice(allocator, "\\\"") catch unreachable;
                 },
                 '\\' => {
                     format_buf.appendSlice(allocator, "\\\\") catch unreachable;
-                    literal_run.appendSlice(allocator, "\\\\") catch unreachable;
                 },
                 '\n' => {
                     format_buf.appendSlice(allocator, "\\n") catch unreachable;
-                    literal_run.appendSlice(allocator, "\\n") catch unreachable;
                 },
                 '\r' => {
                     format_buf.appendSlice(allocator, "\\r") catch unreachable;
-                    literal_run.appendSlice(allocator, "\\r") catch unreachable;
                 },
                 '\t' => {
                     format_buf.appendSlice(allocator, "\\t") catch unreachable;
-                    literal_run.appendSlice(allocator, "\\t") catch unreachable;
                 },
-                else => {
-                    format_buf.append(allocator, content[i]) catch unreachable;
-                    literal_run.append(allocator, content[i]) catch unreachable;
-                },
+                else => format_buf.append(allocator, content[i]) catch unreachable,
             }
             i += 1;
         }
@@ -906,50 +775,25 @@ const std = @import("std");
                 appendEscapedPath(&args_buf, allocator, var_name);
                 first_arg = false;
 
-                // Raw I/O tracking
-                if (!std.mem.eql(u8, format_spec, "d") and !std.mem.eql(u8, format_spec, "s")) {
-                    needs_fmt = true;
-                }
-
-                // Raw I/O: emit expression write
-                flushLiteralFn(&raw_buf, &literal_run, allocator);
-                if (std.mem.eql(u8, format_spec, "d")) {
-                    raw_buf.appendSlice(allocator, "__kio.__kz_wd(@as(i64, @intCast(") catch unreachable;
-                    appendEscapedPath(&raw_buf, allocator, var_name);
-                    raw_buf.appendSlice(allocator, "))); ") catch unreachable;
-                } else if (std.mem.eql(u8, format_spec, "s")) {
-                    raw_buf.appendSlice(allocator, "__kio.__kz_w(") catch unreachable;
-                    appendEscapedPath(&raw_buf, allocator, var_name);
-                    raw_buf.appendSlice(allocator, "); ") catch unreachable;
-                }
-
                 i = j + 2;
             } else {
                 switch (content[i]) {
                     '"' => {
                         format_buf.appendSlice(allocator, "\\\"") catch unreachable;
-                        literal_run.appendSlice(allocator, "\\\"") catch unreachable;
                     },
                     '\\' => {
                         format_buf.appendSlice(allocator, "\\\\") catch unreachable;
-                        literal_run.appendSlice(allocator, "\\\\") catch unreachable;
                     },
                     '\n' => {
                         format_buf.appendSlice(allocator, "\\n") catch unreachable;
-                        literal_run.appendSlice(allocator, "\\n") catch unreachable;
                     },
                     '\r' => {
                         format_buf.appendSlice(allocator, "\\r") catch unreachable;
-                        literal_run.appendSlice(allocator, "\\r") catch unreachable;
                     },
                     '\t' => {
                         format_buf.appendSlice(allocator, "\\t") catch unreachable;
-                        literal_run.appendSlice(allocator, "\\t") catch unreachable;
                     },
-                    else => {
-                        format_buf.append(allocator, content[i]) catch unreachable;
-                        literal_run.append(allocator, content[i]) catch unreachable;
-                    },
+                    else => format_buf.append(allocator, content[i]) catch unreachable,
                 }
                 i += 1;
             }
@@ -958,28 +802,20 @@ const std = @import("std");
             switch (content[i]) {
                 '"' => {
                     format_buf.appendSlice(allocator, "\\\"") catch unreachable;
-                    literal_run.appendSlice(allocator, "\\\"") catch unreachable;
                 },
                 '\\' => {
                     format_buf.appendSlice(allocator, "\\\\") catch unreachable;
-                    literal_run.appendSlice(allocator, "\\\\") catch unreachable;
                 },
                 '\n' => {
                     format_buf.appendSlice(allocator, "\\n") catch unreachable;
-                    literal_run.appendSlice(allocator, "\\n") catch unreachable;
                 },
                 '\r' => {
                     format_buf.appendSlice(allocator, "\\r") catch unreachable;
-                    literal_run.appendSlice(allocator, "\\r") catch unreachable;
                 },
                 '\t' => {
                     format_buf.appendSlice(allocator, "\\t") catch unreachable;
-                    literal_run.appendSlice(allocator, "\\t") catch unreachable;
                 },
-                else => {
-                    format_buf.append(allocator, content[i]) catch unreachable;
-                    literal_run.append(allocator, content[i]) catch unreachable;
-                },
+                else => format_buf.append(allocator, content[i]) catch unreachable,
             }
             i += 1;
         }
@@ -991,7 +827,6 @@ const std = @import("std");
         format_buf.items[format_buf.items.len - 1] != 'n')
     {
         format_buf.appendSlice(allocator, "\\n") catch unreachable;
-        literal_run.appendSlice(allocator, "\\n") catch unreachable;
     }
 
     const inline_code = if (missing_spec) |placeholder|
@@ -1000,20 +835,12 @@ const std = @import("std");
             "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
             .{placeholder}
         ) catch unreachable
-    else if (needs_fmt)
+    else
         std.fmt.allocPrint(
             allocator,
             "@import(\"std\").debug.print(\"{s}\", .{{{s}}});",
             .{ format_buf.items, args_buf.items }
-        ) catch unreachable
-    else blk: {
-        flushLiteralFn(&raw_buf, &literal_run, allocator);
-        var code = std.ArrayList(u8).initCapacity(allocator, raw_buf.items.len + 1024) catch unreachable;
-        code.appendSlice(allocator, raw_io_prefix) catch unreachable;
-        code.appendSlice(allocator, raw_buf.items) catch unreachable;
-        code.appendSlice(allocator, "}") catch unreachable;
-        break :blk code.items;
-    };
+        ) catch unreachable;
 
     if (is_pointer_top) {
         // =====================================================================
