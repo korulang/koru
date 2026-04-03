@@ -1,0 +1,25 @@
+// ============================================================================
+// Test 210_059: Reject tilde invocation after pipe-forward
+// A pipe-forward (|>) chains into a continuation body, not a new flow.
+// Writing `~call()` after `|>` is nonsensical — if you need to chain
+// flows, use a branch binding and invoke from the continuation body.
+// ============================================================================
+
+~event greet { name: []const u8 }
+| done { message: []const u8 }
+
+~proc greet {
+    return .{ .done = .{ .message = "Hello!" } };
+}
+
+~event farewell { name: []const u8 }
+| done { message: []const u8 }
+
+~proc farewell {
+    return .{ .done = .{ .message = "Goodbye!" } };
+}
+
+// INVALID: ~ invocation after |> is not valid Koru
+~greet(name: "World")
+|>
+~farewell(name: "World")

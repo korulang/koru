@@ -1,0 +1,24 @@
+// Test: ~proc with module qualifier for abstract event override
+//
+// This tests using ~proc input:greet { ... } syntax to provide
+// a proc implementation for an abstract event.
+//
+// This is the proc-based equivalent of ~input:greet = flow syntax.
+// The difference: proc contains Zig code, flow contains event chains.
+
+const std = @import("std");
+
+// Abstract event WITHOUT default implementation
+~[abstract] event greet { name: []const u8 }
+| greeted { message: []const u8 }
+
+// Provide proc implementation using module-qualified syntax
+// This should be equivalent to ~input:greet = greeted { message: name }
+~proc input:greet {
+    std.debug.print("{s}\n", .{name});
+    return .{ .greeted = .{ .message = name } };
+}
+
+// Use the event
+~greet(name: "hello from proc override")
+| greeted _ |> _
