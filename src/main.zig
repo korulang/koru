@@ -31,7 +31,7 @@ const codegen_utils = @import("codegen_utils");
 const emitter_helpers = @import("emitter_helpers");
 const ccp = @import("ccp.zig");
 
-const version = "0.1.4";
+const version = "0.1.6";
 
 /// Write a branch name, escaping Zig keywords with @"..."
 fn writeBranchName(writer: anytype, name: []const u8) !void {
