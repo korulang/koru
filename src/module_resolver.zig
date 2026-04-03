@@ -51,7 +51,12 @@ pub const ModuleResolver = struct {
             koru_home_temp = std.fs.path.dirname(koru_home_temp) orelse koru_home_temp;
         }
         // Dupe to heap so it survives beyond this function
+        // Normalize backslashes to forward slashes for Windows compatibility
+        // (Zig string literals treat \U etc. as invalid escape sequences)
         const koru_home = try allocator.dupe(u8, koru_home_temp);
+        for (koru_home) |*c| {
+            if (c.* == '\\') c.* = '/';
+        }
 
         var resolver = ModuleResolver{
             .allocator = allocator,
