@@ -1,6 +1,6 @@
 # Koru
 
-Koru is an event continuation language that compiles to Zig. It provides a structured way to handle asynchronous control flow through events, continuations, and taps.
+Koru is an event continuation language that compiles to Zig. It provides a structured way to handle control flow through events, continuations, and taps.
 
 ```koru
 ~import "$std/io"
