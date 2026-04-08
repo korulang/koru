@@ -341,39 +341,76 @@ const std = @import("std");
                     si: *?*const ast.Invocation,
                 ) void {
                     for (continuations) |*cont| {
-                        if (cont.node) |*nd| {
-                            if (nd.* == .invocation) {
-                                const inv = &nd.invocation;
-                                detectStep(inv, sr, si);
-                                const is_pairwise = inv.path.segments.len == 1 and
-                                    std.mem.eql(u8, inv.path.segments[0], "pairwise") and
-                                    inv.path.module_qualifier != null and
-                                    std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
-                                const is_self = inv.path.segments.len == 1 and
-                                    std.mem.eql(u8, inv.path.segments[0], "self") and
-                                    inv.path.module_qualifier != null and
-                                    std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
+                        // Skip | step |> branches here - handle them separately to avoid double-counting
+                        const is_step = std.mem.eql(u8, cont.branch, "step");
+                        
+                        if (!is_step) {
+                            if (cont.node) |*nd| {
+                                if (nd.* == .invocation) {
+                                    const inv = &nd.invocation;
+                                    detectStep(inv, sr, si);
+                                    const is_pairwise = inv.path.segments.len == 1 and
+                                        std.mem.eql(u8, inv.path.segments[0], "pairwise") and
+                                        inv.path.module_qualifier != null and
+                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
+                                    const is_self = inv.path.segments.len == 1 and
+                                        std.mem.eql(u8, inv.path.segments[0], "self") and
+                                        inv.path.module_qualifier != null and
+                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
 
-                                if (is_pairwise or is_self) {
-                                    // Extract source text from the invocation's args
-                                    var body_text: ?[]const u8 = null;
-                                    for (inv.args) |arg| {
-                                        if (arg.source_value) |src_val| {
-                                            body_text = src_val.text;
+                                    if (is_pairwise or is_self) {
+                                        var body_text: ?[]const u8 = null;
+                                        for (inv.args) |arg| {
+                                            if (arg.source_value) |src_val| {
+                                                body_text = src_val.text;
+                                            }
                                         }
-                                    }
-                                    if (body_text) |bt| {
-                                        ops_list.append(a, .{
-                                            .op_type = if (is_pairwise) "pairwise" else "self",
-                                            .body_text = bt,
-                                        }) catch unreachable;
+                                        if (body_text) |bt| {
+                                            ops_list.append(a, .{
+                                                .op_type = if (is_pairwise) "pairwise" else "self",
+                                                .body_text = bt,
+                                            }) catch unreachable;
+                                        }
                                     }
                                 }
                             }
-                        }
-                        // Recurse into nested continuations (for |> chaining)
-                        if (cont.continuations.len > 0) {
-                            callInner(a, cont.continuations, ops_list, sr, si);
+                            // Recurse into nested continuations (for |> chaining)
+                            if (cont.continuations.len > 0) {
+                                callInner(a, cont.continuations, ops_list, sr, si);
+                            }
+                        } else {
+                            // | step |> branch: check its node and recurse into its continuations
+                            if (cont.node) |*nd| {
+                                if (nd.* == .invocation) {
+                                    const inv = &nd.invocation;
+                                    const is_pairwise = inv.path.segments.len == 1 and
+                                        std.mem.eql(u8, inv.path.segments[0], "pairwise") and
+                                        inv.path.module_qualifier != null and
+                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
+                                    const is_self = inv.path.segments.len == 1 and
+                                        std.mem.eql(u8, inv.path.segments[0], "self") and
+                                        inv.path.module_qualifier != null and
+                                        std.mem.eql(u8, inv.path.module_qualifier.?, "std.kernel");
+
+                                    if (is_pairwise or is_self) {
+                                        var body_text: ?[]const u8 = null;
+                                        for (inv.args) |arg| {
+                                            if (arg.source_value) |src_val| {
+                                                body_text = src_val.text;
+                                            }
+                                        }
+                                        if (body_text) |bt| {
+                                            ops_list.append(a, .{
+                                                .op_type = if (is_pairwise) "pairwise" else "self",
+                                                .body_text = bt,
+                                            }) catch unreachable;
+                                        }
+                                    }
+                                }
+                            }
+                            if (cont.continuations.len > 0) {
+                                callInner(a, cont.continuations, ops_list, sr, si);
+                            }
                         }
                     }
                 }
@@ -1343,7 +1380,7 @@ const std = @import("std");
     // OUTER-RANGE CASE: pairwise(0..N) { ... } |> per_step(...)
     //
     // Build a ForeachNode for the outer loop.
-    // "each" branch body = [ pairwise i/j inline_code → sub_continuations ]
+    // "step" branch body = [ pairwise i/j inline_code → sub_continuations ]
     // This puts the per-step continuation (advance_positions etc.) INSIDE the
     // outer loop, hoisting ptr extraction and fusing both operations together.
     // ========================================================================
@@ -1365,7 +1402,7 @@ const std = @import("std");
 
     const branches = allocator.alloc(ast.NamedBranch, 1) catch unreachable;
     branches[0] = ast.NamedBranch{
-        .name = allocator.dupe(u8, "each") catch unreachable,
+        .name = allocator.dupe(u8, "step") catch unreachable,
         .body = each_body,
         .binding = allocator.dupe(u8, "_") catch unreachable,
         .annotations = scope_annotations,
@@ -1657,8 +1694,49 @@ const std = @import("std");
     _ = expr;
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
+    
+    // Find the continuation containing this step invocation to check for | step |>
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{ .program = program } };
+    
+    const findStepCont = struct {
+        fn search(conts: []const ast.Continuation, target: *const ast.Invocation) ?*const ast.Continuation {
+            for (conts) |*c| {
+                if (c.node) |*n| {
+                    if (n.* == .invocation and &n.invocation == target) return c;
+                }
+                if (search(c.continuations, target)) |found| return found;
+            }
+            return null;
+        }
+    }.search;
+    
+    const step_cont = findStepCont(flow.continuations, invocation);
+    
+    // Check for | step |> and flatten it to void-chain
+    var new_conts: []const ast.Continuation = &[_]ast.Continuation{};
+    if (step_cont) |cont| {
+        for (cont.continuations) |*nested| {
+            if (std.mem.eql(u8, nested.branch, "step")) {
+                // Flatten | step |> contents to void-chain
+                var void_cont = allocator.alloc(ast.Continuation, 1) catch unreachable;
+                void_cont[0] = .{
+                    .branch = "",
+                    .binding = nested.binding,
+                    .condition = nested.condition,
+                    .node = nested.node,
+                    .indent = nested.indent,
+                    .continuations = nested.continuations,
+                };
+                new_conts = void_cont;
+                break;
+            }
+        }
+    }
+    
     const empty_node = ast.Node{ .inline_code = "" };
-    const maybe_new = ast_functional.replaceInvocationNodeRecursive(allocator, program, invocation, empty_node) catch unreachable;
+    const maybe_new = ast_functional.replaceInvocationNodeAndContinuationsRecursive(
+        allocator, program, invocation, empty_node, new_conts
+    ) catch unreachable;
     if (maybe_new) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;

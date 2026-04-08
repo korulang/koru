@@ -24,8 +24,9 @@
 }
 | kernel k |>
     std.kernel:step(0..3)
-    |> std.kernel:pairwise { k.mass += k.other.mass * 0.0 }
-    |> std.kernel:self { k.mass += 0.1 }
+    | step |>
+        std.kernel:pairwise { k.mass += k.other.mass * 0.0 }
+        |> std.kernel:self { k.mass += 0.1 }
 | computed c |>
     std.io:print.blk {
         mass[0]={{ c[0].mass:f }}

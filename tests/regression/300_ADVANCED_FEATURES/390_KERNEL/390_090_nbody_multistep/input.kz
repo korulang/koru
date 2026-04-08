@@ -31,7 +31,8 @@ const DT: f64 = 0.01;
 }
 | kernel k |>
     std.kernel:step(0..10)
-    |> std.kernel:pairwise {
+    | step |>
+        std.kernel:pairwise {
         const dx = k.x - k.other.x;
         const dy = k.y - k.other.y;
         const dz = k.z - k.other.z;
@@ -43,8 +44,8 @@ const DT: f64 = 0.01;
         k.other.vx += dx * k.mass * mag;
         k.other.vy += dy * k.mass * mag;
         k.other.vz += dz * k.mass * mag;
-    }
-    |> std.kernel:self {
+        }
+        |> std.kernel:self {
         k.x += DT * k.vx;
         k.y += DT * k.vy;
         k.z += DT * k.vz;
