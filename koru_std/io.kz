@@ -268,6 +268,10 @@ const std = @import("std");
     var first_arg = true;
 
     var missing_spec: ?[]const u8 = null;
+    var function_call_expr: ?[]const u8 = null;
+
+    // Use the expression parser to detect function calls properly
+    const expr_parser = @import("expression_parser");
 
     // Detect string literal vs bare expression
     const is_string_literal = expr.len > 0 and expr[0] == '"';
@@ -380,6 +384,19 @@ const std = @import("std");
                     has_spec = true;
                 }
 
+                // Function call check: parse the expression and check for function calls
+                if (function_call_expr == null) {
+                    var parser = expr_parser.ExpressionParser.init(allocator, var_name);
+                    defer parser.deinit();
+                    if (parser.parse()) |parsed_expr| {
+                        if (expr_parser.containsFunctionCall(parsed_expr)) {
+                            function_call_expr = var_name;
+                        }
+                    } else |_| {
+                        // Parse failed - let the Zig compiler catch it later
+                    }
+                }
+
                 // Missing specifier: record error (first one only)
                 if (!has_spec and missing_spec == null) {
                     missing_spec = placeholder;
@@ -411,7 +428,13 @@ const std = @import("std");
 
     format_buf.appendSlice(allocator, "\\n") catch unreachable;
 
-    const inline_code = if (missing_spec) |placeholder|
+    const inline_code = if (function_call_expr) |fn_expr|
+        std.fmt.allocPrint(
+            allocator,
+            "@compileError(\"std.io:print.ln: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
+            .{fn_expr}
+        ) catch unreachable
+    else if (missing_spec) |placeholder|
         std.fmt.allocPrint(
             allocator,
             "@compileError(\"std.io:print.ln: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
@@ -647,6 +670,10 @@ const std = @import("std");
     var first_arg = true;
 
     var missing_spec: ?[]const u8 = null;
+    var function_call_expr: ?[]const u8 = null;
+
+    // Use the expression parser to detect function calls properly
+    const expr_parser = @import("expression_parser");
 
     const content = source.text;
 
@@ -758,6 +785,19 @@ const std = @import("std");
                     has_spec = true;
                 }
 
+                // Function call check: parse the expression and check for function calls
+                if (function_call_expr == null) {
+                    var parser = expr_parser.ExpressionParser.init(allocator, var_name);
+                    defer parser.deinit();
+                    if (parser.parse()) |parsed_expr| {
+                        if (expr_parser.containsFunctionCall(parsed_expr)) {
+                            function_call_expr = var_name;
+                        }
+                    } else |_| {
+                        // Parse failed - let the Zig compiler catch it later
+                    }
+                }
+
                 // Missing specifier: record error (first one only)
                 if (!has_spec and missing_spec == null) {
                     missing_spec = placeholder;
@@ -829,7 +869,13 @@ const std = @import("std");
         format_buf.appendSlice(allocator, "\\n") catch unreachable;
     }
 
-    const inline_code = if (missing_spec) |placeholder|
+    const inline_code = if (function_call_expr) |fn_expr|
+        std.fmt.allocPrint(
+            allocator,
+            "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
+            .{fn_expr}
+        ) catch unreachable
+    else if (missing_spec) |placeholder|
         std.fmt.allocPrint(
             allocator,
             "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",

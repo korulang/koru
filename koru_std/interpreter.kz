@@ -282,6 +282,17 @@ pub const Value = struct {
 };
 
 // ============================================================================
+// VALUE SERIALIZATION - Convert interpreter Value to JSON
+// ============================================================================
+
+~[retain]pub event value.stringify { value: Value }
+| json []const u8
+
+~proc value.stringify {
+    return .{ .json = value.toJsonBuf() };
+}
+
+// ============================================================================
 // BUDGET TRACKING - Metered execution
 // ============================================================================
 

@@ -33,7 +33,8 @@ const TEST_SOURCE_DISCARD =
 
 ~std.runtime:get_scope(name: "test")
 | scope s |> std.interpreter:run(source: TEST_SOURCE_IDENTITY, dispatcher: s.dispatcher)
-    | result r |> std.io:print.ln("IDENTITY {{ r.value.toJsonBuf():s }}")
+    | result r |> std.interpreter:value.stringify(value: r.value)
+        | json j |> std.io:print.ln("IDENTITY {{ j:s }}")
     | exhausted e |> std.io:print.ln("EXHAUSTED: {{ e.last_event:s }}")
     | parse_error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
     | validation_error e |> std.io:print.ln("VALIDATION ERROR: {{ e.message:s }}")
@@ -42,7 +43,8 @@ const TEST_SOURCE_DISCARD =
 
 ~std.runtime:get_scope(name: "test")
 | scope s |> std.interpreter:run(source: TEST_SOURCE_BRANCH, dispatcher: s.dispatcher)
-    | result r |> std.io:print.ln("BRANCH {{ r.value.toJsonBuf():s }}")
+    | result r |> std.interpreter:value.stringify(value: r.value)
+        | json j |> std.io:print.ln("BRANCH {{ j:s }}")
     | exhausted e |> std.io:print.ln("EXHAUSTED: {{ e.last_event:s }}")
     | parse_error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
     | validation_error e |> std.io:print.ln("VALIDATION ERROR: {{ e.message:s }}")

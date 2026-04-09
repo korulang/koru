@@ -1,25 +1,20 @@
-// TEST: KORU100 false positive — binding used in print.ln template expression
+// TEST: Binding used in print.ln template expression
 //
-// BUG: The flow checker emits KORU100 (unused binding) for a binding that IS
-// used inside {{ }} string interpolation in print.ln.
+// Verifies that bindings referenced inside {{ }} interpolation in print.ln
+// are correctly recognized as used by the flow checker.
 //
-// print.blk handles this correctly — it registers template references as used.
-// print.ln does NOT — the binding appears unused to the flow checker.
-//
-// Related: 220_003 (same bug in for-loop context)
-//
-// Expected: Compiles successfully — 'val' IS used in {{ val }}
-// Actual:   error[KORU100]: unused binding 'val'
+// The binding 'val' is used in {{ val.value:d }} and should NOT trigger KORU100.
 
 ~import "$std/io"
 
-~event provide { value: i64 }
+~event provide {}
+| ok { value: i64 }
+
 ~proc provide {
     return .{ .ok = .{ .value = 42 } };
 }
 
 ~provide()
-| ok val |>
-~std.io:print.ln("value is {{ val }}")
+| ok val |> std.io:print.ln("value is {{ val.value:d }}")
 
 pub fn main() void {}

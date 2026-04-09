@@ -92,17 +92,37 @@ Please don't run the full regression suite - it takes 40+ minutes and the user r
 ./run_regression.sh 330            # Run a range (330-339)
 ```
 
-## PERMANENT SYNTAX REMINDER
-**The `~` prefix is ONLY used to switch from Zig to Koru mode, NOT inside flows.**
+## PERMANENT SYNTAX REMINDER: The `~` Prefix
 
-Inside a flow (after `|>`), events are called WITHOUT `~`:
+**The `~` prefix switches the parser from the host language (Zig) to Koru. It is NEVER used inside a Koru flow.**
+
+Once you're in Koru (after the initial `~`), you stay in Koru until the flow ends. The `~` is a parser mode switch, not an "event call" operator.
+
 ```koru
-~get_user(id: 4)           // ~ here: switching from Zig to Koru
+// ~ switches from Zig to Koru - this starts a flow
+~get_user(id: 4)
 | ok u |>
-    get_permissions(user: u)   // NO ~ here: already in Koru flow
+    get_permissions(user: u)   // Already in Koru - no ~
     | ok p |>
-        if(u.active)           // NO ~ here either
+        std.io:print.ln("...")  // Still in Koru - no ~
         | then |> ...
+```
+
+**WRONG - using `~` inside a flow:**
+```koru
+~provide()
+| ok val |>
+    ~std.io:print.ln("...")   // WRONG! This starts a NEW flow!
+```
+
+The parser will silently accept this and create TWO separate flows:
+1. `~provide() | ok val |>` (with unused binding `val`)
+2. `~std.io:print.ln(...)` (new top-level flow that can't see `val`)
+
+**CORRECT:**
+```koru
+~provide()
+| ok val |> std.io:print.ln("{{ val:any }}")
 ```
 
 ## 🧬 Project Consciousness
