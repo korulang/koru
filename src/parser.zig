@@ -3463,6 +3463,19 @@ pub const Parser = struct {
 
         // Check if it's a branch constructor (immediate return syntax)
         if (body_str.len > 0) {
+            // Reject Zig-style struct syntax: .{ .field = value }
+            // Koru uses: branch_name { field: value }
+            if (lexer.startsWith(body_str, ".{")) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current,
+                    1,
+                    "Zig-style struct syntax '.{{' is not valid Koru — use 'branch_name {{ field: value }}' instead",
+                    .{},
+                );
+                return error.ParseError;
+            }
+
             // Check for branch constructor pattern: word followed by {
             const brace_idx = std.mem.indexOf(u8, body_str, "{");
             if (brace_idx) |b_idx| {
@@ -3622,6 +3635,19 @@ pub const Parser = struct {
         }
         const body_line = self.lines[self.current];
         const trimmed_body = lexer.trim(body_line);
+
+        // Reject Zig-style struct syntax: .{ .field = value }
+        // Koru uses: branch_name { field: value }
+        if (lexer.startsWith(trimmed_body, ".{")) {
+            try self.reporter.addError(
+                .PARSE003,
+                self.current + 1,
+                1,
+                "Zig-style struct syntax '.{{' is not valid Koru — use 'branch_name {{ field: value }}' instead",
+                .{},
+            );
+            return error.ParseError;
+        }
 
         // Check for branch constructor (immediate return syntax)
         const brace_idx = std.mem.indexOf(u8, trimmed_body, "{");
@@ -5655,7 +5681,7 @@ pub const Parser = struct {
                 else
                     eq_idx;
 
-                var field_name: []const u8 = if (sep_idx) |idx| blk: {
+                const field_name: []const u8 = if (sep_idx) |idx| blk: {
                     // Explicit form: name: value or .name = value
                     break :blk lexer.trim(trimmed[0..idx]);
                 } else blk: {
@@ -5670,9 +5696,17 @@ pub const Parser = struct {
                     }
                 };
 
-                // Strip leading . from field name (Zig anonymous struct syntax)
+                // Reject Zig-style struct syntax: .{ .field = value }
+                // Koru uses: branch_name { field: value }
                 if (lexer.startsWith(field_name, ".")) {
-                    field_name = field_name[1..];
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current + 1,
+                        1,
+                        "Zig-style struct syntax '.{s}' is not valid Koru — use 'field_name: value' instead of '.field_name = value'",
+                        .{field_name},
+                    );
+                    return error.ParseError;
                 }
 
                 const field_value = if (sep_idx) |idx|

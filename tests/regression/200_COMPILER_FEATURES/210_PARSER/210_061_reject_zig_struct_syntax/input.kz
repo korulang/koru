@@ -1,0 +1,13 @@
+// Test: Parser should reject Zig-style struct syntax in subflow implementations
+// Zig uses .{ .field = value } but Koru uses branch_name { field: value }
+
+const std = @import("std");
+
+~[abstract] event fetch { url: []const u8 }
+| success { body: []const u8 }
+| error { code: i32 }
+
+// WRONG: This is Zig syntax, not Koru
+// Should be: ~input:fetch = success { body: "mock response" }
+~input:fetch =
+    .{ .success = .{ .body = "mock response" } }
