@@ -1,0 +1,35 @@
+// TEST: Reject state mismatch - passing wrong state to event
+//
+// If an event requires [connected] state on input, passing a connection
+// without that state (or in a different state) must be rejected.
+//
+// This is a type error: *Connection[connected] != *Connection
+//
+// EXPECTED: Compiler error - phantom state mismatch
+// STATUS: BUG - compiler currently accepts this invalid code
+
+const Connection = struct { id: i32 };
+
+// Event that requires connection in [connected] state
+~pub event query { conn: *Connection[connected], sql: []const u8 }
+| done {}
+
+~proc query {
+    return .{ .done = .{} };
+}
+
+// Event that produces a connection WITHOUT any state annotation
+~pub event get_raw_connection {}
+| ok { conn: *Connection }
+
+~proc get_raw_connection {
+    return .{ .ok = .{ .conn = undefined } };
+}
+
+// Try to pass unqualified *Connection to event expecting *Connection[connected]
+~get_raw_connection()
+| ok c |>
+    query(conn: c.conn, sql: "SELECT 1")
+    | done |> _
+
+pub fn main() void {}

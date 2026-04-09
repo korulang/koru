@@ -1,0 +1,24 @@
+// TEST: Reject obligation consumption [!state] on output parameters
+//
+// The ! prefix means "consume obligation" - this only makes sense on INPUT.
+// On OUTPUT, you can:
+//   - [state]   = produce in this state (no obligation)
+//   - [state!]  = issue an obligation that must be discharged
+//
+// But [!state] on output is semantically invalid - you can't "consume" an
+// obligation on something you're producing.
+//
+// MUST_FAIL: Cannot consume obligation
+
+const Connection = struct { id: i32 };
+
+// INVALID: [!connected] on output tries to consume an obligation
+// This should be either [connected] (just state) or [connected!] (issue obligation)
+~pub event connect { url: []const u8 }
+| ok { conn: *Connection[!connected] }
+
+~proc connect {
+    return .{ .ok = .{ .conn = undefined } };
+}
+
+pub fn main() void {}

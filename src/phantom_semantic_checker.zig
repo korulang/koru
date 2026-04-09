@@ -229,7 +229,7 @@ pub const PhantomSemanticChecker = struct {
                     // Check input fields
                     for (event_decl.input.fields) |field| {
                         if (field.phantom) |phantom_str| {
-                            const phantom_valid = try self.validatePhantom(phantom_str, event_decl.path.segments[0], event_decl.location);
+                            const phantom_valid = try self.validatePhantom(phantom_str, event_decl.path.segments[0], event_decl.location, true);
                             if (!phantom_valid) {
                                 has_errors = true;
                                 // Continue checking for more errors
@@ -241,7 +241,7 @@ pub const PhantomSemanticChecker = struct {
                     for (event_decl.branches) |branch| {
                         for (branch.payload.fields) |field| {
                             if (field.phantom) |phantom_str| {
-                                const phantom_valid = try self.validatePhantom(phantom_str, event_decl.path.segments[0], event_decl.location);
+                                const phantom_valid = try self.validatePhantom(phantom_str, event_decl.path.segments[0], event_decl.location, false);
                                 if (!phantom_valid) {
                                     has_errors = true;
                                     // Continue checking for more errors
@@ -258,7 +258,7 @@ pub const PhantomSemanticChecker = struct {
 
                             for (event_decl.input.fields) |field| {
                                 if (field.phantom) |phantom_str| {
-                                    const phantom_valid = try self.validatePhantom(phantom_str, event_decl.path.segments[0], event_decl.location);
+                                    const phantom_valid = try self.validatePhantom(phantom_str, event_decl.path.segments[0], event_decl.location, true);
                                     if (!phantom_valid) {
                                         has_errors = true;
                                         // Continue checking for more errors
@@ -269,7 +269,7 @@ pub const PhantomSemanticChecker = struct {
                             for (event_decl.branches) |branch| {
                                 for (branch.payload.fields) |field| {
                                     if (field.phantom) |phantom_str| {
-                                        const phantom_valid = try self.validatePhantom(phantom_str, event_decl.path.segments[0], event_decl.location);
+                                        const phantom_valid = try self.validatePhantom(phantom_str, event_decl.path.segments[0], event_decl.location, false);
                                         if (!phantom_valid) {
                                             has_errors = true;
                                             // Continue checking for more errors
@@ -287,12 +287,38 @@ pub const PhantomSemanticChecker = struct {
         return !has_errors;
     }
 
-    fn validatePhantom(self: *PhantomSemanticChecker, phantom_str: []const u8, event_name: []const u8, location: errors.SourceLocation) !bool {
+    fn validatePhantom(self: *PhantomSemanticChecker, phantom_str: []const u8, event_name: []const u8, location: errors.SourceLocation, is_input: bool) !bool {
         var phantom = try phantom_parser.PhantomState.parse(self.allocator, phantom_str);
         defer phantom.deinit(self.allocator);
 
         switch (phantom) {
             .concrete => |concrete| {
+                // Check for obligation issuance (! suffix) on input - this is invalid
+                // You can only ISSUE obligations on outputs, not inputs
+                if (is_input and concrete.requires_cleanup) {
+                    try self.reporter.addError(
+                        .KORU033,
+                        location.line,
+                        location.column,
+                        "Cannot issue obligation '[{s}]' on input parameter (event: {s}). Use '[!{s}]' to consume an existing obligation, or remove the '!' suffix.",
+                        .{ phantom_str, event_name, concrete.name },
+                    );
+                    return false;
+                }
+
+                // Check for obligation consumption (! prefix) on output - this is invalid
+                // You can only CONSUME obligations on inputs, not outputs
+                if (!is_input and concrete.consumes_obligation) {
+                    try self.reporter.addError(
+                        .KORU033,
+                        location.line,
+                        location.column,
+                        "Cannot consume obligation '[{s}]' on output parameter (event: {s}). Use '[{s}!]' to issue a new obligation, or remove the '!' prefix.",
+                        .{ phantom_str, event_name, concrete.name },
+                    );
+                    return false;
+                }
+
                 if (concrete.module_path) |mod_path| {
                     if (!self.module_map.contains(mod_path)) {
                         try self.reporter.addError(
@@ -300,7 +326,7 @@ pub const PhantomSemanticChecker = struct {
                             location.line,
                             location.column,
                             "Unknown module '{s}' in phantom type annotation '{s}' (event: {s}). Module not imported.",
-                            .{mod_path, phantom_str, event_name}
+                            .{ mod_path, phantom_str, event_name },
                         );
                         // Return false to indicate error, but don't stop checking
                         return false;
@@ -311,6 +337,8 @@ pub const PhantomSemanticChecker = struct {
                 // State variables are always valid (they're constraints, not concrete states)
             },
             .state_union => |u| {
+                // State unions can only appear on inputs (they accept multiple states)
+                // The phantom_parser already rejects unions with ! suffix (requires_cleanup)
                 // Validate each member of the union
                 for (u.members) |member| {
                     if (member.module_path) |mod_path| {
@@ -320,7 +348,7 @@ pub const PhantomSemanticChecker = struct {
                                 location.line,
                                 location.column,
                                 "Unknown module '{s}' in phantom type annotation '{s}' (event: {s}). Module not imported.",
-                                .{mod_path, phantom_str, event_name}
+                                .{ mod_path, phantom_str, event_name },
                             );
                             return false;
                         }

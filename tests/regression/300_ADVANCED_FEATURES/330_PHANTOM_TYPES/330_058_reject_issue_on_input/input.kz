@@ -1,0 +1,24 @@
+// TEST: Reject obligation issuance [state!] on input parameters
+//
+// The ! suffix means "issue obligation" - this only makes sense on OUTPUT.
+// On INPUT, you can:
+//   - [state]   = require this state (no obligation transfer)
+//   - [!state]  = consume an existing obligation
+//
+// But [state!] on input is semantically invalid - you can't "issue" an
+// obligation on something you receive.
+//
+// MUST_FAIL: Cannot issue obligation
+
+const Connection = struct { id: i32 };
+
+// INVALID: [connected!] on input tries to issue an obligation
+// This should be either [connected] (require state) or [!connected] (consume)
+~pub event use_connection { conn: *Connection[connected!] }
+| done {}
+
+~proc use_connection {
+    return .{ .done = .{} };
+}
+
+pub fn main() void {}

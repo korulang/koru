@@ -29,7 +29,9 @@ const Transaction = struct {
 }
 
 // Start a query/transaction - creates transaction! obligation
-~pub event query { conn: *Connection[connected!], sql: []const u8 }
+// The connection must be in [connected] state (required, but not consumed)
+// The connected! obligation is tracked separately and discharged by disconnect()
+~pub event query { conn: *Connection[connected], sql: []const u8 }
 | started { tx: *Transaction[transaction!] }
 
 ~proc query {

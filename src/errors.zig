@@ -15,6 +15,7 @@ pub const ErrorCode = enum(u16) {
     KORU030, // Shape mismatch
     KORU031, // Payload type mismatch
     KORU032, // Cannot auto-discharge outer-scope resource inside loop
+    KORU033, // Invalid phantom annotation (e.g., obligation issuance on input)
     SHAPE001, // Inconsistent branch shapes in subflow
     SHAPE002, // Duplicate branch handler at same level (indentation error)
     
