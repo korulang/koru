@@ -1,69 +1,24 @@
-// Test: Pattern branches for HTTP routing
+// MUST_FAIL: Zig-style struct syntax in parameter values must be rejected
 //
-// Pattern branches like | [GET /users/:id] |> should be transformed
-// into runtime dispatch based on method + path matching.
+// Koru does not support Zig anonymous struct literals (.{ .field = value })
+// in flow call parameters. Use named parameters instead.
 
 ~import "$std/io"
 
 const std = @import("std");
 
-// Simulated request type
 pub const Request = struct {
     method: []const u8,
     path: []const u8,
 };
 
-// Simulated route params
-pub const RouteParams = struct {
-    id: ?[]const u8 = null,
-    name: ?[]const u8 = null,
-};
-
-// Event that returns a request (simulating http server)
 ~pub event handle { req: Request }
 | response { status: u16, body: []const u8 }
 
-// For now, we'll manually implement what the transform SHOULD generate
-// This helps us understand the target behavior
-
 ~proc handle {
-    // This is what a pattern branch transform would generate:
-    // Parse the patterns at compile time, generate this dispatch logic
-
-    if (std.mem.eql(u8, req.method, "GET")) {
-        // Check /users/:id pattern
-        if (std.mem.startsWith(u8, req.path, "/users/")) {
-            const id = req.path[7..];  // Extract :id
-            if (id.len > 0) {
-                // Route matched: GET /users/:id
-                return .{ .response = .{ .status = 200, .body = id } };
-            }
-        }
-        // Check /health pattern
-        if (std.mem.eql(u8, req.path, "/health")) {
-            return .{ .response = .{ .status = 200, .body = "ok" } };
-        }
-    }
-
-    if (std.mem.eql(u8, req.method, "POST")) {
-        if (std.mem.eql(u8, req.path, "/users")) {
-            return .{ .response = .{ .status = 201, .body = "created" } };
-        }
-    }
-
-    // No match
-    return .{ .response = .{ .status = 404, .body = "not found" } };
+    return .{ .response = .{ .status = 200, .body = "ok" } };
 }
 
-// Test the routing
-~handle(req: .{ .method = "GET", .path = "/users/42" })
-| response r |> std.io:print.ln("GET /users/42 -> {{ r.status:d }}: {{ r.body:s }}")
-
+// WRONG: Zig-style struct literal in parameter value
 ~handle(req: .{ .method = "GET", .path = "/health" })
-| response r |> std.io:print.ln("GET /health -> {{ r.status:d }}: {{ r.body:s }}")
-
-~handle(req: .{ .method = "POST", .path = "/users" })
-| response r |> std.io:print.ln("POST /users -> {{ r.status:d }}: {{ r.body:s }}")
-
-~handle(req: .{ .method = "DELETE", .path = "/users/1" })
-| response r |> std.io:print.ln("DELETE /users/1 -> {{ r.status:d }}: {{ r.body:s }}")
+| response r |> std.io:print.ln("{{ r.body:s }}")

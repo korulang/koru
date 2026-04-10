@@ -3316,6 +3316,19 @@ pub const Parser = struct {
 
                 // Transfer ownership of the strings to the AST
                 for (parsed_args) |arg| {
+                    // Reject Zig-style struct syntax in parameter values: name: .{ .field = value }
+                    // Koru uses named parameters: name: value — not anonymous struct literals
+                    if (lexer.startsWith(arg.value, ".{")) {
+                        try self.reporter.addError(
+                            .PARSE003,
+                            self.current,
+                            1,
+                            "Zig-style struct syntax '.{{' is not valid in Koru parameter values — pass fields as named parameters instead",
+                            .{},
+                        );
+                        return error.ParseError;
+                    }
+
                     var ast_arg = ast.Arg{
                         .name = arg.name,
                         .value = arg.value,

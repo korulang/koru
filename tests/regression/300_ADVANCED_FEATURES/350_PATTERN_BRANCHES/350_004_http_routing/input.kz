@@ -1,0 +1,48 @@
+// Test: Pattern branches for HTTP routing
+//
+// Demonstrates HTTP-style routing dispatch using Koru events and procs.
+// Uses named parameters instead of Zig struct literals.
+
+~import "$std/io"
+
+const std = @import("std");
+
+~pub event handle { method: []const u8, path: []const u8 }
+| response { status: u16, body: []const u8 }
+
+~proc handle {
+    if (std.mem.eql(u8, method, "GET")) {
+        // Check /users/:id pattern
+        if (std.mem.startsWith(u8, path, "/users/")) {
+            const id = path[7..];
+            if (id.len > 0) {
+                return .{ .response = .{ .status = 200, .body = id } };
+            }
+        }
+        // Check /health pattern
+        if (std.mem.eql(u8, path, "/health")) {
+            return .{ .response = .{ .status = 200, .body = "ok" } };
+        }
+    }
+
+    if (std.mem.eql(u8, method, "POST")) {
+        if (std.mem.eql(u8, path, "/users")) {
+            return .{ .response = .{ .status = 201, .body = "created" } };
+        }
+    }
+
+    // No match
+    return .{ .response = .{ .status = 404, .body = "not found" } };
+}
+
+~handle(method: "GET", path: "/users/42")
+| response r |> std.io:print.ln("GET /users/42 -> {{ r.status:d }}: {{ r.body:s }}")
+
+~handle(method: "GET", path: "/health")
+| response r |> std.io:print.ln("GET /health -> {{ r.status:d }}: {{ r.body:s }}")
+
+~handle(method: "POST", path: "/users")
+| response r |> std.io:print.ln("POST /users -> {{ r.status:d }}: {{ r.body:s }}")
+
+~handle(method: "DELETE", path: "/users/1")
+| response r |> std.io:print.ln("DELETE /users/1 -> {{ r.status:d }}: {{ r.body:s }}")
