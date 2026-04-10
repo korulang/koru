@@ -2115,6 +2115,68 @@ pub const PhantomSemanticChecker = struct {
             // in [connected] state, but if we got *Connection (no phantom) from another
             // event, that's a type mismatch.
             //
+            // HOWEVER: Earlier compiler passes (like auto-discharge) may rename bindings
+            // (e.g., outermost_f -> _auto_2), so the argument value may not match
+            // the original binding name in our context. For field accesses (containing .),
+            // we can try to match by field name suffix since the field name is stable.
+            //
+            // If the argument looks like a field access and we find a matching field
+            // name in the context, we should use that binding instead.
+            if (std.mem.indexOf(u8, arg.value, ".")) |dot_idx| {
+                const field_suffix = arg.value[dot_idx..]; // e.g., ".file"
+                // Search for any binding ending with this field suffix
+                var iter = context.bindings.iterator();
+                while (iter.next()) |entry| {
+                    if (std.mem.endsWith(u8, entry.key_ptr.*, field_suffix)) {
+                        // Found a matching binding - use it
+                        log.debug("[PHANTOM-FLOW]   Found binding by field suffix: '{s}' matches '{s}'\n", .{entry.key_ptr.*, arg.value});
+                        // Continue with validation using this binding
+                        const matched_info = entry.value_ptr.*;
+                        // Validate phantom state compatibility (same as below)
+                        const canonical_expected = try self.canonicalizePhantomState(expected_phantom.?, module_for_canon);
+                        defer self.allocator.free(canonical_expected);
+                        const canonical_provided = try self.canonicalizePhantomState(matched_info.phantom_state, module_for_canon);
+                        defer self.allocator.free(canonical_provided);
+
+                        const compatible = try phantom_parser.areCompatible(self.allocator, canonical_expected, canonical_provided);
+                        if (!compatible) {
+                            try self.reporter.addError(
+                                .KORU030,
+                                location.line,
+                                location.column,
+                                "Phantom state mismatch: expected '{s}' but got '{s}' for argument '{s}'",
+                                .{ canonical_expected, canonical_provided, arg.name },
+                            );
+                            return false;
+                        }
+
+                        // Check if this event consumes the obligation
+                        var expected_phantom_parsed = try phantom_parser.PhantomState.parse(self.allocator, expected_phantom.?);
+                        defer expected_phantom_parsed.deinit(self.allocator);
+                        switch (expected_phantom_parsed) {
+                            .concrete => |concrete| {
+                                if (concrete.consumes_obligation) {
+                                    // Find and clear the matched binding's obligation
+                                    context.clearCleanupObligation(entry.key_ptr.*);
+                                    try context.markDisposed(entry.key_ptr.*);
+                                }
+                            },
+                            .variable => {},
+                            .state_union => |u| {
+                                var any_consumes = false;
+                                for (u.members) |m| if (m.consumes_obligation) { any_consumes = true; break; };
+                                if (any_consumes) {
+                                    context.clearCleanupObligation(entry.key_ptr.*);
+                                    try context.markDisposed(entry.key_ptr.*);
+                                }
+                            },
+                        }
+                        return true;
+                    }
+                }
+            }
+
+            // No matching binding found - this is an error if phantom state is required
             // Parse expected_phantom to check what kind of requirement it is:
             // - [state] (no !) = requirement - the value MUST be in this state
             // - [!state] (prefix !) = consumption - consumes an existing obligation
