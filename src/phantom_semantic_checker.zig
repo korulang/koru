@@ -2108,8 +2108,65 @@ pub const PhantomSemanticChecker = struct {
         // Get the full binding info (phantom state + base type) from context
         const binding_info = context.getInfo(arg.value) orelse {
             log.debug("[PHANTOM-FLOW]   No binding found for '{s}' in context\n", .{arg.value});
-            // Value is not a tracked binding - might be a literal
-            return true;
+            // Value is not a tracked binding.
+            // If the event REQUIRES a phantom state (expected_phantom is set),
+            // then passing an untracked value is an error - we can't verify the state.
+            // For example: query(conn: *Connection[connected]) requires the input to be
+            // in [connected] state, but if we got *Connection (no phantom) from another
+            // event, that's a type mismatch.
+            //
+            // Parse expected_phantom to check what kind of requirement it is:
+            // - [state] (no !) = requirement - the value MUST be in this state
+            // - [!state] (prefix !) = consumption - consumes an existing obligation
+            // Both cases require the binding to be tracked with the correct state.
+            var expected_parsed = try phantom_parser.PhantomState.parse(self.allocator, expected_phantom.?);
+            defer expected_parsed.deinit(self.allocator);
+
+            switch (expected_parsed) {
+                .concrete => |concrete| {
+                    // Whether it's a requirement or consumption, we need the binding tracked
+                    const canonical_expected = try self.canonicalizePhantomState(expected_phantom.?, module_for_canon);
+                    defer self.allocator.free(canonical_expected);
+
+                    if (concrete.consumes_obligation) {
+                        // [!state] - consumption - argument must have an obligation to consume
+                        try self.reporter.addError(
+                            .KORU030,
+                            location.line,
+                            location.column,
+                            "Phantom state mismatch: argument '{s}' has no tracked phantom state, but event requires '[!{s}]' (consumption). Did you mean to pass a value with state '{s}'?",
+                            .{ arg.name, concrete.name, canonical_expected },
+                        );
+                    } else {
+                        // [state] - requirement - argument must be in this state
+                        try self.reporter.addError(
+                            .KORU030,
+                            location.line,
+                            location.column,
+                            "Phantom state mismatch: argument '{s}' has no tracked phantom state, but event requires '[{s}]'. The value must be in state '{s}'.",
+                            .{ arg.name, expected_phantom.?, canonical_expected },
+                        );
+                    }
+                    return false;
+                },
+                .variable => {
+                    // State variable - the event is polymorphic, any state is fine
+                    // (or no state - the variable will be bound at the call site)
+                    return true;
+                },
+                .state_union => {
+                    // State union - the event accepts multiple states
+                    // If the binding isn't tracked, we can't verify it's in one of those states
+                    try self.reporter.addError(
+                        .KORU030,
+                        location.line,
+                        location.column,
+                        "Phantom state mismatch: argument '{s}' has no tracked phantom state, but event requires one of '[{s}]'.",
+                        .{ arg.name, expected_phantom.? },
+                    );
+                    return false;
+                },
+            }
         };
 
         const provided_phantom = binding_info.phantom_state;

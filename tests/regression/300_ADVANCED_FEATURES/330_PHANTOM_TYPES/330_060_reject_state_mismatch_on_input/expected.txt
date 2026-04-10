@@ -1,1 +1,0 @@
-BUG: This test should not compile - phantom state mismatch not enforced

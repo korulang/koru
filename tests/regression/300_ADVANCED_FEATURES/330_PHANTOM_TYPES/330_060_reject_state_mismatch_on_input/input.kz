@@ -5,8 +5,7 @@
 //
 // This is a type error: *Connection[connected] != *Connection
 //
-// EXPECTED: Compiler error - phantom state mismatch
-// STATUS: BUG - compiler currently accepts this invalid code
+// EXPECTED: Compiler error KORU030 - phantom state mismatch
 
 const Connection = struct { id: i32 };
 
