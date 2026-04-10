@@ -1,52 +1,22 @@
-// Test 430_006: Timed Compiler Pipeline
+// MUST_FAIL: Function calls in branch constructors must be rejected
 //
-// This proves you can WRAP the entire compilation pipeline with timing!
-// We override compiler.coordinate to measure compilation time:
-//
-// 1. Record start time
-// 2. Delegate to default pipeline
-// 3. Record end time and report duration
-// 4. Compiled program RUNS and prints timing to stderr
-//
-// This is COMPILE-TIME METAPROGRAMMING with actual instrumentation!
+// Branch constructors must be pure — no side effects. Calling
+// std.fmt.allocPrint inside a branch constructor violates this rule.
+// Use event chaining to compute values before constructing the branch.
 
 ~import "$std/compiler"
 ~import "$std/io"
 
 const std = @import("std");
 
-// Override the compiler coordinator - TIME the pipeline!
+// This should fail: allocPrint is a function call in a branch constructor
 ~std.compiler:coordinate =
-    timer_start()
-    | started start_time |>
-        std.compiler:coordinate.default(program_ast, allocator)
-        | coordinated c |>
-            timer_end(start_ns: start_time.ns)
-            | elapsed e |> coordinated {
-                ast: c.ast,
-                code: c.code,
-                metrics: std.fmt.allocPrint(allocator, "Pipeline completed in {d}ms", .{e.ms}) catch "timing error"
-            }
-        | error e |> error { message: e.message }
+    std.compiler:coordinate.default(program_ast, allocator)
+    | coordinated c |> coordinated {
+        ast: c.ast,
+        code: c.code,
+        metrics: std.fmt.allocPrint(allocator, "done in {d}ms", .{}) catch "error"
+    }
+    | error e |> error { message: e.message }
 
-// Timer events - comptime because they're called from coordinate handler
-~[comptime] event timer_start {}
-| started { ns: i128 }
-
-~[comptime] proc timer_start {
-    return .{ .started = .{ .ns = std.time.nanoTimestamp() } };
-}
-
-~[comptime] event timer_end { start_ns: i128 }
-| elapsed { ms: f64 }
-
-~[comptime] proc timer_end {
-    const end_ns = std.time.nanoTimestamp();
-    const elapsed_ns = end_ns - start_ns;
-    const ms: f64 = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
-    std.debug.print("⏱️  Compilation took {d:.2}ms\n", .{ms});
-    return .{ .elapsed = .{ .ms = ms } };
-}
-
-// The actual program - this compiles and runs!
-~std.io:print.ln("hello from timed compilation!")
+~std.io:print.ln("should not compile")

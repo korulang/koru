@@ -1,0 +1,1 @@
+branch constructor field 'metrics' contains a function call
