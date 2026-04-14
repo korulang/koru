@@ -1294,7 +1294,10 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                 for (event_decl.branches) |branch| {
                     if (std.mem.eql(u8, branch.name, "transformed")) {
                         for (branch.payload.fields) |field| {
-                            if (std.mem.eql(u8, field.name, "program")) {
+                            // Check for old-style struct field or identity syntax (__type_ref)
+                            if (std.mem.eql(u8, field.name, "program") or
+                                (std.mem.eql(u8, field.name, "__type_ref") and
+                                 std.mem.indexOf(u8, field.type, "Program") != null)) {
                                 returns_program = true;
                                 break;
                             }
@@ -1428,7 +1431,10 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                         for (event_decl.branches) |branch| {
                             if (std.mem.eql(u8, branch.name, "transformed")) {
                                 for (branch.payload.fields) |field| {
-                                    if (std.mem.eql(u8, field.name, "program")) {
+                                    // Check for old-style struct field or identity syntax (__type_ref)
+                                    if (std.mem.eql(u8, field.name, "program") or
+                                        (std.mem.eql(u8, field.name, "__type_ref") and
+                                         std.mem.indexOf(u8, field.type, "Program") != null)) {
                                         returns_program = true;
                                         break;
                                     }
@@ -1711,7 +1717,10 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 for (event_decl.branches) |branch| {
                     if (std.mem.eql(u8, branch.name, "transformed")) {
                         for (branch.payload.fields) |field| {
-                            if (std.mem.eql(u8, field.name, "program")) {
+                            // Check for old-style struct field or identity syntax (__type_ref)
+                            if (std.mem.eql(u8, field.name, "program") or
+                                (std.mem.eql(u8, field.name, "__type_ref") and
+                                 std.mem.indexOf(u8, field.type, "Program") != null)) {
                                 returns_program = true;
                                 break;
                             }
@@ -1861,7 +1870,10 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         for (event_decl.branches) |branch| {
                             if (std.mem.eql(u8, branch.name, "transformed")) {
                                 for (branch.payload.fields) |field| {
-                                    if (std.mem.eql(u8, field.name, "program")) {
+                                    // Check for old-style struct field or identity syntax (__type_ref)
+                                    if (std.mem.eql(u8, field.name, "program") or
+                                        (std.mem.eql(u8, field.name, "__type_ref") and
+                                         std.mem.indexOf(u8, field.type, "Program") != null)) {
                                         returns_program = true;
                                         break;
                                     }
@@ -2047,7 +2059,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             if (event.returns_program) {
                 try code_emitter.write("    const result = handler.handler(input);\n");
                 try code_emitter.write("    return switch (result) {\n");
-                try code_emitter.write("        .transformed => |t| t.program,\n");
+                try code_emitter.write("        .transformed => |t| t,\n");
                 if (event.has_failed) {
                     try code_emitter.write("        .failed => |f| {\n");
                     try code_emitter.write("            log.debug(\"Derive failed: {s}\\n\", .{f.@\"error\"});\n");
@@ -2142,7 +2154,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             if (event.returns_program) {
                 try code_emitter.write("        const result = handler.handler(input);\n");
                 try code_emitter.write("        return switch (result) {\n");
-                try code_emitter.write("            .transformed => |t| t.program,\n");
+                try code_emitter.write("            .transformed => |t| t,\n");
                 if (event.has_failed) {
                     try code_emitter.write("            .failed => |f| {\n");
                     try code_emitter.write("                log.debug(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");

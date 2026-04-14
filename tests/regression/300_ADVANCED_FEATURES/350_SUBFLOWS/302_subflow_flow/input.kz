@@ -24,7 +24,7 @@ const std = @import("std");
 
 // Subflow: calls double and maps its output
 ~process = double(value: input)
-| result r |> final { output: r.doubled }
+| result r |> final r
 
 // Helper to print i32
 ~event print_result { value: i32 }
@@ -37,5 +37,5 @@ const std = @import("std");
 
 // Test: 21 * 2 = 42
 ~process(input: 21)
-| final f |> print_result(value: f.output)
+| final f |> print_result(value: f)
     | done |> _
