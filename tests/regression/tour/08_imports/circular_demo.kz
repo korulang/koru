@@ -8,7 +8,7 @@ const std = @import("std");
 ~import "circular_b.kz" => b
 
 ~event demo.circular {}
-| complete { message: []const u8 }
+| complete []const u8
 
 ~proc demo.circular {
     // Use module A, which internally uses module B

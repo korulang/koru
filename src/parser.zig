@@ -6178,6 +6178,31 @@ pub const Parser = struct {
         // Note: parseBranchPayloadShape will advance self.current if multi-line
         const payload = try self.parseBranchPayloadShape(branch_start);
 
+        // Validate: braces must contain 2+ fields (no empty braces, no single-field braces)
+        // Empty braces {} are meaningless - use void events or identity syntax instead
+        // Single-field braces { x: T } should use identity syntax: | branch T
+        // Exception: { * } wildcard syntax is allowed (is_wildcard flag set)
+        if (payload.fields.len == 0 and !payload.is_wildcard) {
+            try self.reporter.addError(
+                .PARSE003,
+                self.current,
+                @intCast(brace_idx.? + 1),
+                "empty braces in branch payload - remove braces for void branch or use identity syntax '| {s} Type'",
+                .{branch_name},
+            );
+            return error.ParseError;
+        }
+        if (payload.fields.len == 1 and !payload.is_wildcard) {
+            try self.reporter.addError(
+                .PARSE003,
+                self.current,
+                @intCast(brace_idx.? + 1),
+                "single field in braces - use identity syntax '| {s} {s}' instead of '| {s} {{ {s}: {s} }}'",
+                .{ branch_name, payload.fields[0].type, branch_name, payload.fields[0].name, payload.fields[0].type },
+            );
+            return error.ParseError;
+        }
+
         // Find the closing brace position
         const close_brace_idx = blk: {
             var depth: i32 = 0;

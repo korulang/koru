@@ -6,7 +6,7 @@
 ~pub event test_nullable {
     pool: ?*std.interpreter:HandlePool,
 }
-| done {}
+| done
 
 ~proc test_nullable {
     return .{ .done = .{} };

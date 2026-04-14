@@ -9,9 +9,5 @@
     value: i32,
     note: []const u8,
 }
-| success {
-    written: usize,
-}
-| failure {
-    message: []const u8,
-}
+| success usize
+| failure []const u8

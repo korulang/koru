@@ -17,7 +17,7 @@
 // === USE CASE 1: Property Testing ===
 
 ~pub event sort { items: []i32 }
-| sorted { items: []i32 }
+| sorted []i32
 
 // Reference implementation - simple, obviously correct
 ~proc sort|zig(reference) {
@@ -32,13 +32,13 @@
             }
         }
     }
-    return .{ .sorted = .{ .items = result } };
+    return .{ .sorted = result };
 }
 
 // Optimized implementation - complex, needs testing
 ~proc sort|zig(optimized) {
     // Introsort with median-of-three pivot - fast but subtle
-    return .{ .sorted = .{ .items = std.sort.sort(items) } };
+    return .{ .sorted = std.sort.sort(items) };
 }
 
 // Property test: both variants produce same output
@@ -59,20 +59,20 @@
     width: u32,
     height: u32,
 }
-| transformed { pixels: []u8 }
+| transformed []u8
 
 ~proc image.transform.*|cpu {
-    return .{ .transformed = .{ .pixels = pixels } };
+    return .{ .transformed = pixels };
 }
 
 ~proc image.transform.*|gpu {
     // GLSL compute shader dispatch
-    return .{ .transformed = .{ .pixels = pixels } };
+    return .{ .transformed = pixels };
 }
 
 ~proc image.transform.*|wasm {
     // WebAssembly-friendly, no SIMD
-    return .{ .transformed = .{ .pixels = pixels } };
+    return .{ .transformed = pixels };
 }
 
 

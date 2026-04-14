@@ -10,19 +10,19 @@ const File = struct {
 
 // Open a file - returns opened state
 ~pub event open { path: []const u8 }
-| opened { file: *File[open] }
+| opened *File[open]
 
 ~proc open {
     std.debug.print("Opening file: {s}\n", .{path});
     const allocator = std.heap.page_allocator;
     const f = allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = f };
 }
 
 // Close a file - accepts open state, returns closed state
 ~pub event close { file: *File[open] }
-| closed {}
+| closed
 
 ~proc close {
     std.debug.print("Closing file\n", .{});

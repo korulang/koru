@@ -15,7 +15,7 @@ const Context = struct {
 
 // Abstract event with multiple contexts
 ~[comptime|abstract] event process { allocator: std.mem.Allocator }
-| done { count: u32 }
+| done u32
 
 // Step 1: Create contexts
 ~[comptime] event setup {}
@@ -31,11 +31,11 @@ const Context = struct {
 
 // Step 2: Process array of contexts
 ~[comptime] event consume { contexts: []const Context }
-| consumed { count: u32 }
+| consumed u32
 
 ~proc consume {
     std.debug.print("[COMPTIME] Processing {} contexts\n", .{contexts.len});
-    return .{ .consumed = .{ .count = @intCast(contexts.len) } };
+    return .{ .consumed = @intCast(contexts.len) };
 }
 
 // THE KEY TEST: Subflow implementation with array literal

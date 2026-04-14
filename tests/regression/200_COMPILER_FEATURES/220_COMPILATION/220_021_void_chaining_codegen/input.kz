@@ -15,12 +15,12 @@ const std = @import("std");
 const Resource = struct { id: usize };
 
 ~event create {}
-| created { r: *Resource[active!] }
+| created *Resource[active!]
 
 ~proc create {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = 42 };
-    return .{ .created = .{ .r = r } };
+    return .{ .created = r };
 }
 
 ~event work { r: *Resource[active] }

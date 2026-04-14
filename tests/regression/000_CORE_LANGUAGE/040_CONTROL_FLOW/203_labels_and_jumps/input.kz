@@ -10,7 +10,7 @@ const std = @import("std");
 // Event for counting iteration
 ~event count { current: i32, target: i32 }
 | next { value: i32, target: i32 }
-| done { final: i32 }
+| done i32
 
 ~proc count {
     std.debug.print("Count: {}\n", .{current});
@@ -18,7 +18,7 @@ const std = @import("std");
     if (current < target) {
         return .{ .next = .{ .value = current + 1, .target = target } };
     } else {
-        return .{ .done = .{ .final = current } };
+        return .{ .done = current };
     }
 }
 

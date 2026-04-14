@@ -14,10 +14,10 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event hello {}
-| tap_target {}
+| tap_target
 
 ~event goodbye {}
-| tap_target {}
+| tap_target
 
 ~event observer {}
 

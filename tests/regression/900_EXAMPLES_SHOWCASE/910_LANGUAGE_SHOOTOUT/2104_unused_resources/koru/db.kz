@@ -23,8 +23,8 @@ const QueryResult = struct { rows: i32 };
 
 // connect: creates connection with obligation to use it
 ~pub event connect { host: []const u8 }
-| ok { conn: Connection[open!] }
-| err { msg: []const u8 }
+| ok Connection[open!]
+| err []const u8
 
 ~proc connect {
     return .{ .ok = .{ .conn = .{ .handle = 42 } } };
@@ -32,8 +32,8 @@ const QueryResult = struct { rows: i32 };
 
 // begin: consumes connection obligation, creates transaction obligation
 ~pub event begin { conn: Connection[!open] }
-| ok { tx: Transaction[active!] }
-| err { msg: []const u8 }
+| ok Transaction[active!]
+| err []const u8
 
 ~proc begin {
     return .{ .ok = .{ .tx = .{ .conn_handle = conn.handle } } };
@@ -52,7 +52,7 @@ const QueryResult = struct { rows: i32 };
 // commit: consumes transaction obligation - this is a MEANINGFUL END
 ~[!]pub event commit { tx: Transaction[!active] }
 | ok
-| err { msg: []const u8 }
+| err []const u8
 
 ~proc commit {
     std.debug.print("COMMIT\n", .{});
@@ -62,7 +62,7 @@ const QueryResult = struct { rows: i32 };
 // rollback: consumes transaction obligation - this is also a MEANINGFUL END
 ~[!]pub event rollback { tx: Transaction[!active] }
 | ok
-| err { msg: []const u8 }
+| err []const u8
 
 ~proc rollback {
     std.debug.print("ROLLBACK\n", .{});

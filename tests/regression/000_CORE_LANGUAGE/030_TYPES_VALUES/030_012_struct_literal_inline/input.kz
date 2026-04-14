@@ -13,11 +13,11 @@ pub const Config = struct {
 };
 
 ~event configure { config: Config }
-| configured { total_wait: i32 }
+| configured i32
 
 ~proc configure {
     const total = config.timeout * config.retries;
-    return .{ .configured = .{ .total_wait = total } };
+    return .{ .configured = total };
 }
 
 ~event check { expected: i32, actual: i32 }

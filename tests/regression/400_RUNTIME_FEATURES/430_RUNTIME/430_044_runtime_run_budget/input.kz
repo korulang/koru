@@ -4,7 +4,7 @@
 ~import "$std/io"
 
 ~pub event expensive {}
-| done {}
+| done
 
 ~proc expensive {
     return .{ .done = .{} };

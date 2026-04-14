@@ -19,7 +19,7 @@
     item: *const Item,
     program: *const Program,
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc ring.* {
     const std = @import("std");
@@ -28,8 +28,8 @@
     const allocator = std.heap.page_allocator;
 
     // Parse: ring.new[T:u32;N:1024]
-    const bracket_start = std.mem.indexOf(u8, event_name, "[") orelse return .{ .transformed = .{ .program = program } };
-    const bracket_end = std.mem.lastIndexOf(u8, event_name, "]") orelse return .{ .transformed = .{ .program = program } };
+    const bracket_start = std.mem.indexOf(u8, event_name, "[") orelse return .{ .transformed = program };
+    const bracket_end = std.mem.lastIndexOf(u8, event_name, "]") orelse return .{ .transformed = program };
 
     const params_str = event_name[bracket_start + 1 .. bracket_end];
 
@@ -76,7 +76,7 @@
         .{ name, N, T, T, N }
     ) catch unreachable;
 
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{ .program = program } };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = program };
 
     const inline_code_item = ast.Item{
         .inline_code = ast.InlineCode{
@@ -90,9 +90,9 @@
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // Create a ring buffer of 1024 u32 values

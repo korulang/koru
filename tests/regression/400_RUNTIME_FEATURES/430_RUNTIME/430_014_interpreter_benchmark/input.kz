@@ -8,10 +8,10 @@ const std = @import("std");
 
 // Simple event for benchmarking
 ~pub event ping { value: []const u8 }
-| pong { value: []const u8 }
+| pong []const u8
 
 ~proc ping {
-    return .{ .pong = .{ .value = value } };
+    return .{ .pong = value };
 }
 
 // Register for dispatch

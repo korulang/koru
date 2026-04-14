@@ -6,41 +6,41 @@ const std = @import("std");
 
 // Define validation event
 ~event validate { data: []const u8 }
-| valid { clean_data: []const u8 }
-| invalid { reason: []const u8 }
+| valid []const u8
+| invalid []const u8
 
 // Define processing event
 ~event process { input: []const u8 }
-| success { output: []const u8 }
-| error { code: u32 }
+| success []const u8
+| error u32
 
 // Simple validation implementation
 ~proc validate {
     // Check if data is not empty and has valid format
     if (e.data.len == 0) {
-        return .{ .invalid = .{ .reason = "Empty data" } };
+        return .{ .invalid = "Empty data" };
     }
     
     // Check for forbidden characters
     for (e.data) |char| {
         if (char == '<' or char == '>') {
-            return .{ .invalid = .{ .reason = "Contains HTML tags" } };
+            return .{ .invalid = "Contains HTML tags" };
         }
     }
     
-    return .{ .valid = .{ .clean_data = e.data } };
+    return .{ .valid = e.data };
 }
 
 // Simple processing implementation
 ~proc process {
     // Transform the input
-    return .{ .success = .{ .output = e.input } };
+    return .{ .success = e.input };
 }
 
 // Main event that uses inline flows
 ~event handle_request { payload: []const u8 }
-| ok { result: []const u8 }
-| error { message: []const u8 }
+| ok []const u8
+| error []const u8
 
 // INLINE FLOWS: Mix Zig code with Koru flows
 ~proc handle_request {
@@ -59,7 +59,7 @@ const std = @import("std");
     
     // We can use regular Zig code here
     if (validated.len > 100) {
-        return .{ .error = .{ .message = "Data too large" } };
+        return .{ .error = "Data too large" };
     }
     
     // Process the validated data with another inline flow
@@ -80,26 +80,26 @@ const std = @import("std");
     ) catch "Format error";
     
     // Return success with the final result
-    return .{ .ok = .{ .result = result } };
+    return .{ .ok = result };
 }
 
 // Alternative: Inline flow without assignment (terminal flow)
 ~event quick_validate { text: []const u8 }
-| accepted {}
-| rejected { why: []const u8 }
+| accepted
+| rejected []const u8
 
 ~proc quick_validate {
     // Without assignment, the inline flow returns directly from the proc
     ~validate(data: e.text)
     | valid _ |> .{ .accepted = .{} }
-    | invalid i |> .{ .rejected = .{ .why = i.reason } }
+    | invalid i |> .{ .rejected = i.reason }
     
     // This line would be unreachable
 }
 
 // Multiple inline flows in sequence
 ~event multi_step { input: []const u8 }
-| done { final_result: []const u8 }
+| done []const u8
 | failed { step: []const u8, reason: []const u8 }
 
 ~proc multi_step {
@@ -133,7 +133,7 @@ const std = @import("std");
         }
     }
     
-    return .{ .done = .{ .final_result = step3 } };
+    return .{ .done = step3 };
 }
 
 // Example flows

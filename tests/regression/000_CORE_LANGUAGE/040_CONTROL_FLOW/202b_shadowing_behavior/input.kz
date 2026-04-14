@@ -7,21 +7,21 @@
 const std = @import("std");
 
 ~event first { value: i32 }
-| result { num: i32 }
+| result i32
 
 ~proc first {
-    return .{ .result = .{ .num = value * 2 } };
+    return .{ .result = value * 2 };
 }
 
 ~event second { value: i32 }
-| data { num: i32 }
+| data i32
 
 ~proc second {
-    return .{ .data = .{ .num = value * 3 } };
+    return .{ .data = value * 3 };
 }
 
 ~event show { outer_val: i32, inner_val: i32 }
-| done {}
+| done
 
 ~proc show {
     std.debug.print("Outer: {}, Inner: {}\n", .{outer_val, inner_val});

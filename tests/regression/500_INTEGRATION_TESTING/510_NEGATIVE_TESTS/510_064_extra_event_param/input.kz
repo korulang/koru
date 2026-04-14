@@ -3,7 +3,7 @@
 // (We don't re-implement Zig's type system)
 
 ~event foo { x: i32 }
-| done {}
+| done
 
 ~foo(x: 1, y: 2)
 | done |> _

@@ -18,33 +18,33 @@ const Transaction = struct {
 
 // Connect to database - creates connected! obligation
 ~pub event connect { url: []const u8 }
-| connected { conn: *Connection[connected!] }
+| connected *Connection[connected!]
 
 ~proc connect {
     std.debug.print("Connecting to: {s}\n", .{url});
     const allocator = std.heap.page_allocator;
     const c = allocator.create(Connection) catch unreachable;
     c.* = Connection{ .id = 1 };
-    return .{ .connected = .{ .conn = c } };
+    return .{ .connected = c };
 }
 
 // Start a query/transaction - creates transaction! obligation
 // The connection must be in [connected] state (required, but not consumed)
 // The connected! obligation is tracked separately and discharged by disconnect()
 ~pub event query { conn: *Connection[connected], sql: []const u8 }
-| started { tx: *Transaction[transaction!] }
+| started *Transaction[transaction!]
 
 ~proc query {
     std.debug.print("Query: {s}\n", .{sql});
     const allocator = std.heap.page_allocator;
     const t = allocator.create(Transaction) catch unreachable;
     t.* = Transaction{ .conn = conn };
-    return .{ .started = .{ .tx = t } };
+    return .{ .started = t };
 }
 
 // Commit - CONSUMES transaction! obligation
 ~pub event commit { tx: *Transaction[!transaction] }
-| committed {}
+| committed
 
 ~proc commit {
     std.debug.print("Committing transaction\n", .{});
@@ -53,7 +53,7 @@ const Transaction = struct {
 
 // Rollback - CONSUMES transaction! obligation (alternative to commit)
 ~pub event rollback { tx: *Transaction[!transaction] }
-| rolledback {}
+| rolledback
 
 ~proc rollback {
     std.debug.print("Rolling back transaction\n", .{});
@@ -62,7 +62,7 @@ const Transaction = struct {
 
 // Disconnect - CONSUMES connected! obligation
 ~pub event disconnect { conn: *Connection[!connected] }
-| disconnected {}
+| disconnected
 
 ~proc disconnect {
     std.debug.print("Disconnecting\n", .{});

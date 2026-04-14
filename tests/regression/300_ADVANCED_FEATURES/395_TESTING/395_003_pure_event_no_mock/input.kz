@@ -7,10 +7,10 @@
 
 // Pure computation - no side effects
 ~event add_numbers { a: u32, b: u32 }
-| result { sum: u32 }
+| result u32
 
 ~[pure] proc add_numbers {
-    return .{ .result = .{ .sum = a + b } };
+    return .{ .result = a + b };
 }
 
 // Test: Pure event called directly, no mock needed

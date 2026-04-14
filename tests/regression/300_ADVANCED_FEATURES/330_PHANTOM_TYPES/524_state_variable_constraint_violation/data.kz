@@ -2,19 +2,19 @@ const std = @import("std");
 const Data = struct { value: i32 };
 
 ~pub event gc_alloc {}
-| allocated { data: *Data[gc] }  // GC-managed, NOT owned or borrowed
+| allocated *Data[gc]  // GC-managed, NOT owned or borrowed
 
 ~proc gc_alloc {
     const allocator = std.heap.page_allocator;
     const d = allocator.create(Data) catch unreachable;
     d.* = Data{ .value = 42 };
-    return .{ .allocated = .{ .data = d } };
+    return .{ .allocated = d };
 }
 
 // Generic processor constrained to owned OR borrowed ONLY
 ~pub event process { d: *Data[M'owned|borrowed] }
-| done { d: *Data[M'owned|borrowed] }
+| done *Data[M'owned|borrowed]
 
 ~proc process {
-    return .{ .done = .{ .d = d } };
+    return .{ .done = d };
 }

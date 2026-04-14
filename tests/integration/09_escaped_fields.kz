@@ -3,8 +3,8 @@
 // Features: fields named after Zig keywords need escaping
 
 ~event data.process { input: i32 }
-| success { return: i32 }  // 'return' is a keyword
-| failure { error: []const u8 }  // 'error' is a keyword
+| success i32  // 'return' is a keyword
+| failure []const u8  // 'error' is a keyword
 
 ~proc data.process {
     if (e.input < 0) {
@@ -19,7 +19,7 @@
 | failure f |> logError(msg: f.error) |> _
 
 ~event doSomething { value: i32 }
-| done {}
+| done
 
 ~proc doSomething {
     return .{ .@"done" = .{} };

@@ -6,7 +6,7 @@
 const std = @import("std");
 
 ~event start {}
-| done {}
+| done
 
 ~proc start {
     return .{ .done = .{} };

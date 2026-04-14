@@ -43,7 +43,7 @@ const Body = struct {
 // ============================================================================
 
 ~event initialize_bodies {}
-| initialized { bodies: [5]Body }
+| initialized [5]Body
 
 ~proc initialize_bodies {
     // Sun, Jupiter, Saturn, Uranus, Neptune
@@ -91,7 +91,7 @@ const Body = struct {
         },
     };
 
-    return .{ .initialized = .{ .bodies = bodies_data } };
+    return .{ .initialized = bodies_data };
 }
 
 // ============================================================================
@@ -99,7 +99,7 @@ const Body = struct {
 // ============================================================================
 
 ~event offset_momentum { bodies: []Body }
-| adjusted {}
+| adjusted
 
 ~proc offset_momentum {
     var px: f64 = 0.0;
@@ -124,7 +124,7 @@ const Body = struct {
 // ============================================================================
 
 ~event calculate_energy { bodies: []const Body }
-| result { energy: f64 }
+| result f64
 
 ~proc calculate_energy {
     var e: f64 = 0.0;
@@ -144,7 +144,7 @@ const Body = struct {
         }
     }
 
-    return .{ .result = .{ .energy = e } };
+    return .{ .result = e };
 }
 
 // ============================================================================
@@ -152,7 +152,7 @@ const Body = struct {
 // ============================================================================
 
 ~event print_energy { energy: f64 }
-| done {}
+| done
 
 ~proc print_energy {
     std.debug.print("{d:.9}\n", .{energy});
@@ -165,7 +165,7 @@ const Body = struct {
 // ============================================================================
 
 ~event calculate_interactions { bodies: []Body, dt: f64 }
-| updated {}
+| updated
 
 ~proc calculate_interactions {
     var i: usize = 0;
@@ -197,7 +197,7 @@ const Body = struct {
 // ============================================================================
 
 ~event update_positions { bodies: []Body, dt: f64 }
-| advanced {}
+| advanced
 
 ~proc update_positions {
     for (bodies) |*body| {
@@ -214,7 +214,7 @@ const Body = struct {
 // ============================================================================
 
 ~event parse_args {}
-| parsed { n: u32 }
+| parsed u32
 
 ~proc parse_args {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -226,7 +226,7 @@ const Body = struct {
     }
 
     const n = std.fmt.parseInt(u32, args[1], 10) catch unreachable;
-    return .{ .parsed = .{ .n = n } };
+    return .{ .parsed = n };
 }
 
 // ============================================================================

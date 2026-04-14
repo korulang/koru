@@ -2,7 +2,7 @@
 
 // BAD: Opens file but doesn't document obligation in signature
 ~pub event bad_subflow {}
-| done {}  // NO [!] in signature - obligation disappears!
+| done  // NO [!] in signature - obligation disappears!
 
 ~proc bad_subflow {
     ~app.fs:open(path: "data.txt")

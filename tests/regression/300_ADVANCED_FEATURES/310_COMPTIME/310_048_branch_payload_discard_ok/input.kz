@@ -6,13 +6,13 @@
 const std = @import("std");
 
 ~event compute { x: i32 }
-| result { value: i32 }
+| result i32
 
 ~event finish {}
-| done {}
+| done
 
 ~proc compute {
-    return .{ .result = .{ .value = x * 2 } };
+    return .{ .result = x * 2 };
 }
 
 ~proc finish {

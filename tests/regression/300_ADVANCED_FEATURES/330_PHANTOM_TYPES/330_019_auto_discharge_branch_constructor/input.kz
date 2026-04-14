@@ -12,7 +12,7 @@
 
 // Event that wraps file opening and returns a status
 ~event check_file { path: []const u8 }
-| result { status: []const u8 }
+| result []const u8
 
 // Subflow: opens file, returns status - SHOULD auto-discharge the file!
 // Using _ for binding since auto-discharge should synthesize _auto_N

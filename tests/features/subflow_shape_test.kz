@@ -1,8 +1,8 @@
 // Test that subflow invocations need proper continuations
 
 ~event data.process { value: u32 }
-| ok { result: u32 }
-| error { msg: []const u8 }
+| ok u32
+| error []const u8
 
 // Subflow that returns branches
 ~process_data (v) = data.process (value: v)

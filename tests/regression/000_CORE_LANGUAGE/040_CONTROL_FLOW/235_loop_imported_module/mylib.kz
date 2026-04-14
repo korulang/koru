@@ -3,14 +3,14 @@
 const std = @import("std");
 
 ~pub event tick {}
-| next { n: u32 }
-| done {}
+| next u32
+| done
 
 ~proc tick {
     const static = struct { var count: u32 = 0; };
     static.count += 1;
     if (static.count < 3) {
-        return .{ .next = .{ .n = static.count } };
+        return .{ .next = static.count };
     }
     return .{ .done = .{} };
 }

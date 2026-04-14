@@ -1,7 +1,7 @@
 // Test that expressions are not allowed in branch constructors
 
 ~event compute.value { x: u32 }
-| result { value: u32 }
+| result u32
 
 // This should fail - arithmetic expression
 ~compute.value (x: 10)

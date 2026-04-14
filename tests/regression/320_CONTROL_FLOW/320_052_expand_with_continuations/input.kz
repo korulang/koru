@@ -34,8 +34,8 @@ const std = @import("std");
 
 // Event with branches - expand detects branches and uses switch_result mode
 ~[norun|expand]pub event maybe { expr: Expression }
-| some { val: i32 }
-| none {}
+| some i32
+| none
 
 // Usage - continuations become switch arms automatically
 var test_value: ?i32 = 42;

@@ -20,7 +20,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc if {
     const ast = @import("ast");
@@ -29,11 +29,11 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     // Check if already transformed (inline_body is set)
     if (flow.inline_body != null) {
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     const is_pointer_top = (invocation == &flow.invocation);
@@ -57,7 +57,7 @@ const std = @import("std");
     // If we don't have both branches for top-level, fall back to no-op
     // (could happen with malformed input)
     if (is_top_level_if and then_cont == null) {
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     if (is_top_level_if) {
@@ -109,9 +109,9 @@ const std = @import("std");
             if (maybe_new_program) |new_program| {
                 const result = allocator.create(ast.Program) catch unreachable;
                 result.* = new_program;
-                return .{ .transformed = .{ .program = result } };
+                return .{ .transformed = result };
             }
-            return .{ .transformed = .{ .program = program } };
+            return .{ .transformed = program };
         }
 
         const conditional_node = ast.Node{ .conditional = .{
@@ -170,7 +170,7 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         } else {
             std.debug.print("ERROR: ~if transform failed - flow not found in program\n", .{});
             @panic("if transform: flow not found");
@@ -249,7 +249,7 @@ const std = @import("std");
         const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation) orelse {
             // Can't find the if structure, return unchanged
             std.debug.print("[IF TRANSFORM] WARNING: Could not find specific invocation in nested continuations\n", .{});
-            return .{ .transformed = .{ .program = program } };
+            return .{ .transformed = program };
         };
 
         then_cont = search_result.then_cont;
@@ -315,7 +315,7 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         } else {
             std.debug.print("ERROR: ~if transform (pipeline case) failed - flow not found in program\n", .{});
             @panic("if transform: flow not found");
@@ -344,7 +344,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc for {
     const ast = @import("ast");
@@ -353,12 +353,12 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     // Check if already transformed (has @pass_ran annotation)
     for (flow.invocation.annotations) |ann| {
         if (std.mem.startsWith(u8, ann, "@pass_ran")) {
-            return .{ .transformed = .{ .program = program } };
+            return .{ .transformed = program };
         }
     }
 
@@ -379,7 +379,7 @@ const std = @import("std");
 
     // If we don't have each branch for top-level, fall back to no-op
     if (is_top_level_for and !has_each) {
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     if (is_top_level_for and !is_pointer_top) {
@@ -399,7 +399,7 @@ const std = @import("std");
         }
 
         if (each_cont == null) {
-            return .{ .transformed = .{ .program = program } };
+            return .{ .transformed = program };
         }
 
         // Build ForeachNode with uniform NamedBranch structure
@@ -447,9 +447,9 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         }
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     if (is_top_level_for) {
@@ -476,7 +476,7 @@ const std = @import("std");
         }
 
         if (each_cont == null) {
-            return .{ .transformed = .{ .program = program } };
+            return .{ .transformed = program };
         }
 
         // Build ForeachNode with uniform NamedBranch structure
@@ -568,7 +568,7 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         } else {
             std.debug.print("ERROR: ~for transform failed - flow not found in program\n", .{});
             @panic("for transform: flow not found");
@@ -653,7 +653,7 @@ const std = @import("std");
         const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation) orelse {
             // Can't find the for structure, return unchanged
             std.debug.print("[FOR TRANSFORM] WARNING: Could not find specific invocation in nested continuations\n", .{});
-            return .{ .transformed = .{ .program = program } };
+            return .{ .transformed = program };
         };
 
         // Build ForeachNode with uniform NamedBranch structure
@@ -721,7 +721,7 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         } else {
             std.debug.print("ERROR: ~for transform (pipeline case) failed - flow not found in program\n", .{});
             @panic("for transform: flow not found");
@@ -759,7 +759,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc capture {
     const ast = @import("ast");
@@ -769,7 +769,7 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     // Check if this is a top-level capture (flow.invocation IS the capture being transformed)
     // vs a pipeline case (capture is a step inside the flow's continuations)
@@ -1036,7 +1036,7 @@ const std = @import("std");
     const capture_continuations: []const ast.Continuation = if (is_pointer_top or is_virtual_top) blk: {
         // Check if already transformed
         if (flow.inline_body != null) {
-            return .{ .transformed = .{ .program = program } };
+            return .{ .transformed = program };
         }
         break :blk flow.continuations;
     } else {
@@ -1101,7 +1101,7 @@ const std = @import("std");
         const empty_path = &[_]usize{};
         const search_result = findCaptureWithPath(allocator, flow.continuations, empty_path, invocation) orelse {
             std.debug.print("[CAPTURE TRANSFORM] WARNING: Could not find nested capture invocation\n", .{});
-            return .{ .transformed = .{ .program = program } };
+            return .{ .transformed = program };
         };
 
         // Get bindings
@@ -1196,7 +1196,7 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         } else {
             std.debug.print("ERROR: ~capture transform (pipeline case) failed - flow not found in program\n", .{});
             @panic("capture transform: flow not found");
@@ -1232,7 +1232,7 @@ const std = @import("std");
 
     if (as_cont == null) {
         std.debug.print("ERROR: ~capture missing | as |> branch\n", .{});
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     // Detect existing struct mode: no '{' means binding to existing variable
@@ -1314,10 +1314,10 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         }
 
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     // Create void-chain continuation containing the CaptureNode
@@ -1370,7 +1370,7 @@ const std = @import("std");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     } else {
         std.debug.print("ERROR: ~capture transform failed - flow not found in program\n", .{});
         @panic("capture transform: flow not found");
@@ -1395,7 +1395,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc const {
     const ast = @import("ast");
@@ -1405,14 +1405,14 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     // Check if this is a top-level const
     const is_top_level = @intFromPtr(&flow.invocation) == @intFromPtr(invocation);
 
     if (!is_top_level) {
         // Nested case - for now just pass through
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     // Step 1: Find | as binding |> continuation
@@ -1429,7 +1429,7 @@ const std = @import("std");
 
     if (as_cont == null) {
         std.debug.print("ERROR: ~const requires | as binding |> continuation\n", .{});
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     // Step 2: Convert init expression (Koru struct -> Zig struct)
@@ -1486,8 +1486,8 @@ const std = @import("std");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     } else {
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 }

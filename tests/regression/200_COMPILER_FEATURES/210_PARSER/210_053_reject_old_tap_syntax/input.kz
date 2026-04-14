@@ -4,7 +4,7 @@
 const std = @import("std");
 
 ~event foo {}
-| done {}
+| done
 
 // OLD SYNTAX - should be rejected with helpful error
 ~foo -> *

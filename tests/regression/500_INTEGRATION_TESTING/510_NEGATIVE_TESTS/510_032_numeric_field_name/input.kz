@@ -2,4 +2,4 @@
 // Parser rejects field names that start with digits
 
 ~event foo { 123: i32 }
-| done {}
+| done

@@ -12,7 +12,7 @@ const std = @import("std");
 ~float(Temperature)
 
 ~event report_temp { temp: Temperature }
-| reported {}
+| reported
 
 ~proc report_temp {
     std.debug.print("Temperature: {d:.1}\n", .{temp});

@@ -1,10 +1,10 @@
 // Minimal test for namespace duplication bug
 
 ~event foo.bar { x: u32 }
-| ok { result: u32 }
+| ok u32
 
 ~event foo.baz { y: u32 }  
-| done { value: u32 }
+| done u32
 
 ~proc foo.bar {
     return .{ .@"ok" = .{ .result = e.x + 1 } };

@@ -9,15 +9,15 @@
 
 // Event with required + multiple optional branches
 ~event analyze { value: u32 }
-| success { result: u32 }         // REQUIRED
-| ?warning { msg: []const u8 }    // OPTIONAL: ignored
-| ?debug { info: []const u8 }     // OPTIONAL: ignored
+| success u32         // REQUIRED
+| ?warning []const u8    // OPTIONAL: ignored
+| ?debug []const u8     // OPTIONAL: ignored
 
 ~proc analyze {
     if (value > 100) {
-        return .{ .warning = .{ .msg = "Large value" } };
+        return .{ .warning = "Large value" };
     }
-    return .{ .success = .{ .result = value * 2 } };
+    return .{ .success = value * 2 };
 }
 
 // value=50 → success

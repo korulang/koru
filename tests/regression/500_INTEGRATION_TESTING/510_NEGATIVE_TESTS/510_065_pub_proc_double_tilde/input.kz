@@ -2,6 +2,6 @@
 // Parser catches both "pub proc" and "pub ~proc" variants
 
 ~event foo { x: i32 }
-| done {}
+| done
 
 ~pub ~proc foo = done {}

@@ -11,7 +11,7 @@
 
 // Event with empty payload - nothing to bind
 ~event signal_done {}
-| done {}
+| done
 
 ~proc signal_done {
     return .{ .done = .{} };

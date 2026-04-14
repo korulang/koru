@@ -3,10 +3,10 @@
 const std = @import("std");
 
 ~pub event render { width: i32, height: i32 }
-| drawn { pixels: i32 }
+| drawn i32
 
 ~pub event clear { color: i32 }
-| cleared {}
+| cleared
 
 ~proc render {
     return .{ .@"drawn" = .{ .pixels = width * height } };

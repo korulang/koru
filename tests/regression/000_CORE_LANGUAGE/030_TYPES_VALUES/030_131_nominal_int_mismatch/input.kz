@@ -11,14 +11,14 @@
 ~int(ProductId)
 
 ~event get_user { id: UserId }
-| found { name: []const u8 }
+| found []const u8
 
 ~proc get_user {
-    return .{ .found = .{ .name = "Alice" } };
+    return .{ .found = "Alice" };
 }
 
 ~event main {}
-| done {}
+| done
 
 ~proc main {
     // ERROR: Passing ProductId where UserId is expected

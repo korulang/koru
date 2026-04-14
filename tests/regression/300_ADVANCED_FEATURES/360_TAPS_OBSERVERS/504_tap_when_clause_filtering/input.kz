@@ -27,10 +27,10 @@ const Entity = struct {
 
 // Producer event - broadcasts entities
 ~pub event process_entity { e: Entity }
-| entity { e: Entity }
+| entity Entity
 
 ~proc process_entity {
-    return .{ .entity = .{ .e = e } };
+    return .{ .entity = e };
 }
 
 // TAP: Only fires when entity has damage

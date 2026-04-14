@@ -9,9 +9,9 @@ const std = @import("std");
 
 // Event that processes a greeting request
 ~event process_greeting { name: []const u8 }
-| friendly { msg: []const u8 }
-| formal { msg: []const u8 }
-| unknown {}
+| friendly []const u8
+| formal []const u8
+| unknown
 
 // Proc that decides how to greet based on the name
 ~proc process_greeting {

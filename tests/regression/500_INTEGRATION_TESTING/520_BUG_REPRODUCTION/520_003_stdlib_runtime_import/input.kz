@@ -19,7 +19,7 @@
 const std = @import("std");
 
 ~event test_parser_runtime {}
-| success {}
+| success
 
 ~proc test_parser_runtime {
     const allocator = std.heap.page_allocator;
@@ -27,7 +27,7 @@ const std = @import("std");
     // This code is CORRECT but won't work until ~build.requires is implemented
     const test_source =
         \\~event hello {}
-        \\| done {}
+        \\| done
     ;
 
     // Call parser at USER RUNTIME (not comptime)

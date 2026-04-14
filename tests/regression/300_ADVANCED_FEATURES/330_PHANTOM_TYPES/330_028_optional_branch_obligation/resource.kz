@@ -9,19 +9,19 @@ const Handle = struct {
 
 // Risky operation - might succeed OR might leak a handle
 ~pub event risky {}
-| success { result: u32 }
-| ?leaked { handle: *Handle[owned!] }  // Optional with obligation!
+| success u32
+| ?leaked *Handle[owned!]  // Optional with obligation!
 
 ~proc risky {
     // Always succeeds in this test, but the event DECLARES
     // that it COULD return ?leaked with an obligation
     std.debug.print("Operation succeeded\n", .{});
-    return .{ .success = .{ .result = 42 } };
+    return .{ .success = 42 };
 }
 
 // Disposer for the obligation (would need to be called for ?leaked)
 ~pub event close { handle: *Handle[!owned] }
-| closed {}
+| closed
 
 ~proc close {
     std.debug.print("Closing handle\n", .{});

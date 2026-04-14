@@ -5,7 +5,7 @@ const std = @import("std");
 
 // Impure operation (unmarked, so defaults to impure)
 ~event log { message: []const u8 }
-| done {}
+| done
 
 ~proc log {
     std.debug.print("LOG: {s}\n", .{message});
@@ -14,7 +14,7 @@ const std = @import("std");
 
 // Main entry using subflow
 ~event main {}
-| done {}
+| done
 
 // Subflow that calls impure event - should be transitively IMPURE
 ~log(message: "Hello")

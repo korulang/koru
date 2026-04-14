@@ -7,4 +7,4 @@
     user_data: test_lib.user:User,
     value: i32,
 }
-| done { success: bool }
+| done bool

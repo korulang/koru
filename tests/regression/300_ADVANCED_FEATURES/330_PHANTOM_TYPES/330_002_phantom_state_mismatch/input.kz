@@ -16,7 +16,7 @@ const File = struct {
 
 // Event that expects app.lib.fs:open phantom state
 ~event needs_fs_file { file: *File[app.lib.fs:open] }
-| processed {}
+| processed
 
 ~proc needs_fs_file {
     return .{ .processed = .{} };

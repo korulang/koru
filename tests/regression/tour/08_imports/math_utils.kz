@@ -5,40 +5,40 @@ const std = @import("std");
 
 // Public event - will be available when imported
 ~pub event add { a: i32, b: i32 }
-| sum { result: i32 }
+| sum i32
 
 // Another public event
 ~pub event multiply { x: i32, y: i32 }
-| product { result: i32 }
+| product i32
 
 // Public event with multiple branches
 ~pub event divide { numerator: f64, denominator: f64 }
-| success { quotient: f64 }
-| error { message: []const u8 }
+| success f64
+| error []const u8
 
 // Private event - NOT available when imported (no 'pub')
 ~event internal_helper { value: i32 }
-| processed { result: i32 }
+| processed i32
 
 // Implementations (procs are always private)
 ~proc add {
-    return .{ .sum = .{ .result = e.a + e.b } };
+    return .{ .sum = e.a + e.b };
 }
 
 ~proc multiply {
-    return .{ .product = .{ .result = e.x * e.y } };
+    return .{ .product = e.x * e.y };
 }
 
 ~proc divide {
     if (e.denominator == 0) {
-        return .{ .error = .{ .message = "Division by zero" } };
+        return .{ .error = "Division by zero" };
     }
-    return .{ .success = .{ .quotient = e.numerator / e.denominator } };
+    return .{ .success = e.numerator / e.denominator };
 }
 
 ~proc internal_helper {
     // This is only usable within this file
-    return .{ .processed = .{ .result = e.value * 2 } };
+    return .{ .processed = e.value * 2 };
 }
 
 // Note: When another file imports this module, they will get:

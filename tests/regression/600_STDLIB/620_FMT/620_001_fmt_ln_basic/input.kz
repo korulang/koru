@@ -3,7 +3,7 @@
 ~import "$std/io"
 
 ~event greet { name: []const u8 }
-| greeted { message: []const u8 }
+| greeted []const u8
 
 ~greet = std.fmt:ln("Hello, {{ name:s }}!")
 | line l |> greeted { message: l.text }

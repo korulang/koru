@@ -2,18 +2,18 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 ~pub event open { path: []const u8 }
-| opened { file: *File[opened!] }
+| opened *File[opened!]
 
 ~proc open {
     std.debug.print("Opening file: {s}\n", .{path});
     const allocator = std.heap.page_allocator;
     const f = allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = f };
 }
 
 ~pub event close { file: *File[!opened] }
-| closed {}
+| closed
 
 ~proc close {
     std.debug.print("Closing file\n", .{});
@@ -23,7 +23,7 @@ const File = struct { handle: i32 };
 // Subflow that opens a file and returns it with obligation
 // The obligation escapes via the return signature - caller must handle it
 ~pub event my_subflow {}
-| file_opened { file: *File[opened!] }
+| file_opened *File[opened!]
 
 // SUBFLOW: Delegates to open, maps opened → file_opened
 // The [opened!] obligation passes through to the caller

@@ -1,8 +1,8 @@
 const std = @import("std");
 
 ~event test.run { input: i32 }
-| ok { value: i32 }  
-| retry { value: i32 }
+| ok i32  
+| retry i32
 
 ~proc test.run {
     if (e.input < 5) {
@@ -12,7 +12,7 @@ const std = @import("std");
 }
 
 ~event io.log { msg: []const u8 }
-| done {}
+| done
 
 ~proc io.log {
     std.debug.print("{s}\n", .{e.msg});

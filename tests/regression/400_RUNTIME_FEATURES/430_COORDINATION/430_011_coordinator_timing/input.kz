@@ -1,57 +1,27 @@
 // Test 430_011: Timed Compiler Pipeline
 //
-// Wraps the compilation pipeline with timing instrumentation.
-// Uses event chaining to keep branch constructors pure —
-// format_metrics computes the string before the branch constructor.
+// Wraps the compilation pipeline with timing instrumentation
+// using std.time from the standard library.
 
 ~import "$std/compiler"
+~import "$std/time"
 ~import "$std/io"
 
 const std = @import("std");
 
 // Override the compiler coordinator - TIME the pipeline!
 ~std.compiler:coordinate =
-    timer_start()
-    | started start_time |>
+    std.time:now()
+    | t start |>
         std.compiler:coordinate.default(program_ast, allocator)
         | coordinated c |>
-            timer_end(start_ns: start_time.ns)
-            | elapsed e |>
-                format_metrics(allocator: allocator, ms: e.ms)
-                | formatted f |> coordinated {
-                    ast: c.ast,
-                    code: c.code,
-                    metrics: f.text
-                }
+            std.time:report(start: start.ns, label: "Compilation")
+            |> coordinated {
+                ast: c.ast,
+                code: c.code,
+                metrics: c.metrics
+            }
         | error e |> error { message: e.message }
-
-// Timer events - comptime because they're called from coordinate handler
-~[comptime] event timer_start {}
-| started { ns: i128 }
-
-~[comptime] proc timer_start {
-    return .{ .started = .{ .ns = std.time.nanoTimestamp() } };
-}
-
-~[comptime] event timer_end { start_ns: i128 }
-| elapsed { ms: f64 }
-
-~[comptime] proc timer_end {
-    const end_ns = std.time.nanoTimestamp();
-    const elapsed_ns = end_ns - start_ns;
-    const ms: f64 = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
-    std.debug.print("⏱️  Compilation took {d:.2}ms\n", .{ms});
-    return .{ .elapsed = .{ .ms = ms } };
-}
-
-// Format metrics string — keeps the allocPrint out of the branch constructor
-~[comptime] event format_metrics { allocator: std.mem.Allocator, ms: f64 }
-| formatted { text: []const u8 }
-
-~[comptime] proc format_metrics {
-    const text = std.fmt.allocPrint(allocator, "Pipeline completed in {d}ms", .{ms}) catch "timing error";
-    return .{ .formatted = .{ .text = text } };
-}
 
 // The actual program - this compiles and runs!
 ~std.io:print.ln("hello from timed compilation!")

@@ -9,14 +9,14 @@
 
 // Event with required + optional branch
 ~event process { value: u32 }
-| success { result: u32 }        // REQUIRED
-| ?warning { msg: []const u8 }   // OPTIONAL
+| success u32        // REQUIRED
+| ?warning []const u8   // OPTIONAL
 
 ~proc process {
     if (value > 100) {
-        return .{ .warning = .{ .msg = "Value too large" } };
+        return .{ .warning = "Value too large" };
     }
-    return .{ .success = .{ .result = value * 2 } };
+    return .{ .success = value * 2 };
 }
 
 // Handler references a branch that doesn't exist on this event

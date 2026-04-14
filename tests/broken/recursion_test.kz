@@ -3,7 +3,7 @@
 // to ensure compile-time expansion is always possible
 
 ~event test.ping { count: u32 }
-| pong { count: u32 }
+| pong u32
 | done { }
 
 // Direct recursion - will be caught

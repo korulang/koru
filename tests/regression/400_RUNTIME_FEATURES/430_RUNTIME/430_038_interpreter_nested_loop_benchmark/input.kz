@@ -16,13 +16,13 @@ var global_sum: i64 = 0;
 
 // add() updates global accumulator - same work as Python
 ~pub event add { a: []const u8, b: []const u8 }
-| sum { result: []const u8 }
+| sum []const u8
 
 ~proc add {
     const a_int = std.fmt.parseInt(i64, a, 10) catch 0;
     const b_int = std.fmt.parseInt(i64, b, 10) catch 0;
     global_sum += a_int + b_int;
-    return .{ .sum = .{ .result = "0" } };  // Result not used, just like Python
+    return .{ .sum = "0" };  // Result not used, just like Python
 }
 
 // Get the accumulated sum for verification

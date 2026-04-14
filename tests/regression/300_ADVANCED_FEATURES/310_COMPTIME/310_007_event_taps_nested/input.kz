@@ -11,7 +11,7 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event helper {}
-| done {}
+| done
 
 ~proc helper {
     std.debug.print("Helper executed\n", .{});
@@ -30,7 +30,7 @@ const std = @import("std");
 
 // Call helper from a NESTED context (inside a continuation)
 ~event outer {}
-| done {}
+| done
 
 ~proc outer {
     return .{ .done = .{} };

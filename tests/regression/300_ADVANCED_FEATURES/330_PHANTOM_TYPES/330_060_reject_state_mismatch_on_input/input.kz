@@ -11,7 +11,7 @@ const Connection = struct { id: i32 };
 
 // Event that requires connection in [connected] state
 ~pub event query { conn: *Connection[connected], sql: []const u8 }
-| done {}
+| done
 
 ~proc query {
     return .{ .done = .{} };
@@ -19,10 +19,10 @@ const Connection = struct { id: i32 };
 
 // Event that produces a connection WITHOUT any state annotation
 ~pub event get_raw_connection {}
-| ok { conn: *Connection }
+| ok *Connection
 
 ~proc get_raw_connection {
-    return .{ .ok = .{ .conn = undefined } };
+    return .{ .ok = undefined };
 }
 
 // Try to pass unqualified *Connection to event expecting *Connection[connected]

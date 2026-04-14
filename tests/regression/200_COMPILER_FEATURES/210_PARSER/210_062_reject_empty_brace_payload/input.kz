@@ -1,0 +1,11 @@
+// Test: Parser should reject empty braces {} in branch payloads
+// Empty braces are meaningless - use void events (no branches) or identity syntax instead
+
+const std = @import("std");
+
+// WRONG: Empty braces in branch payload
+// Should be either:
+// - A void event: ~event done {} (no branches at all)
+// - Identity syntax: | done SomeType
+~event verify {}
+| done

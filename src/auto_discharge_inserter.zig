@@ -1881,30 +1881,28 @@ pub const AutoDischargeInserter = struct {
         const disposal_is_void = disposal.event_decl.branches.len == 0;
 
         if (original_is_terminator) {
-            // Case 1: Original is a terminator - insert disposal BEFORE terminal
-            // Result: disposal() |> _
-            var after_disposal_cont: []ast.Continuation = undefined;
             if (disposal_is_void) {
-                // Void disposal event - use empty branch (void continuation)
-                after_disposal_cont = try self.allocator.alloc(ast.Continuation, 1);
-                after_disposal_cont[0] = .{
-                    .branch = "", // Empty branch = void continuation
-                    .binding = null,
-                    .binding_annotations = &[_][]const u8{},
-                    .condition = null,
-                    .node = original.node, // Preserve original terminal
-                    .indent = original.indent + 1,
+                // Void disposal replacing a terminal — flat structure, no children.
+                // This must produce the same AST shape as an explicit hand-written
+                // void event call so the emitter generates identical Zig.
+                return .{
+                    .branch = try self.allocator.dupe(u8, original.branch),
+                    .binding = if (original.binding) |b| try self.allocator.dupe(u8, b) else null,
+                    .binding_annotations = original.binding_annotations,
+                    .condition = if (original.condition) |c| try self.allocator.dupe(u8, c) else null,
+                    .node = .{ .invocation = disposal_invocation },
+                    .indent = original.indent,
                     .continuations = &[_]ast.Continuation{},
                     .location = original.location,
                 };
             } else {
-                // Disposal event with branches - use first branch name
+                // Disposal event with branches - nest terminal as child
                 var disposal_branch: []const u8 = "done";
                 for (disposal.event_decl.branches) |branch| {
                     disposal_branch = branch.name;
                     break;
                 }
-                after_disposal_cont = try self.allocator.alloc(ast.Continuation, 1);
+                var after_disposal_cont = try self.allocator.alloc(ast.Continuation, 1);
                 after_disposal_cont[0] = .{
                     .branch = try self.allocator.dupe(u8, disposal_branch),
                     .binding = try self.allocator.dupe(u8, "_"),
@@ -1915,47 +1913,43 @@ pub const AutoDischargeInserter = struct {
                     .continuations = &[_]ast.Continuation{},
                     .location = original.location,
                 };
-            }
 
-            // Return with disposal as the node
-            return .{
-                .branch = try self.allocator.dupe(u8, original.branch),
-                .binding = if (original.binding) |b| try self.allocator.dupe(u8, b) else null,
-                .binding_annotations = original.binding_annotations,
-                .condition = if (original.condition) |c| try self.allocator.dupe(u8, c) else null,
-                .node = .{ .invocation = disposal_invocation },
-                .indent = original.indent,
-                .continuations = after_disposal_cont,
-                .location = original.location,
-            };
+                return .{
+                    .branch = try self.allocator.dupe(u8, original.branch),
+                    .binding = if (original.binding) |b| try self.allocator.dupe(u8, b) else null,
+                    .binding_annotations = original.binding_annotations,
+                    .condition = if (original.condition) |c| try self.allocator.dupe(u8, c) else null,
+                    .node = .{ .invocation = disposal_invocation },
+                    .indent = original.indent,
+                    .continuations = after_disposal_cont,
+                    .location = original.location,
+                };
+            }
         } else {
             // Case 2: Original is an invocation (void event chain)
             // Need to: keep original invocation, append disposal after it
             // Result: original_invocation() |> disposal() |> _
 
-            // Create the terminal continuation (final step)
-            const terminal_cont = ast.Continuation{
-                .branch = "", // void continuation
+            // Create disposal continuation after the original invocation.
+            // For void disposal events, use a flat structure (no children) to match
+            // what the parser produces for explicit hand-written void calls.
+            // For disposal events with branches, nest the terminal inside.
+            const disposal_cont = if (disposal_is_void) ast.Continuation{
+                .branch = "", // void continuation after original invocation
                 .binding = null,
                 .binding_annotations = &[_][]const u8{},
                 .condition = null,
-                .node = .{ .terminal = {} },
-                .indent = original.indent + 2,
+                .node = .{ .invocation = disposal_invocation },
+                .indent = original.indent + 1,
                 .continuations = &[_]ast.Continuation{},
                 .location = original.location,
-            };
-
-            // Create disposal continuation with terminal inside
-            var disposal_cont_children = try self.allocator.alloc(ast.Continuation, 1);
-            if (disposal_is_void) {
-                disposal_cont_children[0] = terminal_cont;
-            } else {
-                // Disposal with branches - wrap terminal in branch continuation
+            } else blk: {
                 var disposal_branch: []const u8 = "done";
                 for (disposal.event_decl.branches) |branch| {
                     disposal_branch = branch.name;
                     break;
                 }
+                var disposal_cont_children = try self.allocator.alloc(ast.Continuation, 1);
                 disposal_cont_children[0] = .{
                     .branch = try self.allocator.dupe(u8, disposal_branch),
                     .binding = try self.allocator.dupe(u8, "_"),
@@ -1966,17 +1960,16 @@ pub const AutoDischargeInserter = struct {
                     .continuations = &[_]ast.Continuation{},
                     .location = original.location,
                 };
-            }
-
-            const disposal_cont = ast.Continuation{
-                .branch = "", // void continuation after original invocation
-                .binding = null,
-                .binding_annotations = &[_][]const u8{},
-                .condition = null,
-                .node = .{ .invocation = disposal_invocation },
-                .indent = original.indent + 1,
-                .continuations = disposal_cont_children,
-                .location = original.location,
+                break :blk ast.Continuation{
+                    .branch = "", // void continuation after original invocation
+                    .binding = null,
+                    .binding_annotations = &[_][]const u8{},
+                    .condition = null,
+                    .node = .{ .invocation = disposal_invocation },
+                    .indent = original.indent + 1,
+                    .continuations = disposal_cont_children,
+                    .location = original.location,
+                };
             };
 
             // Create new continuations array: [disposal_cont]

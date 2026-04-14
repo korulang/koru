@@ -7,22 +7,22 @@
 
 // Define events that we'll configure variants for
 ~event compute { x: i32 }
-| done { result: i32 }
+| done i32
 
 ~proc compute {
-    return .{ .done = .{ .result = x } };
+    return .{ .done = x };
 }
 
 ~proc compute|fast {
-    return .{ .done = .{ .result = x * 2 } };
+    return .{ .done = x * 2 };
 }
 
 ~proc compute|naive {
-    return .{ .done = .{ .result = x } };
+    return .{ .done = x };
 }
 
 ~event blur { intensity: i32 }
-| done {}
+| done
 
 ~proc blur {
     return .{ .done = .{} };

@@ -145,22 +145,22 @@ pub const ParseResult = parser_impl.ParseResult;
     file_name: []const u8,
     allocator: std.mem.Allocator
 }
-| parsed { ast: parser_impl.ParseResult }
-| parse_error { message: []const u8 }
+| parsed parser_impl.ParseResult
+| parse_error []const u8
 
 ~proc parse.source {
     // Initialize parser (empty compiler flags, no resolver for standalone parsing)
     var p = parser_impl.Parser.init(allocator, source, file_name, &[_][]const u8{}, null) catch |err| {
-        return .{ .parse_error = .{ .message = @errorName(err) } };
+        return .{ .parse_error = @errorName(err) };
     };
     defer p.deinit();
 
     // Parse the source
     const result = p.parse() catch |err| {
-        return .{ .parse_error = .{ .message = @errorName(err) } };
+        return .{ .parse_error = @errorName(err) };
     };
 
-    return .{ .parsed = .{ .ast = result } };
+    return .{ .parsed = result };
 }
 
 // Serialize AST to JSON string
@@ -168,18 +168,18 @@ pub const ParseResult = parser_impl.ParseResult;
     ast: parser_impl.ParseResult,
     allocator: std.mem.Allocator
 }
-| dumped { json: []const u8 }
-| dump_error { message: []const u8 }
+| dumped []const u8
+| dump_error []const u8
 
 ~proc dump.ast {
     var serializer = ast_serializer.AstSerializer.init(allocator) catch |err| {
-        return .{ .dump_error = .{ .message = @errorName(err) } };
+        return .{ .dump_error = @errorName(err) };
     };
     defer serializer.deinit();
 
     const json = serializer.serializeToJson(&ast.source_file) catch |err| {
-        return .{ .dump_error = .{ .message = @errorName(err) } };
+        return .{ .dump_error = @errorName(err) };
     };
 
-    return .{ .dumped = .{ .json = json } };
+    return .{ .dumped = json };
 }

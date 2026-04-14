@@ -9,15 +9,15 @@ const std = @import("std");
 
 // Event with single pure implementation -> pure event
 ~event pure_add { x: i32, y: i32 }
-| done { result: i32 }
+| done i32
 
 ~[pure]proc pure_add {
-    return .{ .done = .{ .result = x + y } };
+    return .{ .done = x + y };
 }
 
 // Event with single impure implementation -> impure event
 ~event impure_log { msg: []const u8 }
-| done {}
+| done
 
 ~proc impure_log {
     std.debug.print("[LOG] {s}\n", .{msg});
@@ -26,7 +26,7 @@ const std = @import("std");
 
 // Flow that composes pure and impure events
 ~event compute { a: i32, b: i32 }
-| done { result: i32 }
+| done i32
 
 ~compute = pure_add(x: a, y: b)
 | done d |> impure_log(msg: "Computed!")

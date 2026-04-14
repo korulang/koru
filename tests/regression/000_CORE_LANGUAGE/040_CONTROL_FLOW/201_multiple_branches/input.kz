@@ -6,18 +6,18 @@
 const std = @import("std");
 
 ~event check { value: i32 }
-| positive { n: i32 }
-| zero {}
-| negative { n: i32 }
+| positive i32
+| zero
+| negative i32
 
 ~proc check {
-    if (value > 0) return .{ .positive = .{ .n = value } };
-    if (value < 0) return .{ .negative = .{ .n = value } };
+    if (value > 0) return .{ .positive = value };
+    if (value < 0) return .{ .negative = value };
     return .{ .zero = .{} };
 }
 
 ~event handle_positive { n: i32 }
-| done {}
+| done
 
 ~proc handle_positive {
     std.debug.print("Positive branch works: {}\n", .{n});
@@ -25,7 +25,7 @@ const std = @import("std");
 }
 
 ~event handle_zero {}
-| done {}
+| done
 
 ~proc handle_zero {
     std.debug.print("Zero branch works\n", .{});
@@ -33,7 +33,7 @@ const std = @import("std");
 }
 
 ~event handle_negative { n: i32 }
-| done {}
+| done
 
 ~proc handle_negative {
     std.debug.print("Negative branch works: {}\n", .{n});

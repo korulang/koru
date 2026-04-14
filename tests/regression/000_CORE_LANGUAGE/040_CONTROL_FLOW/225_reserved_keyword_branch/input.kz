@@ -14,8 +14,8 @@ const std = @import("std");
 ~import "$std/io"
 
 ~pub event process_file { path: []const u8 }
-| success { data: []const u8 }
-| error { msg: []const u8 }  // "error" is a Zig reserved keyword!
+| success []const u8
+| error []const u8  // "error" is a Zig reserved keyword!
 
 ~proc process_file {
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
@@ -27,7 +27,7 @@ const std = @import("std");
         return .{ .@"error" = .{ .msg = @errorName(err) } };
     };
 
-    return .{ .success = .{ .data = data } };
+    return .{ .success = data };
 }
 
 // Test without inline flows - just test keyword escaping

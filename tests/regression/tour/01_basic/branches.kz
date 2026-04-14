@@ -2,7 +2,7 @@
 // Events can have multiple output branches for different outcomes
 
 ~event divide { numerator: i32, denominator: i32 }
-| success { result: f64 }
+| success f64
 | div_by_zero { }
 | overflow { }
 
@@ -17,7 +17,7 @@
     }
     
     const result = @intToFloat(f64, e.numerator) / @intToFloat(f64, e.denominator);
-    return .{ .success = .{ .result = result } };
+    return .{ .success = result };
 }
 
 // Handle all branches

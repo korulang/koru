@@ -6,25 +6,25 @@ const std = @import("std");
 
 // Define a family of file events
 ~event file.read { path: []const u8 }
-| ok { data: []const u8 }
-| error { reason: []const u8 }
+| ok []const u8
+| error []const u8
 
 ~event file.write { path: []const u8, data: []const u8 }  
-| ok { bytes_written: usize }
-| error { reason: []const u8 }
+| ok usize
+| error []const u8
 
 ~event file.delete { path: []const u8 }
-| ok {}
-| error { reason: []const u8 }
+| ok
+| error []const u8
 
 // Database events
 ~event database.query { sql: []const u8 }
-| rows { count: usize }
-| error { code: u32 }
+| rows usize
+| error u32
 
 ~event database.connect { host: []const u8 }
-| connected { session_id: u32 }
-| error { reason: []const u8 }
+| connected u32
+| error []const u8
 
 // Monitoring events
 ~event metrics.increment { metric: []const u8, tags: anytype }
@@ -33,11 +33,11 @@ const std = @import("std");
 
 // Simple implementations
 ~proc file.read {
-    return .{ .ok = .{ .data = "content" } };
+    return .{ .ok = "content" };
 }
 
 ~proc file.write {
-    return .{ .ok = .{ .bytes_written = e.data.len } };
+    return .{ .ok = e.data.len };
 }
 
 ~proc file.delete {
@@ -45,11 +45,11 @@ const std = @import("std");
 }
 
 ~proc database.query {
-    return .{ .rows = .{ .count = 42 } };
+    return .{ .rows = 42 };
 }
 
 ~proc database.connect {
-    return .{ .connected = .{ .session_id = 12345 } };
+    return .{ .connected = 12345 };
 }
 
 ~proc metrics.increment {

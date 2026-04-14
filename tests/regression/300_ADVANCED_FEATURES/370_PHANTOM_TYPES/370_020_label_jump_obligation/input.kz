@@ -15,28 +15,28 @@ const std = @import("std");
 const Resource = struct { id: i32 };
 
 ~event create {}
-| created { res: *Resource[open!] }
+| created *Resource[open!]
 
 ~proc create {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
     r.* = .{ .id = 42 };
-    return .{ .created = .{ .res = r } };
+    return .{ .created = r };
 }
 
 ~event use { res: *Resource[open] }
-| ok { res: *Resource[open] }
-| failed { res: *Resource[open] }
+| ok *Resource[open]
+| failed *Resource[open]
 
 ~proc use {
     // Simulate sometimes failing
     if (res.id == 42) {
-        return .{ .ok = .{ .res = res } };
+        return .{ .ok = res };
     }
-    return .{ .failed = .{ .res = res } };
+    return .{ .failed = res };
 }
 
 ~event close { res: *Resource[!open] }
-| closed {}
+| closed
 
 ~proc close {
     std.heap.page_allocator.destroy(res);

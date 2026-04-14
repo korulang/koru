@@ -30,7 +30,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc parser {
     const ast = @import("ast");
@@ -254,7 +254,7 @@ const std = @import("std");
         .allocator = allocator,
     };
 
-    return .{ .transformed = .{ .program = new_program } };
+    return .{ .transformed = new_program };
 }
 
 // Helper: Generate Zig matching code for a pattern

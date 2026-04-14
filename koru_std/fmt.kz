@@ -309,12 +309,12 @@ pub const FormattedText = struct {
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~[norun]pub event ln.impl {
     expr: []const u8,
 }
-| line { text: []const u8 }
+| line []const u8
 
 ~proc ln {
     const ast = @import("ast");
@@ -376,7 +376,7 @@ pub const FormattedText = struct {
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     // Extract the expression string from the first invocation arg
     const expr = if (invocation.args.len > 0) invocation.args[0].value else "";
@@ -472,7 +472,7 @@ pub const FormattedText = struct {
 
     // Already transformed — don't re-run
     if (invocation.inline_body != null) {
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     // Build the replacement invocation: reroute to ln.impl, carry inline_body.
@@ -524,7 +524,7 @@ pub const FormattedText = struct {
         if (maybe_new_program) |new_program| {
             const result_ptr = allocator.create(ast.Program) catch unreachable;
             result_ptr.* = new_program;
-            return .{ .transformed = .{ .program = result_ptr } };
+            return .{ .transformed = result_ptr };
         }
     } else {
         // Pipeline: replace the invocation node directly using the original
@@ -536,9 +536,9 @@ pub const FormattedText = struct {
         if (maybe_new_program) |new_program| {
             const result_ptr = allocator.create(ast.Program) catch unreachable;
             result_ptr.* = new_program;
-            return .{ .transformed = .{ .program = result_ptr } };
+            return .{ .transformed = result_ptr };
         }
     }
 
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }

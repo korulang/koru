@@ -2,7 +2,7 @@
 // Parser catches return/break/continue and suggests '_' instead
 
 ~event foo { x: i32 }
-| done {}
+| done
 
 ~foo(x: 1)
 | done |> return

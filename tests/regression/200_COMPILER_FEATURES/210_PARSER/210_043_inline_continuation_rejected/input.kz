@@ -5,10 +5,10 @@
 // ============================================================================
 
 ~event greet { name: []const u8 }
-| done { message: []const u8 }
+| done []const u8
 
 ~proc greet {
-    return .{ .done = .{ .message = "Hello!" } };
+    return .{ .done = "Hello!" };
 }
 
 // INVALID: continuation on same line as invocation

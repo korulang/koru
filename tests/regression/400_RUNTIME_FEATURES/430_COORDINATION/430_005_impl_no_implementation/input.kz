@@ -4,7 +4,7 @@
 
 // Define abstract event with NO implementation at all
 ~[abstract] event unimplemented { x: i32 }
-| done {}
+| done
 
 // Try to invoke it - THIS SHOULD BE A COMPILER ERROR
 ~unimplemented(x: 42)

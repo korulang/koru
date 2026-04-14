@@ -14,10 +14,10 @@ const std = @import("std");
 
 // Event 1: double a number
 ~event double { x: i32 }
-| result { y: i32 }
+| result i32
 
 ~proc double {
-    return .{ .result = .{ .y = x * 2 } };
+    return .{ .result = x * 2 };
 }
 
 // Event 2: print a number

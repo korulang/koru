@@ -24,7 +24,7 @@ const std = @import("std");
 // Events must be called with their namespace prefix
 
 ~event demo.basic_usage {}
-| done { message: []const u8 }
+| done []const u8
 
 ~proc demo.basic_usage {
     // Use math_utils namespace (from default import)
@@ -48,7 +48,7 @@ const std = @import("std");
     | not_found |> log:error(message: "File not found", code: 404)
     | error e |> log:error(message: e.message, code: 500)
 
-    return .{ .done = .{ .message = "Basic imports demonstrated" } };
+    return .{ .done = "Basic imports demonstrated" };
 }
 
 // WHAT YOU CAN'T DO:

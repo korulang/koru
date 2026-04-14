@@ -4,10 +4,10 @@
 const std = @import("std");
 
 ~[abstract] event fetch { url: []const u8 }
-| success { body: []const u8 }
-| error { code: i32 }
+| success []const u8
+| error i32
 
 // WRONG: This is Zig syntax, not Koru
 // Should be: ~input:fetch = success { body: "mock response" }
 ~input:fetch =
-    .{ .success = .{ .body = "mock response" } }
+    .{ .success = "mock response" }

@@ -27,24 +27,24 @@ const std = @import("std");
 // Example 1: Abstract event WITH default implementation
 // The default can be called from within implementation via delegation
 ~[abstract] event coordinate { ctx: i32 }
-| finished { result: i32 }
+| finished i32
 
 ~proc coordinate {
     std.debug.print("Default coordination: {}\n", .{ctx});
-    return .{ .finished = .{ .result = ctx } };
+    return .{ .finished = ctx };
 }
 
 // Example 2: Abstract event WITHOUT default implementation
 // User MUST provide implementation or compile error
 ~[abstract] event process { data: i32 }
-| done { output: i32 }
+| done i32
 
 // Helper proc for Example 4
 ~event double { value: i32 }
-| result { doubled: i32 }
+| result i32
 
 ~proc double {
-    return .{ .result = .{ .doubled = value * 2 } };
+    return .{ .result = value * 2 };
 }
 
 // Example 3: Implementation that delegates to default and extends

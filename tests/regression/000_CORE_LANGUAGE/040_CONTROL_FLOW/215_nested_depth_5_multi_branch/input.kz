@@ -11,33 +11,33 @@
 ~import "$std/io"
 
 ~event validate { value: i32 }
-| ok { result: i32 }
-| failure { msg: []const u8 }
+| ok i32
+| failure []const u8
 
 ~proc validate {
     if (value > 0) {
-        return .{ .ok = .{ .result = value } };
+        return .{ .ok = value };
     } else {
-        return .{ .failure = .{ .msg = "negative" } };
+        return .{ .failure = "negative" };
     }
 }
 
 ~event double { value: i32 }
-| ok { result: i32 }
-| failure { msg: []const u8 }
+| ok i32
+| failure []const u8
 
 ~proc double {
     if (value < 100) {
-        return .{ .ok = .{ .result = value * 2 } };
+        return .{ .ok = value * 2 };
     } else {
-        return .{ .failure = .{ .msg = "too large" } };
+        return .{ .failure = "too large" };
     }
 }
 
 // Chain with failure handling at each level
 ~event process { input: i32 }
-| success { final: i32 }
-| failed { reason: []const u8 }
+| success i32
+| failed []const u8
 
 ~process = validate(value: input)
 | ok a |> double(value: a.result)

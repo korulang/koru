@@ -7,7 +7,7 @@ const std = @import("std");
 
 // Impure logging event (no ~[pure] annotation - does I/O)
 ~event log { msg: []const u8 }
-| done {}
+| done
 
 ~proc log {
     std.debug.print("[LOG] {s}\n", .{msg});
@@ -16,15 +16,15 @@ const std = @import("std");
 
 // Pure math operation
 ~event multiply { x: i32, factor: i32 }
-| done { result: i32 }
+| done i32
 
 ~[pure]proc multiply {
-    return .{ .done = .{ .result = x * factor } };
+    return .{ .done = x * factor };
 }
 
 // Marked pure but calls impure event - TAINTED!
 ~event compute_with_logging { x: i32 }
-| done { result: i32 }
+| done i32
 
 ~[pure]proc compute_with_logging {
     // Call impure log - this TAINTS our purity!
@@ -34,14 +34,14 @@ const std = @import("std");
 
     switch (result) {
         .done => |d| {
-            return .{ .done = .{ .result = d.result } };
+            return .{ .done = d.result };
         },
     }
 }
 
 // Print result
 ~event print_number { n: i32 }
-| done {}
+| done
 
 ~proc print_number {
     std.debug.print("Result: {}\n", .{n});
@@ -50,7 +50,7 @@ const std = @import("std");
 
 // Main
 ~event main {}
-| done {}
+| done
 
 ~proc main {
     const result = compute_with_logging_event.handler(.{ .x = 21 });

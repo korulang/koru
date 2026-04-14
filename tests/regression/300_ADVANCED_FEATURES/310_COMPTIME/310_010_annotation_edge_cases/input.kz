@@ -5,27 +5,27 @@ const std = @import("std");
 
 // Annotations with special characters (opaque!)
 ~[gpu:metal:half] event colon_separated {}
-| done {}
+| done
 
 // Annotations with comparison operators
 ~[version>=2.0] event version_check {}
-| done {}
+| done
 
 // Annotations with spaces in params
 ~[profile "with spaces" 1000Hz] event spaced {}
-| done {}
+| done
 
 // Nested parens (opaque string handles it)
 ~[custom(foo(bar: 1))] event nested {}
-| done {}
+| done
 
 // URL-like annotation
 ~[source("https://example.com/spec")] event url_annot {}
-| done {}
+| done
 
 // Future syntax experimentation
 ~[inline@500] event at_syntax {}
-| done {}
+| done
 
 ~proc colon_separated { return .{ .done = .{} }; }
 ~proc version_check { return .{ .done = .{} }; }

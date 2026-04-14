@@ -24,11 +24,11 @@ const std = @import("std");
 // Inner loop event
 ~event inner { x: i32, y: i32, max: i32 }
 | next_inner { x: i32, y: i32, max: i32 }
-| done_inner { x: i32 }
+| done_inner i32
 
 ~proc inner {
     if (y > max) {
-        return .{ .done_inner = .{ .x = x } };
+        return .{ .done_inner = x };
     }
 
     std.debug.print("  Inner: x={}, y={}\n", .{x, y});

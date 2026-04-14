@@ -31,7 +31,7 @@ const std = @import("std");
 
 // Event that accepts array of handles
 ~event joinHandles { handles: []const threading:WorkerHandle }
-| joined {}
+| joined
 
 ~proc joinHandles {
     return .{ .joined = .{} };

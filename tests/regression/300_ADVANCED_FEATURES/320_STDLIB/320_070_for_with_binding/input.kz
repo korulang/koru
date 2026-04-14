@@ -26,7 +26,7 @@ const my_items = [_]i32{ 1, 2, 3 };
 var sum: i32 = 0;
 
 ~event add_item { value: i32 }
-| done {}
+| done
 
 ~proc add_item {
     sum += value;
@@ -36,7 +36,7 @@ var sum: i32 = 0;
 
 // Show result
 ~event show_sum {}
-| done {}
+| done
 
 ~proc show_sum {
     std.debug.print("Final sum: {}\n", .{sum});

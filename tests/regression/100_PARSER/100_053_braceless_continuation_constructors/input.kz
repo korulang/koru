@@ -10,10 +10,10 @@
 
 // Source event
 ~pub event compute { x: i32 }
-| value { n: i32 }
+| value i32
 
 ~proc compute {
-    return .{ .value = .{ .n = x * 2 } };
+    return .{ .value = x * 2 };
 }
 
 // Result event with identity branches

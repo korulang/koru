@@ -45,8 +45,8 @@ const std = @import("std");
     body: []const u8,
     path: []const []const u8,
 }
-| compiled { code: []const u8 }
-| unsupported { reason: []const u8 }
+| compiled []const u8
+| unsupported []const u8
 
 // ================================================================
 // Mock Compiler Passes (simplified for testing)
@@ -84,7 +84,7 @@ const std = @import("std");
 
         try result.appendSlice("\n//\n// Zig wrapper that loads compiled shader:\nreturn .{ .done = .{} };\n");
 
-        return .{ .compiled = .{ .code = result.items } };
+        return .{ .compiled = result.items };
     }
 
     // JavaScript target: Wrap JS code for V8
@@ -110,12 +110,12 @@ const std = @import("std");
 
         try result.appendSlice("\n;\n// TODO: Call V8 engine with js_code\nreturn .{ .done = .{} };\n");
 
-        return .{ .compiled = .{ .code = result.items } };
+        return .{ .compiled = result.items };
     }
 
     // Unsupported target
     const msg = try std.fmt.allocPrint(allocator, "Target '{s}' not supported - only 'gpu' and 'js' available", .{target_name});
-    return .{ .unsupported = .{ .reason = msg } };
+    return .{ .unsupported = msg };
 }
 
 // ================================================================

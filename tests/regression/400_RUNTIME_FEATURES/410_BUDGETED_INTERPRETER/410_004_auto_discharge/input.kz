@@ -7,14 +7,14 @@
 const std = @import("std");
 
 ~pub event open { path: []const u8 }
-| opened { handle: []const u8[opened!] }
+| opened []const u8[opened!]
 
 ~proc open {
-    return .{ .opened = .{ .handle = "file_1" } };
+    return .{ .opened = "file_1" };
 }
 
 ~pub event close { handle: []const u8[!opened] }
-| closed {}
+| closed
 
 ~proc close {
     std.debug.print("close() was called by auto-discharge\n", .{});

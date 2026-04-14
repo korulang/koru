@@ -3,15 +3,15 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event process { value: usize }
-| done { result: usize }
+| done usize
 
 ~event alert { result: usize }
-| done {}
+| done
 
 ~proc process {
     const result = value * 2;
     std.debug.print("Processed: {}\n", .{result});
-    return .{ .done = .{ .result = result } };
+    return .{ .done = result };
 }
 
 ~proc alert {

@@ -6,7 +6,7 @@
 const std = @import("std");
 
 ~pub event debug.dump_state {}
-| dumped {}
+| dumped
 
 ~proc debug.dump_state {
     return .{ .dumped = .{} };

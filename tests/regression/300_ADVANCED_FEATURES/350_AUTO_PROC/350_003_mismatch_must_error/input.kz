@@ -9,7 +9,7 @@
 
 // Input has 'input_val', output has 'output_val' - MISMATCH
 ~pub event mismatched { input_val: i32 }
-| done { output_val: i32 }
+| done i32
 
 // This should fail - no proc and can't synthesize
 ~mismatched(input_val: 42)

@@ -7,17 +7,17 @@
 
 // Impure event - Zig proc without ~[pure]
 ~event fetch_user { id: u32 }
-| found { name: []const u8 }
-| not_found {}
+| found []const u8
+| not_found
 
 ~proc fetch_user {
     // This is impure - does I/O (simulated)
-    return .{ .found = .{ .name = "Alice" } };
+    return .{ .found = "Alice" };
 }
 
 // Another impure event
 ~event save_log { message: []const u8 }
-| saved {}
+| saved
 
 ~proc save_log {
     // This is impure - writes to disk

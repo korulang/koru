@@ -769,7 +769,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\                return r.code;
             \\            },
             \\            .@"error" => |e| {
-            \\                __koru_std.debug.print("❌ Compiler coordination error: {s}\n", .{e.message});
+            \\                __koru_std.debug.print("❌ Compiler coordination error: {s}\n", .{e});
             \\                return error.CompilerCoordinationFailed;
             \\            },
             \\        }

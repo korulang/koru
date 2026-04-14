@@ -12,11 +12,11 @@ const std = @import("std");
 
 // Simulated event pump - all branches optional (any event can fire)
 ~event pump { iteration: u32 }
-| ?keyboard { code: i32 }
-| ?mouse { code: i32 }
-| ?window { code: i32 }
-| ?timer { code: i32 }
-| ?quit {}
+| ?keyboard i32
+| ?mouse i32
+| ?window i32
+| ?timer i32
+| ?quit
 
 ~proc pump {
     const i = iteration;
@@ -29,13 +29,13 @@ const std = @import("std");
     // Cycle: keyboard, mouse, window, timer
     const event_type = i % 4;
     if (event_type == 0) {
-        return .{ .keyboard = .{ .code = @intCast(i) } };
+        return .{ .keyboard = @intCast(i) };
     } else if (event_type == 1) {
-        return .{ .mouse = .{ .code = @intCast(i) } };
+        return .{ .mouse = @intCast(i) };
     } else if (event_type == 2) {
-        return .{ .window = .{ .code = @intCast(i) } };
+        return .{ .window = @intCast(i) };
     } else {
-        return .{ .timer = .{ .code = @intCast(i) } };
+        return .{ .timer = @intCast(i) };
     }
 }
 

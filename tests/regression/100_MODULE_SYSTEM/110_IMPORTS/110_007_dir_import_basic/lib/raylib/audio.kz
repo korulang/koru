@@ -3,10 +3,10 @@
 const std = @import("std");
 
 ~pub event play { sound_id: i32 }
-| playing {}
+| playing
 
 ~pub event stop {}
-| stopped {}
+| stopped
 
 ~proc play {
     return .{ .@"playing" = .{} };

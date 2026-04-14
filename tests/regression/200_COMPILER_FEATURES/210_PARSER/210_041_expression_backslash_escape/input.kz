@@ -5,11 +5,11 @@
 const std = @import("std");
 
 ~event process_path { path: []const u8 }
-| done { result: []const u8 }
+| done []const u8
 
 ~proc process_path {
     std.debug.print("Processing path: {s}\n", .{path});
-    return .{ .done = .{ .result = path } };
+    return .{ .done = path };
 }
 
 // This should parse correctly:

@@ -15,10 +15,10 @@ const std = @import("std");
 
 // Two simple events
 ~event target {}
-| done {}
+| done
 
 ~event other {}
-| done {}
+| done
 
 // Procs
 ~proc target {

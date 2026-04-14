@@ -9,10 +9,10 @@
 
 // Event with single output branch
 ~event compute { x: i32 }
-| done { value: i32 }
+| done i32
 
 ~proc compute {
-    return .{ .done = .{ .value = x * 2 } };
+    return .{ .done = x * 2 };
 }
 
 // Event with two branches

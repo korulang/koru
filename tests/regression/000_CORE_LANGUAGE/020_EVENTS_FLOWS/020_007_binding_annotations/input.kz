@@ -4,15 +4,15 @@
 const std = @import("std");
 
 ~event get_data {}
-| result { value: i32 }
+| result i32
 
 ~proc get_data {
-    return .{ .result = .{ .value = 42 } };
+    return .{ .result = 42 };
 }
 
 // This event mutates the value it receives via a pointer
 ~event mutate_and_print { ptr: *i32 }
-| done {}
+| done
 
 ~proc mutate_and_print {
     ptr.* += 1;  // Mutate the value

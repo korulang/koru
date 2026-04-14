@@ -6,7 +6,7 @@ const std = @import("std");
 // HTTP Request
 ~pub event http.parse_request { data: []const u8 }
 | request { method: []const u8, path: []const u8, headers: []const u8, body: []const u8 }
-| invalid { msg: []const u8 }
+| invalid []const u8
 
 ~proc http.parse_request {
     const allocator = std.heap.page_allocator;
@@ -53,7 +53,7 @@ const std = @import("std");
 
 // HTTP Response Builder
 ~pub event http.response { status: u16, status_text: []const u8, headers: []const u8, body: []const u8 }
-| formatted { data: []const u8 }
+| formatted []const u8
 
 ~proc http.response {
     const allocator = std.heap.page_allocator;
@@ -72,8 +72,8 @@ const std = @import("std");
 
 // Route matching
 ~pub event http.match_route { path: []const u8, pattern: []const u8 }
-| matched { params: []const u8 }  // For simplicity, params as comma-separated string
-| no_match {}
+| matched []const u8  // For simplicity, params as comma-separated string
+| no_match
 
 ~proc http.match_route {
     // Simple exact match for now
@@ -94,7 +94,7 @@ const std = @import("std");
 
 // Simple JSON response helper
 ~pub event http.json_response { status: u16, json: []const u8 }
-| response { data: []const u8 }
+| response []const u8
 
 ~proc http.json_response {
     const allocator = std.heap.page_allocator;
@@ -121,7 +121,7 @@ const std = @import("std");
 
 // HTML response helper
 ~pub event http.html_response { status: u16, html: []const u8 }
-| response { data: []const u8 }
+| response []const u8
 
 ~proc http.html_response {
     const allocator = std.heap.page_allocator;
@@ -146,7 +146,7 @@ const std = @import("std");
 
 // Static file serving helper
 ~pub event http.mime_type { extension: []const u8 }
-| type { mime: []const u8 }
+| type []const u8
 
 ~proc http.mime_type {
     const mime = if (std.mem.eql(u8, extension, ".html")) "text/html"
@@ -164,8 +164,8 @@ const std = @import("std");
 
 // URL decode helper
 ~pub event http.url_decode { encoded: []const u8 }
-| decoded { text: []const u8 }
-| error { msg: []const u8 }
+| decoded []const u8
+| error []const u8
 
 ~proc http.url_decode {
     const allocator = std.heap.page_allocator;
@@ -200,7 +200,7 @@ const std = @import("std");
 
 // Parse query string
 ~pub event http.parse_query { query: []const u8 }
-| params { data: []const u8 }  // Simplified: key=value,key2=value2 format
+| params []const u8  // Simplified: key=value,key2=value2 format
 
 ~proc http.parse_query {
     const allocator = std.heap.page_allocator;

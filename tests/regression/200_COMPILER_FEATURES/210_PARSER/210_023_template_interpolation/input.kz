@@ -14,8 +14,8 @@ const std = @import("std");
 // [comptime|transform] annotation marks this as compile-time transformation
 // Transform events receive: source (user args), invocation (for context), program (AST), allocator (memory)
 ~[comptime|transform]event renderHTML { source: Source[HTML], invocation: *const Invocation, program: *const Program, allocator: std.mem.Allocator }
-| transformed { program: *const Program }
-| failed { error: []const u8 }
+| transformed *const Program
+| failed []const u8
 
 ~proc renderHTML {
     const ast = @import("ast");
@@ -33,7 +33,7 @@ const std = @import("std");
     const source_location = source.location;
 
     if (html_text.len == 0) {
-        return .{ .failed = .{ .error = "Source parameter is empty" } };
+        return .{ .failed = "Source parameter is empty" };
     }
 
     // Generate Zig code that returns | rendered { html: []const u8 }
@@ -216,7 +216,7 @@ const std = @import("std");
         .allocator = allocator,
     };
 
-    return .{ .transformed = .{ .program = new_program } };
+    return .{ .transformed = new_program };
 }
 
 // Module-level test: Source block gets passed to renderHTML

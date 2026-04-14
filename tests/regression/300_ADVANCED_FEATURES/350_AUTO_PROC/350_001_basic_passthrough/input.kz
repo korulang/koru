@@ -11,7 +11,7 @@
 
 // Event with matching input/output - NO PROC DEFINED
 ~pub event passthrough { msg: []const u8 }
-| done { msg: []const u8 }
+| done []const u8
 
 // Verify event - has proc that validates the passthrough worked
 ~pub event verify { msg: []const u8 }

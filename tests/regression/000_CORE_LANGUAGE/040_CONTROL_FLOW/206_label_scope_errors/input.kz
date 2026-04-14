@@ -10,22 +10,22 @@ const std = @import("std");
 
 // Simple counter event
 ~event counter { n: i32 }
-| next { value: i32 }
-| done { final: i32 }
+| next i32
+| done i32
 
 ~proc counter {
     std.debug.print("Count: {}\n", .{n});
 
     if (n < 3) {
-        return .{ .next = .{ .value = n + 1 } };
+        return .{ .next = n + 1 };
     } else {
-        return .{ .done = .{ .final = n } };
+        return .{ .done = n };
     }
 }
 
 // Start event
 ~event start {}
-| ready {}
+| ready
 
 ~proc start {
     std.debug.print("Starting...\n", .{});

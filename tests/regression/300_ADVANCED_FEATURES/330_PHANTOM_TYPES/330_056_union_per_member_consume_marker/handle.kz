@@ -11,28 +11,28 @@ const Handle = struct {
 
 // Open a handle - produces obligation (must be finalized)
 ~pub event open {}
-| opened { h: *Handle[opened!] }
+| opened *Handle[opened!]
 
 ~proc open {
     std.debug.print("Opening handle\n", .{});
     const allocator = std.heap.page_allocator;
     const h = allocator.create(Handle) catch unreachable;
     h.* = Handle{ .id = 42 };
-    return .{ .opened = .{ .h = h } };
+    return .{ .opened = h };
 }
 
 // Start closing - explicitly discharges opened! and produces closing! obligation
 ~pub event start_close { h: *Handle[!opened] }
-| closing { h: *Handle[closing!] }
+| closing *Handle[closing!]
 
 ~proc start_close {
     std.debug.print("Starting close: {d}\n", .{h.id});
-    return .{ .closing = .{ .h = h } };
+    return .{ .closing = h };
 }
 
 // Finalize - per-member consume markers: !opened discharges opened!, !closing discharges closing!
 ~pub event finalize { h: *Handle[!opened|!closing] }
-| done {}
+| done
 
 ~proc finalize {
     std.debug.print("Finalizing handle: {d}\n", .{h.id});

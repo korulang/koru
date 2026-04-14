@@ -2,7 +2,7 @@
 // std.log is a valid event name, should not trigger "Zig code not allowed"
 
 ~event std.log { msg: []const u8 }
-| done {}
+| done
 
 ~std.log(msg: "hello")
 | done |> _

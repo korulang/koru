@@ -6,15 +6,15 @@
 
 // Pure event
 ~event add { x: i32, y: i32 }
-| done { result: i32 }
+| done i32
 
 ~[pure]proc add {
-    return .{ .done = .{ .result = x + y } };
+    return .{ .done = x + y };
 }
 
 // Flow that composes pure operations
 ~event calculate { a: i32, b: i32, c: i32 }
-| done { result: i32 }
+| done i32
 
 ~calculate = add(x: a, y: b)
 | done d1 |> add(x: d1.result, y: c)

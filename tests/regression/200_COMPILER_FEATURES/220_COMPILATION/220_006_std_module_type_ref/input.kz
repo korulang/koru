@@ -17,7 +17,7 @@ const std = @import("std");
 ~event process_ast {
     result: std.parser:ParseResult,
 }
-| processed { item_count: usize }
+| processed usize
 
 ~proc process_ast {
     return .{ .processed = .{ .item_count = result.source_file.items.len }};
@@ -33,7 +33,7 @@ const std = @import("std");
 // Sample code to parse
 const SAMPLE =
     \\~event test {}
-    \\| done {}
+    \\| done
 ;
 
 // Flow: parse → process → report

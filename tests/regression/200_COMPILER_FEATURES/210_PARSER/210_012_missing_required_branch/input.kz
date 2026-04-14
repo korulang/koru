@@ -5,15 +5,15 @@
 
 // Event with both required and optional branches
 ~event process { value: u32 }
-| success { result: u32 }        // REQUIRED
-| ?warning { msg: []const u8 }   // OPTIONAL
+| success u32        // REQUIRED
+| ?warning []const u8   // OPTIONAL
 
 // Proc implementation that can return both branches
 ~proc process {
     if (value > 100) {
-        return .{ .warning = .{ .msg = "Large value" } };
+        return .{ .warning = "Large value" };
     }
-    return .{ .success = .{ .result = value * 2 } };
+    return .{ .success = value * 2 };
 }
 
 // This flow is INVALID - missing required 'success' branch!

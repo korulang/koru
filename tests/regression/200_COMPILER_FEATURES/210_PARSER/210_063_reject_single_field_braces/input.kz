@@ -1,0 +1,9 @@
+// Test: Parser should reject single-field braces in branch payloads
+// Single field in braces should use identity syntax instead
+
+const std = @import("std");
+
+// WRONG: Single field in braces
+// Should be: | ok i32 (identity syntax)
+~event compute {}
+| ok i32

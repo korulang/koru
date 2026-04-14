@@ -7,10 +7,10 @@
 const std = @import("std");
 
 ~event compute { x: u32, y: u32 }
-| sum { result: u32 }              // REQUIRED
-| ?product { result: u32 }         // OPTIONAL
-| ?difference { result: u32 }      // OPTIONAL
-| ?quotient { result: u32 }        // OPTIONAL
+| sum u32              // REQUIRED
+| ?product u32         // OPTIONAL
+| ?difference u32      // OPTIONAL
+| ?quotient u32        // OPTIONAL
 
 ~proc compute {
     const s = x + y;
@@ -19,22 +19,22 @@ const std = @import("std");
     const q = if (y != 0) x / y else 0;
 
     if (x == y) {
-        return .{ .sum = .{ .result = s } };
+        return .{ .sum = s };
     }
 
     if (x > 100 and y > 100) {
-        return .{ .product = .{ .result = p } };
+        return .{ .product = p };
     }
 
     if (x < 10 and y < 10) {
-        return .{ .difference = .{ .result = d } };
+        return .{ .difference = d };
     }
 
     if (y > 50) {
-        return .{ .quotient = .{ .result = q } };
+        return .{ .quotient = q };
     }
 
-    return .{ .sum = .{ .result = s } };
+    return .{ .sum = s };
 }
 
 // Flow A: Handles sum + product

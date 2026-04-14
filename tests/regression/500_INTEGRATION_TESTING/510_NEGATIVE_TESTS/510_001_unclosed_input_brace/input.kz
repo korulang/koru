@@ -4,4 +4,4 @@
 ~event write {
     value: i32,
     note: []const u8
-| success {}
+| success

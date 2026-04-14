@@ -8,20 +8,20 @@ const std = @import("std");
 
 // Event with required and optional branches
 ~event process { value: u32 }
-| success { result: u32 }        // REQUIRED - must be handled
-| ?warning { msg: []const u8 }   // OPTIONAL - can be ignored!
-| ?debug { details: []const u8 } // OPTIONAL - can be ignored!
+| success u32        // REQUIRED - must be handled
+| ?warning []const u8   // OPTIONAL - can be ignored!
+| ?debug []const u8 // OPTIONAL - can be ignored!
 
 // Proc that can return any branch
 ~proc process {
     if (value > 100) {
-        return .{ .warning = .{ .msg = "Large value" } };
+        return .{ .warning = "Large value" };
     }
     if (value % 2 == 1) {
-        return .{ .debug = .{ .details = "Odd value" } };
+        return .{ .debug = "Odd value" };
     }
     std.debug.print("Success: {}\n", .{value * 2});
-    return .{ .success = .{ .result = value * 2 } };
+    return .{ .success = value * 2 };
 }
 
 // Flow that ONLY handles required branch - optional branches are ignored!

@@ -8,12 +8,12 @@
 const std = @import("std");
 
 ~event outer { count: i32 }
-| continue_outer { next: i32 }
-| done_outer {}
+| continue_outer i32
+| done_outer
 
 ~event inner { count: i32 }
-| continue_inner { next: i32 }
-| done_inner {}
+| continue_inner i32
+| done_inner
 
 ~proc outer {
     std.debug.print("Outer: {}\n", .{count});

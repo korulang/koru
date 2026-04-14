@@ -46,7 +46,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~[norun]pub event struct.impl { name: []const u8 }
 
@@ -58,7 +58,7 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     // Parse type name from expr (strip quotes if present)
     var type_name = expr;
@@ -146,9 +146,9 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         }
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     // NORMAL STRUCT: no generics, emit as-is
@@ -171,9 +171,9 @@ const std = @import("std");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // Declare a Zig enum type
@@ -210,7 +210,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc string {
     const ast = @import("ast");
@@ -219,7 +219,7 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     // Parse type name from expr (strip quotes if present)
     var type_name = expr;
@@ -257,9 +257,9 @@ const std = @import("std");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // Declare a nominal integer type (wraps i64)
@@ -269,7 +269,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc int {
     const ast = @import("ast");
@@ -278,7 +278,7 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     var type_name = expr;
     if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
@@ -314,9 +314,9 @@ const std = @import("std");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // Declare a nominal float type (wraps f64)
@@ -326,7 +326,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc float {
     const ast = @import("ast");
@@ -335,7 +335,7 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     var type_name = expr;
     if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
@@ -371,9 +371,9 @@ const std = @import("std");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // Declare a nominal bool type (wraps bool)
@@ -383,7 +383,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc bool {
     const ast = @import("ast");
@@ -392,7 +392,7 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     var type_name = expr;
     if (type_name.len >= 2 and type_name[0] == '"' and type_name[type_name.len - 1] == '"') {
@@ -428,9 +428,9 @@ const std = @import("std");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // ============================================================================
@@ -451,7 +451,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc type {
     const ast = @import("ast");
@@ -460,7 +460,7 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     // Parse type expression (strip quotes if present)
     var type_expr = expr;
@@ -569,7 +569,7 @@ const std = @import("std");
     if (equals_pos == null) {
         // No '=' found - invalid syntax for ~type
         std.debug.print("ERROR: ~type requires 'Name = Generic<Args>' syntax\n", .{});
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     const eq_idx = equals_pos.?;
@@ -605,9 +605,9 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         }
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     const a_start = angle_start.?;
@@ -710,7 +710,7 @@ const std = @import("std");
 
     if (generic_source == null) {
         std.debug.print("ERROR: ~type could not find generic definition for '{s}'\n", .{base_name});
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     const gen_src = generic_source.?;
@@ -767,8 +767,8 @@ const std = @import("std");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 

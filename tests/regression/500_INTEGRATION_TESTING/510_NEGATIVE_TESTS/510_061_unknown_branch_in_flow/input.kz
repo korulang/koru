@@ -2,7 +2,7 @@
 // GOOD: Backend catches with KORU021/KORU022
 
 ~event foo { x: i32 }
-| done {}
+| done
 
 ~foo(x: 1)
 | success |> _

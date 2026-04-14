@@ -7,11 +7,11 @@
 const std = @import("std");
 
 ~event window { window: i32 }
-| success { size: i32 }
+| success i32
 
 ~proc window {
     std.debug.print("Window size: {d}\n", .{window});
-    return .{ .success = .{ .size = window * 2 } };
+    return .{ .success = window * 2 };
 }
 
 // Invoke the event

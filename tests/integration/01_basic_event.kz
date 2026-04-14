@@ -2,8 +2,8 @@
 // Features: event declaration, proc body, correct union syntax
 
 ~event basic.compute { value: i32 }
-| success { result: i32 }
-| failure { msg: []const u8 }
+| success i32
+| failure []const u8
 
 ~proc basic.compute {
     if (e.value > 0) {

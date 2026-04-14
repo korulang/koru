@@ -39,7 +39,7 @@ const allocator = std.heap.c_allocator;
 // ============================================================
 
 ~event work_done { r: *Resource }
-| done {}
+| done
 
 ~proc work_done {
     r.data[0] +%= 1;
@@ -52,12 +52,12 @@ const allocator = std.heap.c_allocator;
 // ============================================================
 
 ~event create { id: usize }
-| created { r: *Resource[active!] }
+| created *Resource[active!]
 
 ~proc create {
     const r = allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = id, .data = undefined };
-    return .{ .created = .{ .r = r } };
+    return .{ .created = r };
 }
 
 ~event destroy { r: *Resource[!active] }
@@ -68,7 +68,7 @@ const allocator = std.heap.c_allocator;
 
 // Factory with DIFFERENT field name than create
 ~event make_resource { id: usize }
-| ready { resource: *Resource[active!] }  // "resource" not "r"
+| ready *Resource[active!]  // "resource" not "r"
 
 // BUG #3: f.r -> resource field name mismatch
 ~make_resource = create(id: id)

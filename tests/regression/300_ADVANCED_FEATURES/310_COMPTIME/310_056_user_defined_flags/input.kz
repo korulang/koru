@@ -25,7 +25,7 @@
 }
 
 ~event main {}
-| done {}
+| done
 
 ~proc main {
     return .{ .done = .{} };

@@ -18,66 +18,66 @@ const Transaction = struct { conn_handle: i32 };
 
 // connect: creates connection with [connected!] obligation
 ~pub event connect { host: []const u8 }
-| ok { conn: *Connection[connected!] }
-| err { msg: []const u8 }
+| ok *Connection[connected!]
+| err []const u8
 
 ~proc connect {
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .handle = 42 };
-    return .{ .ok = .{ .conn = c } };
+    return .{ .ok = c };
 }
 
 // begin: consumes [!connected] OR [!active], produces Transaction[started!]
 ~pub event begin { conn: *Connection[!connected|!active] }
-| ok { tx: *Transaction[started!] }
-| err { msg: []const u8 }
+| ok *Transaction[started!]
+| err []const u8
 
 ~proc begin {
     const tx = std.heap.page_allocator.create(Transaction) catch unreachable;
     tx.* = Transaction{ .conn_handle = conn.handle };
-    return .{ .ok = .{ .tx = tx } };
+    return .{ .ok = tx };
 }
 
 // exec: consumes [!started] OR [!active], produces Transaction[active!]
 ~pub event exec { tx: *Transaction[!started|!active], sql: []const u8 }
-| ok { tx: *Transaction[active!] }
-| err { msg: []const u8 }
+| ok *Transaction[active!]
+| err []const u8
 
 ~proc exec {
     std.debug.print("Executing: {s}\n", .{sql});
-    return .{ .ok = .{ .tx = tx } };
+    return .{ .ok = tx };
 }
 
 // commit: consumes [!active], returns Connection[active!]
 ~pub event commit { tx: *Transaction[!active] }
-| ok { conn: *Connection[active!] }
-| err { msg: []const u8 }
+| ok *Connection[active!]
+| err []const u8
 
 ~proc commit {
     std.debug.print("COMMIT\n", .{});
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .handle = tx.conn_handle };
     std.heap.page_allocator.destroy(tx);
-    return .{ .ok = .{ .conn = c } };
+    return .{ .ok = c };
 }
 
 // rollback: consumes [!active], returns Connection[active!]
 ~pub event rollback { tx: *Transaction[!active] }
-| ok { conn: *Connection[active!] }
-| err { msg: []const u8 }
+| ok *Connection[active!]
+| err []const u8
 
 ~proc rollback {
     std.debug.print("ROLLBACK\n", .{});
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .handle = tx.conn_handle };
     std.heap.page_allocator.destroy(tx);
-    return .{ .ok = .{ .conn = c } };
+    return .{ .ok = c };
 }
 
 // close: ONLY accepts [!active] - forces meaningful use before close
 ~pub event close { conn: *Connection[!active] }
-| ok {}
-| err { msg: []const u8 }
+| ok
+| err []const u8
 
 ~proc close {
     std.debug.print("Connection closed\n", .{});

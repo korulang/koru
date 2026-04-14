@@ -8,8 +8,8 @@
 
 // Event with derive annotation - echo handler generates greet.info
 ~[derive(echo)]event greet {}
-| hello { name: []const u8 }
-| goodbye { name: []const u8 }
+| hello []const u8
+| goodbye []const u8
 
 // Use the generated event - greet.info should exist after derive
 ~greet.info()

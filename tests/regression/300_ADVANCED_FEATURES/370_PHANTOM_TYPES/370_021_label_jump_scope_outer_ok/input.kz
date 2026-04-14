@@ -9,16 +9,16 @@ const std = @import("std");
 const Resource = struct { id: i32 };
 
 ~event create {}
-| created { res: *Resource[open!] }
+| created *Resource[open!]
 
 ~proc create {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
     r.* = .{ .id = 1 };
-    return .{ .created = .{ .res = r } };
+    return .{ .created = r };
 }
 
 ~event close { res: *Resource[!open] }
-| closed {}
+| closed
 
 ~proc close {
     std.heap.page_allocator.destroy(res);
@@ -26,8 +26,8 @@ const Resource = struct { id: i32 };
 }
 
 ~pub event with_context {}
-| scoped {}
-| done {}
+| scoped
+| done
 
 ~proc with_context {
     return .{ .scoped = .{} };

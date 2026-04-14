@@ -7,15 +7,15 @@
 const std = @import("std");
 
 ~pub event open { path: []const u8 }
-| opened { handle: []const u8[opened!] }
+| opened []const u8[opened!]
 
 ~proc open {
     std.debug.print("opened {s}\n", .{path});
-    return .{ .opened = .{ .handle = "file_1" } };
+    return .{ .opened = "file_1" };
 }
 
 ~pub event close { handle: []const u8[!opened] }
-| closed {}
+| closed
 
 ~proc close {
     std.debug.print("auto-closing file\n", .{});
@@ -23,10 +23,10 @@ const std = @import("std");
 }
 
 ~pub event expensive_read { handle: []const u8[opened] }
-| read { data: []const u8 }
+| read []const u8
 
 ~proc expensive_read {
-    return .{ .read = .{ .data = "file contents" } };
+    return .{ .read = "file contents" };
 }
 
 ~std.runtime:register(scope: "test") {

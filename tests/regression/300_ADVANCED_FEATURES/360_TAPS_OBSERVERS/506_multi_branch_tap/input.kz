@@ -10,14 +10,14 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event process { value: i32 }
-| success { result: i32 }
-| error { msg: []const u8 }
+| success i32
+| error []const u8
 
 ~proc process {
     if (value > 0) {
-        return .{ .success = .{ .result = value * 2 } };
+        return .{ .success = value * 2 };
     }
-    return .{ .error = .{ .msg = "negative value" } };
+    return .{ .error = "negative value" };
 }
 
 // Multiple handlers for success branch - both should fire

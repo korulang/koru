@@ -12,17 +12,17 @@ const std = @import("std");
 
 // Event chain to create deep nesting
 ~event step1 {}
-| done {}
+| done
 
 ~proc step1 {
     return .{ .done = .{} };
 }
 
 ~event step2 {}
-| result { value: i32 }
+| result i32
 
 ~proc step2 {
-    return .{ .result = .{ .value = 42 } };
+    return .{ .result = 42 };
 }
 
 // Main flow: if is nested 2 levels deep

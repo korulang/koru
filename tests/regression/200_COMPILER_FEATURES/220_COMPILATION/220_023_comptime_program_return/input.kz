@@ -16,7 +16,7 @@ const ast_functional = @import("ast_functional");
     program: *const ast.Program,
     allocator: std.mem.Allocator
 }
-| done { program: *const ast.Program }
+| done *const ast.Program
 
 ~[comptime] proc augment_program {
     // Use ast_functional to add a new item to the program
@@ -25,9 +25,9 @@ const ast_functional = @import("ast_functional");
 
     // TODO: Actually modify the program using ast_functional
     // const new_program = ast_functional.addItem(allocator, program, new_item);
-    // return .{ .done = .{ .program = new_program } };
+    // return .{ .done = new_program };
 
-    return .{ .done = .{ .program = program } };
+    return .{ .done = program };
 }
 
 // Invoke the augmentation — no continuations needed
@@ -35,7 +35,7 @@ const ast_functional = @import("ast_functional");
 
 // A simple runtime event to verify compilation works
 ~event hello {}
-| greeted {}
+| greeted
 
 ~proc hello {
     std.debug.print("Hello from augmented program!\n", .{});

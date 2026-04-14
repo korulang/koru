@@ -4,13 +4,13 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event main_flow {}
-| done {}
+| done
 
 ~event logger {}
-| done {}
+| done
 
 ~event metrics {}
-| done {}
+| done
 
 ~proc main_flow {
     std.debug.print("Main flow executed\n", .{});

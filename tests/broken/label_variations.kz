@@ -1,9 +1,9 @@
 const std = @import("std");
 
 ~event process.item { item: []const u8 }
-| next { item: []const u8 }
-| done {}
-| error { msg: []const u8 }
+| next []const u8
+| done
+| error []const u8
 
 ~proc process.item {
     // Simulate processing
@@ -17,7 +17,7 @@ const std = @import("std");
 }
 
 ~event log.error { msg: []const u8 }
-| logged {}
+| logged
 
 ~proc log.error {
     std.debug.print("ERROR: {s}\n", .{e.msg});
@@ -25,7 +25,7 @@ const std = @import("std");
 }
 
 ~event log.info { msg: []const u8 }
-| logged {}
+| logged
 
 ~proc log.info {
     std.debug.print("INFO: {s}\n", .{e.msg});
@@ -33,7 +33,7 @@ const std = @import("std");
 }
 
 ~event std.debug.print { msg: []const u8 }
-| printed {}
+| printed
 
 ~proc std.debug.print {
     std.debug.print("{s}\n", .{e.msg});

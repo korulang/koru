@@ -6,12 +6,12 @@
 ~import "$std/io"
 
 ~pub event greet { name: []const u8 }
-| greeted { message: []const u8 }
+| greeted []const u8
 
 ~proc greet {
     const std = @import("std");
     std.debug.print("GREET: Hello, {s}!\n", .{name});
-    return .{ .greeted = .{ .message = "Hello!" } };
+    return .{ .greeted = "Hello!" };
 }
 
 ~std.runtime:register(scope: "test") {

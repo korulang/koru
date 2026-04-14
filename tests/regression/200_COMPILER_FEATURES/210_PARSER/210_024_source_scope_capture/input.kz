@@ -26,8 +26,8 @@ const std = @import("std");
 // [comptime|transform] annotation marks this as compile-time transformation
 // Transform events receive: source (user args), invocation (for type resolution), program (AST), allocator (memory)
 ~[comptime|transform]event renderHTML { source: Source[HTML], invocation: *const Invocation, program: *const Program, allocator: std.mem.Allocator }
-| transformed { program: *const Program }
-| failed { error: []const u8 }
+| transformed *const Program
+| failed []const u8
 
 ~proc renderHTML {
     // THE BREAKTHROUGH: Access captured bindings at comptime!
@@ -39,7 +39,7 @@ const std = @import("std");
 
     // First, prove we can see the bindings!
     if (source.scope.bindings.len == 0) {
-        return .{ .failed = .{ .error = "ERROR: No bindings captured!" } };
+        return .{ .failed = "ERROR: No bindings captured!" };
     }
 
     // THE BREAKTHROUGH: We have access to the captured binding!
@@ -496,7 +496,7 @@ const std = @import("std");
         .allocator = allocator,
     };
 
-    return .{ .transformed = .{ .program = new_program } };
+    return .{ .transformed = new_program };
 }
 
 // THE BREAKTHROUGH TEST: Continuation binding + Source block

@@ -10,7 +10,7 @@
 
 // Define abstract event
 ~[abstract] event process { name: []const u8 }
-| result { message: []const u8 }
+| result []const u8
 
 // Default implementation: just returns the name
 ~process = result { message: name }

@@ -7,18 +7,18 @@ const File = struct { handle: i32 };
 
 // Open a file - returns opened! state (requires cleanup)
 ~pub event open { path: []const u8 }
-| opened { file: *File[opened!] }
+| opened *File[opened!]
 
 ~proc open {
     std.debug.print("Opening file\n", .{});
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = f };
 }
 
 // Close - the ONLY consumer of [!opened]
 ~pub event close { file: *File[!opened] }
-| closed {}
+| closed
 
 ~proc close {
     std.debug.print("Closing file (auto-discharged)\n", .{});
@@ -28,7 +28,7 @@ const File = struct { handle: i32 };
 // A logging event for taps - can observe file handle from the tap binding
 // The tap passes in the handle it observed from the opened event
 ~pub event log_open { handle: i32 }
-| done {}
+| done
 
 ~proc log_open {
     // Note: Procs receive input via generated code, we just print a static message

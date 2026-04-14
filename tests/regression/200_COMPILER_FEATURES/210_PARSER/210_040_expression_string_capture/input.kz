@@ -4,11 +4,11 @@
 const std = @import("std");
 
 ~[comptime|transform]event test.expr { expr: Expression, program: *const Program, allocator: std.mem.Allocator }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc test.expr {
     std.debug.print("Captured expression: '{s}'\n", .{expr});
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // Test 1: Simple string with comma inside

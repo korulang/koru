@@ -4,8 +4,8 @@
 const std = @import("std");
 
 ~pub event connect { host: []const u8, port: u16 }
-| connected {}
-| failed {}
+| connected
+| failed
 
 ~proc connect {
     std.debug.print("Attempting TCP connection to {s}:{d}\n", .{host, port});

@@ -5,8 +5,8 @@
 // ============================================================================
 
 ~event check { x: i32, y: i32 }
-| high { x: i32 }
-| low { y: i32 }
+| high i32
+| low i32
 
 // Flow with multiple continuations for same branch using when clauses
 ~check(x: 10, y: 5)

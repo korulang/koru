@@ -2,4 +2,4 @@
 // Parser catches 'string' and suggests '[]const u8'
 
 ~event greet { name: string }
-| done {}
+| done

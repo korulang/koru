@@ -8,7 +8,7 @@
 pub const Point = struct { x: i32, y: i32 };
 
 ~event make_point { x: i32, y: i32 }
-| point { p: Point }
+| point Point
 
 ~proc make_point {
     return .{ .point = .{ .p = Point{ .x = x, .y = y } } };

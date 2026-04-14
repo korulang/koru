@@ -7,8 +7,8 @@
 ~event void_event {}
 
 ~event branching_event {}
-| done {}
-| error {}
+| done
+| error
 
 // Chain void event to branching event, then handle branches with nested continuations
 ~void_event() |> branching_event()

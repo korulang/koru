@@ -7,12 +7,12 @@ const File = struct { handle: i32 };
 
 // Open a file - returns opened! state (requires cleanup)
 ~pub event open { path: []const u8 }
-| opened { file: *File[opened!] }
+| opened *File[opened!]
 
 ~proc open {
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = f };
 }
 
 // Oops! No close() or any event with [!opened] defined!

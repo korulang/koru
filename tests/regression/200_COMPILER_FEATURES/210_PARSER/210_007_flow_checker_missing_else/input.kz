@@ -6,8 +6,8 @@
 // ============================================================================
 
 ~event check { x: i32, y: i32 }
-| high { x: i32 }
-| low { y: i32 }
+| high i32
+| low i32
 
 // Invalid: Two when-clauses but NO else case (non-exhaustive)
 ~check(x: 10, y: 5)

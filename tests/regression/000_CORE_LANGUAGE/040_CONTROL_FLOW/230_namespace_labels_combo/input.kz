@@ -8,12 +8,12 @@
 const std = @import("std");
 
 ~event server.accept {}
-| connection { id: u32 }
-| stopped {}
+| connection u32
+| stopped
 
 ~event server.handle { id: u32 }
-| processed {}
-| failed {}
+| processed
+| failed
 
 ~proc server.accept {
     std.debug.print("Accept\n", .{});

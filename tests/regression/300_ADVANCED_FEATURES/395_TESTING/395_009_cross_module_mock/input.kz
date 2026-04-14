@@ -18,8 +18,8 @@
 
 // A flow that depends on an external module event
 ~event process_config { path: []const u8 }
-| ok { line_count: usize }
-| failed { reason: []const u8 }
+| ok usize
+| failed []const u8
 
 ~process_config = std.fs:read_lines(path: path)
 | lines l |> ok { line_count: l.len }

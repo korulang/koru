@@ -13,7 +13,7 @@
 ~type(BadPair = Pair<i32>)
 
 ~event main {}
-| done {}
+| done
 
 ~proc main {
     return .{ .done = .{} };

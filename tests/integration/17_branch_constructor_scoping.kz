@@ -3,7 +3,7 @@ const std = @import("std");
 
 // Simple event for testing
 ~event test.data { value: i32 }
-| success { data: i32 }
+| success i32
 | error { code: i32, message: []const u8 }
 
 ~event io.print { msg: []const u8 }

@@ -11,15 +11,15 @@
 const std = @import("std");
 
 ~event process { value: u32 }
-| success { result: u32 }
-| ?warning { msg: []const u8 }
-| ?debug { details: []const u8 }
+| success u32
+| ?warning []const u8
+| ?debug []const u8
 
 ~proc process {
     if (value > 100) {
-        return .{ .warning = .{ .msg = "Large value" } };
+        return .{ .warning = "Large value" };
     }
-    return .{ .success = .{ .result = value * 2 } };
+    return .{ .success = value * 2 };
 }
 
 // This should FAIL - optional branches exist but no catch-all

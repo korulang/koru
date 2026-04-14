@@ -12,8 +12,8 @@ const std = @import("std");
 // ============================================================================
 
 ~pub event compute { a: []const u8, b: []const u8, op: []const u8 }
-| result { value: []const u8 }
-| error { message: []const u8 }
+| result []const u8
+| error []const u8
 
 ~proc compute {
     const a_val = std.fmt.parseInt(i64, a, 10) catch 0;
@@ -30,11 +30,11 @@ const std = @import("std");
 
     var buf: [32]u8 = undefined;
     const result_str = std.fmt.bufPrint(&buf, "{d}", .{value}) catch "0";
-    return .{ .result = .{ .value = result_str } };
+    return .{ .result = result_str };
 }
 
 ~pub event print_result { value: []const u8 }
-| printed {}
+| printed
 
 ~proc print_result {
     std.debug.print("Result: {s}\n", .{value});

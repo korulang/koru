@@ -1,8 +1,8 @@
 // Test inline branch constructors
 
 ~event process.data { value: u32 }
-| success { result: u32 }
-| error { msg: []const u8 }
+| success u32
+| error []const u8
 
 // Test simple branch constructor (field mapping only)
 ~process.data (value: 42)

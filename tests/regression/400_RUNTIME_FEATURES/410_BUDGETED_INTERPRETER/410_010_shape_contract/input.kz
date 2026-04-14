@@ -15,20 +15,20 @@ const std = @import("std");
 
 ~pub event handler { req: []const u8 }
 | ok { status: i32, body: []const u8 }
-| not_found {}
-| error { message: []const u8 }
+| not_found
+| error []const u8
 
 // =============================================================================
 // Backend events the handler can call
 // =============================================================================
 
 ~pub event db.user.get { id: i32 }
-| found { name: []const u8 }
-| unknown {}
+| found []const u8
+| unknown
 
 ~proc db.user.get {
     if (id == 1) {
-        return .{ .found = .{ .name = "Alice" } };
+        return .{ .found = "Alice" };
     }
     return .{ .unknown = .{} };
 }

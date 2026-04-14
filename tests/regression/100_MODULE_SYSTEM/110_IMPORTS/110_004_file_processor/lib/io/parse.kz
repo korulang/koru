@@ -3,7 +3,7 @@
 const std = @import("std");
 
 ~pub event lines { text: []const u8 }
-| parsed { lines: [][]const u8 }
+| parsed [][]const u8
 
 ~proc lines {
     // Stub implementation for test

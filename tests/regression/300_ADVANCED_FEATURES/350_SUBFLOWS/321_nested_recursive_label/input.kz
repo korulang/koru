@@ -3,26 +3,26 @@
 // Pattern: .continue_outer => , (missing expression)
 
 ~event outer_step { i: u32 }
-| continue_outer { i: u32 }
-| done_outer { i: u32 }
+| continue_outer u32
+| done_outer u32
 
 ~proc outer_step {
     if (i < 2) {
-        return .{ .continue_outer = .{ .i = i } };
+        return .{ .continue_outer = i };
     } else {
-        return .{ .done_outer = .{ .i = i } };
+        return .{ .done_outer = i };
     }
 }
 
 ~event inner_step { i: u32, j: u32 }
 | continue_inner { i: u32, j: u32 }
-| done_inner { i: u32 }
+| done_inner u32
 
 ~proc inner_step {
     if (j < 2) {
         return .{ .continue_inner = .{ .i = i, .j = j } };
     } else {
-        return .{ .done_inner = .{ .i = i } };
+        return .{ .done_inner = i };
     }
 }
 
@@ -35,7 +35,7 @@
 
 // Nested recursive loop with labels
 ~event nested_loop { start: u32 }
-| done { result: u32 }
+| done u32
 
 ~nested_loop = outer_step(i: start)
 | continue_outer outer |> #inner_start inner_step(i: outer.i, j: 0)

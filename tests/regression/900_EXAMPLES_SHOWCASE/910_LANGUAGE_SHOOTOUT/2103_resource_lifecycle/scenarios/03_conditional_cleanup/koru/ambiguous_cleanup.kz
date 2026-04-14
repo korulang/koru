@@ -11,16 +11,16 @@ const std = @import("std");
 const File = struct { handle: i32, dirty: bool };
 
 ~event open { path: []const u8 }
-| opened { file: *File[opened!] }
+| opened *File[opened!]
 
 ~proc open {
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42, .dirty = false };
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = f };
 }
 
 ~event write { file: *File[opened], data: []const u8 }
-| written {}
+| written
 
 ~proc write {
     file.dirty = true;
@@ -29,7 +29,7 @@ const File = struct { handle: i32, dirty: bool };
 
 // Two different ways to close - user must choose!
 ~event close { file: *File[!opened] }
-| closed {}
+| closed
 
 ~proc close {
     std.debug.print("Close (no flush)\n", .{});
@@ -38,7 +38,7 @@ const File = struct { handle: i32, dirty: bool };
 }
 
 ~event flush_close { file: *File[!opened] }
-| flushed {}
+| flushed
 
 ~proc flush_close {
     std.debug.print("Flush and close\n", .{});

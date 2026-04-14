@@ -22,7 +22,7 @@ const std = @import("std");
 // ~import "application_configuration.kz" => cfg
 
 ~event demo.namespaces {}
-| complete { message: []const u8 }
+| complete []const u8
 
 ~proc demo.namespaces {
     // Using short, clear namespaces makes code readable
@@ -69,7 +69,7 @@ const std = @import("std");
 // ~import "prod_logger.kz" => prod
 
 ~event demo.namespace_patterns {}
-| done {}
+| done
 
 ~proc demo.namespace_patterns {
     // Clear namespace usage prevents ambiguity

@@ -9,7 +9,7 @@ const std = @import("std");
 // Sample Koru code to parse
 const SAMPLE_CODE =
     \\~event greet { name: []const u8 }
-    \\| greeted {}
+    \\| greeted
     \\
     \\~proc greet {
     \\    return .{ .greeted = .{} };

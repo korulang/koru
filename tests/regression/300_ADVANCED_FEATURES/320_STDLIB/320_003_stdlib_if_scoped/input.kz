@@ -9,10 +9,10 @@ const std = @import("std");
 
 // Event that returns a value we can check
 ~event get_value {}
-| result { value: i32 }
+| result i32
 
 ~proc get_value {
-    return .{ .result = .{ .value = 42 } };
+    return .{ .result = 42 };
 }
 
 // Test: ~if in pipeline, condition uses binding from outer continuation

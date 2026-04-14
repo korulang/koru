@@ -10,7 +10,7 @@
 // Local print event - same name as $std.io:print
 // This MUST take priority for unqualified invocations
 ~event print {}
-| done {}
+| done
 
 ~proc print {
     const std = @import("std");

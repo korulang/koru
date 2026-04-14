@@ -14,7 +14,7 @@ const std = @import("std");
 // ============================================================================
 
 ~pub event add { a: []const u8, b: []const u8 }
-| sum { result: []const u8 }
+| sum []const u8
 
 ~proc add {
     const a_int = std.fmt.parseInt(i64, a, 10) catch 0;
@@ -22,14 +22,14 @@ const std = @import("std");
     const result_int = a_int + b_int;
     var buf: [32]u8 = undefined;
     const result_str = std.fmt.bufPrint(&buf, "{d}", .{result_int}) catch "0";
-    return .{ .sum = .{ .result = result_str } };
+    return .{ .sum = result_str };
 }
 
 ~pub event init_sum {}
-| value { n: []const u8 }
+| value []const u8
 
 ~proc init_sum {
-    return .{ .value = .{ .n = "0" } };
+    return .{ .value = "0" };
 }
 
 // Register events including for

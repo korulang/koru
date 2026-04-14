@@ -12,10 +12,10 @@ const std = @import("std");
 ~import "$app/test_lib/logger"
 
 ~event hello {}
-| done {}
+| done
 
 ~event goodbye {}
-| done {}
+| done
 
 ~proc hello {
     std.debug.print("Hello\n", .{});

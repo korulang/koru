@@ -1,6 +1,6 @@
 ~event counter.tick { value: i32 }
-| continue { value: i32 }
-| done {}
+| continue i32
+| done
 
 ~proc counter.tick {
     if (e.value >= 10) {

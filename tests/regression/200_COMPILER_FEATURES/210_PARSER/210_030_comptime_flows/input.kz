@@ -6,7 +6,7 @@ const std = @import("std");
 
 // Test 1: Comptime event that executes during compilation
 ~[comptime] event validateConventions {}
-| validated {}
+| validated
 
 ~proc validateConventions {
     // This code executes at compile time!
@@ -20,27 +20,27 @@ const std = @import("std");
 ~[comptime] event bundleAssets {
     dir: []const u8
 }
-| bundled { count: i32 }
+| bundled i32
 
 ~proc bundleAssets {
     // Comptime asset bundling - executes during compilation
     const asset_count = dir.len; // Can operate on comptime strings
     _ = asset_count;
-    return .{ .bundled = .{ .count = 42 } };
+    return .{ .bundled = 42 };
 }
 
 // Test 3: Comptime event with error branch
 ~[comptime] event preprocessMipmaps {
     inputDir: []const u8
 }
-| ok { processed: i32 }
-| err { message: []const u8 }
+| ok i32
+| err []const u8
 
 ~proc preprocessMipmaps {
     // Comptime mipmap preprocessing
     const dir_len = inputDir.len;
     _ = dir_len;
-    return .{ .ok = .{ .processed = 10 } };
+    return .{ .ok = 10 };
 }
 
 // Top-level comptime flows (execute during backend compilation!)

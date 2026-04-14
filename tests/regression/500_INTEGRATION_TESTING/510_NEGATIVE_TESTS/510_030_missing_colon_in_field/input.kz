@@ -2,4 +2,4 @@
 // Expected: Parser rejects with "field missing type annotation"
 
 ~event foo { x i32 }
-| done {}
+| done

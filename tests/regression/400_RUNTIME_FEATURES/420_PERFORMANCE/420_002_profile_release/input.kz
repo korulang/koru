@@ -4,13 +4,13 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event hello {}
-| done {}
+| done
 
 ~event goodbye {}
-| done {}
+| done
 
 ~[comptime|runtime] event profiler { source: []const u8, branch: []const u8, destination: ?[]const u8, timestamp_ns: i128 }
-| done {}
+| done
 
 ~proc hello {
     std.debug.print("Hello executed\n", .{});

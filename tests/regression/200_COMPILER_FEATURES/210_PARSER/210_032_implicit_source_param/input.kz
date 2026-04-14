@@ -9,12 +9,12 @@
     source: Source,
     item: *const Item
 }
-| transformed { item: Item }
+| transformed Item
 
 ~proc capture.source {
     // For MVP: Just return the item unchanged to prove transform machinery works
     // TODO: Actually transform the source into inline code
-    return .{ .transformed = .{ .item = item.* } };
+    return .{ .transformed = item.* };
 }
 
 // Use explicit source parameter

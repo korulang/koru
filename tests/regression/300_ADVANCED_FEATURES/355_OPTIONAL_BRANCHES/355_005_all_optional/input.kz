@@ -9,18 +9,18 @@
 
 // Event with ONLY optional branches
 ~event process { value: u32 }
-| ?success { result: u32 }
-| ?warning { msg: []const u8 }
-| ?err { msg: []const u8 }
+| ?success u32
+| ?warning []const u8
+| ?err []const u8
 
 ~proc process {
     if (value == 0) {
-        return .{ .err = .{ .msg = "Zero value" } };
+        return .{ .err = "Zero value" };
     }
     if (value > 100) {
-        return .{ .warning = .{ .msg = "Large value" } };
+        return .{ .warning = "Large value" };
     }
-    return .{ .success = .{ .result = value * 2 } };
+    return .{ .success = value * 2 };
 }
 
 // All caught by |?

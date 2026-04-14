@@ -3,16 +3,16 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event http.request {}
-| done {}
+| done
 
 ~event http.response {}
-| done {}
+| done
 
 ~event db.query {}
-| done {}
+| done
 
 ~event logger { source: []const u8 }
-| done {}
+| done
 
 ~proc http.request {
     std.debug.print("HTTP request\n", .{});

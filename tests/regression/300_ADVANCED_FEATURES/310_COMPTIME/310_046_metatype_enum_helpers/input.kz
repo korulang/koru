@@ -5,17 +5,17 @@
 ~import "$std/taps"
 
 ~event process { value: i32 }
-| ok { result: i32 }
-| error { msg: []const u8 }
+| ok i32
+| error []const u8
 
 ~event logger { msg: []const u8 }
 | done { }
 
 ~[pure]proc process {
     if (value > 0) {
-        return .{ .ok = .{ .result = value } };
+        return .{ .ok = value };
     }
-    return .{ .error = .{ .msg = "negative" } };
+    return .{ .error = "negative" };
 }
 
 ~[pure]proc logger {

@@ -9,8 +9,8 @@
 ~import "$std/testing"
 
 ~event get_data {}
-| ok { value: u32 }
-| error_result { code: u32 }
+| ok u32
+| error_result u32
 
 ~test(Unexpected branch should fail) {
     // Mock returns error_result, but test only handles ok branch

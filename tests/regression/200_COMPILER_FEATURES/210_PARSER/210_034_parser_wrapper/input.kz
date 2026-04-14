@@ -16,7 +16,7 @@ const std = @import("std");
 // The import itself proves the wrapper is available and generates valid code
 
 ~event main {}
-| done {}
+| done
 
 ~proc main {
     return .{ .done = .{} };

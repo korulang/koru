@@ -3,13 +3,13 @@
 const std = @import("std");
 
 ~event hello {}
-| done {}
+| done
 
 ~event goodbye {}
-| done {}
+| done
 
 ~[comptime|runtime] event logger { source: []const u8, branch: []const u8, destination: ?[]const u8 }
-| done {}
+| done
 
 ~proc hello {
     std.debug.print("Hello executed\n", .{});

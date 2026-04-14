@@ -29,19 +29,19 @@ const std = @import("std");
 // Outer loop checker: i from 0 to limit
 ~event outer_step { i: u64, limit: u64, sum: u64 }
 | continue { i: u64, limit: u64, sum: u64 }
-| done { result: u64 }
+| done u64
 
 ~proc outer_step {
     if (i < limit) {
         return .{ .continue = .{ .i = i, .limit = limit, .sum = sum } };
     } else {
-        return .{ .done = .{ .result = sum } };
+        return .{ .done = sum };
     }
 }
 
 // Print result
 ~event print { result: u64 }
-| done {}
+| done
 
 ~proc print {
     std.debug.print("Sum: {}\n", .{result});

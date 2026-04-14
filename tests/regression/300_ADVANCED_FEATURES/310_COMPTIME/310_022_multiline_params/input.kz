@@ -9,11 +9,11 @@ const std = @import("std");
     last: []const u8,
     age: u32
 }
-| greeting { msg: []const u8 }
+| greeting []const u8
 
 ~proc greet {
     std.debug.print("Hello, {s} {s} ({d})!\n", .{e.first, e.last, e.age});
-    return .{ .greeting = .{ .msg = "Hi!" } };
+    return .{ .greeting = "Hi!" };
 }
 
 ~greet(

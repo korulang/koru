@@ -13,8 +13,8 @@ const std = @import("std");
 // ============================================================================
 
 ~event my_if_impl { condition: bool }
-| then {}
-| else {}
+| then
+| else
 
 ~proc my_if_impl {
     if (condition) {
@@ -34,7 +34,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc my_if {
     const ast = @import("ast");
@@ -44,7 +44,7 @@ const std = @import("std");
 
     if (item.* != .flow) {
         std.debug.print("my_if transform: item is not a flow, returning unchanged\n", .{});
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     const flow = &item.flow;
@@ -101,10 +101,10 @@ const std = @import("std");
         const new_program = ast_functional.replaceAt(allocator, program, idx, transformed_item) catch unreachable;
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     } else {
         std.debug.print("my_if transform: item not found in program.items\n", .{});
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 }
 

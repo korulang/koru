@@ -6,14 +6,14 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event counter { n: i32 }
-| next { value: i32 }
-| done { final: i32 }
+| next i32
+| done i32
 
 ~proc counter {
     if (n < 3) {
-        return .{ .next = .{ .value = n + 1 } };
+        return .{ .next = n + 1 };
     }
-    return .{ .done = .{ .final = n } };
+    return .{ .done = n };
 }
 
 ~event log_iteration { value: i32 }
@@ -27,7 +27,7 @@ const std = @import("std");
 | next v |> log_iteration(value: v.value)
 
 ~event start {}
-| ready {}
+| ready
 
 ~proc start {
     return .{ .ready = .{} };

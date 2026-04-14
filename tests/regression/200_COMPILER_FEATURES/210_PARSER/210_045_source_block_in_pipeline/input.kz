@@ -18,7 +18,7 @@
 
 // First: void event to start a pipeline
 ~event setup {}
-| ready {}
+| ready
 
 ~proc setup {
     return .{ .ready = .{} };

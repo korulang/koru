@@ -8,12 +8,12 @@ const std = @import("std");
 
 // Public events from module B
 ~pub event b.transform { input: i32 }
-| transformed { output: i32 }
-| error { message: []const u8 }
+| transformed i32
+| error []const u8
 
 ~pub event b.check { content: []const u8 }
-| passed {}
-| failed { issue: []const u8 }
+| passed
+| failed []const u8
 
 // Implementation that uses module A
 ~proc b.transform {
@@ -23,16 +23,16 @@ const std = @import("std");
     // Could validate using A if needed
     ~a:validate(data: "check")
     | valid |> {
-        return .{ .transformed = .{ .output = output } };
+        return .{ .transformed = output };
     }
     | invalid i |> {
-        return .{ .error = .{ .message = i.reason } };
+        return .{ .error = i.reason };
     }
 }
 
 ~proc b.check {
     if (e.content.len > 100) {
-        return .{ .failed = .{ .issue = "Content too long" } };
+        return .{ .failed = "Content too long" };
     }
     
     return .{ .passed = .{} };

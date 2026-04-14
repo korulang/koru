@@ -8,10 +8,10 @@
 ~import "$std/io"
 
 ~event provide {}
-| ok { value: i64 }
+| ok i64
 
 ~proc provide {
-    return .{ .ok = .{ .value = 42 } };
+    return .{ .ok = 42 };
 }
 
 ~provide()

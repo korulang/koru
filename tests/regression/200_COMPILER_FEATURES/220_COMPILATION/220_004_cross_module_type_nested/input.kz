@@ -20,7 +20,7 @@ const std = @import("std");
 ~pub event grant_access {
     user_data: domain.user:DomainUser,
 }
-| granted { success: bool }
+| granted bool
 
 ~proc grant_access {
     std.debug.print("Granting access: {s} as {s} (perms: {d})\n",

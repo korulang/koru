@@ -9,14 +9,14 @@
 
 // Event with two possible outcomes
 ~event divide { a: i32, b: i32 }
-| ok { result: i32 }
-| err { msg: []const u8 }
+| ok i32
+| err []const u8
 
 ~proc divide {
     if (b == 0) {
-        return .{ .err = .{ .msg = "Division by zero" } };
+        return .{ .err = "Division by zero" };
     }
-    return .{ .ok = .{ .result = @divTrunc(a, b) } };
+    return .{ .ok = @divTrunc(a, b) };
 }
 
 // Test: Valid division - should take ok branch

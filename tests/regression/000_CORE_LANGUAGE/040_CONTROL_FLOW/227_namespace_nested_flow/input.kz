@@ -9,12 +9,12 @@ const std = @import("std");
 
 // Events with namespace
 ~event net.connect { host: []const u8 }
-| connected { id: u32 }
-| failed { msg: []const u8 }
+| connected u32
+| failed []const u8
 
 ~event net.send { id: u32, data: []const u8 }
-| sent { bytes: usize }
-| failed { msg: []const u8 }
+| sent usize
+| failed []const u8
 
 ~proc net.connect {
     std.debug.print("Connecting to {s}\n", .{e.host});

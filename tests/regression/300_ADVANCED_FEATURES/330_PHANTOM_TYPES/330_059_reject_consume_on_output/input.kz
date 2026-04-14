@@ -15,10 +15,10 @@ const Connection = struct { id: i32 };
 // INVALID: [!connected] on output tries to consume an obligation
 // This should be either [connected] (just state) or [connected!] (issue obligation)
 ~pub event connect { url: []const u8 }
-| ok { conn: *Connection[!connected] }
+| ok *Connection[!connected]
 
 ~proc connect {
-    return .{ .ok = .{ .conn = undefined } };
+    return .{ .ok = undefined };
 }
 
 pub fn main() void {}

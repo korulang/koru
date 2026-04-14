@@ -24,9 +24,7 @@ const std = @import("std");
     spv_path: []const u8,
     success: bool,
 }
-| failed {
-    msg: []const u8,
-}
+| failed []const u8
 
 ~proc gpu_shader {
     const allocator = std.heap.page_allocator;
@@ -34,11 +32,11 @@ const std = @import("std");
     // Write GLSL to temp file
     const glsl_path = "/tmp/koru_test_shader.glsl";
     const glsl_file = std.fs.createFileAbsolute(glsl_path, .{}) catch |err| {
-        return .{ .failed = .{ .msg = @errorName(err) } };
+        return .{ .failed = @errorName(err) };
     };
     defer glsl_file.close();
     glsl_file.writeAll(glsl_code) catch |err| {
-        return .{ .failed = .{ .msg = @errorName(err) } };
+        return .{ .failed = @errorName(err) };
     };
 
     // Run glslangValidator!
@@ -57,7 +55,7 @@ const std = @import("std");
     child.stderr_behavior = .Ignore;
 
     const result = child.spawnAndWait() catch |err| {
-        return .{ .failed = .{ .msg = @errorName(err) } };
+        return .{ .failed = @errorName(err) };
     };
 
     const success = switch (result) {
@@ -66,7 +64,7 @@ const std = @import("std");
     };
 
     const spv_path_owned = allocator.dupe(u8, spv_path) catch |err| {
-        return .{ .failed = .{ .msg = @errorName(err) } };
+        return .{ .failed = @errorName(err) };
     };
 
     return .{ .compiled = .{
@@ -101,7 +99,7 @@ const std = @import("std");
     // COMPILE IT! This will actually run glslangValidator!
     const compile_result = ~gpu_shader(glsl_code: glsl)
     | compiled c |> result { success: c.success, spv_path: c.spv_path }
-    | failed e |> result { success: false, spv_path: msg };
+    | failed e |> result { success: false, spv_path: e };
 
     return compile_result;
 }

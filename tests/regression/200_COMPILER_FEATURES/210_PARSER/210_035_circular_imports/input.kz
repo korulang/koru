@@ -9,11 +9,11 @@ const std = @import("std");
 ~import "$app/module_b"
 
 ~pub event from_a {}
-| done { msg: []const u8 }
+| done []const u8
 
 ~proc from_a {
     std.debug.print("Event from module A\n", .{});
-    return .{ .done = .{ .msg = "hello from A" } };
+    return .{ .done = "hello from A" };
 }
 
 ~from_a()

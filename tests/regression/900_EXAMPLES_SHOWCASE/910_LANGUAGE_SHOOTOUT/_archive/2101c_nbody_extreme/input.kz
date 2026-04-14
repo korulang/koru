@@ -35,7 +35,7 @@ const Body = struct {
 // ============================================================================
 
 ~event create_sun {}
-| created { sun: Body }
+| created Body
 
 ~proc create_sun {
     const sun = Body{
@@ -43,11 +43,11 @@ const Body = struct {
         .vx = 0, .vy = 0, .vz = 0,
         .mass = SOLAR_MASS,
     };
-    return .{ .created = .{ .sun = sun } };
+    return .{ .created = sun };
 }
 
 ~event create_jupiter {}
-| created { jupiter: Body }
+| created Body
 
 ~proc create_jupiter {
     const jupiter = Body{
@@ -59,11 +59,11 @@ const Body = struct {
         .vz = -6.90460016972063023e-05 * DAYS_PER_YEAR,
         .mass = 9.54791938424326609e-04 * SOLAR_MASS,
     };
-    return .{ .created = .{ .jupiter = jupiter } };
+    return .{ .created = jupiter };
 }
 
 ~event create_saturn {}
-| created { saturn: Body }
+| created Body
 
 ~proc create_saturn {
     const saturn = Body{
@@ -75,11 +75,11 @@ const Body = struct {
         .vz = 2.30417297573763929e-05 * DAYS_PER_YEAR,
         .mass = 2.85885980666130812e-04 * SOLAR_MASS,
     };
-    return .{ .created = .{ .saturn = saturn } };
+    return .{ .created = saturn };
 }
 
 ~event create_uranus {}
-| created { uranus: Body }
+| created Body
 
 ~proc create_uranus {
     const uranus = Body{
@@ -91,11 +91,11 @@ const Body = struct {
         .vz = -2.96589568540237556e-05 * DAYS_PER_YEAR,
         .mass = 4.36624404335156298e-05 * SOLAR_MASS,
     };
-    return .{ .created = .{ .uranus = uranus } };
+    return .{ .created = uranus };
 }
 
 ~event create_neptune {}
-| created { neptune: Body }
+| created Body
 
 ~proc create_neptune {
     const neptune = Body{
@@ -107,7 +107,7 @@ const Body = struct {
         .vz = -9.51592254519715870e-05 * DAYS_PER_YEAR,
         .mass = 5.15138902046611451e-05 * SOLAR_MASS,
     };
-    return .{ .created = .{ .neptune = neptune } };
+    return .{ .created = neptune };
 }
 
 ~event assemble_solar_system {
@@ -117,16 +117,16 @@ const Body = struct {
     uranus: Body,
     neptune: Body
 }
-| assembled { bodies: [5]Body }
+| assembled [5]Body
 
 ~proc assemble_solar_system {
     const bodies_array = [_]Body{ sun, jupiter, saturn, uranus, neptune };
-    return .{ .assembled = .{ .bodies = bodies_array } };
+    return .{ .assembled = bodies_array };
 }
 
 // Subflow: Initialize system by creating each planet then assembling
 ~event initialize_system {}
-| initialized { bodies: [5]Body }[mutable]
+| initialized [5]Body[mutable]
 
 ~initialize_system = create_sun()
 | created s |> create_jupiter()
@@ -141,40 +141,40 @@ const Body = struct {
 // ============================================================================
 
 ~event calculate_momentum_x { bodies: []Body }
-| computed { px: f64 }
+| computed f64
 
 ~proc calculate_momentum_x {
     var px: f64 = 0.0;
     for (bodies) |body| {
         px += body.vx * body.mass;
     }
-    return .{ .computed = .{ .px = px } };
+    return .{ .computed = px };
 }
 
 ~event calculate_momentum_y { bodies: []Body }
-| computed { py: f64 }
+| computed f64
 
 ~proc calculate_momentum_y {
     var py: f64 = 0.0;
     for (bodies) |body| {
         py += body.vy * body.mass;
     }
-    return .{ .computed = .{ .py = py } };
+    return .{ .computed = py };
 }
 
 ~event calculate_momentum_z { bodies: []Body }
-| computed { pz: f64 }
+| computed f64
 
 ~proc calculate_momentum_z {
     var pz: f64 = 0.0;
     for (bodies) |body| {
         pz += body.vz * body.mass;
     }
-    return .{ .computed = .{ .pz = pz } };
+    return .{ .computed = pz };
 }
 
 ~event apply_sun_offset { bodies: []Body, px: f64, py: f64, pz: f64 }
-| adjusted {}
+| adjusted
 
 ~proc apply_sun_offset {
     bodies[0].vx = -px / SOLAR_MASS;
@@ -185,7 +185,7 @@ const Body = struct {
 
 // Subflow: Offset momentum by calculating each component then applying
 ~event offset_momentum { bodies: []Body }
-| adjusted {}
+| adjusted
 
 ~offset_momentum = calculate_momentum_x(bodies: bodies)
 | computed cx |> calculate_momentum_y(bodies: bodies)
@@ -198,18 +198,18 @@ const Body = struct {
 // ============================================================================
 
 ~event sum_kinetic_energies { bodies: []const Body }
-| computed { total_ke: f64 }
+| computed f64
 
 ~proc sum_kinetic_energies {
     var total: f64 = 0.0;
     for (bodies) |body| {
         total += 0.5 * body.mass * (body.vx * body.vx + body.vy * body.vy + body.vz * body.vz);
     }
-    return .{ .computed = .{ .total_ke = total } };
+    return .{ .computed = total };
 }
 
 ~event sum_potential_energies { bodies: []const Body }
-| computed { total_pe: f64 }
+| computed f64
 
 ~proc sum_potential_energies {
     var total: f64 = 0.0;
@@ -223,20 +223,20 @@ const Body = struct {
             total -= (body.mass * bodies[j].mass) / distance;
         }
     }
-    return .{ .computed = .{ .total_pe = total } };
+    return .{ .computed = total };
 }
 
 ~event combine_energies { ke: f64, pe: f64 }
-| computed { total: f64 }
+| computed f64
 
 ~proc combine_energies {
     const total = ke + pe;
-    return .{ .computed = .{ .total = total } };
+    return .{ .computed = total };
 }
 
 // Subflow: Calculate total energy by summing kinetic and potential
 ~event calculate_total_energy { bodies: []const Body }
-| result { energy: f64 }
+| result f64
 
 ~calculate_total_energy = sum_kinetic_energies(bodies: bodies)
 | computed ke |> sum_potential_energies(bodies: bodies)
@@ -315,7 +315,7 @@ const Body = struct {
 
 // Helper: Update one pair of bodies in the array
 ~event update_pair_in_array { bodies: []Body, i: usize, j: usize, dt: f64 }
-| updated_array {}
+| updated_array
 
 ~proc update_pair_in_array {
     const dx = bodies[i].x - bodies[j].x;
@@ -338,32 +338,32 @@ const Body = struct {
 // Inner loop iteration: process pairs for current i
 ~event inner_loop_step { bodies: []Body, i: usize, j: usize, dt: f64 }
 | continue_inner { i: usize, j: usize, dt: f64 }
-| done_inner { i: usize }
+| done_inner usize
 
 ~proc inner_loop_step {
     if (j < bodies.len) {
         return .{ .continue_inner = .{ .i = i, .j = j, .dt = dt } };
     } else {
-        return .{ .done_inner = .{ .i = i } };
+        return .{ .done_inner = i };
     }
 }
 
 // Outer loop iteration: process all i values
 ~event outer_loop_step { bodies: []Body, i: usize, dt: f64 }
 | continue_outer { i: usize, dt: f64 }
-| done_outer { dt: f64 }
+| done_outer f64
 
 ~proc outer_loop_step {
     if (i < bodies.len) {
         return .{ .continue_outer = .{ .i = i, .dt = dt } };
     } else {
-        return .{ .done_outer = .{ .dt = dt } };
+        return .{ .done_outer = dt };
     }
 }
 
 // Main entry point: Event-driven nested loop for all interactions
 ~event calculate_all_interactions { bodies: []Body, dt: f64 }
-| updated {}
+| updated
 
 ~calculate_all_interactions = outer_loop_step(bodies: bodies, i: 0, dt: dt)
 | continue_outer outer |> #inner_start inner_loop_step(bodies: bodies, i: outer.i, j: outer.i + 1, dt: outer.dt)
@@ -379,7 +379,7 @@ const Body = struct {
 // ============================================================================
 
 ~event update_all_positions { bodies: []Body, dt: f64 }
-| advanced {}
+| advanced
 
 ~proc update_all_positions {
     for (bodies) |*body| {
@@ -395,7 +395,7 @@ const Body = struct {
 // ============================================================================
 
 ~event print_energy { energy: f64 }
-| done {}
+| done
 
 ~proc print_energy {
     std.debug.print("{d:.9}\n", .{energy});
@@ -404,7 +404,7 @@ const Body = struct {
 
 ~event simulation_step { i: u32, n: u32 }
 | continue { i: u32, n: u32 }
-| done {}
+| done
 
 ~proc simulation_step {
     if (i < n) {
@@ -415,7 +415,7 @@ const Body = struct {
 }
 
 ~event parse_args {}
-| parsed { n: u32 }
+| parsed u32
 
 ~proc parse_args {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -427,7 +427,7 @@ const Body = struct {
     }
 
     const n = std.fmt.parseInt(u32, args[1], 10) catch unreachable;
-    return .{ .parsed = .{ .n = n } };
+    return .{ .parsed = n };
 }
 
 // ============================================================================

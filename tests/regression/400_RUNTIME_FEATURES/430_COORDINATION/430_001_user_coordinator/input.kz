@@ -11,5 +11,5 @@
 ~std.compiler:coordinate = error { message: "Testing!" }
 
 // Some test code (doesn't matter - coordinator will error immediately)
-~event test {} | done {}
+~event test {} | done
 ~proc test { return .{ .done = .{} }; }

@@ -6,14 +6,14 @@ const std = @import("std");
 
 // Event with branch name "error" (Zig keyword)
 ~event check { value: i32 }
-| error { msg: []const u8 }
-| ok { result: i32 }
+| error []const u8
+| ok i32
 
 ~proc check {
     if (value < 0) {
         return .{ .@"error" = .{ .msg = "negative" } };
     }
-    return .{ .ok = .{ .result = value } };
+    return .{ .ok = value };
 }
 
 // Simple flow

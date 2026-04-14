@@ -15,7 +15,7 @@ const Connection = struct { id: i32 };
 // INVALID: [connected!] on input tries to issue an obligation
 // This should be either [connected] (require state) or [!connected] (consume)
 ~pub event use_connection { conn: *Connection[connected!] }
-| done {}
+| done
 
 ~proc use_connection {
     return .{ .done = .{} };

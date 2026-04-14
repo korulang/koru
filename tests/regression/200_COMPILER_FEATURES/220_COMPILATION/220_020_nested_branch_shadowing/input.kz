@@ -15,16 +15,16 @@ const Resource = struct {
 };
 
 ~event create { id: usize }
-| created { r: *Resource[active!] }
+| created *Resource[active!]
 
 ~proc create {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = id, .data = undefined };
-    return .{ .created = .{ .r = r } };
+    return .{ .created = r };
 }
 
 ~event work { r: *Resource[active] }
-| done {}
+| done
 
 ~proc work {
     r.data[0] +%= 1;
@@ -32,7 +32,7 @@ const Resource = struct {
 }
 
 ~event destroy { r: *Resource[!active] }
-| destroyed {}
+| destroyed
 
 ~proc destroy {
     std.heap.page_allocator.destroy(r);
@@ -40,7 +40,7 @@ const Resource = struct {
 }
 
 ~event run_one { id: usize }
-| finished {}
+| finished
 
 ~run_one = create(id: id)
 | created r |>

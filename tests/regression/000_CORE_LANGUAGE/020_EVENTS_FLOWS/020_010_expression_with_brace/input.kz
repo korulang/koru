@@ -2,7 +2,7 @@
 // Verifies parser captures { ... } as Expression argument
 
 ~event test_expr { val: Expression }
-| done {}
+| done
 
 ~proc test_expr {
     const std = @import("std");

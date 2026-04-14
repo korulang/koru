@@ -9,22 +9,22 @@
 
 // Event with required + multiple optional branches
 ~event process { value: u32 }
-| success { result: u32 }        // REQUIRED
-| ?warning { msg: []const u8 }   // OPTIONAL: handled explicitly
-| ?debug { info: []const u8 }    // OPTIONAL: caught by |?
-| ?trace { details: []const u8 } // OPTIONAL: caught by |?
+| success u32        // REQUIRED
+| ?warning []const u8   // OPTIONAL: handled explicitly
+| ?debug []const u8    // OPTIONAL: caught by |?
+| ?trace []const u8 // OPTIONAL: caught by |?
 
 ~proc process {
     if (value > 100) {
-        return .{ .warning = .{ .msg = "Value too large" } };
+        return .{ .warning = "Value too large" };
     }
     if (value % 2 == 1) {
-        return .{ .debug = .{ .info = "Value is odd" } };
+        return .{ .debug = "Value is odd" };
     }
     if (value < 5) {
-        return .{ .trace = .{ .details = "Very small value" } };
+        return .{ .trace = "Very small value" };
     }
-    return .{ .success = .{ .result = value * 2 } };
+    return .{ .success = value * 2 };
 }
 
 // value=10 → success (required, handled)

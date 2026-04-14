@@ -18,11 +18,11 @@ const std = @import("std");
 ~pub event compute {
     value: f32,
 }
-| done { result: f32 }
+| done f32
 
 // Zig implementation - always works
 ~proc compute|zig {
-    return .{ .done = .{ .result = value * 2.0 } };
+    return .{ .done = value * 2.0 };
 }
 
 // GPU implementation - requires compiler pass

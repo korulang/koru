@@ -7,9 +7,9 @@ const std = @import("std");
 
 // Event with optional branches that have complex logic
 ~event analyze { data: []const u8 }
-| success { result: u32 }           // REQUIRED
+| success u32           // REQUIRED
 | ?warning { code: u32, msg: []const u8 }  // OPTIONAL - expensive validation
-| ?debug { trace: []const u8 }      // OPTIONAL - detailed logging
+| ?debug []const u8      // OPTIONAL - detailed logging
 
 ~proc analyze {
     const len = data.len;
@@ -36,11 +36,11 @@ const std = @import("std");
     if (len < 10) {
         const trace = std.fmt.allocPrint(std.heap.page_allocator,
             "Short input: {s}", .{data}) catch unreachable;
-        return .{ .debug = .{ .trace = trace } };
+        return .{ .debug = trace };
     }
 
     std.debug.print("Analyzed: {d} bytes\n", .{len});
-    return .{ .success = .{ .result = @intCast(len) } };
+    return .{ .success = @intCast(len) };
 }
 
 // Flow that ONLY handles success

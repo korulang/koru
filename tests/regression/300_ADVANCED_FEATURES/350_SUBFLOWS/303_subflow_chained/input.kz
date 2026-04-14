@@ -12,15 +12,15 @@ const std = @import("std");
 
 // Base proc: adds 5 to a number
 ~event add_five { value: i32 }
-| result { sum: i32 }
+| result i32
 
 ~proc add_five {
-    return .{ .result = .{ .sum = value + 5 } };
+    return .{ .result = value + 5 };
 }
 
 // Event that will be implemented as a subflow
 ~event double { value: i32 }
-| result { doubled: i32 }
+| result i32
 
 // Subflow 1: double calls add_five and maps the result
 ~double = add_five(value: value)
@@ -28,7 +28,7 @@ const std = @import("std");
 
 // Event that will call the subflow
 ~event process { input: i32 }
-| final { output: i32 }
+| final i32
 
 // Subflow 2: process calls double (which is itself a subflow)
 ~process = double(value: input)
@@ -36,7 +36,7 @@ const std = @import("std");
 
 // Helper to print i32
 ~event print_result { value: i32 }
-| done {}
+| done
 
 ~proc print_result {
     std.debug.print("{}\n", .{value});

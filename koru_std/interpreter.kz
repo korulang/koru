@@ -968,7 +968,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
 | parse_error { message: []const u8, line: u32, column: u32 }
-| validation_error { message: []const u8 }
+| validation_error []const u8
 | dispatch_error { event_name: []const u8, message: []const u8 }
 
 // Cached parse + execute (reuses parsed flow for identical source input)
@@ -990,7 +990,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
 | parse_error { message: []const u8, line: u32, column: u32 }
-| validation_error { message: []const u8 }
+| validation_error []const u8
 | dispatch_error { event_name: []const u8, message: []const u8 }
 
 // Execute pre-parsed AST - for benchmarks and advanced use
@@ -1011,7 +1011,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 }
 | result { value: Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
-| validation_error { message: []const u8 }
+| validation_error []const u8
 | dispatch_error { event_name: []const u8, message: []const u8 }
 
 ~proc run {

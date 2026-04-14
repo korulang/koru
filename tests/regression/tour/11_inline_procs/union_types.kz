@@ -7,13 +7,13 @@ const std = @import("std");
 // HTTP event for fetching data
 ~event http.get { url: []const u8 }
 | ok { status: u32, body: []const u8 }
-| timeout { after_ms: u64 }
+| timeout u64
 | error { code: u32, msg: []const u8 }
 
 ~proc http.get {
     // Simulate different responses based on URL
     if (std.mem.indexOf(u8, e.url, "timeout") != null) {
-        return .{ .timeout = .{ .after_ms = 5000 } };
+        return .{ .timeout = 5000 };
     }
     if (std.mem.indexOf(u8, e.url, "error") != null) {
         return .{ .error = .{ .code = 500, .msg = "Server error" } };
@@ -23,8 +23,8 @@ const std = @import("std");
 
 // UNION TYPE GENERATION
 ~event fetch_with_retry { endpoint: []const u8, max_retries: u32 }
-| data { content: []const u8 }
-| failed { final_error: []const u8 }
+| data []const u8
+| failed []const u8
 
 ~proc fetch_with_retry {
     var retries: u32 = 0;
@@ -53,7 +53,7 @@ const std = @import("std");
             .success => |s| {
                 // Success case - return the data
                 std.debug.print("Success with status {}\n", .{s.status});
-                return .{ .data = .{ .content = s.data } };
+                return .{ .data = s.data };
             },
             .retry => |r| {
                 // Retry case - wait and continue loop
@@ -69,7 +69,7 @@ const std = @import("std");
         }
     }
     
-    return .{ .failed = .{ .final_error = "Max retries exceeded" } };
+    return .{ .failed = "Max retries exceeded" };
 }
 
 // COMPLEX UNION WITH MULTIPLE FIELDS
@@ -78,7 +78,7 @@ const std = @import("std");
     settings: ConfigData,
     version: u32 
 }
-| error { msg: []const u8 }
+| error []const u8
 
 const ConfigData = struct {
     timeout: u32,
@@ -89,7 +89,7 @@ const ConfigData = struct {
 ~proc parse_config {
     // Simple mock parser
     if (e.data.len == 0) {
-        return .{ .error = .{ .msg = "Empty config" } };
+        return .{ .error = "Empty config" };
     }
     
     return .{ .config = .{
@@ -103,8 +103,8 @@ const ConfigData = struct {
 }
 
 ~event load_and_validate { config_path: []const u8, schema_version: u32 }
-| ready { config: ConfigData }
-| invalid { errors: []const u8 }
+| ready ConfigData
+| invalid []const u8
 
 ~proc load_and_validate {
     // Multiple inline flows creating different union types
@@ -130,7 +130,7 @@ const ConfigData = struct {
             break :blk v.data;
         },
         .parse_error => |p| {
-            return .{ .invalid = .{ .errors = p.msg } };
+            return .{ .invalid = p.msg };
         }
     };
     
@@ -143,11 +143,11 @@ const ConfigData = struct {
     // Handle second union type
     switch (validated) {
         .validation_passed => {
-            return .{ .ready = .{ .config = config_data } };
+            return .{ .ready = config_data };
         },
         .validation_timeout => {
             // Could retry or use cached validation
-            return .{ .ready = .{ .config = config_data } };
+            return .{ .ready = config_data };
         },
         .validation_failed => |v| {
             return .{ .invalid = .{ 
@@ -165,19 +165,19 @@ const ConfigData = struct {
 // Using unions to create Result<T, E> style types
 
 ~event divide { numerator: f64, denominator: f64 }
-| result { value: f64 }
-| error { msg: []const u8 }
+| result f64
+| error []const u8
 
 ~proc divide {
     if (e.denominator == 0) {
-        return .{ .error = .{ .msg = "Division by zero" } };
+        return .{ .error = "Division by zero" };
     }
-    return .{ .result = .{ .value = e.numerator / e.denominator } };
+    return .{ .result = e.numerator / e.denominator };
 }
 
 ~event calculate { a: f64, b: f64, c: f64 }
-| answer { value: f64 }
-| computation_error { reason: []const u8 }
+| answer f64
+| computation_error []const u8
 
 ~proc calculate {
     // Chain operations that might fail
@@ -197,8 +197,8 @@ const ConfigData = struct {
     | error e |> err { msg: e.msg }
     
     switch (div2) {
-        .ok => |o| return .{ .answer = .{ .value = o.val } },
-        .err => |e| return .{ .computation_error = .{ .reason = e.msg } },
+        .ok => |o| return .{ .answer = o.val },
+        .err => |e| return .{ .computation_error = e.msg },
     }
 }
 
@@ -206,8 +206,8 @@ const ConfigData = struct {
 // Inline flows can be nested, creating unions within unions
 
 ~event process_request { request_data: []const u8 }
-| processed { result: []const u8 }
-| rejected { reason: []const u8 }
+| processed []const u8
+| rejected []const u8
 
 ~proc process_request {
     const auth_result = ~http.get(url: "/auth")
@@ -225,10 +225,10 @@ const ConfigData = struct {
             
             switch (data_result) {
                 .data_success => |d| {
-                    return .{ .processed = .{ .result = d.content } };
+                    return .{ .processed = d.content };
                 },
                 .data_timeout => {
-                    return .{ .rejected = .{ .reason = "Data fetch timeout" } };
+                    return .{ .rejected = "Data fetch timeout" };
                 },
                 .data_error => |e| {
                     return .{ .rejected = .{ 
@@ -242,10 +242,10 @@ const ConfigData = struct {
             }
         },
         .auth_timeout => {
-            return .{ .rejected = .{ .reason = "Auth timeout" } };
+            return .{ .rejected = "Auth timeout" };
         },
         .unauthorized => {
-            return .{ .rejected = .{ .reason = "Unauthorized" } };
+            return .{ .rejected = "Unauthorized" };
         }
     }
 }

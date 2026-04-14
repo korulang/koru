@@ -12,15 +12,15 @@ const std = @import("std");
 
 // Helper event: doubles a number
 ~event double { value: i32 }
-| result { doubled: i32 }
+| result i32
 
 ~proc double {
-    return .{ .result = .{ .doubled = value * 2 } };
+    return .{ .result = value * 2 };
 }
 
 // Event to test
 ~event process { input: i32 }
-| final { output: i32 }
+| final i32
 
 // Subflow: calls double and maps its output
 ~process = double(value: input)
@@ -28,7 +28,7 @@ const std = @import("std");
 
 // Helper to print i32
 ~event print_result { value: i32 }
-| done {}
+| done
 
 ~proc print_result {
     std.debug.print("{}\n", .{value});

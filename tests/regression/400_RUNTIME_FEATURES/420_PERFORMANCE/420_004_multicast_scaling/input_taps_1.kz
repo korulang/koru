@@ -9,14 +9,14 @@ const MESSAGES: u64 = 10_000_000;
 var sum1: u64 = 0;
 
 ~event count { i: u64 }
-| next { value: u64 }
-| done {}
+| next u64
+| done
 
 ~proc count {
     if (i >= MESSAGES) {
         return .{ .done = .{} };
     }
-    return .{ .next = .{ .value = i } };
+    return .{ .next = i };
 }
 
 // Observer 1
@@ -33,7 +33,7 @@ var sum1: u64 = 0;
     }
 }
 
-~event start {} | ready {}
+~event start {} | ready
 ~proc start { return .{ .ready = .{} }; }
 
 // 1 TAP - fused at compile time

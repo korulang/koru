@@ -14,8 +14,8 @@
 // Custom event that is NOT a loop but has @scope semantics
 // (simulating a transaction, callback, or other scoped context)
 ~pub event with_context {}
-| scoped {}
-| done {}
+| scoped
+| done
 
 ~proc with_context {
     return .{ .scoped = .{} };

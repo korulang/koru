@@ -12,7 +12,7 @@ const std = @import("std");
 ~string(EmailAddress)
 
 ~event send_email { to: EmailAddress }
-| sent {}
+| sent
 
 ~proc send_email {
     std.debug.print("Sending to: {s}\n", .{to});

@@ -12,19 +12,19 @@ const std = @import("std");
 // ============================================================================
 
 ~pub event greet { name: []const u8 }
-| greeted { message: []const u8 }
+| greeted []const u8
 
 ~proc greet {
     std.debug.print("GREET handler: Hello, {s}!\n", .{name});
-    return .{ .greeted = .{ .message = "Hello!" } };
+    return .{ .greeted = "Hello!" };
 }
 
 ~pub event farewell { name: []const u8 }
-| departed { message: []const u8 }
+| departed []const u8
 
 ~proc farewell {
     std.debug.print("FAREWELL handler: Goodbye, {s}!\n", .{name});
-    return .{ .departed = .{ .message = "Goodbye!" } };
+    return .{ .departed = "Goodbye!" };
 }
 
 // Register events for runtime dispatch

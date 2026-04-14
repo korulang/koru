@@ -6,11 +6,11 @@
 const std = @import("std");
 
 ~event greet { name: []const u8 }
-| greeting { msg: []const u8 }
+| greeting []const u8
 
 ~proc greet {
     std.debug.print("Hello, {s}!\n", .{name});
-    return .{ .greeting = .{ .msg = "Hello!" } };
+    return .{ .greeting = "Hello!" };
 }
 
 ~greet(name: "Koru")

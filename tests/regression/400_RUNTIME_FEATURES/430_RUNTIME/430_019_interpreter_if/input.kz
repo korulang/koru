@@ -12,11 +12,11 @@ const std = @import("std");
 // ============================================================================
 
 ~pub event get_score { value: []const u8 }
-| score { amount: i32 }
+| score i32
 
 ~proc get_score {
     const num = std.fmt.parseInt(i32, value, 10) catch 0;
-    return .{ .score = .{ .amount = num } };
+    return .{ .score = num };
 }
 
 // Register events for dispatch

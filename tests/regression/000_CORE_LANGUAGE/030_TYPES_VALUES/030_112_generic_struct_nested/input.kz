@@ -12,7 +12,7 @@ const std = @import("std");
 ~type(IntResult = Result<i32, []const u8>)
 
 ~event test_result {}
-| done {}
+| done
 
 ~proc test_result {
     const success = IntResult{ .ok = 42, .err = null };

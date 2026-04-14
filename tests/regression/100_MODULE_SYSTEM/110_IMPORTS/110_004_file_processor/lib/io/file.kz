@@ -3,13 +3,13 @@
 const std = @import("std");
 
 ~pub event read { path: []const u8 }
-| success { contents: []const u8 }
-| notfound {}
-| ioerror { msg: []const u8 }
+| success []const u8
+| notfound
+| ioerror []const u8
 
 ~pub event write { path: []const u8, data: []const u8 }
-| written {}
-| ioerror { msg: []const u8 }
+| written
+| ioerror []const u8
 
 ~proc read {
     // Stub implementation for test

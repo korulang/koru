@@ -12,7 +12,7 @@ const std = @import("std");
 ~type(StringIntEntry = Entry<[]const u8, i32>)
 
 ~event test_entry {}
-| done {}
+| done
 
 ~proc test_entry {
     const e = StringIntEntry{ .key = "count", .value = 42 };

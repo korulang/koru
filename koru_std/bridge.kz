@@ -70,13 +70,13 @@ pub const Bridge = struct {
 // ============================================================================
 
 ~pub event create { id: []const u8 }
-| session { bridge: *Bridge[session!] }
+| session *Bridge[session!]
 
 ~proc create {
     const allocator = std.heap.page_allocator;
     const br = allocator.create(Bridge) catch unreachable;
     br.* = Bridge.init(allocator, id);
-    return .{ .session = .{ .bridge = br } };
+    return .{ .session = br };
 }
 
 // ============================================================================
@@ -84,10 +84,10 @@ pub const Bridge = struct {
 // ============================================================================
 
 ~pub event get_handles { br: *Bridge }
-| handles { count: u32 }
+| handles u32
 
 ~proc get_handles {
-    return .{ .handles = .{ .count = br.getHandleCount() } };
+    return .{ .handles = br.getHandleCount() };
 }
 
 // ============================================================================
@@ -95,14 +95,14 @@ pub const Bridge = struct {
 // ============================================================================
 
 ~pub event close { br: *Bridge[!session] }
-| closed { discharged: u32 }
+| closed u32
 
 ~proc close {
     const count = br.getHandleCount();
     br.dischargeAll(null); // TODO: pass dispatcher
     br.deinit();
     std.heap.page_allocator.destroy(br);
-    return .{ .closed = .{ .discharged = count } };
+    return .{ .closed = count };
 }
 
 // ============================================================================
@@ -114,8 +114,8 @@ pub const Bridge = struct {
     scope: []const u8,
     budget: u64
 }
-| pass { handles: u32 }
-| fail { reason: []const u8 }
+| pass u32
+| fail []const u8
 
 ~proc test_run {
     const rt = @import("root").koru_std.runtime;
@@ -138,13 +138,13 @@ pub const Bridge = struct {
     switch (result) {
         .result => {
             const handle_count = br.getHandleCount();
-            return .{ .pass = .{ .handles = handle_count } };
+            return .{ .pass = handle_count };
         },
-        .exhausted => return .{ .fail = .{ .reason = "exhausted" } },
-        .parse_error => return .{ .fail = .{ .reason = "parse_error" } },
-        .validation_error => return .{ .fail = .{ .reason = "validation_error" } },
-        .event_denied => return .{ .fail = .{ .reason = "event_denied" } },
-        .dispatch_error => return .{ .fail = .{ .reason = "dispatch_error" } },
-        .scope_not_found => return .{ .fail = .{ .reason = "scope_not_found" } },
+        .exhausted => return .{ .fail = "exhausted" },
+        .parse_error => return .{ .fail = "parse_error" },
+        .validation_error => return .{ .fail = "validation_error" },
+        .event_denied => return .{ .fail = "event_denied" },
+        .dispatch_error => return .{ .fail = "dispatch_error" },
+        .scope_not_found => return .{ .fail = "scope_not_found" },
     }
 }

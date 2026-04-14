@@ -32,7 +32,7 @@ const Program = ast.Program;
 
 // Helper event to print marker (must be comptime since it's called from coordinate handler)
 ~[comptime] event custom_marker {}
-| done {}
+| done
 
 ~proc custom_marker {
     std.debug.print("CUSTOM COORDINATOR: Pipeline override active!\n", .{});
@@ -41,7 +41,7 @@ const Program = ast.Program;
 
 // Simple test event
 ~pub event hello {}
-| done {}
+| done
 
 ~proc hello {
     std.debug.print("Hello from custom-compiled code!\n", .{});

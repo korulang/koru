@@ -14,7 +14,7 @@ const std = @import("std");
 ~type(EmailBox = Box<EmailAddress>)
 
 ~event test_email {}
-| done {}
+| done
 
 ~proc test_email {
     const email: EmailAddress = "test@example.com";

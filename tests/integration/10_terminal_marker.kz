@@ -3,14 +3,14 @@
 // This tests our "smart" terminal marker handling
 
 ~event test.simple {}
-| ok {}
+| ok
 
 ~proc test.simple {
     return .{ .@"ok" = .{} };
 }
 
 ~event test.withData { value: i32 }
-| result { num: i32 }
+| result i32
 
 ~proc test.withData {
     return .{ .@"result" = .{ .num = e.value * 2 } };

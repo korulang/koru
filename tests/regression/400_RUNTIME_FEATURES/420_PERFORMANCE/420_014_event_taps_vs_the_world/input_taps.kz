@@ -22,14 +22,14 @@ var sum: u64 = 0;
 // ============================================================================
 
 ~event count { i: u64 }
-| next { value: u64 }
-| done {}
+| next u64
+| done
 
 ~proc count {
     if (i >= MESSAGES) {
         return .{ .done = .{} };
     }
-    return .{ .next = .{ .value = i } };
+    return .{ .next = i };
 }
 
 // ============================================================================
@@ -55,7 +55,7 @@ var sum: u64 = 0;
 
 // Starting event to kick off the loop
 ~event start {}
-| ready {}
+| ready
 
 ~proc start {
     return .{ .ready = .{} };

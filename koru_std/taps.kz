@@ -47,7 +47,7 @@ var metatype_global_counter: usize = 0;
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc tap {
     const ast = @import("ast");
@@ -72,10 +72,10 @@ var metatype_global_counter: usize = 0;
     }
 
     const tap_flow = if (item.* == .flow) &item.flow
-        else return .{ .transformed = .{ .program = program } };
+        else return .{ .transformed = program };
 
     if (tap_flow.continuations.len == 0) {
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     // All tap branches - we support multiple handlers for same branch (fan-out)
@@ -1320,5 +1320,5 @@ var metatype_global_counter: usize = 0;
         .allocator = allocator,
     };
 
-    return .{ .transformed = .{ .program = new_program } };
+    return .{ .transformed = new_program };
 }

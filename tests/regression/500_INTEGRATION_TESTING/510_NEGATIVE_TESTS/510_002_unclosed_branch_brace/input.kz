@@ -4,4 +4,4 @@
 ~event process { value: i32 }
 | success {
     result: u32
-| failure {}
+| failure

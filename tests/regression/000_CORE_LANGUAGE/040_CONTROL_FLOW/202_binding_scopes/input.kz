@@ -8,30 +8,30 @@ const std = @import("std");
 
 // Events for testing scoping
 ~event outer { x: i32 }
-| result { value: i32 }
+| result i32
 
 ~proc outer {
     // x is accessible here directly
-    return .{ .result = .{ .value = x } };
+    return .{ .result = x };
 }
 
 ~event middle { y: i32 }
-| data { val: i32 }
+| data i32
 
 ~proc middle {
-    return .{ .data = .{ .val = y * 2 } };
+    return .{ .data = y * 2 };
 }
 
 ~event inner { z: i32 }
-| final { result: i32 }
+| final i32
 
 ~proc inner {
-    return .{ .final = .{ .result = z * 3 } };
+    return .{ .final = z * 3 };
 }
 
 // Event with nested structure for field access testing
 ~event nested_data { info: UserInfo }
-| processed { name_len: i32 }
+| processed i32
 
 // Define the struct type inline
 const UserInfo = struct {
@@ -44,12 +44,12 @@ const UserInfo = struct {
 ~proc nested_data {
     // Access nested field
     const len: i32 = @intCast(info.profile.name.len);
-    return .{ .processed = .{ .name_len = len } };
+    return .{ .processed = len };
 }
 
 // Event to demonstrate access to outer scope bindings
 ~event show_values { a: i32, b: i32, c: i32 }
-| done {}
+| done
 
 ~proc show_values {
     // Should print values showing the scope chain worked

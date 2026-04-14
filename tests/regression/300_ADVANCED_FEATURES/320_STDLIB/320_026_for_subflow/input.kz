@@ -8,7 +8,7 @@ const std = @import("std");
 
 // Event that uses ~for in its implementation
 ~event count_to_three {}
-| result { total: i32 }
+| result i32
 
 // Subflow implementation using ~for as the starting construct
 ~count_to_three = for(0..3)

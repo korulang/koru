@@ -6,7 +6,7 @@ const std = @import("std");
 
 // Event with a branch to tap (tap_target = test scaffolding name)
 ~event hello {}
-| tap_target {}
+| tap_target
 
 ~proc hello {
     std.debug.print("Main flow executed\n", .{});

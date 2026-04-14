@@ -23,7 +23,7 @@ const std = @import("std");
 
 // Flow: println transitions to a local event
 ~event finish {}
-| done {}
+| done
 
 ~proc finish {
     std.debug.print("Done\n", .{});

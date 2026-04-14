@@ -7,9 +7,9 @@
 
 // Event with multiple possible outcomes
 ~event withdraw { amount: u32 }
-| success { new_balance: u32 }
-| insufficient_funds {}
-| account_locked {}
+| success u32
+| insufficient_funds
+| account_locked
 
 // Test: Mock forces success branch - verify the mocked value
 ~test(Withdrawal succeeds when mocked) {

@@ -34,31 +34,31 @@ const std = @import("std");
 
 // Read line from stdin (for future interactive programs)
 ~pub event readln {}
-| line { text: []const u8 }
-| eof {}
-| failed { message: []const u8 }
+| line []const u8
+| eof
+| failed []const u8
 
 ~proc readln {
     // TODO: Implement actual stdin reading
     // For now, return a placeholder
-    return .{ .failed = .{ .message = "readln not yet implemented" } };
+    return .{ .failed = "readln not yet implemented" };
 }
 
 // Simple line reader - returns the line, or empty string on EOF/error
 // No error handling, just returns what it gets
 ~pub event read.ln {}
-| ok { line: []const u8 }
+| ok []const u8
 
 ~proc read.ln {
     const stdin = std.fs.File.stdin();
     var buf: [4096]u8 = undefined;
-    const n = stdin.read(&buf) catch return .{ .ok = .{ .line = "" } };
-    if (n == 0) return .{ .ok = .{ .line = "" } };
+    const n = stdin.read(&buf) catch return .{ .ok = "" };
+    if (n == 0) return .{ .ok = "" };
     // Find newline and exclude it
     var end: usize = 0;
     while (end < n and buf[end] != '\n') : (end += 1) {}
     const duped = std.heap.page_allocator.dupe(u8, buf[0..end]) catch "";
-    return .{ .ok = .{ .line = duped } };
+    return .{ .ok = duped };
 }
 
 // Debug print for development
@@ -74,7 +74,7 @@ const std = @import("std");
 
 // Print error to stderr
 ~pub event eprintln { message: []const u8 }
-| printed {}
+| printed
 
 ~proc eprintln {
     const stderr = std.fs.File.stderr().writer();
@@ -87,7 +87,7 @@ const std = @import("std");
 
 // Success message with green color (if terminal supports it)
 ~pub event success { message: []const u8 }
-| printed {}
+| printed
 
 ~proc success {
     std.debug.print("✅ {s}\n", .{message});
@@ -96,7 +96,7 @@ const std = @import("std");
 
 // Warning message
 ~pub event warn { message: []const u8 }
-| printed {}
+| printed
 
 ~proc warn {
     std.debug.print("⚠️  {s}\n", .{message});
@@ -109,9 +109,9 @@ const std = @import("std");
 
 // Read entire stdin as text
 ~pub event read_stdin {}
-| ok { text: []const u8 }
-| eof {}
-| failed { message: []const u8 }
+| ok []const u8
+| eof
+| failed []const u8
 
 ~proc read_stdin {
     const stdin = std.fs.File.stdin();
@@ -120,29 +120,29 @@ const std = @import("std");
             error.OutOfMemory => "Input too large (max 10MB)",
             else => "Failed to read stdin",
         };
-        return .{ .failed = .{ .message = msg } };
+        return .{ .failed = msg };
     };
 
     if (content.len == 0) {
         return .{ .eof = .{} };
     }
 
-    return .{ .ok = .{ .text = content } };
+    return .{ .ok = content };
 }
 
 // Read entire file as text
 ~pub event read_file { path: []const u8 }
-| ok { text: []const u8 }
-| not_found {}
-| failed { message: []const u8 }
+| ok []const u8
+| not_found
+| failed []const u8
 
 ~proc read_file {
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         return switch (err) {
             error.FileNotFound => .{ .not_found = .{} },
-            error.AccessDenied => .{ .failed = .{ .message = "Access denied" } },
-            error.IsDir => .{ .failed = .{ .message = "Path is a directory" } },
-            else => .{ .failed = .{ .message = "Failed to open file" } },
+            error.AccessDenied => .{ .failed = "Access denied" },
+            error.IsDir => .{ .failed = "Path is a directory" },
+            else => .{ .failed = "Failed to open file" },
         };
     };
     defer file.close();
@@ -152,15 +152,15 @@ const std = @import("std");
             error.OutOfMemory => "File too large (max 10MB)",
             else => "Failed to read file",
         };
-        return .{ .failed = .{ .message = msg } };
+        return .{ .failed = msg };
     };
 
-    return .{ .ok = .{ .text = content } };
+    return .{ .ok = content };
 }
 
 // Get command line arguments
 ~pub event args {}
-| ok { argv: []const []const u8 }
+| ok []const []const u8
 
 ~proc args {
     var arg_list = std.ArrayList([]const u8).init(std.heap.page_allocator);
@@ -192,7 +192,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~[norun]pub event print.impl {
     expr: []const u8,
@@ -259,7 +259,7 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     // Parse the Expression string for ${...} placeholders
     var format_buf = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
@@ -492,14 +492,14 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         }
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     // TOP-LEVEL CASE: Set flow.inline_body
     if (flow.inline_body != null) {
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
@@ -537,9 +537,9 @@ const std = @import("std");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // ============================================================================
@@ -565,7 +565,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~[norun]pub event print.blk.impl {
     text: []const u8,
@@ -631,7 +631,7 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     const isSameInvocation = struct {
         fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
@@ -938,9 +938,9 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         }
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     } else {
         // =====================================================================
         // PIPELINE CASE: print.blk inside a continuation pipeline
@@ -950,8 +950,8 @@ const std = @import("std");
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         }
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 }

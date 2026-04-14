@@ -12,7 +12,7 @@ const std = @import("std");
 
 // Public event with configuration
 ~pub event log.configure { level: LogLevel }
-| configured { previous_level: LogLevel }
+| configured LogLevel
 
 const LogLevel = enum {
     debug,
@@ -45,5 +45,5 @@ var current_level: LogLevel = .info;
 ~proc log.configure {
     const prev = current_level;
     current_level = e.level;
-    return .{ .configured = .{ .previous_level = prev } };
+    return .{ .configured = prev };
 }

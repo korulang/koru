@@ -19,8 +19,8 @@
 
 // Payment service (impure - external API)
 ~event payment.charge { user_id: u32, amount: u32 }
-| success { transaction_id: []const u8 }
-| failed { reason: []const u8 }
+| success []const u8
+| failed []const u8
 
 // Pure validation (no side effects)
 ~event validate.amount { amount: u32, balance: u32 }
@@ -37,7 +37,7 @@
 
 // The main flow - chains everything together
 ~event process_payment { user_id: u32, amount: u32 }
-| success { transaction_id: []const u8 }
+| success []const u8
 | user_not_found
 | insufficient_funds
 

@@ -3,4 +3,4 @@
 // Should say: "Unknown keyword 'evnet'. Did you mean 'event'?"
 
 ~evnet foo { x: i32 }
-| done {}
+| done

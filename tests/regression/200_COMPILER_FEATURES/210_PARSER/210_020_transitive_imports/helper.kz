@@ -7,4 +7,4 @@ const std = @import("std");
 ~import "$app/base"
 
 ~pub event quadruple { x: i32 }
-| done { result: i32 }
+| done i32

@@ -2,18 +2,18 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 ~pub event open { path: []const u8 }
-| opened { file: *File[opened!] }
+| opened *File[opened!]
 
 ~proc open {
     std.debug.print("Opening file: {s}\n", .{path});
     const allocator = std.heap.page_allocator;
     const f = allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = f };
 }
 
 ~pub event close { file: *File[!opened] }  // Consumes obligation
-| closed {}
+| closed
 
 ~proc close {
     std.debug.print("Closing file\n", .{});
@@ -21,7 +21,7 @@ const File = struct { handle: i32 };
 }
 
 ~pub event use_file { file: *File[opened] }  // Expects opened file
-| used {}
+| used
 
 ~proc use_file {
     std.debug.print("Using file\n", .{});

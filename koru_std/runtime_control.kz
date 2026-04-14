@@ -328,13 +328,13 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
     expression: Expression,
     bindings: *const Bindings
 }
-| then {}
-| else {}
-| error { message: []const u8 }
+| then
+| else
+| error []const u8
 
 ~proc if {
     const result = evaluate(expression, bindings) catch |err| {
-        return .{ .error = .{ .message = @errorName(err) } };
+        return .{ .error = @errorName(err) };
     };
 
     if (result.isTruthy()) {

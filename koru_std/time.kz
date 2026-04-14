@@ -21,10 +21,10 @@ const std = @import("std");
 
 // Get current timestamp in nanoseconds
 ~pub event now {}
-| t { ns: i128 }
+| t i128
 
 ~proc now {
-    return .{ .t = .{ .ns = std.time.nanoTimestamp() } };
+    return .{ .t = std.time.nanoTimestamp() };
 }
 
 // ============================================================================

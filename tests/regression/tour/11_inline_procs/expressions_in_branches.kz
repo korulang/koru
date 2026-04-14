@@ -12,11 +12,11 @@ const std = @import("std");
     max: f64,
     min: f64
 }
-| error { message: []const u8 }
+| error []const u8
 
 ~proc analyze {
     if (e.values.len == 0) {
-        return .{ .error = .{ .message = "No values to analyze" } };
+        return .{ .error = "No values to analyze" };
     }
     
     var sum: f64 = 0;
@@ -44,13 +44,13 @@ const std = @import("std");
     body: []const u8,
     headers: []const u8
 }
-| timeout { after_ms: u64 }
+| timeout u64
 | error { code: u32, message: []const u8 }
 
 ~proc http.get {
     // Simulate HTTP request
     if (std.mem.eql(u8, e.url, "/timeout")) {
-        return .{ .timeout = .{ .after_ms = 5000 } };
+        return .{ .timeout = 5000 };
     }
     if (std.mem.eql(u8, e.url, "/error")) {
         return .{ .error = .{ .code = 500, .message = "Internal Server Error" } };
@@ -72,8 +72,8 @@ const std = @import("std");
     is_valid: bool,
     percentile_95: f64
 }
-| empty { message: []const u8 }
-| error { reason: []const u8 }
+| empty []const u8
+| error []const u8
 
 ~proc compute_metrics {
     // Use inline flow with expressions in branch constructor
@@ -205,14 +205,14 @@ const std = @import("std");
 
 // Helper event
 ~event validate { data: []const u8 }
-| valid { clean_data: []const u8 }  
-| invalid { reason: []const u8 }
+| valid []const u8  
+| invalid []const u8
 
 ~proc validate {
     if (e.data.len > 0) {
-        return .{ .valid = .{ .clean_data = e.data } };
+        return .{ .valid = e.data };
     }
-    return .{ .invalid = .{ .reason = "Empty data" } };
+    return .{ .invalid = "Empty data" };
 }
 
 // Example flows

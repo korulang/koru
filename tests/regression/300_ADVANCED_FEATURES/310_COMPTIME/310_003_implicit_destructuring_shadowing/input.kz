@@ -7,7 +7,7 @@
 const std = @import("std");
 
 ~event greet { name: []const u8 }
-| greeted {}
+| greeted
 
 ~proc greet {
     std.debug.print("Hello, {s}!\n", .{name});

@@ -4,7 +4,7 @@
 ~import "$std/io"
 
 ~pub event ping {}
-| ok {}
+| ok
 
 ~proc ping {
     return .{ .ok = .{} };
@@ -16,7 +16,7 @@
 
 const TEST_SOURCE =
     \\~event broken
-    \\| ok {}
+    \\| ok
     \\~ping()
 ;
 

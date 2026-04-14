@@ -5,15 +5,15 @@ const std = @import("std");
 
 // Base pure math event
 ~event multiply { x: i32, factor: i32 }
-| done { result: i32 }
+| done i32
 
 ~[pure]proc multiply {
-    return .{ .done = .{ .result = x * factor } };
+    return .{ .done = x * factor };
 }
 
 // Pure print event
 ~event print_result { n: i32 }
-| done {}
+| done
 
 ~proc print_result {
     std.debug.print("Result: {}\n", .{n});

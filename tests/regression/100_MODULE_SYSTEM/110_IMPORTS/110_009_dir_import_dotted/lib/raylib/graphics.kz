@@ -3,17 +3,17 @@
 const std = @import("std");
 
 ~pub event z_buffer.render { width: i32, height: i32 }
-| drawn { pixels: i32 }
+| drawn i32
 
 ~pub event z_buffer.clear {}
-| cleared {}
+| cleared
 
 ~pub event sprite.draw { x: i32, y: i32 }
-| drawn {}
+| drawn
 
 ~pub event texture.load { path: []const u8 }
-| loaded { texture_id: i32 }
-| failed { msg: []const u8 }
+| loaded i32
+| failed []const u8
 
 ~proc z_buffer.render {
     return .{ .@"drawn" = .{ .pixels = width * height } };

@@ -20,7 +20,7 @@ const std = @import("std");
     code: []const u8,
     build_steps: []const BuildStep,
 }
-| unsupported { reason: []const u8 }
+| unsupported []const u8
 
 // BuildStep types (should match src/ast.zig)
 const BuildStep = union(enum) {
@@ -59,7 +59,7 @@ const RuntimeFile = struct {
             "gpu.kz only handles 'gpu' target, got '{s}'",
             .{target_name}
         );
-        return .{ .unsupported = .{ .reason = msg } };
+        return .{ .unsupported = msg };
     }
 
     // ================================================================

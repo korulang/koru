@@ -2,4 +2,4 @@
 // Parser should reject - event must have identifier
 
 ~event { value: i32 }
-| success {}
+| success

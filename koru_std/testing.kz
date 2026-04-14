@@ -230,7 +230,7 @@ const validateMocks = struct {
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~[comptime|retain] pub event validate_mocks {
     program: *const Program,
@@ -238,14 +238,14 @@ const validateMocks = struct {
     source: *const Source,
     allocator: std.mem.Allocator
 }
-| ok {}
-| failed { message: []const u8 }
+| ok
+| failed []const u8
 
 ~proc validate_mocks {
     if (validateMocks(allocator, program, mocks, source)) {
         return .{ .ok = .{} };
     }
-    return .{ .failed = .{ .message = "Mock shape validation failed" } };
+    return .{ .failed = "Mock shape validation failed" };
 }
 
 // Test transform - generates proper Zig test blocks
@@ -261,11 +261,11 @@ const validateMocks = struct {
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     const is_top_level = (invocation == &flow.invocation);
     if (!is_top_level) {
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     // Get test name from expr parameter
@@ -333,7 +333,7 @@ const validateMocks = struct {
 
     // Clone program AST
     const cloned_program = ast_functional.cloneSourceFile(allocator, program) catch {
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     };
 
     // Build test module items: program items with mocks substituted
@@ -421,7 +421,7 @@ const validateMocks = struct {
         program.main_module_name,  // original main module name for event redirection
     ) catch |err| {
         std_import.debug.print("emitModuleSubset failed in test: {s}\n", .{@errorName(err)});
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     };
 
     // Run transforms on test flows (for assert -> inline_code, etc.)
@@ -442,7 +442,7 @@ const validateMocks = struct {
     const backend_output = @import("backend_output_emitted.zig");
     const transformed_program = backend_output.run_pass("transform", flow_program, allocator) catch |err| {
         std_import.debug.print("Transform pass failed in test: {}\n", .{err});
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     };
 
     // ==========================================================================
@@ -596,9 +596,9 @@ const validateMocks = struct {
     if (maybe_new_program) |new_program| {
         const result_program = allocator.create(ast.Program) catch unreachable;
         result_program.* = new_program;
-        return .{ .transformed = .{ .program = result_program } };
+        return .{ .transformed = result_program };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // Helper: Walk flow checking purity
@@ -807,7 +807,7 @@ const emitFlowWithMocks = struct {
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc assert {
     const std_import = @import("std");
@@ -818,7 +818,7 @@ const emitFlowWithMocks = struct {
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     // Check if this is top-level (flow.invocation IS the assert)
     const is_top_level = (invocation == &flow.invocation);
@@ -855,9 +855,9 @@ const emitFlowWithMocks = struct {
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         }
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     } else {
         // Pipeline case: assert is a step inside a continuation
         // Replace the invocation node directly (supports nested/virtual flows).
@@ -871,9 +871,9 @@ const emitFlowWithMocks = struct {
         if (maybe_new_program) |new_program| {
             const result = allocator.create(ast.Program) catch unreachable;
             result.* = new_program;
-            return .{ .transformed = .{ .program = result } };
+            return .{ .transformed = result };
         }
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 }
 
@@ -887,7 +887,7 @@ const emitFlowWithMocks = struct {
 
 // Simple fail - fails the test with optional message
 ~[keyword] pub event assert.fail { message: ?[]const u8 }
-| failed {}
+| failed
 
 ~[pure] proc assert.fail {
     const msg = message orelse "Assertion failed";
@@ -896,15 +896,15 @@ const emitFlowWithMocks = struct {
 
 // Equality assertion
 ~[keyword] pub event assert.eq { expected: Expression, actual: Expression }
-| ok {}
+| ok
 | failed { expected: []const u8, actual: []const u8 }
 
 // TODO: Transform to generate Zig equality check
 
 // Contains assertion (for strings/slices)
 ~[keyword] pub event assert.contains { haystack: Expression, needle: Expression }
-| ok {}
-| failed {}
+| ok
+| failed
 
 // TODO: Transform to generate Zig contains check
 

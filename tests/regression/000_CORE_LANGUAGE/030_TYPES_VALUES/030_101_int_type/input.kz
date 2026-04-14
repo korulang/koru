@@ -12,7 +12,7 @@ const std = @import("std");
 ~int(UserId)
 
 ~event lookup_user { id: UserId }
-| found {}
+| found
 
 ~proc lookup_user {
     std.debug.print("Looking up user: {d}\n", .{id});

@@ -13,11 +13,11 @@ const std = @import("std");
 
 // Public event - will be tapped
 ~event hello {}
-| done {}
+| done
 
 // Internal event - marked opaque to prevent tapping
 ~[opaque] event internal_log { msg: []const u8 }
-| done {}
+| done
 
 ~proc hello {
     std.debug.print("Hello\n", .{});

@@ -10,14 +10,14 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc inline.source {
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 ~event setup {}
-| ready {}
+| ready
 
 ~proc setup { return .{ .ready = .{} }; }
 

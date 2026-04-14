@@ -3,21 +3,21 @@
 const std = @import("std");
 
 ~pub event server.listen { port: i32 }
-| listening { server_id: i32 }
-| failed { msg: []const u8 }
+| listening i32
+| failed []const u8
 
 ~pub event server.accept { server_id: i32 }
-| connection { conn_id: i32 }
-| failed { msg: []const u8 }
+| connection i32
+| failed []const u8
 
 ~pub event connection.read { conn_id: i32 }
-| data { bytes: []const u8 }
-| closed {}
-| failed { msg: []const u8 }
+| data []const u8
+| closed
+| failed []const u8
 
 ~pub event connection.write { conn_id: i32, data: []const u8 }
-| sent { bytes_written: i32 }
-| failed { msg: []const u8 }
+| sent i32
+| failed []const u8
 
 ~proc server.listen {
     return .{ .@"listening" = .{ .server_id = 1 } };

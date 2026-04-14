@@ -13,7 +13,7 @@
 ~import "$std/compiler"
 
 ~event main {}
-| done {}
+| done
 
 ~proc main {
     return .{ .done = .{} };

@@ -11,7 +11,7 @@ const std = @import("std");
 // Outer counter event (counts outer iterations)
 ~event outer { x: i32, max_inner: i32 }
 | next_outer { x: i32, max_inner: i32 }
-| done_outer {}
+| done_outer
 
 ~proc outer {
     std.debug.print("Outer: {}\n", .{x});
@@ -40,7 +40,7 @@ const std = @import("std");
 
 // Start event
 ~event start {}
-| ready {}
+| ready
 
 ~proc start {
     std.debug.print("Starting nested loops...\n", .{});

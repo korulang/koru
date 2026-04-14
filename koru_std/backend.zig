@@ -10210,7 +10210,7 @@ const RuntimeEmitter = struct {
                 return r.code;
             },
             .@"error" => |e| {
-                std.debug.print("❌ Compiler coordination error: {s}\n", .{e.message});
+                std.debug.print("❌ Compiler coordination error: {s}\n", .{e});
                 return error.CompilerCoordinationFailed;
             },
         }

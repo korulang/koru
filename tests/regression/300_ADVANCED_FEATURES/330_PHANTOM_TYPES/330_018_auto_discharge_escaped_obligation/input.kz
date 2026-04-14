@@ -15,18 +15,18 @@ const File = struct { handle: i32 };
 
 // Open a file - returns opened! state (requires cleanup)
 ~event open { path: []const u8 }
-| opened { file: *File[opened!] }
+| opened *File[opened!]
 
 ~proc open {
     std.debug.print("Opening file\n", .{});
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = f };
 }
 
 // Close - the ONLY consumer of [!opened]
 ~event close { file: *File[!opened] }
-| closed {}
+| closed
 
 ~proc close {
     std.debug.print("Closing file (auto-discharged)\n", .{});
@@ -35,7 +35,7 @@ const File = struct { handle: i32 };
 
 // Wrapper event that opens and returns file (obligation escapes)
 ~event get_file { path: []const u8 }
-| got_file { file: *File[opened!] }
+| got_file *File[opened!]
 
 // Subflow: opens file, returns via branch constructor (obligation escapes!)
 ~get_file = open(path: path)

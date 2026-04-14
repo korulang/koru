@@ -7,10 +7,10 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event file.read {}
-| done {}
+| done
 
 ~event file.write {}
-| done {}
+| done
 
 ~event logger {}
 

@@ -10,7 +10,7 @@ const std = @import("std");
 
 // Event that prints a number
 ~pub event print_num { n: []const u8 }
-| printed {}
+| printed
 
 ~proc print_num {
     std.debug.print("[print_num] n = {s}\n", .{n});

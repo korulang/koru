@@ -9,9 +9,9 @@
 
 // Event with required and optional branches
 ~event process { value: u32 }
-| success { result: u32 }        // Required
-| ?warning { msg: []const u8 }   // Optional
-| ?debug { details: []const u8 } // Optional
+| success u32        // Required
+| ?warning []const u8   // Optional
+| ?debug []const u8 // Optional
 
 // Test 1: Simple |? discard
 ~process(value: 10)

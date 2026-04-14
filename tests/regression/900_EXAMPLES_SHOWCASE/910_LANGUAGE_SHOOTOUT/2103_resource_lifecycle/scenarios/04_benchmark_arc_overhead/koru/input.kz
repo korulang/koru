@@ -49,7 +49,7 @@ var grand_total: u64 = 0;
 }
 
 ~event print_result {}
-| done {}
+| done
 
 ~proc print_result {
     std.debug.print("Koru: {} iterations, checksum: {}\n", .{N, grand_total});

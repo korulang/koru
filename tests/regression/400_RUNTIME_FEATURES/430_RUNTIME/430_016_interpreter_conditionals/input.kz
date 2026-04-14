@@ -19,16 +19,16 @@ const std = @import("std");
 // ============================================================================
 
 ~pub event check { value: []const u8 }
-| high { score: []const u8 }
-| low { score: []const u8 }
+| high []const u8
+| low []const u8
 
 ~proc check {
     // Parse value as number, return high if > 50
     const num = std.fmt.parseInt(i32, value, 10) catch 0;
     if (num > 50) {
-        return .{ .high = .{ .score = value } };
+        return .{ .high = value };
     }
-    return .{ .low = .{ .score = value } };
+    return .{ .low = value };
 }
 
 // Register events

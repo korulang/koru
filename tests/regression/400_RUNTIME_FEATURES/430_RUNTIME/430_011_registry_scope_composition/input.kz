@@ -12,28 +12,28 @@ const std = @import("std");
 
 // User management events
 ~pub event users.get { id: u64 }
-| found { name: []const u8 }
-| not_found {}
+| found []const u8
+| not_found
 
 ~pub event users.list {}
-| listed { count: usize }
+| listed usize
 
 ~pub event users.create { name: []const u8 }
-| created { id: u64 }
+| created u64
 
 // Admin events (restricted)
 ~pub event admin.delete_user { id: u64 }
-| deleted {}
+| deleted
 
 ~pub event admin.reset_db {}
-| reset {}
+| reset
 
 // Debug events (only in debug builds)
 ~pub event debug.dump_state {}
-| dumped { json: []const u8 }
+| dumped []const u8
 
 ~pub event debug.trace { message: []const u8 }
-| traced {}
+| traced
 
 // =============================================================================
 // REGISTRY SCOPES

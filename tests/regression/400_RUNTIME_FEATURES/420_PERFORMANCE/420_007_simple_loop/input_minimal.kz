@@ -5,12 +5,12 @@ const std = @import("std");
 
 // Count event - loop controller
 ~event count { i: u64 }
-| next { i: u64 }
-| done {}
+| next u64
+| done
 
 ~proc count {
     if (i < 10) {
-        return .{ .next = .{ .i = i + 1 } };
+        return .{ .next = i + 1 };
     } else {
         return .{ .done = .{} };
     }
@@ -18,7 +18,7 @@ const std = @import("std");
 
 // Print event
 ~event print { i: u64 }
-| done {}
+| done
 
 ~proc print {
     std.debug.print("i = {}\n", .{i});

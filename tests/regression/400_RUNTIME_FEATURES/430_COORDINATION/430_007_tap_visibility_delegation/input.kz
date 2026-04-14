@@ -14,7 +14,7 @@ const std = @import("std");
 
 // Define abstract event
 ~[abstract] event process { value: i32 }
-| result { output: i32 }
+| result i32
 
 // Default implementation: double the value
 ~process = result { output: value * 2 }

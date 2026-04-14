@@ -9,32 +9,32 @@ const std = @import("std");
 
 // Validation events
 ~event validate { value: i32 }
-| valid { result: i32 }
-| invalid { msg: []const u8 }
+| valid i32
+| invalid []const u8
 
 ~proc validate {
     if (value > 0) {
-        return .{ .valid = .{ .result = value } };
+        return .{ .valid = value };
     }
-    return .{ .invalid = .{ .msg = "Value must be positive" } };
+    return .{ .invalid = "Value must be positive" };
 }
 
 ~event double { value: i32 }
-| ok { result: i32 }
+| ok i32
 
 ~proc double {
-    return .{ .ok = .{ .result = value * 2 } };
+    return .{ .ok = value * 2 };
 }
 
 ~event triple { value: i32 }
-| ok { result: i32 }
+| ok i32
 
 ~proc triple {
-    return .{ .ok = .{ .result = value * 3 } };
+    return .{ .ok = value * 3 };
 }
 
 ~event success { result: i32 }
-| done {}
+| done
 
 ~proc success {
     std.debug.print("Success: {}\n", .{result});
@@ -42,7 +42,7 @@ const std = @import("std");
 }
 
 ~event failure { msg: []const u8 }
-| done {}
+| done
 
 ~proc failure {
     std.debug.print("Failure: {s}\n", .{msg});

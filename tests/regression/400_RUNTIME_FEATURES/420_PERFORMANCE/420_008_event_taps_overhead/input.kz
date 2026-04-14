@@ -11,12 +11,12 @@ var tap_count: u64 = 0;
 
 // Event for loop iteration
 ~event count { i: u64 }
-| next { i: u64 }
-| done {}
+| next u64
+| done
 
 ~proc count {
     if (i < 1_000_000) {
-        return .{ .next = .{ .i = i + 1 } };
+        return .{ .next = i + 1 };
     } else {
         return .{ .done = .{} };
     }
@@ -24,7 +24,7 @@ var tap_count: u64 = 0;
 
 // Tap target - simulates logging/metrics
 ~event tap_point { i: u64 }
-| done {}
+| done
 
 ~proc tap_point {
     tap_count += 1;
@@ -37,7 +37,7 @@ var tap_count: u64 = 0;
 
 // Print result
 ~event print_result {}
-| done {}
+| done
 
 ~proc print_result {
     std.debug.print("Taps called: {}\n", .{tap_count});

@@ -26,7 +26,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 // Internal event for shape checking (never runs)
 ~[norun]pub event emit.impl {
@@ -42,7 +42,7 @@ const std = @import("std");
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     // Build Liquid context from named event arguments (skip expr)
     var ctx = liquid.Context.init(allocator);
@@ -68,7 +68,7 @@ const std = @import("std");
     // Render the Liquid template
     const rendered = liquid.render(allocator, tpl, &ctx) catch |err| {
         std.debug.print("Liquid template error: {}\n", .{err});
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     };
 
     // Escape the rendered output for use in a Zig string literal
@@ -136,7 +136,7 @@ const std = @import("std");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }

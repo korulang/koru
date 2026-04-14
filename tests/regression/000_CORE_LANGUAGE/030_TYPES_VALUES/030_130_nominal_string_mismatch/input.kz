@@ -11,14 +11,14 @@
 ~string(UserName)
 
 ~event send_email { to: EmailAddress }
-| sent {}
+| sent
 
 ~proc send_email {
     return .{ .sent = .{} };
 }
 
 ~event main {}
-| done {}
+| done
 
 ~proc main {
     // ERROR: Passing UserName where EmailAddress is expected

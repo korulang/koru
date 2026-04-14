@@ -3,11 +3,11 @@ const std = @import("std");
 
 ~event fetch.order { id: i32 }
 | found { order_id: i32, customer: []const u8, total: i32 }
-| not_found {}
+| not_found
 
 ~event process.order { order_id: i32, customer: []const u8, total: i32 }
 | approved { id: i32, name: []const u8, amount: i32 }
-| rejected { reason: []const u8 }
+| rejected []const u8
 
 // Test shorthand with field accesses in branch constructors
 ~process.order = fetch.order (id: order_id)

@@ -31,8 +31,8 @@ const std = @import("std");
 ~[comptime] pub event start {
     contexts: []const std.compiler:CompilerContext,
 }
-| launched {}
-| skipped {}
+| launched
+| skipped
 
 ~proc start {
     // Always print to verify the integration works

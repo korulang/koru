@@ -14,7 +14,7 @@ pub const DomainUser = struct {
     role: []const u8,
     permissions: u32,
 }
-| created { user: DomainUser }
+| created DomainUser
 
 ~proc create {
     const new_user = DomainUser{

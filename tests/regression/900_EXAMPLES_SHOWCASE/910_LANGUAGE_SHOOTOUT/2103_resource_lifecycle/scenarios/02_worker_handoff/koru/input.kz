@@ -15,17 +15,17 @@ const std = @import("std");
 const Conn = struct { id: i32 };
 
 ~event connect { name: []const u8 }
-| connected { conn: *Conn[active!] }
+| connected *Conn[active!]
 
 ~proc connect {
     std.debug.print("Connect: {s}\n", .{name});
     const c = std.heap.page_allocator.create(Conn) catch unreachable;
     c.* = Conn{ .id = 42 };
-    return .{ .connected = .{ .conn = c } };
+    return .{ .connected = c };
 }
 
 ~event process { conn: *Conn[active] }
-| processed {}
+| processed
 
 ~proc process {
     std.debug.print("Process: {}\n", .{conn.id});
@@ -33,7 +33,7 @@ const Conn = struct { id: i32 };
 }
 
 ~event disconnect { conn: *Conn[!active] }
-| disconnected {}
+| disconnected
 
 ~proc disconnect {
     std.debug.print("Disconnect: {}\n", .{conn.id});

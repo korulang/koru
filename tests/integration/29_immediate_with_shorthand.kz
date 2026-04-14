@@ -5,7 +5,7 @@ const std = @import("std");
 // Define an event
 ~event order.validate { id: i32, total: i32 }
 | valid { order_id: i32, amount: i32, status: []const u8 }  
-| invalid { reason: []const u8 }
+| invalid []const u8
 
 // Immediate return with explicit values
 // Could be used for default configuration or fixed business rules

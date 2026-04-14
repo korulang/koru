@@ -26,16 +26,16 @@ const JSON_SAMPLE =
 ;
 
 ~event bench_json {}
-| done { items: usize }
+| done usize
 
 ~proc bench_json {
     const parsed = std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, JSON_SAMPLE, .{}) catch {
-        return .{ .done = .{ .items = 0 } };
+        return .{ .done = 0 };
     };
     defer parsed.deinit();
 
-    const events = parsed.value.object.get("events") orelse return .{ .done = .{ .items = 0 } };
-    return .{ .done = .{ .items = events.array.items.len } };
+    const events = parsed.value.object.get("events") orelse return .{ .done = 0 };
+    return .{ .done = events.array.items.len };
 }
 
 ~bench_json()

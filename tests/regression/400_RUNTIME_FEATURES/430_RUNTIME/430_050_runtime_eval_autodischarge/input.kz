@@ -6,15 +6,15 @@
 const std = @import("std");
 
 ~pub event open_handle {}
-| opened { handle: []const u8[opened!] }
+| opened []const u8[opened!]
 
 ~proc open_handle {
     std.debug.print("OPEN\n", .{});
-    return .{ .opened = .{ .handle = "h1" } };
+    return .{ .opened = "h1" };
 }
 
 ~pub event close_handle { handle: []const u8[!opened] }
-| closed {}
+| closed
 
 ~proc close_handle {
     std.debug.print("CLOSE\n", .{});

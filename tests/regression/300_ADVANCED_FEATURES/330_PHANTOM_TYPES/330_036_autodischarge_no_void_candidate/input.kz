@@ -25,8 +25,8 @@ pub const Handle = struct {
 
 // ONLY disposal event has branches - cannot be auto-discharged
 ~event close { h: *Handle[!open] }
-| closed {}
-| error { msg: []const u8 }
+| closed
+| error []const u8
 
 ~proc close {
     std.heap.page_allocator.destroy(h);

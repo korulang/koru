@@ -19,7 +19,7 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event log { data: ?[]const u8 }
-| done {}
+| done
 
 ~proc log {
     return .{ .done = .{} };

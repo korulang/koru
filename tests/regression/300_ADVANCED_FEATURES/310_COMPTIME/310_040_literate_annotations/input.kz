@@ -34,13 +34,13 @@ This keeps the token stream clean for the parser.
 
 - whitespace(skip)
 ] event token {}
-| number { value: u64[\d+] }
-| string { content: []const u8["[^"]*"] }
-| identifier { name: []const u8[[a-zA-Z_][a-zA-Z0-9_]*] }
-| lparen { _: void[(] }
-| rparen { _: void[)] }
-| plus { _: void[+] }
-| star { _: void[*] }
-| whitespace { _: void[\s+] }
+| number u64[\d+]
+| string []const u8["[^"]*"]
+| identifier []const u8[[a-zA-Z_][a-zA-Z0-9_]*]
+| lparen void[(]
+| rparen void[)]
+| plus void[+]
+| star void[*]
+| whitespace void[\s+]
 
 pub fn main() void {}

@@ -13,9 +13,9 @@
 
 // Event with required + optional branches
 ~event process { value: u32 }
-| success { result: u32 }                    // REQUIRED
+| success u32                    // REQUIRED
 | ?warning { msg: []const u8, level: u32 }   // OPTIONAL with payload
-| ?debug { info: []const u8 }                // OPTIONAL (never handled)
+| ?debug []const u8                // OPTIONAL (never handled)
 
 ~proc process {
     // Return warning with different levels based on value
@@ -31,7 +31,7 @@
         return .{ .warning = .{ .msg = "Slightly large", .level = 1 } };
     }
 
-    return .{ .success = .{ .result = value * 2 } };
+    return .{ .success = value * 2 };
 }
 
 // value=10 → success

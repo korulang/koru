@@ -29,12 +29,12 @@ const std = @import("std");
 | error { status: u32, message: []const u8 }
 
 ~event cache.get { key: []const u8 }
-| hit { value: []const u8 }
-| miss {}
+| hit []const u8
+| miss
 
 ~event database.query { sql: []const u8 }
-| result { rows: usize }
-| error { code: u32 }
+| result usize
+| error u32
 
 // Simple implementations
 ~proc profiler.record {
@@ -67,13 +67,13 @@ const std = @import("std");
     // Simulate cache with 80% hit rate
     const random = std.crypto.random.int(u8) % 10;
     if (random < 8) {
-        return .{ .hit = .{ .value = "cached value" } };
+        return .{ .hit = "cached value" };
     }
     return .{ .miss = .{} };
 }
 
 ~proc database.query {
-    return .{ .result = .{ .rows = 100 } };
+    return .{ .result = 100 };
 }
 
 // UNIVERSAL PROFILER: Observe ALL transitions with metadata

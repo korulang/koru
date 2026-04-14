@@ -8,7 +8,7 @@ const Item = ast.Item;
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~[norun]pub event sample_impl {}
 
@@ -17,7 +17,7 @@ const Item = ast.Item;
     const flow = if (item.* == .flow)
         &item.flow
     else
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
 
     const segments = allocator.alloc([]const u8, 1) catch unreachable;
     segments[0] = "sample_impl";
@@ -40,7 +40,7 @@ const Item = ast.Item;
     const new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, .{ .flow = transformed_flow }) catch unreachable;
     const result_ptr = allocator.create(ast.Program) catch unreachable;
     result_ptr.* = new_program.?;
-    return .{ .transformed = .{ .program = result_ptr } };
+    return .{ .transformed = result_ptr };
 }
 
 ~sample_transform()

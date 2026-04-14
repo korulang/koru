@@ -10,10 +10,10 @@
 
 // Simple event with one branch we care about
 ~event ping {}
-| pong { msg: []const u8 }
+| pong []const u8
 
 ~proc ping {
-    return .{ .pong = .{ .msg = "Pong!" } };
+    return .{ .pong = "Pong!" };
 }
 
 // SHORTHAND: ~tap(ping) instead of ~tap(ping -> *)

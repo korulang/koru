@@ -2,7 +2,7 @@
 // Koru validates that data shapes match at each flow step
 
 ~event fetch_user { id: u32 }
-| found { user: User }
+| found User
 | not_found { }
 
 ~event process_user { user: User }

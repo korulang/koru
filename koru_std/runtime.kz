@@ -26,7 +26,7 @@ const koru_parser = @import("koru_parser");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc register {
     const ast_reg = @import("ast");
@@ -182,7 +182,7 @@ const koru_parser = @import("koru_parser");
     };
 
     // Get the flow from the item
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{ .program = program } };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = program };
 
     // Extract scope name from args or registry annotations
     const scope_name = Helpers.extractScopeName(invocation, flow.annotations);
@@ -1108,10 +1108,10 @@ const koru_parser = @import("koru_parser");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast_reg.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
 
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // ============================================================================
@@ -1254,7 +1254,7 @@ fn buildScopeTable() []const ScopeRuntime {
     creates_spec_fn: ?CreatesSpecFn,
     discharges_spec_fn: ?DischargesSpecFn
 }
-| not_found {}
+| not_found
 
 // Look up scope dispatcher by name
 // Dispatchers are generated into main_module with naming convention: dispatch_<scope>
@@ -1297,21 +1297,21 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     allocator: std.mem.Allocator,
     fail_fast: bool = true
 }
-| parsed { ast: koru_parser.ParseResult }
-| parse_error { message: []const u8 }
+| parsed koru_parser.ParseResult
+| parse_error []const u8
 
 ~proc parse.source {
     var parser = koru_parser.Parser.init(allocator, source, file_name, &[_][]const u8{}, null) catch |err| {
-        return .{ .parse_error = .{ .message = @errorName(err) } };
+        return .{ .parse_error = @errorName(err) };
     };
     defer parser.deinit();
     parser.fail_fast = fail_fast;
 
     const result = parser.parse() catch |err| {
-        return .{ .parse_error = .{ .message = @errorName(err) } };
+        return .{ .parse_error = @errorName(err) };
     };
 
-    return .{ .parsed = .{ .ast = result } };
+    return .{ .parsed = result };
 }
 
 // ============================================================================
@@ -1327,10 +1327,10 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 }
 | result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
-| validation_error { message: []const u8 }
-| event_denied { name: []const u8 }
+| validation_error []const u8
+| event_denied []const u8
 | dispatch_error { event_name: []const u8, message: []const u8 }
-| scope_not_found { scope_name: []const u8 }
+| scope_not_found []const u8
 
 ~proc eval {
     const interpreter_mod = @import("root").koru_std.interpreter;
@@ -1344,7 +1344,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     }
 
     if (flow_to_run == null) {
-        return .{ .validation_error = .{ .message = "No flow found in AST" } };
+        return .{ .validation_error = "No flow found in AST" };
     }
 
     const scope_result = get_scope_event.handler(.{ .name = scope });
@@ -1375,10 +1375,10 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                     .last_event = e.last_event,
                     .handles = e.handles,
                 } },
-                .validation_error => |e| return .{ .validation_error = .{ .message = e.message } },
+                .validation_error => |e| return .{ .validation_error = e.message },
                 .dispatch_error => |e| {
                     if (std.mem.eql(u8, e.message, "EventDenied")) {
-                        return .{ .event_denied = .{ .name = e.event_name } };
+                        return .{ .event_denied = e.event_name };
                     }
                     return .{ .dispatch_error = .{
                         .event_name = e.event_name,
@@ -1387,7 +1387,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                 },
             }
         },
-        .not_found => return .{ .scope_not_found = .{ .scope_name = scope } },
+        .not_found => return .{ .scope_not_found = scope },
     }
 }
 
@@ -1410,11 +1410,11 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 | result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
 | parse_error { message: []const u8, line: u32, column: u32 }
-| validation_error { message: []const u8 }
+| validation_error []const u8
 | shape_error { branch: []const u8, field: ?[]const u8, message: []const u8 }
-| event_denied { name: []const u8 }
+| event_denied []const u8
 | dispatch_error { event_name: []const u8, message: []const u8 }
-| scope_not_found { scope_name: []const u8 }
+| scope_not_found []const u8
 
 ~proc run {
     const interpreter_mod = @import("root").koru_std.interpreter;
@@ -1502,10 +1502,10 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                     .line = e.line,
                     .column = e.column,
                 } },
-                .validation_error => |e| return .{ .validation_error = .{ .message = e.message } },
+                .validation_error => |e| return .{ .validation_error = e.message },
                 .dispatch_error => |e| {
                     if (std.mem.eql(u8, e.message, "EventDenied")) {
-                        return .{ .event_denied = .{ .name = e.event_name } };
+                        return .{ .event_denied = e.event_name };
                     }
                     return .{ .dispatch_error = .{
                         .event_name = e.event_name,
@@ -1514,7 +1514,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                 },
             }
         },
-        .not_found => return .{ .scope_not_found = .{ .scope_name = scope } },
+        .not_found => return .{ .scope_not_found = scope },
     }
 }
 
@@ -1531,11 +1531,11 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 | result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
 | parse_error { message: []const u8, line: u32, column: u32 }
-| validation_error { message: []const u8 }
+| validation_error []const u8
 | shape_error { branch: []const u8, field: ?[]const u8, message: []const u8 }
-| event_denied { name: []const u8 }
+| event_denied []const u8
 | dispatch_error { event_name: []const u8, message: []const u8 }
-| scope_not_found { scope_name: []const u8 }
+| scope_not_found []const u8
 
 ~proc run_cached {
     const interpreter_mod = @import("root").koru_std.interpreter;
@@ -1574,10 +1574,10 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                     .line = e.line,
                     .column = e.column,
                 } },
-                .validation_error => |e| return .{ .validation_error = .{ .message = e.message } },
+                .validation_error => |e| return .{ .validation_error = e.message },
                 .dispatch_error => |e| {
                     if (std.mem.eql(u8, e.message, "EventDenied")) {
-                        return .{ .event_denied = .{ .name = e.event_name } };
+                        return .{ .event_denied = e.event_name };
                     }
                     return .{ .dispatch_error = .{
                         .event_name = e.event_name,
@@ -1586,7 +1586,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                 },
             }
         },
-        .not_found => return .{ .scope_not_found = .{ .scope_name = scope } },
+        .not_found => return .{ .scope_not_found = scope },
     }
 }
 
@@ -1595,7 +1595,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 // ============================================================================
 
 ~[comptime]pub event collect_scopes {}
-| collected {}
+| collected
 
 ~proc collect_scopes {
     // Access PROGRAM_AST from backend

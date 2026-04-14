@@ -4,14 +4,14 @@
 const std = @import("std");
 
 ~event calc.double { val: i32 }
-| result { value: i32 }
+| result i32
 
 ~proc calc.double {
     return .{ .@"result" = .{ .value = e.val * 2 } };
 }
 
 ~event calc.add { a: i32, b: i32 }
-| sum { total: i32 }
+| sum i32
 
 ~proc calc.add {
     return .{ .@"sum" = .{ .total = e.a + e.b } };

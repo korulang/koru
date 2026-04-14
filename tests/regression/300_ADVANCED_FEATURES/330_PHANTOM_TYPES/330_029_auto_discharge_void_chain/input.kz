@@ -10,12 +10,12 @@ const std = @import("std");
 const Resource = struct { id: i32 };
 
 ~event acquire {}
-| ok { res: *Resource[held!] }
+| ok *Resource[held!]
 
 ~proc acquire {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = 42 };
-    return .{ .ok = .{ .res = r } };
+    return .{ .ok = r };
 }
 
 ~event release { res: *Resource[!held] }

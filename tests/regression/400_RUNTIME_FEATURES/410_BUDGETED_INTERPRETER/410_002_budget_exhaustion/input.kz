@@ -7,10 +7,10 @@
 const std = @import("std");
 
 ~pub event expensive { data: []const u8 }
-| processed { result: []const u8 }
+| processed []const u8
 
 ~proc expensive {
-    return .{ .processed = .{ .result = data } };
+    return .{ .processed = data };
 }
 
 // Register with high cost

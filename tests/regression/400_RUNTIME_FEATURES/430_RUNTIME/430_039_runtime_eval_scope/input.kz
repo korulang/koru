@@ -6,11 +6,11 @@
 const std = @import("std");
 
 ~pub event greet { name: []const u8 }
-| greeted { message: []const u8 }
+| greeted []const u8
 
 ~proc greet {
     const msg = std.fmt.allocPrint(std.heap.page_allocator, "Hello, {s}!", .{name}) catch "Hello!";
-    return .{ .greeted = .{ .message = msg } };
+    return .{ .greeted = msg };
 }
 
 ~std.runtime:register(scope: "api") {

@@ -3,10 +3,10 @@
 // NO IMPORTS - pure parser test
 
 ~event source { x: i32 }
-| value { data: i32 }
+| value i32
 
 ~event log { data: i32 }
-| done {}
+| done
 
 ~proc log {
     return .{ .done = .{} };

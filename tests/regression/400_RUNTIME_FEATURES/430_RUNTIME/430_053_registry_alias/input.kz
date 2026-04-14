@@ -11,10 +11,10 @@
 const std = @import("std");
 
 ~pub event greet { name: []const u8 }
-| greeted { message: []const u8 }
+| greeted []const u8
 
 ~proc greet {
-    return .{ .greeted = .{ .message = name } };
+    return .{ .greeted = name };
 }
 
 // Register same event under two aliases

@@ -12,23 +12,23 @@ const std = @import("std");
 
 // Helper event: triples a number
 ~event triple { value: i32 }
-| tripled { value: i32 }
+| tripled i32
 
 ~proc triple {
-    return .{ .tripled = .{ .value = value * 3 } };
+    return .{ .tripled = value * 3 };
 }
 
 // Helper event: doubles a number
 ~event double { value: i32 }
-| doubled { value: i32 }
+| doubled i32
 
 ~proc double {
-    return .{ .doubled = .{ .value = value * 2 } };
+    return .{ .doubled = value * 2 };
 }
 
 // Event to test
 ~event process { input: i32 }
-| final { output: i32 }
+| final i32
 
 // Multi-continuation subflow: chains triple -> double -> final
 ~process = triple(value: input)
@@ -37,7 +37,7 @@ const std = @import("std");
 
 // Helper to verify and print the result
 ~event verify_and_print { value: i32 }
-| done {}
+| done
 
 ~proc verify_and_print {
     if (value == 30) {

@@ -7,7 +7,7 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event work {}
-| done {}
+| done
 
 ~event logger {}
 

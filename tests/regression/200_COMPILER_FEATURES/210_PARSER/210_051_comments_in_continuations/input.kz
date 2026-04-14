@@ -6,13 +6,13 @@
 // Expected: Parser should skip comment lines and continue parsing the flow
 
 ~event step1 {}
-| done {}
+| done
 
 ~event step2 {}
-| done {}
+| done
 
 ~event step3 {}
-| done {}
+| done
 
 ~proc step1 { return .{ .done = .{} }; }
 ~proc step2 { return .{ .done = .{} }; }

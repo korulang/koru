@@ -10,37 +10,37 @@ const std = @import("std");
 // But from purity perspective, they're both pure operations
 
 ~event is_even { n: i32 }
-| done { result: bool }
+| done bool
 
 ~[pure]proc is_even {
     if (n == 0) {
-        return .{ .done = .{ .result = true } };
+        return .{ .done = true };
     }
     if (n == 1) {
-        return .{ .done = .{ .result = false } };
+        return .{ .done = false };
     }
     // Would call is_odd(n-1) - creating cycle
     // For this test, we just use simple logic
-    return .{ .done = .{ .result = @mod(n, 2) == 0 } };
+    return .{ .done = @mod(n, 2) == 0 };
 }
 
 ~event is_odd { n: i32 }
-| done { result: bool }
+| done bool
 
 ~[pure]proc is_odd {
     if (n == 0) {
-        return .{ .done = .{ .result = false } };
+        return .{ .done = false };
     }
     if (n == 1) {
-        return .{ .done = .{ .result = true } };
+        return .{ .done = true };
     }
     // Would call is_even(n-1) - creating cycle
     // For this test, we just use simple logic
-    return .{ .done = .{ .result = @mod(n, 2) == 1 } };
+    return .{ .done = @mod(n, 2) == 1 };
 }
 
 ~event print_bool { value: bool }
-| done {}
+| done
 
 ~proc print_bool {
     if (value) {

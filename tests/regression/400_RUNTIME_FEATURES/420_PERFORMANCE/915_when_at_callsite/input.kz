@@ -6,16 +6,16 @@
 const std = @import("std");
 
 ~event produce { value: u32 }
-| done { result: u32 }
+| done u32
 
 ~proc produce {
     const result = value * 2;
     std.debug.print("Produced: {}\n", .{result});
-    return .{ .done = .{ .result = result } };
+    return .{ .done = result };
 }
 
 ~event log { result: u32 }
-| done {}
+| done
 
 ~proc log {
     std.debug.print("Logging: {}\n", .{result});

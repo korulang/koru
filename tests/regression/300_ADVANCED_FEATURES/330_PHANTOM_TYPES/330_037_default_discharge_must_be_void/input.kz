@@ -28,8 +28,8 @@ pub const Handle = struct {
 // ERROR: [!] on event with branches is invalid
 // Branched events require manual handling, cannot be auto-discharged
 ~[!]event close { h: *Handle[!open] }
-| closed {}
-| error { msg: []const u8 }
+| closed
+| error []const u8
 
 ~proc close {
     std.heap.page_allocator.destroy(h);

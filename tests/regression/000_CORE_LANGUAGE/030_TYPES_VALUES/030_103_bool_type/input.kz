@@ -12,8 +12,8 @@ const std = @import("std");
 ~bool(IsActive)
 
 ~event check_status { active: IsActive }
-| active {}
-| inactive {}
+| active
+| inactive
 
 ~proc check_status {
     if (active) {

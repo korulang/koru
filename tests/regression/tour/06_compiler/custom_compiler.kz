@@ -6,10 +6,10 @@
 
 // Your program continues normally
 ~event hello { name: []const u8 }
-| greeted { msg: []const u8 }
+| greeted []const u8
 
 ~proc hello {
-    return .{ .greeted = .{ .msg = "Hello from custom compiler!" } };
+    return .{ .greeted = "Hello from custom compiler!" };
 }
 
 // This will be compiled with YOUR compiler strategy

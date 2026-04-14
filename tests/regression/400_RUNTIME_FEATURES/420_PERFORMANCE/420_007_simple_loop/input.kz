@@ -10,7 +10,7 @@ const std = @import("std");
 // Event for counting/summing
 ~event count { i: u64, sum: u64 }
 | next { i: u64, sum: u64 }
-| done { result: u64 }
+| done u64
 
 ~proc count {
     const new_i = i + 1;
@@ -19,13 +19,13 @@ const std = @import("std");
     if (new_i < 10_000_000) {
         return .{ .next = .{ .i = new_i, .sum = new_sum } };
     } else {
-        return .{ .done = .{ .result = new_sum } };
+        return .{ .done = new_sum };
     }
 }
 
 // Print result
 ~event print { result: u64 }
-| done {}
+| done
 
 ~proc print {
     std.debug.print("Sum: {}\n", .{result});

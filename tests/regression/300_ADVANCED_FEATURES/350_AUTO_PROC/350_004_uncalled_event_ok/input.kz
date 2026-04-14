@@ -7,7 +7,7 @@
 
 // Event with no proc and mismatched input/output - but never called
 ~pub event unused_event { x: i32 }
-| result { y: []const u8 }
+| result []const u8
 
 // A real event that IS called
 ~pub event greet {}

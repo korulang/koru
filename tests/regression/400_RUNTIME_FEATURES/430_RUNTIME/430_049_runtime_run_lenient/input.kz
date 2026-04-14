@@ -6,7 +6,7 @@
 const std = @import("std");
 
 ~pub event ping {}
-| ok {}
+| ok
 
 ~proc ping {
     std.debug.print("PING\n", .{});
@@ -19,7 +19,7 @@ const std = @import("std");
 
 const TEST_SOURCE =
     \\~event broken
-    \\| ok {}
+    \\| ok
     \\~ping()
 ;
 

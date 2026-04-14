@@ -35,7 +35,7 @@ const Body = struct {
 // ============================================================================
 
 ~event create_sun {}
-| created { sun: Body }
+| created Body
 
 ~proc create_sun {
     const sun = Body{
@@ -43,11 +43,11 @@ const Body = struct {
         .vx = 0, .vy = 0, .vz = 0,
         .mass = SOLAR_MASS,
     };
-    return .{ .created = .{ .sun = sun } };
+    return .{ .created = sun };
 }
 
 ~event create_jupiter {}
-| created { jupiter: Body }
+| created Body
 
 ~proc create_jupiter {
     const jupiter = Body{
@@ -59,11 +59,11 @@ const Body = struct {
         .vz = -6.90460016972063023e-05 * DAYS_PER_YEAR,
         .mass = 9.54791938424326609e-04 * SOLAR_MASS,
     };
-    return .{ .created = .{ .jupiter = jupiter } };
+    return .{ .created = jupiter };
 }
 
 ~event create_saturn {}
-| created { saturn: Body }
+| created Body
 
 ~proc create_saturn {
     const saturn = Body{
@@ -75,11 +75,11 @@ const Body = struct {
         .vz = 2.30417297573763929e-05 * DAYS_PER_YEAR,
         .mass = 2.85885980666130812e-04 * SOLAR_MASS,
     };
-    return .{ .created = .{ .saturn = saturn } };
+    return .{ .created = saturn };
 }
 
 ~event create_uranus {}
-| created { uranus: Body }
+| created Body
 
 ~proc create_uranus {
     const uranus = Body{
@@ -91,11 +91,11 @@ const Body = struct {
         .vz = -2.96589568540237556e-05 * DAYS_PER_YEAR,
         .mass = 4.36624404335156298e-05 * SOLAR_MASS,
     };
-    return .{ .created = .{ .uranus = uranus } };
+    return .{ .created = uranus };
 }
 
 ~event create_neptune {}
-| created { neptune: Body }
+| created Body
 
 ~proc create_neptune {
     const neptune = Body{
@@ -107,7 +107,7 @@ const Body = struct {
         .vz = -9.51592254519715870e-05 * DAYS_PER_YEAR,
         .mass = 5.15138902046611451e-05 * SOLAR_MASS,
     };
-    return .{ .created = .{ .neptune = neptune } };
+    return .{ .created = neptune };
 }
 
 ~event assemble_solar_system {
@@ -117,16 +117,16 @@ const Body = struct {
     uranus: Body,
     neptune: Body
 }
-| assembled { bodies: [5]Body }
+| assembled [5]Body
 
 ~proc assemble_solar_system {
     const bodies_array = [_]Body{ sun, jupiter, saturn, uranus, neptune };
-    return .{ .assembled = .{ .bodies = bodies_array } };
+    return .{ .assembled = bodies_array };
 }
 
 // Subflow: Initialize system by creating each planet then assembling
 ~event initialize_system {}
-| initialized { bodies: [5]Body }
+| initialized [5]Body
 
 ~initialize_system = create_sun()
 | created s |> create_jupiter()
@@ -174,19 +174,19 @@ const Body = struct {
 }
 
 ~event apply_sun_offset { bodies: [5]Body, px: f64, py: f64, pz: f64 }
-| adjusted { bodies: [5]Body }
+| adjusted [5]Body
 
 ~proc apply_sun_offset {
     var adjusted_bodies = bodies;
     adjusted_bodies[0].vx = -px / SOLAR_MASS;
     adjusted_bodies[0].vy = -py / SOLAR_MASS;
     adjusted_bodies[0].vz = -pz / SOLAR_MASS;
-    return .{ .adjusted = .{ .bodies = adjusted_bodies } };
+    return .{ .adjusted = adjusted_bodies };
 }
 
 // Subflow: Offset momentum by calculating each component then applying
 ~event offset_momentum { bodies: [5]Body }
-| adjusted { bodies: [5]Body }
+| adjusted [5]Body
 
 ~offset_momentum = calculate_momentum_x(bodies)
 | computed cx |> calculate_momentum_y(cx.bodies)
@@ -340,7 +340,7 @@ const Body = struct {
 // ============================================================================
 
 ~event update_all_positions { bodies: [5]Body, dt: f64 }
-| advanced { bodies: [5]Body }
+| advanced [5]Body
 
 ~proc update_all_positions {
     var updated_bodies = bodies;
@@ -349,7 +349,7 @@ const Body = struct {
         body.y += dt * body.vy;
         body.z += dt * body.vz;
     }
-    return .{ .advanced = .{ .bodies = updated_bodies } };
+    return .{ .advanced = updated_bodies };
 }
 
 // ============================================================================
@@ -357,27 +357,27 @@ const Body = struct {
 // ============================================================================
 
 ~event print_energy { energy: f64, bodies: [5]Body }
-| done { bodies: [5]Body }
+| done [5]Body
 
 ~proc print_energy {
     std.debug.print("{d:.9}\n", .{energy});
-    return .{ .done = .{ .bodies = bodies } };
+    return .{ .done = bodies };
 }
 
 ~event simulation_step { bodies: [5]Body, i: u32, n: u32 }
 | continue { bodies: [5]Body, i: u32, n: u32 }
-| done { bodies: [5]Body }
+| done [5]Body
 
 ~proc simulation_step {
     if (i < n) {
         return .{ .continue = .{ .bodies = bodies, .i = i, .n = n } };
     } else {
-        return .{ .done = .{ .bodies = bodies } };
+        return .{ .done = bodies };
     }
 }
 
 ~event parse_args {}
-| parsed { n: u32 }
+| parsed u32
 
 ~proc parse_args {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -389,7 +389,7 @@ const Body = struct {
     }
 
     const n = std.fmt.parseInt(u32, args[1], 10) catch unreachable;
-    return .{ .parsed = .{ .n = n } };
+    return .{ .parsed = n };
 }
 
 // ============================================================================

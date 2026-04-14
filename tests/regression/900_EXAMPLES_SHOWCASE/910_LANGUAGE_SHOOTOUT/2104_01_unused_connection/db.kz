@@ -19,25 +19,25 @@ const QueryResult = struct { rows: i32 };
 
 // connect: creates connection with obligation to use it
 ~pub event connect { host: []const u8 }
-| ok { conn: *Connection[open!] }
-| err { msg: []const u8 }
+| ok *Connection[open!]
+| err []const u8
 
 ~proc connect {
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .handle = 42 };
-    return .{ .ok = .{ .conn = c } };
+    return .{ .ok = c };
 }
 
 // begin: consumes connection obligation, creates transaction obligation
 ~pub event begin { conn: *Connection[!open] }
-| ok { tx: *Transaction[active!] }
-| err { msg: []const u8 }
+| ok *Transaction[active!]
+| err []const u8
 
 ~proc begin {
     const tx = std.heap.page_allocator.create(Transaction) catch unreachable;
     tx.* = Transaction{ .conn_handle = conn.handle };
     std.heap.page_allocator.destroy(conn);
-    return .{ .ok = .{ .tx = tx } };
+    return .{ .ok = tx };
 }
 
 // execute: uses transaction WITHOUT consuming it (can call multiple times)

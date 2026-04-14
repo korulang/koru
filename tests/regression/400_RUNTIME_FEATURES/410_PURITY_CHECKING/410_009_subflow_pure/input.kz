@@ -5,15 +5,15 @@ const std = @import("std");
 
 // Pure math operation
 ~event double { x: i32 }
-| done { result: i32 }
+| done i32
 
 ~[pure]proc double {
-    return .{ .done = .{ .result = x * 2 } };
+    return .{ .done = x * 2 };
 }
 
 // Main entry using subflow
 ~event main {}
-| done {}
+| done
 
 // Subflow that calls pure event - result unused
 ~double(x: 21)

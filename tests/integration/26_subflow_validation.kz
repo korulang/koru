@@ -3,12 +3,12 @@ const std = @import("std");
 
 // Test 1: Subflow must implement all event branches
 ~event complete.task { task_id: i32 }
-| done { message: []const u8 }
-| failed { error: []const u8 }
+| done []const u8
+| failed []const u8
 
 ~event db.save { id: i32 }
-| saved {}
-| error { msg: []const u8 }
+| saved
+| error []const u8
 
 // This implementation covers all branches - VALID
 ~complete.task = db.save (id: task_id)
@@ -17,11 +17,11 @@ const std = @import("std");
 
 // Test 2: Input field shadowing is not allowed
 ~event process.item { item: []const u8, count: i32 }
-| processed { total: i32 }
+| processed i32
 
 ~event validate.item { name: []const u8 }
-| valid { item_name: []const u8 }
-| invalid {}
+| valid []const u8
+| invalid
 
 // This would be an ERROR if we tried: | valid item |>
 // because 'item' would shadow the input field 'item'
@@ -55,7 +55,7 @@ const std = @import("std");
 // Proc implementations
 ~proc db.save {
     if (e.id == 0) {
-        return .{ .error = .{ .msg = "Invalid ID" } };
+        return .{ .error = "Invalid ID" };
     }
     return .{ .saved = .{} };
 }
@@ -64,7 +64,7 @@ const std = @import("std");
     if (std.mem.eql(u8, e.name, "")) {
         return .{ .invalid = .{} };
     }
-    return .{ .valid = .{ .item_name = e.name } };
+    return .{ .valid = e.name };
 }
 
 ~proc fetch.details {

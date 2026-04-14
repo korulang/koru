@@ -30,16 +30,16 @@ const std = @import("std");
 
 // [expand] event — template produces inline_body + branches
 ~[norun|expand]pub event classify_num { expr: Expression }
-| positive { val: i32 }
-| non_positive {}
+| positive i32
+| non_positive
 
 // Abstract event — simulates a library event like orisha:handler
 ~[abstract]pub event categorize { value: i32 }
-| result { output: i32 }
+| result i32
 
 // Default implementation (fallback)
 ~proc categorize {
-    return .{ .result = .{ .output = -999 } };
+    return .{ .result = -999 };
 }
 
 // Cross-module impl using expand — THIS IS THE KEY PATTERN
@@ -52,7 +52,7 @@ const std = @import("std");
 
 // Helper to print
 ~event print_num { n: i32 }
-| done {}
+| done
 
 ~proc print_num {
     std.debug.print("{}\n", .{n});

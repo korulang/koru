@@ -6,7 +6,7 @@
 ~import "$std/io"
 
 ~event work {}
-| done {}
+| done
 
 ~proc work {
     return .{ .done = .{} };

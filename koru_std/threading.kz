@@ -40,7 +40,7 @@ pub const WorkerHandle = struct {
 // Use when you don't need to wait for result
 
 ~event worker.spawn { work_fn: WorkFn, context: *anyopaque }
-| spawned {}
+| spawned
 
 ~proc worker.spawn {
     // Spawn thread with work function
@@ -63,7 +63,7 @@ pub const WorkerHandle = struct {
 // Threading happens INSIDE the proc, but event signature is clean
 
 ~event worker.spawn.async { work_fn: WorkFn, context: *anyopaque }
-| awaitable { handle: WorkerHandle }
+| awaitable WorkerHandle
 
 ~proc worker.spawn.async {
     // Spawn thread with work function
@@ -87,14 +87,14 @@ pub const WorkerHandle = struct {
 // Explicitly wait for one worker to complete
 
 ~event worker.spawn.await { handle: WorkerHandle }
-| completed { result: *anyopaque }
+| completed *anyopaque
 
 ~proc worker.spawn.await {
     // Block until thread completes
     handle.thread.join();
 
     // Return result pointer (caller must cast to expected type)
-    return .{ .completed = .{ .result = handle.result_ptr } };
+    return .{ .completed = handle.result_ptr };
 }
 
 // ============================================================================
@@ -104,7 +104,7 @@ pub const WorkerHandle = struct {
 // This is where progressive disclosure really shines!
 
 ~event worker.spawn.join { handles: []const WorkerHandle }
-| all_completed { results: []*anyopaque }
+| all_completed []*anyopaque
 
 ~proc worker.spawn.join {
     // Allocate results array
@@ -116,7 +116,7 @@ pub const WorkerHandle = struct {
         results[i] = h.result_ptr;
     }
 
-    return .{ .all_completed = .{ .results = results } };
+    return .{ .all_completed = results };
 }
 
 // ============================================================================

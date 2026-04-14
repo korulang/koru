@@ -6,9 +6,9 @@
 
 // Event with one required branch and two optional branches
 ~event process { value: u32 }
-| success { result: u32 }
-| ?warning { msg: []const u8 }
-| ?info { details: []const u8 }
+| success u32
+| ?warning []const u8
+| ?info []const u8
 
 // Test: Handle only required branch, catch-all for optional branches
 ~process(value: 42)

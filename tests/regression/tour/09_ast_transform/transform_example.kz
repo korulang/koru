@@ -5,7 +5,7 @@ const std = @import("std");
 
 // A simple event to transform
 ~event compute { x: i32, y: i32 }
-| result { value: i32 }
+| result i32
 
 ~proc compute {
     return .{ .result = .{ .value = e.x + e.y }};
@@ -13,7 +13,7 @@ const std = @import("std");
 
 // The transformer event - takes ProgramAST and transforms it
 ~event transform_doubles { ast: ProgramAST }
-| transformed { ast: ProgramAST }
+| transformed ProgramAST
 
 ~proc transform_doubles {
     comptime {

@@ -3,7 +3,7 @@
 const std = @import("std");
 
 ~pub event uppercase { text: []const u8 }
-| transformed { result: []const u8 }
+| transformed []const u8
 
 ~proc uppercase {
     // Stub implementation for test

@@ -14,7 +14,7 @@ const std = @import("std");
 ~[test]import "$std/testing"
 
 ~event hello {}
-| done {}
+| done
 
 ~proc hello {
     std.debug.print("Hello from conditional import test!\n", .{});

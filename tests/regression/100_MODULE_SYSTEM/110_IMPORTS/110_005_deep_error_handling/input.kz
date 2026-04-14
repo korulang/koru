@@ -6,23 +6,23 @@
 const std = @import("std");
 
 ~event step1 {}
-| ok { value: i32 }
-| failed { reason: []const u8 }
+| ok i32
+| failed []const u8
 
 ~event step2 { value: i32 }
-| ok { value: i32 }
-| failed { reason: []const u8 }
+| ok i32
+| failed []const u8
 
 ~event step3 { value: i32 }
-| ok { value: i32 }
-| failed { reason: []const u8 }
+| ok i32
+| failed []const u8
 
 ~event step4 { value: i32 }
-| ok { value: i32 }
-| failed { reason: []const u8 }
+| ok i32
+| failed []const u8
 
 ~event log { msg: []const u8 }
-| done {}
+| done
 
 ~proc step1 {
     return .{ .@"ok" = .{ .value = 1 } };

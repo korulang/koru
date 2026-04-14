@@ -18,13 +18,13 @@
 
 // Event that takes Source parameter for HTML rendering
 ~event renderHTML { source: Source[HTML] }
-| rendered { html: []const u8 }
+| rendered []const u8
 
 // Comptime proc that receives Source with captured scope
 ~proc renderHTML {
     // For now, just verify syntax works and return hardcoded HTML
     // In the future, source.scope.bindings will contain the captured 'u' binding
-    return .{ .rendered = .{ .html = "<div>Captured binding in scope!</div>" } };
+    return .{ .rendered = "<div>Captured binding in scope!</div>" };
 }
 
 // Test: Source block syntax

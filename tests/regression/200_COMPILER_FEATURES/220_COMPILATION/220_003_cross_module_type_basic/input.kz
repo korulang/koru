@@ -23,7 +23,7 @@ const std = @import("std");
 ~pub event register_user {
     user_data: app.test_lib.user:User,
 }
-| registered { success: bool }
+| registered bool
 
 ~proc register_user {
     // Print the user's information

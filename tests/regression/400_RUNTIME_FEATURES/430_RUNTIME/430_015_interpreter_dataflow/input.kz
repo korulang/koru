@@ -11,23 +11,23 @@ const std = @import("std");
 // ============================================================================
 
 ~pub event validate { data: []const u8 }
-| valid { value: []const u8 }
-| invalid { reason: []const u8 }
+| valid []const u8
+| invalid []const u8
 
 ~proc validate {
     // Simple validation - non-empty = valid
     if (data.len > 0) {
-        return .{ .valid = .{ .value = data } };
+        return .{ .valid = data };
     }
-    return .{ .invalid = .{ .reason = "empty input" } };
+    return .{ .invalid = "empty input" };
 }
 
 ~pub event transform { input: []const u8 }
-| transformed { output: []const u8 }
+| transformed []const u8
 
 ~proc transform {
     // Simple transform - uppercase first char (just return as-is for test)
-    return .{ .transformed = .{ .output = input } };
+    return .{ .transformed = input };
 }
 
 // Register events

@@ -5,7 +5,7 @@ const std = @import("std");
 
 // Declare an event with input and output branches
 ~event greet { name: []const u8 }
-| welcomed { message: []const u8 }
+| welcomed []const u8
 
 // Implement the event with a proc
 ~proc greet {

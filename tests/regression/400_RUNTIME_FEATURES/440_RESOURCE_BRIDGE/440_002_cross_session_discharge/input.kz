@@ -20,7 +20,7 @@ var bridge_pool = HandlePool.init(std.heap.page_allocator);
 ~open = opened "file_1"
 
 ~pub event close { handle: []const u8[!opened] }
-| closed {}
+| closed
 
 ~proc close {
     std.debug.print("close() called for handle\n", .{});
@@ -54,7 +54,7 @@ const SESSION_2 = "~close(handle: \"file_1\")\n| closed |> result {}";
 // Helper event to run session 2 and report both counts
 ~event run_session_2 { handles_after_open: u32 }
 | done { after_open: u32, after_close: u32 }
-| fail { reason: []const u8 }
+| fail []const u8
 
 ~proc run_session_2 {
     std.debug.print("Session 1 left {} handle(s) on bridge\n", .{handles_after_open});
@@ -73,12 +73,12 @@ const SESSION_2 = "~close(handle: \"file_1\")\n| closed |> result {}";
             std.debug.print("Session 2 complete, {} handle(s) remaining\n", .{r.handles});
             return .{ .done = .{ .after_open = handles_after_open, .after_close = r.handles } };
         },
-        .exhausted => return .{ .fail = .{ .reason = "session 2 exhausted" } },
-        .parse_error => return .{ .fail = .{ .reason = "session 2 parse error" } },
-        .validation_error => return .{ .fail = .{ .reason = "session 2 validation error" } },
-        .shape_error => return .{ .fail = .{ .reason = "session 2 shape error" } },
-        .event_denied => return .{ .fail = .{ .reason = "session 2 event denied" } },
-        .dispatch_error => return .{ .fail = .{ .reason = "session 2 dispatch error" } },
-        .scope_not_found => return .{ .fail = .{ .reason = "session 2 scope not found" } },
+        .exhausted => return .{ .fail = "session 2 exhausted" },
+        .parse_error => return .{ .fail = "session 2 parse error" },
+        .validation_error => return .{ .fail = "session 2 validation error" },
+        .shape_error => return .{ .fail = "session 2 shape error" },
+        .event_denied => return .{ .fail = "session 2 event denied" },
+        .dispatch_error => return .{ .fail = "session 2 dispatch error" },
+        .scope_not_found => return .{ .fail = "session 2 scope not found" },
     }
 }

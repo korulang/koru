@@ -11,13 +11,13 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event hello {}
-| done {}
+| done
 
 ~event goodbye {}
-| done {}
+| done
 
 ~event logger {}
-| done {}
+| done
 
 ~proc hello {
     std.debug.print("Hello\n", .{});

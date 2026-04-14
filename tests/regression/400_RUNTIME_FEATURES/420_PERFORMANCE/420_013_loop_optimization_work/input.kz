@@ -14,32 +14,32 @@ const std = @import("std");
 
 // Work event: Process array element (this should be INLINED into loop body)
 ~event process_element { array: []u64, i: u64, sum: u64 }
-| processed { sum: u64 }
+| processed u64
 
 ~proc process_element {
     // Simulate some work: square the element and add to sum
     const value = array[i];
     const squared = value * value;
     const new_sum = sum + squared;
-    return .{ .processed = .{ .sum = new_sum } };
+    return .{ .processed = new_sum };
 }
 
 // Checker event: Loop through array indices
 ~event loop_step { i: u64, limit: u64, sum: u64 }
 | continue { i: u64, sum: u64 }
-| done { result: u64 }
+| done u64
 
 ~proc loop_step {
     if (i < limit) {
         return .{ .continue = .{ .i = i, .sum = sum } };
     } else {
-        return .{ .done = .{ .result = sum } };
+        return .{ .done = sum };
     }
 }
 
 // Print result
 ~event print { result: u64 }
-| done {}
+| done
 
 ~proc print {
     std.debug.print("Sum: {}\n", .{result});
@@ -48,7 +48,7 @@ const std = @import("std");
 
 // Initialize array event
 ~event init_array {}
-| initialized { array: []u64 }
+| initialized []u64
 
 ~proc init_array {
     // Create array 0..10000
@@ -60,7 +60,7 @@ const std = @import("std");
         array[i] = i;
     }
 
-    return .{ .initialized = .{ .array = array } };
+    return .{ .initialized = array };
 }
 
 // Main flow: Loop with work body

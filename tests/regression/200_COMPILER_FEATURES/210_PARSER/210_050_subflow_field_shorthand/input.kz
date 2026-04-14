@@ -25,7 +25,7 @@ const Entity = struct {
 };
 
 ~pub event test_event { e: Entity }
-| result { e: Entity }
+| result Entity
 
 // BUG: This emits wrong code
 // ~test_event = result { e }

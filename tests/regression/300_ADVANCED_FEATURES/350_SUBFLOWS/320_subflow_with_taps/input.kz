@@ -10,23 +10,23 @@ const std = @import("std");
 
 // Base event: adds 5 to a number
 ~event add_five { value: i32 }
-| result { sum: i32 }
+| result i32
 
 ~proc add_five {
     std.debug.print("add_five: {} + 5 = {}\n", .{value, value + 5});
-    return .{ .result = .{ .sum = value + 5 } };
+    return .{ .result = value + 5 };
 }
 
 // Subflow that calls add_five
 ~event double { value: i32 }
-| result { doubled: i32 }
+| result i32
 
 ~double = add_five(value: value)
 | result r |> result { doubled: r.sum }
 
 // Observer that should be called by the tap
 ~event observer {}
-| done {}
+| done
 
 ~proc observer {
     std.debug.print("TAP FIRED: add_five -> result transition observed!\n", .{});
@@ -35,7 +35,7 @@ const std = @import("std");
 
 // Print final result
 ~event print_final { value: i32 }
-| done {}
+| done
 
 ~proc print_final {
     std.debug.print("Final: {}\n", .{value});

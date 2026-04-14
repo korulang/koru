@@ -7,11 +7,11 @@ const File = struct {
 
 // Opens a file, returns with fs:open phantom state
 ~pub event open { path: []const u8 }
-| opened { file: *File[open] }
+| opened *File[open]
 
 ~proc open {
     const allocator = std.heap.page_allocator;
     const f = allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = f };
 }

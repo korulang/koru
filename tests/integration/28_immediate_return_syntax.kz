@@ -5,17 +5,17 @@ const std = @import("std");
 // Define an event that we want to mock
 ~event user.fetch { id: i32 }
 | found { name: []const u8, email: []const u8 }
-| not_found {}
+| not_found
 
 // Traditional implementation with a flow
 ~event user.fetchComplex { id: i32 }
 | found { name: []const u8, email: []const u8 }
-| not_found {}
+| not_found
 
 // Declare the db.lookup event
 ~event db.lookup { id: i32 }
 | success { name: []const u8, email: []const u8 }
-| failure {}
+| failure
 
 ~user.fetchComplex = db.lookup(id: id)
 | success s |> found { name: s.name, email: s.email }
@@ -27,15 +27,15 @@ const std = @import("std");
 
 // Test an event with parameters that returns fixed values
 ~event calc.add { a: i32, b: i32 }
-| result { sum: i32 }
+| result i32
 
 // Constant implementation that always returns 42
 ~calc.add = result { sum: 42 }
 
 // Test empty branch
 ~event status.check {}
-| ok {}
-| error { code: i32 }
+| ok
+| error i32
 
 // Simple stub that always returns ok
 ~status.check = ok {}

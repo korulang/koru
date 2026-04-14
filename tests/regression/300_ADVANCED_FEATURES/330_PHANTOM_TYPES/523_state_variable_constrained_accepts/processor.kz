@@ -2,8 +2,8 @@
 // Will NOT accept other states like "gc" or "static"
 
 ~pub event process { data: *Data[M'owned|borrowed] }
-| done { data: *Data[M'owned|borrowed] }  // Preserves whichever state was passed
+| done *Data[M'owned|borrowed]  // Preserves whichever state was passed
 
 ~proc process {
-    return .{ .done = .{ .data = data } };
+    return .{ .done = data };
 }

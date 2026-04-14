@@ -2,12 +2,12 @@
 const std = @import("std");
 
 ~event file.read { path: []const u8 }
-| success { contents: []const u8 }
-| failure { errno: u8 }
+| success []const u8
+| failure u8
 
 ~event file.print { contents: []const u8 }
-| success {}
-| failure { errno: u8 }
+| success
+| failure u8
 
 // Void event - no branches
 ~event proc.exit { errno: u8 }

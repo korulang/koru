@@ -9,7 +9,7 @@
 
 // Simple event to test pattern branches
 ~event test_patterns {}
-| ok {}
+| ok
 
 ~proc test_patterns {
     return .{ .ok = .{} };

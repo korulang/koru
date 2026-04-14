@@ -16,7 +16,7 @@
     program: *const Program,
     allocator: std.mem.Allocator,
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc ring.* {
     // Implementation would parse params, generate full ring buffer type
@@ -30,7 +30,7 @@
     // - Transform generates typed Zig struct
     // - Generated code compiles and runs
 
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // Full usage example

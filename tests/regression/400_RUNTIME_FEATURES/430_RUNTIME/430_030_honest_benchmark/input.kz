@@ -10,30 +10,30 @@ const std = @import("std");
 
 // Events that do simple math
 ~pub event add { a: []const u8, b: []const u8 }
-| sum { result: i64 }
+| sum i64
 
 ~proc add {
     const a_val = std.fmt.parseInt(i64, a, 10) catch 0;
     const b_val = std.fmt.parseInt(i64, b, 10) catch 0;
-    return .{ .sum = .{ .result = a_val + b_val } };
+    return .{ .sum = a_val + b_val };
 }
 
 ~pub event multiply { value: []const u8, by: []const u8 }
-| product { result: i64 }
+| product i64
 
 ~proc multiply {
     const val = std.fmt.parseInt(i64, value, 10) catch 0;
     const by_val = std.fmt.parseInt(i64, by, 10) catch 0;
-    return .{ .product = .{ .result = val * by_val } };
+    return .{ .product = val * by_val };
 }
 
 ~pub event subtract { value: []const u8, by: []const u8 }
-| difference { result: i64 }
+| difference i64
 
 ~proc subtract {
     const val = std.fmt.parseInt(i64, value, 10) catch 0;
     const by_val = std.fmt.parseInt(i64, by, 10) catch 0;
-    return .{ .difference = .{ .result = val - by_val } };
+    return .{ .difference = val - by_val };
 }
 
 // Register for runtime dispatch

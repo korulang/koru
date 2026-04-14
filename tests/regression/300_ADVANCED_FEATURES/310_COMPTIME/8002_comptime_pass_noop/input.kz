@@ -6,11 +6,11 @@ const std = @import("std");
 
 // Simple event with no comptime parameters
 ~event greet { name: []const u8 }
-| greeting { message: []const u8 }
+| greeting []const u8
 
 ~proc greet {
     const msg = "Hello, World!";
-    return .{ .greeting = .{ .message = msg } };
+    return .{ .greeting = msg };
 }
 
 // Simple flow to trigger compilation

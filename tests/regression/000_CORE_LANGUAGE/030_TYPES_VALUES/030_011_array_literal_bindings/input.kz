@@ -8,21 +8,21 @@
 const std = @import("std");
 
 ~event getValue { id: i32 }
-| got { value: i32 }
+| got i32
 
 ~proc getValue {
-    return .{ .got = .{ .value = id * 10 } };
+    return .{ .got = id * 10 };
 }
 
 ~event sumAll { values: []const i32 }
-| total { sum: i32 }
+| total i32
 
 ~proc sumAll {
     var sum: i32 = 0;
     for (values) |v| {
         sum += v;
     }
-    return .{ .total = .{ .sum = sum } };
+    return .{ .total = sum };
 }
 
 ~event check { expected: i32, actual: i32 }

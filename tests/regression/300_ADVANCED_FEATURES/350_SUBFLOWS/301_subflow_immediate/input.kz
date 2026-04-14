@@ -10,7 +10,7 @@
 
 // Event: takes a name, produces a greeting message
 ~event greet { name: []const u8 }
-| greeting { message: []const u8 }
+| greeting []const u8
 
 // Subflow implementation: maps input field 'name' to output field 'message'
 ~greet = greeting { message: name }

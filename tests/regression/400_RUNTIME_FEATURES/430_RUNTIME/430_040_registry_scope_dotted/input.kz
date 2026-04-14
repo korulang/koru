@@ -9,7 +9,7 @@
 const std = @import("std");
 
 ~pub event greet { id: u64 }
-| ok {}
+| ok
 
 ~proc greet {
     return .{ .ok = .{} };

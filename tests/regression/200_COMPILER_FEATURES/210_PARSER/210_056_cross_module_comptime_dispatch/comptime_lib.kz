@@ -7,9 +7,9 @@
 const std = @import("std");
 
 ~[comptime|norun] pub event setup { config: []const u8 }
-| ok { result: []const u8 }
+| ok []const u8
 
 ~proc setup {
     std.debug.print("Comptime setup: {s}\n", .{config});
-    return .{ .ok = .{ .result = "configured" } };
+    return .{ .ok = "configured" };
 }

@@ -17,14 +17,14 @@ const ast = @import("ast");
     source_ast: *const ast.Program,
     allocator: std.mem.Allocator
 }
-| emitted { zig_code: []const u8 }
-| failed { message: []const u8 }
+| emitted []const u8
+| failed []const u8
 
 ~proc emit.program {
     // Create a large buffer for emission
     const MAX_SIZE = 512 * 1024; // 512KB
     const buffer = allocator.alloc(u8, MAX_SIZE) catch |err| {
-        return .{ .failed = .{ .message = @errorName(err) } };
+        return .{ .failed = @errorName(err) };
     };
     defer allocator.free(buffer);
 
@@ -33,17 +33,17 @@ const ast = @import("ast");
 
     // Emit program header
     emitter_impl.emitProgramHeader(&code_emitter) catch |err| {
-        return .{ .failed = .{ .message = @errorName(err) } };
+        return .{ .failed = @errorName(err) };
     };
 
     // Emit all modules
     emitter_impl.emitAllModules(&code_emitter, source_ast, allocator) catch |err| {
-        return .{ .failed = .{ .message = @errorName(err) } };
+        return .{ .failed = @errorName(err) };
     };
 
     // Emit main function
     emitter_impl.emitMainFunction(&code_emitter, source_ast) catch |err| {
-        return .{ .failed = .{ .message = @errorName(err) } };
+        return .{ .failed = @errorName(err) };
     };
 
     // Get the generated code
@@ -51,9 +51,9 @@ const ast = @import("ast");
 
     // Allocate and copy to owned slice
     const owned = allocator.alloc(u8, output.len) catch |err| {
-        return .{ .failed = .{ .message = @errorName(err) } };
+        return .{ .failed = @errorName(err) };
     };
     @memcpy(owned, output);
 
-    return .{ .emitted = .{ .zig_code = owned } };
+    return .{ .emitted = owned };
 }

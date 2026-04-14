@@ -412,23 +412,23 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
     expression: Expression,
     bindings: *const Bindings
 }
-| bool { value: bool }
-| int { value: i64 }
-| float { value: f64 }
-| string { value: []const u8 }
-| null {}
-| error { message: []const u8 }
+| bool bool
+| int i64
+| float f64
+| string []const u8
+| null
+| error []const u8
 
 ~proc eval {
     const result = evaluate(expression, bindings) catch |err| {
-        return .{ .error = .{ .message = @errorName(err) } };
+        return .{ .error = @errorName(err) };
     };
 
     return switch (result) {
-        .bool_val => |v| .{ .bool = .{ .value = v } },
-        .int_val => |v| .{ .int = .{ .value = v } },
-        .float_val => |v| .{ .float = .{ .value = v } },
-        .string_val => |v| .{ .string = .{ .value = v } },
+        .bool_val => |v| .{ .bool = v },
+        .int_val => |v| .{ .int = v },
+        .float_val => |v| .{ .float = v },
+        .string_val => |v| .{ .string = v },
         .null_val => .{ .null = .{} },
     };
 }
@@ -438,13 +438,13 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
     expression: Expression,
     bindings: *const Bindings
 }
-| true {}
-| false {}
-| error { message: []const u8 }
+| true
+| false
+| error []const u8
 
 ~proc eval_bool {
     const result = evaluate(expression, bindings) catch |err| {
-        return .{ .error = .{ .message = @errorName(err) } };
+        return .{ .error = @errorName(err) };
     };
 
     if (result.isTruthy()) {

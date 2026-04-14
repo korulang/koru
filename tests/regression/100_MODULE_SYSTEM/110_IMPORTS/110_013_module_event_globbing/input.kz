@@ -20,23 +20,23 @@ const std = @import("std");
 
 // Define multiple events to test with
 ~event compute { x: i32 }
-| result { value: i32 }
+| result i32
 
 ~event format { value: i32 }
-| formatted { text: []const u8 }
+| formatted []const u8
 
 ~event display { text: []const u8 }
-| done {}
+| done
 
 ~proc compute {
     std.debug.print("compute({d})\n", .{x});
-    return .{ .result = .{ .value = x * 2 } };
+    return .{ .result = x * 2 };
 }
 
 ~proc format {
     std.debug.print("format({d})\n", .{value});
     const text = "formatted";
-    return .{ .formatted = .{ .text = text } };
+    return .{ .formatted = text };
 }
 
 ~proc display {

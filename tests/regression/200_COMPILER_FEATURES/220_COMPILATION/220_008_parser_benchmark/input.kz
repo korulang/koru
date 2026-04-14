@@ -15,28 +15,28 @@ const SAMPLE =
     \\
     \\~event authenticate { username: []const u8, password: []const u8 }
     \\| authenticated { user_id: u64, token: []const u8 }
-    \\| invalid_credentials { reason: []const u8 }
-    \\| account_locked { until: u64 }
+    \\| invalid_credentials []const u8
+    \\| account_locked u64
     \\
     \\~event validate_token { token: []const u8 }
     \\| valid { user_id: u64, expires: u64 }
-    \\| expired { user_id: u64 }
-    \\| invalid {}
+    \\| expired u64
+    \\| invalid
     \\
     \\~event refresh_token { token: []const u8 }
     \\| refreshed { new_token: []const u8, expires: u64 }
-    \\| denied { reason: []const u8 }
+    \\| denied []const u8
     \\
     \\~event get_user { user_id: u64 }
     \\| found { name: []const u8, email: []const u8, role: []const u8 }
-    \\| not_found {}
+    \\| not_found
     \\
     \\~event check_permission { user_id: u64, resource: []const u8, action: []const u8 }
-    \\| allowed {}
-    \\| denied { reason: []const u8 }
+    \\| allowed
+    \\| denied []const u8
     \\
     \\~event log_access { user_id: u64, resource: []const u8, action: []const u8, allowed: bool }
-    \\| logged {}
+    \\| logged
     \\
     \\// Main authentication flow
     \\~authenticate(username: "admin", password: "secret")

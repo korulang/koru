@@ -1,12 +1,12 @@
 // Test subflows with actual output shapes
 
 ~event data.validate { value: u32 }
-| valid { result: u32 }
-| invalid { reason: []const u8 }
+| valid u32
+| invalid []const u8
 
 ~event data.transform { input: u32 }
-| done { output: u32 }
-| error { msg: []const u8 }
+| done u32
+| error []const u8
 
 // Subflow that has an output shape (returns valid/invalid)
 ~validate_and_double (v) = data.validate (value: v)

@@ -8,17 +8,13 @@
 ~event transpiler { 
     source: File  // Should not be embedded in binary
 }
-| transpiled { 
-    output: []const u8 
-}
+| transpiled []const u8
 
 // Event using EmbedFile type (runtime embedding)
 ~event assets {
     icon: EmbedFile  // Should be embedded in binary
 }
-| loaded {
-    data: []const u8
-}
+| loaded []const u8
 
 // Event using both types
 ~event builder {
@@ -26,26 +22,24 @@
     template: File,      // Compile-time only
     resource: EmbedFile  // Runtime embedded
 }
-| built {
-    result: []const u8
-}
+| built []const u8
 
 // Test implementations
 ~proc transpiler {
     // Process file at compile-time
     // In real usage, would parse/transform the source
-    return .{ .transpiled = .{ .output = "transpiled" } };
+    return .{ .transpiled = "transpiled" };
 }
 
 ~proc assets {
     // Return embedded file data
-    return .{ .loaded = .{ .data = e.icon } };
+    return .{ .loaded = e.icon };
 }
 
 ~proc builder {
     // Use config and template at compile-time
     // Resource available at runtime
-    return .{ .built = .{ .result = "built" } };
+    return .{ .built = "built" };
 }
 
 // Test flows

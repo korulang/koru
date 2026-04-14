@@ -1,8 +1,8 @@
 // Generic processor constrained to owned OR borrowed ONLY
 
 ~pub event process { data: *Data[M'owned|borrowed] }
-| done { data: *Data[M'owned|borrowed] }
+| done *Data[M'owned|borrowed]
 
 ~proc process {
-    return .{ .done = .{ .data = data } };
+    return .{ .done = data };
 }

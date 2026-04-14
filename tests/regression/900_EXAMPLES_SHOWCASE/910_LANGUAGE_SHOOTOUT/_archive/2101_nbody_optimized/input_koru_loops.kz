@@ -26,7 +26,7 @@ const Body = struct {
 // ============================================================================
 
 ~event initialize_bodies {}
-| initialized { bodies: [5]Body }
+| initialized [5]Body
 
 ~proc initialize_bodies {
     const bodies_data = [_]Body{
@@ -68,7 +68,7 @@ const Body = struct {
             .mass = 5.15138902046611451e-05 * SOLAR_MASS,
         },
     };
-    return .{ .initialized = .{ .bodies = bodies_data } };
+    return .{ .initialized = bodies_data };
 }
 
 // ============================================================================
@@ -76,7 +76,7 @@ const Body = struct {
 // ============================================================================
 
 ~event process_pair { bodies: []Body, i: usize, j: usize, dt: f64 }
-| done {}
+| done
 
 ~proc process_pair {
     const dx = bodies[i].x - bodies[j].x;
@@ -101,7 +101,7 @@ const Body = struct {
 // ============================================================================
 
 ~event update_position { body: *Body, dt: f64 }
-| done {}
+| done
 
 ~proc update_position {
     body.x += dt * body.vx;
@@ -115,7 +115,7 @@ const Body = struct {
 // ============================================================================
 
 ~event offset_momentum { bodies: []Body }
-| adjusted {}
+| adjusted
 
 ~proc offset_momentum {
     var px: f64 = 0.0;
@@ -136,7 +136,7 @@ const Body = struct {
 }
 
 ~event calculate_energy { bodies: []const Body }
-| result { energy: f64 }
+| result f64
 
 ~proc calculate_energy {
     var e: f64 = 0.0;
@@ -154,11 +154,11 @@ const Body = struct {
         }
     }
 
-    return .{ .result = .{ .energy = e } };
+    return .{ .result = e };
 }
 
 ~event print_energy { energy: f64 }
-| done {}
+| done
 
 ~proc print_energy {
     std.debug.print("{d:.9}\n", .{energy});
@@ -166,7 +166,7 @@ const Body = struct {
 }
 
 ~event parse_args {}
-| parsed { n: u32 }
+| parsed u32
 
 ~proc parse_args {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
@@ -178,7 +178,7 @@ const Body = struct {
     }
 
     const n = std.fmt.parseInt(u32, args[1], 10) catch unreachable;
-    return .{ .parsed = .{ .n = n } };
+    return .{ .parsed = n };
 }
 
 // ============================================================================
@@ -189,7 +189,7 @@ const Body = struct {
 // The body loops are still in process_all_pairs for now
 
 ~event process_all_pairs { bodies: []Body, dt: f64 }
-| done {}
+| done
 
 // This uses Koru ~for for the OUTER loop
 ~process_all_pairs = for(0..5)
@@ -199,7 +199,7 @@ const Body = struct {
 | done |> done {}
 
 ~event update_all_positions { bodies: []Body, dt: f64 }
-| done {}
+| done
 
 ~update_all_positions = for(0..5)
 | each k |> update_position(body: &bodies[k.val], dt: dt)

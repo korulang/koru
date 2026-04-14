@@ -8,12 +8,12 @@ const Data = struct { content: []const u8 };
 
 // Open a file - returns opened! state
 ~pub event open { path: []const u8 }
-| opened { file: *File[opened!] }
+| opened *File[opened!]
 
 ~proc open {
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = f };
 }
 
 // Read - returns data! state (nested obligation)
@@ -28,7 +28,7 @@ const Data = struct { content: []const u8 };
 
 // Close file - consumes opened!
 ~pub event close { file: *File[!opened] }
-| closed {}
+| closed
 
 ~proc close {
     std.heap.page_allocator.destroy(file);

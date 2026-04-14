@@ -7,8 +7,8 @@
 const std = @import("std");
 
 ~[comptime|norun] pub event sql { query: []const u8 }
-| ok {}
-| err { message: []const u8 }
+| ok
+| err []const u8
 
 ~proc sql {
     _ = query;

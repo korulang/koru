@@ -9,7 +9,7 @@
 
 // Impure event - needs mock in tests (no proc = impure by default)
 ~event get_balance {}
-| amount { value: u32 }
+| amount u32
 
 // Test: Mock value is inlined, binding extracted, value verified
 ~test(Mock value inlined with binding) {

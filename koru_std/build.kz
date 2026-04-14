@@ -96,8 +96,8 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 ~[comptime|norun]pub event requires {
     source: Source
 }
-| ?added {}
-| ?parse_error { msg: []const u8 }
+| ?added
+| ?parse_error []const u8
 
 ~proc requires {
     // Validate Source syntax
@@ -127,14 +127,14 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // The program AST is used to validate that referenced events exist
 
 ~[comptime]pub event variants { meta: InvocationMeta, source: Source, program: Program }
-| configured { count: usize }
-| skipped { reason: []const u8 }
-| invalid_event { name: []const u8 }
+| configured usize
+| skipped []const u8
+| invalid_event []const u8
 
 ~proc variants {
     // Check if this config's annotation matches the --build flag
     if (!matchesFlags(meta.annotations)) {
-        return .{ .skipped = .{ .reason = "no matching build flag" } };
+        return .{ .skipped = "no matching build flag" };
     }
 
     // Parse the source as simple JSON-like key:value pairs
@@ -185,7 +185,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
         // Validate that the event exists in the AST
         if (ast_functional.findEventByCanonicalName(program, key) == null) {
             // Event not found - report error
-            return .{ .invalid_event = .{ .name = key } };
+            return .{ .invalid_event = key };
         }
 
         // Register in the core variant registry
@@ -194,7 +194,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
         }
     }
 
-    return .{ .configured = .{ .count = count } };
+    return .{ .configured = count };
 }
 
 // ============================================================================
@@ -213,12 +213,12 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // Currently the backend recognizes "target" for zig cross-compilation.
 
 ~[comptime]pub event config { meta: InvocationMeta, source: Source }
-| configured { count: usize }
-| skipped { reason: []const u8 }
+| configured usize
+| skipped []const u8
 
 ~proc config {
     if (!matchesFlags(meta.annotations)) {
-        return .{ .skipped = .{ .reason = "no matching build flag" } };
+        return .{ .skipped = "no matching build flag" };
     }
 
     // Parse the source as simple JSON-like key:value pairs
@@ -271,7 +271,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
         }
     }
 
-    return .{ .configured = .{ .count = count } };
+    return .{ .configured = count };
 }
 
 // ============================================================================
@@ -374,7 +374,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 //       | failed e |> std.io:println("Lint failed: " ++ e)
 
 ~[comptime|norun]pub event command { name: []const u8, description: []const u8 }
-| execute { argv: [][]const u8 }
+| execute [][]const u8
 
 // ============================================================================
 // BUILD STEPS - Declarative Build Pipeline with Dependencies
@@ -457,7 +457,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
     ctx: compiler_types.CompilerContext,
     output_path: []const u8
 }
-| collected { ctx: compiler_types.CompilerContext }
+| collected compiler_types.CompilerContext
 
 ~proc collect {
     // Extract nested fields from ctx (auto-destructuring only works for top-level event params)
@@ -561,5 +561,5 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;
 
-    return .{ .collected = .{ .ctx = updated_ctx } };
+    return .{ .collected = updated_ctx };
 }

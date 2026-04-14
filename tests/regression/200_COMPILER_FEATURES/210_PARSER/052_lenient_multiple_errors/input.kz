@@ -4,27 +4,27 @@
 ~event valid_before {
     x: i32
 }
-| ok {}
+| ok
 
 // This event has an unclosed brace - should create parse_error node
 ~event broken_event {
     value: i32
-| success {}
+| success
 
 // This event is valid - should still be parsed
 ~event valid_after {
     y: i32
 }
-| done {}
+| done
 
 // Another broken event - unclosed annotation
 ~[unclosed annotation event another_broken {
     z: i32
 }
-| result {}
+| result
 
 // One more valid event to verify recovery
 ~event final_valid {
     data: []const u8
 }
-| complete {}
+| complete

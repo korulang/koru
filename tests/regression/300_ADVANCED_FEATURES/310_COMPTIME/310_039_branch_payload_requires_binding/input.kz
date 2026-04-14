@@ -12,10 +12,10 @@
 const std = @import("std");
 
 ~event compute { x: i32 }
-| result { value: i32 }
+| result i32
 
 ~proc compute {
-    return .{ .result = .{ .value = x * 2 } };
+    return .{ .result = x * 2 };
 }
 
 // BUG: This should be a compile error!

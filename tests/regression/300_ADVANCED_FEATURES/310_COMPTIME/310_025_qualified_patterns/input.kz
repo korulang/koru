@@ -9,7 +9,7 @@ const std = @import("std");
 
 // Local event to transition to (so tap can fire)
 ~event finish {}
-| done {}
+| done
 
 ~proc finish {
     std.debug.print("Local print\n", .{});

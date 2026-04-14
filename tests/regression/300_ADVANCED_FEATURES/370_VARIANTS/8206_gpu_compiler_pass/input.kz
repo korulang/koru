@@ -20,15 +20,15 @@ const std = @import("std");
     target_name: []const u8,
     body: []const u8,
 }
-| compiled { wrapper_code: []const u8 }
-| unsupported { reason: []const u8 }
+| compiled []const u8
+| unsupported []const u8
 
 ~proc compile.target {
     const allocator = std.heap.page_allocator;
 
     // Only handle "gpu" target
     if (!std.mem.eql(u8, target_name, "gpu")) {
-        return .{ .unsupported = .{ .reason = "Not GPU" } };
+        return .{ .unsupported = "Not GPU" };
     }
 
     // Check for GLSL (#version keyword)
@@ -39,8 +39,8 @@ const std = @import("std");
             \\const shader_data = @embedFile("shader.spv");
             \\return .{ .done = .{} };
         ;
-        return .{ .compiled = .{ .wrapper_code = try allocator.dupe(u8, wrapper) } };
+        return .{ .compiled = try allocator.dupe(u8, wrapper) };
     }
 
-    return .{ .unsupported = .{ .reason = "No GLSL found" } };
+    return .{ .unsupported = "No GLSL found" };
 }

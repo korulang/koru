@@ -10,10 +10,10 @@
 const std = @import("std");
 
 ~pub event outer {}
-| done { value: i32 }
+| done i32
 
 ~pub event inner { x: i32 }
-| done {}
+| done
 
 ~outer()
 | done d |> ~inner(x: d.value)

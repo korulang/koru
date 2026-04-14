@@ -8,11 +8,11 @@ const std = @import("std");
 
 // Public events from module A
 ~pub event a.process { value: i32 }
-| result { processed: i32 }
+| result i32
 
 ~pub event a.validate { data: []const u8 }
-| valid {}
-| invalid { reason: []const u8 }
+| valid
+| invalid []const u8
 
 // Implementation that uses module B
 ~proc a.process {
@@ -22,16 +22,16 @@ const std = @import("std");
     // Then send to B for further processing
     ~b:transform(input: processed)
     | transformed t |> {
-        return .{ .result = .{ .processed = t.output } };
+        return .{ .result = t.output };
     }
     | error err |> {
-        return .{ .result = .{ .processed = processed } };
+        return .{ .result = processed };
     }
 }
 
 ~proc a.validate {
     if (e.data.len == 0) {
-        return .{ .invalid = .{ .reason = "Empty data" } };
+        return .{ .invalid = "Empty data" };
     }
     
     // Could also call b.check here if needed

@@ -10,33 +10,33 @@ const std = @import("std");
 
 // Counter event that can go in both directions
 ~event count { n: i32, direction: []const u8 }
-| next { value: i32 }
-| done { final: i32 }
+| next i32
+| done i32
 
 ~proc count {
     std.debug.print("{s}: {}\n", .{direction, n});
 
     if (std.mem.eql(u8, direction, "up")) {
         if (n < 3) {
-            return .{ .next = .{ .value = n + 1 } };
+            return .{ .next = n + 1 };
         } else {
-            return .{ .done = .{ .final = n } };
+            return .{ .done = n };
         }
     } else {
         if (n > 2) {
-            return .{ .next = .{ .value = n - 1 } };
+            return .{ .next = n - 1 };
         } else {
-            return .{ .done = .{ .final = n } };
+            return .{ .done = n };
         }
     }
 }
 
 // Start events for each flow
 ~event start_up {}
-| ready {}
+| ready
 
 ~event start_down {}
-| ready {}
+| ready
 
 ~proc start_up {
     std.debug.print("Starting count-up flow...\n", .{});

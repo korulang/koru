@@ -2,7 +2,7 @@
 // Uncomment sections to see different error types
 
 ~event test.foo { x: i32 }
-| ok { y: i32 }
+| ok i32
 
 // TEST 1: Missing branch coverage (commented out to allow compilation)
 // ~test.foo (x: 42)

@@ -15,7 +15,7 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc labeled {
     const ast = @import("ast");
@@ -34,7 +34,7 @@ const std = @import("std");
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
     @panic("labeled: replacement failed");
 }
@@ -42,7 +42,7 @@ const std = @import("std");
 // Use a simple noop event to create a continuation context — labeled must be
 // inside a continuation for replaceInvocationNodeRecursive to find it.
 ~event noop {}
-| done {}
+| done
 
 ~proc noop { return .{ .done = .{} }; }
 

@@ -3,9 +3,9 @@
 // Verifies: Empty struct handling in unions
 
 ~event state.change {}
-| ready {}
-| busy {}
-| done {}
+| ready
+| busy
+| done
 
 ~proc state.change {
     // Just return ready for testing
@@ -13,9 +13,9 @@
 }
 
 ~event task.run { id: u32 }
-| started {}
-| completed { result: u32 }
-| failed {}
+| started
+| completed u32
+| failed
 
 ~proc task.run {
     if (e.id == 0) {

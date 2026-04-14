@@ -19,29 +19,29 @@
 const std = @import("std");
 
 ~event step_a { x: i32 }
-| done { result: i32 }
+| done i32
 
 ~proc step_a {
-    return .{ .done = .{ .result = x + 1 } };
+    return .{ .done = x + 1 };
 }
 
 ~event step_b { a: i32, b: i32, c: i32 }
-| done { result: i32 }
+| done i32
 
 ~proc step_b {
-    return .{ .done = .{ .result = a + b + c } };
+    return .{ .done = a + b + c };
 }
 
 ~event step_c { x: i32 }
-| done { result: i32 }
+| done i32
 
 ~proc step_c {
-    return .{ .done = .{ .result = x * 2 } };
+    return .{ .done = x * 2 };
 }
 
 // This subflow should work but currently fails
 ~event test_multiline_call {}
-| final { result: i32 }
+| final i32
 
 ~test_multiline_call = step_a(x: 10)
 | done a |> step_b(

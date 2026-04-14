@@ -5,7 +5,7 @@
 
 // Simple work event
 ~event work {}
-| done {}
+| done
 
 ~proc work {
     return .{ .done = .{} };

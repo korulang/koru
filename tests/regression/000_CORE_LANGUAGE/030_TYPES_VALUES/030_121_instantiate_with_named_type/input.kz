@@ -14,7 +14,7 @@ const std = @import("std");
 ~type(UserIdBox = Box<UserId>)
 
 ~event test_box {}
-| done {}
+| done
 
 ~proc test_box {
     const uid: UserId = 999;

@@ -3,18 +3,18 @@ const std = @import("std");
 
 ~event user.create { name: []const u8, email: []const u8, age: i32 }
 | success { id: i32, name: []const u8, email: []const u8 }
-| failure { reason: []const u8 }
+| failure []const u8
 
 ~event db.insert { table: []const u8, name: []const u8, email: []const u8, age: i32 }
-| inserted { record_id: i32 }
-| error { message: []const u8 }
+| inserted i32
+| error []const u8
 
 ~event notify.welcome { user_id: i32, user_email: []const u8 }
 
 // Event that creates a user and notifies them
 ~event register.user { name: []const u8, email: []const u8, age: i32 }
-| registered { id: i32 }
-| failed { error: []const u8 }
+| registered i32
+| failed []const u8
 
 // Implement with subflow using shorthand everywhere possible
 ~register.user = db.insert (table: "users", name, email, age)
@@ -40,9 +40,9 @@ const std = @import("std");
 // Proc implementations  
 ~proc db.insert {
     if (std.mem.eql(u8, e.table, "users")) {
-        return .{ .inserted = .{ .record_id = 42 } };
+        return .{ .inserted = 42 };
     }
-    return .{ .inserted = .{ .record_id = 99 } };
+    return .{ .inserted = 99 };
 }
 
 ~proc user.create {

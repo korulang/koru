@@ -29,7 +29,7 @@ pub const String = struct {
 
 // Create with explicit allocator
 ~pub event new { allocator: std.mem.Allocator, text: []const u8 }
-| ok { s: *String[view!] }
+| ok *String[view!]
 | err []const u8
 
 ~proc new {
@@ -43,12 +43,12 @@ pub const String = struct {
         return .{ .err = "allocation failed" };
     };
     s.* = .{ .data = data, .allocator = allocator };
-    return .{ .ok = .{ .s = s } };
+    return .{ .ok = s };
 }
 
 // Create with page allocator (simple, for demos)
 ~pub event from_page { text: []const u8 }
-| ok { s: *String[view!] }
+| ok *String[view!]
 | err []const u8
 
 ~proc from_page {
@@ -63,7 +63,7 @@ pub const String = struct {
         return .{ .err = "allocation failed" };
     };
     s.* = .{ .data = data, .allocator = allocator };
-    return .{ .ok = .{ .s = s } };
+    return .{ .ok = s };
 }
 
 // ============================================

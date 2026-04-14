@@ -15,12 +15,12 @@
 const std = @import("std");
 
 ~event iterate { count: i32 }
-| next { count: i32 }
-| done {}
+| next i32
+| done
 
 ~proc iterate {
     if (count < 3) {
-        return .{ .next = .{ .count = count + 1 } };
+        return .{ .next = count + 1 };
     } else {
         return .{ .done = .{} };
     }

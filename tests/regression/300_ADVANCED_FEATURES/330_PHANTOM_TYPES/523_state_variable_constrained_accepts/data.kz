@@ -2,27 +2,27 @@ const std = @import("std");
 const Data = struct { value: i32 };
 
 ~pub event alloc {}
-| allocated { data: *Data[owned] }
+| allocated *Data[owned]
 
 ~proc alloc {
     const allocator = std.heap.page_allocator;
     const d = allocator.create(Data) catch unreachable;
     d.* = Data{ .value = 42 };
-    return .{ .allocated = .{ .data = d } };
+    return .{ .allocated = d };
 }
 
 ~pub event borrow { other: *Data[owned] }
-| borrowed { data: *Data[borrowed] }
+| borrowed *Data[borrowed]
 
 ~proc borrow {
-    return .{ .borrowed = .{ .data = other } };
+    return .{ .borrowed = other };
 }
 
 // Generic processor constrained to owned OR borrowed
 // Will NOT accept other states like "gc" or "static"
 ~pub event process { d: *Data[M'owned|borrowed] }
-| done { d: *Data[M'owned|borrowed] }  // Preserves whichever state was passed
+| done *Data[M'owned|borrowed]  // Preserves whichever state was passed
 
 ~proc process {
-    return .{ .done = .{ .d = d } };
+    return .{ .done = d };
 }

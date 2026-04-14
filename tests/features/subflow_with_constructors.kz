@@ -15,11 +15,11 @@ const std = @import("std");
 
 // Helper events
 ~event validate.input { value: u32 }
-| valid { value: u32 }
-| invalid { msg: []const u8 }
+| valid u32
+| invalid []const u8
 
 ~event process.value { data: u32 }
-| done { result: u32 }
+| done u32
 | failed { error_code: u32, reason: []const u8 }
 
 // Test using the subflow

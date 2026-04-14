@@ -7,7 +7,7 @@ const std = @import("std");
 
 // Event with a branch to tap
 ~event hello {}
-| tap_target {}
+| tap_target
 
 // Void observer events
 ~event tap1 {}

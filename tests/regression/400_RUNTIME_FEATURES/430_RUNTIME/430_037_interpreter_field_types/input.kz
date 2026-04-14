@@ -9,10 +9,10 @@ const std = @import("std");
 
 // Event producing an integer field
 ~pub event produce_int {}
-| value { num: i32 }
+| value i32
 
 ~proc produce_int {
-    return .{ .value = .{ .num = 12 } };
+    return .{ .value = 12 };
 }
 
 // Register scope

@@ -5,17 +5,17 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 ~event open { path: []const u8 }
-| opened { file: *File[opened!] }
+| opened *File[opened!]
 
 ~proc open {
     std.debug.print("Opening\n", .{});
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .opened = .{ .file = f } };
+    return .{ .opened = f };
 }
 
 ~event use { file: *File[opened] }
-| used {}
+| used
 
 ~proc use {
     std.debug.print("Using\n", .{});
@@ -23,7 +23,7 @@ const File = struct { handle: i32 };
 }
 
 ~event close { file: *File[!opened] }
-| closed {}
+| closed
 
 ~proc close {
     std.debug.print("Closing\n", .{});
@@ -32,7 +32,7 @@ const File = struct { handle: i32 };
 }
 
 ~event create { path: []const u8 }
-| created { file: *File[opened!] }
+| created *File[opened!]
 
 ~create = open(path: path)
 | opened f |> created { file: f.file }

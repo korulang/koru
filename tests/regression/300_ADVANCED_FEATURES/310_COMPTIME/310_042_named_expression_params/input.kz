@@ -14,12 +14,12 @@ const std = @import("std");
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc operation {
     // Both expr and guard should be available as []const u8
     std.debug.print("[operation] expr='{s}' guard='{s}'\n", .{ expr, guard });
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // Usage: implicit expr + named guard Expression
@@ -27,7 +27,7 @@ const std = @import("std");
 
 // Scaffold to make it compile
 ~event dummy {}
-| done {}
+| done
 
 ~proc dummy {
     std.debug.print("dummy\n", .{});

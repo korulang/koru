@@ -19,8 +19,8 @@
 }
 
 ~event do.work { input: i32 }
-| success { result: i32 }
-| failure { errmsg: []const u8 }
+| success i32
+| failure []const u8
 
 ~proc do.work {
     if (e.input < 0) {

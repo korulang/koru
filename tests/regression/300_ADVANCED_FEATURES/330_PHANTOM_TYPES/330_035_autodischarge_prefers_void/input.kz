@@ -35,8 +35,8 @@ pub const Handle = struct {
 
 // MULTI-BRANCH disposal - should NOT be selected for auto-discharge
 ~event close_checked { h: *Handle[!open] }
-| closed {}
-| error { msg: []const u8 }
+| closed
+| error []const u8
 
 ~proc close_checked {
     std.heap.page_allocator.destroy(h);

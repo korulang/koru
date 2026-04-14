@@ -12,7 +12,7 @@
     item: *const Item,
     program: *const Program,
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 // Transform proc - replaces invocation with inline comment
 ~proc log.* {
@@ -21,24 +21,24 @@
     const allocator = @import("std").heap.page_allocator;
 
     // Get the flow from the item
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{ .program = program } };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = program };
 
     // Create inline code to replace the flow (simple comment, no keywords)
     const inline_code_item = ast.Item{
         .inline_code = .{
             .code = "// glob transform ran",
             .location = flow.location,
-            .module = allocator.dupe(u8, flow.module) catch return .{ .transformed = .{ .program = program } },
+            .module = allocator.dupe(u8, flow.module) catch return .{ .transformed = program },
         },
     };
 
-    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch return .{ .transformed = .{ .program = program } };
+    const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, inline_code_item) catch return .{ .transformed = program };
     if (maybe_new_program) |new_program| {
-        const result = allocator.create(ast.Program) catch return .{ .transformed = .{ .program = program } };
+        const result = allocator.create(ast.Program) catch return .{ .transformed = program };
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // This invocation should match log.* glob pattern

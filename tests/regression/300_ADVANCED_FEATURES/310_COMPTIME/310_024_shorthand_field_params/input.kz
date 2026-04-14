@@ -8,7 +8,7 @@ const std = @import("std");
     branch: []const u8,
     destination: ?[]const u8,
 }
-| done {}
+| done
 
 ~proc process {
     std.debug.print("source={s} branch={s}\n", .{source, branch});
@@ -27,7 +27,7 @@ pub const Data = struct {
     | done |> _
 
 ~event start {}
-| result { data: Data }
+| result Data
 
 ~proc start {
     const data = Data{
@@ -35,5 +35,5 @@ pub const Data = struct {
         .branch = "success",
         .destination = null,
     };
-    return .{ .result = .{ .data = data } };
+    return .{ .result = data };
 }

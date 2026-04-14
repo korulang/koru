@@ -531,35 +531,35 @@ pub const CompilerContext = struct {
 // Abstract: Users can override with ~std.compiler:coordinate = ...
 ~[comptime|abstract] pub event coordinate { program_ast: *const Program, allocator: std.mem.Allocator }
 | coordinated { ast: *const Program, code: []const u8, metrics: []const u8 }
-| error { message: []const u8 }
+| error []const u8
 
 // Default implementation of the compiler coordinator
 // Users who don't override get this standard pipeline
 
 ~coordinate = context_create(program_ast, allocator)
-| created c0 |> frontend(ctx: c0.ctx)
+| created c0 |> frontend(ctx: c0)
   | ctx c1 |> analysis(ctx: c1)
     | ctx c2 |> test_generation(ctx: c2)
       | ctx c3 |> std.optimizer:optimize(ctx: c3)
         | ctx c4 |> emission(ctx: c4)
           | ctx c5 |> metrics_format(passes_completed: c5.ctx.passes_completed, allocator: allocator)
             | formatted m |> std.inter:start(contexts: [
-                c0.ctx,
+                c0,
                 c1,
                 c2,
                 c3,
                 c4,
                 c5.ctx
               ])
-              | launched |> coordinated { ast: c5.ctx.ast, code: c5.code, metrics: m.metrics }
-              | skipped |> coordinated { ast: c5.ctx.ast, code: c5.code, metrics: m.metrics }
-    | failed f |> error { message: f.message }
+              | launched |> coordinated { ast: c5.ctx.ast, code: c5.code, metrics: m }
+              | skipped |> coordinated { ast: c5.ctx.ast, code: c5.code, metrics: m }
+    | failed f |> error f.message
 
 // Composable pipeline segments - users can mix and match!
 
 // Helper: Create CompilerContext from ast and allocator
 ~pub event context_create { program_ast: *const Program, allocator: std.mem.Allocator }
-| created { ctx: CompilerContext }
+| created CompilerContext
 
 ~proc context_create {
     const ctx = CompilerContext{
@@ -573,12 +573,12 @@ pub const CompilerContext = struct {
         .passes_completed = 0,
         .tap_registry = null,
     };
-    return .{ .created = .{ .ctx = ctx } };
+    return .{ .created = ctx };
 }
 
 // Helper: Format metrics string
 ~pub event metrics_format { passes_completed: u32, allocator: std.mem.Allocator }
-| formatted { metrics: []const u8 }
+| formatted []const u8
 
 ~proc metrics_format {
     const metrics = std.fmt.allocPrint(
@@ -586,7 +586,7 @@ pub const CompilerContext = struct {
         "Passes: {d} (flow-based: frontend, analysis, emission)",
         .{passes_completed}
     ) catch "Passes: <unknown> (flow-based: frontend, analysis, emission)";
-    return .{ .formatted = .{ .metrics = metrics } };
+    return .{ .formatted = metrics };
 }
 
 // Helper: Dump AST as JSON for introspection
@@ -875,7 +875,7 @@ const processTestFlow = struct {
                 .allocator = allocator,
             });
             if (validation_result == .failed) {
-                @panic(validation_result.failed.message);
+                @panic(validation_result.failed);
             }
         }
 
@@ -1155,8 +1155,8 @@ const emitFlowWithMocks = struct {
 // Parser service - makes the Koru parser available at backend comptime
 // This enables dynamic module loading during compilation passes
 ~pub event parse { source: []const u8, module_name: []const u8 }
-| parsed { items: []Item }
-| failed { message: []const u8 }
+| parsed []Item
+| failed []const u8
 
 // Zig code emission event - the final step of compilation!
 ~pub event emit_zig { ctx: CompilerContext }
@@ -1354,7 +1354,7 @@ const joinPathAlloc = struct {
 
     // Initialize parser (empty compiler flags, no resolver for standalone parsing)
     var parser = Parser.init(allocator, source, module_name, &[_][]const u8{}, null) catch {
-        return .{ .failed = .{ .message = "Failed to initialize parser" } };
+        return .{ .failed = "Failed to initialize parser" };
     };
     defer parser.deinit();
 
@@ -1362,15 +1362,15 @@ const joinPathAlloc = struct {
     const parse_result = parser.parse() catch {
         // Try to get error details if available
         if (parser.reporter.hasErrors()) {
-            return .{ .failed = .{ .message = "Parse error - see compiler output" } };
+            return .{ .failed = "Parse error - see compiler output" };
         }
-        return .{ .failed = .{ .message = "Failed to parse source" } };
+        return .{ .failed = "Failed to parse source" };
     };
 
     // Return the parsed items
     // Note: The items are allocated in our buffer, which is stack-allocated
     // This is fine for comptime usage where everything gets evaluated away
-    return .{ .parsed = .{ .items = parse_result.source_file.items } };
+    return .{ .parsed = parse_result.source_file.items };
 }
 
 // Comptime evaluation pass - executes events with Program/Source parameters

@@ -8,14 +8,14 @@
 const std = @import("std");
 
 ~event sum { numbers: []const i32 }
-| result { total: i32 }
+| result i32
 
 ~proc sum {
     var total: i32 = 0;
     for (numbers) |n| {
         total += n;
     }
-    return .{ .result = .{ .total = total } };
+    return .{ .result = total };
 }
 
 ~event check { expected: i32, actual: i32 }

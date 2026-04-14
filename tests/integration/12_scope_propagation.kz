@@ -4,7 +4,7 @@
 
 ~event user.login { username: []const u8 }
 | authenticated { user_id: i32, session: []const u8 }
-| failed { reason: []const u8 }
+| failed []const u8
 
 ~proc user.login {
     const std = @import("std");
@@ -16,7 +16,7 @@
 
 ~event data.fetch { user_id: i32, session: []const u8 }
 | success { data: []const u8, count: i32 }
-| unauthorized {}
+| unauthorized
 
 ~proc data.fetch {
     const std = @import("std");

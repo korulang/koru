@@ -5,15 +5,15 @@ const std = @import("std");
 
 // Single annotation
 ~[comptime] event compile_only {}
-| done {}
+| done
 
 // Multiple annotations (inline with |)
 ~[comptime|runtime] event dual_phase {}
-| done {}
+| done
 
 // Multiple annotations (should also work - future vertical syntax)
 ~[fuseable] pub event optimizable {}
-| result {}
+| result
 
 // Proc with annotations
 ~[inline] proc compile_only {

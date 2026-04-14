@@ -9,14 +9,14 @@ const std = @import("std");
 
 // Opaque event - cannot be intercepted
 ~[opaque] event auth.verify { token: []const u8 }
-| valid { user_id: u32 }
-| invalid { reason: []const u8 }
+| valid u32
+| invalid []const u8
 
 ~proc auth.verify {
     if (std.mem.eql(u8, token, "secret")) {
-        return .{ .valid = .{ .user_id = 42 } };
+        return .{ .valid = 42 };
     }
-    return .{ .invalid = .{ .reason = "bad token" } };
+    return .{ .invalid = "bad token" };
 }
 
 // Attempt to intercept opaque event - COMPILE ERROR

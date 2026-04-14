@@ -30,7 +30,7 @@ const std = @import("std");
     destination: ?[]const u8,
     timestamp_ns: i128,
 }
-| done {}
+| done
 
 ~proc emit_transition {
     var buffer: [8192]u8 = undefined;

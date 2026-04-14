@@ -25,7 +25,7 @@
 ~[comptime|transform]pub event test.* {
     event_name: []const u8,
 }
-| ok {}
+| ok
 
 ~proc test.* {
     // Just accept everything for this test

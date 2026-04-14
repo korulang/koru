@@ -12,7 +12,7 @@ const std = @import("std");
 ~import "$std/interceptors"
 
 ~event log.write { logline: []const u8 }
-| written {}
+| written
 
 ~proc log.write {
     std.debug.print("{s}\n", .{logline});

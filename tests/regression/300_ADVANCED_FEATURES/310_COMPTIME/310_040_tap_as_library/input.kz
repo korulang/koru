@@ -8,7 +8,7 @@ const std = @import("std");
 // NOTE: Taps work by observing TRANSITIONS (branches), not void events!
 // The branch is named 'tap_target' to make clear this is TEST SCAFFOLDING.
 ~event hello {}
-| tap_target {}
+| tap_target
 
 ~proc hello {
     std.debug.print("Hello executed\n", .{});

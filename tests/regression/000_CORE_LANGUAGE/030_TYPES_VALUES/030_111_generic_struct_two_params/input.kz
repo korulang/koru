@@ -14,7 +14,7 @@ const std = @import("std");
 ~type(StringIntPair = Pair<[]const u8, i32>)
 
 ~event test_pair {}
-| done {}
+| done
 
 ~proc test_pair {
     const p = StringIntPair{ .first = "answer", .second = 42 };

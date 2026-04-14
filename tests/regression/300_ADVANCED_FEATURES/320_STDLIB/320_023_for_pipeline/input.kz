@@ -12,10 +12,10 @@ const std = @import("std");
 
 // Simple event that returns a count
 ~event get_count {}
-| result { n: u32 }
+| result u32
 
 ~proc get_count {
-    return .{ .result = .{ .n = 3 } };
+    return .{ .result = 3 };
 }
 
 // Main flow: pipeline ~for

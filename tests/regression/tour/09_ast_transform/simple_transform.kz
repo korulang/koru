@@ -5,7 +5,7 @@ const std = @import("std");
 
 // Event that processes the AST
 ~event analyze_ast { ast: ProgramAST }
-| analyzed { event_count: usize }
+| analyzed usize
 
 ~proc analyze_ast {
     comptime {
@@ -24,7 +24,7 @@ const std = @import("std");
 
 // Simple test event
 ~event hello { name: []const u8 }
-| greeted { msg: []const u8 }
+| greeted []const u8
 
 ~proc hello {
     return .{ .greeted = .{ .msg = "Hello!" }};

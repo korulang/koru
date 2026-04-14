@@ -28,21 +28,21 @@ const LargeStruct = struct {
 };
 
 ~event process_data { input: [100]f64 }
-| result { output: [100]f64 }
+| result [100]f64
 
 ~proc process_data {
     var output_data = input;
     for (&output_data) |*val| {
         val.* *= 2.0;
     }
-    return .{ .result = .{ .output = output_data } };
+    return .{ .result = output_data };
 }
 
 ~event chain { values: [100]f64 }
-| done { values: [100]f64 }
+| done [100]f64
 
 ~proc chain {
-    return .{ .done = .{ .values = values } };
+    return .{ .done = values };
 }
 
 // Test flow - currently copies 800 bytes twice!

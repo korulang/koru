@@ -4,14 +4,14 @@
 ~import "$std/io"
 
 ~pub event allowed {}
-| ok {}
+| ok
 
 ~proc allowed {
     return .{ .ok = .{} };
 }
 
 ~pub event denied {}
-| ok {}
+| ok
 
 ~proc denied {
     return .{ .ok = .{} };

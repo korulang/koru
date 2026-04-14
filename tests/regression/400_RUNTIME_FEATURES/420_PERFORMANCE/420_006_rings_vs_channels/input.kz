@@ -125,17 +125,17 @@ const MESSAGES: u64 = 10_000_000;
 // ============================================================================
 
 ~event create_ring {}
-| created { ring: *Ring }
+| created *Ring
 
 ~proc create_ring {
     // Allocate ring on heap (needs to outlive this function)
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
     ring_storage.* = Ring.init();
-    return .{ .created = .{ .ring = ring_storage } };
+    return .{ .created = ring_storage };
 }
 
 ~event spawn_producer { ring: *Ring }
-| spawned {}
+| spawned
 
 ~proc spawn_producer {
     // Spawn producer thread
@@ -157,12 +157,12 @@ const MESSAGES: u64 = 10_000_000;
 }
 
 ~event dequeue { ring: *Ring }
-| some { value: u64 }
-| none {}
+| some u64
+| none
 
 ~proc dequeue {
     if (ring.tryDequeue()) |value| {
-        return .{ .some = .{ .value = value } };
+        return .{ .some = value };
     } else {
         return .{ .none = .{} };
     }
@@ -170,7 +170,7 @@ const MESSAGES: u64 = 10_000_000;
 
 ~event consume_loop { ring: *Ring, sum: u64, received: u64 }
 | continue { sum: u64, received: u64 }
-| done { sum: u64 }
+| done u64
 
 ~consume_loop = dequeue(ring: ring)
 | some msg |> check_if_done(sum: sum + msg.value, received: received + 1)
@@ -181,11 +181,11 @@ const MESSAGES: u64 = 10_000_000;
 
 ~event check_if_done { sum: u64, received: u64 }
 | continue { sum: u64, received: u64 }
-| done { sum: u64 }
+| done u64
 
 ~proc check_if_done {
     if (received >= MESSAGES) {
-        return .{ .done = .{ .sum = sum } };
+        return .{ .done = sum };
     } else {
         return .{ .continue = .{ .sum = sum, .received = received } };
     }
@@ -200,8 +200,8 @@ const MESSAGES: u64 = 10_000_000;
 }
 
 ~event validate { sum: u64 }
-| valid {}
-| invalid {}
+| valid
+| invalid
 
 ~proc validate {
     const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;

@@ -9,32 +9,32 @@ const std = @import("std");
 
 // Server events
 ~event listen { port: u16 }
-| ready { server: u32 }
-| failed { msg: []const u8 }
+| ready u32
+| failed []const u8
 
 ~proc listen {
     std.debug.print("Listening on port {}\n", .{port});
     if (port == 0) {
-        return .{ .failed = .{ .msg = "Invalid port" } };
+        return .{ .failed = "Invalid port" };
     }
-    return .{ .ready = .{ .server = port } };
+    return .{ .ready = port };
 }
 
 ~event accept { server: u32 }
 | connected { conn: u32, server: u32 }
-| failed { server: u32 }
+| failed u32
 
 ~proc accept {
     std.debug.print("Accepting connection\n", .{});
     if (server == 9999) {
-        return .{ .failed = .{ .server = server } };
+        return .{ .failed = server };
     }
     return .{ .connected = .{ .conn = server + 1, .server = server } };
 }
 
 ~event process { conn: u32 }
-| done { conn: u32 }
-| retry { conn: u32 }
+| done u32
+| retry u32
 | error { conn: u32, msg: []const u8 }
 
 ~proc process {
@@ -43,9 +43,9 @@ const std = @import("std");
         return .{ .error = .{ .conn = conn, .msg = "Processing error" } };
     }
     if (conn % 2 == 0) {
-        return .{ .done = .{ .conn = conn } };
+        return .{ .done = conn };
     }
-    return .{ .retry = .{ .conn = conn } };
+    return .{ .retry = conn };
 }
 
 ~event close { conn: u32 }
@@ -57,11 +57,11 @@ const std = @import("std");
 }
 
 ~event log_error { conn: u32, msg: []const u8 }
-| logged { conn: u32 }
+| logged u32
 
 ~proc log_error {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
-    return .{ .logged = .{ .conn = conn } };
+    return .{ .logged = conn };
 }
 
 ~event cleanup { conn: u32 }

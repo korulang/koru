@@ -18,14 +18,14 @@ var sum9: u64 = 0;
 var sum10: u64 = 0;
 
 ~event count { i: u64 }
-| next { value: u64 }
-| done {}
+| next u64
+| done
 
 ~proc count {
     if (i >= MESSAGES) {
         return .{ .done = .{} };
     }
-    return .{ .next = .{ .value = i } };
+    return .{ .next = i };
 }
 
 // 10 Observers
@@ -70,7 +70,7 @@ var sum10: u64 = 0;
     }
 }
 
-~event start {} | ready {}
+~event start {} | ready
 ~proc start { return .{ .ready = .{} }; }
 
 // 10 TAPS - ALL fused at compile time

@@ -17,7 +17,7 @@
 // Event with wildcard payload - parser should accept this
 ~[norun]event iterator_pattern {}
 | each { * }
-| done {}
+| done
 
 // Use stdlib to print
 ~std.io:println(text: "done")

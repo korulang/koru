@@ -9,23 +9,23 @@
 
 // Event with both required and optional branches
 ~event process { value: u32 }
-| success { result: u32 }        // REQUIRED: must be handled
-| ?warning { msg: []const u8 }   // OPTIONAL: can be caught by |?
-| ?debug { details: []const u8 } // OPTIONAL: can be caught by |?
+| success u32        // REQUIRED: must be handled
+| ?warning []const u8   // OPTIONAL: can be caught by |?
+| ?debug []const u8 // OPTIONAL: can be caught by |?
 
 ~proc process {
     // When value > 100, return optional warning branch
     if (value > 100) {
-        return .{ .warning = .{ .msg = "Value is large" } };
+        return .{ .warning = "Value is large" };
     }
 
     // When value is odd, return optional debug branch
     if (value % 2 == 1) {
-        return .{ .debug = .{ .details = "Value is odd" } };
+        return .{ .debug = "Value is odd" };
     }
 
     // Otherwise return required success branch
-    return .{ .success = .{ .result = value * 2 } };
+    return .{ .success = value * 2 };
 }
 
 // Call 1: value=10 → even, <100 → success branch

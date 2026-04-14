@@ -7,11 +7,11 @@ const File = struct {
 
 // Loads a mipmap, returns with mipmap:open phantom state
 ~pub event load { path: []const u8 }
-| loaded { file: *File[open] }
+| loaded *File[open]
 
 ~proc load {
     const allocator = std.heap.page_allocator;
     const f = allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
-    return .{ .loaded = .{ .file = f } };
+    return .{ .loaded = f };
 }

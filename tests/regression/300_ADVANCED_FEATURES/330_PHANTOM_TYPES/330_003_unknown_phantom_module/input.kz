@@ -18,7 +18,7 @@ const File = struct {
 // Reference to 'unknown' module that doesn't exist
 // The semantic checker should detect that 'unknown' is not imported
 ~event check_file { file: *File[unknown:open] }
-| done {}
+| done
 
 ~proc check_file {
     return .{ .done = .{} };

@@ -146,12 +146,12 @@ const AsyncHandle = struct {
 // ============================================================================
 
 ~event createRing {}
-| created { ring: *Ring }
+| created *Ring
 
 ~proc createRing {
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
     ring_storage.* = Ring.init();
-    return .{ .created = .{ .ring = ring_storage } };
+    return .{ .created = ring_storage };
 }
 
 // ============================================================================
@@ -159,7 +159,7 @@ const AsyncHandle = struct {
 // ============================================================================
 
 ~event spawnProducer { ring: *Ring }
-| spawned {}
+| spawned
 
 ~proc spawnProducer {
     const producer = std.Thread.spawn(.{}, struct {
@@ -209,7 +209,7 @@ const AsyncHandle = struct {
 // Threading happens INSIDE the proc, but the event signature is still clean.
 
 ~event consumeMessages.async { ring: *Ring, target: u64 }
-| awaitable { handle: AsyncHandle }
+| awaitable AsyncHandle
 
 ~proc consumeMessages.async {
     // Allocate result storage (shared between thread and caller)
@@ -260,7 +260,7 @@ const AsyncHandle = struct {
 // This is where the power of progressive disclosure shines!
 
 ~event consumeMessages.join { handles: []const AsyncHandle }
-| all_completed { results: []const ConsumeResult }
+| all_completed []const ConsumeResult
 
 ~proc consumeMessages.join {
     // Allocate results array
@@ -272,7 +272,7 @@ const AsyncHandle = struct {
         results[i] = h.result_ptr.*;
     }
 
-    return .{ .all_completed = .{ .results = results } };
+    return .{ .all_completed = results };
 }
 
 // ============================================================================
@@ -299,8 +299,8 @@ const AsyncHandle = struct {
 // ============================================================================
 
 ~event validate { sum: u64, count: u64 }
-| valid {}
-| invalid {}
+| valid
+| invalid
 
 ~proc validate {
     const expected_sum: u64 = TOTAL_MESSAGES * (TOTAL_MESSAGES - 1) / 2;
@@ -320,7 +320,7 @@ const AsyncHandle = struct {
 // ============================================================================
 
 ~event startConsumers { ring: *Ring }
-| started { handle: AsyncHandle }
+| started AsyncHandle
 
 ~proc startConsumers {
     // Just delegate to .async

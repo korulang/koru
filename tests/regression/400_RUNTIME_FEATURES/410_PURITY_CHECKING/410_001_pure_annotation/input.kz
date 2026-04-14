@@ -5,15 +5,15 @@ const std = @import("std");
 
 // Pure math function - marked with ~[pure]
 ~event add { a: i32, b: i32 }
-| done { result: i32 }
+| done i32
 
 ~[pure]proc add {
-    return .{ .done = .{ .result = a + b } };
+    return .{ .done = a + b };
 }
 
 // Impure I/O function (no annotation - defaults to impure)
 ~event print_number { n: i32 }
-| done {}
+| done
 
 ~proc print_number {
     std.debug.print("Number: {}\n", .{n});

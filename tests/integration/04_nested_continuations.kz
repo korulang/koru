@@ -4,7 +4,7 @@
 const std = @import("std");
 
 ~event data.validate { input: i32 }
-| valid { value: i32 }
+| valid i32
 | invalid { }
 
 ~proc data.validate {
@@ -15,7 +15,7 @@ const std = @import("std");
 }
 
 ~event data.process { val: i32 }
-| done { result: i32 }
+| done i32
 | failed { }
 
 ~proc data.process {

@@ -21,7 +21,7 @@
     item: *const Item,
     program: *const Program,
 }
-| transformed { program: *const Program }
+| transformed *const Program
 
 ~proc ring.* {
     const std = @import("std");
@@ -38,7 +38,7 @@
 
     if (bracket_start == null or bracket_end == null) {
         // No generic params - this is fine for some ring operations
-        return .{ .transformed = .{ .program = program } };
+        return .{ .transformed = program };
     }
 
     const command = event_name[5..bracket_start.?]; // Skip "ring."
@@ -52,7 +52,7 @@
         .{ command, params_str }
     ) catch unreachable;
 
-    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = .{ .program = program } };
+    const flow = if (item.* == .flow) &item.flow else return .{ .transformed = program };
 
     const inline_code_item = ast.Item{
         .inline_code = ast.InlineCode{
@@ -66,9 +66,9 @@
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;
         result.* = new_program;
-        return .{ .transformed = .{ .program = result } };
+        return .{ .transformed = result };
     }
-    return .{ .transformed = .{ .program = program } };
+    return .{ .transformed = program };
 }
 
 // This invocation has generic params in brackets

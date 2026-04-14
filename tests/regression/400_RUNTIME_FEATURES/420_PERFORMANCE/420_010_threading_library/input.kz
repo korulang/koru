@@ -174,16 +174,16 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // ============================================================================
 
 ~event createRing {}
-| created { ring: *Ring }
+| created *Ring
 
 ~proc createRing {
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
     ring_storage.* = Ring.init();
-    return .{ .created = .{ .ring = ring_storage } };
+    return .{ .created = ring_storage };
 }
 
 ~event spawnProducer { ring: *Ring }
-| spawned {}
+| spawned
 
 ~proc spawnProducer {
     const producer = std.Thread.spawn(.{}, struct {
@@ -206,7 +206,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // ============================================================================
 
 ~event spawnConsumer { ring: *Ring, target: u64 }
-| spawned { context: *ConsumerContext }
+| spawned *ConsumerContext
 
 ~proc spawnConsumer {
     // Allocate context on heap (must outlive this function)
@@ -218,7 +218,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
         .count = 0,
     };
 
-    return .{ .spawned = .{ .context = ctx } };
+    return .{ .spawned = ctx };
 }
 
 // ============================================================================
@@ -241,8 +241,8 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 }
 
 ~event validate { sum: u64, count: u64 }
-| valid {}
-| invalid {}
+| valid
+| invalid
 
 ~proc validate {
     const expected_sum: u64 = TOTAL_MESSAGES * (TOTAL_MESSAGES - 1) / 2;
@@ -262,14 +262,14 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 // ============================================================================
 
 ~event castToOpaque { context: *ConsumerContext }
-| casted { ptr: *anyopaque }
+| casted *anyopaque
 
 ~proc castToOpaque {
-    return .{ .casted = .{ .ptr = @as(*anyopaque, @ptrCast(context)) } };
+    return .{ .casted = @as(*anyopaque, @ptrCast(context)) };
 }
 
 ~event extractContexts { results: []*anyopaque }
-| extracted { contexts: []*ConsumerContext }
+| extracted []*ConsumerContext
 
 ~proc extractContexts {
     const contexts = std.heap.page_allocator.alloc(*ConsumerContext, results.len) catch unreachable;
@@ -278,7 +278,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
         contexts[i] = @as(*ConsumerContext, @ptrCast(@alignCast(result)));
     }
 
-    return .{ .extracted = .{ .contexts = contexts } };
+    return .{ .extracted = contexts };
 }
 
 // ============================================================================

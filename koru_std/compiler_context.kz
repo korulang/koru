@@ -56,7 +56,7 @@ pub const CompilerContext = struct {
     allocator: std.mem.Allocator,
     error_policy: ErrorPolicy
 }
-| created { ctx: CompilerContext }
+| created CompilerContext
 
 ~proc init {
     var ctx = CompilerContext{
@@ -69,12 +69,12 @@ pub const CompilerContext = struct {
         .passes_completed = 0,
     };
 
-    return .{ .created = .{ .ctx = ctx } };
+    return .{ .created = ctx };
 }
 
 // Begin a compilation pass (increments metrics, emits CCP events)
 ~pub event begin_pass { ctx: CompilerContext, name: []const u8 }
-| continued { ctx: CompilerContext }
+| continued CompilerContext
 
 ~proc begin_pass {
     var ctx = ctx;
@@ -85,12 +85,12 @@ pub const CompilerContext = struct {
     //     emit_ccp_event("pass_started", .{ .pass = name });
     // }
 
-    return .{ .continued = .{ .ctx = ctx } };
+    return .{ .continued = ctx };
 }
 
 // End a compilation pass (increments pass counter, emits CCP events)
 ~pub event end_pass { ctx: CompilerContext }
-| continued { ctx: CompilerContext }
+| continued CompilerContext
 
 ~proc end_pass {
     var ctx = ctx;
@@ -108,7 +108,7 @@ pub const CompilerContext = struct {
     }
 
     ctx.current_pass = null;
-    return .{ .continued = .{ .ctx = ctx } };
+    return .{ .continued = ctx };
 }
 
 // Report a compilation error
@@ -117,7 +117,7 @@ pub const CompilerContext = struct {
     message: []const u8,
     location: SourceLocation
 }
-| continued { ctx: CompilerContext }
+| continued CompilerContext
 
 ~proc report_error {
     var ctx = ctx;
@@ -146,7 +146,7 @@ pub const CompilerContext = struct {
 
     // TODO: Emit CCP error event if --ccp flag is set
 
-    return .{ .continued = .{ .ctx = ctx } };
+    return .{ .continued = ctx };
 }
 
 // Report a compilation warning
@@ -155,7 +155,7 @@ pub const CompilerContext = struct {
     message: []const u8,
     location: SourceLocation
 }
-| continued { ctx: CompilerContext }
+| continued CompilerContext
 
 ~proc report_warning {
     var ctx = ctx;
@@ -184,12 +184,12 @@ pub const CompilerContext = struct {
 
     // TODO: Emit CCP warning event if --ccp flag is set
 
-    return .{ .continued = .{ .ctx = ctx } };
+    return .{ .continued = ctx };
 }
 
 // Report an informational message
 ~pub event info { ctx: CompilerContext, message: []const u8 }
-| continued { ctx: CompilerContext }
+| continued CompilerContext
 
 ~proc info {
     // TODO: Check if --verbose flag is set before printing
@@ -197,13 +197,13 @@ pub const CompilerContext = struct {
         std.debug.print("INFO: {s}\n", .{message});
     // }
 
-    return .{ .continued = .{ .ctx = ctx } };
+    return .{ .continued = ctx };
 }
 
 // Check if compilation should abort due to errors
 ~pub event should_abort { ctx: CompilerContext }
-| yes { ctx: CompilerContext }
-| no { ctx: CompilerContext }
+| yes CompilerContext
+| no CompilerContext
 
 ~proc should_abort {
     const ctx = ctx;
@@ -211,9 +211,9 @@ pub const CompilerContext = struct {
     const should_abort = (ctx.error_policy == .abort_on_first and ctx.errors.items.len > 0);
 
     if (should_abort) {
-        return .{ .yes = .{ .ctx = ctx } };
+        return .{ .yes = ctx };
     } else {
-        return .{ .no = .{ .ctx = ctx } };
+        return .{ .no = ctx };
     }
 }
 
@@ -254,10 +254,10 @@ pub const CompilerContext = struct {
 
 // Update AST in context (used by transformation passes)
 ~pub event update_ast { ctx: CompilerContext, ast: Program }
-| continued { ctx: CompilerContext }
+| continued CompilerContext
 
 ~proc update_ast {
     var ctx = ctx;
     ctx.ast = ast;
-    return .{ .continued = .{ .ctx = ctx } };
+    return .{ .continued = ctx };
 }

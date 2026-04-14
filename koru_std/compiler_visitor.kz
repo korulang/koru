@@ -472,7 +472,7 @@ const VisitorContext = struct {
 // ============================================================
 
 ~event compiler.emit.zig.visitor {}
-| emitted { code: []const u8 }
+| emitted []const u8
 
 ~proc compiler.emit.zig.visitor {
     // Get a buffer
@@ -489,10 +489,10 @@ const VisitorContext = struct {
     visitor.visit() catch |err| {
         // Handle error
         _ = err;
-        return .{ .emitted = .{ .code = "" } };
+        return .{ .emitted = "" };
     };
     
     // Return generated code
     const output = emitter.getOutput();
-    return .{ .emitted = .{ .code = output } };
+    return .{ .emitted = output };
 }

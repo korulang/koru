@@ -1,7 +1,7 @@
 ~import "$std/testing"
 
 ~event do_thing {}
-| done {}
+| done
 
 // Test that passes - assert true
 ~test(This test passes) {

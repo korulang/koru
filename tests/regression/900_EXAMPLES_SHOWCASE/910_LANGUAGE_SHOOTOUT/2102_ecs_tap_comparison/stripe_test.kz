@@ -16,10 +16,10 @@ const Entity = struct {
 
 // The broadcast point
 ~pub event process_entity { e: Entity }
-| entity { e: Entity }
+| entity Entity
 
 ~proc process_entity {
-    return .{ .entity = .{ .e = e } };
+    return .{ .entity = e };
 }
 
 // TAP: Only fires when entity has damage
