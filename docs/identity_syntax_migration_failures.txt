@@ -3,12 +3,36 @@
 # Commit: 0f80c81 (fix: detect identity syntax in transform return types)
 # Date: 2026-04-14
 #
-# These 199 tests need mechanical updates for the new syntax:
-# - Empty braces: | branch {} → | branch
-# - Single-field: | branch { field: Type } → | branch Type
-# - Call sites: binding.field → binding
-# - Branch constructors: branch { field: val } → branch val
+# ============================================================================
+# SYNTAX TRANSFORMATION RULES
+# ============================================================================
 #
+# RULE 1: Empty braces are illegal - remove them
+#   BEFORE: | done {}
+#   AFTER:  | done
+#
+# RULE 2: Single-field braces must use identity syntax
+#   BEFORE: | ok { value: i32 }
+#   AFTER:  | ok i32
+#
+# RULE 3: Multi-field braces (2+ fields) remain unchanged
+#   STAYS:  | result { count: i32, message: []const u8 }
+#
+# RULE 4: Proc returns change for identity branches
+#   BEFORE: return .{ .ok = .{ .value = 42 } };
+#   AFTER:  return .{ .ok = 42 };
+#
+# RULE 5: Call-site access changes - binding IS the value
+#   BEFORE: | ok v |> print(value: v.value)
+#   AFTER:  | ok v |> print(value: v)
+#
+# RULE 6: Branch constructors in subflows change
+#   BEFORE: ~impl = done { result: x + 1 }
+#   AFTER:  ~impl = done x + 1
+#
+# ============================================================================
+# TESTS NEEDING MIGRATION (199 total)
+# ============================================================================
 020_007_binding_annotations
 030_010_array_literal_simple
 030_011_array_literal_bindings
