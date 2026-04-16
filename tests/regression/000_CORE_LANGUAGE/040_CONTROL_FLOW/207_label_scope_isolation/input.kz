@@ -52,7 +52,7 @@ const std = @import("std");
 // This label is scoped to this flow only
 ~start_up()
 | ready |> #loop count(n: 0, direction: "up")
-    | next c |> @loop(n: c.value, direction: "up")
+    | next c |> @loop(n: c, direction: "up")
     | done |> _
 
 // Flow 2: Count down using SAME label name "loop"
@@ -60,5 +60,5 @@ const std = @import("std");
 // Both flows can use the name "loop" without conflict!
 ~start_down()
 | ready |> #loop count(n: 5, direction: "down")
-    | next c |> @loop(n: c.value, direction: "down")
+    | next c |> @loop(n: c, direction: "down")
     | done |> _

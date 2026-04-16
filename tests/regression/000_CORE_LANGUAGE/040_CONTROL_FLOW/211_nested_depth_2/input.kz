@@ -14,16 +14,16 @@ const std = @import("std");
 ~event add_one { value: i32 }
 | done i32
 
-~add_one = done { result: value + 1 }
+~add_one = done value + 1
 
 ~event add_two { value: i32 }
 | done i32
 
-~add_two = done { result: value + 2 }
+~add_two = done value + 2
 
 // Chain: 10 → add_one → add_two → print result
 // Depth 2: Two nested continuations
 // Test: 10 + 1 + 2 = 13
 ~add_one(value: 10)
-| done a |> add_two(value: a.result)
-    | done b |> std.io:print.ln("{{b.result:d}}")
+| done a |> add_two(value: a)
+    | done b |> std.io:print.ln("{{b:d}}")

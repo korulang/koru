@@ -40,17 +40,17 @@
 | failed []const u8
 
 ~process = validate(value: input)
-| ok a |> double(value: a.result)
-    | ok b |> validate(value: b.result)
-        | ok c |> double(value: c.result)
-            | ok d |> validate(value: d.result)
-                | ok final_ok |> success { final: final_ok.result }
-                | failure e_err |> failed { reason: e_err.msg }
-            | failure d_err |> failed { reason: d_err.msg }
-        | failure c_err |> failed { reason: c_err.msg }
-    | failure b_err |> failed { reason: b_err.msg }
-| failure a_err |> failed { reason: a_err.msg }
+| ok a |> double(value: a)
+    | ok b |> validate(value: b)
+        | ok c |> double(value: c)
+            | ok d |> validate(value: d)
+                | ok final_ok |> success final_ok
+                | failure e_err |> failed e_err
+            | failure d_err |> failed d_err
+        | failure c_err |> failed c_err
+    | failure b_err |> failed b_err
+| failure a_err |> failed a_err
 
 ~process(input: 1)
-| success s |> std.io:print.ln("Success: {{ s.final:d }}")
-| failed f |> std.io:print.ln("Failed: {{ f.reason:s }}")
+| success s |> std.io:print.ln("Success: {{ s:d }}")
+| failed f |> std.io:print.ln("Failed: {{ f:s }}")
