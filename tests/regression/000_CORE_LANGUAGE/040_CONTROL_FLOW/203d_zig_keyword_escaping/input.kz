@@ -11,7 +11,7 @@ const std = @import("std");
 
 ~proc check {
     if (value < 0) {
-        return .{ .@"error" = .{ .msg = "negative" } };
+        return .{ .@"error" = "negative" };
     }
     return .{ .ok = value };
 }

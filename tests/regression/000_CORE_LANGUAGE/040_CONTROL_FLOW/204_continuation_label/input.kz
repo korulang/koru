@@ -34,5 +34,5 @@ const std = @import("std");
 // Flow with label on continuation (not on flow itself!)
 ~start()
 | ready |> #loop counter(n: 1)
-    | next c |> @loop(n: c.value)
+    | next c |> @loop(n: c)
     | done |> _

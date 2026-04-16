@@ -5,7 +5,7 @@
 // parameter must fail.
 
 ~event take { numbers: i32 }
-| done { }
+| done
 
 ~proc take {
     return .{ .done = {} };

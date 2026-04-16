@@ -30,4 +30,4 @@ const std = @import("std");
 
 // Use array literal syntax
 ~sum(numbers: [1, 2, 3, 4])
-| result r |> check(expected: 10, actual: r.total)
+| result r |> check(expected: 10, actual: r)

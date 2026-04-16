@@ -39,5 +39,5 @@ const std = @import("std");
 ~getValue(id: 1)
 | got a |> getValue(id: 2)
     | got b |> getValue(id: 3)
-        | got c |> sumAll(values: [a.value, b.value, c.value])
-            | total t |> check(expected: 60, actual: t.sum)
+        | got c |> sumAll(values: [a, b, c])
+            | total t |> check(expected: 60, actual: t)

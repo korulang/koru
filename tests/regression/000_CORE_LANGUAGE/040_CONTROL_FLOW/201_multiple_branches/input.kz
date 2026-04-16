@@ -42,27 +42,27 @@ const std = @import("std");
 
 // Test 1: Positive value (42)
 ~check(value: 42)
-| positive p |> handle_positive(n: p.n)
+| positive p |> handle_positive(n: p)
     | done |> _
 | zero |> handle_zero()
     | done |> _
-| negative n |> handle_negative(n: n.n)
+| negative n |> handle_negative(n: n)
     | done |> _
 
 // Test 2: Zero value (0)
 ~check(value: 0)
-| positive p |> handle_positive(n: p.n)
+| positive p |> handle_positive(n: p)
     | done |> _
 | zero |> handle_zero()
     | done |> _
-| negative n |> handle_negative(n: n.n)
+| negative n |> handle_negative(n: n)
     | done |> _
 
 // Test 3: Negative value (-7)
 ~check(value: -7)
-| positive p |> handle_positive(n: p.n)
+| positive p |> handle_positive(n: p)
     | done |> _
 | zero |> handle_zero()
     | done |> _
-| negative n |> handle_negative(n: n.n)
+| negative n |> handle_negative(n: n)
     | done |> _

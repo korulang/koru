@@ -43,11 +43,11 @@ const Context = struct {
 // Array literals inside subflow_impl flows emit incorrectly
 ~process = setup()
 | ready r |> consume(contexts: [r.c0, r.c1, r.c2])
-    | consumed c |> done { count: c.count }
+    | consumed c |> done c
 
 // Trigger the flow
 ~process(allocator: std.heap.page_allocator)
-| done d |> report(count: d.count)
+| done d |> report(count: d)
 
 ~[comptime] event report { count: u32 }
 

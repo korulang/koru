@@ -59,11 +59,11 @@ const UserInfo = struct {
 
 // Top-level flow to test scoping rules
 // Test 1: Bindings persist through nested continuations
-// r.value should be 10, d.val should be 20, f.result should be 60
+// r should be 10, d should be 20, f should be 60
 ~outer(x: 10)
-| result r |> middle(y: r.value)
-    | data d |> inner(z: d.val)
-        | final f |> show_values(a: r.value, b: d.val, c: f.result)
+| result r |> middle(y: r)
+    | data d |> inner(z: d)
+        | final f |> show_values(a: r, b: d, c: f)
             | done |> _
 
 // The binding 'r' from outer should be accessible in all nested continuations

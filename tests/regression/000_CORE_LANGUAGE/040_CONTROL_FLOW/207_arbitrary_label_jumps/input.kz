@@ -10,7 +10,7 @@ const std = @import("std");
 // Outer loop event
 ~event outer { x: i32, max: i32 }
 | next_outer { x: i32, max: i32 }
-| done_outer { }
+| done_outer
 
 ~proc outer {
     if (x > max) {
@@ -37,7 +37,7 @@ const std = @import("std");
 
 // Start event
 ~event start { }
-| ready { }
+| ready
 
 ~proc start {
     std.debug.print("Starting nested loops...\n", .{});
@@ -49,5 +49,5 @@ const std = @import("std");
 | ready |> #outer_loop outer(x: 1, max: 3)
     | next_outer o |> #inner_loop inner(x: o.x, y: 1, max: 2)
         | next_inner i |> @inner_loop(x: i.x, y: i.y + 1, max: i.max)  // Loop within inner
-        | done_inner d |> @outer_loop(x: d.x + 1, max: o.max)          // Jump back to outer!
+        | done_inner d |> @outer_loop(x: d + 1, max: o.max)             // Jump back to outer!
     | done_outer |> _

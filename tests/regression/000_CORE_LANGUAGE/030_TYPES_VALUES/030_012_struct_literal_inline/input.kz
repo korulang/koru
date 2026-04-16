@@ -32,4 +32,4 @@ pub const Config = struct {
 
 // Use struct literal syntax (Koru-style, not Zig-style)
 ~configure(config: { timeout: 30, retries: 3 })
-| configured c |> check(expected: 90, actual: c.total_wait)
+| configured c |> check(expected: 90, actual: c)
