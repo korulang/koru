@@ -12,4 +12,4 @@ const std = @import("std");
 }
 
 ~tap(app.counter:tick -> *)
-| next v |> log(n: v.n)
+| next v |> log(n: v)

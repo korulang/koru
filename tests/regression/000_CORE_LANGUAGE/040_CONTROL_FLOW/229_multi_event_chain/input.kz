@@ -16,9 +16,9 @@ const std = @import("std");
 
 ~proc parse {
     const value = std.fmt.parseInt(i32, input, 10) catch {
-        return .{ .@"invalid" = .{ .msg = "Not a number" } };
+        return .{ .@"invalid" = "Not a number" };
     };
-    return .{ .@"parsed" = .{ .value = value } };
+    return .{ .@"parsed" = value };
 }
 
 // Stage 2: Validate
@@ -28,9 +28,9 @@ const std = @import("std");
 
 ~proc validate {
     if (value < 0 or value > 100) {
-        return .{ .@"invalid" = .{ .msg = "Out of range" } };
+        return .{ .@"invalid" = "Out of range" };
     }
-    return .{ .@"valid" = .{ .value = value } };
+    return .{ .@"valid" = value };
 }
 
 // Stage 3: Transform
@@ -38,7 +38,7 @@ const std = @import("std");
 | transformed i32
 
 ~proc transform {
-    return .{ .@"transformed" = .{ .result = value * 2 } };
+    return .{ .@"transformed" = value * 2 };
 }
 
 // Stage 4: Format
@@ -48,9 +48,9 @@ const std = @import("std");
 ~proc format {
     const allocator = std.heap.page_allocator;
     const text = std.fmt.allocPrint(allocator, "Result: {}", .{value}) catch {
-        return .{ .@"formatted" = .{ .text = "Error formatting" } };
+        return .{ .@"formatted" = "Error formatting" };
     };
-    return .{ .@"formatted" = .{ .text = text } };
+    return .{ .@"formatted" = text };
 }
 
 // Stage 5: Display
@@ -65,12 +65,12 @@ const std = @import("std");
 // The chain: parse -> validate -> transform -> format -> display
 // With error handling at each stage
 ~parse(input: "42")
-| parsed p |> validate(value: p.value)
-    | valid v |> transform(value: v.value)
-        | transformed t |> format(value: t.result)
-            | formatted f |> display(text: f.text)
+| parsed p |> validate(value: p)
+    | valid v |> transform(value: v)
+        | transformed t |> format(value: t)
+            | formatted f |> display(text: f)
                 | done |> _
-    | invalid i |> display(text: i.msg)
+    | invalid i |> display(text: i)
         | done |> _
-| invalid i |> display(text: i.msg)
+| invalid i |> display(text: i)
     | done |> _

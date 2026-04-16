@@ -6,4 +6,4 @@
 ~import "$app/helper"
 
 ~app.helper:greet(name: "World")
-| greeted g |> std.io:print.ln("{{ g.message:s }}")
+| greeted g |> std.io:print.ln("{{ g:s }}")

@@ -19,12 +19,12 @@ const std = @import("std");
 
 ~proc process_file {
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
-        return .{ .@"error" = .{ .msg = @errorName(err) } };
+        return .{ .@"error" = @errorName(err) };
     };
     defer file.close();
 
     const data = file.readToEndAlloc(std.heap.page_allocator, 1024) catch |err| {
-        return .{ .@"error" = .{ .msg = @errorName(err) } };
+        return .{ .@"error" = @errorName(err) };
     };
 
     return .{ .success = data };
