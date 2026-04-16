@@ -35,7 +35,7 @@
 | result i32
 
 ~process = compute(x: input)
-| value v |> result v.n
+| value v |> result v
 
 // Main test
 ~std.io:print.ln("Testing braceless in continuation:")
