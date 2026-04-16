@@ -46,6 +46,6 @@ const std = @import("std");
 
 // Call all three events - the logger's ~input:* tap should intercept ALL of them!
 ~compute(x: 42)
-| result r |> format(value: r.value)
-    | formatted f |> display(text: f.text)
+| result r |> format(value: r)
+    | formatted f |> display(text: f)
         | done |> _

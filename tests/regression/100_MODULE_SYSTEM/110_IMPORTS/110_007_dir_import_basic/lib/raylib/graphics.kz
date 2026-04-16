@@ -9,7 +9,7 @@ const std = @import("std");
 | cleared
 
 ~proc render {
-    return .{ .@"drawn" = .{ .pixels = width * height } };
+    return .{ .@"drawn" = width * height };
 }
 
 ~proc clear {

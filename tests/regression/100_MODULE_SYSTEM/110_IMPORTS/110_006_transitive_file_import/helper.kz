@@ -12,5 +12,5 @@ const std = @import("std");
 
 ~quadruple =
     app.base:double(x: x)
-    | doubled d1 |> app.base:double(x: d1.result)
-        | doubled d2 |> done { result: d2.result }
+    | doubled d1 |> app.base:double(x: d1)
+        | doubled d2 |> done d2
