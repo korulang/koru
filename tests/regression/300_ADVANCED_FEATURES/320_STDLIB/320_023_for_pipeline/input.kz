@@ -20,6 +20,6 @@ const std = @import("std");
 
 // Main flow: pipeline ~for
 ~get_count()
-| result r |> for(0..r.n)
+| result r |> for(0..r)
     | each |> std.io:println(text: "iteration")
     | done |> std.io:println(text: "done")

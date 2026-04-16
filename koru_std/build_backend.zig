@@ -19,7 +19,7 @@ pub fn build(__koru_b: *std.Build) void {
             _ = &b; _ = &exe; _ = &target; _ = &optimize; // Suppress unused warnings
 // Calculate relative path from test directory to repo root
 // This will be baked into the generated build.zig
-const REL_TO_ROOT = "/Users/larsde/src/koru-ast-rewrite";
+const REL_TO_ROOT = "/Users/larsde/src/koru";
 
 // Errors module - error reporting
 const errors_module = b.createModule(.{
@@ -202,6 +202,15 @@ auto_discharge_inserter_module.addImport("errors", errors_module);
 auto_discharge_inserter_module.addImport("log", log_module);
 auto_discharge_inserter_module.addImport("phantom_parser", phantom_parser_module);
 
+// Dead strip pass - removes unreachable events/procs from AST
+const dead_strip_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/dead_strip.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+dead_strip_module.addImport("ast", ast_module);
+dead_strip_module.addImport("log", log_module);
+
 // Codegen utilities - keyword escaping, identifier helpers
 const codegen_utils_module = b.createModule(.{
     .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/codegen_utils.zig" },
@@ -315,23 +324,6 @@ visitor_emitter_module.addImport("type_registry", type_registry_module);
 visitor_emitter_module.addImport("annotation_parser", annotation_parser_module);
 visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
 
-// Fusion detector and optimizer
-const fusion_detector_module = b.createModule(.{
-    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/fusion_detector.zig" },
-    .target = target,
-    .optimize = optimize,
-});
-fusion_detector_module.addImport("ast", ast_module);
-
-const fusion_optimizer_module = b.createModule(.{
-    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/fusion_optimizer.zig" },
-    .target = target,
-    .optimize = optimize,
-});
-fusion_optimizer_module.addImport("ast", ast_module);
-fusion_optimizer_module.addImport("ast_functional", ast_functional_module);
-fusion_optimizer_module.addImport("fusion_detector.zig", fusion_detector_module);
-
 // Build.zig emission
 const emit_build_zig_module = b.createModule(.{
     .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/emit_build_zig.zig" },
@@ -372,12 +364,13 @@ exe.root_module.addImport("runtime_registry", runtime_registry_module);
 exe.root_module.addImport("tap_transformer", tap_transformer_module);
 exe.root_module.addImport("visitor_emitter", visitor_emitter_module);
 exe.root_module.addImport("parser", parser_module);
-exe.root_module.addImport("fusion_optimizer", fusion_optimizer_module);
+exe.root_module.addImport("expression_parser", expression_parser_module);
 exe.root_module.addImport("emit_build_zig", emit_build_zig_module);
 exe.root_module.addImport("shape_checker", shape_checker_module);
 exe.root_module.addImport("flow_checker", flow_checker_module);
 exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
 exe.root_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
+exe.root_module.addImport("dead_strip", dead_strip_module);
 exe.root_module.addImport("purity_analyzer", purity_analyzer_module);
 exe.root_module.addImport("errors", errors_module);
 exe.root_module.addImport("type_registry", type_registry_module);

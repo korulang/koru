@@ -41,5 +41,5 @@ const items = [_]i32{ 1, 2, 3 };
 // Each item: double it, then print the result
 ~for(&items)
 | each item |> double(x: item)
-    | result r |> print_num(y: r.y)
+    | result r |> print_num(y: r)
 | done |> finalize()
