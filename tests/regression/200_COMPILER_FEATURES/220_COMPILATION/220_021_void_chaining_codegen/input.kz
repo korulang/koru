@@ -39,7 +39,7 @@ const Resource = struct { id: usize };
 
 ~run_one = create()
 | created r |>
-    work(r: r.r) |> work(r: r.r) |> destroy(r: r.r)
+    work(r: r) |> work(r: r) |> destroy(r: r)
 
 ~for(0..10)
 | each _ |> run_one()

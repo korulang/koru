@@ -9,9 +9,9 @@
 
 // Event with required + optional branches
 ~event process { value: u32 }
-| success u32          // REQUIRED
-| ?warning []const u8     // OPTIONAL
-| ?debug []const u8   // OPTIONAL
+| success u32
+| ?warning []const u8
+| ?debug []const u8
 
 ~proc process {
     if (value > 100) {

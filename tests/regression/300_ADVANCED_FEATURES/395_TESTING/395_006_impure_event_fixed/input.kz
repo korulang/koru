@@ -21,17 +21,17 @@
 
 ~proc save_log {
     // This is impure - writes to disk
-    return .{ .saved = .{} };
+    return .{ .saved = {} };
 }
 
 // Test: Should PASS - overrides provided for impure events
 // Verify the mock value propagates through the chain
 ~test(Impure events with overrides work) {
-    ~fetch_user = found { name: "TestUser" }
-    ~save_log = saved {}
+    ~fetch_user = found "TestUser"
+    ~save_log = saved
 
     ~fetch_user(id: 1)
-    | found u |> assert(u.name.len == 8)
+    | found u |> assert(u.len == 8)
 }
 
 pub fn main() void {}

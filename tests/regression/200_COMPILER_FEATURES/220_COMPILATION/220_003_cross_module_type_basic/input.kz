@@ -28,7 +28,7 @@ const std = @import("std");
 ~proc register_user {
     // Print the user's information
     std.debug.print("Registering user: {s}, age {d}\n", .{user_data.name, user_data.age});
-    return .{ .registered = .{ .success = true }};
+    return .{ .registered = true };
 }
 
 // Create a user using the imported event

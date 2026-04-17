@@ -19,5 +19,5 @@ pub const User = struct {
         .name = name,
         .age = age,
     };
-    return .{ .created = .{ .user = t_user }};
+    return .{ .created = t_user };
 }

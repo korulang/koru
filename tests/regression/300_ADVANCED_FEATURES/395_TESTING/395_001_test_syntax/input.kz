@@ -13,9 +13,9 @@
 
 // Test: Mock value is inlined, binding extracted, value verified
 ~test(Mock value inlined with binding) {
-    ~get_balance = amount { value: 100 }
+    ~get_balance = amount 100
     ~get_balance()
-    | amount a |> assert(a.value == 100)
+    | amount a |> assert(a == 100)
 }
 
 pub fn main() void {}

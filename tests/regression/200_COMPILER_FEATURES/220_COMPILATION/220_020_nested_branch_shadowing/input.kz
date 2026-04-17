@@ -44,18 +44,18 @@ const Resource = struct {
 
 ~run_one = create(id: id)
 | created r |>
-    work(r: r.r)
+    work(r: r)
     | done |>
-        work(r: r.r)
+        work(r: r)
         | done |>
-            work(r: r.r)
+            work(r: r)
             | done |>
-                work(r: r.r)
+                work(r: r)
                 | done |>
-                    work(r: r.r)
+                    work(r: r)
                     | done |>
-                        destroy(r: r.r)
-                        | destroyed |> finished {}
+                        destroy(r: r)
+                        | destroyed |> finished
 
 ~for(0..10)
 | each _ |>
