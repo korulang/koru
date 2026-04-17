@@ -8,9 +8,9 @@
 ~import "$app/fs"
 
 ~app.fs:open(path: "test.txt")
-| opened f |> app.fs:lock(file: f.file)
-    | locked l |> app.fs:write(file: l.file, data: "test")
-        | written |> app.fs:unlock(file: l.file)
+| opened f |> app.fs:lock(file: f)
+    | locked l |> app.fs:write(file: l, data: "test")
+        | written |> app.fs:unlock(file: l)
             | unlocked |> _
-        | err _ |> app.fs:force_close(file: l.file)
+        | err _ |> app.fs:force_close(file: l)
             | closed |> _

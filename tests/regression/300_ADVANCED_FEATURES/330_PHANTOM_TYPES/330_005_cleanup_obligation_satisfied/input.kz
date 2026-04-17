@@ -6,5 +6,5 @@
 
 // Open a file with opened! state and properly close it
 ~app.fs:open(path: "test.txt")
-| opened f |> app.fs:close(file: f.file)
+| opened f |> app.fs:close(file: f)
     | closed |> _

@@ -28,5 +28,5 @@ const std = @import("std");
 }
 
 ~compute(x: 42)
-| result r |> format(value: r.value)
+| result r |> format(value: r)
     | formatted |> _

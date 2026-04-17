@@ -11,5 +11,5 @@
 ~import "$app/fs"
 
 ~app.fs:my_subflow()
-| file_opened f |> app.fs:close(file: f.file)
+| file_opened f |> app.fs:close(file: f)
     | closed |> _

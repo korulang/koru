@@ -21,9 +21,9 @@ pub const Data = struct {
     destination: ?[]const u8,
 };
 
-// Main flow: Use shorthand syntax (r.data.source) which should expand to (source: r.data.source)
+// Main flow: Use shorthand syntax (r.source) which should expand to (source: r.source)
 ~start()
-| result r |> process(r.data.source, r.data.branch, r.data.destination)
+| result r |> process(r.source, r.branch, r.destination)
     | done |> _
 
 ~event start {}

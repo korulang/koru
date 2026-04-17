@@ -8,7 +8,7 @@
 
 // Explicit close - no auto-insert needed
 ~app.fs:open(path: "test.txt")
-| opened f |> app.fs:close(file: f.file)
+| opened f |> app.fs:close(file: f)
     | closed |> _
 
 pub fn main() void {}

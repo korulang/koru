@@ -21,7 +21,7 @@ const std = @import("std");
 
 // Only fire tap when result is > 50
 ~tap(process -> *)
-| done d when d.result > 50 |> alert(result: d.result)
+| done d when d > 50 |> alert(result: d)
     | done |> _
 
 // Test with low value (should not trigger alert)

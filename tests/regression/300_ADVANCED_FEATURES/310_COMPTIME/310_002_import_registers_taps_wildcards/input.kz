@@ -48,6 +48,6 @@ const std = @import("std");
 
 // Call events - the logger's universal tap should intercept them!
 ~compute(x: 42)
-| result r |> format(value: r.value)
-    | formatted f |> display(text: f.text)
+| result r |> format(value: r)
+    | formatted f |> display(text: f)
         | done |> _

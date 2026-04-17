@@ -22,5 +22,5 @@ const File = struct {
 // 3. Accept the file in close() which expects app.fileops:open
 
 ~app.fileops:open(path: "test.txt")
-| opened f |> app.fileops:close(file: f.file)  // f.file: *File[app.fileops:open]
+| opened f |> app.fileops:close(file: f)  // f: *File[app.fileops:open]
     | closed |> std.io:println(text: "File closed successfully")

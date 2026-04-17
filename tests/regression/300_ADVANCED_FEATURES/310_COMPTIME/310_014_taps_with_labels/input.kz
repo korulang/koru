@@ -27,7 +27,7 @@ const std = @import("std");
 
 // Tap that should fire on every counter -> * transition with 'next' branch
 ~tap(counter -> *)
-| next v |> log_iteration(value: v.value)
+| next v |> log_iteration(value: v)
 
 // Recursive label using counter - tap should fire on each loop iteration
 ~event start {}
@@ -39,5 +39,5 @@ const std = @import("std");
 
 ~start()
 | ready |> #loop counter(n: 1)
-    | next v |> @loop(n: v.value)
+    | next v |> @loop(n: v)
     | done |> _
