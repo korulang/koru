@@ -39,4 +39,4 @@ const JSON_SAMPLE =
 }
 
 ~bench_json()
-| done d |> std.io:print.ln("JSON: {{d.items:d}} events")
+| done d |> std.io:print.ln("JSON: {{d:d}} events")

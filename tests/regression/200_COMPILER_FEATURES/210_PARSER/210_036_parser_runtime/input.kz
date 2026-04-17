@@ -52,5 +52,5 @@ const SAMPLE_CODE =
 
 // Modern Koru: proc = flow composition
 ~std.parser:parse.source(source: SAMPLE_CODE, file_name: "sample.kz", allocator: std.heap.page_allocator)
-| parsed p |> inspect_ast(result: p.ast)
-| parse_error err |> report_error(message: err.message)
+| parsed p |> inspect_ast(result: p)
+| parse_error err |> report_error(message: err)

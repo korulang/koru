@@ -24,7 +24,7 @@ const std = @import("std");
 
 // Tap that fires on counter transitions
 ~tap(counter -> *)
-| next v |> log_iteration(value: v.value)
+| next v |> log_iteration(value: v)
 
 ~event start {}
 | ready
@@ -36,5 +36,5 @@ const std = @import("std");
 // Loop with tap - must handle all branches
 ~start()
 | ready |> #loop counter(n: 1)
-    | next v |> @loop(n: v.value)
+    | next v |> @loop(n: v)
     | done _ |> _

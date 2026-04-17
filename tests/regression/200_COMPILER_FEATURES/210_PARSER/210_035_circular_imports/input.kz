@@ -17,4 +17,4 @@ const std = @import("std");
 }
 
 ~from_a()
-| done d |> std.io:println(text: d.msg)
+| done d |> std.io:println(text: d)
