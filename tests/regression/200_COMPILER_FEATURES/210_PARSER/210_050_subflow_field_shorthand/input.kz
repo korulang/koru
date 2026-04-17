@@ -27,11 +27,8 @@ const Entity = struct {
 ~pub event test_event { e: Entity }
 | result Entity
 
-// BUG: This emits wrong code
-// ~test_event = result { e }
-
-// WORKAROUND: Explicit syntax works
-~test_event = result { e: e }
+// Identity branch syntax - result IS the Entity
+~test_event = result e
 
 ~event print_result { e: Entity }
 ~proc print_result {
@@ -41,4 +38,4 @@ const Entity = struct {
 const entity = Entity{ .id = 42 };
 
 ~test_event(e: entity)
-| result r |> print_result(e: r.e)
+| result r |> print_result(e: r)

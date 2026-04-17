@@ -52,13 +52,13 @@ const std = @import("std");
 // Module name is derived from filename: input.kz -> "input"
 ~input:coordinate =
     coordinate(ctx: 42)  // Delegates to default
-    | finished f |> finished { result: f.result + 1 }
+    | finished f |> finished f + 1
 
 // Example 4: Implementation that provides complete logic
 // No delegation to default (there isn't one for 'process')
 ~input:process =
     double(value: data)
-    | result r |> done { output: r.doubled }
+    | result r |> done r
 
 // Use the implemented events
 ~coordinate(ctx: 10)

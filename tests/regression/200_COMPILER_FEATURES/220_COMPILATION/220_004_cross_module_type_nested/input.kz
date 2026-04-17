@@ -25,10 +25,10 @@ const std = @import("std");
 ~proc grant_access {
     std.debug.print("Granting access: {s} as {s} (perms: {d})\n",
         .{user_data.email, user_data.role, user_data.permissions});
-    return .{ .granted = .{ .success = true }};
+    return .{ .granted = true };
 }
 
 // Create a domain user and grant access
 ~domain.user:create(email: "admin@example.com", role: "administrator", permissions: 999)
-| created c |> grant_access(user_data: c.user)
+| created c |> grant_access(user_data: c)
     | granted _ |> _

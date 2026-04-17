@@ -15,6 +15,6 @@
 }
 
 ~provide()
-| ok val |> std.io:print.ln("value is {{ val.value:d }}")
+| ok val |> std.io:print.ln("value is {{ val:d }}")
 
 pub fn main() void {}

@@ -45,12 +45,12 @@ const std = @import("std");
 
 ~test_multiline_call = step_a(x: 10)
 | done a |> step_b(
-    a: a.result,
+    a: a,
     b: 20,
     c: 30
 )
-    | done b |> step_c(x: b.result)
-        | done c |> final { result: c.result }
+    | done b |> step_c(x: b)
+        | done c |> final c
 
 // Main flow
 ~test_multiline_call()

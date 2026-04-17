@@ -18,7 +18,7 @@ const SAMPLE =
 
 // Flow: parse → dump → print (pure Koru!)
 ~std.parser:parse.source(source: SAMPLE, file_name: "test.kz", allocator: std.heap.page_allocator)
-| parsed p |> std.parser:dump.ast(ast: p.ast, allocator: std.heap.page_allocator)
-    | dumped d |> std.io:print.ln("{{d.json:s}}")
-    | dump_error e |> std.io:print.ln("Dump error: {{e.message:s}}")
-| parse_error e |> std.io:print.ln("Parse error: {{e.message:s}}")
+| parsed p |> std.parser:dump.ast(ast: p, allocator: std.heap.page_allocator)
+    | dumped d |> std.io:print.ln("{{d:s}}")
+    | dump_error e |> std.io:print.ln("Dump error: {{e:s}}")
+| parse_error e |> std.io:print.ln("Parse error: {{e:s}}")

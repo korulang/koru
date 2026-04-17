@@ -11,7 +11,7 @@ pub const Point = struct { x: i32, y: i32 };
 | point Point
 
 ~proc make_point {
-    return .{ .point = .{ .p = Point{ .x = x, .y = y } } };
+    return .{ .point = Point{ .x = x, .y = y } };
 }
 
 ~event use_point { p: Point }
@@ -22,5 +22,5 @@ pub const Point = struct { x: i32, y: i32 };
 
 // Test it
 ~make_point(x: 10, y: 20)
-| point pt |> use_point(p: pt.p)
+| point pt |> use_point(p: pt)
     | result r |> std.io:print.ln("punning works: x={{ r.x:d }}, y={{ r.y:d }}")

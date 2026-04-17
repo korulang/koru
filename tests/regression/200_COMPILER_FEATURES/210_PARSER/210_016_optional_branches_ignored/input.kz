@@ -7,18 +7,20 @@
 const std = @import("std");
 
 // Event with required and optional branches
+// success: REQUIRED - must be handled
+// warning, debug: OPTIONAL - can be ignored!
 ~event process { value: u32 }
-| success u32        // REQUIRED - must be handled
-| ?warning []const u8   // OPTIONAL - can be ignored!
-| ?debug []const u8 // OPTIONAL - can be ignored!
+| success u32
+| ?warning []const u8
+| ?debug []const u8
 
 // Proc that can return any branch
 ~proc process {
     if (value > 100) {
-        return .{ .warning = "Large value" };
+        return .{ .warning = @as([]const u8, "Large value") };
     }
     if (value % 2 == 1) {
-        return .{ .debug = "Odd value" };
+        return .{ .debug = @as([]const u8, "Odd value") };
     }
     std.debug.print("Success: {}\n", .{value * 2});
     return .{ .success = value * 2 };
