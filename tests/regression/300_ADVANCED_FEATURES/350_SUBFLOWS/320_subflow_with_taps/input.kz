@@ -22,7 +22,7 @@ const std = @import("std");
 | result i32
 
 ~double = add_five(value: value)
-| result r |> result { doubled: r.sum }
+| result r |> result r
 
 // Observer that should be called by the tap
 ~event observer {}
@@ -50,5 +50,5 @@ const std = @import("std");
 
 // Execute the subflow - tap should fire
 ~double(value: 10)
-| result r |> print_final(value: r.doubled)
+| result r |> print_final(value: r)
     | done |> _

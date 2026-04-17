@@ -38,13 +38,13 @@
 | done u32
 
 ~nested_loop = outer_step(i: start)
-| continue_outer outer |> #inner_start inner_step(i: outer.i, j: 0)
+| continue_outer outer |> #inner_start inner_step(i: outer, j: 0)
     | continue_inner inner |> process_pair(i: inner.i, j: inner.j)
         | processed p |> @inner_start(i: p.i, j: p.j + 1)
-    | done_inner done_i |> outer_step(i: done_i.i + 1)
-        | continue_outer co2 |> @inner_start(i: co2.i, j: 0)
-        | done_outer done_o |> done { result: done_o.i }
-| done_outer done_o |> done { result: done_o.i }
+    | done_inner done_i |> outer_step(i: done_i + 1)
+        | continue_outer co2 |> @inner_start(i: co2, j: 0)
+        | done_outer done_o |> done done_o
+| done_outer done_o |> done done_o
 
 ~nested_loop(start: 0)
 | done _ |> _
