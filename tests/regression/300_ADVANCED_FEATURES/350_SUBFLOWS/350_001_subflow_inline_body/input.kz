@@ -18,12 +18,12 @@ const std = @import("std");
 ~std.template:define(name: "check_positive") {
     blk: {
         const Result = union(enum) {
-            positive: struct { val: i32 },
+            positive: i32,
             negative: void,
         };
         const __value: i32 = {{ expr }};
         if (__value > 0) {
-            break :blk Result{ .positive = .{ .val = __value } };
+            break :blk Result{ .positive = __value };
         } else {
             break :blk Result{ .negative = {} };
         }
@@ -42,8 +42,8 @@ const std = @import("std");
 // Subflow: uses check_positive (an [expand] with inline_body) inside subflow_impl
 // This is the key pattern — inline_body must work in the default handler path
 ~classify = check_positive(expr: input)
-| positive p |> result { output: p.val }
-| negative |> result { output: -1 }
+| positive p |> result p
+| negative |> result -1
 
 // Helper to print
 ~event print_result { value: i32 }
@@ -56,10 +56,10 @@ const std = @import("std");
 
 // Test 1: positive value → should output 42
 ~classify(input: 42)
-| result r |> print_result(value: r.output)
+| result r |> print_result(value: r)
     | done |> _
 
 // Test 2: negative value → should output -1
 ~classify(input: -5)
-| result r |> print_result(value: r.output)
+| result r |> print_result(value: r)
     | done |> _

@@ -8,10 +8,12 @@
 ~import "$std/io"
 
 // Event with both required and optional branches
+// success is REQUIRED - must be handled
+// warning and debug are OPTIONAL - can be caught by |?
 ~event process { value: u32 }
-| success u32        // REQUIRED: must be handled
-| ?warning []const u8   // OPTIONAL: can be caught by |?
-| ?debug []const u8 // OPTIONAL: can be caught by |?
+| success u32
+| ?warning []const u8
+| ?debug []const u8
 
 ~proc process {
     // When value > 100, return optional warning branch
