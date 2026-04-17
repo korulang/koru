@@ -12,9 +12,9 @@
 ~event greet { name: []const u8 }
 | greeting []const u8
 
-// Subflow implementation: maps input field 'name' to output field 'message'
-~greet = greeting { message: name }
+// Subflow implementation: maps input directly to output
+~greet = greeting name
 
 // Test: call greet with "World" and print the resulting message
 ~greet(name: "World")
-| greeting g |> std.io:print(text: g.message)
+| greeting g |> std.io:print(text: g)

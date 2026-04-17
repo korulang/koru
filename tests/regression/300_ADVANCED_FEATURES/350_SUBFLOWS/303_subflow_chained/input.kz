@@ -22,9 +22,9 @@ const std = @import("std");
 ~event double { value: i32 }
 | result i32
 
-// Subflow 1: double calls add_five and maps the result
+// Subflow 1: double calls add_five and passes through the result
 ~double = add_five(value: value)
-| result r |> result { doubled: r.sum }
+| result r |> result r
 
 // Event that will call the subflow
 ~event process { input: i32 }
@@ -32,7 +32,7 @@ const std = @import("std");
 
 // Subflow 2: process calls double (which is itself a subflow)
 ~process = double(value: input)
-| result r |> final { output: r.doubled }
+| result r |> final r
 
 // Helper to print i32
 ~event print_result { value: i32 }
@@ -47,5 +47,5 @@ const std = @import("std");
 // Chain: process (subflow) → double (subflow) → add_five (proc)
 // This tests that a subflow can call another subflow successfully
 ~process(input: 21)
-| final f |> print_result(value: f.output)
+| final f |> print_result(value: f)
     | done |> _
