@@ -83,7 +83,7 @@
                     "payload": {
                         "fields": [
                             {
-                                "name": "success",
+                                "name": "__type_ref",
                                 "type": "bool",
                                 "is_source": false,
                                 "is_file": false,

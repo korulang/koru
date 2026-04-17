@@ -83,7 +83,7 @@
                 "line": 11,
                 "col": 1
             },
-            "raw_text": "~event broken_event {\n    value: i32\n| success {}\n\n// This event is valid - should still be parsed\n"
+            "raw_text": "~event broken_event {\n    value: i32\n| success\n\n// This event is valid - should still be parsed\n"
         },
         {
             "type": "event_decl",
@@ -138,7 +138,7 @@
                 "line": 23,
                 "col": 1
             },
-            "raw_text": "    z: i32\n}\n| result {}\n\n// One more valid event to verify recovery\n"
+            "raw_text": "    z: i32\n}\n| result\n\n// One more valid event to verify recovery\n"
         },
         {
             "type": "event_decl",

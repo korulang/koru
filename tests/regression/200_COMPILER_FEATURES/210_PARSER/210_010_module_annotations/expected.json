@@ -46,7 +46,7 @@
                     "payload": {
                         "fields": [
                             {
-                                "name": "output",
+                                "name": "__type_ref",
                                 "type": "u32",
                                 "is_source": false,
                                 "is_file": false,

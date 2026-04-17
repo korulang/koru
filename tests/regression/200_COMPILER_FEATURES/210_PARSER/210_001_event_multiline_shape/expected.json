@@ -83,7 +83,7 @@
                     "payload": {
                         "fields": [
                             {
-                                "name": "written",
+                                "name": "__type_ref",
                                 "type": "usize",
                                 "is_source": false,
                                 "is_file": false,
@@ -100,7 +100,7 @@
                     "payload": {
                         "fields": [
                             {
-                                "name": "message",
+                                "name": "__type_ref",
                                 "type": "[]const u8",
                                 "is_source": false,
                                 "is_file": false,
@@ -115,7 +115,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_001_event_multiline_shape/input.kz",
-                "line": 19,
+                "line": 15,
                 "col": 0
             }
         }

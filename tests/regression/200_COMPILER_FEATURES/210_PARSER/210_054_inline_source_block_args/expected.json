@@ -104,7 +104,7 @@
                     "payload": {
                         "fields": [
                             {
-                                "name": "program",
+                                "name": "__type_ref",
                                 "type": "*const Program",
                                 "is_source": false,
                                 "is_file": false,
