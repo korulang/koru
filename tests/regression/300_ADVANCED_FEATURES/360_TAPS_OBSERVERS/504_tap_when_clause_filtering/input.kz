@@ -35,7 +35,7 @@ const Entity = struct {
 
 // TAP: Only fires when entity has damage
 ~tap(process_entity -> *)
-| entity ent when ent.e.has_damage |> handle_damage(e: ent.e)
+| entity ent when ent.has_damage |> handle_damage(e: ent)
 
 ~event handle_damage { e: Entity }
 ~proc handle_damage {

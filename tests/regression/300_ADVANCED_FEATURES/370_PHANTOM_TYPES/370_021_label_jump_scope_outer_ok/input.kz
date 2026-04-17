@@ -36,7 +36,7 @@ const Resource = struct { id: i32 };
 ~#loop create()
 | created c |> with_context()
     | scoped _[@scope] |> @loop()
-    | done |> close(res: c.res)
+    | done |> close(res: c)
         | closed |> _
 
 pub fn main() void {}

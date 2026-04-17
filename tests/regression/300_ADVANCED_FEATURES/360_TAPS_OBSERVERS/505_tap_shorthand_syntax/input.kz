@@ -22,4 +22,4 @@
 
 // Main flow
 ~ping()
-| pong p |> std.io:println(text: p.msg)
+| pong p |> std.io:println(text: p)
