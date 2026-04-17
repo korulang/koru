@@ -8,10 +8,11 @@
 ~import "$std/io"
 
 // Event with required + multiple optional branches
+// success is REQUIRED, warning and debug are OPTIONAL (ignored)
 ~event analyze { value: u32 }
-| success u32         // REQUIRED
-| ?warning []const u8    // OPTIONAL: ignored
-| ?debug []const u8     // OPTIONAL: ignored
+| success u32
+| ?warning []const u8
+| ?debug []const u8
 
 ~proc analyze {
     if (value > 100) {

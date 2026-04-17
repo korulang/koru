@@ -12,10 +12,11 @@
 ~import "$std/io"
 
 // Event with required + optional branches
+// success is REQUIRED, warning/debug are OPTIONAL
 ~event process { value: u32 }
-| success u32                    // REQUIRED
-| ?warning { msg: []const u8, level: u32 }   // OPTIONAL with payload
-| ?debug []const u8                // OPTIONAL (never handled)
+| success u32
+| ?warning { msg: []const u8, level: u32 }
+| ?debug []const u8
 
 ~proc process {
     // Return warning with different levels based on value

@@ -9,10 +9,11 @@
 ~import "$std/io"
 
 // VERSION 2: added ?debug branch (new in v2)
+// success is REQUIRED, warning/debug are OPTIONAL
 ~event process { value: u32 }
-| success u32        // REQUIRED (both versions)
-| ?warning []const u8   // OPTIONAL (both versions)
-| ?debug []const u8    // OPTIONAL (NEW in v2)
+| success u32
+| ?warning []const u8
+| ?debug []const u8
 
 ~proc process {
     if (value < 5) {
