@@ -19,12 +19,12 @@
 
 ~app.db:connect(host: "localhost")
 | ok c |>
-    app.db:begin(conn: c.conn)
+    app.db:begin(conn: c)
     | ok t |>
-        // BUG: Passing t.tx (*Transaction) to close() which expects *Connection
+        // BUG: Passing t (*Transaction) to close() which expects *Connection
         // Koru won't catch this without --strict-base-types
         // Zig WILL catch this during compilation
-        app.db:close(conn: t.tx)
+        app.db:close(conn: t)
         |> _
     | err _ |> _
 | err _ |> _
