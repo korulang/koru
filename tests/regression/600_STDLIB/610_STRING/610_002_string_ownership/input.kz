@@ -3,7 +3,7 @@
 ~import "$std/io"
 
 ~std.string:from_page(text: "hello")
-| ok s |> std.string:take(s: s.s)
+| ok s |> std.string:take(s: s)
     | instance owned |> std.string:append(s: owned, text: " world")
         | ok |> std.string:read(s: owned)
             | slice text |> std.io:print.ln("{{ text:s }}")

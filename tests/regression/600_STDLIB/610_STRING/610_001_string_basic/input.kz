@@ -3,7 +3,7 @@
 ~import "$std/io"
 
 ~std.string:from_page(text: "hello")
-| ok s |> std.string:read(s: s.s)
+| ok s |> std.string:read(s: s)
     | slice text |> std.io:print.ln("{{ text:s }}")
-        |> std.string:free(s: s.s)
+        |> std.string:free(s: s)
 | err _ |> _

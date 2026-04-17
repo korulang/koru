@@ -11,7 +11,7 @@
 
 // Test: State variable chains consistently
 ~app.data:alloc()
-| allocated a |> app.data:validate(d: a.d)  // M'_ accepts [owned], M = owned
-    | validated v |> app.data:process(d: v.d)  // M'_ accepts [owned], M = owned
-        | processed p |> app.data:finalize(d: p.d)  // M'_ accepts [owned], M = owned
-            | done _ |> _  // d.d: *Data[owned] - M preserved through entire chain!
+| allocated a |> app.data:validate(d: a)
+    | validated v |> app.data:process(d: v)
+        | processed p |> app.data:finalize(d: p)
+            | done _ |> _

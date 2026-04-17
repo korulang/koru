@@ -10,5 +10,5 @@
 ~import "$app/fs"
 
 ~app.fs:open(path: "test.txt")
-| opened f |> app.fs:flush_close(file: f.file)  // Explicit choice of cleanup path
+| opened f |> app.fs:flush_close(file: f)
     | flushed |> _
