@@ -9,7 +9,7 @@
 | error []const u8
 
 ~event logger { msg: []const u8 }
-| done { }
+| done
 
 ~[pure]proc process {
     if (value > 0) {

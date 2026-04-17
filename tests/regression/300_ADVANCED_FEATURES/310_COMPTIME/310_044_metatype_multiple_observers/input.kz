@@ -5,10 +5,10 @@
 ~import "$std/taps"
 
 ~event hello { }
-| done { }
+| done
 
 ~event logger { msg: []const u8 }
-| done { }
+| done
 
 ~[pure]proc hello {
     return .{ .done = .{} };
