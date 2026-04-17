@@ -12,7 +12,7 @@
 
 ~std.compiler:frontend = std.time:now()
 | t start |> std.compiler:frontend.default(ctx)
-    | ctx c |> std.time:report(start: start.ns, label: "frontend") |> ctx c
+    | ctx c |> std.time:report(start: start, label: "frontend") |> ctx c
 
 // The actual program
 ~std.io:print.ln("Compiled with timed frontend!")

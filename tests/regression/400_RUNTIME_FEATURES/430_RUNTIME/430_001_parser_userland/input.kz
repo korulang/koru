@@ -15,5 +15,5 @@ const test_source = "~greet()";
 
 // Main flow - parse and report
 ~std.parser:parse.source(source: test_source, file_name: "test.kz", allocator: allocator)
-| parsed p |> std.io:print.ln("Parser works! Got AST with {{ p.ast.source_file.items.len:d }} items")
-| parse_error e |> std.io:print.ln("Parse failed: {{ e.message:s }}")
+| parsed p |> std.io:print.ln("Parser works! Got AST with {{ p.source_file.items.len:d }} items")
+| parse_error e |> std.io:print.ln("Parse failed: {{ e:s }}")
