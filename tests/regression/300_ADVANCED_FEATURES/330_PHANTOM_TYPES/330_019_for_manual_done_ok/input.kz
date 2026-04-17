@@ -11,7 +11,7 @@
     std.control:for(0..3)
     | each _ |> _
     | done |>
-        app.fs:close(file: f.file)
+        app.fs:close(file: f)
         | closed _ |> _
 
 pub fn main() void {}

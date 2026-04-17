@@ -17,7 +17,7 @@
 // Subflow: opens file, returns status - SHOULD auto-discharge the file!
 // Using _ for binding since auto-discharge should synthesize _auto_N
 ~check_file = app.fs:open(path: path)
-| opened _ |> result { status: "file exists" }  // obligation should be auto-discharged before returning!
+| opened _ |> result "file exists"  // obligation should be auto-discharged before returning!
 
 // Main flow
 ~check_file(path: "test.txt")

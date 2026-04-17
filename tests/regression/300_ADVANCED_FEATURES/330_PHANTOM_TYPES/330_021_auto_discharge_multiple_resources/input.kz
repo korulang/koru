@@ -16,7 +16,7 @@ const std = @import("std");
 | opened _ |>
     app.fs:open(path: "second.txt")
     | opened f2 |>
-        app.fs:close(file: f2.file)
+        app.fs:close(file: f2)
         | closed |> _
 
 pub fn main() void {}

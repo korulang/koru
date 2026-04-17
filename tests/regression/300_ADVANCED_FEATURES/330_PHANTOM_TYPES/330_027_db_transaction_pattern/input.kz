@@ -19,18 +19,18 @@ const query_succeeded = true;
 
 ~app.db:connect(url: "postgres://localhost/test")
 | connected c |>
-    app.db:query(conn: c.conn, sql: "SELECT * FROM users")
+    app.db:query(conn: c, sql: "SELECT * FROM users")
     | started tx |>
         std.control:if(query_succeeded)
         | then |>
-            app.db:commit(tx: tx.tx)
+            app.db:commit(tx: tx)
             | committed |>
-                app.db:disconnect(conn: c.conn)
+                app.db:disconnect(conn: c)
                 | disconnected |> _
         | else |>
-            app.db:rollback(tx: tx.tx)
+            app.db:rollback(tx: tx)
             | rolledback |>
-                app.db:disconnect(conn: c.conn)
+                app.db:disconnect(conn: c)
                 | disconnected |> _
 
 pub fn main() void {}

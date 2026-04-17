@@ -22,7 +22,7 @@ const condition = true;
         | then |> _  // Fine - just ends this iteration
         | else |> _  // Fine - just ends this iteration
     | done |>
-        app.fs:close(file: f.file)  // Close after loop completes
+        app.fs:close(file: f)  // Close after loop completes
         | closed |> _
 
 pub fn main() void {}

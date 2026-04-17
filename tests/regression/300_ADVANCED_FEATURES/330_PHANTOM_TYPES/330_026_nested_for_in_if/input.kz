@@ -17,10 +17,10 @@ const should_loop = true;
         std.control:for(0..3)
         | each _ |> _
         | done |>
-            app.fs:close(file: f.file)
+            app.fs:close(file: f)
             | closed |> _
     | else |>
-        app.fs:close(file: f.file)  // Still need to close if no loop
+        app.fs:close(file: f)  // Still need to close if no loop
         | closed |> _
 
 pub fn main() void {}

@@ -17,7 +17,7 @@ const condition = true;
 | opened f |>
     std.control:if(condition)
     | then |>
-        app.fs:close(file: f.file)
+        app.fs:close(file: f)
         | closed |> _
     | else |> _  // ERROR? Obligation not satisfied here!
 
