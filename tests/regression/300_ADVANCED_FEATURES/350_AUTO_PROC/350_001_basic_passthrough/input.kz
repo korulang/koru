@@ -29,4 +29,4 @@ const std = @import("std");
 
 // Use it - passthrough should forward the value to verify
 ~passthrough(msg: "42")
-| done d |> verify(msg: d.msg)
+| done d |> verify(msg: d)

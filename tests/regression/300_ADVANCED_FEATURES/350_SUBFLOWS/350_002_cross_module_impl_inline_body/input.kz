@@ -16,12 +16,12 @@ const std = @import("std");
 ~std.template:define(name: "classify_num") {
     blk: {
         const Result = union(enum) {
-            positive: struct { val: i32 },
+            positive: i32,
             non_positive: void,
         };
         const __v: i32 = {{ expr }};
         if (__v > 0) {
-            break :blk Result{ .positive = .{ .val = __v } };
+            break :blk Result{ .positive = __v };
         } else {
             break :blk Result{ .non_positive = {} };
         }
@@ -47,8 +47,8 @@ const std = @import("std");
 // classify_num is [expand] so it sets inline_body on the flow
 // The emitter must use inline_body instead of trying to call classify_num_event.handler
 ~input:categorize = classify_num(expr: value)
-| positive p |> result { output: p.val }
-| non_positive |> result { output: 0 }
+| positive p |> result p
+| non_positive |> result 0
 
 // Helper to print
 ~event print_num { n: i32 }
@@ -61,10 +61,10 @@ const std = @import("std");
 
 // Test 1: positive value -> should output 42
 ~categorize(value: 42)
-| result r |> print_num(n: r.output)
+| result r |> print_num(n: r)
     | done |> _
 
 // Test 2: non-positive value -> should output 0
 ~categorize(value: 0)
-| result r |> print_num(n: r.output)
+| result r |> print_num(n: r)
     | done |> _
