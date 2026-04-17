@@ -44,7 +44,7 @@
 ~process_payment = db.get_user(id: user_id)
 | found u |> validate.amount(amount: amount, balance: u.balance)
     | valid |> payment.charge(user_id: u.id, amount: amount)
-        | success tx |> success { transaction_id: tx.transaction_id }
+        | success tx |> success tx
         | failed _ |> insufficient_funds
     | insufficient |> insufficient_funds
 | not_found |> user_not_found
@@ -55,10 +55,10 @@
 
 ~test(Successful payment) {
     ~db.get_user = found { id: 42, balance: 100 }
-    ~payment.charge = success { transaction_id: "tx123" }
+    ~payment.charge = success "tx123"
 
     ~process_payment(user_id: 42, amount: 50)
-    | success s |> assert(s.transaction_id.len == 5)  // "tx123" has 5 chars
+    | success s |> assert(s.len == 5)  // "tx123" has 5 chars
 }
 
 ~test(Insufficient funds rejected) {
