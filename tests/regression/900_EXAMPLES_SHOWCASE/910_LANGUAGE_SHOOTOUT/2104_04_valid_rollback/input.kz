@@ -9,15 +9,15 @@
 
 ~app.db:connect(host: "localhost")
 | ok c |>
-    app.db:begin(conn: c.conn)
+    app.db:begin(conn: c)
     | ok t |>
-        app.db:exec(tx: t.tx, sql: "INSERT INTO users VALUES (1, 'alice')")
+        app.db:exec(tx: t, sql: "INSERT INTO users VALUES (1, 'alice')")
         | ok r |>
             // Decided to rollback instead of commit
-            app.db:rollback(tx: r.tx)
+            app.db:rollback(tx: r)
             | ok conn |>
-                app.db:close(conn: conn.conn)
-                | ok _ |> _
+                app.db:close(conn: conn)
+                | ok |> _
                 | err _ |> _
             | err _ |> _
         | err _ |> _

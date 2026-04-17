@@ -11,21 +11,21 @@
 ~app.db:connect(host: "localhost")
 | ok c |>
     // First transaction
-    app.db:begin(conn: c.conn)
+    app.db:begin(conn: c)
     | ok t1 |>
-        app.db:exec(tx: t1.tx, sql: "INSERT INTO users VALUES (1, 'alice')")
+        app.db:exec(tx: t1, sql: "INSERT INTO users VALUES (1, 'alice')")
         | ok r1 |>
-            app.db:commit(tx: r1.tx)
+            app.db:commit(tx: r1)
             | ok conn1 |>
                 // Second transaction on same connection!
-                app.db:begin(conn: conn1.conn)
+                app.db:begin(conn: conn1)
                 | ok t2 |>
-                    app.db:exec(tx: t2.tx, sql: "INSERT INTO users VALUES (2, 'bob')")
+                    app.db:exec(tx: t2, sql: "INSERT INTO users VALUES (2, 'bob')")
                     | ok r2 |>
-                        app.db:commit(tx: r2.tx)
+                        app.db:commit(tx: r2)
                         | ok conn2 |>
-                            app.db:close(conn: conn2.conn)
-                            | ok _ |> _
+                            app.db:close(conn: conn2)
+                            | ok |> _
                             | err _ |> _
                         | err _ |> _
                     | err _ |> _
