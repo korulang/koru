@@ -1375,7 +1375,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                     .last_event = e.last_event,
                     .handles = e.handles,
                 } },
-                .validation_error => |e| return .{ .validation_error = e.message },
+                .validation_error => |e| return .{ .validation_error = e },
                 .dispatch_error => |e| {
                     if (std.mem.eql(u8, e.message, "EventDenied")) {
                         return .{ .event_denied = e.event_name };
@@ -1502,7 +1502,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                     .line = e.line,
                     .column = e.column,
                 } },
-                .validation_error => |e| return .{ .validation_error = e.message },
+                .validation_error => |e| return .{ .validation_error = e },
                 .dispatch_error => |e| {
                     if (std.mem.eql(u8, e.message, "EventDenied")) {
                         return .{ .event_denied = e.event_name };
@@ -1574,7 +1574,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
                     .line = e.line,
                     .column = e.column,
                 } },
-                .validation_error => |e| return .{ .validation_error = e.message },
+                .validation_error => |e| return .{ .validation_error = e },
                 .dispatch_error => |e| {
                     if (std.mem.eql(u8, e.message, "EventDenied")) {
                         return .{ .event_denied = e.event_name };

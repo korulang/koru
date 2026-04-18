@@ -1059,9 +1059,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 
     // Validation pass
     if (validateFlow(flow, allocator)) |validation_err| {
-        return .{ .validation_error = .{
-            .message = std.heap.page_allocator.dupe(u8, validation_err.message) catch "validation error",
-        }};
+        return .{ .validation_error = std.heap.page_allocator.dupe(u8, validation_err.message) catch "validation error" };
     }
 
     // Create environment and context
@@ -1205,9 +1203,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
     };
 
     if (validateFlow(cached_flow, allocator)) |validation_err| {
-        return .{ .validation_error = .{
-            .message = std.heap.page_allocator.dupe(u8, validation_err.message) catch "validation error",
-        }};
+        return .{ .validation_error = std.heap.page_allocator.dupe(u8, validation_err.message) catch "validation error" };
     }
 
     const env = &InterpreterThreadState.env;
@@ -2248,9 +2244,7 @@ fn executeFlow(
     if (validateFlow(flow, allocator)) |validation_err| {
         std.debug.print("[EVAL] Validation failed: {s} (binding: {s})\n",
             .{validation_err.message, validation_err.binding_name});
-        return .{ .validation_error = .{
-            .message = validation_err.message,
-        }};
+        return .{ .validation_error = validation_err.message };
     }
     std.debug.print("[EVAL] Validation passed\n", .{});
 
