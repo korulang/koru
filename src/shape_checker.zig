@@ -295,7 +295,8 @@ pub const ShapeChecker = struct {
                 .proc_decl => |*proc| {
                     try self.validateProc(proc, null);
                 },
-                .immediate_impl => {
+                .immediate_impl => |*ii| {
+                    try self.validateImmediateImplShape(ii);
                     // Immediate values (like branch constructors) are already validated
                     // during parsing and type inference. No additional validation needed.
                 },
@@ -1359,6 +1360,94 @@ pub const ShapeChecker = struct {
         // Recursively process nested continuations
         for (cont.continuations) |nested| {
             try self.validateContinuationLabelJumps(&nested);
+        }
+    }
+
+    /// Validate a top-level subflow impl: `~event = branch { ... }` or `~event = branch value`.
+    ///
+    /// The branch declaration determines the valid constructor shape:
+    /// - Identity branch (`| X Type`): must be constructed with a bare value (`X v` or `X { v }`).
+    ///   Reject struct-init syntax (`X { field: v }`) — it targets a field that doesn't exist.
+    /// - Multi-field struct (`| X { a: A, b: B }`): must be constructed with matching fields.
+    ///   Reject bare-value construction.
+    /// - Void branch (`| X`): must be constructed with no payload.
+    ///
+    /// Note: single-field struct branches are forbidden at declaration time (parser.zig),
+    /// so they do not appear here.
+    fn validateImmediateImplShape(
+        self: *ShapeChecker,
+        ii: *const ast.ImmediateImpl,
+    ) !void {
+        const event_path = try self.pathToString(ii.event_path);
+        defer self.allocator.free(event_path);
+
+        const event_info = self.events.get(event_path) orelse {
+            // Event not found in symbol table — another pass reports this.
+            return;
+        };
+
+        const constructor = &ii.value;
+
+        // Find the declared branch matching the constructor name.
+        var declared_branch: ?*const ast.Branch = null;
+        for (event_info.decl.branches) |*br| {
+            if (std.mem.eql(u8, br.name, constructor.branch_name)) {
+                declared_branch = br;
+                break;
+            }
+        }
+        const branch = declared_branch orelse {
+            // Unknown branch — another pass reports this.
+            return;
+        };
+
+        // Wildcard payloads ({ * }) accept any constructor shape.
+        if (branch.payload.is_wildcard) return;
+
+        // Classify declared shape.
+        const decl_is_identity = branch.payload.fields.len == 1 and
+            std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref");
+        const decl_is_void = branch.payload.fields.len == 0;
+        // Else: multi-field struct (declared with 2+ named fields).
+
+        // Classify constructor shape.
+        const ctor_has_plain_value = constructor.plain_value != null;
+        const ctor_has_fields = constructor.fields.len > 0;
+
+        if (decl_is_identity) {
+            if (ctor_has_fields) {
+                const decl_type = branch.payload.fields[0].type;
+                try self.reporter.addError(
+                    .KORU030,
+                    ii.location.line,
+                    ii.location.column,
+                    "branch '{s}' of event '{s}' is declared identity ('| {s} {s}') — construct with '{s} value', not '{s} {{ ... }}'",
+                    .{ constructor.branch_name, event_path, constructor.branch_name, decl_type, constructor.branch_name, constructor.branch_name },
+                );
+            }
+            // Bare value or empty is acceptable for identity.
+        } else if (decl_is_void) {
+            if (ctor_has_fields or ctor_has_plain_value) {
+                try self.reporter.addError(
+                    .KORU030,
+                    ii.location.line,
+                    ii.location.column,
+                    "branch '{s}' of event '{s}' is declared void — construct with just '{s}', no payload",
+                    .{ constructor.branch_name, event_path, constructor.branch_name },
+                );
+            }
+        } else {
+            // Declared multi-field struct.
+            if (ctor_has_plain_value) {
+                try self.reporter.addError(
+                    .KORU030,
+                    ii.location.line,
+                    ii.location.column,
+                    "branch '{s}' of event '{s}' has multi-field payload — construct with '{s} {{ field: value, ... }}'",
+                    .{ constructor.branch_name, event_path, constructor.branch_name },
+                );
+            }
+            // TODO: verify constructor field names match declared field names.
         }
     }
 

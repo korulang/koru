@@ -1,0 +1,18 @@
+// Test: Shape checker catches identity-vs-struct mismatch in subflow override.
+//
+// `greet` declares `| ok []const u8` (identity branch).
+// The subflow override `~greet = ok { message: "Hello" }` uses struct-init syntax,
+// which is only valid for multi-field branches. Single-field struct branches
+// are illegal at declaration time (post commit 869cd29), so this constructor
+// cannot possibly match any valid declaration of `ok`.
+//
+// Expected: shape checker at Stage C (analysis/check_structure) rejects with KORU030
+// and does NOT let the malformed constructor reach Zig emission.
+
+~event greet {}
+| ok []const u8
+
+~greet = ok { message: "Hello" }
+
+~greet()
+| ok _ |> _
