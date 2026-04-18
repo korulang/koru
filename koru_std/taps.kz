@@ -309,44 +309,48 @@ var metatype_global_counter: usize = 0;
         }
 
         // Rewrite binding references in a string value
-        // Replaces "old_binding." with "new_binding." (e.g., "f.file.handle" → "_.file.handle")
+        // Handles both field access ("d.field" → "_tap_123.field")
+        // and bare identifiers ("d" → "_tap_123") for identity branches
         fn rewriteBindingInValue(
             alloc: std.mem.Allocator,
             value: []const u8,
             old_binding: []const u8,
             new_binding: []const u8,
         ) ![]const u8 {
-            // Build the pattern "old_binding."
-            var pattern_buf: [256]u8 = undefined;
-            const pattern_len = old_binding.len + 1;
-            @memcpy(pattern_buf[0..old_binding.len], old_binding);
-            pattern_buf[old_binding.len] = '.';
-            const pattern = pattern_buf[0..pattern_len];
+            var result = std.ArrayList(u8).initCapacity(alloc, value.len + new_binding.len * 2) catch unreachable;
+            errdefer result.deinit(alloc);
 
-            // Check if value contains the pattern
-            if (std.mem.indexOf(u8, value, pattern)) |_| {
-                // Found it - need to rewrite
-                var result = std.ArrayList(u8).initCapacity(alloc, value.len + new_binding.len) catch unreachable;
-                var pos: usize = 0;
-                var remaining = value;
+            var i: usize = 0;
+            while (i < value.len) {
+                // Check if we're at the start of the old_binding
+                if (i + old_binding.len <= value.len and
+                    std.mem.eql(u8, value[i .. i + old_binding.len], old_binding))
+                {
+                    // Check that it's a word boundary (not part of a larger identifier)
+                    const at_start = (i == 0) or !isIdentChar(value[i - 1]);
+                    const at_end = (i + old_binding.len >= value.len) or !isIdentChar(value[i + old_binding.len]);
 
-                while (std.mem.indexOf(u8, remaining, pattern)) |match_pos| {
-                    // Copy everything before the match
-                    result.appendSlice(alloc, value[pos..pos + match_pos]) catch unreachable;
-                    // Replace with new_binding.
-                    result.appendSlice(alloc, new_binding) catch unreachable;
-                    result.append(alloc, '.') catch unreachable;
-                    // Move past the matched pattern
-                    pos += match_pos + pattern_len;
-                    remaining = value[pos..];
+                    if (at_start and at_end) {
+                        // Replace with new_binding
+                        result.appendSlice(alloc, new_binding) catch unreachable;
+                        i += old_binding.len;
+                        continue;
+                    }
                 }
-                // Copy remaining text after last match
-                result.appendSlice(alloc, value[pos..]) catch unreachable;
-                return result.toOwnedSlice(alloc) catch unreachable;
-            } else {
-                // No pattern found - return original value
-                return value;
+                // Copy character as-is
+                result.append(alloc, value[i]) catch unreachable;
+                i += 1;
             }
+
+            return result.toOwnedSlice(alloc) catch unreachable;
+        }
+
+        // Check if character is a valid identifier character
+        fn isIdentChar(c: u8) bool {
+            return (c >= 'a' and c <= 'z') or
+                (c >= 'A' and c <= 'Z') or
+                (c >= '0' and c <= '9') or
+                c == '_';
         }
 
         // Rewrite binding references in a Step's invocation args

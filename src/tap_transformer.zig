@@ -258,6 +258,15 @@ fn mergeTapContinuationsWithOriginal(
     for (tap_continuations) |tap_cont| {
         var new_cont = tap_cont;
 
+        // CRITICAL: Rewrite the when clause condition to use target_binding
+        // If the tap continuation has a condition like "d > 50" and tap_binding is "d",
+        // we need to rewrite it to use target_binding (e.g., "_tap_70270 > 50")
+        if (tap_cont.condition) |cond| {
+            if (tap_binding) |tap_bind| {
+                new_cont.condition = try rewriteBindingInCondition(cond, tap_bind, target_binding, allocator);
+            }
+        }
+
         // Check if this tap continuation's step is a pass-through point
         // Pass-through can be:
         // 1. A branch_constructor (explicitly passes through, e.g., | done |> result { result: r })
@@ -588,6 +597,22 @@ fn transformContinuationsWithInvokedEventInternal(
             // target_binding is now owned by the AST - don't free it!
         }
 
+        // CRITICAL: Rewrite the when clause condition to use target_binding
+        // If the tap has a when_condition_string like "d > 50" and tap_binding is "d",
+        // we need to rewrite it to use target_binding (e.g., "_tap_70270 > 50")
+        if (matching_taps.len > 0) {
+            const tap = matching_taps[0];
+            if (tap.when_condition_string) |when_cond| {
+                if (tap.tap_binding) |tap_bind| {
+                    // Rewrite bare identifier references (e.g., "d > 50" -> "_tap_70270 > 50")
+                    // We need to handle both "d" as standalone and "d." for field access
+                    new_cont.condition = try rewriteBindingInCondition(when_cond, tap_bind, target_binding, allocator);
+                } else {
+                    new_cont.condition = when_cond;
+                }
+            }
+        }
+
         try transformed.append(allocator, new_cont);
     }
 
@@ -648,48 +673,62 @@ fn findDestinationEventFromStep(
 
 
 /// Rewrite binding references in arg values
-/// Replaces "old_binding." with "new_binding." (e.g., "d.result" → "done.result")
+/// Handles both field access ("d.field" → "_tap_123.field")
+/// and bare identifiers ("d" → "_tap_123")
 fn rewriteBindingInValue(
     value: []const u8,
     old_binding: []const u8,
     new_binding: []const u8,
     allocator: std.mem.Allocator,
 ) ![]const u8 {
-    // Look for "old_binding." pattern
-    const pattern = try std.fmt.allocPrint(allocator, "{s}.", .{old_binding});
-    defer allocator.free(pattern);
+    // Use the same logic as rewriteBindingInCondition to handle both
+    // bare identifiers and field access patterns
+    return rewriteBindingInCondition(value, old_binding, new_binding, allocator);
+}
 
-    // Check if value contains the pattern
-    if (std.mem.indexOf(u8, value, pattern)) |_| {
-        // Found it - need to rewrite
-        // Build new value by replacing pattern with "new_binding."
-        var result = try std.ArrayList(u8).initCapacity(allocator, value.len + new_binding.len);
-        defer result.deinit(allocator);
+/// Rewrite binding references in when clause conditions
+/// Handles both field access ("d.field > 50" → "_tap_123.field > 50")
+/// and bare identifiers ("d > 50" → "_tap_123 > 50")
+fn rewriteBindingInCondition(
+    condition: []const u8,
+    old_binding: []const u8,
+    new_binding: []const u8,
+    allocator: std.mem.Allocator,
+) ![]const u8 {
+    var result = try std.ArrayList(u8).initCapacity(allocator, condition.len + new_binding.len * 2);
+    errdefer result.deinit(allocator);
 
-        var pos: usize = 0;
-        var remaining = value;
+    var i: usize = 0;
+    while (i < condition.len) {
+        // Check if we're at the start of the old_binding
+        if (i + old_binding.len <= condition.len and
+            std.mem.eql(u8, condition[i .. i + old_binding.len], old_binding))
+        {
+            // Check that it's a word boundary (not part of a larger identifier)
+            const at_start = (i == 0) or !isIdentChar(condition[i - 1]);
+            const at_end = (i + old_binding.len >= condition.len) or !isIdentChar(condition[i + old_binding.len]);
 
-        while (std.mem.indexOf(u8, remaining, pattern)) |match_pos| {
-            // Copy everything before the match
-            try result.appendSlice(allocator, value[pos..pos + match_pos]);
-
-            // Replace with new_binding.
-            try result.appendSlice(allocator, new_binding);
-            try result.append(allocator, '.');
-
-            // Move past the matched pattern
-            pos += match_pos + pattern.len;
-            remaining = value[pos..];
+            if (at_start and at_end) {
+                // Replace with new_binding
+                try result.appendSlice(allocator, new_binding);
+                i += old_binding.len;
+                continue;
+            }
         }
-
-        // Copy remaining text after last match
-        try result.appendSlice(allocator, value[pos..]);
-
-        return try result.toOwnedSlice(allocator);
-    } else {
-        // No pattern found - return original value (no alloc needed, just return the slice)
-        return value;
+        // Copy character as-is
+        try result.append(allocator, condition[i]);
+        i += 1;
     }
+
+    return try result.toOwnedSlice(allocator);
+}
+
+/// Check if character is a valid identifier character
+fn isIdentChar(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or
+        (c >= 'A' and c <= 'Z') or
+        (c >= '0' and c <= '9') or
+        c == '_';
 }
 
 // buildCanonicalEventName() removed - no longer needed!
