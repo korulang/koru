@@ -1172,6 +1172,7 @@ const TransformEvent = struct {
     has_event_name_field: bool, // Event accepts event_name: []const u8 parameter (for glob patterns)
     returns_program: bool, // Event returns transformed{ program: *const Program }
     has_failed: bool, // Event has failed{ error: []const u8 } branch
+    failed_is_identity: bool, // failed branch is identity (just []const u8, not struct)
     has_compile_error: bool, // Event has compile_error{ message: []const u8 } branch
 };
 
@@ -1290,6 +1291,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                 // Detect what this event returns (check branches)
                 var returns_program = false;
                 var has_failed = false;
+                var failed_is_identity = false;
                 var has_compile_error = false;
                 for (event_decl.branches) |branch| {
                     if (std.mem.eql(u8, branch.name, "transformed")) {
@@ -1304,6 +1306,11 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                         }
                     } else if (std.mem.eql(u8, branch.name, "failed")) {
                         has_failed = true;
+                        // Check if it's an identity branch (single __type_ref field)
+                        if (branch.payload.fields.len == 1 and
+                            std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
+                            failed_is_identity = true;
+                        }
                     } else if (std.mem.eql(u8, branch.name, "compile_error")) {
                         has_compile_error = true;
                     }
@@ -1328,6 +1335,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                     .has_compile_error = has_compile_error,
                     .returns_program = returns_program,
                     .has_failed = has_failed,
+                    .failed_is_identity = failed_is_identity,
                 };
                 transform_count += 1;
             }
@@ -1427,6 +1435,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                         // Detect what this event returns (check branches)
                         var returns_program = false;
                         var has_failed = false;
+                        var failed_is_identity = false;
                         var has_compile_error = false;
                         for (event_decl.branches) |branch| {
                             if (std.mem.eql(u8, branch.name, "transformed")) {
@@ -1441,6 +1450,11 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                                 }
                             } else if (std.mem.eql(u8, branch.name, "failed")) {
                                 has_failed = true;
+                                // Check if it's an identity branch (single __type_ref field)
+                                if (branch.payload.fields.len == 1 and
+                                    std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
+                                    failed_is_identity = true;
+                                }
                             } else if (std.mem.eql(u8, branch.name, "compile_error")) {
                                 has_compile_error = true;
                             }
@@ -1468,6 +1482,7 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                             .has_compile_error = has_compile_error,
                             .returns_program = returns_program,
                             .has_failed = has_failed,
+                            .failed_is_identity = failed_is_identity,
                         };
                         transform_count += 1;
                     }
@@ -1713,6 +1728,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 // Detect what this event returns (check branches)
                 var returns_program = false;
                 var has_failed = false;
+                var failed_is_identity = false;
                 var has_compile_error = false;
                 for (event_decl.branches) |branch| {
                     if (std.mem.eql(u8, branch.name, "transformed")) {
@@ -1727,6 +1743,11 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         }
                     } else if (std.mem.eql(u8, branch.name, "failed")) {
                         has_failed = true;
+                        // Check if it's an identity branch (single __type_ref field)
+                        if (branch.payload.fields.len == 1 and
+                            std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
+                            failed_is_identity = true;
+                        }
                     } else if (std.mem.eql(u8, branch.name, "compile_error")) {
                         has_compile_error = true;
                     }
@@ -1753,6 +1774,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     .has_compile_error = has_compile_error,
                     .returns_program = returns_program,
                     .has_failed = has_failed,
+                    .failed_is_identity = failed_is_identity,
                 };
                 transform_count += 1;
             }
@@ -1866,6 +1888,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         // Detect return type
                         var returns_program = false;
                         var has_failed = false;
+                        var failed_is_identity = false;
                         var has_compile_error = false;
                         for (event_decl.branches) |branch| {
                             if (std.mem.eql(u8, branch.name, "transformed")) {
@@ -1880,6 +1903,11 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                                 }
                             } else if (std.mem.eql(u8, branch.name, "failed")) {
                                 has_failed = true;
+                                // Check if it's an identity branch (single __type_ref field)
+                                if (branch.payload.fields.len == 1 and
+                                    std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
+                                    failed_is_identity = true;
+                                }
                             } else if (std.mem.eql(u8, branch.name, "compile_error")) {
                                 has_compile_error = true;
                             }
@@ -1906,6 +1934,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .has_compile_error = has_compile_error,
                             .returns_program = returns_program,
                             .has_failed = has_failed,
+                            .failed_is_identity = failed_is_identity,
                         };
                         transform_count += 1;
                     }
@@ -2062,7 +2091,13 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 try code_emitter.write("        .transformed => |t| t,\n");
                 if (event.has_failed) {
                     try code_emitter.write("        .failed => |f| {\n");
-                    try code_emitter.write("            log.debug(\"Derive failed: {s}\\n\", .{f.@\"error\"});\n");
+                    if (event.failed_is_identity) {
+                        // Identity branch: f IS the error message directly
+                        try code_emitter.write("            log.debug(\"Derive failed: {s}\\n\", .{f});\n");
+                    } else {
+                        // Struct branch: f.error contains the message
+                        try code_emitter.write("            log.debug(\"Derive failed: {s}\\n\", .{f.@\"error\"});\n");
+                    }
                     try code_emitter.write("            return error.DeriveFailed;\n");
                     try code_emitter.write("        },\n");
                 }
@@ -2157,7 +2192,13 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                 try code_emitter.write("            .transformed => |t| t,\n");
                 if (event.has_failed) {
                     try code_emitter.write("            .failed => |f| {\n");
-                    try code_emitter.write("                log.debug(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");
+                    if (event.failed_is_identity) {
+                        // Identity branch: f IS the error message directly
+                        try code_emitter.write("                log.debug(\"Transform failed: {s}\\n\", .{f});\n");
+                    } else {
+                        // Struct branch: f.error contains the message
+                        try code_emitter.write("                log.debug(\"Transform failed: {s}\\n\", .{f.@\"error\"});\n");
+                    }
                     try code_emitter.write("                return error.TransformFailed;\n");
                     try code_emitter.write("            },\n");
                 }

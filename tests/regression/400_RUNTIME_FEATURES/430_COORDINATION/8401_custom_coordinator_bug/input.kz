@@ -17,7 +17,7 @@ const Program = ast.Program;
 ~std.compiler:coordinate =
     custom_marker()
 | done |> std.compiler:context_create(program_ast: program_ast, allocator: allocator)
-  | created c0 |> std.compiler:frontend(ctx: c0.ctx)
+  | created c0 |> std.compiler:frontend(ctx: c0)
     | ctx c1 |> std.compiler:transform_taps(ctx: c1)
       | ctx c2 |> std.compiler:analysis(ctx: c2)
         | ctx c3 |> std.compiler:test_generation(ctx: c3)
@@ -28,7 +28,7 @@ const Program = ast.Program;
                   code: c6.code,
                   metrics: "Custom coordinator ran!"
               }
-        | failed f |> error { message: f.message }
+        | failed f |> error f.message
 
 // Helper event to print marker (must be comptime since it's called from coordinate handler)
 ~[comptime] event custom_marker {}
