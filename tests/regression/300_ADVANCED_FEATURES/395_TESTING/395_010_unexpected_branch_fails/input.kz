@@ -14,8 +14,8 @@
 
 ~test(Unexpected branch should fail) {
     // Mock returns error_result, but test only handles ok branch
-    ~get_data = error_result { code: 500 }
+    ~get_data = error_result 500
 
     ~get_data()
-    | ok result |> assert(result.value == 42)
+    | ok result |> assert(result == 42)
 }

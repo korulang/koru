@@ -6,28 +6,28 @@
 
 // Test 1: resume() accepts 'active' state (second member of union)
 ~app.connection:create()
-| created c1 |> app.connection:connect(conn: c1.conn)
-    | connected c2 |> app.connection:resume(conn: c2.conn)  // active -> resume accepts it!
-        | resumed c3 |> app.connection:close(conn: c3.conn)
+| created c1 |> app.connection:connect(conn: c1)
+    | connected c2 |> app.connection:resume(conn: c2)  // active -> resume accepts it!
+        | resumed c3 |> app.connection:close(conn: c3)
             | closed |> _
 
 // Test 2: resume() accepts 'paused' state (first member of union)
 ~app.connection:create()
-| created c1 |> app.connection:connect(conn: c1.conn)
-    | connected c2 |> app.connection:pause(conn: c2.conn)
-        | paused c3 |> app.connection:resume(conn: c3.conn)  // paused -> resume accepts it!
-            | resumed c4 |> app.connection:close(conn: c4.conn)
+| created c1 |> app.connection:connect(conn: c1)
+    | connected c2 |> app.connection:pause(conn: c2)
+        | paused c3 |> app.connection:resume(conn: c3)  // paused -> resume accepts it!
+            | resumed c4 |> app.connection:close(conn: c4)
                 | closed |> _
 
 // Test 3: close() accepts 'active' directly (union member)
 ~app.connection:create()
-| created c1 |> app.connection:connect(conn: c1.conn)
-    | connected c2 |> app.connection:close(conn: c2.conn)  // active -> close accepts it!
+| created c1 |> app.connection:connect(conn: c1)
+    | connected c2 |> app.connection:close(conn: c2)  // active -> close accepts it!
         | closed |> _
 
 // Test 4: close() accepts 'paused' (other union member)
 ~app.connection:create()
-| created c1 |> app.connection:connect(conn: c1.conn)
-    | connected c2 |> app.connection:pause(conn: c2.conn)
-        | paused c3 |> app.connection:close(conn: c3.conn)  // paused -> close accepts it!
+| created c1 |> app.connection:connect(conn: c1)
+    | connected c2 |> app.connection:pause(conn: c2)
+        | paused c3 |> app.connection:close(conn: c3)  // paused -> close accepts it!
             | closed |> _

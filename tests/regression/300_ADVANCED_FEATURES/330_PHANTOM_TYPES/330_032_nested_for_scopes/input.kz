@@ -21,7 +21,7 @@
                 _  // inner_f auto-closed here (innermost @scope)
         | done |> _
     | done |>
-        app.fs:close(file: outermost_f.file)
+        app.fs:close(file: outermost_f)
         | closed |> _
 
 pub fn main() void {}

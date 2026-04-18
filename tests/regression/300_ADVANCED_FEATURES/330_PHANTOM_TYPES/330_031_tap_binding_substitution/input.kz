@@ -17,9 +17,9 @@
 ~import "$app/fs"
 
 // Tap that USES the binding to access file data
-// This should work: the tap reads f.file.handle and passes it to log_open
+// This should work: the tap reads f.handle and passes it to log_open
 ~tap(app.fs:open -> *)
-| opened f |> app.fs:log_open(handle: f.file.handle)
+| opened f |> app.fs:log_open(handle: f.handle)
     | done |> _
 
 // Main flow with auto-discharge

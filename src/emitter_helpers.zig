@@ -7684,21 +7684,28 @@ fn emitEventDeclForModule(
         if (event.branches.len > 0) {
             // Return first branch with undefined values for all fields
             const first_branch = &event.branches[0];
+            const is_identity = first_branch.payload.fields.len == 1 and
+                std.mem.eql(u8, first_branch.payload.fields[0].name, "__type_ref");
             try code_emitter.write("return .{ .");
             try writeBranchName(code_emitter, first_branch.name);
-            try code_emitter.write(" = .{");
-            for (first_branch.payload.fields, 0..) |field, i| {
-                if (i > 0) {
+            if (is_identity) {
+                // Identity branch: emit value directly (no struct wrapper)
+                try code_emitter.write(" = undefined };\n");
+            } else {
+                try code_emitter.write(" = .{");
+                for (first_branch.payload.fields, 0..) |field, i| {
+                    if (i > 0) {
+                        try code_emitter.write(",");
+                    }
+                    try code_emitter.write(" .");
+                    try code_emitter.write(field.name);
+                    try code_emitter.write(" = undefined");
+                }
+                if (first_branch.payload.fields.len > 0) {
                     try code_emitter.write(",");
                 }
-                try code_emitter.write(" .");
-                try code_emitter.write(field.name);
-                try code_emitter.write(" = undefined");
+                try code_emitter.write("} };\n");
             }
-            if (first_branch.payload.fields.len > 0) {
-                try code_emitter.write(",");
-            }
-            try code_emitter.write("} };\n");
         } else {
             try code_emitter.write("return;\n");
         }

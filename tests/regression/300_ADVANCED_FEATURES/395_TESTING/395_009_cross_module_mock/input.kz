@@ -22,8 +22,8 @@
 | failed []const u8
 
 ~process_config = std.fs:read_lines(path: path)
-| lines l |> ok { line_count: l.len }
-| failed msg |> failed { reason: msg }
+| lines l |> ok l.len
+| failed msg |> failed msg
 
 // ============================================
 // THE TEST - Cross-module mock
@@ -36,7 +36,7 @@
 
     ~process_config(path: "/this/file/does/not/exist.txt")
     | ok |> assert.fail()
-    | failed result |> assert(result.reason.len > 0)
+    | failed result |> assert(result.len > 0)
 }
 
 // ============================================
@@ -47,6 +47,6 @@
     ~std.fs:read_lines = lines ["line1", "line2", "line3"]
 
     ~process_config(path: "/fake/path")
-    | ok result |> assert(result.line_count == 3)
+    | ok result |> assert(result == 3)
     | failed |> assert.fail()
 }

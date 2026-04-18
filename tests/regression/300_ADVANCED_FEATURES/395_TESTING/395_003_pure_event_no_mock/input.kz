@@ -17,7 +17,7 @@
 // Actually verify the computation result!
 ~test(Pure event works without mock) {
     ~add_numbers(a: 5, b: 3)
-    | result r |> assert(r.sum == 8)
+    | result r |> assert(r == 8)
 }
 
 pub fn main() void {}
