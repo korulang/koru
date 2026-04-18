@@ -5,18 +5,18 @@
 ~import "$std/taps"
 
 ~event hello { }
-| ok { }
-| error { }
+| ok
+| error
 
 ~event logger { msg: []const u8 }
-| done { }
+| done
 
 ~[pure]proc hello {
-    return .{ .ok = .{} };
+    return .ok;
 }
 
 ~[pure]proc logger {
-    return .{ .done = .{} };
+    return .done;
 }
 
 // For now, just verify multiple Profile observations work

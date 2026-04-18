@@ -17,26 +17,26 @@
 
 // Event with two branches
 ~event validate { n: i32 }
-| valid { }
-| invalid { }
+| valid
+| invalid
 
 ~proc validate {
     if (n > 0) {
-        return .{ .valid = .{} };
+        return .valid;
     }
-    return .{ .invalid = .{} };
+    return .invalid;
 }
 
 // Mixed flow: void events, single-branch events, and multi-branch events
 ~std.io:println(text: "Starting computation")
 
 ~compute(x: 5)
-| done d |> validate(n: d.value)
+| done d |> validate(n: d)
     | valid |> std.io:println(text: "Valid result")
     | invalid |> std.io:println(text: "Invalid result")
 
 ~compute(x: -3)
-| done d |> validate(n: d.value)
+| done d |> validate(n: d)
     | valid |> std.io:println(text: "Valid result")
     | invalid |> std.io:println(text: "Invalid result")
 

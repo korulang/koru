@@ -18,7 +18,7 @@ const std = @import("std");
 
 // Create some handles
 ~event makeHandle { id: u64 }
-| made { handle: threading:WorkerHandle }
+| made threading:WorkerHandle
 
 ~proc makeHandle {
     // Create a dummy handle (just for testing codegen)
@@ -26,7 +26,7 @@ const std = @import("std");
         .thread = undefined,
         .result_ptr = undefined,
     };
-    return .{ .made = .{ .handle = handle } };
+    return .{ .made = handle };
 }
 
 // Event that accepts array of handles
@@ -40,5 +40,5 @@ const std = @import("std");
 // Try to use array literal with imported type
 ~makeHandle(id: 1)
 | made h1 |> makeHandle(id: 2)
-    | made h2 |> joinHandles(handles: &[_]threading:WorkerHandle{ h1.handle, h2.handle })
+    | made h2 |> joinHandles(handles: &[_]threading:WorkerHandle{ h1, h2 })
         | joined |> _

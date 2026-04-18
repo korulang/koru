@@ -6,7 +6,7 @@
 | greeted []const u8
 
 ~greet = std.fmt:ln("Hello, {{ name:s }}!")
-| line l |> greeted { message: l.text }
+| line l |> greeted l.text
 
 ~greet(name: "World")
-| greeted g |> std.io:println(text: g.message)
+| greeted g |> std.io:println(text: g)

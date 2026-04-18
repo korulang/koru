@@ -18,12 +18,12 @@ const std = @import("std");
 
 // Minimal reproduction: Event that returns slice of imported type
 ~event getHandles {}
-| got { handles: []const threading:WorkerHandle }
+| got []const threading:WorkerHandle
 
 ~proc getHandles {
     // Create empty slice just to test codegen
     const handles = std.heap.page_allocator.alloc(threading:WorkerHandle, 0) catch unreachable;
-    return .{ .got = .{ .handles = handles } };
+    return .{ .got = handles };
 }
 
 // Try to use it

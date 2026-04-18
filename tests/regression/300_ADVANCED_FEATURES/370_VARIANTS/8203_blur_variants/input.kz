@@ -14,12 +14,12 @@
 // ❌ GPU code generation (future work)
 
 ~pub event blur { }
-| done { }
+| done
 
 ~proc blur|naive {
-    return .{ .done = .{} };
+    return .done;
 }
 
 ~proc blur|gpu {
-    return .{ .done = .{} };
+    return .done;
 }

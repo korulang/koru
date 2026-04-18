@@ -19,16 +19,16 @@
 ~[comptime|transform|norun]pub event log.* {
     message: []const u8,
 }
-| ok { }
+| ok
 
 // A concrete event that matches the glob pattern
 ~pub event log.info {
     message: []const u8,
 }
-| ok { }
+| ok
 
 ~proc log.info {
-    return .{ .ok = .{} };
+    return .ok;
 }
 
 // Test invocation of the concrete event
