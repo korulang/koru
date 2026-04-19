@@ -69,6 +69,86 @@ test "validateArgument accepts correct base type with matching phantom state" {
     try std.testing.expect(!reporter.hasErrors());
 }
 
+test "identity branch capture preserves phantom state literal" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+    const test_alloc = std.testing.allocator;
+
+    // Units-of-measure phantom typing — pure state matching, no obligations.
+    //
+    // `read_sensor` returns `f32[celsius]` via an identity-declared branch
+    // (`| temperature f32[celsius]`). The identity capture `| temperature t |>`
+    // binds the whole payload to `t`. That `t` must carry the phantom state
+    // literal `celsius` so that `log_reading(value: t)` — which requires
+    // `f32[celsius]` — type-checks.
+    //
+    // No `!` anywhere: there is nothing to discharge. Temperatures don't get
+    // cleaned up. This exercises the state-literal tracking path in isolation
+    // from the obligation machinery.
+    const source =
+        \\~event read_sensor { }
+        \\| temperature f32[celsius]
+        \\
+        \\~event log_reading { value: f32[celsius] }
+        \\
+        \\~read_sensor()
+        \\| temperature t |> log_reading(value: t)
+    ;
+
+    const empty_flags: []const []const u8 = &.{};
+    var parser = try Parser.init(arena_alloc, source, "test.kz", empty_flags, null);
+    defer parser.deinit();
+
+    var parse_result = try parser.parse();
+    defer parse_result.deinit();
+
+    // Sanity: the parser must accept this source cleanly. If the parser rejects
+    // anything (e.g. void events, identity declarations, phantom state on a
+    // primitive f32), any downstream checker outcome is an artifact of parser
+    // recovery, not a real tracking result — so fail loudly here with
+    // diagnostic output.
+    if (parser.reporter.hasErrors()) {
+        const stderr_writer = std.debug.lockStderrWriter(&.{});
+        defer std.debug.unlockStderrWriter();
+        stderr_writer.print("\n[unexpected] parser reported errors:\n", .{}) catch {};
+        parser.reporter.printErrors(stderr_writer) catch {};
+        try std.testing.expect(false);
+    }
+
+    var reporter = try errors.ErrorReporter.init(test_alloc, "test.kz", source);
+    defer reporter.deinit();
+
+    var checker = try PhantomSemanticChecker.init(test_alloc, &reporter);
+    defer checker.deinit();
+
+    // The checker may return error.ValidationFailed on rejection. Catch it so
+    // the reporter contents still surface in the test output — otherwise we
+    // just see "ValidationFailed" with no KORU code breakdown.
+    checker.check(&parse_result.source_file) catch |err| {
+        const stderr_writer = std.debug.lockStderrWriter(&.{});
+        defer std.debug.unlockStderrWriter();
+        stderr_writer.print(
+            "\n[checker returned {s}; reporter contents]:\n",
+            .{@errorName(err)},
+        ) catch {};
+        reporter.printErrors(stderr_writer) catch {};
+    };
+
+    // Identity capture `t` must carry the [celsius] state from the branch so
+    // that `log_reading(value: t)` matches its `f32[celsius]` parameter.
+    //
+    // Currently expected to FAIL on master with KORU030 "no tracked phantom
+    // state" — that is the bug this test pins.
+    if (reporter.hasErrors()) {
+        const stderr_writer = std.debug.lockStderrWriter(&.{});
+        defer std.debug.unlockStderrWriter();
+        stderr_writer.print("\n[phantom checker reported errors]:\n", .{}) catch {};
+        reporter.printErrors(stderr_writer) catch {};
+    }
+    try std.testing.expect(!reporter.hasErrors());
+}
+
 test "obligations track phantom states through multi-step flow" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
