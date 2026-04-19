@@ -18,6 +18,7 @@ const __dirname = dirname(__filename);
 
 const REGRESSION_PATH = join(__dirname, '../tests/regression');
 const RESULTS_DIR = join(__dirname, '../test-results');
+const UNIT_TESTS_PATH = join(RESULTS_DIR, 'unit-tests.json');
 
 // Parse command line args
 const args = process.argv.slice(2);
@@ -142,10 +143,23 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 	return tests;
 }
 
+async function loadUnitTests() {
+	try {
+		const content = await readFile(UNIT_TESTS_PATH, 'utf-8');
+		return JSON.parse(content);
+	} catch {
+		// No unit test results available
+		return null;
+	}
+}
+
 async function saveSnapshot() {
 	try {
 		// Ensure results directory exists
 		await mkdir(RESULTS_DIR, { recursive: true });
+
+		// Load unit test results if available
+		const unitTests = await loadUnitTests();
 
 		// Scan all tests recursively (matching bash script behavior)
 		const allTests = await findAllTestDirs(REGRESSION_PATH);
@@ -196,7 +210,11 @@ async function saveSnapshot() {
 				untested: untestedTests,
 				passRate: totalTests > 0 ? ((passedTests / totalTests) * 100).toFixed(1) : '0.0'
 			},
-			categories
+			categories,
+			unitTests: unitTests ? {
+				summary: unitTests.summary,
+				suites: unitTests.suites
+			} : null
 		};
 
 		// Save timestamped snapshot
@@ -214,8 +232,12 @@ async function saveSnapshot() {
 		await symlink(filename, latestPath);
 
 		console.log(`✓ Saved test snapshot: ${filename}`);
-		console.log(`  ${passedTests}/${totalTests} passed (${snapshot.summary.passRate}%)`);
+		console.log(`  Regression: ${passedTests}/${totalTests} passed (${snapshot.summary.passRate}%)`);
 		console.log(`  Failed: ${failedTests}, TODO: ${todoTests}, Skipped: ${skippedTests}, Broken: ${brokenTests}`);
+		if (unitTests) {
+			const us = unitTests.summary;
+			console.log(`  Unit tests: ${us.passed}/${us.total} passed, ${us.compileErrors} compile errors`);
+		}
 
 	} catch (error) {
 		console.error('Error saving snapshot:', error);

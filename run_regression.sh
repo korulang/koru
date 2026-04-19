@@ -43,9 +43,9 @@ PRIORITY_LIST=""
 # Use --ignore-leaks to disable strict leak checking
 CHECK_LEAKS=true
 
-# Unit test execution flag (default: OFF)
-# Use --run-units to run unit tests
-RUN_UNIT_TESTS=false
+# Unit test execution flag (default: ON)
+# Use --skip-units to skip unit tests
+RUN_UNIT_TESTS=true
 
 # Compiler rebuild flag (default: ON)
 # Use --no-rebuild to skip rebuilding the compiler (for rapid iteration)
@@ -107,7 +107,7 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo -e "${CYAN}OPTIONS:${NC}"
     echo "  --ignore-leaks                         Run without memory leak checks"
     echo "  --no-rebuild                           Skip compiler rebuild (for rapid iteration)"
-    echo "  --run-units                            Run unit tests before regression tests"
+    echo "  --skip-units                           Skip unit tests (they run by default)"
     echo "  --verbose                              Show full stderr output on failures (not truncated)"
     echo "  --priority                             List all tests marked as PRIORITY"
     echo "  --clean                                Clean all Zig caches before running (fresh build)"
@@ -357,8 +357,13 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --run-units)
+            # Backwards compatibility - unit tests now run by default
             RUN_UNIT_TESTS=true
-            echo "🧪 Unit tests ENABLED"
+            shift
+            ;;
+        --skip-units)
+            RUN_UNIT_TESTS=false
+            echo "⏭️  Unit tests DISABLED"
             echo ""
             shift
             ;;
@@ -719,13 +724,15 @@ fi
 # UNIT TESTS - Run first for fast feedback
 # ════════════════════════════════════════
 UNIT_TESTS_PASSED=true
+UNIT_TEST_OUTPUT=""
 if [ "$RUN_UNIT_TESTS" = true ]; then
     echo "════════════════════════════════════════"
     echo "    UNIT TESTS (zig build test)"
     echo "════════════════════════════════════════"
     echo ""
 
-    if zig build test 2>&1; then
+    UNIT_TEST_LOG="${TMPDIR:-/tmp}/koru-unit-test.log"
+    if zig build test 2>&1 | tee "$UNIT_TEST_LOG"; then
         echo ""
         echo -e "${GREEN}✅ All unit tests passed${NC}"
         echo ""
@@ -734,6 +741,12 @@ if [ "$RUN_UNIT_TESTS" = true ]; then
         echo -e "${RED}❌ Unit tests FAILED${NC}"
         echo ""
         UNIT_TESTS_PASSED=false
+    fi
+    UNIT_TEST_OUTPUT=$(cat "$UNIT_TEST_LOG")
+
+    # Parse unit test results and save to JSON
+    if command -v node >/dev/null 2>&1; then
+        node scripts/parse-unit-tests.js "$UNIT_TEST_LOG" 2>/dev/null || true
     fi
 
     echo "════════════════════════════════════════"
