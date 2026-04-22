@@ -939,8 +939,33 @@ EOF
                     FAILED_TESTS="$FAILED_TESTS $TEST_NAME(post-validation)"
                 fi
             else
-                # No post.sh - just check leaks and mark as compile-only pass
-                if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
+                # No post.sh - check if this test is genuinely compile-only
+                # or if it's a "lazy" test that should run but lacks MUST_RUN.
+                # Compile-only is only acceptable for parser/syntax tests.
+                IS_LAZY_COMPILE_ONLY=false
+                if [ ! -f "$test_dir/PARSER_TEST" ] && [ ! -f "$test_dir/EXPECT" ] && [ ! -f "$test_dir/COMPILE_ONLY" ]; then
+                    if [ -f "$test_dir/input.kz" ]; then
+                        # Scan for runtime indicators
+                        if grep -qE 'std\.debug\.print|std\.io:|std\.fs\.|~std\.runtime:|~std\.interpreter:|~\[comptime|~compiler:' "$test_dir/input.kz"; then
+                            IS_LAZY_COMPILE_ONLY=true
+                            LAZY_REASON="contains runtime I/O or runtime/interpreter invocation"
+                        elif grep -qE '~\s*proc\s+\w+' "$test_dir/input.kz" && grep -qE '(return\s|return\s*\.\{)' "$test_dir/input.kz"; then
+                            # Has a proc with a return statement - likely produces a value that should be verified
+                            IS_LAZY_COMPILE_ONLY=true
+                            LAZY_REASON="contains proc with return value"
+                        fi
+                    fi
+                fi
+
+                if [ "$IS_LAZY_COMPILE_ONLY" = true ]; then
+                    echo -e "${RED}❌ FAIL (compile-only-lazy)${NC}"
+                    echo "  This test $LAZY_REASON but has no MUST_RUN marker."
+                    echo "  It compiled successfully but was never executed."
+                    echo "  Add MUST_RUN if the test needs runtime validation,"
+                    echo "  or add COMPILE_ONLY if compile-time validation is sufficient."
+                    echo "compile-only-lazy" > "$test_dir/FAILURE"
+                    FAILED_TESTS="$FAILED_TESTS $TEST_NAME(compile-only-lazy)"
+                elif [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
                     echo -e "${RED}❌ PASS but memory leak detected ($LEAK_PHASE)${NC}"
                     echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                     FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"

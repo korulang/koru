@@ -5955,6 +5955,12 @@ pub const Parser = struct {
             branch_start = lexer.trim(branch_start[1..]);
         }
 
+        // Strip inline comments (// ...) so they don't leak into types or annotations.
+        // This must happen before any brace/phantom/annotation parsing.
+        if (std.mem.indexOf(u8, branch_start, "//")) |comment_idx| {
+            branch_start = lexer.trim(branch_start[0..comment_idx]);
+        }
+
         // Check for struct shape { ... } vs identity type
         const brace_idx = std.mem.indexOf(u8, branch_start, "{");
 
@@ -6002,7 +6008,7 @@ pub const Parser = struct {
             }
 
             // Rest is the type, possibly with [annotation]
-            var type_and_annotation = lexer.trim(branch_start[name_end..]);
+            const type_and_annotation = lexer.trim(branch_start[name_end..]);
 
             // Check if this is an empty payload (just branch name, no type)
             if (type_and_annotation.len == 0) {
@@ -6016,47 +6022,14 @@ pub const Parser = struct {
                 };
             }
 
-            // Find annotation start (last [ that starts an annotation, not part of type)
-            // Annotations are [identifier], array types are [number] or [_]
-            // IMPORTANT: Phantom types [active!] or [!active] contain '!' - don't treat as annotations
-            var annotation_start: ?usize = null;
-            var i: usize = type_and_annotation.len;
-            while (i > 0) {
-                i -= 1;
-                if (type_and_annotation[i] == '[') {
-                    // Check if this is an annotation (followed by identifier) or array type (followed by digit or _)
-                    if (i + 1 < type_and_annotation.len) {
-                        const next_char = type_and_annotation[i + 1];
-                        if (std.ascii.isAlphabetic(next_char)) {
-                            // Check if this contains '!' - if so, it's a phantom type, not an annotation
-                            const close_bracket = std.mem.indexOf(u8, type_and_annotation[i..], "]") orelse type_and_annotation.len - i;
-                            const bracket_content = type_and_annotation[i + 1 .. i + close_bracket];
-                            const has_bang = std.mem.indexOf(u8, bracket_content, "!") != null;
-                            if (!has_bang) {
-                                // This is an annotation like [mutable], not a phantom like [active!]
-                                annotation_start = i;
-                                break;
-                            }
-                            // Has '!' - it's a phantom type, not an annotation. Continue looking for annotations.
-                        }
-                    }
-                }
-            }
-
-            var type_str: []const u8 = undefined;
-            if (annotation_start) |ann_start| {
-                type_str = lexer.trim(type_and_annotation[0..ann_start]);
-                const annotation_content = type_and_annotation[ann_start..];
-
-                // Parse annotation: [name]
-                if (annotation_content.len > 2 and annotation_content[0] == '[') {
-                    const close_bracket = std.mem.indexOf(u8, annotation_content, "]") orelse annotation_content.len - 1;
-                    const ann_name = annotation_content[1..close_bracket];
-                    try annotations.append(self.allocator, try self.allocator.dupe(u8, ann_name));
-                }
-            } else {
-                type_str = type_and_annotation;
-            }
+            // Identity branches carry the full type string (including any phantom
+            // type suffix).  Phantom extraction happens below; we no longer strip
+            // trailing [identifier] as a "branch annotation" because bare phantom
+            // state literals (e.g. [celsius], [open]) were incorrectly swallowed
+            // here.  The only annotation historically used on identity branches
+            // ([mutable]) is unused in current code and is better handled as a
+            // phantom type or binding annotation in the continuation.
+            var type_str = type_and_annotation;
 
             // Handle phantom types like u64[\d+] - extract and strip from type_str
             // Use same logic as parseFields for consistency
