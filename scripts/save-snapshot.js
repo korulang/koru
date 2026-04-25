@@ -193,6 +193,10 @@ async function saveSnapshot() {
 		const brokenTests = allTests.filter(t => t.status === 'broken').length;
 		const untestedTests = allTests.filter(t => t.status === 'untested').length;
 		const totalTests = allTests.length;
+		// inScope: tests that should be executed and contribute to pass rate.
+		// Excludes TODO/SKIP/BROKEN (explicitly sidelined). Includes untested
+		// (those *should* have run — if they didn't it's a real gap).
+		const inScopeTests = totalTests - todoTests - skippedTests - brokenTests;
 
 		// Create snapshot
 		const timestamp = new Date().toISOString();
@@ -202,13 +206,14 @@ async function saveSnapshot() {
 			commandFlags: flags,
 			summary: {
 				total: totalTests,
+				inScope: inScopeTests,
 				passed: passedTests,
 				failed: failedTests,
 				todo: todoTests,
 				skipped: skippedTests,
 				broken: brokenTests,
 				untested: untestedTests,
-				passRate: totalTests > 0 ? ((passedTests / totalTests) * 100).toFixed(1) : '0.0'
+				passRate: inScopeTests > 0 ? ((passedTests / inScopeTests) * 100).toFixed(1) : '0.0'
 			},
 			categories,
 			unitTests: unitTests ? {
@@ -232,7 +237,7 @@ async function saveSnapshot() {
 		await symlink(filename, latestPath);
 
 		console.log(`✓ Saved test snapshot: ${filename}`);
-		console.log(`  Regression: ${passedTests}/${totalTests} passed (${snapshot.summary.passRate}%)`);
+		console.log(`  Regression: ${passedTests}/${inScopeTests} in-scope passed (${snapshot.summary.passRate}%)  [${totalTests} total on disk]`);
 		console.log(`  Failed: ${failedTests}, TODO: ${todoTests}, Skipped: ${skippedTests}, Broken: ${brokenTests}`);
 		if (unitTests) {
 			const us = unitTests.summary;

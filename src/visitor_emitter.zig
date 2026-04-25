@@ -2782,27 +2782,35 @@ pub const VisitorEmitter = struct {
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("}\n");
 
-        // Emit variant handlers for registry-selected variants only.
-        // Non-zig variants (gpu, js, etc.) are only emitted if explicitly
-        // selected via build:variants — their bodies may be foreign code
-        // (GLSL, JS) that would fail Zig compilation if emitted verbatim.
-        const module_for_variant_lookup = self.current_module_name orelse self.main_module_name;
-        const event_canonical = emitter.buildCanonicalEventName(&event.path, self.allocator, module_for_variant_lookup) catch null;
-        defer if (event_canonical) |ec| self.allocator.free(ec);
-
+        // Emit variant handlers for every Zig-targeted variant proc. Both the bare
+        // handler and handler__<variant> coexist in the backend; call sites dispatch via
+        // writeHandlerName which mangles to handler__<variant> when invocation.variant is
+        // set or getVariant() returns a registered default. Dead-code elimination drops
+        // unused variant bodies. (Foreign-language variants like gpu/js are still gated
+        // because their bodies are not Zig and would fail compilation.)
         for (items_to_search) |impl_item| {
             switch (impl_item) {
                 .proc_decl => |proc| {
-                    // Only emit handlers for variant procs (target != null and target != "zig")
+                    // Only emit handlers for Zig variant procs (target != null and target != "zig")
                     if (proc.target) |target| {
                         if (eql(u8, target, "zig")) continue;
-
-                        // Only emit if this variant is registered (selected for use)
-                        const is_registered = if (event_canonical) |ec|
-                            if (emitter.getVariant(ec)) |rv| eql(u8, rv, target) else false
-                        else
-                            false;
-                        if (!is_registered) continue;
+                        // Foreign-language targets are only safe to emit when explicitly
+                        // selected via build:variants (their bodies aren't valid Zig).
+                        const foreign_targets = [_][]const u8{ "gpu", "js", "python", "wasm", "glsl" };
+                        var is_foreign = false;
+                        for (foreign_targets) |ft| {
+                            if (eql(u8, target, ft)) {
+                                is_foreign = true;
+                                break;
+                            }
+                        }
+                        if (is_foreign) {
+                            const module_for_variant_lookup = self.current_module_name orelse self.main_module_name;
+                            const event_canonical = emitter.buildCanonicalEventName(&event.path, self.allocator, module_for_variant_lookup) catch continue;
+                            defer self.allocator.free(event_canonical);
+                            const is_registered = if (emitter.getVariant(event_canonical)) |rv| eql(u8, rv, target) else false;
+                            if (!is_registered) continue;
+                        }
 
                         // Check if this proc matches the event
                         if (proc.path.segments.len != event.path.segments.len) continue;

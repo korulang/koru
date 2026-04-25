@@ -364,6 +364,7 @@ exe.root_module.addImport("runtime_registry", runtime_registry_module);
 exe.root_module.addImport("tap_transformer", tap_transformer_module);
 exe.root_module.addImport("visitor_emitter", visitor_emitter_module);
 exe.root_module.addImport("parser", parser_module);
+exe.root_module.addImport("expression_parser", expression_parser_module);
 exe.root_module.addImport("emit_build_zig", emit_build_zig_module);
 exe.root_module.addImport("shape_checker", shape_checker_module);
 exe.root_module.addImport("flow_checker", flow_checker_module);

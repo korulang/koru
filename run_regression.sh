@@ -193,6 +193,12 @@ if [ "$1" = "--last-run" ]; then
             node -e "
 const fs = require('fs');
 const snap = JSON.parse(fs.readFileSync('test-results/latest.json', 'utf-8'));
+// Backfill inScope/passRate for older snapshots
+const s = snap.summary;
+if (s.inScope === undefined) {
+    s.inScope = s.total - s.todo - s.skipped - s.broken;
+    s.passRate = s.inScope > 0 ? ((s.passed / s.inScope) * 100).toFixed(1) : '0.0';
+}
 console.log('═══════════════════════════════════════════════════════════');
 console.log('LAST FULL RUN RESULTS');
 console.log('═══════════════════════════════════════════════════════════');
@@ -201,13 +207,13 @@ console.log('Timestamp:', new Date(snap.timestamp).toLocaleString());
 console.log('Git commit:', snap.gitCommit);
 console.log('Flags:', snap.commandFlags || '(none)');
 console.log('');
-console.log(\`RESULTS: \${snap.summary.passed}/\${snap.summary.total} passed (\${snap.summary.passRate}%)\`);
-console.log(\`  ✅ \${snap.summary.passed} passing\`);
-if (snap.summary.todo > 0) console.log(\`  📝 \${snap.summary.todo} TODO\`);
-if (snap.summary.skipped > 0) console.log(\`  ⏭️  \${snap.summary.skipped} skipped\`);
-if (snap.summary.broken > 0) console.log(\`  🔧 \${snap.summary.broken} broken\`);
-if (snap.summary.failed > 0) console.log(\`  ❌ \${snap.summary.failed} failed\`);
-if (snap.summary.untested > 0) console.log(\`  ❔ \${snap.summary.untested} untested\`);
+console.log(\`RESULTS: \${s.passed}/\${s.inScope} in-scope passed (\${s.passRate}%)  [\${s.total} total]\`);
+console.log(\`  ✅ \${s.passed} passing\`);
+if (s.failed > 0) console.log(\`  ❌ \${s.failed} failed\`);
+if (s.untested > 0) console.log(\`  ❔ \${s.untested} untested\`);
+if (s.todo > 0) console.log(\`  📝 \${s.todo} TODO       (excluded from %)\`);
+if (s.skipped > 0) console.log(\`  ⏭️  \${s.skipped} skipped    (excluded from %)\`);
+if (s.broken > 0) console.log(\`  🔧 \${s.broken} broken     (excluded from %)\`);
 "
         else
             echo -e "${RED}❌ No snapshot found${NC}"

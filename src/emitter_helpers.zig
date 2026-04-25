@@ -2781,6 +2781,85 @@ fn findProcDeclByPathInModule(items: []const ast.Item, segments: []const []const
     return null;
 }
 
+/// Find all variant proc_decls (proc.target != null) whose path matches the given path.
+/// Caller owns the returned slice. Used by event-handler emission to generate
+/// handler__<variant> functions alongside the bare handler.
+pub fn findVariantProcsByPath(
+    allocator: std.mem.Allocator,
+    items: []const ast.Item,
+    path: *const ast.DottedPath,
+) ![]*const ast.ProcDecl {
+    var found = std.ArrayList(*const ast.ProcDecl){};
+    errdefer found.deinit(allocator);
+
+    if (path.module_qualifier) |module_qual| {
+        for (items) |*item| {
+            if (item.* == .module_decl) {
+                if (std.mem.eql(u8, item.module_decl.logical_name, module_qual)) {
+                    try collectVariantProcsInModule(allocator, &found, item.module_decl.items, path.segments);
+                    return try found.toOwnedSlice(allocator);
+                }
+            }
+        }
+        try collectVariantProcsInModule(allocator, &found, items, path.segments);
+        return try found.toOwnedSlice(allocator);
+    }
+
+    try collectVariantProcsRecursive(allocator, &found, items, path.segments);
+    return try found.toOwnedSlice(allocator);
+}
+
+fn collectVariantProcsInModule(
+    allocator: std.mem.Allocator,
+    out: *std.ArrayList(*const ast.ProcDecl),
+    items: []const ast.Item,
+    segments: []const []const u8,
+) !void {
+    for (items) |*item| {
+        if (item.* == .proc_decl) {
+            const proc = &item.proc_decl;
+            if (proc.target == null) continue;
+            if (proc.path.segments.len != segments.len) continue;
+            var matches = true;
+            for (proc.path.segments, 0..) |segment, i| {
+                if (!std.mem.eql(u8, segment, segments[i])) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) try out.append(allocator, proc);
+        }
+    }
+}
+
+fn collectVariantProcsRecursive(
+    allocator: std.mem.Allocator,
+    out: *std.ArrayList(*const ast.ProcDecl),
+    items: []const ast.Item,
+    segments: []const []const u8,
+) !void {
+    for (items) |*item| {
+        switch (item.*) {
+            .proc_decl => |*proc| {
+                if (proc.target == null) continue;
+                if (proc.path.segments.len != segments.len) continue;
+                var matches = true;
+                for (proc.path.segments, 0..) |segment, i| {
+                    if (!std.mem.eql(u8, segment, segments[i])) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) try out.append(allocator, proc);
+            },
+            .module_decl => |*module| {
+                try collectVariantProcsRecursive(allocator, out, module.items, segments);
+            },
+            else => {},
+        }
+    }
+}
+
 /// Tagged union for the two kinds of impl items that can be found by path:
 /// - An ImmediateImpl (constant/mock value)
 /// - A Flow with impl_of set (flow-based implementation)
@@ -7714,6 +7793,51 @@ fn emitEventDeclForModule(
     code_emitter.indent_level -= 1;
     try code_emitter.writeIndent();
     try code_emitter.write("}\n");
+
+    // Variant handlers: emit pub fn handler__<variant>(...) for each ~proc <event>|<variant>.
+    // Both bodies coexist in the binary; call sites dispatch via writeHandlerName which
+    // mangles to handler__<variant> when invocation.variant is set or getVariant() returns
+    // a registered default. Dead-code elimination drops unused variant bodies.
+    const variant_procs = try findVariantProcsByPath(ctx.allocator, all_items, &event.path);
+    defer ctx.allocator.free(variant_procs);
+    for (variant_procs) |variant_proc| {
+        const variant_name = variant_proc.target orelse continue;
+        const mangled = try mangleVariant(ctx.allocator, variant_name);
+        defer ctx.allocator.free(mangled);
+
+        try code_emitter.writeIndent();
+        try code_emitter.write("pub fn handler__");
+        try code_emitter.write(mangled);
+        try code_emitter.write("(__koru_event_input: Input) Output {\n");
+        code_emitter.indent_level += 1;
+
+        for (event.input.fields) |field| {
+            try code_emitter.writeIndent();
+            try code_emitter.write("const ");
+            try code_emitter.write(field.name);
+            try code_emitter.write(" = __koru_event_input.");
+            try code_emitter.write(field.name);
+            try code_emitter.write(";\n");
+        }
+        for (event.input.fields) |field| {
+            try code_emitter.writeIndent();
+            try code_emitter.write("_ = &");
+            try code_emitter.write(field.name);
+            try code_emitter.write(";\n");
+        }
+        try code_emitter.writeIndent();
+        try code_emitter.write("_ = &__koru_event_input;\n");
+
+        if (variant_proc.body.len > 0) {
+            try code_emitter.writeIndent();
+            try code_emitter.write(variant_proc.body);
+            try code_emitter.write("\n");
+        }
+
+        code_emitter.indent_level -= 1;
+        try code_emitter.writeIndent();
+        try code_emitter.write("}\n");
+    }
 
     // Close event struct
     code_emitter.indent_level -= 1;

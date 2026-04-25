@@ -28,6 +28,7 @@
 !**/expected_error.txt
 !**/expected.json
 !**/EXPECT
+!**/COMPILE_ONLY
 !**/SKIP
 !**/MUST_*
 !**/SHOULD_*

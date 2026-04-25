@@ -166,7 +166,7 @@ pub const PROGRAM_AST = Program{
                 .invocation = Invocation{
                     .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"requires"} },
                     .args = &[_]Arg{
-                        Arg{ .name = "source", .value = "// Calculate relative path from test directory to repo root\n// This will be baked into the generated build.zig\nconst REL_TO_ROOT = \"${REL_TO_ROOT}\";\n\n// Errors module - error reporting\nconst errors_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/errors.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Log module - logging utilities\nconst log_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/log.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// AST module - core AST data structures\nconst ast_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/ast.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nast_module.addImport(\"errors\", errors_module);\n\n// Lexer module - tokenization\nconst lexer_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/lexer.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Annotation parser - parses parametrized annotations\nconst annotation_parser_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/annotation_parser.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Type registry - type metadata tracking\nconst type_registry_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/type_registry.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntype_registry_module.addImport(\"ast\", ast_module);\ntype_registry_module.addImport(\"log\", log_module);\n\n// Expression parser\nconst expression_parser_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/expression_parser.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nexpression_parser_module.addImport(\"lexer\", lexer_module);\nexpression_parser_module.addImport(\"ast\", ast_module);\n\n// Union collector\nconst union_collector_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/union_collector.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nunion_collector_module.addImport(\"ast\", ast_module);\n\n// Config module - project configuration\nconst config_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/config.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nconfig_module.addImport(\"log\", log_module);\n\n// Module resolver - resolves import paths\nconst module_resolver_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/module_resolver.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nmodule_resolver_module.addImport(\"config\", config_module);\nmodule_resolver_module.addImport(\"log\", log_module);\n\n// Parser module - source parsing\nconst parser_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/parser.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nparser_module.addImport(\"ast\", ast_module);\nparser_module.addImport(\"lexer\", lexer_module);\nparser_module.addImport(\"errors\", errors_module);\nparser_module.addImport(\"log\", log_module);\nparser_module.addImport(\"type_registry\", type_registry_module);\nparser_module.addImport(\"expression_parser\", expression_parser_module);\nparser_module.addImport(\"union_collector\", union_collector_module);\nparser_module.addImport(\"module_resolver\", module_resolver_module);\n\n// Phantom parser\nconst phantom_parser_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/koru_std/phantom_parser.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Type inference\nconst type_inference_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/type_inference.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntype_inference_module.addImport(\"ast\", ast_module);\ntype_inference_module.addImport(\"errors\", errors_module);\n\n// Branch checker - pure branch name validation\nconst branch_checker_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/branch_checker.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Shape checker - validates event/branch structures\nconst shape_checker_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/shape_checker.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nshape_checker_module.addImport(\"ast\", ast_module);\nshape_checker_module.addImport(\"errors\", errors_module);\nshape_checker_module.addImport(\"log\", log_module);\nshape_checker_module.addImport(\"phantom_parser\", phantom_parser_module);\nshape_checker_module.addImport(\"type_inference\", type_inference_module);\nshape_checker_module.addImport(\"branch_checker\", branch_checker_module);\n\n// Flow checker - validates control flow\nconst flow_checker_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/flow_checker.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nflow_checker_module.addImport(\"ast\", ast_module);\nflow_checker_module.addImport(\"errors\", errors_module);\nflow_checker_module.addImport(\"log\", log_module);\nflow_checker_module.addImport(\"branch_checker\", branch_checker_module);\nflow_checker_module.addImport(\"annotation_parser\", annotation_parser_module);\n\n// Phantom semantic checker - validates phantom type states\nconst phantom_semantic_checker_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/phantom_semantic_checker.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nphantom_semantic_checker_module.addImport(\"ast\", ast_module);\nphantom_semantic_checker_module.addImport(\"errors\", errors_module);\nphantom_semantic_checker_module.addImport(\"log\", log_module);\nphantom_semantic_checker_module.addImport(\"phantom_parser\", phantom_parser_module);\n\n// Purity analyzer - tracks [pure] annotations\nconst purity_analyzer_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/compiler_passes/purity_analyzer.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\npurity_analyzer_module.addImport(\"ast\", ast_module);\n\n// AST functional utilities\nconst ast_functional_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/ast_functional.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nast_functional_module.addImport(\"ast\", ast_module);\n\n// Auto-discharge inserter - inserts disposal calls before terminators\nconst auto_discharge_inserter_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/auto_discharge_inserter.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nauto_discharge_inserter_module.addImport(\"ast\", ast_module);\nauto_discharge_inserter_module.addImport(\"ast_functional\", ast_functional_module);\nauto_discharge_inserter_module.addImport(\"errors\", errors_module);\nauto_discharge_inserter_module.addImport(\"log\", log_module);\nauto_discharge_inserter_module.addImport(\"phantom_parser\", phantom_parser_module);\n\n// Dead strip pass - removes unreachable events/procs from AST\nconst dead_strip_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/dead_strip.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ndead_strip_module.addImport(\"ast\", ast_module);\ndead_strip_module.addImport(\"log\", log_module);\n\n// Codegen utilities - keyword escaping, identifier helpers\nconst codegen_utils_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/codegen_utils.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Continuation codegen - reusable code generation for transforms\nconst continuation_codegen_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/continuation_codegen.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ncontinuation_codegen_module.addImport(\"ast\", ast_module);\ncontinuation_codegen_module.addImport(\"codegen_utils\", codegen_utils_module);\n\n// Template utils - template lookup and interpolation for metaprogramming\nconst template_utils_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/template_utils.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntemplate_utils_module.addImport(\"ast\", ast_module);\n\n// Liquid template engine - runtime Liquid-style templating\nconst liquid_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/liquid.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Compiler config\nconst compiler_config_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/compiler_config.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Emitter helpers - code generation utilities\nconst emitter_helpers_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/emitter_helpers.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nemitter_helpers_module.addImport(\"ast\", ast_module);\nemitter_helpers_module.addImport(\"errors\", errors_module);\nemitter_helpers_module.addImport(\"log\", log_module);\nemitter_helpers_module.addImport(\"compiler_config\", compiler_config_module);\nemitter_helpers_module.addImport(\"type_registry\", type_registry_module);\nemitter_helpers_module.addImport(\"codegen_utils\", codegen_utils_module);\n\n// Tap pattern matcher\nconst glob_pattern_matcher_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/glob_pattern_matcher.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Tap registry - tap/observer system\nconst tap_registry_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/tap_registry.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntap_registry_module.addImport(\"ast\", ast_module);\ntap_registry_module.addImport(\"errors\", errors_module);\ntap_registry_module.addImport(\"log\", log_module);\ntap_registry_module.addImport(\"glob_pattern_matcher\", glob_pattern_matcher_module);\n\n// Runtime registry - runtime scope collection\nconst runtime_registry_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/runtime_registry.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Tap transformer - inserts tap invocations into AST\nconst tap_transformer_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/tap_transformer.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntap_transformer_module.addImport(\"ast\", ast_module);\ntap_transformer_module.addImport(\"log\", log_module);\ntap_transformer_module.addImport(\"tap_registry\", tap_registry_module);\ntap_transformer_module.addImport(\"emitter_helpers\", emitter_helpers_module);\n\n// Purity helpers\nconst purity_helpers_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/compiler_passes/purity_helpers.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\npurity_helpers_module.addImport(\"ast\", ast_module);\npurity_helpers_module.addImport(\"lexer\", lexer_module);\ntap_transformer_module.addImport(\"compiler_passes/purity_helpers\", purity_helpers_module);\nemitter_helpers_module.addImport(\"tap_registry\", tap_registry_module);\nemitter_helpers_module.addImport(\"compiler_passes/purity_helpers\", purity_helpers_module);\n\n// Visitor emitter - code generation visitor pattern\nconst visitor_emitter_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/visitor_emitter.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nvisitor_emitter_module.addImport(\"ast\", ast_module);\nvisitor_emitter_module.addImport(\"log\", log_module);\nvisitor_emitter_module.addImport(\"emitter_helpers\", emitter_helpers_module);\nvisitor_emitter_module.addImport(\"tap_registry\", tap_registry_module);\nvisitor_emitter_module.addImport(\"type_registry\", type_registry_module);\nvisitor_emitter_module.addImport(\"annotation_parser\", annotation_parser_module);\nvisitor_emitter_module.addImport(\"codegen_utils\", codegen_utils_module);\n\n// Build.zig emission\nconst emit_build_zig_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/emit_build_zig.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// AST serializer (for --ast-json and debugging)\nconst ast_serializer_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/ast_serializer.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nast_serializer_module.addImport(\"ast\", ast_module);\n\n// Transform pass runner - recursive AST walker for transform handlers\n// Also handles [expand] events via template lookup and interpolation\nconst transform_pass_runner_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/transform_pass_runner.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntransform_pass_runner_module.addImport(\"ast\", ast_module);\ntransform_pass_runner_module.addImport(\"log\", log_module);\ntransform_pass_runner_module.addImport(\"annotation_parser\", annotation_parser_module);\ntransform_pass_runner_module.addImport(\"template_utils\", template_utils_module);\ntransform_pass_runner_module.addImport(\"ast_functional\", ast_functional_module);\ntransform_pass_runner_module.addImport(\"liquid\", liquid_module);\n\n// Add all imports to the backend executable\nexe.root_module.addImport(\"ast\", ast_module);\nexe.root_module.addImport(\"ast_functional\", ast_functional_module);\nexe.root_module.addImport(\"ast_serializer\", ast_serializer_module);\nexe.root_module.addImport(\"log\", log_module);\nexe.root_module.addImport(\"emitter_helpers\", emitter_helpers_module);\nexe.root_module.addImport(\"tap_registry\", tap_registry_module);\nexe.root_module.addImport(\"runtime_registry\", runtime_registry_module);\nexe.root_module.addImport(\"tap_transformer\", tap_transformer_module);\nexe.root_module.addImport(\"visitor_emitter\", visitor_emitter_module);\nexe.root_module.addImport(\"parser\", parser_module);\nexe.root_module.addImport(\"emit_build_zig\", emit_build_zig_module);\nexe.root_module.addImport(\"shape_checker\", shape_checker_module);\nexe.root_module.addImport(\"flow_checker\", flow_checker_module);\nexe.root_module.addImport(\"phantom_semantic_checker\", phantom_semantic_checker_module);\nexe.root_module.addImport(\"auto_discharge_inserter\", auto_discharge_inserter_module);\nexe.root_module.addImport(\"dead_strip\", dead_strip_module);\nexe.root_module.addImport(\"purity_analyzer\", purity_analyzer_module);\nexe.root_module.addImport(\"errors\", errors_module);\nexe.root_module.addImport(\"type_registry\", type_registry_module);\nexe.root_module.addImport(\"annotation_parser\", annotation_parser_module);\nexe.root_module.addImport(\"transform_pass_runner\", transform_pass_runner_module);\nexe.root_module.addImport(\"codegen_utils\", codegen_utils_module);\nexe.root_module.addImport(\"continuation_codegen\", continuation_codegen_module);\nexe.root_module.addImport(\"template_utils\", template_utils_module);\nexe.root_module.addImport(\"liquid\", liquid_module);\n", .source_value = &Source{
+                        Arg{ .name = "source", .value = "// Calculate relative path from test directory to repo root\n// This will be baked into the generated build.zig\nconst REL_TO_ROOT = \"${REL_TO_ROOT}\";\n\n// Errors module - error reporting\nconst errors_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/errors.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Log module - logging utilities\nconst log_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/log.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// AST module - core AST data structures\nconst ast_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/ast.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nast_module.addImport(\"errors\", errors_module);\n\n// Lexer module - tokenization\nconst lexer_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/lexer.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Annotation parser - parses parametrized annotations\nconst annotation_parser_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/annotation_parser.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Type registry - type metadata tracking\nconst type_registry_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/type_registry.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntype_registry_module.addImport(\"ast\", ast_module);\ntype_registry_module.addImport(\"log\", log_module);\n\n// Expression parser\nconst expression_parser_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/expression_parser.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nexpression_parser_module.addImport(\"lexer\", lexer_module);\nexpression_parser_module.addImport(\"ast\", ast_module);\n\n// Union collector\nconst union_collector_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/union_collector.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nunion_collector_module.addImport(\"ast\", ast_module);\n\n// Config module - project configuration\nconst config_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/config.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nconfig_module.addImport(\"log\", log_module);\n\n// Module resolver - resolves import paths\nconst module_resolver_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/module_resolver.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nmodule_resolver_module.addImport(\"config\", config_module);\nmodule_resolver_module.addImport(\"log\", log_module);\n\n// Parser module - source parsing\nconst parser_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/parser.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nparser_module.addImport(\"ast\", ast_module);\nparser_module.addImport(\"lexer\", lexer_module);\nparser_module.addImport(\"errors\", errors_module);\nparser_module.addImport(\"log\", log_module);\nparser_module.addImport(\"type_registry\", type_registry_module);\nparser_module.addImport(\"expression_parser\", expression_parser_module);\nparser_module.addImport(\"union_collector\", union_collector_module);\nparser_module.addImport(\"module_resolver\", module_resolver_module);\n\n// Phantom parser\nconst phantom_parser_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/koru_std/phantom_parser.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Type inference\nconst type_inference_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/type_inference.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntype_inference_module.addImport(\"ast\", ast_module);\ntype_inference_module.addImport(\"errors\", errors_module);\n\n// Branch checker - pure branch name validation\nconst branch_checker_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/branch_checker.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Shape checker - validates event/branch structures\nconst shape_checker_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/shape_checker.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nshape_checker_module.addImport(\"ast\", ast_module);\nshape_checker_module.addImport(\"errors\", errors_module);\nshape_checker_module.addImport(\"log\", log_module);\nshape_checker_module.addImport(\"phantom_parser\", phantom_parser_module);\nshape_checker_module.addImport(\"type_inference\", type_inference_module);\nshape_checker_module.addImport(\"branch_checker\", branch_checker_module);\n\n// Flow checker - validates control flow\nconst flow_checker_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/flow_checker.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nflow_checker_module.addImport(\"ast\", ast_module);\nflow_checker_module.addImport(\"errors\", errors_module);\nflow_checker_module.addImport(\"log\", log_module);\nflow_checker_module.addImport(\"branch_checker\", branch_checker_module);\nflow_checker_module.addImport(\"annotation_parser\", annotation_parser_module);\n\n// Phantom semantic checker - validates phantom type states\nconst phantom_semantic_checker_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/phantom_semantic_checker.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nphantom_semantic_checker_module.addImport(\"ast\", ast_module);\nphantom_semantic_checker_module.addImport(\"errors\", errors_module);\nphantom_semantic_checker_module.addImport(\"log\", log_module);\nphantom_semantic_checker_module.addImport(\"phantom_parser\", phantom_parser_module);\n\n// Purity analyzer - tracks [pure] annotations\nconst purity_analyzer_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/compiler_passes/purity_analyzer.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\npurity_analyzer_module.addImport(\"ast\", ast_module);\n\n// AST functional utilities\nconst ast_functional_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/ast_functional.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nast_functional_module.addImport(\"ast\", ast_module);\n\n// Auto-discharge inserter - inserts disposal calls before terminators\nconst auto_discharge_inserter_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/auto_discharge_inserter.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nauto_discharge_inserter_module.addImport(\"ast\", ast_module);\nauto_discharge_inserter_module.addImport(\"ast_functional\", ast_functional_module);\nauto_discharge_inserter_module.addImport(\"errors\", errors_module);\nauto_discharge_inserter_module.addImport(\"log\", log_module);\nauto_discharge_inserter_module.addImport(\"phantom_parser\", phantom_parser_module);\n\n// Dead strip pass - removes unreachable events/procs from AST\nconst dead_strip_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/dead_strip.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ndead_strip_module.addImport(\"ast\", ast_module);\ndead_strip_module.addImport(\"log\", log_module);\n\n// Codegen utilities - keyword escaping, identifier helpers\nconst codegen_utils_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/codegen_utils.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Continuation codegen - reusable code generation for transforms\nconst continuation_codegen_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/continuation_codegen.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ncontinuation_codegen_module.addImport(\"ast\", ast_module);\ncontinuation_codegen_module.addImport(\"codegen_utils\", codegen_utils_module);\n\n// Template utils - template lookup and interpolation for metaprogramming\nconst template_utils_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/template_utils.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntemplate_utils_module.addImport(\"ast\", ast_module);\n\n// Liquid template engine - runtime Liquid-style templating\nconst liquid_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/liquid.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Compiler config\nconst compiler_config_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/compiler_config.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Emitter helpers - code generation utilities\nconst emitter_helpers_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/emitter_helpers.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nemitter_helpers_module.addImport(\"ast\", ast_module);\nemitter_helpers_module.addImport(\"errors\", errors_module);\nemitter_helpers_module.addImport(\"log\", log_module);\nemitter_helpers_module.addImport(\"compiler_config\", compiler_config_module);\nemitter_helpers_module.addImport(\"type_registry\", type_registry_module);\nemitter_helpers_module.addImport(\"codegen_utils\", codegen_utils_module);\n\n// Tap pattern matcher\nconst glob_pattern_matcher_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/glob_pattern_matcher.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Tap registry - tap/observer system\nconst tap_registry_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/tap_registry.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntap_registry_module.addImport(\"ast\", ast_module);\ntap_registry_module.addImport(\"errors\", errors_module);\ntap_registry_module.addImport(\"log\", log_module);\ntap_registry_module.addImport(\"glob_pattern_matcher\", glob_pattern_matcher_module);\n\n// Runtime registry - runtime scope collection\nconst runtime_registry_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/runtime_registry.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// Tap transformer - inserts tap invocations into AST\nconst tap_transformer_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/tap_transformer.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntap_transformer_module.addImport(\"ast\", ast_module);\ntap_transformer_module.addImport(\"log\", log_module);\ntap_transformer_module.addImport(\"tap_registry\", tap_registry_module);\ntap_transformer_module.addImport(\"emitter_helpers\", emitter_helpers_module);\n\n// Purity helpers\nconst purity_helpers_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/compiler_passes/purity_helpers.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\npurity_helpers_module.addImport(\"ast\", ast_module);\npurity_helpers_module.addImport(\"lexer\", lexer_module);\ntap_transformer_module.addImport(\"compiler_passes/purity_helpers\", purity_helpers_module);\nemitter_helpers_module.addImport(\"tap_registry\", tap_registry_module);\nemitter_helpers_module.addImport(\"compiler_passes/purity_helpers\", purity_helpers_module);\n\n// Visitor emitter - code generation visitor pattern\nconst visitor_emitter_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/visitor_emitter.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nvisitor_emitter_module.addImport(\"ast\", ast_module);\nvisitor_emitter_module.addImport(\"log\", log_module);\nvisitor_emitter_module.addImport(\"emitter_helpers\", emitter_helpers_module);\nvisitor_emitter_module.addImport(\"tap_registry\", tap_registry_module);\nvisitor_emitter_module.addImport(\"type_registry\", type_registry_module);\nvisitor_emitter_module.addImport(\"annotation_parser\", annotation_parser_module);\nvisitor_emitter_module.addImport(\"codegen_utils\", codegen_utils_module);\n\n// Build.zig emission\nconst emit_build_zig_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/emit_build_zig.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\n\n// AST serializer (for --ast-json and debugging)\nconst ast_serializer_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/ast_serializer.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\nast_serializer_module.addImport(\"ast\", ast_module);\n\n// Transform pass runner - recursive AST walker for transform handlers\n// Also handles [expand] events via template lookup and interpolation\nconst transform_pass_runner_module = b.createModule(.{\n    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ \"/src/transform_pass_runner.zig\" },\n    .target = target,\n    .optimize = optimize,\n});\ntransform_pass_runner_module.addImport(\"ast\", ast_module);\ntransform_pass_runner_module.addImport(\"log\", log_module);\ntransform_pass_runner_module.addImport(\"annotation_parser\", annotation_parser_module);\ntransform_pass_runner_module.addImport(\"template_utils\", template_utils_module);\ntransform_pass_runner_module.addImport(\"ast_functional\", ast_functional_module);\ntransform_pass_runner_module.addImport(\"liquid\", liquid_module);\n\n// Add all imports to the backend executable\nexe.root_module.addImport(\"ast\", ast_module);\nexe.root_module.addImport(\"ast_functional\", ast_functional_module);\nexe.root_module.addImport(\"ast_serializer\", ast_serializer_module);\nexe.root_module.addImport(\"log\", log_module);\nexe.root_module.addImport(\"emitter_helpers\", emitter_helpers_module);\nexe.root_module.addImport(\"tap_registry\", tap_registry_module);\nexe.root_module.addImport(\"runtime_registry\", runtime_registry_module);\nexe.root_module.addImport(\"tap_transformer\", tap_transformer_module);\nexe.root_module.addImport(\"visitor_emitter\", visitor_emitter_module);\nexe.root_module.addImport(\"parser\", parser_module);\nexe.root_module.addImport(\"expression_parser\", expression_parser_module);\nexe.root_module.addImport(\"emit_build_zig\", emit_build_zig_module);\nexe.root_module.addImport(\"shape_checker\", shape_checker_module);\nexe.root_module.addImport(\"flow_checker\", flow_checker_module);\nexe.root_module.addImport(\"phantom_semantic_checker\", phantom_semantic_checker_module);\nexe.root_module.addImport(\"auto_discharge_inserter\", auto_discharge_inserter_module);\nexe.root_module.addImport(\"dead_strip\", dead_strip_module);\nexe.root_module.addImport(\"purity_analyzer\", purity_analyzer_module);\nexe.root_module.addImport(\"errors\", errors_module);\nexe.root_module.addImport(\"type_registry\", type_registry_module);\nexe.root_module.addImport(\"annotation_parser\", annotation_parser_module);\nexe.root_module.addImport(\"transform_pass_runner\", transform_pass_runner_module);\nexe.root_module.addImport(\"codegen_utils\", codegen_utils_module);\nexe.root_module.addImport(\"continuation_codegen\", continuation_codegen_module);\nexe.root_module.addImport(\"template_utils\", template_utils_module);\nexe.root_module.addImport(\"liquid\", liquid_module);\n", .source_value = &Source{
                             .text = 
                                 \\// Calculate relative path from test directory to repo root
                                 \\// This will be baked into the generated build.zig
@@ -515,6 +515,7 @@ pub const PROGRAM_AST = Program{
                                 \\exe.root_module.addImport("tap_transformer", tap_transformer_module);
                                 \\exe.root_module.addImport("visitor_emitter", visitor_emitter_module);
                                 \\exe.root_module.addImport("parser", parser_module);
+                                \\exe.root_module.addImport("expression_parser", expression_parser_module);
                                 \\exe.root_module.addImport("emit_build_zig", emit_build_zig_module);
                                 \\exe.root_module.addImport("shape_checker", shape_checker_module);
                                 \\exe.root_module.addImport("flow_checker", flow_checker_module);
@@ -532,7 +533,7 @@ pub const PROGRAM_AST = Program{
                                 \\exe.root_module.addImport("liquid", liquid_module);
                                 \\
                                 ,
-                            .location = .{ .line = 450, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                            .location = .{ .line = 451, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                             .scope = CapturedScope{
                                 .bindings = &[_]ScopeBinding{
                                 },
@@ -560,25 +561,25 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 451, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// STANDARD COMPILER FLAGS", .location = .{ .line = 452, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 453, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 454, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 455, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// COMPILER FLAGS - Self-documenting feature flags", .location = .{ .line = 456, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 457, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Modules declare their compiler flags with inline documentation.", .location = .{ .line = 458, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// The frontend collects these during --help to build flag documentation.", .location = .{ .line = 459, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 460, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 461, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   ~compiler:flag.declare {", .location = .{ .line = 462, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//     \"name\": \"fusion\",", .location = .{ .line = 463, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//     \"description\": \"Enable event fusion optimization\",", .location = .{ .line = 464, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//     \"type\": \"boolean\"", .location = .{ .line = 465, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 466, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 467, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// [norun] annotation prevents auto-execution - --help reads from AST instead.", .location = .{ .line = 468, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// This makes help metacircular - discovered by parsing, not hardcoded!", .location = .{ .line = 469, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 452, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// STANDARD COMPILER FLAGS", .location = .{ .line = 453, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 454, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 455, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 456, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// COMPILER FLAGS - Self-documenting feature flags", .location = .{ .line = 457, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 458, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Modules declare their compiler flags with inline documentation.", .location = .{ .line = 459, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// The frontend collects these during --help to build flag documentation.", .location = .{ .line = 460, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 461, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 462, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   ~compiler:flag.declare {", .location = .{ .line = 463, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//     \"name\": \"fusion\",", .location = .{ .line = 464, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//     \"description\": \"Enable event fusion optimization\",", .location = .{ .line = 465, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//     \"type\": \"boolean\"", .location = .{ .line = 466, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 467, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 468, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// [norun] annotation prevents auto-execution - --help reads from AST instead.", .location = .{ .line = 469, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// This makes help metacircular - discovered by parsing, not hardcoded!", .location = .{ .line = 470, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"flag", "declare"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -592,7 +593,7 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "norun",
                 },
-                .location = .{ .line = 473, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 474, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -608,7 +609,7 @@ pub const PROGRAM_AST = Program{
                                 \\"type": "boolean"
                                 \\
                                 ,
-                            .location = .{ .line = 479, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                            .location = .{ .line = 480, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                             .scope = CapturedScope{
                                 .bindings = &[_]ScopeBinding{
                                 },
@@ -631,7 +632,7 @@ pub const PROGRAM_AST = Program{
                 .super_shape = null,
                 .is_pure = true,
                 .is_transitively_pure = false,
-                .location = .{ .line = 474, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 475, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .impl_of = null,
                 .is_impl = false,
                 .module = "compiler",
@@ -647,7 +648,7 @@ pub const PROGRAM_AST = Program{
                                 \\"type": "boolean"
                                 \\
                                 ,
-                            .location = .{ .line = 485, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                            .location = .{ .line = 486, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                             .scope = CapturedScope{
                                 .bindings = &[_]ScopeBinding{
                                 },
@@ -670,7 +671,7 @@ pub const PROGRAM_AST = Program{
                 .super_shape = null,
                 .is_pure = true,
                 .is_transitively_pure = false,
-                .location = .{ .line = 480, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 481, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .impl_of = null,
                 .is_impl = false,
                 .module = "compiler",
@@ -686,7 +687,7 @@ pub const PROGRAM_AST = Program{
                                 \\"type": "boolean"
                                 \\
                                 ,
-                            .location = .{ .line = 491, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                            .location = .{ .line = 492, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                             .scope = CapturedScope{
                                 .bindings = &[_]ScopeBinding{
                                 },
@@ -709,41 +710,41 @@ pub const PROGRAM_AST = Program{
                 .super_shape = null,
                 .is_pure = true,
                 .is_transitively_pure = false,
-                .location = .{ .line = 486, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 487, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .impl_of = null,
                 .is_impl = false,
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 492, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// COMPILER COMMANDS - User-definable CLI commands", .location = .{ .line = 493, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 494, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Modules can declare CLI commands that run instead of normal compilation.", .location = .{ .line = 495, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Commands have full AST access and run in the backend compilation phase.", .location = .{ .line = 496, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 497, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Usage (in your module, e.g. package.kz):", .location = .{ .line = 498, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   ~import \"$std/compiler\"", .location = .{ .line = 499, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 500, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   ~std.compiler:command.declare {", .location = .{ .line = 501, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//     \"name\": \"i\",", .location = .{ .line = 502, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//     \"alias\": \"install\",", .location = .{ .line = 503, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//     \"description\": \"Install npm packages from requires.npm declarations\"", .location = .{ .line = 504, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 505, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 506, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   ~[comptime|command]pub event install {", .location = .{ .line = 507, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//       program: *const Program,", .location = .{ .line = 508, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//       allocator: std.mem.Allocator,", .location = .{ .line = 509, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//       argv: []const []const u8,", .location = .{ .line = 510, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 511, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 512, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   ~proc install {", .location = .{ .line = 513, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//       // Full AST access - walk program for requires.npm, etc.", .location = .{ .line = 514, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 515, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 516, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Invoke: koruc main.kz install [args...]", .location = .{ .line = 517, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Or:     koruc main.kz i [args...]", .location = .{ .line = 518, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 519, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Commands appear in --help under \"Commands:\" section.", .location = .{ .line = 520, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// [norun] prevents auto-execution - collected from AST like flags.", .location = .{ .line = 521, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 493, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// COMPILER COMMANDS - User-definable CLI commands", .location = .{ .line = 494, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 495, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Modules can declare CLI commands that run instead of normal compilation.", .location = .{ .line = 496, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Commands have full AST access and run in the backend compilation phase.", .location = .{ .line = 497, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 498, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Usage (in your module, e.g. package.kz):", .location = .{ .line = 499, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   ~import \"$std/compiler\"", .location = .{ .line = 500, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 501, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   ~std.compiler:command.declare {", .location = .{ .line = 502, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//     \"name\": \"i\",", .location = .{ .line = 503, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//     \"alias\": \"install\",", .location = .{ .line = 504, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//     \"description\": \"Install npm packages from requires.npm declarations\"", .location = .{ .line = 505, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 506, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 507, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   ~[comptime|command]pub event install {", .location = .{ .line = 508, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//       program: *const Program,", .location = .{ .line = 509, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//       allocator: std.mem.Allocator,", .location = .{ .line = 510, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//       argv: []const []const u8,", .location = .{ .line = 511, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 512, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 513, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   ~proc install {", .location = .{ .line = 514, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//       // Full AST access - walk program for requires.npm, etc.", .location = .{ .line = 515, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 516, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 517, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Invoke: koruc main.kz install [args...]", .location = .{ .line = 518, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Or:     koruc main.kz i [args...]", .location = .{ .line = 519, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 520, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Commands appear in --help under \"Commands:\" section.", .location = .{ .line = 521, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// [norun] prevents auto-execution - collected from AST like flags.", .location = .{ .line = 522, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"command", "declare"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -757,16 +758,16 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "norun",
                 },
-                .location = .{ .line = 524, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 525, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 525, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// COMPILER COORDINATION - User-overridable compilation pipeline", .location = .{ .line = 526, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 527, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// The compiler coordinator (user-overridable)", .location = .{ .line = 529, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Abstract: Users can override with ~std.compiler:coordinate = ...", .location = .{ .line = 530, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 526, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// COMPILER COORDINATION - User-overridable compilation pipeline", .location = .{ .line = 527, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 528, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// The compiler coordinator (user-overridable)", .location = .{ .line = 530, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Abstract: Users can override with ~std.compiler:coordinate = ...", .location = .{ .line = 531, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"coordinate"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -788,7 +789,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "error",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -801,13 +802,13 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "abstract",
                 },
-                .location = .{ .line = 534, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 535, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// Default implementation of the compiler coordinator", .location = .{ .line = 535, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Users who don't override get this standard pipeline", .location = .{ .line = 536, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Default implementation of the compiler coordinator", .location = .{ .line = 536, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Users who don't override get this standard pipeline", .location = .{ .line = 537, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .flow = Flow{
                 .invocation = Invocation{
                     .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"context_create"} },
@@ -834,7 +835,7 @@ pub const PROGRAM_AST = Program{
                         .node =                         .{ .invocation = Invocation{
                             .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"frontend"} },
                             .args = &[_]Arg{
-                                Arg{ .name = "ctx", .value = "c0.ctx", .source_value = null, .expression_value = null },
+                                Arg{ .name = "ctx", .value = "c0", .source_value = null, .expression_value = null },
                             },
                             .annotations = &.{
                             },
@@ -967,7 +968,7 @@ pub const PROGRAM_AST = Program{
                                                                         .node =                                                                         .{ .invocation = Invocation{
                                                                             .path = .{ .module_qualifier = "std.inter", .segments = &[_][]const u8{"start"} },
                                                                             .args = &[_]Arg{
-                                                                                Arg{ .name = "contexts", .value = "[ c0.ctx, c1, c2, c3, c4, c5.ctx ]", .source_value = null, .expression_value = null },
+                                                                                Arg{ .name = "contexts", .value = "[ c0, c1, c2, c3, c4, c5.ctx ]", .source_value = null, .expression_value = null },
                                                                             },
                                                                             .annotations = &.{
                                                                             },
@@ -991,7 +992,7 @@ pub const PROGRAM_AST = Program{
                                                                                     .fields = &[_]Field{
                                                                                         Field{ .name = "ast", .type = "auto", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = "c5.ctx.ast", .owns_expression = false },
                                                                                         Field{ .name = "code", .type = "auto", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = "c5.code", .owns_expression = false },
-                                                                                        Field{ .name = "metrics", .type = "auto", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = "m.metrics", .owns_expression = false },
+                                                                                        Field{ .name = "metrics", .type = "auto", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = "m", .owns_expression = false },
                                                                                     },
                                                                                     .plain_value = null,
                                                                                     .has_expressions = true,
@@ -999,7 +1000,7 @@ pub const PROGRAM_AST = Program{
                                                                                 .indent = 14,
                                                                                 .continuations = &[_]Continuation{
                                                                                 },
-                                                                                .location = .{ .line = 553, .column = 14, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                                                                .location = .{ .line = 554, .column = 14, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                                                             },
                                                                             Continuation{
                                                                                 .branch = "skipped",
@@ -1015,7 +1016,7 @@ pub const PROGRAM_AST = Program{
                                                                                     .fields = &[_]Field{
                                                                                         Field{ .name = "ast", .type = "auto", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = "c5.ctx.ast", .owns_expression = false },
                                                                                         Field{ .name = "code", .type = "auto", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = "c5.code", .owns_expression = false },
-                                                                                        Field{ .name = "metrics", .type = "auto", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = "m.metrics", .owns_expression = false },
+                                                                                        Field{ .name = "metrics", .type = "auto", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = "m", .owns_expression = false },
                                                                                     },
                                                                                     .plain_value = null,
                                                                                     .has_expressions = true,
@@ -1023,22 +1024,22 @@ pub const PROGRAM_AST = Program{
                                                                                 .indent = 14,
                                                                                 .continuations = &[_]Continuation{
                                                                                 },
-                                                                                .location = .{ .line = 554, .column = 14, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                                                                .location = .{ .line = 555, .column = 14, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                                                             },
                                                                         },
-                                                                        .location = .{ .line = 545, .column = 12, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                                                        .location = .{ .line = 546, .column = 12, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                                                     },
                                                                 },
-                                                                .location = .{ .line = 544, .column = 10, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                                                .location = .{ .line = 545, .column = 10, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                                             },
                                                         },
-                                                        .location = .{ .line = 543, .column = 8, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                                        .location = .{ .line = 544, .column = 8, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                                     },
                                                 },
-                                                .location = .{ .line = 542, .column = 6, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                                .location = .{ .line = 543, .column = 6, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                             },
                                         },
-                                        .location = .{ .line = 541, .column = 4, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                        .location = .{ .line = 542, .column = 4, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                     },
                                     Continuation{
                                         .branch = "failed",
@@ -1052,21 +1053,20 @@ pub const PROGRAM_AST = Program{
                                         .node =                                         .{ .branch_constructor = BranchConstructor{
                                             .branch_name = "error",
                                             .fields = &[_]Field{
-                                                Field{ .name = "message", .type = "auto", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = "f.message", .owns_expression = false },
                                             },
-                                            .plain_value = null,
+                                            .plain_value = "f.message",
                                             .has_expressions = true,
                                         } },
                                         .indent = 4,
                                         .continuations = &[_]Continuation{
                                         },
-                                        .location = .{ .line = 555, .column = 4, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                        .location = .{ .line = 556, .column = 4, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                     },
                                 },
-                                .location = .{ .line = 540, .column = 2, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                .location = .{ .line = 541, .column = 2, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                             },
                         },
-                        .location = .{ .line = 539, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                        .location = .{ .line = 540, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                     },
                 },
                 .annotations = &.{
@@ -1076,13 +1076,13 @@ pub const PROGRAM_AST = Program{
                 .super_shape = null,
                 .is_pure = true,
                 .is_transitively_pure = false,
-                .location = .{ .line = 556, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 557, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .impl_of = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"coordinate"} },
                 .is_impl = false,
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Composable pipeline segments - users can mix and match!", .location = .{ .line = 557, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Helper: Create CompilerContext from ast and allocator", .location = .{ .line = 559, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Composable pipeline segments - users can mix and match!", .location = .{ .line = 558, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Helper: Create CompilerContext from ast and allocator", .location = .{ .line = 560, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"context_create"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -1093,7 +1093,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "created",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "ctx", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -1104,7 +1104,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 562, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 563, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -1124,7 +1124,7 @@ pub const PROGRAM_AST = Program{
                     \\        .passes_completed = 0,
                     \\        .tap_registry = null,
                     \\    };
-                    \\    return .{ .created = .{ .ctx = ctx } };
+                    \\    return .{ .created = ctx };
                     ,
                 .annotations = &.{
                 },
@@ -1132,10 +1132,10 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 577, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 578, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Helper: Format metrics string", .location = .{ .line = 578, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Helper: Format metrics string", .location = .{ .line = 579, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"metrics_format"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -1146,7 +1146,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "formatted",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "metrics", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -1157,7 +1157,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 581, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 582, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -1171,7 +1171,7 @@ pub const PROGRAM_AST = Program{
                     \\        "Passes: {d} (flow-based: frontend, analysis, emission)",
                     \\        .{passes_completed}
                     \\    ) catch "Passes: <unknown> (flow-based: frontend, analysis, emission)";
-                    \\    return .{ .formatted = .{ .metrics = metrics } };
+                    \\    return .{ .formatted = metrics };
                     ,
                 .annotations = &.{
                 },
@@ -1179,13 +1179,13 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 590, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 591, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Helper: Dump AST as JSON for introspection", .location = .{ .line = 591, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Usage: Insert at key points in pipeline to inspect AST state", .location = .{ .line = 592, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Void event - just prints and continues", .location = .{ .line = 593, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Example: ~ast_dump(ctx: c, flag: \"frontend\") |> ...", .location = .{ .line = 594, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Helper: Dump AST as JSON for introspection", .location = .{ .line = 592, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Usage: Insert at key points in pipeline to inspect AST state", .location = .{ .line = 593, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Void event - just prints and continues", .location = .{ .line = 594, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Example: ~ast_dump(ctx: c, flag: \"frontend\") |> ...", .location = .{ .line = 595, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"ast_dump"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -1199,7 +1199,7 @@ pub const PROGRAM_AST = Program{
                 .annotations = &.{
                     "comptime",
                 },
-                .location = .{ .line = 599, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 600, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -1224,10 +1224,10 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 611, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 612, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Frontend segment: Early AST processing (abstract, can be overridden)", .location = .{ .line = 612, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Frontend segment: Early AST processing (abstract, can be overridden)", .location = .{ .line = 613, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"frontend"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -1250,7 +1250,7 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "abstract",
                 },
-                .location = .{ .line = 615, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 616, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -1309,10 +1309,10 @@ pub const PROGRAM_AST = Program{
                                 .indent = 2,
                                 .continuations = &[_]Continuation{
                                 },
-                                .location = .{ .line = 618, .column = 2, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                .location = .{ .line = 619, .column = 2, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                             },
                         },
-                        .location = .{ .line = 617, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                        .location = .{ .line = 618, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                     },
                 },
                 .annotations = &.{
@@ -1322,12 +1322,12 @@ pub const PROGRAM_AST = Program{
                 .super_shape = null,
                 .is_pure = true,
                 .is_transitively_pure = false,
-                .location = .{ .line = 619, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 620, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .impl_of = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"frontend"} },
                 .is_impl = false,
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Analysis segment: Validation passes (abstract, can be overridden)", .location = .{ .line = 620, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Analysis segment: Validation passes (abstract, can be overridden)", .location = .{ .line = 621, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"analysis"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -1360,7 +1360,7 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "abstract",
                 },
-                .location = .{ .line = 624, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 625, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -1485,7 +1485,7 @@ pub const PROGRAM_AST = Program{
                                                         .indent = 8,
                                                         .continuations = &[_]Continuation{
                                                         },
-                                                        .location = .{ .line = 630, .column = 8, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                                        .location = .{ .line = 631, .column = 8, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                                     },
                                                     Continuation{
                                                         .branch = "failed",
@@ -1508,10 +1508,10 @@ pub const PROGRAM_AST = Program{
                                                         .indent = 8,
                                                         .continuations = &[_]Continuation{
                                                         },
-                                                        .location = .{ .line = 631, .column = 8, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                                        .location = .{ .line = 632, .column = 8, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                                     },
                                                 },
-                                                .location = .{ .line = 629, .column = 6, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                                .location = .{ .line = 630, .column = 6, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                             },
                                             Continuation{
                                                 .branch = "failed",
@@ -1534,10 +1534,10 @@ pub const PROGRAM_AST = Program{
                                                 .indent = 6,
                                                 .continuations = &[_]Continuation{
                                                 },
-                                                .location = .{ .line = 632, .column = 6, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                                .location = .{ .line = 633, .column = 6, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                             },
                                         },
-                                        .location = .{ .line = 628, .column = 4, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                        .location = .{ .line = 629, .column = 4, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                     },
                                     Continuation{
                                         .branch = "failed",
@@ -1560,10 +1560,10 @@ pub const PROGRAM_AST = Program{
                                         .indent = 4,
                                         .continuations = &[_]Continuation{
                                         },
-                                        .location = .{ .line = 633, .column = 4, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                        .location = .{ .line = 634, .column = 4, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                     },
                                 },
-                                .location = .{ .line = 627, .column = 2, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                .location = .{ .line = 628, .column = 2, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                             },
                             Continuation{
                                 .branch = "failed",
@@ -1586,10 +1586,10 @@ pub const PROGRAM_AST = Program{
                                 .indent = 2,
                                 .continuations = &[_]Continuation{
                                 },
-                                .location = .{ .line = 634, .column = 2, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                .location = .{ .line = 635, .column = 2, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                             },
                         },
-                        .location = .{ .line = 626, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                        .location = .{ .line = 627, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                     },
                     Continuation{
                         .branch = "failed",
@@ -1612,7 +1612,7 @@ pub const PROGRAM_AST = Program{
                         .indent = 0,
                         .continuations = &[_]Continuation{
                         },
-                        .location = .{ .line = 635, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                        .location = .{ .line = 636, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                     },
                 },
                 .annotations = &.{
@@ -1622,15 +1622,15 @@ pub const PROGRAM_AST = Program{
                 .super_shape = null,
                 .is_pure = true,
                 .is_transitively_pure = false,
-                .location = .{ .line = 636, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 637, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .impl_of = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"analysis"} },
                 .is_impl = false,
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Tap transformation segment: Insert tap invocations into AST", .location = .{ .line = 637, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// This converts taps from emission-time code injection to AST nodes,", .location = .{ .line = 638, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// enabling the optimizer to see and optimize them (zero-cost abstraction!)", .location = .{ .line = 639, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// (abstract, can be overridden)", .location = .{ .line = 640, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Tap transformation segment: Insert tap invocations into AST", .location = .{ .line = 638, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// This converts taps from emission-time code injection to AST nodes,", .location = .{ .line = 639, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// enabling the optimizer to see and optimize them (zero-cost abstraction!)", .location = .{ .line = 640, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// (abstract, can be overridden)", .location = .{ .line = 641, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"transform_taps"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -1653,7 +1653,7 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "abstract",
                 },
-                .location = .{ .line = 643, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 644, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -1696,12 +1696,12 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 673, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 674, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Test generation segment: Generates Zig test blocks from ~test declarations", .location = .{ .line = 674, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Runs AFTER analysis (purity is propagated) but BEFORE optimization", .location = .{ .line = 675, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// This uses the SAME emitter as emission - no hand-rolled code generation!", .location = .{ .line = 676, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Test generation segment: Generates Zig test blocks from ~test declarations", .location = .{ .line = 675, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Runs AFTER analysis (purity is propagated) but BEFORE optimization", .location = .{ .line = 676, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// This uses the SAME emitter as emission - no hand-rolled code generation!", .location = .{ .line = 677, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"test_generation"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -1724,13 +1724,13 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "abstract",
                 },
-                .location = .{ .line = 679, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 680, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// Test generation implementation", .location = .{ .line = 680, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Finds ~test invocations in AST and generates Zig test blocks", .location = .{ .line = 681, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Test generation implementation", .location = .{ .line = 681, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Finds ~test invocations in AST and generates Zig test blocks", .location = .{ .line = 682, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .proc_decl = ProcDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"test_generation"} },
                 .body = 
@@ -1831,348 +1831,348 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 773, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 774, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Helper: Check if an invocation is calling the test event", .location = .{ .line = 774, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "const isTestInvocation = struct {", .location = .{ .line = 775, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    fn call(inv: *const @import(\"ast\").Invocation) bool {", .location = .{ .line = 776, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Check if path is \"test\" from std.testing", .location = .{ .line = 777, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], \"test\")) {", .location = .{ .line = 778, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            return true;", .location = .{ .line = 779, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 780, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Could also check for module-qualified: std_testing:test", .location = .{ .line = 781, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (inv.path.module_qualifier) |mq| {", .location = .{ .line = 782, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            if (std.mem.indexOf(u8, mq, \"testing\") != null and", .location = .{ .line = 783, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                inv.path.segments.len == 1 and", .location = .{ .line = 784, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                std.mem.eql(u8, inv.path.segments[0], \"test\"))", .location = .{ .line = 785, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            {", .location = .{ .line = 786, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                return true;", .location = .{ .line = 787, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 788, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 789, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        return false;", .location = .{ .line = 790, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 791, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "}.call;", .location = .{ .line = 792, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Helper: Process a test flow and generate Zig test block", .location = .{ .line = 794, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Uses the REAL emitter infrastructure - not hand-rolled code!", .location = .{ .line = 795, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "const processTestFlow = struct {", .location = .{ .line = 796, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    fn call(flow: *const @import(\"ast\").Flow, program: *const @import(\"ast\").Program, allocator: std.mem.Allocator) ?@import(\"ast\").Item {", .location = .{ .line = 797, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const ast_mod = @import(\"ast\");", .location = .{ .line = 798, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const ast_functional = @import(\"ast_functional\");", .location = .{ .line = 799, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const parser_impl = @import(\"parser\");", .location = .{ .line = 800, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const emitter_helpers = @import(\"emitter_helpers\");", .location = .{ .line = 801, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Suppress unused import warnings (these are used in nested functions)", .location = .{ .line = 802, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        _ = &ast_functional;", .location = .{ .line = 803, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Get test name from invocation args (first arg named \"expr\")", .location = .{ .line = 805, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var test_name: []const u8 = \"unnamed test\";", .location = .{ .line = 806, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        for (flow.invocation.args) |arg| {", .location = .{ .line = 807, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            if (std.mem.eql(u8, arg.name, \"expr\")) {", .location = .{ .line = 808, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                test_name = arg.value;", .location = .{ .line = 809, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                break;", .location = .{ .line = 810, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 811, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 812, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Get source body from invocation args - stored in source_value field", .location = .{ .line = 814, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var source_text: []const u8 = \"\";", .location = .{ .line = 815, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var source_ptr: ?*const ast_mod.Source = null;", .location = .{ .line = 816, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        for (flow.invocation.args) |arg| {", .location = .{ .line = 817, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            if (arg.source_value) |src| {", .location = .{ .line = 818, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                source_text = src.text;", .location = .{ .line = 819, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                source_ptr = src;", .location = .{ .line = 820, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                break;", .location = .{ .line = 821, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 822, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 823, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (source_text.len == 0) {", .location = .{ .line = 825, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            log.verbose(\"[TEST-GEN] Warning: No source body found for test '{s}'\\n\", .{test_name});", .location = .{ .line = 826, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            return null;", .location = .{ .line = 827, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 828, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        log.verbose(\"[TEST-GEN] Processing test '{s}' with {d} bytes of source\\n\", .{test_name, source_text.len});", .location = .{ .line = 830, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Parse the source body", .location = .{ .line = 832, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var parser = parser_impl.Parser.init(allocator, source_text, \"__test__.kz\", &[_][]const u8{}, null) catch {", .location = .{ .line = 833, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            log.verbose(\"[TEST-GEN] Failed to init parser for test '{s}'\\n\", .{test_name});", .location = .{ .line = 834, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            return null;", .location = .{ .line = 835, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        };", .location = .{ .line = 836, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        defer parser.deinit();", .location = .{ .line = 837, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var parse_result = parser.parse() catch {", .location = .{ .line = 839, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            log.verbose(\"[TEST-GEN] Failed to parse source for test '{s}'\\n\", .{test_name});", .location = .{ .line = 840, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            return null;", .location = .{ .line = 841, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        };", .location = .{ .line = 842, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        defer parse_result.deinit();", .location = .{ .line = 843, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Clone parsed items to owned memory (survive parser deinit)", .location = .{ .line = 845, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var mocks = std.ArrayList(ast_mod.Item).initCapacity(allocator, 8) catch unreachable;", .location = .{ .line = 846, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var test_flows = std.ArrayList(ast_mod.Item).initCapacity(allocator, 8) catch unreachable;", .location = .{ .line = 847, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        for (parse_result.source_file.items) |*parsed_item| {", .location = .{ .line = 849, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            switch (parsed_item.*) {", .location = .{ .line = 850, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                .immediate_impl => {", .location = .{ .line = 851, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    // This is a mock! Clone it", .location = .{ .line = 852, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch continue;", .location = .{ .line = 853, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    mocks.append(allocator, cloned) catch {};", .location = .{ .line = 854, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                },", .location = .{ .line = 855, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                .flow => {", .location = .{ .line = 856, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    // This is a test flow - clone it", .location = .{ .line = 857, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch continue;", .location = .{ .line = 858, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    test_flows.append(allocator, cloned) catch {};", .location = .{ .line = 859, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                },", .location = .{ .line = 860, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                else => {},", .location = .{ .line = 861, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 862, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 863, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        log.verbose(\"[TEST-GEN] Parsed {d} mocks and {d} flows\\n\", .{mocks.items.len, test_flows.items.len});", .location = .{ .line = 865, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Validate mock shapes via testing module", .location = .{ .line = 867, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (source_ptr) |src| {", .location = .{ .line = 868, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            const backend_output = @import(\"backend_output_emitted.zig\");", .location = .{ .line = 869, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            const validation_result = backend_output.koru_std.testing.validate_mocks_event.handler(.{", .location = .{ .line = 870, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                .program = program,", .location = .{ .line = 871, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                .mocks = mocks.items,", .location = .{ .line = 872, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                .source = src,", .location = .{ .line = 873, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                .allocator = allocator,", .location = .{ .line = 874, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            });", .location = .{ .line = 875, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            if (validation_result == .failed) {", .location = .{ .line = 876, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                @panic(validation_result.failed.message);", .location = .{ .line = 877, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 878, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 879, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Build mock lookup map (event path -> branch constructor)", .location = .{ .line = 881, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var mock_map = std.StringHashMap(ast_mod.BranchConstructor).init(allocator);", .location = .{ .line = 882, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        for (mocks.items) |mock_item| {", .location = .{ .line = 883, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            if (mock_item == .immediate_impl) {", .location = .{ .line = 884, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                const sf = mock_item.immediate_impl;", .location = .{ .line = 885, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                // Build event path string", .location = .{ .line = 886, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                var path_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;", .location = .{ .line = 887, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                for (sf.event_path.segments, 0..) |seg, i| {", .location = .{ .line = 888, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    if (i > 0) path_buf.append(allocator, '.') catch {};", .location = .{ .line = 889, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    path_buf.appendSlice(allocator, seg) catch {};", .location = .{ .line = 890, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 891, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                mock_map.put(path_buf.items, sf.value) catch {};", .location = .{ .line = 892, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 893, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 894, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Walk test flows and check purity", .location = .{ .line = 896, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var impure_events = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;", .location = .{ .line = 897, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        for (test_flows.items) |flow_item| {", .location = .{ .line = 898, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            if (flow_item == .flow) {", .location = .{ .line = 899, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                walkFlowForPurity(&flow_item.flow, &mock_map, &impure_events, program.items, allocator);", .location = .{ .line = 900, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 901, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 902, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // If there are impure events without mocks, error", .location = .{ .line = 904, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (impure_events.items.len > 0) {", .location = .{ .line = 905, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            var err_msg = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;", .location = .{ .line = 906, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            err_msg.appendSlice(allocator, \"Test '\") catch {};", .location = .{ .line = 907, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            err_msg.appendSlice(allocator, test_name) catch {};", .location = .{ .line = 908, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            err_msg.appendSlice(allocator, \"' has impure events without mocks:\\n\") catch {};", .location = .{ .line = 909, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            for (impure_events.items) |event_path| {", .location = .{ .line = 910, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                err_msg.appendSlice(allocator, \"  - \") catch {};", .location = .{ .line = 911, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                err_msg.appendSlice(allocator, event_path) catch {};", .location = .{ .line = 912, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                err_msg.appendSlice(allocator, \"\\n\") catch {};", .location = .{ .line = 913, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 914, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            @panic(err_msg.items);", .location = .{ .line = 915, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 916, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Now emit the test using REAL emitter infrastructure", .location = .{ .line = 918, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const EMIT_BUFFER_SIZE = 16 * 1024;", .location = .{ .line = 919, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const emit_buffer = allocator.alloc(u8, EMIT_BUFFER_SIZE) catch return null;", .location = .{ .line = 920, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var code_emitter = emitter_helpers.CodeEmitter.init(emit_buffer);", .location = .{ .line = 921, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Set up emission context", .location = .{ .line = 923, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var emit_ctx = emitter_helpers.EmissionContext{", .location = .{ .line = 924, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            .allocator = allocator,", .location = .{ .line = 925, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            .indent_level = 1,  // Inside test block", .location = .{ .line = 926, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            .ast_items = program.items,", .location = .{ .line = 927, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            .main_module_name = \"input\",", .location = .{ .line = 928, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            .is_sync = true,", .location = .{ .line = 929, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        };", .location = .{ .line = 930, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        code_emitter.indent_level = 1;", .location = .{ .line = 931, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Emit each test flow, substituting mocks", .location = .{ .line = 933, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var mock_counter: usize = 0;", .location = .{ .line = 934, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        for (test_flows.items) |flow_item| {", .location = .{ .line = 935, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            if (flow_item == .flow) {", .location = .{ .line = 936, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                emitFlowWithMocks(&code_emitter, &emit_ctx, &flow_item.flow, &mock_map, &mock_counter) catch {};", .location = .{ .line = 937, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 938, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 939, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const flow_code = code_emitter.getOutput();", .location = .{ .line = 941, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Build final test block", .location = .{ .line = 943, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const test_code = std.fmt.allocPrint(", .location = .{ .line = 944, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            allocator,", .location = .{ .line = 945, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            \\\\test \"{s}\" {{", .location = .{ .line = 946, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            \\\\{s}}}", .location = .{ .line = 947, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            ,", .location = .{ .line = 948, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            .{ test_name, flow_code }", .location = .{ .line = 949, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        ) catch return null;", .location = .{ .line = 950, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        return ast_mod.Item{", .location = .{ .line = 952, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            .inline_code = ast_mod.InlineCode{", .location = .{ .line = 953, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                .code = test_code,", .location = .{ .line = 954, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                .location = flow.location,", .location = .{ .line = 955, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                .module = allocator.dupe(u8, flow.module) catch \"\",", .location = .{ .line = 956, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 957, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        };", .location = .{ .line = 958, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 959, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "}.call;", .location = .{ .line = 960, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Helper: Walk a flow checking for impure events without mocks", .location = .{ .line = 962, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "const walkFlowForPurity = struct {", .location = .{ .line = 963, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    fn call(", .location = .{ .line = 964, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        flow_to_walk: *const @import(\"ast\").Flow,", .location = .{ .line = 965, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        mocks: *const std.StringHashMap(@import(\"ast\").BranchConstructor),", .location = .{ .line = 966, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        impure_list: *std.ArrayList([]const u8),", .location = .{ .line = 967, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        all_items: []const @import(\"ast\").Item,", .location = .{ .line = 968, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        allocator: std.mem.Allocator,", .location = .{ .line = 969, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    ) void {", .location = .{ .line = 970, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const emitter_helpers = @import(\"emitter_helpers\");", .location = .{ .line = 971, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Get invocation path as string", .location = .{ .line = 973, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var path_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;", .location = .{ .line = 974, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (flow_to_walk.invocation.path.module_qualifier) |mq| {", .location = .{ .line = 975, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            path_buf.appendSlice(allocator, mq) catch {};", .location = .{ .line = 976, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            path_buf.append(allocator, ':') catch {};", .location = .{ .line = 977, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 978, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        for (flow_to_walk.invocation.path.segments, 0..) |seg, i| {", .location = .{ .line = 979, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            if (i > 0) path_buf.append(allocator, '.') catch {};", .location = .{ .line = 980, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            path_buf.appendSlice(allocator, seg) catch {};", .location = .{ .line = 981, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 982, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const inv_path = path_buf.items;", .location = .{ .line = 983, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Check if this invocation has a mock", .location = .{ .line = 985, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (mocks.get(inv_path)) |_| {", .location = .{ .line = 986, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            // Has mock - walk only matching continuation", .location = .{ .line = 987, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            // (mock value is known, prune other branches)", .location = .{ .line = 988, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            return;", .location = .{ .line = 989, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 990, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // No mock - check if event/proc is pure", .location = .{ .line = 992, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.invocation.path)) |proc| {", .location = .{ .line = 993, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            if (!proc.is_pure) {", .location = .{ .line = 994, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                // Impure proc without mock!", .location = .{ .line = 995, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                var already_added = false;", .location = .{ .line = 996, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                for (impure_list.items) |existing| {", .location = .{ .line = 997, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    if (std.mem.eql(u8, existing, inv_path)) {", .location = .{ .line = 998, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        already_added = true;", .location = .{ .line = 999, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        break;", .location = .{ .line = 1000, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 1001, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 1002, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                if (!already_added) {", .location = .{ .line = 1003, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    impure_list.append(allocator, inv_path) catch {};", .location = .{ .line = 1004, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 1005, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 1006, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        } else if (emitter_helpers.findEventDeclByPath(all_items, &flow_to_walk.invocation.path)) |event| {", .location = .{ .line = 1007, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            if (!event.is_pure) {", .location = .{ .line = 1008, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                var already_added = false;", .location = .{ .line = 1009, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                for (impure_list.items) |existing| {", .location = .{ .line = 1010, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    if (std.mem.eql(u8, existing, inv_path)) {", .location = .{ .line = 1011, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        already_added = true;", .location = .{ .line = 1012, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        break;", .location = .{ .line = 1013, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 1014, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 1015, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                if (!already_added) {", .location = .{ .line = 1016, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    impure_list.append(allocator, inv_path) catch {};", .location = .{ .line = 1017, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 1018, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 1019, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1020, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Walk continuations recursively", .location = .{ .line = 1022, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        for (flow_to_walk.continuations) |cont| {", .location = .{ .line = 1023, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            walkContinuation(&cont, mocks, impure_list, all_items, allocator);", .location = .{ .line = 1024, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1025, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 1026, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    fn walkContinuation(", .location = .{ .line = 1028, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        cont: *const @import(\"ast\").Continuation,", .location = .{ .line = 1029, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        mocks: *const std.StringHashMap(@import(\"ast\").BranchConstructor),", .location = .{ .line = 1030, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        impure_list: *std.ArrayList([]const u8),", .location = .{ .line = 1031, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        all_items: []const @import(\"ast\").Item,", .location = .{ .line = 1032, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        allocator: std.mem.Allocator,", .location = .{ .line = 1033, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    ) void {", .location = .{ .line = 1034, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const ast_mod = @import(\"ast\");", .location = .{ .line = 1035, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (cont.node) |node| {", .location = .{ .line = 1036, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            switch (node) {", .location = .{ .line = 1037, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                .invocation => |inv| {", .location = .{ .line = 1038, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    // Create temp flow to walk", .location = .{ .line = 1039, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    const temp_flow = ast_mod.Flow{", .location = .{ .line = 1040, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        .invocation = inv,", .location = .{ .line = 1041, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        .continuations = cont.continuations,", .location = .{ .line = 1042, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        .location = cont.location,", .location = .{ .line = 1043, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        .module = \"\",", .location = .{ .line = 1044, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        .is_pure = true,", .location = .{ .line = 1045, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        .is_transitively_pure = false,", .location = .{ .line = 1046, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    };", .location = .{ .line = 1047, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    call(&temp_flow, mocks, impure_list, all_items, allocator);", .location = .{ .line = 1048, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                },", .location = .{ .line = 1049, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                else => {", .location = .{ .line = 1050, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    for (cont.continuations) |nested| {", .location = .{ .line = 1051, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        walkContinuation(&nested, mocks, impure_list, all_items, allocator);", .location = .{ .line = 1052, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 1053, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                },", .location = .{ .line = 1054, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 1055, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        } else {", .location = .{ .line = 1056, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            for (cont.continuations) |nested| {", .location = .{ .line = 1057, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                walkContinuation(&nested, mocks, impure_list, all_items, allocator);", .location = .{ .line = 1058, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 1059, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1060, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 1061, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "}.call;", .location = .{ .line = 1062, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Helper: Emit a flow with mock substitution using REAL emitter", .location = .{ .line = 1064, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "const emitFlowWithMocks = struct {", .location = .{ .line = 1065, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    fn call(", .location = .{ .line = 1066, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        code_emitter: *@import(\"emitter_helpers\").CodeEmitter,", .location = .{ .line = 1067, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        ctx: *@import(\"emitter_helpers\").EmissionContext,", .location = .{ .line = 1068, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        flow_to_emit: *const @import(\"ast\").Flow,", .location = .{ .line = 1069, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        mocks: *const std.StringHashMap(@import(\"ast\").BranchConstructor),", .location = .{ .line = 1070, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        counter: *usize,", .location = .{ .line = 1071, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    ) !void {", .location = .{ .line = 1072, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const ast_mod = @import(\"ast\");", .location = .{ .line = 1073, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const emitter_helpers = @import(\"emitter_helpers\");", .location = .{ .line = 1074, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Get invocation path as string", .location = .{ .line = 1076, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var path_buf = std.ArrayList(u8).initCapacity(ctx.allocator, 64) catch unreachable;", .location = .{ .line = 1077, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        for (flow_to_emit.invocation.path.segments, 0..) |seg, i| {", .location = .{ .line = 1078, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            if (i > 0) try path_buf.append(ctx.allocator, '.');", .location = .{ .line = 1079, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try path_buf.appendSlice(ctx.allocator, seg);", .location = .{ .line = 1080, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1081, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const inv_path = path_buf.items;", .location = .{ .line = 1082, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Check if this invocation has a mock", .location = .{ .line = 1084, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (mocks.get(inv_path)) |bc| {", .location = .{ .line = 1085, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            // Emit mock value directly", .location = .{ .line = 1086, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            const result_var = try std.fmt.allocPrint(ctx.allocator, \"__mock_result_{d}\", .{counter.*});", .location = .{ .line = 1087, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            counter.* += 1;", .location = .{ .line = 1088, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try code_emitter.writeIndent();", .location = .{ .line = 1090, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try code_emitter.write(\"const \");", .location = .{ .line = 1091, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try code_emitter.write(result_var);", .location = .{ .line = 1092, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try code_emitter.write(\" = \");", .location = .{ .line = 1093, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try emitter_helpers.emitBranchConstructor(code_emitter, ctx, &bc, true);", .location = .{ .line = 1094, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try code_emitter.write(\";\\n\");", .location = .{ .line = 1095, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            // Emit matching continuation", .location = .{ .line = 1097, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            for (flow_to_emit.continuations) |cont| {", .location = .{ .line = 1098, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                if (std.mem.eql(u8, cont.branch, bc.branch_name)) {", .location = .{ .line = 1099, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    if (cont.binding) |binding| {", .location = .{ .line = 1100, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        // Emit binding extraction: const x = result.branch;", .location = .{ .line = 1101, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.writeIndent();", .location = .{ .line = 1102, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\"const \");", .location = .{ .line = 1103, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.write(binding);", .location = .{ .line = 1104, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\" = \");", .location = .{ .line = 1105, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.write(result_var);", .location = .{ .line = 1106, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\".\");", .location = .{ .line = 1107, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.write(bc.branch_name);", .location = .{ .line = 1108, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\";\\n\");", .location = .{ .line = 1109, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        // Suppress unused binding warning", .location = .{ .line = 1110, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.writeIndent();", .location = .{ .line = 1111, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\"_ = &\");", .location = .{ .line = 1112, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.write(binding);", .location = .{ .line = 1113, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\";\\n\");", .location = .{ .line = 1114, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 1115, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    // Emit nested flows", .location = .{ .line = 1116, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    if (cont.node) |node| {", .location = .{ .line = 1117, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        if (node == .invocation) {", .location = .{ .line = 1118, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                            const nested_flow = ast_mod.Flow{", .location = .{ .line = 1119, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                                .invocation = node.invocation,", .location = .{ .line = 1120, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                                .continuations = cont.continuations,", .location = .{ .line = 1121, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                                .location = cont.location,", .location = .{ .line = 1122, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                                .module = \"\",", .location = .{ .line = 1123, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                                .is_pure = true,", .location = .{ .line = 1124, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                                .is_transitively_pure = false,", .location = .{ .line = 1125, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                            };", .location = .{ .line = 1126, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                            try call(code_emitter, ctx, &nested_flow, mocks, counter);", .location = .{ .line = 1127, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                        }", .location = .{ .line = 1128, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 1129, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                    break;", .location = .{ .line = 1130, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 1131, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 1132, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try code_emitter.writeIndent();", .location = .{ .line = 1134, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try code_emitter.write(\"_ = &\");", .location = .{ .line = 1135, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try code_emitter.write(result_var);", .location = .{ .line = 1136, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try code_emitter.write(\";\\n\");", .location = .{ .line = 1137, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        } else {", .location = .{ .line = 1138, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            // No mock - emit flow normally using real emitter", .location = .{ .line = 1139, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            try emitter_helpers.emitFlow(code_emitter, ctx, flow_to_emit);", .location = .{ .line = 1140, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1141, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 1142, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "}.call;", .location = .{ .line = 1143, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Emission segment: Final code generation (abstract, can be overridden)", .location = .{ .line = 1145, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Helper: Check if an invocation is calling the test event", .location = .{ .line = 775, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "const isTestInvocation = struct {", .location = .{ .line = 776, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    fn call(inv: *const @import(\"ast\").Invocation) bool {", .location = .{ .line = 777, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Check if path is \"test\" from std.testing", .location = .{ .line = 778, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (inv.path.segments.len == 1 and std.mem.eql(u8, inv.path.segments[0], \"test\")) {", .location = .{ .line = 779, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            return true;", .location = .{ .line = 780, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 781, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Could also check for module-qualified: std_testing:test", .location = .{ .line = 782, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (inv.path.module_qualifier) |mq| {", .location = .{ .line = 783, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            if (std.mem.indexOf(u8, mq, \"testing\") != null and", .location = .{ .line = 784, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                inv.path.segments.len == 1 and", .location = .{ .line = 785, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                std.mem.eql(u8, inv.path.segments[0], \"test\"))", .location = .{ .line = 786, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            {", .location = .{ .line = 787, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                return true;", .location = .{ .line = 788, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 789, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 790, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        return false;", .location = .{ .line = 791, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 792, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "}.call;", .location = .{ .line = 793, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Helper: Process a test flow and generate Zig test block", .location = .{ .line = 795, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Uses the REAL emitter infrastructure - not hand-rolled code!", .location = .{ .line = 796, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "const processTestFlow = struct {", .location = .{ .line = 797, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    fn call(flow: *const @import(\"ast\").Flow, program: *const @import(\"ast\").Program, allocator: std.mem.Allocator) ?@import(\"ast\").Item {", .location = .{ .line = 798, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const ast_mod = @import(\"ast\");", .location = .{ .line = 799, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const ast_functional = @import(\"ast_functional\");", .location = .{ .line = 800, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const parser_impl = @import(\"parser\");", .location = .{ .line = 801, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const emitter_helpers = @import(\"emitter_helpers\");", .location = .{ .line = 802, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Suppress unused import warnings (these are used in nested functions)", .location = .{ .line = 803, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        _ = &ast_functional;", .location = .{ .line = 804, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Get test name from invocation args (first arg named \"expr\")", .location = .{ .line = 806, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var test_name: []const u8 = \"unnamed test\";", .location = .{ .line = 807, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        for (flow.invocation.args) |arg| {", .location = .{ .line = 808, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            if (std.mem.eql(u8, arg.name, \"expr\")) {", .location = .{ .line = 809, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                test_name = arg.value;", .location = .{ .line = 810, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                break;", .location = .{ .line = 811, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 812, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 813, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Get source body from invocation args - stored in source_value field", .location = .{ .line = 815, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var source_text: []const u8 = \"\";", .location = .{ .line = 816, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var source_ptr: ?*const ast_mod.Source = null;", .location = .{ .line = 817, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        for (flow.invocation.args) |arg| {", .location = .{ .line = 818, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            if (arg.source_value) |src| {", .location = .{ .line = 819, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                source_text = src.text;", .location = .{ .line = 820, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                source_ptr = src;", .location = .{ .line = 821, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                break;", .location = .{ .line = 822, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 823, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 824, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (source_text.len == 0) {", .location = .{ .line = 826, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            log.verbose(\"[TEST-GEN] Warning: No source body found for test '{s}'\\n\", .{test_name});", .location = .{ .line = 827, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            return null;", .location = .{ .line = 828, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 829, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        log.verbose(\"[TEST-GEN] Processing test '{s}' with {d} bytes of source\\n\", .{test_name, source_text.len});", .location = .{ .line = 831, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Parse the source body", .location = .{ .line = 833, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var parser = parser_impl.Parser.init(allocator, source_text, \"__test__.kz\", &[_][]const u8{}, null) catch {", .location = .{ .line = 834, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            log.verbose(\"[TEST-GEN] Failed to init parser for test '{s}'\\n\", .{test_name});", .location = .{ .line = 835, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            return null;", .location = .{ .line = 836, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        };", .location = .{ .line = 837, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        defer parser.deinit();", .location = .{ .line = 838, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var parse_result = parser.parse() catch {", .location = .{ .line = 840, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            log.verbose(\"[TEST-GEN] Failed to parse source for test '{s}'\\n\", .{test_name});", .location = .{ .line = 841, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            return null;", .location = .{ .line = 842, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        };", .location = .{ .line = 843, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        defer parse_result.deinit();", .location = .{ .line = 844, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Clone parsed items to owned memory (survive parser deinit)", .location = .{ .line = 846, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var mocks = std.ArrayList(ast_mod.Item).initCapacity(allocator, 8) catch unreachable;", .location = .{ .line = 847, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var test_flows = std.ArrayList(ast_mod.Item).initCapacity(allocator, 8) catch unreachable;", .location = .{ .line = 848, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        for (parse_result.source_file.items) |*parsed_item| {", .location = .{ .line = 850, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            switch (parsed_item.*) {", .location = .{ .line = 851, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                .immediate_impl => {", .location = .{ .line = 852, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    // This is a mock! Clone it", .location = .{ .line = 853, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch continue;", .location = .{ .line = 854, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    mocks.append(allocator, cloned) catch {};", .location = .{ .line = 855, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                },", .location = .{ .line = 856, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                .flow => {", .location = .{ .line = 857, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    // This is a test flow - clone it", .location = .{ .line = 858, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    const cloned = ast_functional.cloneItem(allocator, parsed_item) catch continue;", .location = .{ .line = 859, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    test_flows.append(allocator, cloned) catch {};", .location = .{ .line = 860, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                },", .location = .{ .line = 861, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                else => {},", .location = .{ .line = 862, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 863, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 864, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        log.verbose(\"[TEST-GEN] Parsed {d} mocks and {d} flows\\n\", .{mocks.items.len, test_flows.items.len});", .location = .{ .line = 866, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Validate mock shapes via testing module", .location = .{ .line = 868, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (source_ptr) |src| {", .location = .{ .line = 869, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            const backend_output = @import(\"backend_output_emitted.zig\");", .location = .{ .line = 870, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            const validation_result = backend_output.koru_std.testing.validate_mocks_event.handler(.{", .location = .{ .line = 871, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                .program = program,", .location = .{ .line = 872, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                .mocks = mocks.items,", .location = .{ .line = 873, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                .source = src,", .location = .{ .line = 874, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                .allocator = allocator,", .location = .{ .line = 875, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            });", .location = .{ .line = 876, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            if (validation_result == .failed) {", .location = .{ .line = 877, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                @panic(validation_result.failed);", .location = .{ .line = 878, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 879, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 880, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Build mock lookup map (event path -> branch constructor)", .location = .{ .line = 882, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var mock_map = std.StringHashMap(ast_mod.BranchConstructor).init(allocator);", .location = .{ .line = 883, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        for (mocks.items) |mock_item| {", .location = .{ .line = 884, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            if (mock_item == .immediate_impl) {", .location = .{ .line = 885, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                const sf = mock_item.immediate_impl;", .location = .{ .line = 886, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                // Build event path string", .location = .{ .line = 887, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                var path_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;", .location = .{ .line = 888, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                for (sf.event_path.segments, 0..) |seg, i| {", .location = .{ .line = 889, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    if (i > 0) path_buf.append(allocator, '.') catch {};", .location = .{ .line = 890, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    path_buf.appendSlice(allocator, seg) catch {};", .location = .{ .line = 891, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 892, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                mock_map.put(path_buf.items, sf.value) catch {};", .location = .{ .line = 893, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 894, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 895, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Walk test flows and check purity", .location = .{ .line = 897, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var impure_events = std.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;", .location = .{ .line = 898, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        for (test_flows.items) |flow_item| {", .location = .{ .line = 899, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            if (flow_item == .flow) {", .location = .{ .line = 900, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                walkFlowForPurity(&flow_item.flow, &mock_map, &impure_events, program.items, allocator);", .location = .{ .line = 901, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 902, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 903, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // If there are impure events without mocks, error", .location = .{ .line = 905, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (impure_events.items.len > 0) {", .location = .{ .line = 906, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            var err_msg = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;", .location = .{ .line = 907, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            err_msg.appendSlice(allocator, \"Test '\") catch {};", .location = .{ .line = 908, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            err_msg.appendSlice(allocator, test_name) catch {};", .location = .{ .line = 909, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            err_msg.appendSlice(allocator, \"' has impure events without mocks:\\n\") catch {};", .location = .{ .line = 910, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            for (impure_events.items) |event_path| {", .location = .{ .line = 911, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                err_msg.appendSlice(allocator, \"  - \") catch {};", .location = .{ .line = 912, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                err_msg.appendSlice(allocator, event_path) catch {};", .location = .{ .line = 913, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                err_msg.appendSlice(allocator, \"\\n\") catch {};", .location = .{ .line = 914, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 915, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            @panic(err_msg.items);", .location = .{ .line = 916, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 917, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Now emit the test using REAL emitter infrastructure", .location = .{ .line = 919, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const EMIT_BUFFER_SIZE = 16 * 1024;", .location = .{ .line = 920, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const emit_buffer = allocator.alloc(u8, EMIT_BUFFER_SIZE) catch return null;", .location = .{ .line = 921, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var code_emitter = emitter_helpers.CodeEmitter.init(emit_buffer);", .location = .{ .line = 922, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Set up emission context", .location = .{ .line = 924, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var emit_ctx = emitter_helpers.EmissionContext{", .location = .{ .line = 925, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            .allocator = allocator,", .location = .{ .line = 926, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            .indent_level = 1,  // Inside test block", .location = .{ .line = 927, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            .ast_items = program.items,", .location = .{ .line = 928, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            .main_module_name = \"input\",", .location = .{ .line = 929, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            .is_sync = true,", .location = .{ .line = 930, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        };", .location = .{ .line = 931, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        code_emitter.indent_level = 1;", .location = .{ .line = 932, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Emit each test flow, substituting mocks", .location = .{ .line = 934, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var mock_counter: usize = 0;", .location = .{ .line = 935, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        for (test_flows.items) |flow_item| {", .location = .{ .line = 936, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            if (flow_item == .flow) {", .location = .{ .line = 937, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                emitFlowWithMocks(&code_emitter, &emit_ctx, &flow_item.flow, &mock_map, &mock_counter) catch {};", .location = .{ .line = 938, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 939, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 940, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const flow_code = code_emitter.getOutput();", .location = .{ .line = 942, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Build final test block", .location = .{ .line = 944, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const test_code = std.fmt.allocPrint(", .location = .{ .line = 945, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            allocator,", .location = .{ .line = 946, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            \\\\test \"{s}\" {{", .location = .{ .line = 947, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            \\\\{s}}}", .location = .{ .line = 948, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            ,", .location = .{ .line = 949, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            .{ test_name, flow_code }", .location = .{ .line = 950, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        ) catch return null;", .location = .{ .line = 951, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        return ast_mod.Item{", .location = .{ .line = 953, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            .inline_code = ast_mod.InlineCode{", .location = .{ .line = 954, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                .code = test_code,", .location = .{ .line = 955, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                .location = flow.location,", .location = .{ .line = 956, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                .module = allocator.dupe(u8, flow.module) catch \"\",", .location = .{ .line = 957, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 958, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        };", .location = .{ .line = 959, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 960, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "}.call;", .location = .{ .line = 961, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Helper: Walk a flow checking for impure events without mocks", .location = .{ .line = 963, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "const walkFlowForPurity = struct {", .location = .{ .line = 964, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    fn call(", .location = .{ .line = 965, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        flow_to_walk: *const @import(\"ast\").Flow,", .location = .{ .line = 966, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        mocks: *const std.StringHashMap(@import(\"ast\").BranchConstructor),", .location = .{ .line = 967, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        impure_list: *std.ArrayList([]const u8),", .location = .{ .line = 968, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        all_items: []const @import(\"ast\").Item,", .location = .{ .line = 969, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        allocator: std.mem.Allocator,", .location = .{ .line = 970, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    ) void {", .location = .{ .line = 971, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const emitter_helpers = @import(\"emitter_helpers\");", .location = .{ .line = 972, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Get invocation path as string", .location = .{ .line = 974, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var path_buf = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;", .location = .{ .line = 975, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (flow_to_walk.invocation.path.module_qualifier) |mq| {", .location = .{ .line = 976, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            path_buf.appendSlice(allocator, mq) catch {};", .location = .{ .line = 977, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            path_buf.append(allocator, ':') catch {};", .location = .{ .line = 978, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 979, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        for (flow_to_walk.invocation.path.segments, 0..) |seg, i| {", .location = .{ .line = 980, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            if (i > 0) path_buf.append(allocator, '.') catch {};", .location = .{ .line = 981, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            path_buf.appendSlice(allocator, seg) catch {};", .location = .{ .line = 982, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 983, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const inv_path = path_buf.items;", .location = .{ .line = 984, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Check if this invocation has a mock", .location = .{ .line = 986, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (mocks.get(inv_path)) |_| {", .location = .{ .line = 987, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            // Has mock - walk only matching continuation", .location = .{ .line = 988, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            // (mock value is known, prune other branches)", .location = .{ .line = 989, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            return;", .location = .{ .line = 990, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 991, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // No mock - check if event/proc is pure", .location = .{ .line = 993, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.invocation.path)) |proc| {", .location = .{ .line = 994, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            if (!proc.is_pure) {", .location = .{ .line = 995, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                // Impure proc without mock!", .location = .{ .line = 996, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                var already_added = false;", .location = .{ .line = 997, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                for (impure_list.items) |existing| {", .location = .{ .line = 998, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    if (std.mem.eql(u8, existing, inv_path)) {", .location = .{ .line = 999, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        already_added = true;", .location = .{ .line = 1000, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        break;", .location = .{ .line = 1001, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 1002, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 1003, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                if (!already_added) {", .location = .{ .line = 1004, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    impure_list.append(allocator, inv_path) catch {};", .location = .{ .line = 1005, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 1006, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 1007, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        } else if (emitter_helpers.findEventDeclByPath(all_items, &flow_to_walk.invocation.path)) |event| {", .location = .{ .line = 1008, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            if (!event.is_pure) {", .location = .{ .line = 1009, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                var already_added = false;", .location = .{ .line = 1010, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                for (impure_list.items) |existing| {", .location = .{ .line = 1011, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    if (std.mem.eql(u8, existing, inv_path)) {", .location = .{ .line = 1012, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        already_added = true;", .location = .{ .line = 1013, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        break;", .location = .{ .line = 1014, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 1015, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 1016, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                if (!already_added) {", .location = .{ .line = 1017, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    impure_list.append(allocator, inv_path) catch {};", .location = .{ .line = 1018, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 1019, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 1020, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1021, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Walk continuations recursively", .location = .{ .line = 1023, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        for (flow_to_walk.continuations) |cont| {", .location = .{ .line = 1024, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            walkContinuation(&cont, mocks, impure_list, all_items, allocator);", .location = .{ .line = 1025, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1026, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 1027, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    fn walkContinuation(", .location = .{ .line = 1029, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        cont: *const @import(\"ast\").Continuation,", .location = .{ .line = 1030, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        mocks: *const std.StringHashMap(@import(\"ast\").BranchConstructor),", .location = .{ .line = 1031, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        impure_list: *std.ArrayList([]const u8),", .location = .{ .line = 1032, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        all_items: []const @import(\"ast\").Item,", .location = .{ .line = 1033, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        allocator: std.mem.Allocator,", .location = .{ .line = 1034, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    ) void {", .location = .{ .line = 1035, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const ast_mod = @import(\"ast\");", .location = .{ .line = 1036, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (cont.node) |node| {", .location = .{ .line = 1037, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            switch (node) {", .location = .{ .line = 1038, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                .invocation => |inv| {", .location = .{ .line = 1039, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    // Create temp flow to walk", .location = .{ .line = 1040, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    const temp_flow = ast_mod.Flow{", .location = .{ .line = 1041, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        .invocation = inv,", .location = .{ .line = 1042, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        .continuations = cont.continuations,", .location = .{ .line = 1043, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        .location = cont.location,", .location = .{ .line = 1044, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        .module = \"\",", .location = .{ .line = 1045, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        .is_pure = true,", .location = .{ .line = 1046, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        .is_transitively_pure = false,", .location = .{ .line = 1047, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    };", .location = .{ .line = 1048, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    call(&temp_flow, mocks, impure_list, all_items, allocator);", .location = .{ .line = 1049, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                },", .location = .{ .line = 1050, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                else => {", .location = .{ .line = 1051, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    for (cont.continuations) |nested| {", .location = .{ .line = 1052, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        walkContinuation(&nested, mocks, impure_list, all_items, allocator);", .location = .{ .line = 1053, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 1054, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                },", .location = .{ .line = 1055, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 1056, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        } else {", .location = .{ .line = 1057, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            for (cont.continuations) |nested| {", .location = .{ .line = 1058, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                walkContinuation(&nested, mocks, impure_list, all_items, allocator);", .location = .{ .line = 1059, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 1060, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1061, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 1062, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "}.call;", .location = .{ .line = 1063, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Helper: Emit a flow with mock substitution using REAL emitter", .location = .{ .line = 1065, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "const emitFlowWithMocks = struct {", .location = .{ .line = 1066, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    fn call(", .location = .{ .line = 1067, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        code_emitter: *@import(\"emitter_helpers\").CodeEmitter,", .location = .{ .line = 1068, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        ctx: *@import(\"emitter_helpers\").EmissionContext,", .location = .{ .line = 1069, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        flow_to_emit: *const @import(\"ast\").Flow,", .location = .{ .line = 1070, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        mocks: *const std.StringHashMap(@import(\"ast\").BranchConstructor),", .location = .{ .line = 1071, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        counter: *usize,", .location = .{ .line = 1072, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    ) !void {", .location = .{ .line = 1073, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const ast_mod = @import(\"ast\");", .location = .{ .line = 1074, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const emitter_helpers = @import(\"emitter_helpers\");", .location = .{ .line = 1075, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Get invocation path as string", .location = .{ .line = 1077, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var path_buf = std.ArrayList(u8).initCapacity(ctx.allocator, 64) catch unreachable;", .location = .{ .line = 1078, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        for (flow_to_emit.invocation.path.segments, 0..) |seg, i| {", .location = .{ .line = 1079, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            if (i > 0) try path_buf.append(ctx.allocator, '.');", .location = .{ .line = 1080, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try path_buf.appendSlice(ctx.allocator, seg);", .location = .{ .line = 1081, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1082, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const inv_path = path_buf.items;", .location = .{ .line = 1083, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Check if this invocation has a mock", .location = .{ .line = 1085, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (mocks.get(inv_path)) |bc| {", .location = .{ .line = 1086, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            // Emit mock value directly", .location = .{ .line = 1087, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            const result_var = try std.fmt.allocPrint(ctx.allocator, \"__mock_result_{d}\", .{counter.*});", .location = .{ .line = 1088, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            counter.* += 1;", .location = .{ .line = 1089, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try code_emitter.writeIndent();", .location = .{ .line = 1091, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try code_emitter.write(\"const \");", .location = .{ .line = 1092, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try code_emitter.write(result_var);", .location = .{ .line = 1093, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try code_emitter.write(\" = \");", .location = .{ .line = 1094, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try emitter_helpers.emitBranchConstructor(code_emitter, ctx, &bc, true);", .location = .{ .line = 1095, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try code_emitter.write(\";\\n\");", .location = .{ .line = 1096, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            // Emit matching continuation", .location = .{ .line = 1098, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            for (flow_to_emit.continuations) |cont| {", .location = .{ .line = 1099, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                if (std.mem.eql(u8, cont.branch, bc.branch_name)) {", .location = .{ .line = 1100, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    if (cont.binding) |binding| {", .location = .{ .line = 1101, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        // Emit binding extraction: const x = result.branch;", .location = .{ .line = 1102, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.writeIndent();", .location = .{ .line = 1103, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\"const \");", .location = .{ .line = 1104, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.write(binding);", .location = .{ .line = 1105, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\" = \");", .location = .{ .line = 1106, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.write(result_var);", .location = .{ .line = 1107, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\".\");", .location = .{ .line = 1108, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.write(bc.branch_name);", .location = .{ .line = 1109, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\";\\n\");", .location = .{ .line = 1110, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        // Suppress unused binding warning", .location = .{ .line = 1111, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.writeIndent();", .location = .{ .line = 1112, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\"_ = &\");", .location = .{ .line = 1113, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.write(binding);", .location = .{ .line = 1114, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        try code_emitter.write(\";\\n\");", .location = .{ .line = 1115, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 1116, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    // Emit nested flows", .location = .{ .line = 1117, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    if (cont.node) |node| {", .location = .{ .line = 1118, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        if (node == .invocation) {", .location = .{ .line = 1119, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                            const nested_flow = ast_mod.Flow{", .location = .{ .line = 1120, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                                .invocation = node.invocation,", .location = .{ .line = 1121, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                                .continuations = cont.continuations,", .location = .{ .line = 1122, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                                .location = cont.location,", .location = .{ .line = 1123, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                                .module = \"\",", .location = .{ .line = 1124, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                                .is_pure = true,", .location = .{ .line = 1125, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                                .is_transitively_pure = false,", .location = .{ .line = 1126, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                            };", .location = .{ .line = 1127, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                            try call(code_emitter, ctx, &nested_flow, mocks, counter);", .location = .{ .line = 1128, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                        }", .location = .{ .line = 1129, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 1130, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                    break;", .location = .{ .line = 1131, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 1132, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 1133, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try code_emitter.writeIndent();", .location = .{ .line = 1135, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try code_emitter.write(\"_ = &\");", .location = .{ .line = 1136, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try code_emitter.write(result_var);", .location = .{ .line = 1137, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try code_emitter.write(\";\\n\");", .location = .{ .line = 1138, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        } else {", .location = .{ .line = 1139, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            // No mock - emit flow normally using real emitter", .location = .{ .line = 1140, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            try emitter_helpers.emitFlow(code_emitter, ctx, flow_to_emit);", .location = .{ .line = 1141, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1142, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 1143, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "}.call;", .location = .{ .line = 1144, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Emission segment: Final code generation (abstract, can be overridden)", .location = .{ .line = 1146, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"emission"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -2196,7 +2196,7 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "abstract",
                 },
-                .location = .{ .line = 1148, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1149, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -2279,13 +2279,13 @@ pub const PROGRAM_AST = Program{
                                         .indent = 4,
                                         .continuations = &[_]Continuation{
                                         },
-                                        .location = .{ .line = 1152, .column = 4, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                        .location = .{ .line = 1153, .column = 4, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                                     },
                                 },
-                                .location = .{ .line = 1151, .column = 2, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                                .location = .{ .line = 1152, .column = 2, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                             },
                         },
-                        .location = .{ .line = 1150, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                        .location = .{ .line = 1151, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                     },
                 },
                 .annotations = &.{
@@ -2295,13 +2295,13 @@ pub const PROGRAM_AST = Program{
                 .super_shape = null,
                 .is_pure = true,
                 .is_transitively_pure = false,
-                .location = .{ .line = 1153, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1154, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .impl_of = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"emission"} },
                 .is_impl = false,
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Parser service - makes the Koru parser available at backend comptime", .location = .{ .line = 1154, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// This enables dynamic module loading during compilation passes", .location = .{ .line = 1155, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Parser service - makes the Koru parser available at backend comptime", .location = .{ .line = 1155, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// This enables dynamic module loading during compilation passes", .location = .{ .line = 1156, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"parse"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -2312,7 +2312,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "parsed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "items", .type = "[]Item", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]Item", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -2321,7 +2321,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "failed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -2332,12 +2332,12 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 1159, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1160, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// Zig code emission event - the final step of compilation!", .location = .{ .line = 1160, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Zig code emission event - the final step of compilation!", .location = .{ .line = 1161, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"emit_zig"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -2359,12 +2359,12 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 1163, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1164, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// Comptime evaluation pass - executes events with Program/Source parameters", .location = .{ .line = 1164, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Comptime evaluation pass - executes events with Program/Source parameters", .location = .{ .line = 1165, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"evaluate_comptime"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -2385,12 +2385,12 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 1167, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1168, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// Structural shape checking - validates events/branches exist, base types match", .location = .{ .line = 1168, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Structural shape checking - validates events/branches exist, base types match", .location = .{ .line = 1169, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"check_structure"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -2421,12 +2421,12 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 1172, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1173, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// Flow checking - validates control flow properties (when-clause exhaustiveness, etc.)", .location = .{ .line = 1173, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Flow checking - validates control flow properties (when-clause exhaustiveness, etc.)", .location = .{ .line = 1174, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"check_flow"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -2457,13 +2457,13 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 1177, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1178, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// Auto-discharge insertion - inserts disposal calls before terminators", .location = .{ .line = 1178, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Runs BEFORE check_phantom_semantic so checker validates the inserted calls", .location = .{ .line = 1179, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Auto-discharge insertion - inserts disposal calls before terminators", .location = .{ .line = 1179, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Runs BEFORE check_phantom_semantic so checker validates the inserted calls", .location = .{ .line = 1180, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"pass_auto_discharge"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -2494,13 +2494,13 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 1183, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1184, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// Semantic phantom type checking - validates type-state compatibility using", .location = .{ .line = 1184, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// the default Koru semantic checker (module-qualified phantom states)", .location = .{ .line = 1185, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Semantic phantom type checking - validates type-state compatibility using", .location = .{ .line = 1185, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// the default Koru semantic checker (module-qualified phantom states)", .location = .{ .line = 1186, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"check_phantom_semantic"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -2531,12 +2531,12 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 1189, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1190, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// Purity checking - trusts [pure] annotations as developer assertions", .location = .{ .line = 1190, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Purity checking - trusts [pure] annotations as developer assertions", .location = .{ .line = 1191, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"check_purity"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -2567,13 +2567,13 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 1194, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1195, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// Dead strip pass - removes unreachable events/flows from the AST", .location = .{ .line = 1195, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Walks from entry points, marks reachable events, prunes the rest", .location = .{ .line = 1196, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Dead strip pass - removes unreachable events/flows from the AST", .location = .{ .line = 1196, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Walks from entry points, marks reachable events, prunes the rest", .location = .{ .line = 1197, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"pass_dead_strip"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -2594,15 +2594,15 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 1199, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1200, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// CCP observability pass - injects universal observability taps into user AST", .location = .{ .line = 1200, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// When enabled, this makes every compiled program self-observing by adding:", .location = .{ .line = 1201, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// - emit_json event/proc for JSON output", .location = .{ .line = 1202, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// - Universal tap (~* -> *) that emits transition events", .location = .{ .line = 1203, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// CCP observability pass - injects universal observability taps into user AST", .location = .{ .line = 1201, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// When enabled, this makes every compiled program self-observing by adding:", .location = .{ .line = 1202, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// - emit_json event/proc for JSON output", .location = .{ .line = 1203, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// - Universal tap (~* -> *) that emits transition events", .location = .{ .line = 1204, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"inject_ccp"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -2623,12 +2623,12 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 1206, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1207, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
             } },            
-                                    .{ .host_line = .{ .content = "// Implementation of Zig code emission - this IS ComptimeEmitter as a Koru proc!", .location = .{ .line = 1207, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Implementation of Zig code emission - this IS ComptimeEmitter as a Koru proc!", .location = .{ .line = 1208, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .proc_decl = ProcDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"emit_zig"} },
                 .body = 
@@ -2739,37 +2739,37 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 1309, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1310, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Helper: Join path segments with dots", .location = .{ .line = 1310, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// IMPORTANT: Takes an allocator to return heap-allocated memory (stack memory was causing corruption!)", .location = .{ .line = 1311, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "const joinPathAlloc = struct {", .location = .{ .line = 1312, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    fn call(allocator: std.mem.Allocator, path: []const []const u8) []const u8 {", .location = .{ .line = 1313, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (path.len == 0) return \"\";", .location = .{ .line = 1314, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        if (path.len == 1) return path[0];", .location = .{ .line = 1315, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Calculate total length needed", .location = .{ .line = 1317, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var total_len: usize = path[0].len;", .location = .{ .line = 1318, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var i: usize = 1;", .location = .{ .line = 1319, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        while (i < path.len) : (i += 1) {", .location = .{ .line = 1320, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            total_len += 1 + path[i].len; // dot + segment", .location = .{ .line = 1321, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1322, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        // Allocate result buffer", .location = .{ .line = 1324, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        const result = allocator.alloc(u8, total_len) catch return path[0]; // Fallback to first segment if alloc fails", .location = .{ .line = 1325, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        var pos: usize = 0;", .location = .{ .line = 1326, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        @memcpy(result[pos..pos + path[0].len], path[0]);", .location = .{ .line = 1327, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        pos += path[0].len;", .location = .{ .line = 1328, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        i = 1;", .location = .{ .line = 1330, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        while (i < path.len) : (i += 1) {", .location = .{ .line = 1331, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            result[pos] = '.';", .location = .{ .line = 1332, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            pos += 1;", .location = .{ .line = 1333, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            @memcpy(result[pos..pos + path[i].len], path[i]);", .location = .{ .line = 1334, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "            pos += path[i].len;", .location = .{ .line = 1335, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1336, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "        return result[0..pos];", .location = .{ .line = 1338, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 1339, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "}.call;", .location = .{ .line = 1340, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Parser service implementation - wraps the Koru parser for comptime use", .location = .{ .line = 1342, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Helper: Join path segments with dots", .location = .{ .line = 1311, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// IMPORTANT: Takes an allocator to return heap-allocated memory (stack memory was causing corruption!)", .location = .{ .line = 1312, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "const joinPathAlloc = struct {", .location = .{ .line = 1313, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    fn call(allocator: std.mem.Allocator, path: []const []const u8) []const u8 {", .location = .{ .line = 1314, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (path.len == 0) return \"\";", .location = .{ .line = 1315, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        if (path.len == 1) return path[0];", .location = .{ .line = 1316, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Calculate total length needed", .location = .{ .line = 1318, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var total_len: usize = path[0].len;", .location = .{ .line = 1319, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var i: usize = 1;", .location = .{ .line = 1320, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        while (i < path.len) : (i += 1) {", .location = .{ .line = 1321, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            total_len += 1 + path[i].len; // dot + segment", .location = .{ .line = 1322, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1323, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        // Allocate result buffer", .location = .{ .line = 1325, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        const result = allocator.alloc(u8, total_len) catch return path[0]; // Fallback to first segment if alloc fails", .location = .{ .line = 1326, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        var pos: usize = 0;", .location = .{ .line = 1327, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        @memcpy(result[pos..pos + path[0].len], path[0]);", .location = .{ .line = 1328, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        pos += path[0].len;", .location = .{ .line = 1329, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        i = 1;", .location = .{ .line = 1331, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        while (i < path.len) : (i += 1) {", .location = .{ .line = 1332, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            result[pos] = '.';", .location = .{ .line = 1333, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            pos += 1;", .location = .{ .line = 1334, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            @memcpy(result[pos..pos + path[i].len], path[i]);", .location = .{ .line = 1335, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "            pos += path[i].len;", .location = .{ .line = 1336, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 1337, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "        return result[0..pos];", .location = .{ .line = 1339, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 1340, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "}.call;", .location = .{ .line = 1341, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Parser service implementation - wraps the Koru parser for comptime use", .location = .{ .line = 1343, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .proc_decl = ProcDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"parse"} },
                 .body = 
@@ -2786,7 +2786,7 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    // Initialize parser (empty compiler flags, no resolver for standalone parsing)
                     \\    var parser = Parser.init(allocator, source, module_name, &[_][]const u8{}, null) catch {
-                    \\        return .{ .failed = .{ .message = "Failed to initialize parser" } };
+                    \\        return .{ .failed = "Failed to initialize parser" };
                     \\    };
                     \\    defer parser.deinit();
                     \\
@@ -2794,15 +2794,15 @@ pub const PROGRAM_AST = Program{
                     \\    const parse_result = parser.parse() catch {
                     \\        // Try to get error details if available
                     \\        if (parser.reporter.hasErrors()) {
-                    \\            return .{ .failed = .{ .message = "Parse error - see compiler output" } };
+                    \\            return .{ .failed = "Parse error - see compiler output" };
                     \\        }
-                    \\        return .{ .failed = .{ .message = "Failed to parse source" } };
+                    \\        return .{ .failed = "Failed to parse source" };
                     \\    };
                     \\
                     \\    // Return the parsed items
                     \\    // Note: The items are allocated in our buffer, which is stack-allocated
                     \\    // This is fine for comptime usage where everything gets evaluated away
-                    \\    return .{ .parsed = .{ .items = parse_result.source_file.items } };
+                    \\    return .{ .parsed = parse_result.source_file.items };
                     ,
                 .annotations = &.{
                 },
@@ -2810,11 +2810,11 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 1374, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1375, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Comptime evaluation pass - executes events with Program/Source parameters", .location = .{ .line = 1375, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// This runs BEFORE emission so comptime events can transform the AST", .location = .{ .line = 1376, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Comptime evaluation pass - executes events with Program/Source parameters", .location = .{ .line = 1376, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// This runs BEFORE emission so comptime events can transform the AST", .location = .{ .line = 1377, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .proc_decl = ProcDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"evaluate_comptime"} },
                 .body = 
@@ -2936,6 +2936,17 @@ pub const PROGRAM_AST = Program{
                     \\    // std.debug.print("  Detected {} comptime events, {} invocations\n", .{comptime_count, invocations_found});
                     \\
                     \\    const backend_output = @import("backend_output_emitted.zig");
+                    \\
+                    \\    // Phase 2.3.5: Early comptime_main pass — registers build-time configuration
+                    \\    // (build:variants, build:config) into emitter_helpers registries so that Phase 2.4
+                    \\    // transforms can dispatch through the populated registry. Phase 2.5 runs
+                    \\    // comptime_main again for post-transform work (tap injection etc.). This
+                    \\    // double-execution is a known wart; the cleaner fix is to segregate
+                    \\    // build-config flows into a dedicated pre_transform_main() at codegen time.
+                    \\    if (@hasDecl(backend_output, "comptime_main")) {
+                    \\        log.debug("[PHASE 2.3.5] Early comptime_main() — registering build-time variants/config\n", .{});
+                    \\        _ = backend_output.comptime_main(ctx.ast, ctx.allocator);
+                    \\    }
                     \\
                     \\    // Phase 2.4: Execute transform handlers FIRST (if they exist)
                     \\    // NOTE: Transforms run BEFORE comptime events so that comptime events
@@ -3196,10 +3207,10 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 1749, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1761, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Structural shape checker implementation", .location = .{ .line = 1750, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Structural shape checker implementation", .location = .{ .line = 1762, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .proc_decl = ProcDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"check_structure"} },
                 .body = 
@@ -3295,11 +3306,11 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 1837, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1849, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Flow checker implementation", .location = .{ .line = 1838, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Validates control flow properties like when-clause exhaustiveness", .location = .{ .line = 1839, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Flow checker implementation", .location = .{ .line = 1850, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Validates control flow properties like when-clause exhaustiveness", .location = .{ .line = 1851, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .proc_decl = ProcDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"check_flow"} },
                 .body = 
@@ -3384,12 +3395,12 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 1915, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1927, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Auto-discharge inserter implementation", .location = .{ .line = 1916, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Inserts disposal calls before terminators when exactly one disposal option exists", .location = .{ .line = 1917, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Flags for auto-discharge control (co-located with implementation!)", .location = .{ .line = 1919, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Auto-discharge inserter implementation", .location = .{ .line = 1928, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Inserts disposal calls before terminators when exactly one disposal option exists", .location = .{ .line = 1929, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Flags for auto-discharge control (co-located with implementation!)", .location = .{ .line = 1931, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .flow = Flow{
                 .invocation = Invocation{
                     .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"flag", "declare"} },
@@ -3401,7 +3412,7 @@ pub const PROGRAM_AST = Program{
                                 \\"type": "boolean"
                                 \\
                                 ,
-                            .location = .{ .line = 1925, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                            .location = .{ .line = 1937, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                             .scope = CapturedScope{
                                 .bindings = &[_]ScopeBinding{
                                 },
@@ -3424,7 +3435,7 @@ pub const PROGRAM_AST = Program{
                 .super_shape = null,
                 .is_pure = true,
                 .is_transitively_pure = false,
-                .location = .{ .line = 1920, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1932, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .impl_of = null,
                 .is_impl = false,
                 .module = "compiler",
@@ -3440,7 +3451,7 @@ pub const PROGRAM_AST = Program{
                                 \\"type": "boolean"
                                 \\
                                 ,
-                            .location = .{ .line = 1931, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                            .location = .{ .line = 1943, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                             .scope = CapturedScope{
                                 .bindings = &[_]ScopeBinding{
                                 },
@@ -3463,7 +3474,7 @@ pub const PROGRAM_AST = Program{
                 .super_shape = null,
                 .is_pure = true,
                 .is_transitively_pure = false,
-                .location = .{ .line = 1926, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 1938, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .impl_of = null,
                 .is_impl = false,
                 .module = "compiler",
@@ -3556,11 +3567,11 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 2011, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 2023, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Semantic phantom type checker implementation", .location = .{ .line = 2012, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Validates module-qualified phantom states and their compatibility", .location = .{ .line = 2013, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Semantic phantom type checker implementation", .location = .{ .line = 2024, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Validates module-qualified phantom states and their compatibility", .location = .{ .line = 2025, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .proc_decl = ProcDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"check_phantom_semantic"} },
                 .body = 
@@ -3646,11 +3657,11 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 2090, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 2102, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Purity checker implementation", .location = .{ .line = 2091, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Tracks [pure] annotations - developer assertion, trusted without verification", .location = .{ .line = 2092, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Purity checker implementation", .location = .{ .line = 2103, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Tracks [pure] annotations - developer assertion, trusted without verification", .location = .{ .line = 2104, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .proc_decl = ProcDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"check_purity"} },
                 .body = 
@@ -3670,12 +3681,12 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 2103, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 2115, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// Dead Strip Pass", .location = .{ .line = 2104, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Removes unreachable events and flows from the AST", .location = .{ .line = 2105, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Walks from entry points (top-level flows), marks reachable events, prunes the rest", .location = .{ .line = 2106, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Dead Strip Pass", .location = .{ .line = 2116, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Removes unreachable events and flows from the AST", .location = .{ .line = 2117, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Walks from entry points (top-level flows), marks reachable events, prunes the rest", .location = .{ .line = 2118, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .proc_decl = ProcDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"pass_dead_strip"} },
                 .body = 
@@ -3702,12 +3713,12 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 2124, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 2136, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// CCP Observability Injection Pass", .location = .{ .line = 2125, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Injects universal observability taps into the user's AST", .location = .{ .line = 2126, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// This makes every compiled program self-observing by adding emit_json and ~* -> * tap", .location = .{ .line = 2127, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// CCP Observability Injection Pass", .location = .{ .line = 2137, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Injects universal observability taps into the user's AST", .location = .{ .line = 2138, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// This makes every compiled program self-observing by adding emit_json and ~* -> * tap", .location = .{ .line = 2139, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .proc_decl = ProcDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"inject_ccp"} },
                 .body = 
@@ -3732,11 +3743,11 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 2143, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 2155, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// CCP Command Processing Pass", .location = .{ .line = 2144, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Reads and processes incoming AI commands from stdin when --ccp is enabled", .location = .{ .line = 2145, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// CCP Command Processing Pass", .location = .{ .line = 2156, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Reads and processes incoming AI commands from stdin when --ccp is enabled", .location = .{ .line = 2157, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"process_ccp_commands"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -3757,7 +3768,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 2148, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 2160, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -3780,31 +3791,31 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 2158, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
+                .location = .{ .line = 2170, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" },
                 .module = "compiler",
             } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 2159, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// NOTE: The default compiler coordinator is NOT defined as a Koru flow.", .location = .{ .line = 2160, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//       It's hardcoded in src/main.zig as a Zig function.", .location = .{ .line = 2161, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 2162, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// Why: The coordinator runs at Zig compile-time during backend.zig compilation,", .location = .{ .line = 2163, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//      before the Koru runtime exists. Flows can't execute at that stage.", .location = .{ .line = 2164, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 2165, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// To modify the compilation pipeline, edit compiler_coordinate_default", .location = .{ .line = 2166, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// in src/main.zig directly.", .location = .{ .line = 2167, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 2168, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// The pipeline executes these passes in order:", .location = .{ .line = 2169, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   1. compiler.passes.process_ccp_commands  (reads AI commands from stdin)", .location = .{ .line = 2170, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   2. compiler.passes.evaluate_comptime     (executes comptime events)", .location = .{ .line = 2171, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   3. compiler.check.structure              (validates event/branch shapes)", .location = .{ .line = 2172, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   4. compiler.check.phantom.semantic       (validates phantom types)", .location = .{ .line = 2173, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   5. compiler.passes.inject_ccp            (adds observability taps)", .location = .{ .line = 2174, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   6. compiler.passes.dead_strip            (removes unreachable events/flows)", .location = .{ .line = 2175, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "//   7. compiler.emit.zig                     (generates final Zig code)", .location = .{ .line = 2176, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 2171, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// NOTE: The default compiler coordinator is NOT defined as a Koru flow.", .location = .{ .line = 2172, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//       It's hardcoded in src/main.zig as a Zig function.", .location = .{ .line = 2173, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 2174, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// Why: The coordinator runs at Zig compile-time during backend.zig compilation,", .location = .{ .line = 2175, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//      before the Koru runtime exists. Flows can't execute at that stage.", .location = .{ .line = 2176, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
                                     .{ .host_line = .{ .content = "//", .location = .{ .line = 2177, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// [expand] events are handled automatically by transform_pass_runner.zig", .location = .{ .line = 2178, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// during the transform phase inside evaluate_comptime.", .location = .{ .line = 2179, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 2180, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },        
+                                    .{ .host_line = .{ .content = "// To modify the compilation pipeline, edit compiler_coordinate_default", .location = .{ .line = 2178, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// in src/main.zig directly.", .location = .{ .line = 2179, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 2180, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// The pipeline executes these passes in order:", .location = .{ .line = 2181, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   1. compiler.passes.process_ccp_commands  (reads AI commands from stdin)", .location = .{ .line = 2182, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   2. compiler.passes.evaluate_comptime     (executes comptime events)", .location = .{ .line = 2183, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   3. compiler.check.structure              (validates event/branch shapes)", .location = .{ .line = 2184, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   4. compiler.check.phantom.semantic       (validates phantom types)", .location = .{ .line = 2185, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   5. compiler.passes.inject_ccp            (adds observability taps)", .location = .{ .line = 2186, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   6. compiler.passes.dead_strip            (removes unreachable events/flows)", .location = .{ .line = 2187, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//   7. compiler.emit.zig                     (generates final Zig code)", .location = .{ .line = 2188, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 2189, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// [expand] events are handled automatically by transform_pass_runner.zig", .location = .{ .line = 2190, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// during the transform phase inside evaluate_comptime.", .location = .{ .line = 2191, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 2192, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" }, .module = "compiler" } },        
                 }, .is_system = false, .annotations = &.{"comptime"}, .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler.kz" } } },
         .{ .module_decl = .{ .logical_name = "std.io", .canonical_path = "/Users/larsde/src/koru/koru_std/io.kz", .items = &[_]Item{            
                                     .{ .host_line = .{ .content = "// Koru Standard Library: I/O", .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
@@ -3812,8 +3823,9 @@ pub const PROGRAM_AST = Program{
                                     .{ .host_line = .{ .content = "//", .location = .{ .line = 3, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .host_line = .{ .content = "// Finally! After achieving consciousness (metacircular compilation),", .location = .{ .line = 4, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .host_line = .{ .content = "// we can now print \"Hello, World!\"", .location = .{ .line = 5, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "const std = @import(\"std\");", .location = .{ .line = 9, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// Print text without newline", .location = .{ .line = 11, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .import_decl = ImportDecl{ .path = "$std/build", .local_name = "std.build", .location = .{ .file = "/Users/larsde/src/koru/koru_std/io.kz", .line = 10, .column = 0 }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "const std = @import(\"std\");", .location = .{ .line = 11, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Print text without newline", .location = .{ .line = 13, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"print"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -3825,7 +3837,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 13, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 15, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -3842,10 +3854,10 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 17, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 19, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
             } },            
-                                    .{ .host_line = .{ .content = "// Print text with newline", .location = .{ .line = 18, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Print text with newline", .location = .{ .line = 20, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"println"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -3857,7 +3869,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 20, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 22, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -3874,19 +3886,19 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 24, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 26, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
             } },            
-                                    .{ .host_line = .{ .content = "// Print formatted text", .location = .{ .line = 25, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// NOTE: printf with varargs would require runtime support - skipping for now", .location = .{ .line = 26, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// ~pub event io.printf { format: []const u8, args: anytype }", .location = .{ .line = 27, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// | printed {}", .location = .{ .line = 28, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 29, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// ~proc io.printf {", .location = .{ .line = 30, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//     std.debug.print(format, args);", .location = .{ .line = 31, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//     return .{ .printed = .{} };", .location = .{ .line = 32, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// }", .location = .{ .line = 33, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// Read line from stdin (for future interactive programs)", .location = .{ .line = 35, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Print formatted text", .location = .{ .line = 27, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// NOTE: printf with varargs would require runtime support - skipping for now", .location = .{ .line = 28, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ~pub event io.printf { format: []const u8, args: anytype }", .location = .{ .line = 29, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// | printed {}", .location = .{ .line = 30, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 31, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ~proc io.printf {", .location = .{ .line = 32, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//     std.debug.print(format, args);", .location = .{ .line = 33, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//     return .{ .printed = .{} };", .location = .{ .line = 34, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// }", .location = .{ .line = 35, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Read line from stdin (for future interactive programs)", .location = .{ .line = 37, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"readln"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -3895,7 +3907,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "line",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "text", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -3912,7 +3924,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "failed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -3923,7 +3935,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 40, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 42, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -3934,7 +3946,7 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    // TODO: Implement actual stdin reading
                     \\    // For now, return a placeholder
-                    \\    return .{ .failed = .{ .message = "readln not yet implemented" } };
+                    \\    return .{ .failed = "readln not yet implemented" };
                     ,
                 .annotations = &.{
                 },
@@ -3942,11 +3954,11 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 46, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 48, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
             } },            
-                                    .{ .host_line = .{ .content = "// Simple line reader - returns the line, or empty string on EOF/error", .location = .{ .line = 47, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// No error handling, just returns what it gets", .location = .{ .line = 48, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Simple line reader - returns the line, or empty string on EOF/error", .location = .{ .line = 49, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// No error handling, just returns what it gets", .location = .{ .line = 50, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"read", "ln"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -3955,7 +3967,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "ok",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "line", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -3966,7 +3978,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 51, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 53, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -3977,13 +3989,13 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    const stdin = std.fs.File.stdin();
                     \\    var buf: [4096]u8 = undefined;
-                    \\    const n = stdin.read(&buf) catch return .{ .ok = .{ .line = "" } };
-                    \\    if (n == 0) return .{ .ok = .{ .line = "" } };
+                    \\    const n = stdin.read(&buf) catch return .{ .ok = "" };
+                    \\    if (n == 0) return .{ .ok = "" };
                     \\    // Find newline and exclude it
                     \\    var end: usize = 0;
                     \\    while (end < n and buf[end] != '\n') : (end += 1) {}
                     \\    const duped = std.heap.page_allocator.dupe(u8, buf[0..end]) catch "";
-                    \\    return .{ .ok = .{ .line = duped } };
+                    \\    return .{ .ok = duped };
                     ,
                 .annotations = &.{
                 },
@@ -3991,20 +4003,20 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 63, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 65, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
             } },            
-                                    .{ .host_line = .{ .content = "// Debug print for development", .location = .{ .line = 64, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// NOTE: debug with anytype would require runtime support - skipping for now", .location = .{ .line = 65, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// ~pub event io.debug { label: []const u8, value: anytype }", .location = .{ .line = 66, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// | printed {}", .location = .{ .line = 67, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 68, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// ~proc io.debug {", .location = .{ .line = 69, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//     std.debug.print(\"[DEBUG {s}]: \", .{label});", .location = .{ .line = 70, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//     std.debug.print(\"{any}\\n\", .{value});", .location = .{ .line = 71, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//     return .{ .printed = .{} };", .location = .{ .line = 72, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// }", .location = .{ .line = 73, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// Print error to stderr", .location = .{ .line = 75, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Debug print for development", .location = .{ .line = 66, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// NOTE: debug with anytype would require runtime support - skipping for now", .location = .{ .line = 67, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ~pub event io.debug { label: []const u8, value: anytype }", .location = .{ .line = 68, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// | printed {}", .location = .{ .line = 69, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 70, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ~proc io.debug {", .location = .{ .line = 71, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//     std.debug.print(\"[DEBUG {s}]: \", .{label});", .location = .{ .line = 72, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//     std.debug.print(\"{any}\\n\", .{value});", .location = .{ .line = 73, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//     return .{ .printed = .{} };", .location = .{ .line = 74, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// }", .location = .{ .line = 75, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Print error to stderr", .location = .{ .line = 77, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"eprintln"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -4024,7 +4036,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 78, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 80, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -4046,10 +4058,10 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 87, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 89, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
             } },            
-                                    .{ .host_line = .{ .content = "// Success message with green color (if terminal supports it)", .location = .{ .line = 88, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Success message with green color (if terminal supports it)", .location = .{ .line = 90, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"success"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -4069,7 +4081,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 91, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 93, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -4087,10 +4099,10 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 96, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 98, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
             } },            
-                                    .{ .host_line = .{ .content = "// Warning message", .location = .{ .line = 97, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Warning message", .location = .{ .line = 99, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"warn"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -4110,7 +4122,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 100, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 102, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -4128,13 +4140,13 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 105, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 107, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
             } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 106, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// FILE/STDIN READING - For interpreter and scripting", .location = .{ .line = 107, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 108, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// Read entire stdin as text", .location = .{ .line = 110, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// FILE/STDIN READING - For interpreter and scripting", .location = .{ .line = 109, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 110, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Read entire stdin as text", .location = .{ .line = 112, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"read_stdin"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -4143,7 +4155,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "ok",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "text", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -4160,7 +4172,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "failed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -4171,7 +4183,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 115, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 117, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -4186,14 +4198,14 @@ pub const PROGRAM_AST = Program{
                     \\            error.OutOfMemory => "Input too large (max 10MB)",
                     \\            else => "Failed to read stdin",
                     \\        };
-                    \\        return .{ .failed = .{ .message = msg } };
+                    \\        return .{ .failed = msg };
                     \\    };
                     \\
                     \\    if (content.len == 0) {
                     \\        return .{ .eof = .{} };
                     \\    }
                     \\
-                    \\    return .{ .ok = .{ .text = content } };
+                    \\    return .{ .ok = content };
                     ,
                 .annotations = &.{
                 },
@@ -4201,10 +4213,10 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 132, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 134, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
             } },            
-                                    .{ .host_line = .{ .content = "// Read entire file as text", .location = .{ .line = 133, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Read entire file as text", .location = .{ .line = 135, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"read_file"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -4214,7 +4226,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "ok",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "text", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -4231,7 +4243,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "failed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -4242,7 +4254,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 138, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 140, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -4254,9 +4266,9 @@ pub const PROGRAM_AST = Program{
                     \\    const file = std.fs.cwd().openFile(path, .{}) catch |err| {
                     \\        return switch (err) {
                     \\            error.FileNotFound => .{ .not_found = .{} },
-                    \\            error.AccessDenied => .{ .failed = .{ .message = "Access denied" } },
-                    \\            error.IsDir => .{ .failed = .{ .message = "Path is a directory" } },
-                    \\            else => .{ .failed = .{ .message = "Failed to open file" } },
+                    \\            error.AccessDenied => .{ .failed = "Access denied" },
+                    \\            error.IsDir => .{ .failed = "Path is a directory" },
+                    \\            else => .{ .failed = "Failed to open file" },
                     \\        };
                     \\    };
                     \\    defer file.close();
@@ -4266,10 +4278,10 @@ pub const PROGRAM_AST = Program{
                     \\            error.OutOfMemory => "File too large (max 10MB)",
                     \\            else => "Failed to read file",
                     \\        };
-                    \\        return .{ .failed = .{ .message = msg } };
+                    \\        return .{ .failed = msg };
                     \\    };
                     \\
-                    \\    return .{ .ok = .{ .text = content } };
+                    \\    return .{ .ok = content };
                     ,
                 .annotations = &.{
                 },
@@ -4277,10 +4289,10 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 160, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 162, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
             } },            
-                                    .{ .host_line = .{ .content = "// Get command line arguments", .location = .{ .line = 161, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Get command line arguments", .location = .{ .line = 163, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"args"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -4289,7 +4301,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "ok",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "argv", .type = "[]const []const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const []const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -4300,7 +4312,7 @@ pub const PROGRAM_AST = Program{
                 .is_implicit_flow = false,
                 .annotations = &.{
                 },
-                .location = .{ .line = 164, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 166, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -4322,22 +4334,22 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 173, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 175, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
             } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 174, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// PRINT.LN - Interpolated printing with Expression (ZERO OVERHEAD)", .location = .{ .line = 175, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 176, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 177, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// Syntax: std.io:print.ln(\"Hello {{ name }}! Count: {{ count }}\")", .location = .{ .line = 178, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// PRINT.LN - Interpolated printing with Expression (ZERO OVERHEAD)", .location = .{ .line = 177, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 178, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .host_line = .{ .content = "//", .location = .{ .line = 179, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// ARCHITECTURE:", .location = .{ .line = 180, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// - ~print.ln is a comptime transform that generates inline Zig code", .location = .{ .line = 181, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// - Parses {{ ... }} placeholders from the Expression string", .location = .{ .line = 182, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// - Optional format specifier: {{ name:s }} or {{ count:d }}", .location = .{ .line = 183, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// - Generates: std.debug.print(\"Hello {}! Count: {}\\n\", .{name, count});", .location = .{ .line = 184, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 185, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// This is NOT a regular event - it's a pure compile-time transformation.", .location = .{ .line = 186, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Syntax: std.io:print.ln(\"Hello {{ name }}! Count: {{ count }}\")", .location = .{ .line = 180, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 181, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ARCHITECTURE:", .location = .{ .line = 182, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// - ~print.ln is a comptime transform that generates inline Zig code", .location = .{ .line = 183, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// - Parses {{ ... }} placeholders from the Expression string", .location = .{ .line = 184, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// - Optional format specifier: {{ name:s }} or {{ count:d }}", .location = .{ .line = 185, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// - Generates: std.debug.print(\"Hello {}! Count: {}\\n\", .{name, count});", .location = .{ .line = 186, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 187, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// This is NOT a regular event - it's a pure compile-time transformation.", .location = .{ .line = 188, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"print", "ln"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -4351,7 +4363,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "transformed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "program", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -4365,7 +4377,7 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "transform",
                 },
-                .location = .{ .line = 196, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 198, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -4382,7 +4394,7 @@ pub const PROGRAM_AST = Program{
                 .annotations = &.{
                     "norun",
                 },
-                .location = .{ .line = 200, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 202, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -4451,7 +4463,7 @@ pub const PROGRAM_AST = Program{
                     \\    const flow = if (item.* == .flow)
                     \\        &item.flow
                     \\    else
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\
                     \\    // Parse the Expression string for ${...} placeholders
                     \\    var format_buf = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
@@ -4459,37 +4471,11 @@ pub const PROGRAM_AST = Program{
                     \\    var i: usize = 0;
                     \\    var first_arg = true;
                     \\
-                    \\    // Raw I/O: track whether we can use raw writes instead of std.debug.print
-                    \\    var needs_fmt = false;
                     \\    var missing_spec: ?[]const u8 = null;
-                    \\    var raw_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-                    \\    var literal_run = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                    \\    var function_call_expr: ?[]const u8 = null;
                     \\
-                    \\    // Helper: flush accumulated literal text as a raw write call
-                    \\    const flushLiteralFn = struct {
-                    \\        fn flush(rb: *std.ArrayList(u8), lr: *std.ArrayList(u8), alloc: std.mem.Allocator) void {
-                    \\            if (lr.items.len > 0) {
-                    \\                rb.appendSlice(alloc, "__kio.__kz_w(\"") catch unreachable;
-                    \\                rb.appendSlice(alloc, lr.items) catch unreachable;
-                    \\                rb.appendSlice(alloc, "\"); ") catch unreachable;
-                    \\                lr.clearRetainingCapacity();
-                    \\            }
-                    \\        }
-                    \\    }.flush;
-                    \\
-                    \\    // Raw I/O: the __kio helper struct emitted inline for raw write mode
-                    \\    const raw_io_prefix =
-                    \\        "//@koru:inline_stmt\n{ const __kio = struct { " ++
-                    \\        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(1, __kz_b) catch {}; } " ++
-                    \\        "fn __kz_wd(__kz_v: i64) void { " ++
-                    \\        "var _buf: [20]u8 = undefined; var _n: usize = 0; var _v: u64 = undefined; " ++
-                    \\        "if (__kz_v < 0) { __kz_w(\"-\"); _v = @intCast(-(__kz_v + 1)); _v += 1; " ++
-                    \\        "} else { _v = @intCast(__kz_v); } " ++
-                    \\        "if (_v == 0) { _buf[0] = '0'; _n = 1; } else { " ++
-                    \\        "while (_v > 0) : (_n += 1) { _buf[_n] = @intCast('0' + _v % 10); _v /= 10; } " ++
-                    \\        "var _lo: usize = 0; var _hi = _n - 1; " ++
-                    \\        "while (_lo < _hi) { const _t = _buf[_lo]; _buf[_lo] = _buf[_hi]; _buf[_hi] = _t; _lo += 1; _hi -= 1; } " ++
-                    \\        "} __kz_w(_buf[0.._n]); } }; ";
+                    \\    // Use the expression parser to detect function calls properly
+                    \\    const expr_parser = @import("expression_parser");
                     \\
                     \\    // Detect string literal vs bare expression
                     \\    const is_string_literal = expr.len > 0 and expr[0] == '"';
@@ -4498,11 +4484,14 @@ pub const PROGRAM_AST = Program{
                     \\    const end: usize = if (is_string_literal and expr[expr.len - 1] == '"') expr.len - 1 else expr.len;
                     \\    const raw_content = expr[start..end];
                     \\    // Bare expression (not a string literal): wrap as {{ raw_content }} for single-value interpolation
+                    \\    // If expression already has a format spec (contains :), don't add :s
                     \\    const content = if (!is_string_literal and raw_content.len > 0) blk: {
-                    \\        var wrapped = std.ArrayList(u8).initCapacity(allocator, raw_content.len + 6) catch unreachable;
+                    \\        const has_format_spec = std.mem.indexOf(u8, raw_content, ":") != null;
+                    \\        const suffix = if (has_format_spec) " }}" else ":s }}";
+                    \\        var wrapped = std.ArrayList(u8).initCapacity(allocator, raw_content.len + 8) catch unreachable;
                     \\        wrapped.appendSlice(allocator, "{{ ") catch unreachable;
                     \\        wrapped.appendSlice(allocator, raw_content) catch unreachable;
-                    \\        wrapped.appendSlice(allocator, " }}") catch unreachable;
+                    \\        wrapped.appendSlice(allocator, suffix) catch unreachable;
                     \\        break :blk wrapped.items;
                     \\    } else raw_content;
                     \\
@@ -4562,23 +4551,6 @@ pub const PROGRAM_AST = Program{
                     \\                        args_buf.appendSlice(allocator, "\" else \"\"") catch unreachable;
                     \\                        first_arg = false;
                     \\
-                    \\                        // Raw I/O: conditional string write
-                    \\                        flushLiteralFn(&raw_buf, &literal_run, allocator);
-                    \\                        raw_buf.appendSlice(allocator, "__kio.__kz_w(if (") catch unreachable;
-                    \\                        appendEscapedPath(&raw_buf, allocator, cond_var);
-                    \\                        raw_buf.appendSlice(allocator, ") \"") catch unreachable;
-                    \\                        for (body_content) |c| {
-                    \\                            switch (c) {
-                    \\                                '"' => raw_buf.appendSlice(allocator, "\\\"") catch unreachable,
-                    \\                                '\\' => raw_buf.appendSlice(allocator, "\\\\") catch unreachable,
-                    \\                                '\n' => raw_buf.appendSlice(allocator, "\\n") catch unreachable,
-                    \\                                '\r' => raw_buf.appendSlice(allocator, "\\r") catch unreachable,
-                    \\                                '\t' => raw_buf.appendSlice(allocator, "\\t") catch unreachable,
-                    \\                                else => raw_buf.append(allocator, c) catch unreachable,
-                    \\                            }
-                    \\                        }
-                    \\                        raw_buf.appendSlice(allocator, "\" else \"\"); ") catch unreachable;
-                    \\
                     \\                        i = body_end + endif_marker.len;
                     \\                        continue;
                     \\                    }
@@ -4586,7 +4558,6 @@ pub const PROGRAM_AST = Program{
                     \\            }
                     \\            // Not a recognized tag, treat as literal
                     \\            format_buf.append(allocator, content[i]) catch unreachable;
-                    \\            literal_run.append(allocator, content[i]) catch unreachable;
                     \\            i += 1;
                     \\        }
                     \\        // Look for {{ ... }} placeholders (Liquid-style syntax)
@@ -4617,6 +4588,19 @@ pub const PROGRAM_AST = Program{
                     \\                    has_spec = true;
                     \\                }
                     \\
+                    \\                // Function call check: parse the expression and check for function calls
+                    \\                if (function_call_expr == null) {
+                    \\                    var parser = expr_parser.ExpressionParser.init(allocator, var_name);
+                    \\                    defer parser.deinit();
+                    \\                    if (parser.parse()) |parsed_expr| {
+                    \\                        if (expr_parser.containsFunctionCall(parsed_expr)) {
+                    \\                            function_call_expr = var_name;
+                    \\                        }
+                    \\                    } else |_| {
+                    \\                        // Parse failed - let the Zig compiler catch it later
+                    \\                    }
+                    \\                }
+                    \\
                     \\                // Missing specifier: record error (first one only)
                     \\                if (!has_spec and missing_spec == null) {
                     \\                    missing_spec = placeholder;
@@ -4635,59 +4619,37 @@ pub const PROGRAM_AST = Program{
                     \\                appendEscapedPath(&args_buf, allocator, var_name);
                     \\                first_arg = false;
                     \\
-                    \\                // Raw I/O tracking
-                    \\                if (!std.mem.eql(u8, format_spec, "d") and !std.mem.eql(u8, format_spec, "s")) {
-                    \\                    needs_fmt = true;
-                    \\                }
-                    \\
-                    \\                // Raw I/O: emit expression write
-                    \\                flushLiteralFn(&raw_buf, &literal_run, allocator);
-                    \\                if (std.mem.eql(u8, format_spec, "d")) {
-                    \\                    raw_buf.appendSlice(allocator, "__kio.__kz_wd(@as(i64, @intCast(") catch unreachable;
-                    \\                    appendEscapedPath(&raw_buf, allocator, var_name);
-                    \\                    raw_buf.appendSlice(allocator, "))); ") catch unreachable;
-                    \\                } else if (std.mem.eql(u8, format_spec, "s")) {
-                    \\                    raw_buf.appendSlice(allocator, "__kio.__kz_w(") catch unreachable;
-                    \\                    appendEscapedPath(&raw_buf, allocator, var_name);
-                    \\                    raw_buf.appendSlice(allocator, "); ") catch unreachable;
-                    \\                }
-                    \\
                     \\                i = j + 2; // Skip past }}
                     \\            } else {
                     \\                format_buf.append(allocator, content[i]) catch unreachable;
-                    \\                literal_run.append(allocator, content[i]) catch unreachable;
                     \\                i += 1;
                     \\            }
                     \\        } else {
                     \\            format_buf.append(allocator, content[i]) catch unreachable;
-                    \\            literal_run.append(allocator, content[i]) catch unreachable;
                     \\            i += 1;
                     \\        }
                     \\    }
                     \\
                     \\    format_buf.appendSlice(allocator, "\\n") catch unreachable;
-                    \\    literal_run.appendSlice(allocator, "\\n") catch unreachable;
                     \\
-                    \\    const inline_code = if (missing_spec) |placeholder|
+                    \\    const inline_code = if (function_call_expr) |fn_expr|
+                    \\        std.fmt.allocPrint(
+                    \\            allocator,
+                    \\            "@compileError(\"std.io:print.ln: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
+                    \\            .{fn_expr}
+                    \\        ) catch unreachable
+                    \\    else if (missing_spec) |placeholder|
                     \\        std.fmt.allocPrint(
                     \\            allocator,
                     \\            "@compileError(\"std.io:print.ln: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
                     \\            .{placeholder}
                     \\        ) catch unreachable
-                    \\    else if (needs_fmt)
+                    \\    else
                     \\        std.fmt.allocPrint(
                     \\            allocator,
                     \\            "@import(\"std\").debug.print(\"{s}\", .{{{s}}});",
                     \\            .{ format_buf.items, args_buf.items }
-                    \\        ) catch unreachable
-                    \\    else blk: {
-                    \\        flushLiteralFn(&raw_buf, &literal_run, allocator);
-                    \\        var code = std.ArrayList(u8).initCapacity(allocator, raw_buf.items.len + 1024) catch unreachable;
-                    \\        code.appendSlice(allocator, raw_io_prefix) catch unreachable;
-                    \\        code.appendSlice(allocator, raw_buf.items) catch unreachable;
-                    \\        code.appendSlice(allocator, "}") catch unreachable;
-                    \\        break :blk code.items;
-                    \\    };
+                    \\        ) catch unreachable;
                     \\
                     \\    const isSameInvocation = struct {
                     \\        fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
@@ -4734,14 +4696,14 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        }
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     \\
                     \\    // TOP-LEVEL CASE: Set flow.inline_body
                     \\    if (flow.inline_body != null) {
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     \\
                     \\    const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
@@ -4779,9 +4741,9 @@ pub const PROGRAM_AST = Program{
                     \\    if (maybe_new_program) |new_program| {
                     \\        const result = allocator.create(ast.Program) catch unreachable;
                     \\        result.* = new_program;
-                    \\        return .{ .transformed = .{ .program = result } };
+                    \\        return .{ .transformed = result };
                     \\    }
-                    \\    return .{ .transformed = .{ .program = program } };
+                    \\    return .{ .transformed = program };
                     ,
                 .annotations = &.{
                 },
@@ -4789,24 +4751,24 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 594, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 546, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
             } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 595, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// PRINT.BLK - Multi-line block printing with Source block (ZERO OVERHEAD)", .location = .{ .line = 596, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 597, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 598, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// Syntax: std.io:print.blk {", .location = .{ .line = 599, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//     Header: {{ title }}", .location = .{ .line = 600, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//     Value:  {{ count }}", .location = .{ .line = 601, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// }", .location = .{ .line = 602, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 603, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// ARCHITECTURE:", .location = .{ .line = 604, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// - Takes a Source block (multi-line text)", .location = .{ .line = 605, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// - Parses {{ ... }} and {% if %} placeholders", .location = .{ .line = 606, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// - Generates inline Zig print statement", .location = .{ .line = 607, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 608, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
-                                    .{ .host_line = .{ .content = "// This is NOT a regular event - it's a pure compile-time transformation.", .location = .{ .line = 609, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 547, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// PRINT.BLK - Multi-line block printing with Source block (ZERO OVERHEAD)", .location = .{ .line = 548, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 549, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 550, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Syntax: std.io:print.blk {", .location = .{ .line = 551, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//     Header: {{ title }}", .location = .{ .line = 552, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//     Value:  {{ count }}", .location = .{ .line = 553, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// }", .location = .{ .line = 554, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 555, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ARCHITECTURE:", .location = .{ .line = 556, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// - Takes a Source block (multi-line text)", .location = .{ .line = 557, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// - Parses {{ ... }} and {% if %} placeholders", .location = .{ .line = 558, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// - Generates inline Zig print statement", .location = .{ .line = 559, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 560, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// This is NOT a regular event - it's a pure compile-time transformation.", .location = .{ .line = 561, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"print", "blk"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -4820,7 +4782,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "transformed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "program", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -4833,7 +4795,7 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "transform",
                 },
-                .location = .{ .line = 619, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 571, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -4850,7 +4812,7 @@ pub const PROGRAM_AST = Program{
                 .annotations = &.{
                     "norun",
                 },
-                .location = .{ .line = 623, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 575, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
                 .module = "io",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -4918,7 +4880,7 @@ pub const PROGRAM_AST = Program{
                     \\    const flow = if (item.* == .flow)
                     \\        &item.flow
                     \\    else
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\
                     \\    const isSameInvocation = struct {
                     \\        fn check(a: *const ast.Invocation, b: *const ast.Invocation) bool {
@@ -4956,37 +4918,11 @@ pub const PROGRAM_AST = Program{
                     \\    var i: usize = 0;
                     \\    var first_arg = true;
                     \\
-                    \\    // Raw I/O: track whether we can use raw writes instead of std.debug.print
-                    \\    var needs_fmt = false;
                     \\    var missing_spec: ?[]const u8 = null;
-                    \\    var raw_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
-                    \\    var literal_run = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                    \\    var function_call_expr: ?[]const u8 = null;
                     \\
-                    \\    // Helper: flush accumulated literal text as a raw write call
-                    \\    const flushLiteralFn = struct {
-                    \\        fn flush(rb: *std.ArrayList(u8), lr: *std.ArrayList(u8), alloc: std.mem.Allocator) void {
-                    \\            if (lr.items.len > 0) {
-                    \\                rb.appendSlice(alloc, "__kio.__kz_w(\"") catch unreachable;
-                    \\                rb.appendSlice(alloc, lr.items) catch unreachable;
-                    \\                rb.appendSlice(alloc, "\"); ") catch unreachable;
-                    \\                lr.clearRetainingCapacity();
-                    \\            }
-                    \\        }
-                    \\    }.flush;
-                    \\
-                    \\    // Raw I/O: the __kio helper struct emitted inline for raw write mode
-                    \\    const raw_io_prefix =
-                    \\        "//@koru:inline_stmt\n{ const __kio = struct { " ++
-                    \\        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(1, __kz_b) catch {}; } " ++
-                    \\        "fn __kz_wd(__kz_v: i64) void { " ++
-                    \\        "var _buf: [20]u8 = undefined; var _n: usize = 0; var _v: u64 = undefined; " ++
-                    \\        "if (__kz_v < 0) { __kz_w(\"-\"); _v = @intCast(-(__kz_v + 1)); _v += 1; " ++
-                    \\        "} else { _v = @intCast(__kz_v); } " ++
-                    \\        "if (_v == 0) { _buf[0] = '0'; _n = 1; } else { " ++
-                    \\        "while (_v > 0) : (_n += 1) { _buf[_n] = @intCast('0' + _v % 10); _v /= 10; } " ++
-                    \\        "var _lo: usize = 0; var _hi = _n - 1; " ++
-                    \\        "while (_lo < _hi) { const _t = _buf[_lo]; _buf[_lo] = _buf[_hi]; _buf[_hi] = _t; _lo += 1; _hi -= 1; } " ++
-                    \\        "} __kz_w(_buf[0.._n]); } }; ";
+                    \\    // Use the expression parser to detect function calls properly
+                    \\    const expr_parser = @import("expression_parser");
                     \\
                     \\    const content = source.text;
                     \\
@@ -5044,23 +4980,6 @@ pub const PROGRAM_AST = Program{
                     \\                        args_buf.appendSlice(allocator, "\" else \"\"") catch unreachable;
                     \\                        first_arg = false;
                     \\
-                    \\                        // Raw I/O: conditional string write
-                    \\                        flushLiteralFn(&raw_buf, &literal_run, allocator);
-                    \\                        raw_buf.appendSlice(allocator, "__kio.__kz_w(if (") catch unreachable;
-                    \\                        appendEscapedPath(&raw_buf, allocator, cond_var);
-                    \\                        raw_buf.appendSlice(allocator, ") \"") catch unreachable;
-                    \\                        for (body_content) |c| {
-                    \\                            switch (c) {
-                    \\                                '"' => raw_buf.appendSlice(allocator, "\\\"") catch unreachable,
-                    \\                                '\\' => raw_buf.appendSlice(allocator, "\\\\") catch unreachable,
-                    \\                                '\n' => raw_buf.appendSlice(allocator, "\\n") catch unreachable,
-                    \\                                '\r' => raw_buf.appendSlice(allocator, "\\r") catch unreachable,
-                    \\                                '\t' => raw_buf.appendSlice(allocator, "\\t") catch unreachable,
-                    \\                                else => raw_buf.append(allocator, c) catch unreachable,
-                    \\                            }
-                    \\                        }
-                    \\                        raw_buf.appendSlice(allocator, "\" else \"\"); ") catch unreachable;
-                    \\
                     \\                        i = body_end + endif_marker.len;
                     \\                        continue;
                     \\                    }
@@ -5070,28 +4989,20 @@ pub const PROGRAM_AST = Program{
                     \\            switch (content[i]) {
                     \\                '"' => {
                     \\                    format_buf.appendSlice(allocator, "\\\"") catch unreachable;
-                    \\                    literal_run.appendSlice(allocator, "\\\"") catch unreachable;
                     \\                },
                     \\                '\\' => {
                     \\                    format_buf.appendSlice(allocator, "\\\\") catch unreachable;
-                    \\                    literal_run.appendSlice(allocator, "\\\\") catch unreachable;
                     \\                },
                     \\                '\n' => {
                     \\                    format_buf.appendSlice(allocator, "\\n") catch unreachable;
-                    \\                    literal_run.appendSlice(allocator, "\\n") catch unreachable;
                     \\                },
                     \\                '\r' => {
                     \\                    format_buf.appendSlice(allocator, "\\r") catch unreachable;
-                    \\                    literal_run.appendSlice(allocator, "\\r") catch unreachable;
                     \\                },
                     \\                '\t' => {
                     \\                    format_buf.appendSlice(allocator, "\\t") catch unreachable;
-                    \\                    literal_run.appendSlice(allocator, "\\t") catch unreachable;
                     \\                },
-                    \\                else => {
-                    \\                    format_buf.append(allocator, content[i]) catch unreachable;
-                    \\                    literal_run.append(allocator, content[i]) catch unreachable;
-                    \\                },
+                    \\                else => format_buf.append(allocator, content[i]) catch unreachable,
                     \\            }
                     \\            i += 1;
                     \\        }
@@ -5123,6 +5034,19 @@ pub const PROGRAM_AST = Program{
                     \\                    has_spec = true;
                     \\                }
                     \\
+                    \\                // Function call check: parse the expression and check for function calls
+                    \\                if (function_call_expr == null) {
+                    \\                    var parser = expr_parser.ExpressionParser.init(allocator, var_name);
+                    \\                    defer parser.deinit();
+                    \\                    if (parser.parse()) |parsed_expr| {
+                    \\                        if (expr_parser.containsFunctionCall(parsed_expr)) {
+                    \\                            function_call_expr = var_name;
+                    \\                        }
+                    \\                    } else |_| {
+                    \\                        // Parse failed - let the Zig compiler catch it later
+                    \\                    }
+                    \\                }
+                    \\
                     \\                // Missing specifier: record error (first one only)
                     \\                if (!has_spec and missing_spec == null) {
                     \\                    missing_spec = placeholder;
@@ -5140,50 +5064,25 @@ pub const PROGRAM_AST = Program{
                     \\                appendEscapedPath(&args_buf, allocator, var_name);
                     \\                first_arg = false;
                     \\
-                    \\                // Raw I/O tracking
-                    \\                if (!std.mem.eql(u8, format_spec, "d") and !std.mem.eql(u8, format_spec, "s")) {
-                    \\                    needs_fmt = true;
-                    \\                }
-                    \\
-                    \\                // Raw I/O: emit expression write
-                    \\                flushLiteralFn(&raw_buf, &literal_run, allocator);
-                    \\                if (std.mem.eql(u8, format_spec, "d")) {
-                    \\                    raw_buf.appendSlice(allocator, "__kio.__kz_wd(@as(i64, @intCast(") catch unreachable;
-                    \\                    appendEscapedPath(&raw_buf, allocator, var_name);
-                    \\                    raw_buf.appendSlice(allocator, "))); ") catch unreachable;
-                    \\                } else if (std.mem.eql(u8, format_spec, "s")) {
-                    \\                    raw_buf.appendSlice(allocator, "__kio.__kz_w(") catch unreachable;
-                    \\                    appendEscapedPath(&raw_buf, allocator, var_name);
-                    \\                    raw_buf.appendSlice(allocator, "); ") catch unreachable;
-                    \\                }
-                    \\
                     \\                i = j + 2;
                     \\            } else {
                     \\                switch (content[i]) {
                     \\                    '"' => {
                     \\                        format_buf.appendSlice(allocator, "\\\"") catch unreachable;
-                    \\                        literal_run.appendSlice(allocator, "\\\"") catch unreachable;
                     \\                    },
                     \\                    '\\' => {
                     \\                        format_buf.appendSlice(allocator, "\\\\") catch unreachable;
-                    \\                        literal_run.appendSlice(allocator, "\\\\") catch unreachable;
                     \\                    },
                     \\                    '\n' => {
                     \\                        format_buf.appendSlice(allocator, "\\n") catch unreachable;
-                    \\                        literal_run.appendSlice(allocator, "\\n") catch unreachable;
                     \\                    },
                     \\                    '\r' => {
                     \\                        format_buf.appendSlice(allocator, "\\r") catch unreachable;
-                    \\                        literal_run.appendSlice(allocator, "\\r") catch unreachable;
                     \\                    },
                     \\                    '\t' => {
                     \\                        format_buf.appendSlice(allocator, "\\t") catch unreachable;
-                    \\                        literal_run.appendSlice(allocator, "\\t") catch unreachable;
                     \\                    },
-                    \\                    else => {
-                    \\                        format_buf.append(allocator, content[i]) catch unreachable;
-                    \\                        literal_run.append(allocator, content[i]) catch unreachable;
-                    \\                    },
+                    \\                    else => format_buf.append(allocator, content[i]) catch unreachable,
                     \\                }
                     \\                i += 1;
                     \\            }
@@ -5192,28 +5091,20 @@ pub const PROGRAM_AST = Program{
                     \\            switch (content[i]) {
                     \\                '"' => {
                     \\                    format_buf.appendSlice(allocator, "\\\"") catch unreachable;
-                    \\                    literal_run.appendSlice(allocator, "\\\"") catch unreachable;
                     \\                },
                     \\                '\\' => {
                     \\                    format_buf.appendSlice(allocator, "\\\\") catch unreachable;
-                    \\                    literal_run.appendSlice(allocator, "\\\\") catch unreachable;
                     \\                },
                     \\                '\n' => {
                     \\                    format_buf.appendSlice(allocator, "\\n") catch unreachable;
-                    \\                    literal_run.appendSlice(allocator, "\\n") catch unreachable;
                     \\                },
                     \\                '\r' => {
                     \\                    format_buf.appendSlice(allocator, "\\r") catch unreachable;
-                    \\                    literal_run.appendSlice(allocator, "\\r") catch unreachable;
                     \\                },
                     \\                '\t' => {
                     \\                    format_buf.appendSlice(allocator, "\\t") catch unreachable;
-                    \\                    literal_run.appendSlice(allocator, "\\t") catch unreachable;
                     \\                },
-                    \\                else => {
-                    \\                    format_buf.append(allocator, content[i]) catch unreachable;
-                    \\                    literal_run.append(allocator, content[i]) catch unreachable;
-                    \\                },
+                    \\                else => format_buf.append(allocator, content[i]) catch unreachable,
                     \\            }
                     \\            i += 1;
                     \\        }
@@ -5225,29 +5116,26 @@ pub const PROGRAM_AST = Program{
                     \\        format_buf.items[format_buf.items.len - 1] != 'n')
                     \\    {
                     \\        format_buf.appendSlice(allocator, "\\n") catch unreachable;
-                    \\        literal_run.appendSlice(allocator, "\\n") catch unreachable;
                     \\    }
                     \\
-                    \\    const inline_code = if (missing_spec) |placeholder|
+                    \\    const inline_code = if (function_call_expr) |fn_expr|
+                    \\        std.fmt.allocPrint(
+                    \\            allocator,
+                    \\            "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' contains a function call — function calls are not allowed in expressions. Use event chaining instead.\");",
+                    \\            .{fn_expr}
+                    \\        ) catch unreachable
+                    \\    else if (missing_spec) |placeholder|
                     \\        std.fmt.allocPrint(
                     \\            allocator,
                     \\            "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
                     \\            .{placeholder}
                     \\        ) catch unreachable
-                    \\    else if (needs_fmt)
+                    \\    else
                     \\        std.fmt.allocPrint(
                     \\            allocator,
                     \\            "@import(\"std\").debug.print(\"{s}\", .{{{s}}});",
                     \\            .{ format_buf.items, args_buf.items }
-                    \\        ) catch unreachable
-                    \\    else blk: {
-                    \\        flushLiteralFn(&raw_buf, &literal_run, allocator);
-                    \\        var code = std.ArrayList(u8).initCapacity(allocator, raw_buf.items.len + 1024) catch unreachable;
-                    \\        code.appendSlice(allocator, raw_io_prefix) catch unreachable;
-                    \\        code.appendSlice(allocator, raw_buf.items) catch unreachable;
-                    \\        code.appendSlice(allocator, "}") catch unreachable;
-                    \\        break :blk code.items;
-                    \\    };
+                    \\        ) catch unreachable;
                     \\
                     \\    if (is_pointer_top) {
                     \\        // =====================================================================
@@ -5299,9 +5187,9 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        }
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    } else {
                     \\        // =====================================================================
                     \\        // PIPELINE CASE: print.blk inside a continuation pipeline
@@ -5311,9 +5199,9 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        }
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     ,
                 .annotations = &.{
@@ -5322,7 +5210,595 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 1082, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .location = .{ .line = 960, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .module = "io",
+            } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 961, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// PRINT.BLK|RAW_POSIX - raw I/O fast path variant for linux/macos", .location = .{ .line = 962, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 963, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Selected via ~[build(linux)] / ~[build(macos)] std.build:variants below.", .location = .{ .line = 964, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Emits inline posix.write calls when all placeholders use :d or :s specifiers.", .location = .{ .line = 965, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// Falls back to std.debug.print only when complex format specifiers (:any, :f)", .location = .{ .line = 966, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// are used. The raw path produces ~1,728 B ELF binaries vs ~7 KB for stdlib.", .location = .{ .line = 967, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .proc_decl = ProcDecl{
+                .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"print", "blk"} },
+                .body = 
+                    \\
+                    \\    const ast = @import("ast");
+                    \\    const ast_functional = @import("ast_functional");
+                    \\
+                    \\    const isZigKeyword = struct {
+                    \\        fn check(word: []const u8) bool {
+                    \\            const keywords = [_][]const u8{
+                    \\                "error", "type", "async", "await", "suspend", "resume",
+                    \\                "try", "catch", "if", "else", "switch", "while",
+                    \\                "for", "break", "continue", "return", "defer", "errdefer",
+                    \\                "test", "pub", "export", "extern", "packed", "inline",
+                    \\                "noinline", "comptime", "nosuspend", "volatile", "allowzero",
+                    \\                "align", "linksection", "callconv", "noalias",
+                    \\                "struct", "enum", "union", "opaque", "fn", "const",
+                    \\                "var", "anyframe", "anytype", "anyerror", "unreachable",
+                    \\                "undef", "null", "true", "false", "and", "or",
+                    \\                "orelse", "threadlocal",
+                    \\            };
+                    \\            for (keywords) |kw| {
+                    \\                if (std.mem.eql(u8, word, kw)) return true;
+                    \\            }
+                    \\            return false;
+                    \\        }
+                    \\    }.check;
+                    \\
+                    \\    const appendEscapedPath = struct {
+                    \\        fn append(buf: *std.ArrayList(u8), alloc: std.mem.Allocator, path: []const u8) void {
+                    \\            var start: usize = 0;
+                    \\            var pos: usize = 0;
+                    \\            var is_first = true;
+                    \\
+                    \\            while (pos <= path.len) {
+                    \\                if (pos == path.len or path[pos] == '.') {
+                    \\                    const segment = path[start..pos];
+                    \\                    if (!is_first) {
+                    \\                        buf.append(alloc, '.') catch unreachable;
+                    \\                        if (isZigKeyword(segment)) {
+                    \\                            buf.appendSlice(alloc, "@\"") catch unreachable;
+                    \\                            buf.appendSlice(alloc, segment) catch unreachable;
+                    \\                            buf.append(alloc, '"') catch unreachable;
+                    \\                        } else {
+                    \\                            buf.appendSlice(alloc, segment) catch unreachable;
+                    \\                        }
+                    \\                    } else {
+                    \\                        buf.appendSlice(alloc, segment) catch unreachable;
+                    \\                    }
+                    \\                    is_first = false;
+                    \\                    start = pos + 1;
+                    \\                }
+                    \\                pos += 1;
+                    \\            }
+                    \\        }
+                    \\    }.append;
+                    \\
+                    \\    const flow = if (item.* == .flow)
+                    \\        &item.flow
+                    \\    else
+                    \\        return .{ .transformed = program };
+                    \\
+                    \\    const is_top_level = (invocation == &flow.invocation);
+                    \\
+                    \\    var format_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+                    \\    var args_buf = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+                    \\    var i: usize = 0;
+                    \\    var first_arg = true;
+                    \\
+                    \\    // Raw I/O state: two parallel buffers — std.debug.print fallback and raw write path.
+                    \\    var needs_fmt = false;
+                    \\    var missing_spec: ?[]const u8 = null;
+                    \\    var raw_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+                    \\    var literal_run = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+                    \\
+                    \\    const flushLiteralFn = struct {
+                    \\        fn flush(rb: *std.ArrayList(u8), lr: *std.ArrayList(u8), alloc: std.mem.Allocator) void {
+                    \\            if (lr.items.len > 0) {
+                    \\                rb.appendSlice(alloc, "__kio.__kz_w(\"") catch unreachable;
+                    \\                rb.appendSlice(alloc, lr.items) catch unreachable;
+                    \\                rb.appendSlice(alloc, "\"); ") catch unreachable;
+                    \\                lr.clearRetainingCapacity();
+                    \\            }
+                    \\        }
+                    \\    }.flush;
+                    \\
+                    \\    // Inline __kio helper struct: raw posix.write + hand-coded i64 formatter.
+                    \\    // fd=2 (stderr) matches std.debug.print's destination so semantics align.
+                    \\    const raw_io_prefix =
+                    \\        "//@koru:inline_stmt\n{ const __kio = struct { " ++
+                    \\        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(2, __kz_b) catch {}; } " ++
+                    \\        "fn __kz_wd(__kz_v: i64) void { " ++
+                    \\        "var _buf: [20]u8 = undefined; var _n: usize = 0; var _v: u64 = undefined; " ++
+                    \\        "if (__kz_v < 0) { __kz_w(\"-\"); _v = @intCast(-(__kz_v + 1)); _v += 1; " ++
+                    \\        "} else { _v = @intCast(__kz_v); } " ++
+                    \\        "if (_v == 0) { _buf[0] = '0'; _n = 1; } else { " ++
+                    \\        "while (_v > 0) : (_n += 1) { _buf[_n] = @intCast('0' + _v % 10); _v /= 10; } " ++
+                    \\        "var _lo: usize = 0; var _hi = _n - 1; " ++
+                    \\        "while (_lo < _hi) { const _t = _buf[_lo]; _buf[_lo] = _buf[_hi]; _buf[_hi] = _t; _lo += 1; _hi -= 1; } " ++
+                    \\        "} __kz_w(_buf[0.._n]); } }; ";
+                    \\
+                    \\    const content = source.text;
+                    \\
+                    \\    while (i < content.len) {
+                    \\        if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '%') {
+                    \\            const tag_start = i + 2;
+                    \\            var ws_start = tag_start;
+                    \\            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+                    \\
+                    \\            if (ws_start + 3 <= content.len and std.mem.eql(u8, content[ws_start..ws_start + 3], "if ")) {
+                    \\                const var_start = ws_start + 3;
+                    \\                var var_pos = var_start;
+                    \\                while (var_pos < content.len and (content[var_pos] == ' ' or content[var_pos] == '\t')) : (var_pos += 1) {}
+                    \\
+                    \\                var var_end = var_pos;
+                    \\                while (var_end < content.len and content[var_end] != ' ' and content[var_end] != '\t' and content[var_end] != '%') : (var_end += 1) {}
+                    \\                const cond_var = content[var_pos..var_end];
+                    \\
+                    \\                var tag_end = var_end;
+                    \\                while (tag_end + 1 < content.len and !(content[tag_end] == '%' and content[tag_end + 1] == '}')) : (tag_end += 1) {}
+                    \\
+                    \\                if (tag_end + 1 < content.len) {
+                    \\                    const body_start = tag_end + 2;
+                    \\                    const endif_marker = "{% endif %}";
+                    \\                    if (std.mem.indexOf(u8, content[body_start..], endif_marker)) |endif_offset| {
+                    \\                        const body_end = body_start + endif_offset;
+                    \\                        const body_content = content[body_start..body_end];
+                    \\
+                    \\                        format_buf.appendSlice(allocator, "{s}") catch unreachable;
+                    \\
+                    \\                        if (!first_arg) {
+                    \\                            args_buf.appendSlice(allocator, ", ") catch unreachable;
+                    \\                        }
+                    \\                        args_buf.appendSlice(allocator, "if (") catch unreachable;
+                    \\                        appendEscapedPath(&args_buf, allocator, cond_var);
+                    \\                        args_buf.appendSlice(allocator, ") \"") catch unreachable;
+                    \\                        for (body_content) |c| {
+                    \\                            switch (c) {
+                    \\                                '"' => args_buf.appendSlice(allocator, "\\\"") catch unreachable,
+                    \\                                '\\' => args_buf.appendSlice(allocator, "\\\\") catch unreachable,
+                    \\                                '\n' => args_buf.appendSlice(allocator, "\\n") catch unreachable,
+                    \\                                '\r' => args_buf.appendSlice(allocator, "\\r") catch unreachable,
+                    \\                                '\t' => args_buf.appendSlice(allocator, "\\t") catch unreachable,
+                    \\                                else => args_buf.append(allocator, c) catch unreachable,
+                    \\                            }
+                    \\                        }
+                    \\                        args_buf.appendSlice(allocator, "\" else \"\"") catch unreachable;
+                    \\                        first_arg = false;
+                    \\
+                    \\                        flushLiteralFn(&raw_buf, &literal_run, allocator);
+                    \\                        raw_buf.appendSlice(allocator, "__kio.__kz_w(if (") catch unreachable;
+                    \\                        appendEscapedPath(&raw_buf, allocator, cond_var);
+                    \\                        raw_buf.appendSlice(allocator, ") \"") catch unreachable;
+                    \\                        for (body_content) |c| {
+                    \\                            switch (c) {
+                    \\                                '"' => raw_buf.appendSlice(allocator, "\\\"") catch unreachable,
+                    \\                                '\\' => raw_buf.appendSlice(allocator, "\\\\") catch unreachable,
+                    \\                                '\n' => raw_buf.appendSlice(allocator, "\\n") catch unreachable,
+                    \\                                '\r' => raw_buf.appendSlice(allocator, "\\r") catch unreachable,
+                    \\                                '\t' => raw_buf.appendSlice(allocator, "\\t") catch unreachable,
+                    \\                                else => raw_buf.append(allocator, c) catch unreachable,
+                    \\                            }
+                    \\                        }
+                    \\                        raw_buf.appendSlice(allocator, "\" else \"\"); ") catch unreachable;
+                    \\
+                    \\                        i = body_end + endif_marker.len;
+                    \\                        continue;
+                    \\                    }
+                    \\                }
+                    \\            }
+                    \\            switch (content[i]) {
+                    \\                '"' => {
+                    \\                    format_buf.appendSlice(allocator, "\\\"") catch unreachable;
+                    \\                    literal_run.appendSlice(allocator, "\\\"") catch unreachable;
+                    \\                },
+                    \\                '\\' => {
+                    \\                    format_buf.appendSlice(allocator, "\\\\") catch unreachable;
+                    \\                    literal_run.appendSlice(allocator, "\\\\") catch unreachable;
+                    \\                },
+                    \\                '\n' => {
+                    \\                    format_buf.appendSlice(allocator, "\\n") catch unreachable;
+                    \\                    literal_run.appendSlice(allocator, "\\n") catch unreachable;
+                    \\                },
+                    \\                '\r' => {
+                    \\                    format_buf.appendSlice(allocator, "\\r") catch unreachable;
+                    \\                    literal_run.appendSlice(allocator, "\\r") catch unreachable;
+                    \\                },
+                    \\                '\t' => {
+                    \\                    format_buf.appendSlice(allocator, "\\t") catch unreachable;
+                    \\                    literal_run.appendSlice(allocator, "\\t") catch unreachable;
+                    \\                },
+                    \\                else => {
+                    \\                    format_buf.append(allocator, content[i]) catch unreachable;
+                    \\                    literal_run.append(allocator, content[i]) catch unreachable;
+                    \\                },
+                    \\            }
+                    \\            i += 1;
+                    \\        }
+                    \\        else if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '{') {
+                    \\            const placeholder_start = i + 2;
+                    \\            var ws_start = placeholder_start;
+                    \\            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+                    \\
+                    \\            var j = ws_start;
+                    \\            while (j + 1 < content.len and !(content[j] == '}' and content[j + 1] == '}')) : (j += 1) {}
+                    \\
+                    \\            if (j + 1 < content.len) {
+                    \\                var ws_end = j;
+                    \\                while (ws_end > ws_start and (content[ws_end - 1] == ' ' or content[ws_end - 1] == '\t')) : (ws_end -= 1) {}
+                    \\
+                    \\                const placeholder = content[ws_start..ws_end];
+                    \\                var var_name: []const u8 = placeholder;
+                    \\                var format_spec: []const u8 = "any";
+                    \\                var has_spec = false;
+                    \\
+                    \\                if (std.mem.indexOf(u8, placeholder, ":")) |colon_pos| {
+                    \\                    var_name = placeholder[0..colon_pos];
+                    \\                    format_spec = placeholder[colon_pos + 1..];
+                    \\                    has_spec = true;
+                    \\                }
+                    \\
+                    \\                if (!has_spec and missing_spec == null) {
+                    \\                    missing_spec = placeholder;
+                    \\                }
+                    \\
+                    \\                const zig_fmt_spec_blk = if (std.mem.eql(u8, format_spec, "f")) "" else format_spec;
+                    \\                format_buf.append(allocator, '{') catch unreachable;
+                    \\                format_buf.appendSlice(allocator, zig_fmt_spec_blk) catch unreachable;
+                    \\                format_buf.append(allocator, '}') catch unreachable;
+                    \\
+                    \\                if (!first_arg) {
+                    \\                    args_buf.appendSlice(allocator, ", ") catch unreachable;
+                    \\                }
+                    \\                appendEscapedPath(&args_buf, allocator, var_name);
+                    \\                first_arg = false;
+                    \\
+                    \\                // Anything other than :d or :s requires std.fmt — fall back.
+                    \\                if (!std.mem.eql(u8, format_spec, "d") and !std.mem.eql(u8, format_spec, "s")) {
+                    \\                    needs_fmt = true;
+                    \\                }
+                    \\
+                    \\                flushLiteralFn(&raw_buf, &literal_run, allocator);
+                    \\                if (std.mem.eql(u8, format_spec, "d")) {
+                    \\                    raw_buf.appendSlice(allocator, "__kio.__kz_wd(@as(i64, @intCast(") catch unreachable;
+                    \\                    appendEscapedPath(&raw_buf, allocator, var_name);
+                    \\                    raw_buf.appendSlice(allocator, "))); ") catch unreachable;
+                    \\                } else if (std.mem.eql(u8, format_spec, "s")) {
+                    \\                    raw_buf.appendSlice(allocator, "__kio.__kz_w(") catch unreachable;
+                    \\                    appendEscapedPath(&raw_buf, allocator, var_name);
+                    \\                    raw_buf.appendSlice(allocator, "); ") catch unreachable;
+                    \\                }
+                    \\
+                    \\                i = j + 2;
+                    \\            } else {
+                    \\                switch (content[i]) {
+                    \\                    '"' => {
+                    \\                        format_buf.appendSlice(allocator, "\\\"") catch unreachable;
+                    \\                        literal_run.appendSlice(allocator, "\\\"") catch unreachable;
+                    \\                    },
+                    \\                    '\\' => {
+                    \\                        format_buf.appendSlice(allocator, "\\\\") catch unreachable;
+                    \\                        literal_run.appendSlice(allocator, "\\\\") catch unreachable;
+                    \\                    },
+                    \\                    '\n' => {
+                    \\                        format_buf.appendSlice(allocator, "\\n") catch unreachable;
+                    \\                        literal_run.appendSlice(allocator, "\\n") catch unreachable;
+                    \\                    },
+                    \\                    '\r' => {
+                    \\                        format_buf.appendSlice(allocator, "\\r") catch unreachable;
+                    \\                        literal_run.appendSlice(allocator, "\\r") catch unreachable;
+                    \\                    },
+                    \\                    '\t' => {
+                    \\                        format_buf.appendSlice(allocator, "\\t") catch unreachable;
+                    \\                        literal_run.appendSlice(allocator, "\\t") catch unreachable;
+                    \\                    },
+                    \\                    else => {
+                    \\                        format_buf.append(allocator, content[i]) catch unreachable;
+                    \\                        literal_run.append(allocator, content[i]) catch unreachable;
+                    \\                    },
+                    \\                }
+                    \\                i += 1;
+                    \\            }
+                    \\        } else {
+                    \\            switch (content[i]) {
+                    \\                '"' => {
+                    \\                    format_buf.appendSlice(allocator, "\\\"") catch unreachable;
+                    \\                    literal_run.appendSlice(allocator, "\\\"") catch unreachable;
+                    \\                },
+                    \\                '\\' => {
+                    \\                    format_buf.appendSlice(allocator, "\\\\") catch unreachable;
+                    \\                    literal_run.appendSlice(allocator, "\\\\") catch unreachable;
+                    \\                },
+                    \\                '\n' => {
+                    \\                    format_buf.appendSlice(allocator, "\\n") catch unreachable;
+                    \\                    literal_run.appendSlice(allocator, "\\n") catch unreachable;
+                    \\                },
+                    \\                '\r' => {
+                    \\                    format_buf.appendSlice(allocator, "\\r") catch unreachable;
+                    \\                    literal_run.appendSlice(allocator, "\\r") catch unreachable;
+                    \\                },
+                    \\                '\t' => {
+                    \\                    format_buf.appendSlice(allocator, "\\t") catch unreachable;
+                    \\                    literal_run.appendSlice(allocator, "\\t") catch unreachable;
+                    \\                },
+                    \\                else => {
+                    \\                    format_buf.append(allocator, content[i]) catch unreachable;
+                    \\                    literal_run.append(allocator, content[i]) catch unreachable;
+                    \\                },
+                    \\            }
+                    \\            i += 1;
+                    \\        }
+                    \\    }
+                    \\
+                    \\    if (format_buf.items.len < 2 or
+                    \\        format_buf.items[format_buf.items.len - 2] != '\\' or
+                    \\        format_buf.items[format_buf.items.len - 1] != 'n')
+                    \\    {
+                    \\        format_buf.appendSlice(allocator, "\\n") catch unreachable;
+                    \\        literal_run.appendSlice(allocator, "\\n") catch unreachable;
+                    \\    }
+                    \\
+                    \\    const inline_code = if (missing_spec) |placeholder|
+                    \\        std.fmt.allocPrint(
+                    \\            allocator,
+                    \\            "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
+                    \\            .{placeholder}
+                    \\        ) catch unreachable
+                    \\    else if (needs_fmt)
+                    \\        std.fmt.allocPrint(
+                    \\            allocator,
+                    \\            "@import(\"std\").debug.print(\"{s}\", .{{{s}}});",
+                    \\            .{ format_buf.items, args_buf.items }
+                    \\        ) catch unreachable
+                    \\    else blk: {
+                    \\        flushLiteralFn(&raw_buf, &literal_run, allocator);
+                    \\        var code = std.ArrayList(u8).initCapacity(allocator, raw_buf.items.len + 1024) catch unreachable;
+                    \\        code.appendSlice(allocator, raw_io_prefix) catch unreachable;
+                    \\        code.appendSlice(allocator, raw_buf.items) catch unreachable;
+                    \\        code.appendSlice(allocator, "}") catch unreachable;
+                    \\        break :blk code.items;
+                    \\    };
+                    \\
+                    \\    if (is_top_level) {
+                    \\        const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
+                    \\        impl_segments[0] = allocator.dupe(u8, "print") catch unreachable;
+                    \\        impl_segments[1] = allocator.dupe(u8, "blk.impl") catch unreachable;
+                    \\        const impl_path = ast.DottedPath{
+                    \\            .module_qualifier = flow.invocation.path.module_qualifier,
+                    \\            .segments = impl_segments,
+                    \\        };
+                    \\
+                    \\        const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+                    \\        for (flow.invocation.annotations, 0..) |ann, idx| {
+                    \\            new_inv_annotations[idx] = ann;
+                    \\        }
+                    \\        new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+                    \\
+                    \\        const new_invocation = ast.Invocation{
+                    \\            .path = impl_path,
+                    \\            .args = flow.invocation.args,
+                    \\            .annotations = new_inv_annotations,
+                    \\            .inserted_by_tap = flow.invocation.inserted_by_tap,
+                    \\            .from_opaque_tap = flow.invocation.from_opaque_tap,
+                    \\        };
+                    \\
+                    \\        const transformed_flow = ast.Flow{
+                    \\            .invocation = new_invocation,
+                    \\            .continuations = flow.continuations,
+                    \\            .annotations = flow.annotations,
+                    \\            .pre_label = flow.pre_label,
+                    \\            .post_label = flow.post_label,
+                    \\            .super_shape = flow.super_shape,
+                    \\            .inline_body = inline_code,
+                    \\            .is_pure = flow.is_pure,
+                    \\            .is_transitively_pure = flow.is_transitively_pure,
+                    \\            .location = flow.location,
+                    \\            .module = flow.module,
+                    \\            .impl_of = flow.impl_of,
+                    \\        };
+                    \\
+                    \\        const new_item = ast.Item{ .flow = transformed_flow };
+                    \\
+                    \\        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+                    \\        if (maybe_new_program) |new_program| {
+                    \\            const result = allocator.create(ast.Program) catch unreachable;
+                    \\            result.* = new_program;
+                    \\            return .{ .transformed = result };
+                    \\        }
+                    \\        return .{ .transformed = program };
+                    \\    } else {
+                    \\        const new_node = ast.Node{ .inline_code = inline_code };
+                    \\        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(allocator, program, invocation, new_node) catch unreachable;
+                    \\        if (maybe_new_program) |new_program| {
+                    \\            const result = allocator.create(ast.Program) catch unreachable;
+                    \\            result.* = new_program;
+                    \\            return .{ .transformed = result };
+                    \\        }
+                    \\        return .{ .transformed = program };
+                    \\    }
+                    ,
+                .annotations = &.{
+                },
+                .target = "raw_posix",
+                .is_impl = false,
+                .is_pure = false,
+                .is_transitively_pure = false,
+                .location = .{ .line = 1365, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .module = "io",
+            } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 1366, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// VARIANT REGISTRATION - Platform-specific dispatch for print.blk", .location = .{ .line = 1367, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 1368, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// On linux/macos, route std.io:print.blk → raw_posix variant (raw posix.write).", .location = .{ .line = 1369, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// On windows, the bare ~proc print.blk (std.debug.print) is used by default.", .location = .{ .line = 1370, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .host_line = .{ .content = "// build=<host_os> is auto-injected by koruc; users can override with --build=<other>.", .location = .{ .line = 1371, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" }, .module = "io" } },            
+                                    .{ .flow = Flow{
+                .invocation = Invocation{
+                    .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"variants"} },
+                    .args = &[_]Arg{
+                        Arg{ .name = "source", .value = "\"std.io:print.blk\": \"raw_posix\"\n", .source_value = &Source{
+                            .text = 
+                                \\"std.io:print.blk": "raw_posix"
+                                \\
+                                ,
+                            .location = .{ .line = 1379, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                            .scope = CapturedScope{
+                                .bindings = &[_]ScopeBinding{
+                                },
+                            },
+                            .phantom_type = null,
+                        }, .expression_value = null },
+                    },
+                    .annotations = &.{
+                    },
+                    .inserted_by_tap = false,
+                    .from_opaque_tap = false,
+                    .variant = null,
+                },
+                .continuations = &[_]Continuation{
+                    Continuation{
+                        .branch = "configured",
+                        .binding = "_",
+                        .binding_type = .branch_payload,
+                        .binding_annotations = &[_][]const u8{},
+                        .is_catchall = false,
+                        .catchall_metatype = null,
+                        .condition = null,
+                        .condition_expr = null,
+                        .node =                         .{ .terminal = {} },
+                        .indent = 0,
+                        .continuations = &[_]Continuation{
+                        },
+                        .location = .{ .line = 1376, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                    },
+                    Continuation{
+                        .branch = "skipped",
+                        .binding = "_",
+                        .binding_type = .branch_payload,
+                        .binding_annotations = &[_][]const u8{},
+                        .is_catchall = false,
+                        .catchall_metatype = null,
+                        .condition = null,
+                        .condition_expr = null,
+                        .node =                         .{ .terminal = {} },
+                        .indent = 0,
+                        .continuations = &[_]Continuation{
+                        },
+                        .location = .{ .line = 1377, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                    },
+                    Continuation{
+                        .branch = "invalid_event",
+                        .binding = "_",
+                        .binding_type = .branch_payload,
+                        .binding_annotations = &[_][]const u8{},
+                        .is_catchall = false,
+                        .catchall_metatype = null,
+                        .condition = null,
+                        .condition_expr = null,
+                        .node =                         .{ .terminal = {} },
+                        .indent = 0,
+                        .continuations = &[_]Continuation{
+                        },
+                        .location = .{ .line = 1378, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                    },
+                },
+                .annotations = &.{
+                    "build(linux)",
+                },
+                .pre_label = null,
+                .post_label = null,
+                .super_shape = null,
+                .is_pure = true,
+                .is_transitively_pure = false,
+                .location = .{ .line = 1373, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .impl_of = null,
+                .is_impl = false,
+                .module = "io",
+            } },            
+                                    .{ .flow = Flow{
+                .invocation = Invocation{
+                    .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"variants"} },
+                    .args = &[_]Arg{
+                        Arg{ .name = "source", .value = "\"std.io:print.blk\": \"raw_posix\"\n", .source_value = &Source{
+                            .text = 
+                                \\"std.io:print.blk": "raw_posix"
+                                \\
+                                ,
+                            .location = .{ .line = 1386, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                            .scope = CapturedScope{
+                                .bindings = &[_]ScopeBinding{
+                                },
+                            },
+                            .phantom_type = null,
+                        }, .expression_value = null },
+                    },
+                    .annotations = &.{
+                    },
+                    .inserted_by_tap = false,
+                    .from_opaque_tap = false,
+                    .variant = null,
+                },
+                .continuations = &[_]Continuation{
+                    Continuation{
+                        .branch = "configured",
+                        .binding = "_",
+                        .binding_type = .branch_payload,
+                        .binding_annotations = &[_][]const u8{},
+                        .is_catchall = false,
+                        .catchall_metatype = null,
+                        .condition = null,
+                        .condition_expr = null,
+                        .node =                         .{ .terminal = {} },
+                        .indent = 0,
+                        .continuations = &[_]Continuation{
+                        },
+                        .location = .{ .line = 1383, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                    },
+                    Continuation{
+                        .branch = "skipped",
+                        .binding = "_",
+                        .binding_type = .branch_payload,
+                        .binding_annotations = &[_][]const u8{},
+                        .is_catchall = false,
+                        .catchall_metatype = null,
+                        .condition = null,
+                        .condition_expr = null,
+                        .node =                         .{ .terminal = {} },
+                        .indent = 0,
+                        .continuations = &[_]Continuation{
+                        },
+                        .location = .{ .line = 1384, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                    },
+                    Continuation{
+                        .branch = "invalid_event",
+                        .binding = "_",
+                        .binding_type = .branch_payload,
+                        .binding_annotations = &[_][]const u8{},
+                        .is_catchall = false,
+                        .catchall_metatype = null,
+                        .condition = null,
+                        .condition_expr = null,
+                        .node =                         .{ .terminal = {} },
+                        .indent = 0,
+                        .continuations = &[_]Continuation{
+                        },
+                        .location = .{ .line = 1385, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                    },
+                },
+                .annotations = &.{
+                    "build(macos)",
+                },
+                .pre_label = null,
+                .post_label = null,
+                .super_shape = null,
+                .is_pure = true,
+                .is_transitively_pure = false,
+                .location = .{ .line = 1380, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" },
+                .impl_of = null,
+                .is_impl = false,
                 .module = "io",
             } },        
                 }, .is_system = false, .annotations = &.{"comptime", "runtime"}, .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/io.kz" } } },
@@ -5546,7 +6022,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "transformed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "program", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -5585,7 +6061,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "failed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "message", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -5610,7 +6086,7 @@ pub const PROGRAM_AST = Program{
                     \\    if (validateMocks(allocator, program, mocks, source)) {
                     \\        return .{ .ok = .{} };
                     \\    }
-                    \\    return .{ .failed = .{ .message = "Mock shape validation failed" } };
+                    \\    return .{ .failed = "Mock shape validation failed" };
                     ,
                 .annotations = &.{
                 },
@@ -5637,11 +6113,11 @@ pub const PROGRAM_AST = Program{
                     \\    const flow = if (item.* == .flow)
                     \\        &item.flow
                     \\    else
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\
                     \\    const is_top_level = (invocation == &flow.invocation);
                     \\    if (!is_top_level) {
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     \\
                     \\    // Get test name from expr parameter
@@ -5709,7 +6185,7 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    // Clone program AST
                     \\    const cloned_program = ast_functional.cloneSourceFile(allocator, program) catch {
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    };
                     \\
                     \\    // Build test module items: program items with mocks substituted
@@ -5797,7 +6273,7 @@ pub const PROGRAM_AST = Program{
                     \\        program.main_module_name,  // original main module name for event redirection
                     \\    ) catch |err| {
                     \\        std_import.debug.print("emitModuleSubset failed in test: {s}\n", .{@errorName(err)});
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    };
                     \\
                     \\    // Run transforms on test flows (for assert -> inline_code, etc.)
@@ -5818,7 +6294,7 @@ pub const PROGRAM_AST = Program{
                     \\    const backend_output = @import("backend_output_emitted.zig");
                     \\    const transformed_program = backend_output.run_pass("transform", flow_program, allocator) catch |err| {
                     \\        std_import.debug.print("Transform pass failed in test: {}\n", .{err});
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    };
                     \\
                     \\    // ==========================================================================
@@ -5972,9 +6448,9 @@ pub const PROGRAM_AST = Program{
                     \\    if (maybe_new_program) |new_program| {
                     \\        const result_program = allocator.create(ast.Program) catch unreachable;
                     \\        result_program.* = new_program;
-                    \\        return .{ .transformed = .{ .program = result_program } };
+                    \\        return .{ .transformed = result_program };
                     \\    }
-                    \\    return .{ .transformed = .{ .program = program } };
+                    \\    return .{ .transformed = program };
                     ,
                 .annotations = &.{
                 },
@@ -6211,7 +6687,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "transformed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "program", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -6243,7 +6719,7 @@ pub const PROGRAM_AST = Program{
                     \\    const flow = if (item.* == .flow)
                     \\        &item.flow
                     \\    else
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\
                     \\    // Check if this is top-level (flow.invocation IS the assert)
                     \\    const is_top_level = (invocation == &flow.invocation);
@@ -6280,9 +6756,9 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        }
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    } else {
                     \\        // Pipeline case: assert is a step inside a continuation
                     \\        // Replace the invocation node directly (supports nested/virtual flows).
@@ -6296,9 +6772,9 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        }
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     ,
                 .annotations = &.{
@@ -6787,13 +7263,17 @@ pub const PROGRAM_AST = Program{
                 .invocation = Invocation{
                     .path = .{ .module_qualifier = "std.compiler", .segments = &[_][]const u8{"command", "declare"} },
                     .args = &[_]Arg{
-                        Arg{ .name = "source", .value = "\"name\": \"deps\",\n\"description\": \"Check and install system dependencies from requires.system declarations\"\n", .source_value = &Source{
+                        Arg{ .name = "source", .value = "\"name\": \"deps\",\n\"description\": \"Manage system dependencies\",\n\"subcommands\": [\n    { \"name\": \"check\", \"description\": \"Check dependency status (default)\" },\n    { \"name\": \"install\", \"description\": \"Install missing dependencies\" }\n]\n", .source_value = &Source{
                             .text = 
                                 \\"name": "deps",
-                                \\"description": "Check and install system dependencies from requires.system declarations"
+                                \\"description": "Manage system dependencies",
+                                \\"subcommands": [
+                                \\    { "name": "check", "description": "Check dependency status (default)" },
+                                \\    { "name": "install", "description": "Install missing dependencies" }
+                                \\]
                                 \\
                                 ,
-                            .location = .{ .line = 36, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
+                            .location = .{ .line = 40, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
                             .scope = CapturedScope{
                                 .bindings = &[_]ScopeBinding{
                                 },
@@ -6836,7 +7316,7 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "command",
                 },
-                .location = .{ .line = 42, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
+                .location = .{ .line = 46, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
                 .module = "deps",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -7343,12 +7823,12 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 536, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
+                .location = .{ .line = 540, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
                 .module = "deps",
             } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 537, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
-                                    .{ .host_line = .{ .content = "// REQUIRES.SYSTEM EVENT - Declare a system dependency", .location = .{ .line = 538, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 539, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 541, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
+                                    .{ .host_line = .{ .content = "// REQUIRES.SYSTEM EVENT - Declare a system dependency", .location = .{ .line = 542, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 543, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.deps", .segments = &[_][]const u8{"requires", "system"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -7362,7 +7842,7 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "norun",
                 },
-                .location = .{ .line = 542, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
+                .location = .{ .line = 546, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
                 .module = "deps",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -7379,12 +7859,12 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 546, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
+                .location = .{ .line = 550, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
                 .module = "deps",
             } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 547, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
-                                    .{ .host_line = .{ .content = "// REQUIRES.ZIG EVENT - Declare a Zig package dependency", .location = .{ .line = 548, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 549, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 551, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
+                                    .{ .host_line = .{ .content = "// REQUIRES.ZIG EVENT - Declare a Zig package dependency", .location = .{ .line = 552, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 553, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" }, .module = "deps" } },            
                                     .{ .event_decl = EventDecl{
                 .path = .{ .module_qualifier = "std.deps", .segments = &[_][]const u8{"requires", "zig"} },
                 .input = Shape{ .fields = &[_]Field{
@@ -7398,7 +7878,7 @@ pub const PROGRAM_AST = Program{
                     "comptime",
                     "norun",
                 },
-                .location = .{ .line = 552, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
+                .location = .{ .line = 556, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
                 .module = "deps",
                 .is_pure = false,
                 .is_transitively_pure = false,
@@ -7415,7 +7895,7 @@ pub const PROGRAM_AST = Program{
                 .is_impl = false,
                 .is_pure = false,
                 .is_transitively_pure = false,
-                .location = .{ .line = 556, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
+                .location = .{ .line = 560, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" },
                 .module = "deps",
             } },        
                 }, .is_system = false, .annotations = &.{"comptime"}, .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/deps.kz" } } },
@@ -7543,6 +8023,905 @@ pub const PROGRAM_AST = Program{
                 .module = "optimizer",
             } },        
                 }, .is_system = false, .annotations = &.{"comptime"}, .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/optimizer.kz" } } },
+        .{ .module_decl = .{ .logical_name = "std.build", .canonical_path = "/Users/larsde/src/koru/koru_std/build.kz", .items = &[_]Item{            
+                                    .{ .host_line = .{ .content = "// Build Requirements Standard Library", .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Allows modules to declare their build dependencies", .location = .{ .line = 2, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 3, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// TOP-LEVEL COMPTIME EXECUTION:", .location = .{ .line = 4, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// This module uses top-level comptime calls for automatic collection.", .location = .{ .line = 5, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// When imported, the top-level collect() executes automatically.", .location = .{ .line = 6, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "const emit_build_zig = @import(\"emit_build_zig\");", .location = .{ .line = 10, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "const std = @import(\"std\");", .location = .{ .line = 11, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "const Root = @import(\"root\");", .location = .{ .line = 12, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "const ast_functional = @import(\"ast_functional\");", .location = .{ .line = 13, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "const emitter_helpers = @import(\"emitter_helpers\");", .location = .{ .line = 14, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "const annotation_parser = @import(\"annotation_parser\");", .location = .{ .line = 15, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Re-export variant registry functions from the core", .location = .{ .line = 17, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// This allows userland code to query variants via std.build.getVariant()", .location = .{ .line = 18, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "pub const getVariant = emitter_helpers.getVariant;", .location = .{ .line = 19, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "pub const registerVariant = emitter_helpers.registerVariant;", .location = .{ .line = 20, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Import shared compiler types (to avoid circular dependency with compiler.kz)", .location = .{ .line = 22, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .import_decl = ImportDecl{ .path = "$std/compiler_types", .local_name = "std.compiler_types", .location = .{ .file = "/Users/larsde/src/koru/koru_std/build.kz", .line = 24, .column = 0 }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 25, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// FLAG MATCHING - Annotation-based conditional compilation", .location = .{ .line = 26, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 27, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Use ~[build(\"prod\")] or ~[build(\"dev\", \"staging\")] to conditionally include", .location = .{ .line = 28, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// declarations based on the --build=X compiler flag.", .location = .{ .line = 29, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 30, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Usage in source code:", .location = .{ .line = 31, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~[build(\"prod\")]koru.docker:image(tag: \"myapp:latest\") {", .location = .{ .line = 32, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       FROM alpine:3.18", .location = .{ .line = 33, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       COPY zig-out/bin/main /usr/local/bin/myapp", .location = .{ .line = 34, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       CMD [\"myapp\"]", .location = .{ .line = 35, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 36, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 37, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~[build(\"dev\")]koru.docker:image(tag: \"myapp:latest\") {", .location = .{ .line = 38, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       FROM alpine:3.18", .location = .{ .line = 39, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       RUN apk add --no-cache gdb strace", .location = .{ .line = 40, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       COPY zig-out/bin/main /usr/local/bin/myapp", .location = .{ .line = 41, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       CMD [\"myapp\", \"--debug\"]", .location = .{ .line = 42, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 43, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 44, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Then: koruc main.kz --build=prod docker build", .location = .{ .line = 45, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 46, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Usage in a command proc:", .location = .{ .line = 47, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   for (program.items) |item| {", .location = .{ .line = 48, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       if (item == .flow) {", .location = .{ .line = 49, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//           const flow = item.flow;", .location = .{ .line = 50, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//           if (!matchesFlags(flow.invocation.annotations)) continue;", .location = .{ .line = 51, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//           // ... process the flow", .location = .{ .line = 52, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       }", .location = .{ .line = 53, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 54, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 55, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Semantics:", .location = .{ .line = 56, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   - No build(...) annotation → always matches", .location = .{ .line = 57, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   - Has build(\"x\", \"y\", ...) → matches if --build=x OR --build=y", .location = .{ .line = 58, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 59, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "pub fn matchesFlags(annotations: []const []const u8) bool {", .location = .{ .line = 60, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "    // Look for build(...) parametrized annotation", .location = .{ .line = 61, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "    for (annotations) |ann| {", .location = .{ .line = 62, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "        // Try to parse as a parametrized call", .location = .{ .line = 63, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "        const maybe_call = annotation_parser.parseCall(std.heap.page_allocator, ann) catch continue;", .location = .{ .line = 64, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "        if (maybe_call) |call| {", .location = .{ .line = 65, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "            defer {", .location = .{ .line = 66, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                var mutable_call = call;", .location = .{ .line = 67, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                mutable_call.deinit(std.heap.page_allocator);", .location = .{ .line = 68, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 69, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "            // Check if this is a build() annotation", .location = .{ .line = 71, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "            if (std.mem.eql(u8, call.name, \"build\")) {", .location = .{ .line = 72, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                // Check if any of the args match current --build=X flag", .location = .{ .line = 73, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                for (call.args) |arg| {", .location = .{ .line = 74, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                    // Build the flag string: \"build=prod\", \"build=dev\", etc.", .location = .{ .line = 75, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                    var flag_buf: [64]u8 = undefined;", .location = .{ .line = 76, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                    const flag = std.fmt.bufPrint(&flag_buf, \"build={s}\", .{arg}) catch continue;", .location = .{ .line = 77, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                    if (Root.CompilerEnv.hasFlagRuntime(flag)) {", .location = .{ .line = 79, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                        return true;  // Found a matching build flag", .location = .{ .line = 80, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 81, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 82, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                // Has build() annotation but none of the args matched", .location = .{ .line = 83, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "                return false;", .location = .{ .line = 84, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 85, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 86, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 87, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "    // No build() annotation found → always matches", .location = .{ .line = 89, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "    return true;", .location = .{ .line = 90, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "}", .location = .{ .line = 91, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Declare build dependency using implicit Source block", .location = .{ .line = 93, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Usage: ~std.build:requires { exe.linkSystemLibrary(\"sqlite3\"); }", .location = .{ .line = 94, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// [norun] annotation prevents auto-execution - collect() reads from AST instead", .location = .{ .line = 95, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .event_decl = EventDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"requires"} },
+                .input = Shape{ .fields = &[_]Field{
+                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                } },
+                .branches = &[_]Branch{
+                    Branch{
+                        .name = "added",
+                        .payload = Shape{ .fields = &[_]Field{
+                        } },
+                        .is_deferred = false,
+                        .is_optional = true,
+                        .annotations = &.{},
+                    },
+                    Branch{
+                        .name = "parse_error",
+                        .payload = Shape{ .fields = &[_]Field{
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                        } },
+                        .is_deferred = false,
+                        .is_optional = true,
+                        .annotations = &.{},
+                    },
+                },
+                .is_public = true,
+                .is_implicit_flow = true,
+                .annotations = &.{
+                    "comptime",
+                    "norun",
+                },
+                .location = .{ .line = 101, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+                .is_pure = false,
+                .is_transitively_pure = false,
+            } },            
+                                    .{ .proc_decl = ProcDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"requires"} },
+                .body = 
+                    \\
+                    \\    // Validate Source syntax
+                    \\    // Can be called programmatically by collect() to validate each requirement
+                    \\    // TODO: Actually validate Zig syntax
+                    \\    return .{ .added = .{} };
+                    ,
+                .annotations = &.{
+                },
+                .target = null,
+                .is_impl = false,
+                .is_pure = false,
+                .is_transitively_pure = false,
+                .location = .{ .line = 108, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+            } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 109, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// VARIANT SELECTION - Conditional proc selection based on build flags", .location = .{ .line = 110, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 111, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Allows selecting different proc variants based on --build flag.", .location = .{ .line = 112, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 113, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~[build(\"release\")]std.build:variants {", .location = .{ .line = 114, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       \"compute\": \"fast\",", .location = .{ .line = 115, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       \"blur\": \"gpu\"", .location = .{ .line = 116, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 117, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~[build(\"debug\")]std.build:variants {", .location = .{ .line = 118, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       \"compute\": \"naive\",", .location = .{ .line = 119, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       \"blur\": \"cpu\"", .location = .{ .line = 120, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 121, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 122, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// When compiled with --build=release, the emitter will use \"fast\" for compute.", .location = .{ .line = 123, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// When compiled with --build=debug, the emitter will use \"naive\" for compute.", .location = .{ .line = 124, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 125, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// The Source block contains JSON-like mappings: event_name → variant_name", .location = .{ .line = 126, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// The program AST is used to validate that referenced events exist", .location = .{ .line = 127, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .event_decl = EventDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"variants"} },
+                .input = Shape{ .fields = &[_]Field{
+                    Field{ .name = "meta", .type = "InvocationMeta", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = true, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                    Field{ .name = "program", .type = "Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                } },
+                .branches = &[_]Branch{
+                    Branch{
+                        .name = "configured",
+                        .payload = Shape{ .fields = &[_]Field{
+                            Field{ .name = "__type_ref", .type = "usize", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                        } },
+                        .is_deferred = false,
+                        .is_optional = false,
+                        .annotations = &.{},
+                    },
+                    Branch{
+                        .name = "skipped",
+                        .payload = Shape{ .fields = &[_]Field{
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                        } },
+                        .is_deferred = false,
+                        .is_optional = false,
+                        .annotations = &.{},
+                    },
+                    Branch{
+                        .name = "invalid_event",
+                        .payload = Shape{ .fields = &[_]Field{
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                        } },
+                        .is_deferred = false,
+                        .is_optional = false,
+                        .annotations = &.{},
+                    },
+                },
+                .is_public = true,
+                .is_implicit_flow = false,
+                .annotations = &.{
+                    "comptime",
+                },
+                .location = .{ .line = 133, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+                .is_pure = false,
+                .is_transitively_pure = false,
+            } },            
+                                    .{ .proc_decl = ProcDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"variants"} },
+                .body = 
+                    \\
+                    \\    // Check if this config's annotation matches the --build flag
+                    \\    if (!matchesFlags(meta.annotations)) {
+                    \\        return .{ .skipped = "no matching build flag" };
+                    \\    }
+                    \\
+                    \\    // Parse the source as simple JSON-like key:value pairs
+                    \\    // Format: "event_name": "variant_name"
+                    \\    var count: usize = 0;
+                    \\    var pos: usize = 0;
+                    \\    const text = source.text;
+                    \\
+                    \\    while (pos < text.len) {
+                    \\        // Skip whitespace and braces
+                    \\        while (pos < text.len and (text[pos] == ' ' or text[pos] == '\n' or text[pos] == '\r' or text[pos] == '\t' or text[pos] == '{' or text[pos] == '}' or text[pos] == ',')) {
+                    \\            pos += 1;
+                    \\        }
+                    \\        if (pos >= text.len) break;
+                    \\
+                    \\        // Expect opening quote for key
+                    \\        if (text[pos] != '"') {
+                    \\            pos += 1;
+                    \\            continue;
+                    \\        }
+                    \\        pos += 1;
+                    \\
+                    \\        // Read key
+                    \\        const key_start = pos;
+                    \\        while (pos < text.len and text[pos] != '"') {
+                    \\            pos += 1;
+                    \\        }
+                    \\        const key = text[key_start..pos];
+                    \\        pos += 1; // skip closing quote
+                    \\
+                    \\        // Skip colon and whitespace
+                    \\        while (pos < text.len and (text[pos] == ':' or text[pos] == ' ')) {
+                    \\            pos += 1;
+                    \\        }
+                    \\
+                    \\        // Expect opening quote for value
+                    \\        if (pos >= text.len or text[pos] != '"') continue;
+                    \\        pos += 1;
+                    \\
+                    \\        // Read value
+                    \\        const value_start = pos;
+                    \\        while (pos < text.len and text[pos] != '"') {
+                    \\            pos += 1;
+                    \\        }
+                    \\        const value = text[value_start..pos];
+                    \\        pos += 1; // skip closing quote
+                    \\
+                    \\        // Validate that the event exists in the AST
+                    \\        if (ast_functional.findEventByCanonicalName(program, key) == null) {
+                    \\            // Event not found - report error
+                    \\            return .{ .invalid_event = key };
+                    \\        }
+                    \\
+                    \\        // Register in the core variant registry
+                    \\        if (emitter_helpers.registerVariant(key, value)) {
+                    \\            count += 1;
+                    \\        }
+                    \\    }
+                    \\
+                    \\    return .{ .configured = count };
+                    ,
+                .annotations = &.{
+                },
+                .target = null,
+                .is_impl = false,
+                .is_pure = false,
+                .is_transitively_pure = false,
+                .location = .{ .line = 199, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+            } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 200, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// BUILD CONFIG - Key-value build parameters based on build flags", .location = .{ .line = 201, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 202, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Sets build-time configuration values (e.g., cross-compilation target).", .location = .{ .line = 203, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Composes with build:variants — variants select WHICH code, config sets", .location = .{ .line = 204, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// HOW to build it. Both use the same ~[build(X)] guard system.", .location = .{ .line = 205, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 206, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 207, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~[build(\"linux\")]std.build:config {", .location = .{ .line = 208, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       \"target\": \"x86_64-linux-musl\"", .location = .{ .line = 209, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 210, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 211, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// The compiler is agnostic to the keys — it just passes them through.", .location = .{ .line = 212, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Currently the backend recognizes \"target\" for zig cross-compilation.", .location = .{ .line = 213, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .event_decl = EventDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"config"} },
+                .input = Shape{ .fields = &[_]Field{
+                    Field{ .name = "meta", .type = "InvocationMeta", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = true, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                } },
+                .branches = &[_]Branch{
+                    Branch{
+                        .name = "configured",
+                        .payload = Shape{ .fields = &[_]Field{
+                            Field{ .name = "__type_ref", .type = "usize", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                        } },
+                        .is_deferred = false,
+                        .is_optional = false,
+                        .annotations = &.{},
+                    },
+                    Branch{
+                        .name = "skipped",
+                        .payload = Shape{ .fields = &[_]Field{
+                            Field{ .name = "__type_ref", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                        } },
+                        .is_deferred = false,
+                        .is_optional = false,
+                        .annotations = &.{},
+                    },
+                },
+                .is_public = true,
+                .is_implicit_flow = false,
+                .annotations = &.{
+                    "comptime",
+                },
+                .location = .{ .line = 218, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+                .is_pure = false,
+                .is_transitively_pure = false,
+            } },            
+                                    .{ .proc_decl = ProcDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"config"} },
+                .body = 
+                    \\
+                    \\    if (!matchesFlags(meta.annotations)) {
+                    \\        return .{ .skipped = "no matching build flag" };
+                    \\    }
+                    \\
+                    \\    // Parse the source as simple JSON-like key:value pairs
+                    \\    var count: usize = 0;
+                    \\    var pos: usize = 0;
+                    \\    const text = source.text;
+                    \\
+                    \\    while (pos < text.len) {
+                    \\        // Skip whitespace and braces
+                    \\        while (pos < text.len and (text[pos] == ' ' or text[pos] == '\n' or text[pos] == '\r' or text[pos] == '\t' or text[pos] == '{' or text[pos] == '}' or text[pos] == ',')) {
+                    \\            pos += 1;
+                    \\        }
+                    \\        if (pos >= text.len) break;
+                    \\
+                    \\        // Expect opening quote for key
+                    \\        if (text[pos] != '"') {
+                    \\            pos += 1;
+                    \\            continue;
+                    \\        }
+                    \\        pos += 1;
+                    \\
+                    \\        // Read key
+                    \\        const key_start = pos;
+                    \\        while (pos < text.len and text[pos] != '"') {
+                    \\            pos += 1;
+                    \\        }
+                    \\        const key = text[key_start..pos];
+                    \\        pos += 1; // skip closing quote
+                    \\
+                    \\        // Skip colon and whitespace
+                    \\        while (pos < text.len and (text[pos] == ':' or text[pos] == ' ')) {
+                    \\            pos += 1;
+                    \\        }
+                    \\
+                    \\        // Expect opening quote for value
+                    \\        if (pos >= text.len or text[pos] != '"') continue;
+                    \\        pos += 1;
+                    \\
+                    \\        // Read value
+                    \\        const value_start = pos;
+                    \\        while (pos < text.len and text[pos] != '"') {
+                    \\            pos += 1;
+                    \\        }
+                    \\        const value = text[value_start..pos];
+                    \\        pos += 1; // skip closing quote
+                    \\
+                    \\        // Register in the build config registry
+                    \\        if (emitter_helpers.registerBuildConfig(key, value)) {
+                    \\            count += 1;
+                    \\        }
+                    \\    }
+                    \\
+                    \\    return .{ .configured = count };
+                    ,
+                .annotations = &.{
+                },
+                .target = null,
+                .is_impl = false,
+                .is_pure = false,
+                .is_transitively_pure = false,
+                .location = .{ .line = 276, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+            } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 277, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// BUILD COMMANDS - Shell Script Execution (Frontend Optimization)", .location = .{ .line = 278, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 279, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// FRONTEND OPTIMIZATION: Unlike most compiler features, build:command.sh", .location = .{ .line = 280, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// is processed in the frontend (koruc) rather than the backend compiler.", .location = .{ .line = 281, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// This allows instant execution without backend compilation overhead.", .location = .{ .line = 282, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 283, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// For commands that need Zig/Koru compilation, use build:command.proc or", .location = .{ .line = 284, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// build:command.flow (backend passes, slower but more powerful).", .location = .{ .line = 285, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 286, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 287, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~std.build:command.sh(name: \"test\", description: \"Run all tests\") {", .location = .{ .line = 288, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//     ./run_regression.sh", .location = .{ .line = 289, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 290, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 291, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Invoke: koruc main.kz test --all --verbose", .location = .{ .line = 292, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Executes: ./run_regression.sh --all --verbose", .location = .{ .line = 293, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 294, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// The shell command receives all remaining argv as arguments.", .location = .{ .line = 295, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Use `koruc main.kz help` to list all available commands.", .location = .{ .line = 296, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .event_decl = EventDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"command", "sh"} },
+                .input = Shape{ .fields = &[_]Field{
+                    Field{ .name = "name", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                    Field{ .name = "description", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                } },
+                .branches = &[_]Branch{
+                },
+                .is_public = true,
+                .is_implicit_flow = false,
+                .annotations = &.{
+                    "comptime",
+                    "norun",
+                },
+                .location = .{ .line = 299, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+                .is_pure = false,
+                .is_transitively_pure = false,
+            } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 300, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// BUILD COMMANDS - Zig Functions (Frontend Compilation + Execution)", .location = .{ .line = 301, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 302, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// FRONTEND EXECUTION: Powerful commands with full compiler access!", .location = .{ .line = 303, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Unlike command.sh, command.zig functions have access to the AST and allocator,", .location = .{ .line = 304, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// enabling sophisticated build orchestration and metaprogramming.", .location = .{ .line = 305, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 306, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Function Signature:", .location = .{ .line = 307, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   pub fn execute(", .location = .{ .line = 308, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       allocator: std.mem.Allocator,", .location = .{ .line = 309, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       argv: [][]const u8,", .location = .{ .line = 310, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       ast: *const Program", .location = .{ .line = 311, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ) !void", .location = .{ .line = 312, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 313, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 314, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~std.build:command.zig(name: \"build\") {", .location = .{ .line = 315, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//     const std = @import(\"std\");", .location = .{ .line = 316, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//     const ast = @import(\"ast\");", .location = .{ .line = 317, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 318, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//     pub fn execute(allocator: std.mem.Allocator, argv: [][]const u8, program: *const ast.Program) !void {", .location = .{ .line = 319, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       // Parse argv for command arguments", .location = .{ .line = 320, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       // Collect build:step invocations from AST", .location = .{ .line = 321, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       // Orchestrate build step execution with dependency resolution", .location = .{ .line = 322, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//     }", .location = .{ .line = 323, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 324, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 325, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Invoke: koruc main.kz build test --verbose", .location = .{ .line = 326, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   - Command name: \"build\"", .location = .{ .line = 327, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   - argv: [\"test\", \"--verbose\"]", .location = .{ .line = 328, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   - AST: Full program AST for inspection/manipulation", .location = .{ .line = 329, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 330, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Available in scope:", .location = .{ .line = 331, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   - std.mem.Allocator for memory management", .location = .{ .line = 332, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   - Full AST access for metaprogramming", .location = .{ .line = 333, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   - Can import compiler utilities (build_step_utils, etc.)", .location = .{ .line = 334, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 335, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Examples:", .location = .{ .line = 336, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   koruc main.kz build           # Run all build steps", .location = .{ .line = 337, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   koruc main.kz build test      # Run 'test' step + dependencies", .location = .{ .line = 338, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   koruc main.kz clean           # Custom cleanup command", .location = .{ .line = 339, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   koruc main.kz deploy prod     # Deployment orchestration", .location = .{ .line = 340, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .event_decl = EventDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"command", "zig"} },
+                .input = Shape{ .fields = &[_]Field{
+                    Field{ .name = "name", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                } },
+                .branches = &[_]Branch{
+                },
+                .is_public = true,
+                .is_implicit_flow = false,
+                .annotations = &.{
+                    "comptime",
+                    "norun",
+                },
+                .location = .{ .line = 343, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+                .is_pure = false,
+                .is_transitively_pure = false,
+            } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 344, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// BUILD COMMANDS - Native Koru Flows (Zero Context Switch)", .location = .{ .line = 345, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 346, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// FRONTEND EXECUTION: Write build commands in pure Koru!", .location = .{ .line = 347, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// The command body IS a flow continuation - no Source block, no Zig, just Koru.", .location = .{ .line = 348, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 349, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 350, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~std.build:command(name: \"greet\", description: \"Say hello\")", .location = .{ .line = 351, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   | execute ctx |>", .location = .{ .line = 352, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       if(ctx.argv.len > 1)", .location = .{ .line = 353, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       | then |> std.io:println(\"Hello, \" ++ ctx.argv[1] ++ \"!\")", .location = .{ .line = 354, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       | else |> std.io:println(\"Usage: greet <name>\")", .location = .{ .line = 355, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 356, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Invoke: koruc main.kz greet World", .location = .{ .line = 357, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   Output: Hello, World!", .location = .{ .line = 358, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 359, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// The execute branch receives:", .location = .{ .line = 360, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   - ctx.argv: [][]const u8 - command line arguments after command name", .location = .{ .line = 361, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   - ctx.program: *const Program - full AST access (optional)", .location = .{ .line = 362, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 363, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Unlike command.sh (shell) or command.zig (raw Zig), command uses normal", .location = .{ .line = 364, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Koru flow syntax. Same patterns as everything else - events, branches, ~if.", .location = .{ .line = 365, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 366, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Examples:", .location = .{ .line = 367, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~std.build:command(name: \"check\", description: \"Run all checks\")", .location = .{ .line = 368, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   | execute ctx |>", .location = .{ .line = 369, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       std.build:run_step(\"lint\")", .location = .{ .line = 370, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       | done |> std.build:run_step(\"test\")", .location = .{ .line = 371, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//           | done |> std.io:println(\"All checks passed!\")", .location = .{ .line = 372, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//           | failed e |> std.io:println(\"Tests failed: \" ++ e)", .location = .{ .line = 373, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//       | failed e |> std.io:println(\"Lint failed: \" ++ e)", .location = .{ .line = 374, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .event_decl = EventDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"command"} },
+                .input = Shape{ .fields = &[_]Field{
+                    Field{ .name = "name", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                    Field{ .name = "description", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                } },
+                .branches = &[_]Branch{
+                    Branch{
+                        .name = "execute",
+                        .payload = Shape{ .fields = &[_]Field{
+                            Field{ .name = "__type_ref", .type = "[][]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                        } },
+                        .is_deferred = false,
+                        .is_optional = false,
+                        .annotations = &.{},
+                    },
+                },
+                .is_public = true,
+                .is_implicit_flow = false,
+                .annotations = &.{
+                    "comptime",
+                    "norun",
+                },
+                .location = .{ .line = 378, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+                .is_pure = false,
+                .is_transitively_pure = false,
+            } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 379, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// BUILD STEPS - Declarative Build Pipeline with Dependencies", .location = .{ .line = 380, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 381, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// FRONTEND EXECUTION: Build steps are collected and executed in dependency order", .location = .{ .line = 382, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// during the compilation process. Steps declare dependencies using annotations.", .location = .{ .line = 383, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 384, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 385, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~std.build:step(name: \"compile\") {", .location = .{ .line = 386, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//     zig build-exe main.zig", .location = .{ .line = 387, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 388, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 389, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~[depends_on(\"compile\")]std.build:step(name: \"test\") {", .location = .{ .line = 390, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//     ./main --test", .location = .{ .line = 391, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 392, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 393, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~[depends_on(\"compile\", \"test\")]std.build:step(name: \"package\") {", .location = .{ .line = 394, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//     tar czf app.tar.gz main", .location = .{ .line = 395, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 396, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 397, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Execution:", .location = .{ .line = 398, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// - Steps are collected from AST with their annotations", .location = .{ .line = 399, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// - Dependencies are extracted from ~[depends_on(...)] annotations", .location = .{ .line = 400, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// - Dependency graph is built and topologically sorted", .location = .{ .line = 401, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// - Steps execute in correct order (circular dependencies are detected and error)", .location = .{ .line = 402, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 403, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Annotations:", .location = .{ .line = 404, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// - ~[depends_on(\"step1\", \"step2\", ...)] - Variadic dependency list", .location = .{ .line = 405, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// - Future: ~[parallel], ~[optional], ~[timeout(30)], etc.", .location = .{ .line = 406, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .event_decl = EventDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"step"} },
+                .input = Shape{ .fields = &[_]Field{
+                    Field{ .name = "name", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                } },
+                .branches = &[_]Branch{
+                },
+                .is_public = true,
+                .is_implicit_flow = false,
+                .annotations = &.{
+                    "comptime",
+                    "norun",
+                },
+                .location = .{ .line = 409, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+                .is_pure = false,
+                .is_transitively_pure = false,
+            } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 410, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// DEFAULT BUILD STEPS - Standard 2-Phase Metaprogramming Compilation", .location = .{ .line = 411, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 412, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// These steps implement Koru's standard compilation pipeline:", .location = .{ .line = 413, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   1. Compile backend metaprogram (main.zig → backend executable)", .location = .{ .line = 414, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   2. Run backend (applies optimizations, generates final code)", .location = .{ .line = 415, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   3. Run the final program", .location = .{ .line = 416, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 417, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Users can override any step by defining their own with the same name", .location = .{ .line = 418, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// (without the ~[default] annotation). The override resolution in main.zig", .location = .{ .line = 419, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// will automatically use user-defined steps over these defaults.", .location = .{ .line = 420, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Phase 1: Compile backend metaprogram using build_backend.zig", .location = .{ .line = 422, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .flow = Flow{
+                .invocation = Invocation{
+                    .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"step"} },
+                    .args = &[_]Arg{
+                        Arg{ .name = "name", .value = "\"compile_backend\"", .source_value = null, .expression_value = null },
+                        Arg{ .name = "source", .value = "zig build --build-file build_backend.zig\n", .source_value = &Source{
+                            .text = 
+                                \\zig build --build-file build_backend.zig
+                                \\
+                                ,
+                            .location = .{ .line = 426, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                            .scope = CapturedScope{
+                                .bindings = &[_]ScopeBinding{
+                                },
+                            },
+                            .phantom_type = null,
+                        }, .expression_value = null },
+                    },
+                    .annotations = &.{
+                    },
+                    .inserted_by_tap = false,
+                    .from_opaque_tap = false,
+                    .variant = null,
+                },
+                .continuations = &[_]Continuation{
+                },
+                .annotations = &.{
+                    "default",
+                },
+                .pre_label = null,
+                .post_label = null,
+                .super_shape = null,
+                .is_pure = true,
+                .is_transitively_pure = false,
+                .location = .{ .line = 423, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .impl_of = null,
+                .is_impl = false,
+                .module = "build",
+            } },            
+                                    .{ .host_line = .{ .content = "// Phase 2: Run backend to generate & compile final program", .location = .{ .line = 427, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .flow = Flow{
+                .invocation = Invocation{
+                    .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"step"} },
+                    .args = &[_]Arg{
+                        Arg{ .name = "name", .value = "\"build\"", .source_value = null, .expression_value = null },
+                        Arg{ .name = "source", .value = "./zig-out/bin/main backend_tmp\n", .source_value = &Source{
+                            .text = 
+                                \\./zig-out/bin/main backend_tmp
+                                \\
+                                ,
+                            .location = .{ .line = 431, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                            .scope = CapturedScope{
+                                .bindings = &[_]ScopeBinding{
+                                },
+                            },
+                            .phantom_type = null,
+                        }, .expression_value = null },
+                    },
+                    .annotations = &.{
+                    },
+                    .inserted_by_tap = false,
+                    .from_opaque_tap = false,
+                    .variant = null,
+                },
+                .continuations = &[_]Continuation{
+                },
+                .annotations = &.{
+                    "default, depends_on(\"compile_backend\")",
+                },
+                .pre_label = null,
+                .post_label = null,
+                .super_shape = null,
+                .is_pure = true,
+                .is_transitively_pure = false,
+                .location = .{ .line = 428, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .impl_of = null,
+                .is_impl = false,
+                .module = "build",
+            } },            
+                                    .{ .host_line = .{ .content = "// Phase 3: Run the final program", .location = .{ .line = 432, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .flow = Flow{
+                .invocation = Invocation{
+                    .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"step"} },
+                    .args = &[_]Arg{
+                        Arg{ .name = "name", .value = "\"run\"", .source_value = null, .expression_value = null },
+                        Arg{ .name = "source", .value = "./backend_tmp\n", .source_value = &Source{
+                            .text = 
+                                \\./backend_tmp
+                                \\
+                                ,
+                            .location = .{ .line = 436, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                            .scope = CapturedScope{
+                                .bindings = &[_]ScopeBinding{
+                                },
+                            },
+                            .phantom_type = null,
+                        }, .expression_value = null },
+                    },
+                    .annotations = &.{
+                    },
+                    .inserted_by_tap = false,
+                    .from_opaque_tap = false,
+                    .variant = null,
+                },
+                .continuations = &[_]Continuation{
+                },
+                .annotations = &.{
+                    "default, depends_on(\"build\")",
+                },
+                .pre_label = null,
+                .post_label = null,
+                .super_shape = null,
+                .is_pure = true,
+                .is_transitively_pure = false,
+                .location = .{ .line = 433, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .impl_of = null,
+                .is_impl = false,
+                .module = "build",
+            } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 437, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// BUILD COLLECTION - Generate build.zig from build:requires declarations", .location = .{ .line = 438, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 439, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// BACKEND PASS: Collects all build:requires from the user's final program AST", .location = .{ .line = 440, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// and generates build.zig for compiling the final executable.", .location = .{ .line = 441, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 442, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// This is distinct from compiler:requires (which configures backend compilation).", .location = .{ .line = 443, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// build:requires configures the FINAL PROGRAM compilation.", .location = .{ .line = 444, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 445, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// Usage (invoked by compiler.kz during backend coordination):", .location = .{ .line = 446, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   ~std.build:collect(ctx: ctx, output_path: \"build.zig\")", .location = .{ .line = 447, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//   | collected { ctx: CompilerContext }", .location = .{ .line = 448, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 449, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// The pass:", .location = .{ .line = 450, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// - Walks ctx.ast for all ~build:requires invocations", .location = .{ .line = 451, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// - Collects the Source parameters (Zig build code)", .location = .{ .line = 452, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// - Generates build.zig using emit_build_zig library", .location = .{ .line = 453, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .host_line = .{ .content = "// - Returns updated ctx with passes_completed incremented", .location = .{ .line = 454, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
+                                    .{ .event_decl = EventDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"collect"} },
+                .input = Shape{ .fields = &[_]Field{
+                    Field{ .name = "ctx", .type = "compiler_types.CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                    Field{ .name = "output_path", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                } },
+                .branches = &[_]Branch{
+                    Branch{
+                        .name = "collected",
+                        .payload = Shape{ .fields = &[_]Field{
+                            Field{ .name = "__type_ref", .type = "compiler_types.CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                        } },
+                        .is_deferred = false,
+                        .is_optional = false,
+                        .annotations = &.{},
+                    },
+                },
+                .is_public = true,
+                .is_implicit_flow = false,
+                .annotations = &.{
+                    "comptime",
+                },
+                .location = .{ .line = 461, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+                .is_pure = false,
+                .is_transitively_pure = false,
+            } },            
+                                    .{ .proc_decl = ProcDecl{
+                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"collect"} },
+                .body = 
+                    \\
+                    \\    // Extract nested fields from ctx (auto-destructuring only works for top-level event params)
+                    \\    const allocator = ctx.allocator;
+                    \\    const ast_items = ctx.ast.items;
+                    \\
+                    \\    // Collect all build:requires from AST
+                    \\    var requirements = std.ArrayList(emit_build_zig.BuildRequirement){
+                    \\        .items = &.{},
+                    \\        .capacity = 0,
+                    \\    };
+                    \\    errdefer requirements.deinit(allocator);
+                    \\
+                    \\    // Walk AST looking for std.build:requires flows
+                    \\    for (ast_items) |item| {
+                    \\        switch (item) {
+                    \\            .flow => |flow| {
+                    \\                // Check if this is std.build:requires
+                    \\                if (flow.invocation.path.module_qualifier) |mq| {
+                    \\                    const is_build_requires = (std.mem.eql(u8, mq, "std.build") and
+                    \\                        flow.invocation.path.segments.len == 1 and
+                    \\                        std.mem.eql(u8, flow.invocation.path.segments[0], "requires"));
+                    \\
+                    \\                    if (is_build_requires) {
+                    \\                        // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
+                    \\                        if (!matchesFlags(flow.invocation.annotations)) continue;
+                    \\                        // Extract source parameter
+                    \\                        for (flow.invocation.args) |arg| {
+                    \\                            if (std.mem.eql(u8, arg.name, "source")) {
+                    \\                                // Deduplicate by checking if this source already exists
+                    \\                                var found = false;
+                    \\                                for (requirements.items) |req| {
+                    \\                                    if (std.mem.eql(u8, req.source_code, arg.value)) {
+                    \\                                        found = true;
+                    \\                                        break;
+                    \\                                    }
+                    \\                                }
+                    \\                                if (!found) {
+                    \\                                    const requirement = emit_build_zig.BuildRequirement{
+                    \\                                        .module_name = "main", // All user code is in "main" module
+                    \\                                        .source_code = arg.value,
+                    \\                                    };
+                    \\                                    try requirements.append(allocator, requirement);
+                    \\                                }
+                    \\                            }
+                    \\                        }
+                    \\                    }
+                    \\                }
+                    \\            },
+                    \\            .module_decl => |module| {
+                    \\                // Also check imported modules
+                    \\                for (module.items) |mod_item| {
+                    \\                    if (mod_item == .flow) {
+                    \\                        const flow = mod_item.flow;
+                    \\                        if (flow.invocation.path.module_qualifier) |mq| {
+                    \\                            const is_build_requires = (std.mem.eql(u8, mq, "std.build") and
+                    \\                                flow.invocation.path.segments.len == 1 and
+                    \\                                std.mem.eql(u8, flow.invocation.path.segments[0], "requires"));
+                    \\
+                    \\                            if (is_build_requires) {
+                    \\                                // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
+                    \\                                if (!matchesFlags(flow.invocation.annotations)) continue;
+                    \\                                for (flow.invocation.args) |arg| {
+                    \\                                    if (std.mem.eql(u8, arg.name, "source")) {
+                    \\                                        // Deduplicate by checking if this source already exists
+                    \\                                        var found = false;
+                    \\                                        for (requirements.items) |req| {
+                    \\                                            if (std.mem.eql(u8, req.source_code, arg.value)) {
+                    \\                                                found = true;
+                    \\                                                break;
+                    \\                                            }
+                    \\                                        }
+                    \\                                        if (!found) {
+                    \\                                            const requirement = emit_build_zig.BuildRequirement{
+                    \\                                                .module_name = module.logical_name,
+                    \\                                                .source_code = arg.value,
+                    \\                                            };
+                    \\                                            try requirements.append(allocator, requirement);
+                    \\                                        }
+                    \\                                    }
+                    \\                                }
+                    \\                            }
+                    \\                        }
+                    \\                    }
+                    \\                }
+                    \\            },
+                    \\            else => {},
+                    \\        }
+                    \\    }
+                    \\
+                    \\    // If we found requirements, generate build.zig
+                    \\    if (requirements.items.len > 0) {
+                    \\        std.debug.print("📦 Found {d} build requirement(s)\n", .{requirements.items.len});
+                    \\        try emit_build_zig.emitBuildZig(allocator, requirements.items, output_path);
+                    \\        std.debug.print("✓ Generated {s}\n", .{output_path});
+                    \\    }
+                    \\
+                    \\    requirements.deinit(allocator);
+                    \\
+                    \\    // Update context
+                    \\    var updated_ctx = ctx;
+                    \\    updated_ctx.passes_completed += 1;
+                    \\
+                    \\    return .{ .collected = updated_ctx };
+                    ,
+                .annotations = &.{
+                },
+                .target = null,
+                .is_impl = false,
+                .is_pure = false,
+                .is_transitively_pure = false,
+                .location = .{ .line = 566, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
+                .module = "build",
+            } },        
+                }, .is_system = false, .annotations = &.{"comptime"}, .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" } } },
         .{ .module_decl = .{ .logical_name = "std.control", .canonical_path = "/Users/larsde/src/koru/koru_std/control.kz", .items = &[_]Item{            
                                     .{ .host_line = .{ .content = "// Koru Standard Library: Control Flow", .location = .{ .line = 3, .column = 0, .file = "/Users/larsde/src/koru/koru_std/control.kz" }, .module = "control" } },            
                                     .{ .host_line = .{ .content = "// Provides ~if for zero-overhead conditional branching", .location = .{ .line = 4, .column = 0, .file = "/Users/larsde/src/koru/koru_std/control.kz" }, .module = "control" } },            
@@ -7567,7 +8946,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "transformed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "program", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -7596,11 +8975,11 @@ pub const PROGRAM_AST = Program{
                     \\    const flow = if (item.* == .flow)
                     \\        &item.flow
                     \\    else
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\
                     \\    // Check if already transformed (inline_body is set)
                     \\    if (flow.inline_body != null) {
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     \\
                     \\    const is_pointer_top = (invocation == &flow.invocation);
@@ -7624,7 +9003,7 @@ pub const PROGRAM_AST = Program{
                     \\    // If we don't have both branches for top-level, fall back to no-op
                     \\    // (could happen with malformed input)
                     \\    if (is_top_level_if and then_cont == null) {
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     \\
                     \\    if (is_top_level_if) {
@@ -7676,9 +9055,9 @@ pub const PROGRAM_AST = Program{
                     \\            if (maybe_new_program) |new_program| {
                     \\                const result = allocator.create(ast.Program) catch unreachable;
                     \\                result.* = new_program;
-                    \\                return .{ .transformed = .{ .program = result } };
+                    \\                return .{ .transformed = result };
                     \\            }
-                    \\            return .{ .transformed = .{ .program = program } };
+                    \\            return .{ .transformed = program };
                     \\        }
                     \\
                     \\        const conditional_node = ast.Node{ .conditional = .{
@@ -7737,7 +9116,7 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        } else {
                     \\            std.debug.print("ERROR: ~if transform failed - flow not found in program\n", .{});
                     \\            @panic("if transform: flow not found");
@@ -7816,7 +9195,7 @@ pub const PROGRAM_AST = Program{
                     \\        const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation) orelse {
                     \\            // Can't find the if structure, return unchanged
                     \\            std.debug.print("[IF TRANSFORM] WARNING: Could not find specific invocation in nested continuations\n", .{});
-                    \\            return .{ .transformed = .{ .program = program } };
+                    \\            return .{ .transformed = program };
                     \\        };
                     \\
                     \\        then_cont = search_result.then_cont;
@@ -7882,7 +9261,7 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        } else {
                     \\            std.debug.print("ERROR: ~if transform (pipeline case) failed - flow not found in program\n", .{});
                     \\            @panic("if transform: flow not found");
@@ -7924,7 +9303,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "transformed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "program", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -7953,12 +9332,12 @@ pub const PROGRAM_AST = Program{
                     \\    const flow = if (item.* == .flow)
                     \\        &item.flow
                     \\    else
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\
                     \\    // Check if already transformed (has @pass_ran annotation)
                     \\    for (flow.invocation.annotations) |ann| {
                     \\        if (std.mem.startsWith(u8, ann, "@pass_ran")) {
-                    \\            return .{ .transformed = .{ .program = program } };
+                    \\            return .{ .transformed = program };
                     \\        }
                     \\    }
                     \\
@@ -7979,7 +9358,7 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    // If we don't have each branch for top-level, fall back to no-op
                     \\    if (is_top_level_for and !has_each) {
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     \\
                     \\    if (is_top_level_for and !is_pointer_top) {
@@ -7999,7 +9378,7 @@ pub const PROGRAM_AST = Program{
                     \\        }
                     \\
                     \\        if (each_cont == null) {
-                    \\            return .{ .transformed = .{ .program = program } };
+                    \\            return .{ .transformed = program };
                     \\        }
                     \\
                     \\        // Build ForeachNode with uniform NamedBranch structure
@@ -8047,9 +9426,9 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        }
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     \\
                     \\    if (is_top_level_for) {
@@ -8076,7 +9455,7 @@ pub const PROGRAM_AST = Program{
                     \\        }
                     \\
                     \\        if (each_cont == null) {
-                    \\            return .{ .transformed = .{ .program = program } };
+                    \\            return .{ .transformed = program };
                     \\        }
                     \\
                     \\        // Build ForeachNode with uniform NamedBranch structure
@@ -8168,7 +9547,7 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        } else {
                     \\            std.debug.print("ERROR: ~for transform failed - flow not found in program\n", .{});
                     \\            @panic("for transform: flow not found");
@@ -8253,7 +9632,7 @@ pub const PROGRAM_AST = Program{
                     \\        const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation) orelse {
                     \\            // Can't find the for structure, return unchanged
                     \\            std.debug.print("[FOR TRANSFORM] WARNING: Could not find specific invocation in nested continuations\n", .{});
-                    \\            return .{ .transformed = .{ .program = program } };
+                    \\            return .{ .transformed = program };
                     \\        };
                     \\
                     \\        // Build ForeachNode with uniform NamedBranch structure
@@ -8321,7 +9700,7 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        } else {
                     \\            std.debug.print("ERROR: ~for transform (pipeline case) failed - flow not found in program\n", .{});
                     \\            @panic("for transform: flow not found");
@@ -8372,7 +9751,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "transformed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "program", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -8402,7 +9781,7 @@ pub const PROGRAM_AST = Program{
                     \\    const flow = if (item.* == .flow)
                     \\        &item.flow
                     \\    else
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\
                     \\    // Check if this is a top-level capture (flow.invocation IS the capture being transformed)
                     \\    // vs a pipeline case (capture is a step inside the flow's continuations)
@@ -8669,7 +10048,7 @@ pub const PROGRAM_AST = Program{
                     \\    const capture_continuations: []const ast.Continuation = if (is_pointer_top or is_virtual_top) blk: {
                     \\        // Check if already transformed
                     \\        if (flow.inline_body != null) {
-                    \\            return .{ .transformed = .{ .program = program } };
+                    \\            return .{ .transformed = program };
                     \\        }
                     \\        break :blk flow.continuations;
                     \\    } else {
@@ -8734,7 +10113,7 @@ pub const PROGRAM_AST = Program{
                     \\        const empty_path = &[_]usize{};
                     \\        const search_result = findCaptureWithPath(allocator, flow.continuations, empty_path, invocation) orelse {
                     \\            std.debug.print("[CAPTURE TRANSFORM] WARNING: Could not find nested capture invocation\n", .{});
-                    \\            return .{ .transformed = .{ .program = program } };
+                    \\            return .{ .transformed = program };
                     \\        };
                     \\
                     \\        // Get bindings
@@ -8829,7 +10208,7 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        } else {
                     \\            std.debug.print("ERROR: ~capture transform (pipeline case) failed - flow not found in program\n", .{});
                     \\            @panic("capture transform: flow not found");
@@ -8865,7 +10244,7 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    if (as_cont == null) {
                     \\        std.debug.print("ERROR: ~capture missing | as |> branch\n", .{});
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     \\
                     \\    // Detect existing struct mode: no '{' means binding to existing variable
@@ -8947,10 +10326,10 @@ pub const PROGRAM_AST = Program{
                     \\        if (maybe_new_program) |new_program| {
                     \\            const result = allocator.create(ast.Program) catch unreachable;
                     \\            result.* = new_program;
-                    \\            return .{ .transformed = .{ .program = result } };
+                    \\            return .{ .transformed = result };
                     \\        }
                     \\
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     \\
                     \\    // Create void-chain continuation containing the CaptureNode
@@ -9003,7 +10382,7 @@ pub const PROGRAM_AST = Program{
                     \\    if (maybe_new_program) |new_program| {
                     \\        const result = allocator.create(ast.Program) catch unreachable;
                     \\        result.* = new_program;
-                    \\        return .{ .transformed = .{ .program = result } };
+                    \\        return .{ .transformed = result };
                     \\    } else {
                     \\        std.debug.print("ERROR: ~capture transform failed - flow not found in program\n", .{});
                     \\        @panic("capture transform: flow not found");
@@ -9041,7 +10420,7 @@ pub const PROGRAM_AST = Program{
                     Branch{
                         .name = "transformed",
                         .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "program", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
+                            Field{ .name = "__type_ref", .type = "*const Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
                         } },
                         .is_deferred = false,
                         .is_optional = false,
@@ -9071,14 +10450,14 @@ pub const PROGRAM_AST = Program{
                     \\    const flow = if (item.* == .flow)
                     \\        &item.flow
                     \\    else
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\
                     \\    // Check if this is a top-level const
                     \\    const is_top_level = @intFromPtr(&flow.invocation) == @intFromPtr(invocation);
                     \\
                     \\    if (!is_top_level) {
                     \\        // Nested case - for now just pass through
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     \\
                     \\    // Step 1: Find | as binding |> continuation
@@ -9095,7 +10474,7 @@ pub const PROGRAM_AST = Program{
                     \\
                     \\    if (as_cont == null) {
                     \\        std.debug.print("ERROR: ~const requires | as binding |> continuation\n", .{});
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     \\
                     \\    // Step 2: Convert init expression (Koru struct -> Zig struct)
@@ -9152,9 +10531,9 @@ pub const PROGRAM_AST = Program{
                     \\    if (maybe_new_program) |new_program| {
                     \\        const result = allocator.create(ast.Program) catch unreachable;
                     \\        result.* = new_program;
-                    \\        return .{ .transformed = .{ .program = result } };
+                    \\        return .{ .transformed = result };
                     \\    } else {
-                    \\        return .{ .transformed = .{ .program = program } };
+                    \\        return .{ .transformed = program };
                     \\    }
                     ,
                 .annotations = &.{
@@ -9167,905 +10546,6 @@ pub const PROGRAM_AST = Program{
                 .module = "control",
             } },        
                 }, .is_system = false, .annotations = &.{"comptime"}, .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/control.kz" } } },
-        .{ .module_decl = .{ .logical_name = "std.build", .canonical_path = "/Users/larsde/src/koru/koru_std/build.kz", .items = &[_]Item{            
-                                    .{ .host_line = .{ .content = "// Build Requirements Standard Library", .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Allows modules to declare their build dependencies", .location = .{ .line = 2, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 3, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// TOP-LEVEL COMPTIME EXECUTION:", .location = .{ .line = 4, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// This module uses top-level comptime calls for automatic collection.", .location = .{ .line = 5, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// When imported, the top-level collect() executes automatically.", .location = .{ .line = 6, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "const emit_build_zig = @import(\"emit_build_zig\");", .location = .{ .line = 10, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "const std = @import(\"std\");", .location = .{ .line = 11, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "const Root = @import(\"root\");", .location = .{ .line = 12, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "const ast_functional = @import(\"ast_functional\");", .location = .{ .line = 13, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "const emitter_helpers = @import(\"emitter_helpers\");", .location = .{ .line = 14, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "const annotation_parser = @import(\"annotation_parser\");", .location = .{ .line = 15, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Re-export variant registry functions from the core", .location = .{ .line = 17, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// This allows userland code to query variants via std.build.getVariant()", .location = .{ .line = 18, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "pub const getVariant = emitter_helpers.getVariant;", .location = .{ .line = 19, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "pub const registerVariant = emitter_helpers.registerVariant;", .location = .{ .line = 20, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Import shared compiler types (to avoid circular dependency with compiler.kz)", .location = .{ .line = 22, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .import_decl = ImportDecl{ .path = "$std/compiler_types", .local_name = "std.compiler_types", .location = .{ .file = "/Users/larsde/src/koru/koru_std/build.kz", .line = 24, .column = 0 }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 25, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// FLAG MATCHING - Annotation-based conditional compilation", .location = .{ .line = 26, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 27, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Use ~[build(\"prod\")] or ~[build(\"dev\", \"staging\")] to conditionally include", .location = .{ .line = 28, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// declarations based on the --build=X compiler flag.", .location = .{ .line = 29, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 30, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Usage in source code:", .location = .{ .line = 31, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~[build(\"prod\")]koru.docker:image(tag: \"myapp:latest\") {", .location = .{ .line = 32, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       FROM alpine:3.18", .location = .{ .line = 33, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       COPY zig-out/bin/main /usr/local/bin/myapp", .location = .{ .line = 34, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       CMD [\"myapp\"]", .location = .{ .line = 35, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 36, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 37, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~[build(\"dev\")]koru.docker:image(tag: \"myapp:latest\") {", .location = .{ .line = 38, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       FROM alpine:3.18", .location = .{ .line = 39, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       RUN apk add --no-cache gdb strace", .location = .{ .line = 40, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       COPY zig-out/bin/main /usr/local/bin/myapp", .location = .{ .line = 41, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       CMD [\"myapp\", \"--debug\"]", .location = .{ .line = 42, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 43, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 44, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Then: koruc main.kz --build=prod docker build", .location = .{ .line = 45, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 46, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Usage in a command proc:", .location = .{ .line = 47, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   for (program.items) |item| {", .location = .{ .line = 48, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       if (item == .flow) {", .location = .{ .line = 49, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//           const flow = item.flow;", .location = .{ .line = 50, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//           if (!matchesFlags(flow.invocation.annotations)) continue;", .location = .{ .line = 51, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//           // ... process the flow", .location = .{ .line = 52, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       }", .location = .{ .line = 53, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 54, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 55, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Semantics:", .location = .{ .line = 56, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   - No build(...) annotation → always matches", .location = .{ .line = 57, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   - Has build(\"x\", \"y\", ...) → matches if --build=x OR --build=y", .location = .{ .line = 58, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 59, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "pub fn matchesFlags(annotations: []const []const u8) bool {", .location = .{ .line = 60, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "    // Look for build(...) parametrized annotation", .location = .{ .line = 61, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "    for (annotations) |ann| {", .location = .{ .line = 62, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "        // Try to parse as a parametrized call", .location = .{ .line = 63, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "        const maybe_call = annotation_parser.parseCall(std.heap.page_allocator, ann) catch continue;", .location = .{ .line = 64, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "        if (maybe_call) |call| {", .location = .{ .line = 65, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "            defer {", .location = .{ .line = 66, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                var mutable_call = call;", .location = .{ .line = 67, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                mutable_call.deinit(std.heap.page_allocator);", .location = .{ .line = 68, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 69, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "            // Check if this is a build() annotation", .location = .{ .line = 71, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "            if (std.mem.eql(u8, call.name, \"build\")) {", .location = .{ .line = 72, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                // Check if any of the args match current --build=X flag", .location = .{ .line = 73, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                for (call.args) |arg| {", .location = .{ .line = 74, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                    // Build the flag string: \"build=prod\", \"build=dev\", etc.", .location = .{ .line = 75, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                    var flag_buf: [64]u8 = undefined;", .location = .{ .line = 76, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                    const flag = std.fmt.bufPrint(&flag_buf, \"build={s}\", .{arg}) catch continue;", .location = .{ .line = 77, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                    if (Root.CompilerEnv.hasFlagRuntime(flag)) {", .location = .{ .line = 79, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                        return true;  // Found a matching build flag", .location = .{ .line = 80, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                    }", .location = .{ .line = 81, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                }", .location = .{ .line = 82, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                // Has build() annotation but none of the args matched", .location = .{ .line = 83, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "                return false;", .location = .{ .line = 84, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "            }", .location = .{ .line = 85, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "        }", .location = .{ .line = 86, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "    }", .location = .{ .line = 87, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "    // No build() annotation found → always matches", .location = .{ .line = 89, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "    return true;", .location = .{ .line = 90, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "}", .location = .{ .line = 91, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Declare build dependency using implicit Source block", .location = .{ .line = 93, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Usage: ~std.build:requires { exe.linkSystemLibrary(\"sqlite3\"); }", .location = .{ .line = 94, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// [norun] annotation prevents auto-execution - collect() reads from AST instead", .location = .{ .line = 95, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .event_decl = EventDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"requires"} },
-                .input = Shape{ .fields = &[_]Field{
-                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                } },
-                .branches = &[_]Branch{
-                    Branch{
-                        .name = "added",
-                        .payload = Shape{ .fields = &[_]Field{
-                        } },
-                        .is_deferred = false,
-                        .is_optional = true,
-                        .annotations = &.{},
-                    },
-                    Branch{
-                        .name = "parse_error",
-                        .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "msg", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                        } },
-                        .is_deferred = false,
-                        .is_optional = true,
-                        .annotations = &.{},
-                    },
-                },
-                .is_public = true,
-                .is_implicit_flow = true,
-                .annotations = &.{
-                    "comptime",
-                    "norun",
-                },
-                .location = .{ .line = 101, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-                .is_pure = false,
-                .is_transitively_pure = false,
-            } },            
-                                    .{ .proc_decl = ProcDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"requires"} },
-                .body = 
-                    \\
-                    \\    // Validate Source syntax
-                    \\    // Can be called programmatically by collect() to validate each requirement
-                    \\    // TODO: Actually validate Zig syntax
-                    \\    return .{ .added = .{} };
-                    ,
-                .annotations = &.{
-                },
-                .target = null,
-                .is_impl = false,
-                .is_pure = false,
-                .is_transitively_pure = false,
-                .location = .{ .line = 108, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-            } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 109, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// VARIANT SELECTION - Conditional proc selection based on build flags", .location = .{ .line = 110, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 111, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Allows selecting different proc variants based on --build flag.", .location = .{ .line = 112, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 113, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~[build(\"release\")]std.build:variants {", .location = .{ .line = 114, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       \"compute\": \"fast\",", .location = .{ .line = 115, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       \"blur\": \"gpu\"", .location = .{ .line = 116, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 117, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~[build(\"debug\")]std.build:variants {", .location = .{ .line = 118, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       \"compute\": \"naive\",", .location = .{ .line = 119, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       \"blur\": \"cpu\"", .location = .{ .line = 120, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 121, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 122, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// When compiled with --build=release, the emitter will use \"fast\" for compute.", .location = .{ .line = 123, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// When compiled with --build=debug, the emitter will use \"naive\" for compute.", .location = .{ .line = 124, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 125, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// The Source block contains JSON-like mappings: event_name → variant_name", .location = .{ .line = 126, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// The program AST is used to validate that referenced events exist", .location = .{ .line = 127, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .event_decl = EventDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"variants"} },
-                .input = Shape{ .fields = &[_]Field{
-                    Field{ .name = "meta", .type = "InvocationMeta", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = true, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                    Field{ .name = "program", .type = "Program", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                } },
-                .branches = &[_]Branch{
-                    Branch{
-                        .name = "configured",
-                        .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "count", .type = "usize", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                        } },
-                        .is_deferred = false,
-                        .is_optional = false,
-                        .annotations = &.{},
-                    },
-                    Branch{
-                        .name = "skipped",
-                        .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "reason", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                        } },
-                        .is_deferred = false,
-                        .is_optional = false,
-                        .annotations = &.{},
-                    },
-                    Branch{
-                        .name = "invalid_event",
-                        .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "name", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                        } },
-                        .is_deferred = false,
-                        .is_optional = false,
-                        .annotations = &.{},
-                    },
-                },
-                .is_public = true,
-                .is_implicit_flow = false,
-                .annotations = &.{
-                    "comptime",
-                },
-                .location = .{ .line = 133, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-                .is_pure = false,
-                .is_transitively_pure = false,
-            } },            
-                                    .{ .proc_decl = ProcDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"variants"} },
-                .body = 
-                    \\
-                    \\    // Check if this config's annotation matches the --build flag
-                    \\    if (!matchesFlags(meta.annotations)) {
-                    \\        return .{ .skipped = .{ .reason = "no matching build flag" } };
-                    \\    }
-                    \\
-                    \\    // Parse the source as simple JSON-like key:value pairs
-                    \\    // Format: "event_name": "variant_name"
-                    \\    var count: usize = 0;
-                    \\    var pos: usize = 0;
-                    \\    const text = source.text;
-                    \\
-                    \\    while (pos < text.len) {
-                    \\        // Skip whitespace and braces
-                    \\        while (pos < text.len and (text[pos] == ' ' or text[pos] == '\n' or text[pos] == '\r' or text[pos] == '\t' or text[pos] == '{' or text[pos] == '}' or text[pos] == ',')) {
-                    \\            pos += 1;
-                    \\        }
-                    \\        if (pos >= text.len) break;
-                    \\
-                    \\        // Expect opening quote for key
-                    \\        if (text[pos] != '"') {
-                    \\            pos += 1;
-                    \\            continue;
-                    \\        }
-                    \\        pos += 1;
-                    \\
-                    \\        // Read key
-                    \\        const key_start = pos;
-                    \\        while (pos < text.len and text[pos] != '"') {
-                    \\            pos += 1;
-                    \\        }
-                    \\        const key = text[key_start..pos];
-                    \\        pos += 1; // skip closing quote
-                    \\
-                    \\        // Skip colon and whitespace
-                    \\        while (pos < text.len and (text[pos] == ':' or text[pos] == ' ')) {
-                    \\            pos += 1;
-                    \\        }
-                    \\
-                    \\        // Expect opening quote for value
-                    \\        if (pos >= text.len or text[pos] != '"') continue;
-                    \\        pos += 1;
-                    \\
-                    \\        // Read value
-                    \\        const value_start = pos;
-                    \\        while (pos < text.len and text[pos] != '"') {
-                    \\            pos += 1;
-                    \\        }
-                    \\        const value = text[value_start..pos];
-                    \\        pos += 1; // skip closing quote
-                    \\
-                    \\        // Validate that the event exists in the AST
-                    \\        if (ast_functional.findEventByCanonicalName(program, key) == null) {
-                    \\            // Event not found - report error
-                    \\            return .{ .invalid_event = .{ .name = key } };
-                    \\        }
-                    \\
-                    \\        // Register in the core variant registry
-                    \\        if (emitter_helpers.registerVariant(key, value)) {
-                    \\            count += 1;
-                    \\        }
-                    \\    }
-                    \\
-                    \\    return .{ .configured = .{ .count = count } };
-                    ,
-                .annotations = &.{
-                },
-                .target = null,
-                .is_impl = false,
-                .is_pure = false,
-                .is_transitively_pure = false,
-                .location = .{ .line = 199, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-            } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 200, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// BUILD CONFIG - Key-value build parameters based on build flags", .location = .{ .line = 201, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 202, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Sets build-time configuration values (e.g., cross-compilation target).", .location = .{ .line = 203, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Composes with build:variants — variants select WHICH code, config sets", .location = .{ .line = 204, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// HOW to build it. Both use the same ~[build(X)] guard system.", .location = .{ .line = 205, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 206, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 207, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~[build(\"linux\")]std.build:config {", .location = .{ .line = 208, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       \"target\": \"x86_64-linux-musl\"", .location = .{ .line = 209, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 210, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 211, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// The compiler is agnostic to the keys — it just passes them through.", .location = .{ .line = 212, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Currently the backend recognizes \"target\" for zig cross-compilation.", .location = .{ .line = 213, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .event_decl = EventDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"config"} },
-                .input = Shape{ .fields = &[_]Field{
-                    Field{ .name = "meta", .type = "InvocationMeta", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = true, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                } },
-                .branches = &[_]Branch{
-                    Branch{
-                        .name = "configured",
-                        .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "count", .type = "usize", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                        } },
-                        .is_deferred = false,
-                        .is_optional = false,
-                        .annotations = &.{},
-                    },
-                    Branch{
-                        .name = "skipped",
-                        .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "reason", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                        } },
-                        .is_deferred = false,
-                        .is_optional = false,
-                        .annotations = &.{},
-                    },
-                },
-                .is_public = true,
-                .is_implicit_flow = false,
-                .annotations = &.{
-                    "comptime",
-                },
-                .location = .{ .line = 218, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-                .is_pure = false,
-                .is_transitively_pure = false,
-            } },            
-                                    .{ .proc_decl = ProcDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"config"} },
-                .body = 
-                    \\
-                    \\    if (!matchesFlags(meta.annotations)) {
-                    \\        return .{ .skipped = .{ .reason = "no matching build flag" } };
-                    \\    }
-                    \\
-                    \\    // Parse the source as simple JSON-like key:value pairs
-                    \\    var count: usize = 0;
-                    \\    var pos: usize = 0;
-                    \\    const text = source.text;
-                    \\
-                    \\    while (pos < text.len) {
-                    \\        // Skip whitespace and braces
-                    \\        while (pos < text.len and (text[pos] == ' ' or text[pos] == '\n' or text[pos] == '\r' or text[pos] == '\t' or text[pos] == '{' or text[pos] == '}' or text[pos] == ',')) {
-                    \\            pos += 1;
-                    \\        }
-                    \\        if (pos >= text.len) break;
-                    \\
-                    \\        // Expect opening quote for key
-                    \\        if (text[pos] != '"') {
-                    \\            pos += 1;
-                    \\            continue;
-                    \\        }
-                    \\        pos += 1;
-                    \\
-                    \\        // Read key
-                    \\        const key_start = pos;
-                    \\        while (pos < text.len and text[pos] != '"') {
-                    \\            pos += 1;
-                    \\        }
-                    \\        const key = text[key_start..pos];
-                    \\        pos += 1; // skip closing quote
-                    \\
-                    \\        // Skip colon and whitespace
-                    \\        while (pos < text.len and (text[pos] == ':' or text[pos] == ' ')) {
-                    \\            pos += 1;
-                    \\        }
-                    \\
-                    \\        // Expect opening quote for value
-                    \\        if (pos >= text.len or text[pos] != '"') continue;
-                    \\        pos += 1;
-                    \\
-                    \\        // Read value
-                    \\        const value_start = pos;
-                    \\        while (pos < text.len and text[pos] != '"') {
-                    \\            pos += 1;
-                    \\        }
-                    \\        const value = text[value_start..pos];
-                    \\        pos += 1; // skip closing quote
-                    \\
-                    \\        // Register in the build config registry
-                    \\        if (emitter_helpers.registerBuildConfig(key, value)) {
-                    \\            count += 1;
-                    \\        }
-                    \\    }
-                    \\
-                    \\    return .{ .configured = .{ .count = count } };
-                    ,
-                .annotations = &.{
-                },
-                .target = null,
-                .is_impl = false,
-                .is_pure = false,
-                .is_transitively_pure = false,
-                .location = .{ .line = 276, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-            } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 277, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// BUILD COMMANDS - Shell Script Execution (Frontend Optimization)", .location = .{ .line = 278, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 279, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// FRONTEND OPTIMIZATION: Unlike most compiler features, build:command.sh", .location = .{ .line = 280, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// is processed in the frontend (koruc) rather than the backend compiler.", .location = .{ .line = 281, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// This allows instant execution without backend compilation overhead.", .location = .{ .line = 282, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 283, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// For commands that need Zig/Koru compilation, use build:command.proc or", .location = .{ .line = 284, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// build:command.flow (backend passes, slower but more powerful).", .location = .{ .line = 285, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 286, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 287, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~std.build:command.sh(name: \"test\", description: \"Run all tests\") {", .location = .{ .line = 288, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//     ./run_regression.sh", .location = .{ .line = 289, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 290, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 291, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Invoke: koruc main.kz test --all --verbose", .location = .{ .line = 292, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Executes: ./run_regression.sh --all --verbose", .location = .{ .line = 293, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 294, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// The shell command receives all remaining argv as arguments.", .location = .{ .line = 295, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Use `koruc main.kz help` to list all available commands.", .location = .{ .line = 296, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .event_decl = EventDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"command", "sh"} },
-                .input = Shape{ .fields = &[_]Field{
-                    Field{ .name = "name", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                    Field{ .name = "description", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                } },
-                .branches = &[_]Branch{
-                },
-                .is_public = true,
-                .is_implicit_flow = false,
-                .annotations = &.{
-                    "comptime",
-                    "norun",
-                },
-                .location = .{ .line = 299, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-                .is_pure = false,
-                .is_transitively_pure = false,
-            } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 300, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// BUILD COMMANDS - Zig Functions (Frontend Compilation + Execution)", .location = .{ .line = 301, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 302, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// FRONTEND EXECUTION: Powerful commands with full compiler access!", .location = .{ .line = 303, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Unlike command.sh, command.zig functions have access to the AST and allocator,", .location = .{ .line = 304, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// enabling sophisticated build orchestration and metaprogramming.", .location = .{ .line = 305, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 306, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Function Signature:", .location = .{ .line = 307, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   pub fn execute(", .location = .{ .line = 308, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       allocator: std.mem.Allocator,", .location = .{ .line = 309, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       argv: [][]const u8,", .location = .{ .line = 310, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       ast: *const Program", .location = .{ .line = 311, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ) !void", .location = .{ .line = 312, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 313, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 314, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~std.build:command.zig(name: \"build\") {", .location = .{ .line = 315, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//     const std = @import(\"std\");", .location = .{ .line = 316, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//     const ast = @import(\"ast\");", .location = .{ .line = 317, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 318, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//     pub fn execute(allocator: std.mem.Allocator, argv: [][]const u8, program: *const ast.Program) !void {", .location = .{ .line = 319, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       // Parse argv for command arguments", .location = .{ .line = 320, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       // Collect build:step invocations from AST", .location = .{ .line = 321, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       // Orchestrate build step execution with dependency resolution", .location = .{ .line = 322, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//     }", .location = .{ .line = 323, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 324, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 325, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Invoke: koruc main.kz build test --verbose", .location = .{ .line = 326, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   - Command name: \"build\"", .location = .{ .line = 327, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   - argv: [\"test\", \"--verbose\"]", .location = .{ .line = 328, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   - AST: Full program AST for inspection/manipulation", .location = .{ .line = 329, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 330, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Available in scope:", .location = .{ .line = 331, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   - std.mem.Allocator for memory management", .location = .{ .line = 332, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   - Full AST access for metaprogramming", .location = .{ .line = 333, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   - Can import compiler utilities (build_step_utils, etc.)", .location = .{ .line = 334, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 335, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Examples:", .location = .{ .line = 336, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   koruc main.kz build           # Run all build steps", .location = .{ .line = 337, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   koruc main.kz build test      # Run 'test' step + dependencies", .location = .{ .line = 338, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   koruc main.kz clean           # Custom cleanup command", .location = .{ .line = 339, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   koruc main.kz deploy prod     # Deployment orchestration", .location = .{ .line = 340, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .event_decl = EventDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"command", "zig"} },
-                .input = Shape{ .fields = &[_]Field{
-                    Field{ .name = "name", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                } },
-                .branches = &[_]Branch{
-                },
-                .is_public = true,
-                .is_implicit_flow = false,
-                .annotations = &.{
-                    "comptime",
-                    "norun",
-                },
-                .location = .{ .line = 343, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-                .is_pure = false,
-                .is_transitively_pure = false,
-            } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 344, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// BUILD COMMANDS - Native Koru Flows (Zero Context Switch)", .location = .{ .line = 345, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 346, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// FRONTEND EXECUTION: Write build commands in pure Koru!", .location = .{ .line = 347, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// The command body IS a flow continuation - no Source block, no Zig, just Koru.", .location = .{ .line = 348, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 349, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 350, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~std.build:command(name: \"greet\", description: \"Say hello\")", .location = .{ .line = 351, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   | execute ctx |>", .location = .{ .line = 352, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       if(ctx.argv.len > 1)", .location = .{ .line = 353, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       | then |> std.io:println(\"Hello, \" ++ ctx.argv[1] ++ \"!\")", .location = .{ .line = 354, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       | else |> std.io:println(\"Usage: greet <name>\")", .location = .{ .line = 355, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 356, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Invoke: koruc main.kz greet World", .location = .{ .line = 357, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   Output: Hello, World!", .location = .{ .line = 358, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 359, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// The execute branch receives:", .location = .{ .line = 360, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   - ctx.argv: [][]const u8 - command line arguments after command name", .location = .{ .line = 361, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   - ctx.program: *const Program - full AST access (optional)", .location = .{ .line = 362, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 363, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Unlike command.sh (shell) or command.zig (raw Zig), command uses normal", .location = .{ .line = 364, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Koru flow syntax. Same patterns as everything else - events, branches, ~if.", .location = .{ .line = 365, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 366, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Examples:", .location = .{ .line = 367, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~std.build:command(name: \"check\", description: \"Run all checks\")", .location = .{ .line = 368, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   | execute ctx |>", .location = .{ .line = 369, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       std.build:run_step(\"lint\")", .location = .{ .line = 370, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       | done |> std.build:run_step(\"test\")", .location = .{ .line = 371, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//           | done |> std.io:println(\"All checks passed!\")", .location = .{ .line = 372, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//           | failed e |> std.io:println(\"Tests failed: \" ++ e)", .location = .{ .line = 373, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//       | failed e |> std.io:println(\"Lint failed: \" ++ e)", .location = .{ .line = 374, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .event_decl = EventDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"command"} },
-                .input = Shape{ .fields = &[_]Field{
-                    Field{ .name = "name", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                    Field{ .name = "description", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                } },
-                .branches = &[_]Branch{
-                    Branch{
-                        .name = "execute",
-                        .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "argv", .type = "[][]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                        } },
-                        .is_deferred = false,
-                        .is_optional = false,
-                        .annotations = &.{},
-                    },
-                },
-                .is_public = true,
-                .is_implicit_flow = false,
-                .annotations = &.{
-                    "comptime",
-                    "norun",
-                },
-                .location = .{ .line = 378, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-                .is_pure = false,
-                .is_transitively_pure = false,
-            } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 379, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// BUILD STEPS - Declarative Build Pipeline with Dependencies", .location = .{ .line = 380, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 381, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// FRONTEND EXECUTION: Build steps are collected and executed in dependency order", .location = .{ .line = 382, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// during the compilation process. Steps declare dependencies using annotations.", .location = .{ .line = 383, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 384, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Usage:", .location = .{ .line = 385, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~std.build:step(name: \"compile\") {", .location = .{ .line = 386, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//     zig build-exe main.zig", .location = .{ .line = 387, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 388, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 389, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~[depends_on(\"compile\")]std.build:step(name: \"test\") {", .location = .{ .line = 390, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//     ./main --test", .location = .{ .line = 391, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 392, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 393, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~[depends_on(\"compile\", \"test\")]std.build:step(name: \"package\") {", .location = .{ .line = 394, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//     tar czf app.tar.gz main", .location = .{ .line = 395, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   }", .location = .{ .line = 396, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 397, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Execution:", .location = .{ .line = 398, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// - Steps are collected from AST with their annotations", .location = .{ .line = 399, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// - Dependencies are extracted from ~[depends_on(...)] annotations", .location = .{ .line = 400, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// - Dependency graph is built and topologically sorted", .location = .{ .line = 401, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// - Steps execute in correct order (circular dependencies are detected and error)", .location = .{ .line = 402, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 403, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Annotations:", .location = .{ .line = 404, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// - ~[depends_on(\"step1\", \"step2\", ...)] - Variadic dependency list", .location = .{ .line = 405, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// - Future: ~[parallel], ~[optional], ~[timeout(30)], etc.", .location = .{ .line = 406, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .event_decl = EventDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"step"} },
-                .input = Shape{ .fields = &[_]Field{
-                    Field{ .name = "name", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                    Field{ .name = "source", .type = "Source", .module_path = null, .is_source = true, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                } },
-                .branches = &[_]Branch{
-                },
-                .is_public = true,
-                .is_implicit_flow = false,
-                .annotations = &.{
-                    "comptime",
-                    "norun",
-                },
-                .location = .{ .line = 409, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-                .is_pure = false,
-                .is_transitively_pure = false,
-            } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 410, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// DEFAULT BUILD STEPS - Standard 2-Phase Metaprogramming Compilation", .location = .{ .line = 411, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 412, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// These steps implement Koru's standard compilation pipeline:", .location = .{ .line = 413, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   1. Compile backend metaprogram (main.zig → backend executable)", .location = .{ .line = 414, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   2. Run backend (applies optimizations, generates final code)", .location = .{ .line = 415, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   3. Run the final program", .location = .{ .line = 416, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 417, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Users can override any step by defining their own with the same name", .location = .{ .line = 418, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// (without the ~[default] annotation). The override resolution in main.zig", .location = .{ .line = 419, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// will automatically use user-defined steps over these defaults.", .location = .{ .line = 420, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Phase 1: Compile backend metaprogram using build_backend.zig", .location = .{ .line = 422, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .flow = Flow{
-                .invocation = Invocation{
-                    .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"step"} },
-                    .args = &[_]Arg{
-                        Arg{ .name = "name", .value = "\"compile_backend\"", .source_value = null, .expression_value = null },
-                        Arg{ .name = "source", .value = "zig build --build-file build_backend.zig\n", .source_value = &Source{
-                            .text = 
-                                \\zig build --build-file build_backend.zig
-                                \\
-                                ,
-                            .location = .{ .line = 426, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                            .scope = CapturedScope{
-                                .bindings = &[_]ScopeBinding{
-                                },
-                            },
-                            .phantom_type = null,
-                        }, .expression_value = null },
-                    },
-                    .annotations = &.{
-                    },
-                    .inserted_by_tap = false,
-                    .from_opaque_tap = false,
-                    .variant = null,
-                },
-                .continuations = &[_]Continuation{
-                },
-                .annotations = &.{
-                    "default",
-                },
-                .pre_label = null,
-                .post_label = null,
-                .super_shape = null,
-                .is_pure = true,
-                .is_transitively_pure = false,
-                .location = .{ .line = 423, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .impl_of = null,
-                .is_impl = false,
-                .module = "build",
-            } },            
-                                    .{ .host_line = .{ .content = "// Phase 2: Run backend to generate & compile final program", .location = .{ .line = 427, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .flow = Flow{
-                .invocation = Invocation{
-                    .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"step"} },
-                    .args = &[_]Arg{
-                        Arg{ .name = "name", .value = "\"build\"", .source_value = null, .expression_value = null },
-                        Arg{ .name = "source", .value = "./zig-out/bin/main backend_tmp\n", .source_value = &Source{
-                            .text = 
-                                \\./zig-out/bin/main backend_tmp
-                                \\
-                                ,
-                            .location = .{ .line = 431, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                            .scope = CapturedScope{
-                                .bindings = &[_]ScopeBinding{
-                                },
-                            },
-                            .phantom_type = null,
-                        }, .expression_value = null },
-                    },
-                    .annotations = &.{
-                    },
-                    .inserted_by_tap = false,
-                    .from_opaque_tap = false,
-                    .variant = null,
-                },
-                .continuations = &[_]Continuation{
-                },
-                .annotations = &.{
-                    "default, depends_on(\"compile_backend\")",
-                },
-                .pre_label = null,
-                .post_label = null,
-                .super_shape = null,
-                .is_pure = true,
-                .is_transitively_pure = false,
-                .location = .{ .line = 428, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .impl_of = null,
-                .is_impl = false,
-                .module = "build",
-            } },            
-                                    .{ .host_line = .{ .content = "// Phase 3: Run the final program", .location = .{ .line = 432, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .flow = Flow{
-                .invocation = Invocation{
-                    .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"step"} },
-                    .args = &[_]Arg{
-                        Arg{ .name = "name", .value = "\"run\"", .source_value = null, .expression_value = null },
-                        Arg{ .name = "source", .value = "./backend_tmp\n", .source_value = &Source{
-                            .text = 
-                                \\./backend_tmp
-                                \\
-                                ,
-                            .location = .{ .line = 436, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                            .scope = CapturedScope{
-                                .bindings = &[_]ScopeBinding{
-                                },
-                            },
-                            .phantom_type = null,
-                        }, .expression_value = null },
-                    },
-                    .annotations = &.{
-                    },
-                    .inserted_by_tap = false,
-                    .from_opaque_tap = false,
-                    .variant = null,
-                },
-                .continuations = &[_]Continuation{
-                },
-                .annotations = &.{
-                    "default, depends_on(\"build\")",
-                },
-                .pre_label = null,
-                .post_label = null,
-                .super_shape = null,
-                .is_pure = true,
-                .is_transitively_pure = false,
-                .location = .{ .line = 433, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .impl_of = null,
-                .is_impl = false,
-                .module = "build",
-            } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 437, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// BUILD COLLECTION - Generate build.zig from build:requires declarations", .location = .{ .line = 438, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================================", .location = .{ .line = 439, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// BACKEND PASS: Collects all build:requires from the user's final program AST", .location = .{ .line = 440, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// and generates build.zig for compiling the final executable.", .location = .{ .line = 441, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 442, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// This is distinct from compiler:requires (which configures backend compilation).", .location = .{ .line = 443, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// build:requires configures the FINAL PROGRAM compilation.", .location = .{ .line = 444, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 445, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// Usage (invoked by compiler.kz during backend coordination):", .location = .{ .line = 446, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   ~std.build:collect(ctx: ctx, output_path: \"build.zig\")", .location = .{ .line = 447, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//   | collected { ctx: CompilerContext }", .location = .{ .line = 448, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "//", .location = .{ .line = 449, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// The pass:", .location = .{ .line = 450, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// - Walks ctx.ast for all ~build:requires invocations", .location = .{ .line = 451, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// - Collects the Source parameters (Zig build code)", .location = .{ .line = 452, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// - Generates build.zig using emit_build_zig library", .location = .{ .line = 453, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .host_line = .{ .content = "// - Returns updated ctx with passes_completed incremented", .location = .{ .line = 454, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" }, .module = "build" } },            
-                                    .{ .event_decl = EventDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"collect"} },
-                .input = Shape{ .fields = &[_]Field{
-                    Field{ .name = "ctx", .type = "compiler_types.CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                    Field{ .name = "output_path", .type = "[]const u8", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                } },
-                .branches = &[_]Branch{
-                    Branch{
-                        .name = "collected",
-                        .payload = Shape{ .fields = &[_]Field{
-                            Field{ .name = "ctx", .type = "compiler_types.CompilerContext", .module_path = null, .is_source = false, .is_file = false, .is_embed_file = false, .is_expression = false, .is_invocation_meta = false, .phantom = null, .expression = null, .expression_str = null, .owns_expression = false },
-                        } },
-                        .is_deferred = false,
-                        .is_optional = false,
-                        .annotations = &.{},
-                    },
-                },
-                .is_public = true,
-                .is_implicit_flow = false,
-                .annotations = &.{
-                    "comptime",
-                },
-                .location = .{ .line = 461, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-                .is_pure = false,
-                .is_transitively_pure = false,
-            } },            
-                                    .{ .proc_decl = ProcDecl{
-                .path = .{ .module_qualifier = "std.build", .segments = &[_][]const u8{"collect"} },
-                .body = 
-                    \\
-                    \\    // Extract nested fields from ctx (auto-destructuring only works for top-level event params)
-                    \\    const allocator = ctx.allocator;
-                    \\    const ast_items = ctx.ast.items;
-                    \\
-                    \\    // Collect all build:requires from AST
-                    \\    var requirements = std.ArrayList(emit_build_zig.BuildRequirement){
-                    \\        .items = &.{},
-                    \\        .capacity = 0,
-                    \\    };
-                    \\    errdefer requirements.deinit(allocator);
-                    \\
-                    \\    // Walk AST looking for std.build:requires flows
-                    \\    for (ast_items) |item| {
-                    \\        switch (item) {
-                    \\            .flow => |flow| {
-                    \\                // Check if this is std.build:requires
-                    \\                if (flow.invocation.path.module_qualifier) |mq| {
-                    \\                    const is_build_requires = (std.mem.eql(u8, mq, "std.build") and
-                    \\                        flow.invocation.path.segments.len == 1 and
-                    \\                        std.mem.eql(u8, flow.invocation.path.segments[0], "requires"));
-                    \\
-                    \\                    if (is_build_requires) {
-                    \\                        // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
-                    \\                        if (!matchesFlags(flow.invocation.annotations)) continue;
-                    \\                        // Extract source parameter
-                    \\                        for (flow.invocation.args) |arg| {
-                    \\                            if (std.mem.eql(u8, arg.name, "source")) {
-                    \\                                // Deduplicate by checking if this source already exists
-                    \\                                var found = false;
-                    \\                                for (requirements.items) |req| {
-                    \\                                    if (std.mem.eql(u8, req.source_code, arg.value)) {
-                    \\                                        found = true;
-                    \\                                        break;
-                    \\                                    }
-                    \\                                }
-                    \\                                if (!found) {
-                    \\                                    const requirement = emit_build_zig.BuildRequirement{
-                    \\                                        .module_name = "main", // All user code is in "main" module
-                    \\                                        .source_code = arg.value,
-                    \\                                    };
-                    \\                                    try requirements.append(allocator, requirement);
-                    \\                                }
-                    \\                            }
-                    \\                        }
-                    \\                    }
-                    \\                }
-                    \\            },
-                    \\            .module_decl => |module| {
-                    \\                // Also check imported modules
-                    \\                for (module.items) |mod_item| {
-                    \\                    if (mod_item == .flow) {
-                    \\                        const flow = mod_item.flow;
-                    \\                        if (flow.invocation.path.module_qualifier) |mq| {
-                    \\                            const is_build_requires = (std.mem.eql(u8, mq, "std.build") and
-                    \\                                flow.invocation.path.segments.len == 1 and
-                    \\                                std.mem.eql(u8, flow.invocation.path.segments[0], "requires"));
-                    \\
-                    \\                            if (is_build_requires) {
-                    \\                                // Respect build flags: ~[build("prod")], ~[build("dev")], etc.
-                    \\                                if (!matchesFlags(flow.invocation.annotations)) continue;
-                    \\                                for (flow.invocation.args) |arg| {
-                    \\                                    if (std.mem.eql(u8, arg.name, "source")) {
-                    \\                                        // Deduplicate by checking if this source already exists
-                    \\                                        var found = false;
-                    \\                                        for (requirements.items) |req| {
-                    \\                                            if (std.mem.eql(u8, req.source_code, arg.value)) {
-                    \\                                                found = true;
-                    \\                                                break;
-                    \\                                            }
-                    \\                                        }
-                    \\                                        if (!found) {
-                    \\                                            const requirement = emit_build_zig.BuildRequirement{
-                    \\                                                .module_name = module.logical_name,
-                    \\                                                .source_code = arg.value,
-                    \\                                            };
-                    \\                                            try requirements.append(allocator, requirement);
-                    \\                                        }
-                    \\                                    }
-                    \\                                }
-                    \\                            }
-                    \\                        }
-                    \\                    }
-                    \\                }
-                    \\            },
-                    \\            else => {},
-                    \\        }
-                    \\    }
-                    \\
-                    \\    // If we found requirements, generate build.zig
-                    \\    if (requirements.items.len > 0) {
-                    \\        std.debug.print("📦 Found {d} build requirement(s)\n", .{requirements.items.len});
-                    \\        try emit_build_zig.emitBuildZig(allocator, requirements.items, output_path);
-                    \\        std.debug.print("✓ Generated {s}\n", .{output_path});
-                    \\    }
-                    \\
-                    \\    requirements.deinit(allocator);
-                    \\
-                    \\    // Update context
-                    \\    var updated_ctx = ctx;
-                    \\    updated_ctx.passes_completed += 1;
-                    \\
-                    \\    return .{ .collected = .{ .ctx = updated_ctx } };
-                    ,
-                .annotations = &.{
-                },
-                .target = null,
-                .is_impl = false,
-                .is_pure = false,
-                .is_transitively_pure = false,
-                .location = .{ .line = 566, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" },
-                .module = "build",
-            } },        
-                }, .is_system = false, .annotations = &.{"comptime"}, .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/build.kz" } } },
         .{ .module_decl = .{ .logical_name = "std.optimizations.kernels", .canonical_path = "/Users/larsde/src/koru/koru_std/optimizations/kernels.kz", .items = &[_]Item{            
                                     .{ .host_line = .{ .content = "// Kernel Optimization Pass - Fuses kernel operations for performance", .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/optimizations/kernels.kz" }, .module = "kernels" } },            
                                     .{ .host_line = .{ .content = "// ==============================================================", .location = .{ .line = 2, .column = 0, .file = "/Users/larsde/src/koru/koru_std/optimizations/kernels.kz" }, .module = "kernels" } },            
@@ -10250,6 +10730,73 @@ pub const PROGRAM_AST = Program{
                                     .{ .host_line = .{ .content = "// - fn createNativeLoopNode(metadata: LoopMetadata) NativeLoop", .location = .{ .line = 63, .column = 0, .file = "/Users/larsde/src/koru/koru_std/optimizations/loops.kz" }, .module = "loops" } },            
                                     .{ .host_line = .{ .content = "// - fn transformAST(ctx: CompilerContext, transformations: []Transformation) *Program", .location = .{ .line = 64, .column = 0, .file = "/Users/larsde/src/koru/koru_std/optimizations/loops.kz" }, .module = "loops" } },        
                 }, .is_system = false, .annotations = &.{"comptime"}, .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/optimizations/loops.kz" } } },
+        .{ .module_decl = .{ .logical_name = "std.compiler_types", .canonical_path = "/Users/larsde/src/koru/koru_std/compiler_types.kz", .items = &[_]Item{            
+                                    .{ .host_line = .{ .content = "// NOTE: This module is marked ~[comptime] because CompilerContext contains", .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "// ast.Program pointers which are only available during compilation.", .location = .{ .line = 2, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "// If runtime code needs context, use a different type without AST dependencies.", .location = .{ .line = 3, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "// Dummy event to prevent auto-injection of compiler import (which would create circular dependency)", .location = .{ .line = 6, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .event_decl = EventDecl{
+                .path = .{ .module_qualifier = "std.compiler_types", .segments = &[_][]const u8{"__compiler_types_marker"} },
+                .input = Shape{ .fields = &[_]Field{
+                } },
+                .branches = &[_]Branch{
+                    Branch{
+                        .name = "done",
+                        .payload = Shape{ .fields = &[_]Field{
+                        } },
+                        .is_deferred = false,
+                        .is_optional = false,
+                        .annotations = &.{},
+                    },
+                },
+                .is_public = false,
+                .is_implicit_flow = false,
+                .annotations = &.{
+                },
+                .location = .{ .line = 9, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" },
+                .module = "compiler_types",
+                .is_pure = false,
+                .is_transitively_pure = false,
+            } },            
+                                    .{ .host_line = .{ .content = "const std = @import(\"std\");", .location = .{ .line = 10, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "// Import AST types (we'll use ast.Program and ast.Item directly to avoid conflicts)", .location = .{ .line = 12, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "const ast = @import(\"ast\");", .location = .{ .line = 13, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 15, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "// SHARED COMPILER TYPES - Used by both compiler and build", .location = .{ .line = 16, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 17, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "// These types are extracted to avoid circular dependencies:", .location = .{ .line = 18, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "// - compiler.kz needs to import build.kz (for build:collect)", .location = .{ .line = 19, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "// - build.kz needs CompilerContext type", .location = .{ .line = 20, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "// - Solution: Both import compiler_types.kz", .location = .{ .line = 21, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "pub const SourceLocation = struct {", .location = .{ .line = 23, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    file: []const u8,", .location = .{ .line = 24, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    line: u32,", .location = .{ .line = 25, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    column: u32,", .location = .{ .line = 26, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "};", .location = .{ .line = 27, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "pub const CompilerError = struct {", .location = .{ .line = 29, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    message: []const u8,", .location = .{ .line = 30, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    location: SourceLocation,", .location = .{ .line = 31, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "};", .location = .{ .line = 32, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "pub const CompilerWarning = struct {", .location = .{ .line = 34, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    message: []const u8,", .location = .{ .line = 35, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    location: SourceLocation,", .location = .{ .line = 36, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "};", .location = .{ .line = 37, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "pub const ErrorPolicy = enum {", .location = .{ .line = 39, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    abort_on_first,", .location = .{ .line = 40, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    collect_all,", .location = .{ .line = 41, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "};", .location = .{ .line = 42, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "pub const CompilerContext = struct {", .location = .{ .line = 44, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    ast: *const ast.Program,", .location = .{ .line = 45, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    original_ast: *const ast.Program,  // Unfiltered AST for metadata queries (TypeRegistry, etc.)", .location = .{ .line = 46, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    allocator: std.mem.Allocator,", .location = .{ .line = 47, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    errors: std.ArrayList(CompilerError),", .location = .{ .line = 48, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    warnings: std.ArrayList(CompilerWarning),", .location = .{ .line = 49, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    error_policy: ErrorPolicy,", .location = .{ .line = 50, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    current_pass: ?[]const u8,", .location = .{ .line = 51, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    passes_completed: u32,", .location = .{ .line = 52, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "    tap_registry: ?*@import(\"tap_registry\").TapRegistry,", .location = .{ .line = 53, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
+                                    .{ .host_line = .{ .content = "};", .location = .{ .line = 54, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },        
+                }, .is_system = false, .annotations = &.{"comptime"}, .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" } } },
         .{ .module_decl = .{ .logical_name = "std.template", .canonical_path = "/Users/larsde/src/koru/koru_std/template.kz", .items = &[_]Item{            
                                     .{ .host_line = .{ .content = "// Template Library - Code Pattern Templates for Transforms", .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/template.kz" }, .module = "template" } },            
                                     .{ .host_line = .{ .content = "//", .location = .{ .line = 2, .column = 0, .file = "/Users/larsde/src/koru/koru_std/template.kz" }, .module = "template" } },            
@@ -10469,85 +11016,22 @@ pub const PROGRAM_AST = Program{
                 .module = "template",
             } },        
                 }, .is_system = false, .annotations = &.{"comptime"}, .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/template.kz" } } },
-        .{ .module_decl = .{ .logical_name = "std.compiler_types", .canonical_path = "/Users/larsde/src/koru/koru_std/compiler_types.kz", .items = &[_]Item{            
-                                    .{ .host_line = .{ .content = "// NOTE: This module is marked ~[comptime] because CompilerContext contains", .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "// ast.Program pointers which are only available during compilation.", .location = .{ .line = 2, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "// If runtime code needs context, use a different type without AST dependencies.", .location = .{ .line = 3, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "// Dummy event to prevent auto-injection of compiler import (which would create circular dependency)", .location = .{ .line = 6, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .event_decl = EventDecl{
-                .path = .{ .module_qualifier = "std.compiler_types", .segments = &[_][]const u8{"__compiler_types_marker"} },
-                .input = Shape{ .fields = &[_]Field{
-                } },
-                .branches = &[_]Branch{
-                    Branch{
-                        .name = "done",
-                        .payload = Shape{ .fields = &[_]Field{
-                        } },
-                        .is_deferred = false,
-                        .is_optional = false,
-                        .annotations = &.{},
-                    },
-                },
-                .is_public = false,
-                .is_implicit_flow = false,
-                .annotations = &.{
-                },
-                .location = .{ .line = 8, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" },
-                .module = "compiler_types",
-                .is_pure = false,
-                .is_transitively_pure = false,
-            } },            
-                                    .{ .host_line = .{ .content = "const std = @import(\"std\");", .location = .{ .line = 9, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "// Import AST types (we'll use ast.Program and ast.Item directly to avoid conflicts)", .location = .{ .line = 11, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "const ast = @import(\"ast\");", .location = .{ .line = 12, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 14, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "// SHARED COMPILER TYPES - Used by both compiler and build", .location = .{ .line = 15, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "// ============================================================", .location = .{ .line = 16, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "// These types are extracted to avoid circular dependencies:", .location = .{ .line = 17, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "// - compiler.kz needs to import build.kz (for build:collect)", .location = .{ .line = 18, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "// - build.kz needs CompilerContext type", .location = .{ .line = 19, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "// - Solution: Both import compiler_types.kz", .location = .{ .line = 20, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "pub const SourceLocation = struct {", .location = .{ .line = 22, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    file: []const u8,", .location = .{ .line = 23, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    line: u32,", .location = .{ .line = 24, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    column: u32,", .location = .{ .line = 25, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "};", .location = .{ .line = 26, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "pub const CompilerError = struct {", .location = .{ .line = 28, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    message: []const u8,", .location = .{ .line = 29, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    location: SourceLocation,", .location = .{ .line = 30, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "};", .location = .{ .line = 31, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "pub const CompilerWarning = struct {", .location = .{ .line = 33, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    message: []const u8,", .location = .{ .line = 34, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    location: SourceLocation,", .location = .{ .line = 35, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "};", .location = .{ .line = 36, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "pub const ErrorPolicy = enum {", .location = .{ .line = 38, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    abort_on_first,", .location = .{ .line = 39, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    collect_all,", .location = .{ .line = 40, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "};", .location = .{ .line = 41, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "pub const CompilerContext = struct {", .location = .{ .line = 43, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    ast: *const ast.Program,", .location = .{ .line = 44, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    original_ast: *const ast.Program,  // Unfiltered AST for metadata queries (TypeRegistry, etc.)", .location = .{ .line = 45, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    allocator: std.mem.Allocator,", .location = .{ .line = 46, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    errors: std.ArrayList(CompilerError),", .location = .{ .line = 47, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    warnings: std.ArrayList(CompilerWarning),", .location = .{ .line = 48, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    error_policy: ErrorPolicy,", .location = .{ .line = 49, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    current_pass: ?[]const u8,", .location = .{ .line = 50, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    passes_completed: u32,", .location = .{ .line = 51, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "    tap_registry: ?*@import(\"tap_registry\").TapRegistry,", .location = .{ .line = 52, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },            
-                                    .{ .host_line = .{ .content = "};", .location = .{ .line = 53, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" }, .module = "compiler_types" } },        
-                }, .is_system = false, .annotations = &.{"comptime"}, .location = .{ .line = 1, .column = 0, .file = "/Users/larsde/src/koru/koru_std/compiler_types.kz" } } },
         .{ .flow = Flow{
             .invocation = Invocation{
-                .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"print", "ln"} },
+                .path = .{ .module_qualifier = "std.io", .segments = &[_][]const u8{"print", "blk"} },
                 .args = &[_]Arg{
-                    Arg{ .name = "expr", .value = "\"Hello, World!\"", .source_value = null, .expression_value = &CapturedExpression{
-                        .text = "\"Hello, World!\"",
-                        .location = .{ .line = 4, .column = 0, .file = "hello.kz" },
+                    Arg{ .name = "source", .value = "Hello, World!\n", .source_value = &Source{
+                        .text = 
+                            \\Hello, World!
+                            \\
+                            ,
+                        .location = .{ .line = 6, .column = 0, .file = "hello.kz" },
                         .scope = CapturedScope{
                             .bindings = &[_]ScopeBinding{
                             },
                         },
-                    } },
+                        .phantom_type = null,
+                    }, .expression_value = null },
                 },
                 .annotations = &.{
                 },
@@ -10723,11 +11207,14 @@ const log = @import("log");
 pub const CompilerEnv = struct {
     /// All compiler flags (for runtime checking)
     pub const flags = &[_][]const u8{
+        "build=macos",
     };
 
     /// Check if a compiler flag is set (comptime)
     pub fn hasFlag(comptime name: []const u8) bool {
-        _ = name;
+        inline for (flags) |flag| {
+            if (__koru_std.mem.eql(u8, name, flag)) return true;
+        }
         return false;
     }
 
@@ -10794,7 +11281,7 @@ const RuntimeEmitter = struct {
                 return r.code;
             },
             .@"error" => |e| {
-                __koru_std.debug.print("❌ Compiler coordination error: {s}\n", .{e.message});
+                __koru_std.debug.print("❌ Compiler coordination error: {s}\n", .{e});
                 return error.CompilerCoordinationFailed;
             },
         }

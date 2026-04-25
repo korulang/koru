@@ -27,15 +27,18 @@
 
 ```koru
 ~[
--comptime
--runtime
--optimize(level: 3)
--inline(threshold: 500)
--gpu(target: "metal", precision: "half")
+- comptime
+- runtime
+- optimize(level: 3)
+- inline(threshold: 500)
+- gpu(target: "metal", precision: "half")
 ] event complex {}
 ```
 
-**Bullet:** `-` character (markdown-style!)
+**Bullet:** `-`, `*`, or `+` character followed by a **space** — markdown-strict.
+Lines that don't match the bullet pattern are treated as **prose** and silently
+discarded by the parser. This makes annotation blocks usable as
+literate-programming micro-documents (see `310_040_literate_annotations`).
 
 **Produces SAME AST:**
 ```json
@@ -271,11 +274,11 @@ Parser doesn't care about nesting - it's all just a string!
 
 // Easy to scan
 ~[
--comptime
--runtime
--optimize(level: 3)
--inline(threshold: 500)
--gpu(target: "metal")
+- comptime
+- runtime
+- optimize(level: 3)
+- inline(threshold: 500)
+- gpu(target: "metal")
 ]
 ```
 
@@ -331,8 +334,8 @@ get_annotation(annotations, "optimize")
 **Phase 4:** Annotation-driven metaprogramming!
 ```koru
 ~[
--my_custom_pass(mode: "experimental")
--logging(level: "verbose", output: "/tmp/log")
+- my_custom_pass(mode: "experimental")
+- logging(level: "verbose", output: "/tmp/log")
 ]
 ```
 

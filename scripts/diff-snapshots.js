@@ -57,19 +57,29 @@ async function getCurrentState() {
 	// generate-status.js uses: totalTests, passedTests, etc.
 	// save-snapshot.js uses: summary { total, passed, etc. }
 	if (!data.summary && data.totalTests !== undefined) {
+		const inScope = data.inScopeTests ?? (data.totalTests - data.todoTests - data.skippedTests - data.brokenTests);
 		data.summary = {
 			total: data.totalTests,
+			inScope,
 			passed: data.passedTests,
 			failed: data.failedTests,
 			todo: data.todoTests,
 			skipped: data.skippedTests,
 			broken: data.brokenTests,
 			untested: data.untestedTests,
-			passRate: data.totalTests > 0 ? ((data.passedTests / data.totalTests) * 100).toFixed(1) : '0.0'
+			passRate: inScope > 0 ? ((data.passedTests / inScope) * 100).toFixed(1) : '0.0'
 		};
 		data.timestamp = data.generatedAt;
 		data.gitCommit = 'current';
 		data.commandFlags = '';
+	}
+
+	// Backfill inScope on old snapshots written before the field existed.
+	if (data.summary && data.summary.inScope === undefined) {
+		data.summary.inScope = data.summary.total - data.summary.todo - data.summary.skipped - data.summary.broken;
+		data.summary.passRate = data.summary.inScope > 0
+			? ((data.summary.passed / data.summary.inScope) * 100).toFixed(1)
+			: '0.0';
 	}
 
 	return data;
@@ -163,22 +173,22 @@ async function diffSnapshots(oldPathOrData, newPathOrData) {
 		console.log('═══════════════════════════════════════════════════════════');
 		console.log('');
 
-		console.log(`OLD: ${oldSnap.summary.passed}/${oldSnap.summary.total} passed (${oldSnap.summary.passRate}%)`);
+		console.log(`OLD: ${oldSnap.summary.passed}/${oldSnap.summary.inScope} in-scope passed (${oldSnap.summary.passRate}%)  [${oldSnap.summary.total} total]`);
 		console.log(`     ${formatTimestamp(oldSnap.timestamp)}, commit ${oldSnap.gitCommit}`);
 		console.log('');
 
-		console.log(`NEW: ${newSnap.summary.passed}/${newSnap.summary.total} passed (${newSnap.summary.passRate}%)`);
+		console.log(`NEW: ${newSnap.summary.passed}/${newSnap.summary.inScope} in-scope passed (${newSnap.summary.passRate}%)  [${newSnap.summary.total} total]`);
 		console.log(`     ${formatTimestamp(newSnap.timestamp)}, commit ${newSnap.gitCommit}`);
 		console.log('');
 
 		// Calculate net change
 		const passedDelta = newSnap.summary.passed - oldSnap.summary.passed;
-		const totalDelta = newSnap.summary.total - oldSnap.summary.total;
+		const totalDelta = newSnap.summary.inScope - oldSnap.summary.inScope;
 		const passRateDelta = (parseFloat(newSnap.summary.passRate) - parseFloat(oldSnap.summary.passRate)).toFixed(1);
 
 		const deltaSign = passedDelta >= 0 ? '+' : '';
 		const rateSign = passRateDelta >= 0 ? '+' : '';
-		console.log(`NET: ${deltaSign}${passedDelta} passed, ${deltaSign}${totalDelta} total (${rateSign}${passRateDelta}%)`);
+		console.log(`NET: ${deltaSign}${passedDelta} passed, ${deltaSign}${totalDelta} in-scope (${rateSign}${passRateDelta}%)`);
 		console.log('');
 
 		// Show regressions (most important!)

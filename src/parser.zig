@@ -607,18 +607,47 @@ pub const Parser = struct {
                         continue;
                     }
 
-                    // If there IS something after ], it's an item-level construct (event/proc/import)
-                    // Clean up annotations first
-                    for (result.annotations) |ann| {
-                        self.allocator.free(ann);
-                    }
-                    self.allocator.free(result.annotations);
-
-                    // For vertical syntax, the construct is on a different line, so we synthesize a new line
-                    // For inline syntax, the construct is on the SAME line, so just continue parsing this line
+                    // If there IS something after ], it's an item-level construct (event/proc/import).
+                    //
+                    // For vertical syntax, the construct text comes from result.remaining and we
+                    // need to re-attach the annotations as ~[ann1|ann2|...]{construct} so the
+                    // recursive parseKoruConstruct call sees them. Naively synthesizing
+                    // ~{remaining} (as an earlier version did) silently dropped annotations on
+                    // every vertical-block-with-construct-on-bracket-line, breaking 310_008's
+                    // verify.sh and 310_040 in ways the compile-only regression runner missed.
+                    //
+                    // For inline syntax, the construct is on the SAME line as the original
+                    // ~[a|b|c]construct, so we just fall through to normal parsing which sees
+                    // the annotations directly in the source.
                     if (used_vertical_syntax) {
-                        // Vertical: synthesize ~{remaining} and process it
-                        const synthetic_line = try std.fmt.allocPrint(self.allocator, "~{s}", .{result.remaining});
+                        // Build annotation string: [ann1|ann2|ann3]
+                        var ann_str = try std.ArrayList(u8).initCapacity(self.allocator, 64);
+                        defer ann_str.deinit(self.allocator);
+                        try ann_str.append(self.allocator, '[');
+                        for (result.annotations, 0..) |ann, i| {
+                            if (i > 0) try ann_str.append(self.allocator, '|');
+                            try ann_str.appendSlice(self.allocator, ann);
+                        }
+                        try ann_str.append(self.allocator, ']');
+
+                        // Now safe to free the parsed annotations — they're in ann_str
+                        for (result.annotations) |ann| {
+                            self.allocator.free(ann);
+                        }
+                        self.allocator.free(result.annotations);
+
+                        // Strip leading ~ from remaining if present (for events/procs); flow
+                        // calls won't have one. Then synthesize ~[ann1|ann2|...]construct.
+                        const remaining_no_tilde = if (result.remaining.len > 0 and result.remaining[0] == '~')
+                            (if (result.remaining.len > 1) result.remaining[1..] else "")
+                        else
+                            result.remaining;
+
+                        const synthetic_line = try std.fmt.allocPrint(
+                            self.allocator,
+                            "~{s}{s}",
+                            .{ ann_str.items, remaining_no_tilde },
+                        );
                         defer self.allocator.free(synthetic_line);
 
                         // Temporarily replace the line BEFORE current (which has the ]) with the synthetic line
@@ -646,8 +675,14 @@ pub const Parser = struct {
                         try items.append(self.allocator, item);
                         continue;
                     } else {
-                        // Inline: the construct is on the same line, so fall through to normal parsing
-                        // Don't continue here - let the code below handle it
+                        // Inline: the construct is on the same line, so fall through to normal
+                        // parsing which sees the original ~[a|b|c]construct text. Free the
+                        // duplicate annotations parsed by parseAnnotationBlock — the normal path
+                        // will re-parse them from the source line.
+                        for (result.annotations) |ann| {
+                            self.allocator.free(ann);
+                        }
+                        self.allocator.free(result.annotations);
                     }
                 }
 
@@ -751,6 +786,13 @@ pub const Parser = struct {
         remaining: []const u8,
     };
 
+    /// Markdown bullet markers — '-', '*', '+' all valid in a vertical
+    /// annotation block. Each bullet line is one flag; non-bullet lines are
+    /// prose, silently discarded.
+    fn isBulletMarker(c: u8) bool {
+        return c == '-' or c == '*' or c == '+';
+    }
+
     /// Parse annotation block supporting both inline and vertical syntax:
     /// - Inline: [a|b|c] on same line
     /// - Vertical: [\n-a\n-b\n-c\n] across multiple lines
@@ -800,7 +842,7 @@ pub const Parser = struct {
             if (std.mem.indexOf(u8, trimmed, "]")) |bracket_idx| {
                 // Found closing bracket
                 // Check if there's a bullet annotation on this line before the ]
-                if (trimmed.len > 0 and trimmed[0] == '-') {
+                if (trimmed.len > 0 and isBulletMarker(trimmed[0])) {
                     const ann_content = lexer.trim(trimmed[1..bracket_idx]); // Skip the - and content after ]
                     if (ann_content.len > 0) {
                         try annotations.append(self.allocator, try self.allocator.dupe(u8, ann_content));
@@ -814,9 +856,14 @@ pub const Parser = struct {
                 };
             }
 
-            // Check if line starts with - (bullet annotation)
-            if (trimmed.len > 0 and trimmed[0] == '-') {
-                const ann_content = lexer.trim(trimmed[1..]); // Skip the -
+            // Check if line starts with a markdown bullet marker (-, *, +)
+            // — this is a flag entry. Anything else on its own line is prose,
+            // silently discarded by the parser. The annotation block is a
+            // markdown buffer where bullets are canonical flags and prose is
+            // human rationale. Discipline (why-not-what, no double-definitions)
+            // is held in docs, not enforced by the parser.
+            if (trimmed.len > 1 and isBulletMarker(trimmed[0]) and (trimmed[1] == ' ' or trimmed[1] == '\t')) {
+                const ann_content = lexer.trim(trimmed[1..]); // Skip the bullet marker
                 if (ann_content.len > 0) {
                     try annotations.append(self.allocator, try self.allocator.dupe(u8, ann_content));
                 }
@@ -824,16 +871,9 @@ pub const Parser = struct {
                 continue;
             }
 
-            // If we get here: line is not empty, not comment, not -, not ]
-            // This is INVALID syntax in vertical annotation block!
-            try self.reporter.addError(
-                .PARSE003,
-                self.current + 1, // Convert to 1-based line number
-                1,
-                "invalid line in vertical annotation block - expected '-' bullet or ']'",
-                .{},
-            );
-            return error.ParseError;
+            // Prose line — silently discarded.
+            self.current += 1;
+            continue;
         }
 
         // Ran out of lines without finding ]

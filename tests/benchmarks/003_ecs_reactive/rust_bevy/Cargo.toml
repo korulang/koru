@@ -1,0 +1,9 @@
+[package]
+name = "bevy_ecs_reactive_bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy_ecs = { version = "0.18.1", features = ["multi_threaded"] }
+

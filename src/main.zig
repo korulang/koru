@@ -1091,7 +1091,10 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
     // Import AST types as an alias to avoid shadowing/ambiguity
     try code_emitter.write("const __koru_std = @import(\"std\");\n");
     try code_emitter.write("const __koru_ast = @import(\"ast\");\n");
-    try code_emitter.write("const log = @import(\"log\");\n\n");
+    try code_emitter.write("const log = @import(\"log\");\n");
+    // emitter_helpers provides the variant registry (getVariant) so call_handler_*
+    // functions can dispatch transforms to handler__<variant> when a variant is registered.
+    try code_emitter.write("const __koru_emitter_helpers = @import(\"emitter_helpers\");\n\n");
 
     // Add dumpAST helper for observability (backend_output_emitted.zig version)
     try code_emitter.write(
@@ -1174,7 +1177,43 @@ const TransformEvent = struct {
     has_failed: bool, // Event has failed{ error: []const u8 } branch
     failed_is_identity: bool, // failed branch is identity (just []const u8, not struct)
     has_compile_error: bool, // Event has compile_error{ message: []const u8 } branch
+    /// Variant target names (e.g. "raw_posix") for ~proc <event>|<variant> declarations.
+    /// Each variant gets its own stub function call_transform_<stub>__<variant> that calls
+    /// handler.handler__<variant>. The dispatcher selects which variant stub to call based
+    /// on flow.invocation.variant or the build-time variant registry.
+    variant_targets: []const []const u8 = &[_][]const u8{},
 };
+
+/// Walk items finding proc_decls whose path matches the given segments AND have a non-null,
+/// non-"zig" target. Used to collect variant procs for transform-event dispatch.
+fn collectVariantTargetsForEventPath(
+    allocator: std.mem.Allocator,
+    items: []const ast.Item,
+    segments: []const []const u8,
+) ![]const []const u8 {
+    var found = std.ArrayList([]const u8){};
+    errdefer found.deinit(allocator);
+
+    for (items) |item| {
+        if (item == .proc_decl) {
+            const proc = item.proc_decl;
+            if (proc.target == null) continue;
+            if (std.mem.eql(u8, proc.target.?, "zig")) continue;
+            if (proc.path.segments.len != segments.len) continue;
+            var matches = true;
+            for (proc.path.segments, 0..) |segment, i| {
+                if (!std.mem.eql(u8, segment, segments[i])) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                try found.append(allocator, try allocator.dupe(u8, proc.target.?));
+            }
+        }
+    }
+    return try found.toOwnedSlice(allocator);
+}
 
 /// CommandInfo stores CLI command metadata for [comptime|command] events
 /// Commands run instead of normal compilation when invoked via `koruc file.kz <command>`
@@ -1755,6 +1794,10 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
                 const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
 
+                // Collect variant targets across the whole program (top-level event, so
+                // variants may live in any module that implements it).
+                const variant_targets_top = try collectVariantTargetsForEventPath(allocator, source_file.items, event_decl.path.segments);
+
                 transform_events[transform_count] = .{
                     .stub_name = stub_name,
                     .match_name = match_name,
@@ -1775,6 +1818,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                     .returns_program = returns_program,
                     .has_failed = has_failed,
                     .failed_is_identity = failed_is_identity,
+                    .variant_targets = variant_targets_top,
                 };
                 transform_count += 1;
             }
@@ -1915,6 +1959,9 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
                         const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
 
+                        // Collect variant targets from the same module (variants live alongside the event).
+                        const variant_targets_mod = try collectVariantTargetsForEventPath(allocator, module.items, event_decl.path.segments);
+
                         transform_events[transform_count] = .{
                             .stub_name = stub_name,
                             .match_name = match_name,
@@ -1935,6 +1982,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                             .returns_program = returns_program,
                             .has_failed = has_failed,
                             .failed_is_identity = failed_is_identity,
+                            .variant_targets = variant_targets_mod,
                         };
                         transform_count += 1;
                     }
@@ -1952,6 +2000,8 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             if (event.module_path) |mp| {
                 allocator.free(mp);
             }
+            for (event.variant_targets) |t| allocator.free(t);
+            allocator.free(event.variant_targets);
         }
     }
 
@@ -2187,7 +2237,41 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
             // Call handler and handle result
             try code_emitter.write("        };\n");
             if (event.returns_program) {
-                try code_emitter.write("        const result = handler.handler(input);\n");
+                if (event.variant_targets.len > 0) {
+                    // Variant dispatch: select handler__<variant> based on
+                    // explicit invocation.variant or build-time registry lookup.
+                    var canonical_buf: [256]u8 = undefined;
+                    var canonical_len: usize = 0;
+                    if (event.module_path) |mp| {
+                        const stripped = if (std.mem.startsWith(u8, mp, "koru_")) mp[5..] else mp;
+                        @memcpy(canonical_buf[canonical_len..canonical_len + stripped.len], stripped);
+                        canonical_len += stripped.len;
+                        canonical_buf[canonical_len] = ':';
+                        canonical_len += 1;
+                    }
+                    @memcpy(canonical_buf[canonical_len..canonical_len + event.match_name.len], event.match_name);
+                    canonical_len += event.match_name.len;
+                    const canonical_name = canonical_buf[0..canonical_len];
+
+                    try code_emitter.write("        const __variant_opt: ?[]const u8 = blk: {\n");
+                    try code_emitter.write("            if (invocation.variant) |v| break :blk v;\n");
+                    const lookup_line = try std.fmt.bufPrint(&buf, "            if (__koru_emitter_helpers.getVariant(\"{s}\")) |v| break :blk v;\n", .{canonical_name});
+                    try code_emitter.write(lookup_line);
+                    try code_emitter.write("            break :blk null;\n");
+                    try code_emitter.write("        };\n");
+
+                    try code_emitter.write("        const result = if (__variant_opt) |__v| (");
+                    for (event.variant_targets) |target| {
+                        const mangled = try emitter_helpers.mangleVariant(allocator, target);
+                        defer allocator.free(mangled);
+                        const branch = try std.fmt.bufPrint(&buf, "if (__koru_std.mem.eql(u8, __v, \"{s}\")) handler.handler__{s}(input) else ", .{ target, mangled });
+                        try code_emitter.write(branch);
+                    }
+                    try code_emitter.write("handler.handler(input))");
+                    try code_emitter.write(" else handler.handler(input);\n");
+                } else {
+                    try code_emitter.write("        const result = handler.handler(input);\n");
+                }
                 try code_emitter.write("        return switch (result) {\n");
                 try code_emitter.write("            .transformed => |t| t,\n");
                 if (event.has_failed) {
@@ -5603,6 +5687,26 @@ pub fn main() !void {
                 arg;
 
             try compiler_config.addFlag(flag_name);
+        }
+    }
+
+    // Auto-inject build=<host_os> if no build=<os> flag was passed.
+    // This makes os-keyed variant selection (e.g. ~[build(macos)]) work without
+    // requiring the user to pass --build=<os> on every invocation. Cross-compilation
+    // can still override by passing --build=<other_os> explicitly.
+    {
+        var has_build_os = false;
+        for (compiler_config.flags.items) |f| {
+            if (std.mem.startsWith(u8, f, "build=")) {
+                has_build_os = true;
+                break;
+            }
+        }
+        if (!has_build_os) {
+            const tag_name = @tagName(@import("builtin").os.tag);
+            const flag = try std.fmt.allocPrint(allocator, "build={s}", .{tag_name});
+            defer allocator.free(flag);
+            try compiler_config.addFlag(flag);
         }
     }
 

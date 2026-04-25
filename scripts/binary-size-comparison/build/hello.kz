@@ -1,2 +1,4 @@
 ~import "$std/io"
-~std.io:print.ln("Hello, World!")
+~std.io:print.blk {
+    Hello, World!
+}

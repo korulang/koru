@@ -6,6 +6,8 @@
 
 ~[comptime|runtime]
 
+~import "$std/build"
+
 const std = @import("std");
 
 // Print text without newline
@@ -955,3 +957,429 @@ const std = @import("std");
         return .{ .transformed = program };
     }
 }
+
+// ============================================================================
+// PRINT.BLK|RAW_POSIX - raw I/O fast path variant for linux/macos
+// ============================================================================
+// Selected via ~[build(linux)] / ~[build(macos)] std.build:variants below.
+// Emits inline posix.write calls when all placeholders use :d or :s specifiers.
+// Falls back to std.debug.print only when complex format specifiers (:any, :f)
+// are used. The raw path produces ~1,728 B ELF binaries vs ~7 KB for stdlib.
+~proc print.blk|raw_posix {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    const isZigKeyword = struct {
+        fn check(word: []const u8) bool {
+            const keywords = [_][]const u8{
+                "error", "type", "async", "await", "suspend", "resume",
+                "try", "catch", "if", "else", "switch", "while",
+                "for", "break", "continue", "return", "defer", "errdefer",
+                "test", "pub", "export", "extern", "packed", "inline",
+                "noinline", "comptime", "nosuspend", "volatile", "allowzero",
+                "align", "linksection", "callconv", "noalias",
+                "struct", "enum", "union", "opaque", "fn", "const",
+                "var", "anyframe", "anytype", "anyerror", "unreachable",
+                "undef", "null", "true", "false", "and", "or",
+                "orelse", "threadlocal",
+            };
+            for (keywords) |kw| {
+                if (std.mem.eql(u8, word, kw)) return true;
+            }
+            return false;
+        }
+    }.check;
+
+    const appendEscapedPath = struct {
+        fn append(buf: *std.ArrayList(u8), alloc: std.mem.Allocator, path: []const u8) void {
+            var start: usize = 0;
+            var pos: usize = 0;
+            var is_first = true;
+
+            while (pos <= path.len) {
+                if (pos == path.len or path[pos] == '.') {
+                    const segment = path[start..pos];
+                    if (!is_first) {
+                        buf.append(alloc, '.') catch unreachable;
+                        if (isZigKeyword(segment)) {
+                            buf.appendSlice(alloc, "@\"") catch unreachable;
+                            buf.appendSlice(alloc, segment) catch unreachable;
+                            buf.append(alloc, '"') catch unreachable;
+                        } else {
+                            buf.appendSlice(alloc, segment) catch unreachable;
+                        }
+                    } else {
+                        buf.appendSlice(alloc, segment) catch unreachable;
+                    }
+                    is_first = false;
+                    start = pos + 1;
+                }
+                pos += 1;
+            }
+        }
+    }.append;
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{ .transformed = program };
+
+    const is_top_level = (invocation == &flow.invocation);
+
+    var format_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+    var args_buf = std.ArrayList(u8).initCapacity(allocator, 128) catch unreachable;
+    var i: usize = 0;
+    var first_arg = true;
+
+    // Raw I/O state: two parallel buffers — std.debug.print fallback and raw write path.
+    var needs_fmt = false;
+    var missing_spec: ?[]const u8 = null;
+    var raw_buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+    var literal_run = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+
+    const flushLiteralFn = struct {
+        fn flush(rb: *std.ArrayList(u8), lr: *std.ArrayList(u8), alloc: std.mem.Allocator) void {
+            if (lr.items.len > 0) {
+                rb.appendSlice(alloc, "__kio.__kz_w(\"") catch unreachable;
+                rb.appendSlice(alloc, lr.items) catch unreachable;
+                rb.appendSlice(alloc, "\"); ") catch unreachable;
+                lr.clearRetainingCapacity();
+            }
+        }
+    }.flush;
+
+    // Inline __kio helper struct: raw posix.write + hand-coded i64 formatter.
+    // fd=2 (stderr) matches std.debug.print's destination so semantics align.
+    const raw_io_prefix =
+        "//@koru:inline_stmt\n{ const __kio = struct { " ++
+        "fn __kz_w(__kz_b: []const u8) void { _ = @import(\"std\").posix.write(2, __kz_b) catch {}; } " ++
+        "fn __kz_wd(__kz_v: i64) void { " ++
+        "var _buf: [20]u8 = undefined; var _n: usize = 0; var _v: u64 = undefined; " ++
+        "if (__kz_v < 0) { __kz_w(\"-\"); _v = @intCast(-(__kz_v + 1)); _v += 1; " ++
+        "} else { _v = @intCast(__kz_v); } " ++
+        "if (_v == 0) { _buf[0] = '0'; _n = 1; } else { " ++
+        "while (_v > 0) : (_n += 1) { _buf[_n] = @intCast('0' + _v % 10); _v /= 10; } " ++
+        "var _lo: usize = 0; var _hi = _n - 1; " ++
+        "while (_lo < _hi) { const _t = _buf[_lo]; _buf[_lo] = _buf[_hi]; _buf[_hi] = _t; _lo += 1; _hi -= 1; } " ++
+        "} __kz_w(_buf[0.._n]); } }; ";
+
+    const content = source.text;
+
+    while (i < content.len) {
+        if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '%') {
+            const tag_start = i + 2;
+            var ws_start = tag_start;
+            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+
+            if (ws_start + 3 <= content.len and std.mem.eql(u8, content[ws_start..ws_start + 3], "if ")) {
+                const var_start = ws_start + 3;
+                var var_pos = var_start;
+                while (var_pos < content.len and (content[var_pos] == ' ' or content[var_pos] == '\t')) : (var_pos += 1) {}
+
+                var var_end = var_pos;
+                while (var_end < content.len and content[var_end] != ' ' and content[var_end] != '\t' and content[var_end] != '%') : (var_end += 1) {}
+                const cond_var = content[var_pos..var_end];
+
+                var tag_end = var_end;
+                while (tag_end + 1 < content.len and !(content[tag_end] == '%' and content[tag_end + 1] == '}')) : (tag_end += 1) {}
+
+                if (tag_end + 1 < content.len) {
+                    const body_start = tag_end + 2;
+                    const endif_marker = "{% endif %}";
+                    if (std.mem.indexOf(u8, content[body_start..], endif_marker)) |endif_offset| {
+                        const body_end = body_start + endif_offset;
+                        const body_content = content[body_start..body_end];
+
+                        format_buf.appendSlice(allocator, "{s}") catch unreachable;
+
+                        if (!first_arg) {
+                            args_buf.appendSlice(allocator, ", ") catch unreachable;
+                        }
+                        args_buf.appendSlice(allocator, "if (") catch unreachable;
+                        appendEscapedPath(&args_buf, allocator, cond_var);
+                        args_buf.appendSlice(allocator, ") \"") catch unreachable;
+                        for (body_content) |c| {
+                            switch (c) {
+                                '"' => args_buf.appendSlice(allocator, "\\\"") catch unreachable,
+                                '\\' => args_buf.appendSlice(allocator, "\\\\") catch unreachable,
+                                '\n' => args_buf.appendSlice(allocator, "\\n") catch unreachable,
+                                '\r' => args_buf.appendSlice(allocator, "\\r") catch unreachable,
+                                '\t' => args_buf.appendSlice(allocator, "\\t") catch unreachable,
+                                else => args_buf.append(allocator, c) catch unreachable,
+                            }
+                        }
+                        args_buf.appendSlice(allocator, "\" else \"\"") catch unreachable;
+                        first_arg = false;
+
+                        flushLiteralFn(&raw_buf, &literal_run, allocator);
+                        raw_buf.appendSlice(allocator, "__kio.__kz_w(if (") catch unreachable;
+                        appendEscapedPath(&raw_buf, allocator, cond_var);
+                        raw_buf.appendSlice(allocator, ") \"") catch unreachable;
+                        for (body_content) |c| {
+                            switch (c) {
+                                '"' => raw_buf.appendSlice(allocator, "\\\"") catch unreachable,
+                                '\\' => raw_buf.appendSlice(allocator, "\\\\") catch unreachable,
+                                '\n' => raw_buf.appendSlice(allocator, "\\n") catch unreachable,
+                                '\r' => raw_buf.appendSlice(allocator, "\\r") catch unreachable,
+                                '\t' => raw_buf.appendSlice(allocator, "\\t") catch unreachable,
+                                else => raw_buf.append(allocator, c) catch unreachable,
+                            }
+                        }
+                        raw_buf.appendSlice(allocator, "\" else \"\"); ") catch unreachable;
+
+                        i = body_end + endif_marker.len;
+                        continue;
+                    }
+                }
+            }
+            switch (content[i]) {
+                '"' => {
+                    format_buf.appendSlice(allocator, "\\\"") catch unreachable;
+                    literal_run.appendSlice(allocator, "\\\"") catch unreachable;
+                },
+                '\\' => {
+                    format_buf.appendSlice(allocator, "\\\\") catch unreachable;
+                    literal_run.appendSlice(allocator, "\\\\") catch unreachable;
+                },
+                '\n' => {
+                    format_buf.appendSlice(allocator, "\\n") catch unreachable;
+                    literal_run.appendSlice(allocator, "\\n") catch unreachable;
+                },
+                '\r' => {
+                    format_buf.appendSlice(allocator, "\\r") catch unreachable;
+                    literal_run.appendSlice(allocator, "\\r") catch unreachable;
+                },
+                '\t' => {
+                    format_buf.appendSlice(allocator, "\\t") catch unreachable;
+                    literal_run.appendSlice(allocator, "\\t") catch unreachable;
+                },
+                else => {
+                    format_buf.append(allocator, content[i]) catch unreachable;
+                    literal_run.append(allocator, content[i]) catch unreachable;
+                },
+            }
+            i += 1;
+        }
+        else if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '{') {
+            const placeholder_start = i + 2;
+            var ws_start = placeholder_start;
+            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+
+            var j = ws_start;
+            while (j + 1 < content.len and !(content[j] == '}' and content[j + 1] == '}')) : (j += 1) {}
+
+            if (j + 1 < content.len) {
+                var ws_end = j;
+                while (ws_end > ws_start and (content[ws_end - 1] == ' ' or content[ws_end - 1] == '\t')) : (ws_end -= 1) {}
+
+                const placeholder = content[ws_start..ws_end];
+                var var_name: []const u8 = placeholder;
+                var format_spec: []const u8 = "any";
+                var has_spec = false;
+
+                if (std.mem.indexOf(u8, placeholder, ":")) |colon_pos| {
+                    var_name = placeholder[0..colon_pos];
+                    format_spec = placeholder[colon_pos + 1..];
+                    has_spec = true;
+                }
+
+                if (!has_spec and missing_spec == null) {
+                    missing_spec = placeholder;
+                }
+
+                const zig_fmt_spec_blk = if (std.mem.eql(u8, format_spec, "f")) "" else format_spec;
+                format_buf.append(allocator, '{') catch unreachable;
+                format_buf.appendSlice(allocator, zig_fmt_spec_blk) catch unreachable;
+                format_buf.append(allocator, '}') catch unreachable;
+
+                if (!first_arg) {
+                    args_buf.appendSlice(allocator, ", ") catch unreachable;
+                }
+                appendEscapedPath(&args_buf, allocator, var_name);
+                first_arg = false;
+
+                // Anything other than :d or :s requires std.fmt — fall back.
+                if (!std.mem.eql(u8, format_spec, "d") and !std.mem.eql(u8, format_spec, "s")) {
+                    needs_fmt = true;
+                }
+
+                flushLiteralFn(&raw_buf, &literal_run, allocator);
+                if (std.mem.eql(u8, format_spec, "d")) {
+                    raw_buf.appendSlice(allocator, "__kio.__kz_wd(@as(i64, @intCast(") catch unreachable;
+                    appendEscapedPath(&raw_buf, allocator, var_name);
+                    raw_buf.appendSlice(allocator, "))); ") catch unreachable;
+                } else if (std.mem.eql(u8, format_spec, "s")) {
+                    raw_buf.appendSlice(allocator, "__kio.__kz_w(") catch unreachable;
+                    appendEscapedPath(&raw_buf, allocator, var_name);
+                    raw_buf.appendSlice(allocator, "); ") catch unreachable;
+                }
+
+                i = j + 2;
+            } else {
+                switch (content[i]) {
+                    '"' => {
+                        format_buf.appendSlice(allocator, "\\\"") catch unreachable;
+                        literal_run.appendSlice(allocator, "\\\"") catch unreachable;
+                    },
+                    '\\' => {
+                        format_buf.appendSlice(allocator, "\\\\") catch unreachable;
+                        literal_run.appendSlice(allocator, "\\\\") catch unreachable;
+                    },
+                    '\n' => {
+                        format_buf.appendSlice(allocator, "\\n") catch unreachable;
+                        literal_run.appendSlice(allocator, "\\n") catch unreachable;
+                    },
+                    '\r' => {
+                        format_buf.appendSlice(allocator, "\\r") catch unreachable;
+                        literal_run.appendSlice(allocator, "\\r") catch unreachable;
+                    },
+                    '\t' => {
+                        format_buf.appendSlice(allocator, "\\t") catch unreachable;
+                        literal_run.appendSlice(allocator, "\\t") catch unreachable;
+                    },
+                    else => {
+                        format_buf.append(allocator, content[i]) catch unreachable;
+                        literal_run.append(allocator, content[i]) catch unreachable;
+                    },
+                }
+                i += 1;
+            }
+        } else {
+            switch (content[i]) {
+                '"' => {
+                    format_buf.appendSlice(allocator, "\\\"") catch unreachable;
+                    literal_run.appendSlice(allocator, "\\\"") catch unreachable;
+                },
+                '\\' => {
+                    format_buf.appendSlice(allocator, "\\\\") catch unreachable;
+                    literal_run.appendSlice(allocator, "\\\\") catch unreachable;
+                },
+                '\n' => {
+                    format_buf.appendSlice(allocator, "\\n") catch unreachable;
+                    literal_run.appendSlice(allocator, "\\n") catch unreachable;
+                },
+                '\r' => {
+                    format_buf.appendSlice(allocator, "\\r") catch unreachable;
+                    literal_run.appendSlice(allocator, "\\r") catch unreachable;
+                },
+                '\t' => {
+                    format_buf.appendSlice(allocator, "\\t") catch unreachable;
+                    literal_run.appendSlice(allocator, "\\t") catch unreachable;
+                },
+                else => {
+                    format_buf.append(allocator, content[i]) catch unreachable;
+                    literal_run.append(allocator, content[i]) catch unreachable;
+                },
+            }
+            i += 1;
+        }
+    }
+
+    if (format_buf.items.len < 2 or
+        format_buf.items[format_buf.items.len - 2] != '\\' or
+        format_buf.items[format_buf.items.len - 1] != 'n')
+    {
+        format_buf.appendSlice(allocator, "\\n") catch unreachable;
+        literal_run.appendSlice(allocator, "\\n") catch unreachable;
+    }
+
+    const inline_code = if (missing_spec) |placeholder|
+        std.fmt.allocPrint(
+            allocator,
+            "@compileError(\"std.io:print.blk: '{{{{ {s} }}}}' requires a format specifier (:d, :s, :f, or :any)\");",
+            .{placeholder}
+        ) catch unreachable
+    else if (needs_fmt)
+        std.fmt.allocPrint(
+            allocator,
+            "@import(\"std\").debug.print(\"{s}\", .{{{s}}});",
+            .{ format_buf.items, args_buf.items }
+        ) catch unreachable
+    else blk: {
+        flushLiteralFn(&raw_buf, &literal_run, allocator);
+        var code = std.ArrayList(u8).initCapacity(allocator, raw_buf.items.len + 1024) catch unreachable;
+        code.appendSlice(allocator, raw_io_prefix) catch unreachable;
+        code.appendSlice(allocator, raw_buf.items) catch unreachable;
+        code.appendSlice(allocator, "}") catch unreachable;
+        break :blk code.items;
+    };
+
+    if (is_top_level) {
+        const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
+        impl_segments[0] = allocator.dupe(u8, "print") catch unreachable;
+        impl_segments[1] = allocator.dupe(u8, "blk.impl") catch unreachable;
+        const impl_path = ast.DottedPath{
+            .module_qualifier = flow.invocation.path.module_qualifier,
+            .segments = impl_segments,
+        };
+
+        const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+        for (flow.invocation.annotations, 0..) |ann, idx| {
+            new_inv_annotations[idx] = ann;
+        }
+        new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+        const new_invocation = ast.Invocation{
+            .path = impl_path,
+            .args = flow.invocation.args,
+            .annotations = new_inv_annotations,
+            .inserted_by_tap = flow.invocation.inserted_by_tap,
+            .from_opaque_tap = flow.invocation.from_opaque_tap,
+        };
+
+        const transformed_flow = ast.Flow{
+            .invocation = new_invocation,
+            .continuations = flow.continuations,
+            .annotations = flow.annotations,
+            .pre_label = flow.pre_label,
+            .post_label = flow.post_label,
+            .super_shape = flow.super_shape,
+            .inline_body = inline_code,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
+            .location = flow.location,
+            .module = flow.module,
+            .impl_of = flow.impl_of,
+        };
+
+        const new_item = ast.Item{ .flow = transformed_flow };
+
+        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = result };
+        }
+        return .{ .transformed = program };
+    } else {
+        const new_node = ast.Node{ .inline_code = inline_code };
+        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(allocator, program, invocation, new_node) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = result };
+        }
+        return .{ .transformed = program };
+    }
+}
+
+// ============================================================================
+// VARIANT REGISTRATION - Platform-specific dispatch for print.blk
+// ============================================================================
+// On linux/macos, route std.io:print.blk → raw_posix variant (raw posix.write).
+// On windows, the bare ~proc print.blk (std.debug.print) is used by default.
+// build=<host_os> is auto-injected by koruc; users can override with --build=<other>.
+
+~[build(linux)]std.build:variants {
+    "std.io:print.blk": "raw_posix"
+}
+| configured _ |> _
+| skipped _ |> _
+| invalid_event _ |> _
+
+~[build(macos)]std.build:variants {
+    "std.io:print.blk": "raw_posix"
+}
+| configured _ |> _
+| skipped _ |> _
+| invalid_event _ |> _

@@ -56,7 +56,9 @@ C_FLAGS="-target x86_64-linux-musl -Oz -static -s -fno-unwind-tables -Wl,-z,nore
 #############################################
 cat > hello.kz << 'EOF'
 ~import "$std/io"
-~std.io:print.ln("Hello, World!")
+~std.io:print.blk {
+    Hello, World!
+}
 EOF
 
 echo "Building Koru..."
@@ -70,7 +72,7 @@ KORU_SIZE=$(ls -la hello_koru | awk '{print $5}')
 cat > hello_zig_posix.zig << 'EOF'
 const std = @import("std");
 pub fn main() void {
-    _ = std.posix.write(1, "Hello, World!\n") catch {};
+    _ = std.posix.write(2, "Hello, World!\n") catch {};
 }
 EOF
 
@@ -113,7 +115,7 @@ C_PRINTF_SIZE=$(ls -la hello_c_printf | awk '{print $5}')
 cat > hello_c_write.c << 'EOF'
 #include <unistd.h>
 int main() {
-    write(1, "Hello, World!\n", 14);
+    write(2, "Hello, World!\n", 14);
     return 0;
 }
 EOF
@@ -168,7 +170,7 @@ echo "=============================================="
 echo ""
 echo "| Language | Binary Size | vs Koru | Notes |"
 echo "|----------|-------------|---------|-------|"
-printf "| **Koru** | **%'d B** | **1.0x** | string interpolation, compiles to posix.write |\n" "$KORU_SIZE"
+printf "| **Koru** | **%'d B** | **1.0x** | print.blk raw_posix transform, compiles to posix.write |\n" "$KORU_SIZE"
 printf "| Zig (posix.write) | %'d B | %.1fx | raw syscall, same as Koru output |\n" "$ZIG_POSIX_SIZE" "$(echo "scale=1; $ZIG_POSIX_SIZE / $KORU_SIZE" | bc)"
 printf "| C (write, musl) | %'d B | %.1fx | raw syscall |\n" "$C_WRITE_SIZE" "$(echo "scale=1; $C_WRITE_SIZE / $KORU_SIZE" | bc)"
 printf "| C (printf, musl) | %'d B | %.1fx | pulls in stdio formatting |\n" "$C_PRINTF_SIZE" "$(echo "scale=1; $C_PRINTF_SIZE / $KORU_SIZE" | bc)"

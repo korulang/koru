@@ -1,0 +1,35 @@
+// Test 210_046: Implicit Expression with Semicolon
+// Validates that semicolons inside an Expression parameter are captured as
+// part of the opaque text — NOT treated as parser-level separators.
+//
+// Background: when a DSL author wants multi-part call-site syntax for a
+// keyword-like Expression, the convention is to use ';' inside the Expression
+// (which the parser captures verbatim), letting ',' remain available as the
+// parser-level argument separator. The parser is hypothesised to treat
+// implicit Expression as opaque text, splitting only on top-level commas with
+// brace/paren counting. This test confirms that hypothesis.
+
+const std = @import("std");
+
+~[comptime|transform]event make_kiss { expr: Expression, program: *const Program, allocator: std.mem.Allocator }
+| transformed *const Program
+
+~proc make_kiss {
+    std.debug.print("Captured: '{s}'\n", .{expr});
+    return .{ .transformed = program };
+}
+
+// Case 1: single positional Expression containing a semicolon.
+// No top-level comma => one arg => entire text captured verbatim.
+~make_kiss(Claude -> Codex; because why not)
+| transformed _ |> _
+
+// Case 2: multi-part DSL using ';' as the in-Expression separator.
+~make_kiss(a -> b; c -> d; e -> f)
+| transformed _ |> _
+
+// Case 3: nested parens with commas inside, semicolons at the top of the
+// Expression. Inner commas must be ignored (brace-counting); outer semicolons
+// are captured verbatim.
+~make_kiss(foo(x, y); bar(p, q))
+| transformed _ |> _

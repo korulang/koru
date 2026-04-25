@@ -49,9 +49,13 @@ async function loadFromSnapshot() {
 	const snap = JSON.parse(raw);
 	const { summary, categories, timestamp } = snap;
 
+	// Backfill inScope for older snapshots written before the field existed.
+	const inScope = summary.inScope ?? (summary.total - summary.todo - summary.skipped - summary.broken);
+
 	return {
 		categories,
 		totalTests: summary.total,
+		inScopeTests: inScope,
 		passedTests: summary.passed,
 		failedTests: summary.failed,
 		todoTests: summary.todo,
@@ -156,14 +160,20 @@ async function loadFromFilesystem() {
 
 	const count = (status) => categories.reduce((s, c) => s + c.tests.filter(t => t.status === status).length, 0);
 
+	const totalTests = allTests.length;
+	const todoTests = count('todo');
+	const skippedTests = count('skipped');
+	const brokenTests = count('broken');
+
 	return {
 		categories,
-		totalTests: allTests.length,
+		totalTests,
+		inScopeTests: totalTests - todoTests - skippedTests - brokenTests,
 		passedTests: count('success'),
 		failedTests: count('failure'),
-		todoTests: count('todo'),
-		skippedTests: count('skipped'),
-		brokenTests: count('broken'),
+		todoTests,
+		skippedTests,
+		brokenTests,
 		untestedTests: count('untested'),
 		generatedAt: new Date().toISOString(),
 		fromFilesystem: true,
@@ -198,7 +208,7 @@ async function generateStatus() {
 }
 
 function outputCLI(data) {
-	const { categories, totalTests, passedTests, failedTests, todoTests, skippedTests, brokenTests, untestedTests, generatedAt, fromFilesystem } = data;
+	const { categories, totalTests, inScopeTests, passedTests, failedTests, todoTests, skippedTests, brokenTests, untestedTests, generatedAt, fromFilesystem } = data;
 
 	console.log('═══════════════════════════════════════════════════════════');
 	console.log('KORU REGRESSION TEST STATUS');
@@ -207,23 +217,41 @@ function outputCLI(data) {
 	console.log('═══════════════════════════════════════════════════════════');
 	console.log('');
 
-	const percentage = totalTests > 0 ? ((passedTests / totalTests) * 100).toFixed(1) : '0.0';
-	console.log(`OVERALL: ${passedTests}/${totalTests} passed (${percentage}%)`);
+	const percentage = inScopeTests > 0 ? ((passedTests / inScopeTests) * 100).toFixed(1) : '0.0';
+	console.log(`OVERALL: ${passedTests}/${inScopeTests} in-scope passed (${percentage}%)  [${totalTests} total on disk]`);
 	console.log(`  ✅ ${passedTests} passing`);
-	if (todoTests > 0) console.log(`  📝 ${todoTests} TODO`);
-	if (skippedTests > 0) console.log(`  ⏭️  ${skippedTests} skipped`);
-	if (brokenTests > 0) console.log(`  🔧 ${brokenTests} broken`);
 	if (failedTests > 0) console.log(`  ❌ ${failedTests} failed`);
 	if (untestedTests > 0) console.log(`  ❔ ${untestedTests} untested`);
+	if (todoTests > 0) console.log(`  📝 ${todoTests} TODO       (excluded from %)`);
+	if (skippedTests > 0) console.log(`  ⏭️  ${skippedTests} skipped    (excluded from %)`);
+	if (brokenTests > 0) console.log(`  🔧 ${brokenTests} broken     (excluded from %)`);
 	console.log('');
 
 	console.log('BY CATEGORY:');
 	for (const cat of categories) {
-		const catPassed = cat.tests.filter(t => t.status === 'success').length;
-		const catTotal = cat.tests.length;
-		const catPercent = catTotal > 0 ? ((catPassed / catTotal) * 100).toFixed(0) : '0';
-		const statusEmoji = catPercent >= 80 ? '✅' : catPercent >= 50 ? '⚠️' : '❌';
-		console.log(`  ${statusEmoji} ${cat.slug.padEnd(50)} ${catPassed}/${catTotal} ${catPercent.padStart(3)}%`);
+		const counts = { success: 0, failure: 0, todo: 0, skipped: 0, broken: 0, untested: 0, unknown: 0 };
+		for (const t of cat.tests) counts[t.status] = (counts[t.status] || 0) + 1;
+
+		const catInScope = counts.success + counts.failure + counts.unknown + counts.untested;
+		const catPassed = counts.success;
+
+		const sidelined = [];
+		if (counts.todo > 0) sidelined.push(`${counts.todo}📝`);
+		if (counts.skipped > 0) sidelined.push(`${counts.skipped}⏭`);
+		if (counts.broken > 0) sidelined.push(`${counts.broken}🔧`);
+		const sidelinedStr = sidelined.length > 0 ? ` (${sidelined.join(' ')})` : '';
+
+		if (catInScope === 0) {
+			// Fully sidelined — no pass rate applies.
+			const emoji = counts.todo > 0 ? '📝' : counts.skipped > 0 ? '⏭️' : counts.broken > 0 ? '🔧' : '  ';
+			console.log(`  ${emoji} ${cat.slug.padEnd(50)}      —  ${sidelinedStr.trim()}`);
+		} else {
+			const pct = Math.round((catPassed / catInScope) * 100);
+			const emoji = pct >= 80 ? '✅' : pct >= 50 ? '⚠️' : '❌';
+			const scoreStr = `${catPassed}/${catInScope}`.padStart(7);
+			const pctStr = `${pct}%`.padStart(4);
+			console.log(`  ${emoji} ${cat.slug.padEnd(50)} ${scoreStr} ${pctStr}${sidelinedStr}`);
+		}
 	}
 	console.log('');
 

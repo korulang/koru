@@ -68,8 +68,10 @@ async function getCurrentState() {
 
   // Normalize format to match snapshot format
   if (!data.summary && data.totalTests !== undefined) {
+    const inScope = data.inScopeTests ?? (data.totalTests - data.todoTests - data.skippedTests - data.brokenTests);
     data.summary = {
       total: data.totalTests,
+      inScope,
       passed: data.passedTests,
       failed: data.failedTests,
       todo: data.todoTests,
@@ -77,12 +79,20 @@ async function getCurrentState() {
       broken: data.brokenTests,
       untested: data.untestedTests,
       passRate:
-        data.totalTests > 0
-          ? ((data.passedTests / data.totalTests) * 100).toFixed(1)
+        inScope > 0
+          ? ((data.passedTests / inScope) * 100).toFixed(1)
           : "0.0",
     };
     data.timestamp = data.generatedAt;
     data.gitCommit = "current";
+  }
+
+  // Backfill inScope on old snapshots written before the field existed.
+  if (data.summary && data.summary.inScope === undefined) {
+    data.summary.inScope = data.summary.total - data.summary.todo - data.summary.skipped - data.summary.broken;
+    data.summary.passRate = data.summary.inScope > 0
+      ? ((data.summary.passed / data.summary.inScope) * 100).toFixed(1)
+      : "0.0";
   }
 
   return data;

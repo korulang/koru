@@ -1494,6 +1494,17 @@ const joinPathAlloc = struct {
 
     const backend_output = @import("backend_output_emitted.zig");
 
+    // Phase 2.3.5: Early comptime_main pass — registers build-time configuration
+    // (build:variants, build:config) into emitter_helpers registries so that Phase 2.4
+    // transforms can dispatch through the populated registry. Phase 2.5 runs
+    // comptime_main again for post-transform work (tap injection etc.). This
+    // double-execution is a known wart; the cleaner fix is to segregate
+    // build-config flows into a dedicated pre_transform_main() at codegen time.
+    if (@hasDecl(backend_output, "comptime_main")) {
+        log.debug("[PHASE 2.3.5] Early comptime_main() — registering build-time variants/config\n", .{});
+        _ = backend_output.comptime_main(ctx.ast, ctx.allocator);
+    }
+
     // Phase 2.4: Execute transform handlers FIRST (if they exist)
     // NOTE: Transforms run BEFORE comptime events so that comptime events
     // (like tap injection) can see the fully-transformed AST

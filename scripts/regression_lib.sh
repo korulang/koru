@@ -801,9 +801,18 @@ EOF
     
     # Step 3: Run executable and check output (only if executable exists)
     if [ -f "$test_dir/output" ] && [ -f "$test_dir/MUST_RUN" ]; then
-        # Run the program and capture output
-        if "$test_dir/output" > "$test_dir/actual.txt" 2>&1; then
+        # Run the program under a timeout so a runaway binary can't wedge the harness.
+        # Override the default with REGRESSION_TEST_TIMEOUT (seconds).
+        TEST_TIMEOUT="${REGRESSION_TEST_TIMEOUT:-30}"
+        timeout "$TEST_TIMEOUT" "$test_dir/output" > "$test_dir/actual.txt" 2>&1
+        RUN_EXIT=$?
+        if [ $RUN_EXIT -eq 0 ]; then
             RUN_SUCCESS=true
+        elif [ $RUN_EXIT -eq 124 ] || [ $RUN_EXIT -eq 137 ]; then
+            echo -e "${RED}❌ Test binary timed out after ${TEST_TIMEOUT}s${NC}"
+            echo "timeout-${TEST_TIMEOUT}s" > "$test_dir/FAILURE"
+            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(timeout)"
+            return 0
         else
             RUN_SUCCESS=false
         fi
