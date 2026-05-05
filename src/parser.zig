@@ -1489,6 +1489,19 @@ pub const Parser = struct {
             }
         }
 
+        // Reject single void-returning branch: | branch with no payload is redundant.
+        // Use a void event (0 branches) instead.
+        if (branches.items.len == 1 and branches.items[0].payload.fields.len == 0) {
+            try self.reporter.addError(
+                .PARSE003,
+                event_line_index + 1,
+                1,
+                "single branch '{s}' with no payload is redundant - remove it to make this a void event (no branches)",
+                .{branches.items[0].name},
+            );
+            return error.ParseError;
+        }
+
         // Copy annotations, adding comptime if needed
         const extra_annotations: usize = if (needs_comptime and !has_comptime) 1 else 0;
         var annotations_copy = try self.allocator.alloc([]const u8, all_annotations.items.len + extra_annotations);

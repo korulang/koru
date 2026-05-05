@@ -338,7 +338,7 @@ if [ "$1" = "--list" ]; then
         else
             echo -e "     $TEST_NAME"
         fi
-    done < <(find tests/regression -mindepth 1 -type d -print0 | sort -z)
+    done < <(find tests/regression -mindepth 1 -type d -not -path '*/_archive/*' -print0 | sort -z)
 
     echo ""
     exit 0
@@ -543,7 +543,7 @@ if [ "$PARALLEL_JOBS" -gt 1 ]; then
     done
 
     if [ ${#FILTER_PATTERNS[@]} -eq 0 ]; then
-        find tests/regression -mindepth 1 -type d -print0 | sort -z > "$LIST_FILE"
+        find tests/regression -mindepth 1 -type d -not -path '*/_archive/*' -print0 | sort -z > "$LIST_FILE"
     else
         find_args=(tests/regression -mindepth 1 -type d "(")
         for i in "${!FILTER_PATTERNS[@]}"; do
@@ -795,7 +795,7 @@ done < <(
 
     if [ ${#FILTER_PATTERNS[@]} -eq 0 ]; then
         # No filter: find all test directories
-        find tests/regression -mindepth 1 -type d -print0 | sort -z
+        find tests/regression -mindepth 1 -type d -not -path '*/_archive/*' -print0 | sort -z
     else
         # With filters: build find command with multiple -name patterns joined by -or
         # Using an array for arguments is safer than building a string for eval

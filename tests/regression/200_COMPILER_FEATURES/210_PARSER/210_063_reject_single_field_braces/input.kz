@@ -6,4 +6,4 @@ const std = @import("std");
 // WRONG: Single field in braces
 // Should be: | ok i32 (identity syntax)
 ~event compute {}
-| ok i32
+| ok { value: i32 }

@@ -887,7 +887,6 @@ const emitFlowWithMocks = struct {
 
 // Simple fail - fails the test with optional message
 ~[keyword] pub event assert.fail { message: ?[]const u8 }
-| failed
 
 ~[pure] proc assert.fail {
     const msg = message orelse "Assertion failed";

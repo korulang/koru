@@ -75,6 +75,8 @@ async function getTestCases(categoryPath, categorySlugPath, categorySkipped = fa
 	const entries = await readdir(categoryPath);
 
 	for (const entry of entries) {
+		if (entry === '_archive') continue;
+
 		const testPath = join(categoryPath, entry);
 		const stats = await stat(testPath);
 

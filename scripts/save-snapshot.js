@@ -61,6 +61,8 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 	const entries = await readdir(basePath);
 
 	for (const entry of entries) {
+		if (entry === '_archive') continue;
+
 		const fullPath = join(basePath, entry);
 		const stats = await stat(fullPath);
 

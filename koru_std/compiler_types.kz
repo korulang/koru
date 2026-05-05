@@ -5,7 +5,6 @@
 
 // Dummy event to prevent auto-injection of compiler import (which would create circular dependency)
 ~event __compiler_types_marker {}
-| done
 
 const std = @import("std");
 
