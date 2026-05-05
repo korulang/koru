@@ -80,7 +80,7 @@ Errors during backend execution (validation/analysis errors):
 **9100_PARSE_ERRORS/9101_missing_pipe/input.kz:**
 ```koru
 ~event foo { x: i32 } | done { result: i32 }
-~proc foo = done { result: x }  // Missing | before branch
+~foo = done { result: x }  // Missing | before branch
 ```
 
 **EXPECT:**
@@ -98,7 +98,7 @@ error: expected '|' before branch constructor
 **9200_TYPE_ERRORS/9201_wrong_branch_type/input.kz:**
 ```koru
 ~event add { x: i32, y: i32 } | done { result: i32 }
-~proc add = done { result: "not a number" }  // String instead of i32
+~add = done { result: "not a number" }  // String instead of i32
 ```
 
 **EXPECT:**
@@ -122,7 +122,7 @@ error: type mismatch in branch 'done'
 }
 
 ~event pure_thing { x: i32 } | done {}
-~proc pure_thing = impure_thing(x: x) | done {}  // Pure flow calling impure event!
+~pure_thing = impure_thing(x: x) | done {}  // Pure flow calling impure event!
 ```
 
 **EXPECT:**

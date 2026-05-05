@@ -17,11 +17,9 @@ const std = @import("std");
 }
 
 ~pub event farewell { name: []const u8 }
-| done
 
 ~proc farewell {
     std.debug.print("Goodbye, {s}!\n", .{name});
-    return .{ .done = .{} };
 }
 
 // Register a scope with these events

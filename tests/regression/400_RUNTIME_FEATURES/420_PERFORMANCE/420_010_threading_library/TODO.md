@@ -75,7 +75,7 @@ handles: koru_[]const threading.WorkerHandle,  // ❌ Should be: []const koru_th
 1. **✅ Use wrapper events for casts** - Works! (`castToOpaque` event)
 2. **❌ Use inline array literals** - Fails (Bug #2)
 3. **❌ Use slice return types** - Fails (Bug #1)
-4. **🔄 Use proc subflow with Zig expressions** - Not yet tried (suggested by user)
+4. **🔄 Use subflow plus helper proc events** - Not yet tried (suggested by user)
 
 ---
 
@@ -91,13 +91,14 @@ Fix the code generator to:
 1. Emit `[]const koru_modulename.TypeName` for slice types
 2. Emit `koru_modulename.TypeName` in array literals
 
-### Alternative: Proc Subflow Pattern
+### Alternative: Subflow Pattern
 
-User suggestion: Define the main flow as a `~proc subflow` that can use Zig expressions (`@as`, `&[_]Type{...}`), then call it from top-level flow.
+User suggestion: Define the main flow as a subflow and then call it from a
+top-level flow.
 
 **Example**:
 ```koru
-~proc mainFlow = createRing()
+~mainFlow = createRing()
 | created r |> spawnProducer(ring: r.ring)
     | spawned |> spawnConsumer(ring: r.ring, target: MESSAGES_PER_CONSUMER)
         | spawned ctx1 |> threading:worker.spawn.async(
@@ -113,7 +114,8 @@ User suggestion: Define the main flow as a `~proc subflow` that can use Zig expr
 ~mainFlow()  // Top-level call
 ```
 
-**This might work TODAY** without any compiler fixes! Worth trying.
+If this needs raw Zig expressions that are not legal in Koru flow arguments,
+introduce helper events with `~proc` host-code implementations for those pieces.
 
 ---
 
@@ -125,12 +127,12 @@ User suggestion: Define the main flow as a `~proc subflow` that can use Zig expr
 - ✅ Library design is correct
 - ✅ Type system handles it
 - ✅ Import system works
-- ⚠️ Codegen needs fixes OR we need proc subflow pattern
+- ⚠️ Codegen needs fixes OR helper proc events around host-only expressions
 
 Test 2005 proves the PATTERN works (inline).
 Test 2006 proves the LIBRARY works (modulo codegen).
 
-Once codegen is fixed (or proc subflow pattern is used), **Koru will have a real, working, generic threading library!** 🚀
+Once codegen is fixed (or helper proc events isolate host-only expressions), **Koru will have a real, working, generic threading library!** 🚀
 
 ---
 

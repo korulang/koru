@@ -1595,7 +1595,6 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 // ============================================================================
 
 ~[comptime]pub event collect_scopes {}
-| collected
 
 ~proc collect_scopes {
     // Access PROGRAM_AST from backend
@@ -1729,6 +1728,4 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     std.debug.print("[RUNTIME] Collected {d} scope(s)\n", .{scopes.items.len});
 
     // TODO: Generate dispatch tables into std.runtime module
-
-    return .{ .collected = .{} };
 }

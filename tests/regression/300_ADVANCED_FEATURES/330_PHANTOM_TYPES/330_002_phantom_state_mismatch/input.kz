@@ -1,28 +1,14 @@
-// ============================================================================
-// VERIFIED REGRESSION TEST - DO NOT MODIFY WITHOUT DISCUSSION
-// ============================================================================
-// Test: Phantom state mismatch detection
-// Tests that phantom checker detects incompatible cross-module phantom states
-// Expected: MUST_FAIL with KORU030 (phantom state mismatch)
-
 ~import "$app/lib/fs"
 ~import "$app/lib/mipmap"
-
 const std = @import("std");
-
 const File = struct {
     handle: i32,
 };
-
-// Event that expects app.lib.fs:open phantom state
 ~event needs_fs_file { file: *File[app.lib.fs:open] }
 | processed
-
 ~proc needs_fs_file {
     return .{ .processed = .{} };
 }
-
-// This should FAIL: mipmap:open ≠ fs:open
 ~app.lib.mipmap:load(path: "texture.png")
 | loaded m |> needs_fs_file(file: m.file)
     | processed |> _

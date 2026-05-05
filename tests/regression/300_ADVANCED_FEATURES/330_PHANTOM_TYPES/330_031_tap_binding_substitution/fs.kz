@@ -18,11 +18,9 @@ const File = struct { handle: i32 };
 
 // Close - the ONLY consumer of [!opened]
 ~pub event close { file: *File[!opened] }
-| closed
 
 ~proc close {
     std.debug.print("Closing file (auto-discharged)\n", .{});
-    return .{ .closed = .{} };
 }
 
 // A logging event for taps - receives the file handle from tap binding

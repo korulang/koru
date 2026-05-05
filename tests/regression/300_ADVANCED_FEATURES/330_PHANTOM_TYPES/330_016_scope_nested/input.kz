@@ -1,20 +1,5 @@
-// TEST: Nested scopes - each level tracks obligations separately
-// STATUS: PENDING IMPLEMENTATION
-//
-// When scopes are nested (e.g., for inside for), each level should:
-// - Track its own obligations
-// - Auto-dispose inner scope obligations at inner scope exit
-// - Preserve outer scope obligations until outer scope exit
-//
-// Here: Outer loop opens outer.txt, inner loop opens inner.txt
-// Each inner iteration should close inner.txt
-// Each outer iteration should close outer.txt (after inner loop completes)
-//
-// Expected: Compiles with correct open/close pattern
-
 ~import "$std/control"
 ~import "$app/fs"
-
 ~std.control:for(0..2)
 | each _ |>
     app.fs:open(path: "outer.txt")
@@ -25,5 +10,4 @@
             | opened _ |> _  // Auto-close inner here
         | done |> _  // Auto-close outer_f here
 | done |> _
-
 pub fn main() void {}

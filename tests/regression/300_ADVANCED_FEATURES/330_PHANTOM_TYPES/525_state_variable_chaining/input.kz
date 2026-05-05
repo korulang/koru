@@ -1,15 +1,4 @@
-// Test 525: State variable chaining through multiple events
-// Tests that M stays consistent across a chain of generic events
-//
-// Key points:
-// - All events use *Data[M'_] (wildcard)
-// - When we pass [owned], M = owned throughout the entire chain
-// - validate(M) → process(M) → finalize(M) all preserve [owned]
-// - Similarly, [borrowed] would flow through consistently
-
 ~import "$app/data"
-
-// Test: State variable chains consistently
 ~app.data:alloc()
 | allocated a |> app.data:validate(d: a)
     | validated v |> app.data:process(d: v)

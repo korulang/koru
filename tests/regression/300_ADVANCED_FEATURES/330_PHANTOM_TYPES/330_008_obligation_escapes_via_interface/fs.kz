@@ -13,11 +13,9 @@ const File = struct { handle: i32 };
 }
 
 ~pub event close { file: *File[!opened] }
-| closed
 
 ~proc close {
     std.debug.print("Closing file\n", .{});
-    return .{ .closed = .{} };
 }
 
 // Subflow that opens a file and returns it with obligation

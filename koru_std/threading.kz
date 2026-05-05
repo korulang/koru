@@ -40,7 +40,6 @@ pub const WorkerHandle = struct {
 // Use when you don't need to wait for result
 
 ~event worker.spawn { work_fn: WorkFn, context: *anyopaque }
-| spawned
 
 ~proc worker.spawn {
     // Spawn thread with work function
@@ -52,8 +51,6 @@ pub const WorkerHandle = struct {
 
     // Detach - caller doesn't wait for completion
     thread.detach();
-
-    return .{ .spawned = .{} };
 }
 
 // ============================================================================

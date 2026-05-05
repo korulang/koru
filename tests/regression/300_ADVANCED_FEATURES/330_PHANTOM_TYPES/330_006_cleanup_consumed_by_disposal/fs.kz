@@ -13,9 +13,7 @@ const File = struct { handle: i32 };
 }
 
 ~pub event close { file: *File[!opened] }  // [!opened] means CONSUMES obligation
-| closed
 
 ~proc close {
     std.debug.print("Closing file\n", .{});
-    return .{ .closed = .{} };
 }

@@ -13,11 +13,9 @@ const File = struct { handle: i32 };
 }
 
 ~pub event close { file: *File[!opened] }  // Consumes obligation
-| closed
 
 ~proc close {
     std.debug.print("Closing file\n", .{});
-    return .{ .closed = .{} };
 }
 
 ~pub event use_file { file: *File[opened] }  // Expects opened file

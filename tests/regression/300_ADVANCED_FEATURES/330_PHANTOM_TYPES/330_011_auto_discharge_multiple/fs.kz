@@ -17,11 +17,9 @@ const File = struct { handle: i32 };
 
 // Close - saves any changes before closing
 ~pub event close { file: *File[!opened] }
-| closed
 
 ~proc close {
     std.debug.print("Closing file (saving changes)\n", .{});
-    return .{ .closed = .{} };
 }
 
 // Abandon - discards any changes

@@ -1,22 +1,6 @@
-// TEST: Database transaction pattern with layered obligations
-// STATUS: IMPLEMENTED
-//
-// Real-world pattern: connect → query → (commit OR rollback) → disconnect
-//
-// Two obligations that must be satisfied:
-//   1. connected! on Connection - must call disconnect
-//   2. transaction! on Transaction - must call commit OR rollback
-//
-// This tests that:
-// - Multiple obligations can coexist
-// - Each branch (then/else) must handle the transaction obligation
-// - Connection obligation auto-discharged at terminal in both branches
-
 ~import "$std/control"
 ~import "$app/db"
-
 const query_succeeded = true;
-
 ~app.db:connect(url: "postgres://localhost/test")
 | connected c |>
     app.db:query(conn: c, sql: "SELECT * FROM users")
@@ -32,5 +16,4 @@ const query_succeeded = true;
             | rolledback |>
                 app.db:disconnect(conn: c)
                 | disconnected |> _
-
 pub fn main() void {}

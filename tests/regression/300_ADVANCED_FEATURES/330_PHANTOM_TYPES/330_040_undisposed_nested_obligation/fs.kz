@@ -28,11 +28,9 @@ const Data = struct { content: []const u8 };
 
 // Close file - consumes opened!
 ~pub event close { file: *File[!opened] }
-| closed
 
 ~proc close {
     std.heap.page_allocator.destroy(file);
-    return .{ .closed = .{} };
 }
 
 // Free data - consumes data!

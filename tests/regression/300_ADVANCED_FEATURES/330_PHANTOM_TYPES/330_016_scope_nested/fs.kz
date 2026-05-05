@@ -18,9 +18,7 @@ const File = struct { handle: i32 };
 
 // Close - the ONLY consumer of [!opened]
 ~pub event close { file: *File[!opened] }
-| closed
 
 ~proc close {
     std.debug.print("Closing\n", .{});
-    return .{ .closed = .{} };
 }

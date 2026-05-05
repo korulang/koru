@@ -1,16 +1,4 @@
-// Test 523: Constrained state variable accepts valid states
-// Tests that M'owned|borrowed accepts both owned and borrowed
-//
-// Key points:
-// - data:process has d: *Data[M'owned|borrowed]
-// - M is constrained to ONLY owned OR borrowed
-// - [owned] should be accepted, M = owned
-// - [borrowed] should be accepted, M = borrowed
-// - Output preserves the specific state that was passed
-
 ~import "$app/data"
-
-// Test 1: Constraint accepts [owned]
 ~app.data:alloc()
 | allocated a |> app.data:process(d: a)
     | done _ |> _

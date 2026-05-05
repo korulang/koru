@@ -1,15 +1,4 @@
-// Test 522: State variable with wildcard (_)
-// Tests that M'_ accepts any state and preserves it through event
-//
-// Key points:
-// - data:process has d: *Data[M'_]
-// - M'_ is a wildcard - accepts ANY state
-// - The same M is used in output, preserving the state
-// - Should work with [owned], [borrowed], or any other state
-
 ~import "$app/data"
-
-// Test 1: Wildcard accepts [owned]
 ~app.data:alloc()
 | allocated a |> app.data:process(d: a)
     | done _ |> _

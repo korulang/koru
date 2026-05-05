@@ -1,19 +1,6 @@
-// TEST: Nested ~if inside ~for with outer obligation
-// STATUS: IMPLEMENTED
-//
-// Open file before for-loop, use if inside the loop body,
-// close at done. The if branches are non-repeating WITHIN
-// each loop iteration, but the loop itself repeats.
-//
-// Key insight: The if's then/else don't create new scope boundaries
-// because they run at most once per iteration. The outer obligation
-// flows through the entire loop to done.
-
 ~import "$std/control"
 ~import "$app/fs"
-
 const condition = true;
-
 ~app.fs:open(path: "test.txt")
 | opened f |>
     std.control:for(0..3)
@@ -23,6 +10,4 @@ const condition = true;
         | else |> _  // Fine - just ends this iteration
     | done |>
         app.fs:close(file: f)  // Close after loop completes
-        | closed |> _
-
 pub fn main() void {}

@@ -12,9 +12,7 @@ const File = struct { handle: i32 };
 }
 
 ~pub event close { file: *File[!opened] }
-| closed
 
 ~proc close {
     std.debug.print("Closing file (auto-discharged)\n", .{});
-    return .{ .closed = .{} };
 }

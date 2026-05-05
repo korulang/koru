@@ -30,7 +30,6 @@ const std = @import("std");
     destination: ?[]const u8,
     timestamp_ns: i128,
 }
-| done
 
 ~proc emit_transition {
     var buffer: [8192]u8 = undefined;
@@ -91,7 +90,6 @@ const std = @import("std");
 
     // Write to stdout (compiler diagnostics go to stderr)
     std.debug.print("{s}", .{buffer[0..pos]});
-    return .{ .done = .{} };
 }
 
 // UNIVERSAL TAP: Observe ALL event transitions in the program
@@ -109,4 +107,3 @@ const std = @import("std");
 // Self-governing: Only fires when --ccp flag is set AND this module is imported
 ~tap(* -> *)
 | Profile t |> emit_transition(source: t.source, branch: t.branch, destination: t.destination, timestamp_ns: t.timestamp_ns)
-    | done |> _

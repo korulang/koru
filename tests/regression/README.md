@@ -340,31 +340,33 @@ Running 105_inline_flow_basic...
 ~event greet { name: []const u8 }
 | done { message: []const u8 }
 
-~proc greet = done { message: name }
+~greet = done { message: name }
 
 ~greet("World")
 ```
 
-### Inline Flow Test
+### Subflow Implementation Test
 ```koru
 ~event calculate { a: i32, b: i32, c: i32 }
 | done { result: i32 }
 
-~proc calculate = add(x: a, y: b)
+~calculate = add(x: a, y: b)
 | done sum |> multiply(x: sum.result, factor: c)
 | done product |> done { result: product.result }
 ```
 
-### Label Loop Test
-```koru
-~event outer { x: i32 }
-| next { x: i32 }
-| done {}
+Prefer subflow implementations (`~event_name = ...`) for event composition.
+Use `~proc event_name { ... }` only when the implementation must be host/Zig
+code.
 
-~proc outer {
-    #loop outer(x: 1)
-    | next n |> outer(x: n.x + 1)
-    | done |> done {}
+### Host Proc Test
+```koru
+~event print_value { value: i32 }
+| done
+
+~proc print_value {
+    std.debug.print("{}\n", .{value});
+    return .{ .done = .{} };
 }
 ```
 
@@ -397,7 +399,7 @@ Tests that my amazing feature works correctly
 ```koru
 // Your test code
 ~event test {}
-~proc test = done {}
+~test = done
 ~test()
 ```
 

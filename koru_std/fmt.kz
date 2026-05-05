@@ -26,12 +26,10 @@ pub const FormattedText = struct {
 // ============================================================================
 
 ~pub event fmt.dealloc { formatted: *FormattedText[!allocated] }
-| done
 
 ~proc fmt.dealloc {
     formatted.allocator.free(formatted.text);
     std.heap.page_allocator.destroy(formatted);
-    return .{ .done = .{} };
 }
 
 // ============================================================================

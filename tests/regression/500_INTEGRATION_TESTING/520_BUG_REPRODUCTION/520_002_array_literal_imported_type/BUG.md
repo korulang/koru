@@ -62,7 +62,8 @@ Create helper events that build arrays:
 
 Then use the helper instead of inline literals.
 
-**OR** use `~proc flow =` which allows Zig expressions (untested).
+**OR** add helper events implemented with `~proc` for the host expressions that
+cannot be represented directly in Koru flow arguments.
 
 ## Fix Location
 Likely in the Zig code emitter (backend), specifically where:
@@ -81,15 +82,24 @@ The fix should:
 - `koru_std/threading.kz` - Needs this fix to work
 
 ## Alternative Solution
-Allow `~proc flow = ...` syntax which permits Zig expressions directly:
+Keep the outer composition as a subflow and move the raw Zig expression into a
+host proc helper:
 ```koru
-~proc mainFlow = makeHandle(id: 1)
+~event join_two { h1: Handle, h2: Handle }
+| joined { handles: []WorkerHandle }
+
+~proc join_two {
+    return .{ .joined = .{
+        .handles = &[_]koru_threading.WorkerHandle{ h1.handle, h2.handle },
+    } };
+}
+
+~mainFlow = makeHandle(id: 1)
 | made h1 |> makeHandle(id: 2)
-    | made h2 |> joinHandles(
-        handles: &[_]koru_threading.WorkerHandle{ h1.handle, h2.handle }  // ✅ Raw Zig!
-    )
+    | made h2 |> join_two(h1: h1, h2: h2)
 
 ~mainFlow()  // Call from top-level
 ```
 
-This bypasses the translation issue by allowing raw Zig syntax in proc flows.
+This keeps event composition in Koru flow space and confines raw Zig syntax to a
+proc body.

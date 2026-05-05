@@ -1,29 +1,8 @@
-// TEST: Tap binding substitution
-//
-// Verifies that taps can use bindings to access payload data.
-// The tap transform correctly rewrites binding references when splicing.
-//
-// Example: The tap declares `| opened f |> log_open(handle: f.file.handle)`
-//          The main flow has `| opened _ |>` (auto-discharge synthesizes binding)
-//
-// The tap transform:
-// 1. Synthesizes a unique binding (_tap_N) when original binding is "_"
-// 2. Rewrites tap's binding references: f.file.handle → _tap_N.file.handle
-// 3. Sets the synthesized binding on the continuation
-//
-// Result: Tap can observe and access payload data without breaking codegen!
-
 ~import "$std/taps"
 ~import "$app/fs"
-
-// Tap that USES the binding to access file data
-// This should work: the tap reads f.handle and passes it to log_open
 ~tap(app.fs:open -> *)
 | opened f |> app.fs:log_open(handle: f.handle)
     | done |> _
-
-// Main flow with auto-discharge
 ~app.fs:open(path: "test.txt")
 | opened _ |> _
-
 pub fn main() void {}

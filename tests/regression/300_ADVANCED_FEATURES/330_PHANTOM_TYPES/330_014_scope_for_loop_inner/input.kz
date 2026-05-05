@@ -1,21 +1,8 @@
-// TEST: Scope - obligation INSIDE for-loop should auto-discharge per iteration
-// STATUS: IMPLEMENTED
-//
-// When an obligation is created INSIDE a for-loop's | each |> branch,
-// it should be auto-discharged at the end of EACH iteration.
-//
-// Here: We open a file inside the loop, so each iteration should close it.
-// The [@scope] annotation on | each |> marks it as a scope boundary.
-//
-// Expected: Compiles and auto-discharges per iteration
-
 ~import "$std/control"
 ~import "$app/fs"
-
 ~std.control:for(0..3)
 | each _ |>
     app.fs:open(path: "test.txt")
     | opened _ |> _  // Should auto-insert close() here, per iteration
 | done |> _
-
 pub fn main() void {}

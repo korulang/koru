@@ -48,9 +48,7 @@ const std = @import("std");
 
 // Close connection (stub)  
 ~pub event tcp.close { id: u32 }
-| closed
 
 ~proc tcp.close {
     std.debug.print("[NET] Connection {} closed\n", .{id});
-    return .{ .@"closed" = .{} };
 }
