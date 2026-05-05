@@ -4,10 +4,8 @@ pub const File = struct {
 ~event open_file { path: []const u8 }
 | opened *File[open]
 ~event close_file { file: *File[closed] }
-| done
 ~event read_file { file: *File[open] }
 ~event write_file { file: *File[open] }
-| done
 ~proc open_file {
     const f = File{ .handle = 42 };
     return .{ .opened = &f };

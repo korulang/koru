@@ -35,7 +35,6 @@ const std = @import("std");
 ~event start_up {}
 
 ~event start_down {}
-| ready
 
 ~proc start_up {
     std.debug.print("Starting count-up flow...\n", .{});
