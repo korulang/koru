@@ -76,7 +76,6 @@ const std = @import("std");
 
 // Print error to stderr
 ~pub event eprintln { message: []const u8 }
-| printed
 
 ~proc eprintln {
     const stderr = std.fs.File.stderr().writer();

@@ -7410,3 +7410,92 @@ test "parser handles NESTED continuations with when guards" {
     // ready should have nested continuations (key with when, key without when)
     // The node should be poll(), and poll's continuations should have when guards
 }
+
+test "parser rejects single empty branch as redundant" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\~event done {}
+        \\| done
+    ;
+
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer parser.deinit();
+
+    const result = parser.parse();
+    try std.testing.expectError(error.ParseError, result);
+
+    // Verify the specific error message
+    try std.testing.expect(parser.reporter.hasErrors());
+    const first_error = parser.reporter.errors.items[0];
+    try std.testing.expectEqual(errors.ErrorCode.PARSE003, first_error.code);
+    try std.testing.expect(std.mem.indexOf(u8, first_error.message, "single branch 'done'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, first_error.message, "void event") != null);
+}
+
+test "parser allows void event with zero branches" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\~event done {}
+    ;
+
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer parser.deinit();
+
+    var parse_result = try parser.parse();
+    defer parse_result.deinit();
+
+    try std.testing.expect(!parser.reporter.hasErrors());
+    try std.testing.expect(parse_result.source_file.items.len == 1);
+    try std.testing.expect(parse_result.source_file.items[0] == .event_decl);
+    const event = parse_result.source_file.items[0].event_decl;
+    try std.testing.expect(event.branches.len == 0);
+}
+
+test "parser allows single identity branch with type payload" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\~event result {}
+        \\| ok i32
+    ;
+
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer parser.deinit();
+
+    var parse_result = try parser.parse();
+    defer parse_result.deinit();
+
+    try std.testing.expect(!parser.reporter.hasErrors());
+    try std.testing.expect(parse_result.source_file.items.len == 1);
+    try std.testing.expect(parse_result.source_file.items[0] == .event_decl);
+    const event = parse_result.source_file.items[0].event_decl;
+    try std.testing.expect(event.branches.len == 1);
+    try std.testing.expectEqualStrings("ok", event.branches[0].name);
+    try std.testing.expect(event.branches[0].payload.fields.len == 1);
+    try std.testing.expectEqualStrings("__type_ref", event.branches[0].payload.fields[0].name);
+    try std.testing.expectEqualStrings("i32", event.branches[0].payload.fields[0].type);
+}
+
+test "parser allows two empty branches" {
+    const allocator = std.testing.allocator;
+
+    const source =
+        \\~event result {}
+        \\| ok
+        \\| err
+    ;
+
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    defer parser.deinit();
+
+    var parse_result = try parser.parse();
+    defer parse_result.deinit();
+
+    try std.testing.expect(!parser.reporter.hasErrors());
+    try std.testing.expect(parse_result.source_file.items.len == 1);
+    try std.testing.expect(parse_result.source_file.items[0] == .event_decl);
+    const event = parse_result.source_file.items[0].event_decl;
+    try std.testing.expect(event.branches.len == 2);
+}
