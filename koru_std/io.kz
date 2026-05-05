@@ -83,25 +83,20 @@ const std = @import("std");
         // Fall back to debug print if stderr fails
         std.debug.print("ERROR: {s}\n", .{message});
     };
-    return .{ .printed = .{} };
 }
 
 // Success message with green color (if terminal supports it)
 ~pub event success { message: []const u8 }
-| printed
 
 ~proc success {
     std.debug.print("✅ {s}\n", .{message});
-    return .{ .printed = .{} };
 }
 
 // Warning message
 ~pub event warn { message: []const u8 }
-| printed
 
 ~proc warn {
     std.debug.print("⚠️  {s}\n", .{message});
-    return .{ .printed = .{} };
 }
 
 // ============================================================================

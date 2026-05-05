@@ -48,7 +48,6 @@ var process_count: i32 = 0;
 
 // Verify with a regular event
 ~event verify {}
-| done
 
 ~proc verify {
     if (setup_count == 1 and process_count == 3 and cleanup_count == 1) {
@@ -56,8 +55,6 @@ var process_count: i32 = 0;
     } else {
         std.debug.print("FAILED: setup={}, process={}, cleanup={}\n", .{setup_count, process_count, cleanup_count});
     }
-    return .{ .done = .{} };
 }
 
 ~verify()
-| done |> _
