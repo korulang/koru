@@ -24,7 +24,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const RESULTS_DIR = join(__dirname, "../test-results");
-const RECENT_THRESHOLD_HOURS = 48; // Tests broken within this time window are "new regressions"
+const RECENT_THRESHOLD_HOURS = 720; // Tests broken within this time window are "new regressions" (30 days)
 
 async function loadSnapshots() {
   try {

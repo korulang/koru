@@ -11,7 +11,7 @@
 import { readdir, stat, access, writeFile, readFile, mkdir, symlink, unlink } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -244,10 +244,48 @@ async function saveSnapshot() {
 			console.log(`  Unit tests: ${us.passed}/${us.total} passed, ${us.compileErrors} compile errors`);
 		}
 
+		pushToBrain(snapshot);
+
 	} catch (error) {
 		console.error('Error saving snapshot:', error);
 		process.exit(1);
 	}
+}
+
+// Push the snapshot to the koru brain via ctx. Local dev hits the local Convex
+// backend through ~/.6digit/satellite.json; CI sets CTX_USER_KEY +
+// CTX_CONVEX_URL + CTX_BRAIN_ID and skips the file. Fail-soft — a missing or
+// broken ctx never fails the test run.
+function pushToBrain(snapshot) {
+	if (process.env.KORU_SKIP_BRAIN_PUSH) return;
+
+	const s = snapshot.summary;
+	const summary =
+		`${s.passed}/${s.inScope} passed (${s.passRate}%) · ` +
+		`failed: ${s.failed}, todo: ${s.todo}, broken: ${s.broken} · ` +
+		`${snapshot.gitCommit} · ${snapshot.timestamp}`;
+
+	const patch = JSON.stringify({ summary, data: snapshot });
+
+	const result = spawnSync('ctx', ['patch', 'test-run', patch], {
+		stdio: ['ignore', 'pipe', 'pipe'],
+		encoding: 'utf-8'
+	});
+
+	if (result.error) {
+		if (result.error.code === 'ENOENT') {
+			console.log(`  (ctx not on PATH — skipping brain push)`);
+		} else {
+			console.log(`  ⚠ Brain push failed: ${result.error.message}`);
+		}
+		return;
+	}
+	if (result.status !== 0) {
+		const msg = (result.stderr || '').trim().split('\n')[0] || `exit ${result.status}`;
+		console.log(`  ⚠ Brain push failed: ${msg}`);
+		return;
+	}
+	console.log(`  ✓ Pushed snapshot to brain (*test-run)`);
 }
 
 saveSnapshot();

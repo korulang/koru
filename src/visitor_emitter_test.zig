@@ -333,3 +333,38 @@ test "visitor emits complete valid program" {
     try testing.expect(std.mem.indexOf(u8, output, "hello_event") != null);
     try testing.expect(std.mem.indexOf(u8, output, "done") != null);
 }
+
+// ============================================================================
+// CodeEmitter.writeZigStringLiteral
+// Annotations like `build("cortex_m4")` and other user-supplied strings get
+// embedded into generated Zig string literals; quotes/backslashes/control
+// chars must be escaped or the emitted Zig fails to parse.
+// ============================================================================
+
+test "writeZigStringLiteral: plain ascii passes through" {
+    var buffer: [128]u8 = undefined;
+    var ce = emitter_helpers.CodeEmitter.init(&buffer);
+    try ce.writeZigStringLiteral("hello");
+    try testing.expectEqualStrings("\"hello\"", ce.getOutput());
+}
+
+test "writeZigStringLiteral: escapes inner double quotes" {
+    var buffer: [128]u8 = undefined;
+    var ce = emitter_helpers.CodeEmitter.init(&buffer);
+    try ce.writeZigStringLiteral("build(\"cortex_m4\")");
+    try testing.expectEqualStrings("\"build(\\\"cortex_m4\\\")\"", ce.getOutput());
+}
+
+test "writeZigStringLiteral: escapes backslash and control chars" {
+    var buffer: [128]u8 = undefined;
+    var ce = emitter_helpers.CodeEmitter.init(&buffer);
+    try ce.writeZigStringLiteral("a\\b\nc\rd\te");
+    try testing.expectEqualStrings("\"a\\\\b\\nc\\rd\\te\"", ce.getOutput());
+}
+
+test "writeZigStringLiteral: empty string" {
+    var buffer: [16]u8 = undefined;
+    var ce = emitter_helpers.CodeEmitter.init(&buffer);
+    try ce.writeZigStringLiteral("");
+    try testing.expectEqualStrings("\"\"", ce.getOutput());
+}

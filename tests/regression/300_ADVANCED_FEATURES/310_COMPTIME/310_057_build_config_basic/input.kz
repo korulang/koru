@@ -1,0 +1,22 @@
+// Test: ~[build("flag")]std.build:config { ... } compiles cleanly.
+//
+// This is the canonical idiom for setting build-time configuration
+// (cross-compilation target, etc.) gated on a --build flag.
+//
+// REGRESSION: the annotation `build("flag")` contains a literal `"` that
+// must be escaped when serialized into Zig string literals during
+// `backend_output_emitted.zig` emission. Without escaping, the generated
+// Zig was `"build("flag")"` and failed to parse.
+
+~import "$std/build"
+
+~[build("native")]std.build:config {
+    "target": "x86_64-linux-gnu"
+}
+
+~pub event main { }
+
+~proc main {
+    const x: u32 = 42;
+    _ = x;
+}

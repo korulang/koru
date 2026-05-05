@@ -1,0 +1,66 @@
+// Koru blinky for STM32F401RE / Nucleo-F401RE
+//
+// Toggles PA5 (LD2) at roughly 1 Hz using only register MMIO writes.
+// No HAL, no kernel, no runtime — the cortex_m4 variant resolves at
+// compile time and emits the bare register accesses directly.
+//
+// Build with:  koruc --build=cortex_m4 koru/blinky.kz
+// The build:config annotation below threads the cross-compile target
+// through to the zig backend; the |cortex_m4 variant gates the proc body.
+
+// `target:` takes Zig's target query format, not the LLVM/Rust triple.
+// (Zig spells thumbv7em as `thumb`-arch with -mcpu=cortex_m4 separately.)
+//
+// NOTE: build:config currently only forwards `target`. The reference
+// zig blinky uses `-mcpu=cortex_m4` to nail down the v7em ISA + FPU;
+// without it we get generic thumb (likely thumbv4t/thumbv6m) which
+// won't actually run on the M4 — but the comparison-table row will
+// still exist as a thumbv? ELF. mcpu pass-through is a follow-up.
+~[build("cortex_m4")]std.build:config {
+    "target": "thumb-freestanding-eabihf"
+}
+
+~[build("cortex_m4")]std.build:variants {
+    "main": "cortex_m4"
+}
+
+// STM32F401RE memory-mapped peripheral addresses
+// (RM0368, table 1: peripheral register boundary addresses)
+//   RCC_AHB1ENR @ 0x40023830 — bit 0 = GPIOA clock enable
+//   GPIOA_MODER @ 0x40020000 — bits [11:10] = PA5 mode (01 = output)
+//   GPIOA_BSRR  @ 0x40020018 — bit 5 = set, bit 21 = reset
+
+// The whole firmware is one void event with a cortex_m4 variant.
+// Idiomatic surface: "this program does main()." All target-specific
+// register access lives below the variant boundary.
+~pub event main { }
+
+~proc main|cortex_m4 {
+    const rcc_ahb1enr = @as(*volatile u32, @ptrFromInt(0x40023830));
+    const gpioa_moder = @as(*volatile u32, @ptrFromInt(0x40020000));
+    const gpioa_bsrr  = @as(*volatile u32, @ptrFromInt(0x40020018));
+
+    // Enable GPIOA clock
+    rcc_ahb1enr.* |= 1;
+
+    // Configure PA5 as general-purpose output (mode = 01 in bits [11:10])
+    gpioa_moder.* = (gpioa_moder.* & ~@as(u32, 0xC00)) | 0x400;
+
+    // Blink forever — busy-loop delay
+    while (true) {
+        gpioa_bsrr.* = 1 << 5;          // PA5 high
+        var i: u32 = 0;
+        while (i < 400_000) : (i += 1) {
+            asm volatile ("nop");
+        }
+        gpioa_bsrr.* = 1 << 21;         // PA5 low (BSRR reset bit = pin + 16)
+        i = 0;
+        while (i < 400_000) : (i += 1) {
+            asm volatile ("nop");
+        }
+    }
+}
+
+// Top-level invocation: without this, dead_strip removes the entire main
+// event + proc as unreferenced. This is the program's actual entry point.
+~main()

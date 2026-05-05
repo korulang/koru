@@ -214,6 +214,24 @@ pub const CodeEmitter = struct {
         self.pos += text.len;
     }
 
+    /// Emit `text` as a quoted Zig string literal (`"..."`), escaping `\`, `"`,
+    /// and control chars. Use this whenever a user-supplied string (annotation
+    /// content, error message, etc.) must round-trip through generated Zig.
+    pub fn writeZigStringLiteral(self: *CodeEmitter, text: []const u8) !void {
+        try self.write("\"");
+        for (text) |c| {
+            switch (c) {
+                '\\' => try self.write("\\\\"),
+                '"' => try self.write("\\\""),
+                '\n' => try self.write("\\n"),
+                '\r' => try self.write("\\r"),
+                '\t' => try self.write("\\t"),
+                else => try self.write(&[_]u8{c}),
+            }
+        }
+        try self.write("\"");
+    }
+
     /// Write with newline
     pub fn writeLine(self: *CodeEmitter, text: []const u8) !void {
         try self.writeIndent();
@@ -4235,9 +4253,7 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
                 try emitter.write("&[_][]const u8{");
                 for (anns, 0..) |ann, i| {
                     if (i > 0) try emitter.write(", ");
-                    try emitter.write("\"");
-                    try emitter.write(ann);
-                    try emitter.write("\"");
+                    try emitter.writeZigStringLiteral(ann);
                 }
                 try emitter.write("}");
             } else {
@@ -4419,9 +4435,7 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
                             try emitter.write("&[_][]const u8{");
                             for (anns, 0..) |ann, i| {
                                 if (i > 0) try emitter.write(", ");
-                                try emitter.write("\"");
-                                try emitter.write(ann);
-                                try emitter.write("\"");
+                                try emitter.writeZigStringLiteral(ann);
                             }
                             try emitter.write("}");
                         } else {

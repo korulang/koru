@@ -1298,7 +1298,10 @@ pub const PhantomSemanticChecker = struct {
                 var first_lost: ?[]const u8 = null;
 
                 for (uncleaned) |resource| {
-                    if (has_scope and context.isOuterScope(resource)) {
+                    // Outer-scope obligations are the outer scope's responsibility -
+                    // skip them regardless of whether THIS continuation is the @scope
+                    // boundary itself or a deeper nested cont inside the boundary.
+                    if (context.isOuterScope(resource)) {
                         continue;
                     }
                     // For hard terminals (_), all uncleaned resources are errors
@@ -1905,12 +1908,54 @@ pub const PhantomSemanticChecker = struct {
                 }
             }
 
+            // Resolve the event whose branches the nested continuations represent.
+            // Nested continuations of `cont` are branches of cont.node when cont.node is
+            // an invocation. validateContinuation needs the event_decl to add the
+            // continuation's binding to the context with the correct phantom state.
+            var nested_event_decl: ?*const ast.EventDecl = null;
+            var nested_event_module: ?[]const u8 = null;
+            if (cont.node) |step_for_nested| switch (step_for_nested) {
+                .invocation => |inv_for_nested| {
+                    const ev_name = try self.pathToString(inv_for_nested.path);
+                    defer self.allocator.free(ev_name);
+                    nested_event_module = inv_for_nested.path.module_qualifier orelse current_module;
+                    const qualified = if (nested_event_module) |m|
+                        try std.fmt.allocPrint(self.allocator, "{s}:{s}", .{ m, ev_name })
+                    else
+                        try self.allocator.dupe(u8, ev_name);
+                    defer self.allocator.free(qualified);
+                    if (event_map.get(qualified)) |info| nested_event_decl = info.decl;
+                },
+                else => {},
+            };
+
             // Recursively validate nested continuations
             for (cont.continuations) |*nested| {
-                // NOTE: Same as above - we don't check outer-scope obligations at terminators.
-                // They're suspended inside @scope and will be checked by the outer scope.
+                // NOTE: We do NOT check outer-scope obligations at terminators inside @scope.
+                // Outer obligations are "suspended" - they'll be checked when the outer scope
+                // terminates. The auto_discharge_inserter handles disposal, respecting @scope.
 
-                // Validate nested step - handle recursively for nested structures
+                // If we know the parent invocation's event, route through validateContinuation
+                // so the binding (e.g. identity capture from `| opened f |>`) gets registered
+                // before the inner step is validated. Without this, synthesized disposal calls
+                // referencing those bindings see an empty context and fail.
+                if (nested_event_decl) |ev_decl| {
+                    const valid = try self.validateContinuation(
+                        nested,
+                        ev_decl,
+                        nested_event_module,
+                        current_module orelse "",
+                        event_map,
+                        location,
+                        &branch_context,
+                        null,
+                    );
+                    if (!valid) has_errors = true;
+                    continue;
+                }
+
+                // Fallback: parent step isn't an invocation we can resolve. Validate
+                // recursively for nested structures (best effort, no binding tracking).
                 if (nested.node) |step| {
                     switch (step) {
                         .foreach => |fe| {

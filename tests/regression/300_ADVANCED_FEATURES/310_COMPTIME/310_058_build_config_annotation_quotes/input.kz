@@ -1,0 +1,18 @@
+// Test: build flag with multiple arguments survives quote escaping.
+//
+// `~[build("a", "b")]` carries two double-quoted strings with a comma —
+// the worst-case shape for a string-escape bug since both inner quotes
+// AND the comma must round-trip into the emitted Zig annotation array.
+
+~import "$std/build"
+
+~[build("debug", "trace")]std.build:config {
+    "target": "x86_64-linux-gnu"
+}
+
+~pub event main { }
+
+~proc main {
+    const x: u32 = 1;
+    _ = x;
+}

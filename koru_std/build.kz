@@ -182,14 +182,18 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
         const value = text[value_start..pos];
         pos += 1; // skip closing quote
 
-        // Validate that the event exists in the AST
-        if (ast_functional.findEventByCanonicalName(program, key) == null) {
-            // Event not found - report error
+        // Validate that the event exists in the AST and grab its decl
+        const event = ast_functional.findEventByCanonicalName(program, key) orelse {
             return .{ .invalid_event = key };
-        }
+        };
 
-        // Register in the core variant registry
-        if (emitter_helpers.registerVariant(key, value)) {
+        // Register under the event's canonical name (e.g. "blinky:main"),
+        // not the raw user-supplied key (e.g. "main"). visitor_emitter looks
+        // up the canonical form at emission time, so the registry must match.
+        // page_allocator: this is comptime, the slice lives until process exit.
+        const canonical = emitter_helpers.buildCanonicalEventName(&event.path, std.heap.page_allocator, null) catch continue;
+
+        if (emitter_helpers.registerVariant(canonical, value)) {
             count += 1;
         }
     }
