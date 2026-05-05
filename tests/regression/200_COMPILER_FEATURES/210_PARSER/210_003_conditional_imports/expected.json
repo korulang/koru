@@ -104,18 +104,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "done",
-                    "payload": {
-                        "fields": [
 
-                        ]
-                    }
-                }
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_003_conditional_imports/input.kz",
-                "line": 21,
+                "line": 20,
                 "col": 0
             }
         }

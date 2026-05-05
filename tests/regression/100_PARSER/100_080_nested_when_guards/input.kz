@@ -6,10 +6,17 @@
 
 ~event poll { t: i32 }
 | key u8
-|> poll(t: t.t)
+| done
+
+~event cleanup {}
+
+~event handle_key { code: u8 }
+
+~run()
+| ready t |> poll(t: t.t)
     | key k when (k.code == 'q') |> cleanup()
         |> _
     | key k |> handle_key(code: k.code)
         |> _
-    |> _
+    | done |> _
 | err _ |> _

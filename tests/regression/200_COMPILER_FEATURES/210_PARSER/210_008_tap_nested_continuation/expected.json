@@ -194,18 +194,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "done",
-                    "payload": {
-                        "fields": [
 
-                        ]
-                    }
-                }
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
-                "line": 24,
+                "line": 23,
                 "col": 0
             }
         },
@@ -218,6 +211,24 @@
             "is_pure": false,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
+                "line": 26,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
+                "line": 27,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
                 "line": 28,
                 "col": 0
             }
@@ -228,24 +239,6 @@
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
                 "line": 29,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
-                "line": 30,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
-                "line": 31,
                 "col": 0
             }
         },
@@ -282,7 +275,7 @@
                     },
                     "continuations": [
                         {
-                            "branch": "done",
+                            "branch": "",
                             "binding": null,
                             "binding_type": "branch_payload",
                             "condition": null,
@@ -301,7 +294,7 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_008_tap_nested_continuation/input.kz",
-                "line": 32,
+                "line": 30,
                 "col": 0
             }
         }

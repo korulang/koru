@@ -18,4 +18,4 @@ const std = @import("std");
 }
 
 ~send_email(to: "user@example.com")
-| sent |> _
+

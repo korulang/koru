@@ -18,4 +18,4 @@ const std = @import("std");
 }
 
 ~lookup_user(id: 42)
-| found |> _
+

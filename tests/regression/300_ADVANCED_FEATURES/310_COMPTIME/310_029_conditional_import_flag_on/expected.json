@@ -59,18 +59,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "done",
-                    "payload": {
-                        "fields": [
 
-                        ]
-                    }
-                }
             ],
             "location": {
                 "file": "tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_029_conditional_import_flag_on/input.kz",
-                "line": 10,
+                "line": 9,
                 "col": 0
             }
         }

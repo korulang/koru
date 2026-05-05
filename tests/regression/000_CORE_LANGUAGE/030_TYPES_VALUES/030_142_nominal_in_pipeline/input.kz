@@ -25,4 +25,4 @@ const std = @import("std");
 // Use in a pipeline
 ~const({ user: "alice", uid: @as(i64, 42) })
 | as data |> greet_user(name: data.user, id: data.uid)
-    | greeted |> _
+    

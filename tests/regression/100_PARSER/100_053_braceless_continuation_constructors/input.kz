@@ -23,11 +23,9 @@
 
 // Wrapper that uses braceless constructors in continuations
 ~pub event run_test {}
-| done
 
 ~proc run_test {
     // This internally tests braceless continuation constructors
-    return .{ .done = {} };
 }
 
 // Subflow using braceless identity in continuation

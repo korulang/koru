@@ -127,18 +127,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "done",
-                    "payload": {
-                        "fields": [
 
-                        ]
-                    }
-                }
             ],
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 14,
+                "line": 13,
                 "col": 0
             }
         },
@@ -162,18 +155,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "done",
-                    "payload": {
-                        "fields": [
 
-                        ]
-                    }
-                }
             ],
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 17,
+                "line": 15,
                 "col": 0
             }
         },
@@ -223,7 +209,7 @@
                             },
                             "continuations": [
                                 {
-                                    "branch": "done",
+                                    "branch": "",
                                     "binding": null,
                                     "binding_type": "branch_payload",
                                     "condition": null,
@@ -256,7 +242,7 @@
                             },
                             "continuations": [
                                 {
-                                    "branch": "done",
+                                    "branch": "",
                                     "binding": null,
                                     "binding_type": "branch_payload",
                                     "condition": null,
@@ -301,7 +287,7 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 18,
+                "line": 16,
                 "col": 0
             }
         }

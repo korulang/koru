@@ -31,48 +31,15 @@
             }
         },
         {
-            "type": "event_decl",
-            "name": "valid_before",
-            "path": ["valid_before"],
-            "module": "input",
-            "input": {
-                "fields": [
-                    {
-                        "name": "x",
-                        "type": "i32",
-                        "is_source": false,
-                        "is_file": false,
-                        "is_embed_file": false,
-                        "is_expression": false,
-                        "is_invocation_meta": false,
-                        "phantom": null
-                    }
-                ]
+            "type": "parse_error",
+            "code": "PARSE003",
+            "message": "single branch 'ok' with no payload is redundant - remove it to make this a void event (no branches)",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 5,
+                "col": 1
             },
-            "branches": [
-                {
-                    "name": "ok",
-                    "payload": {
-                        "fields": [
-
-                        ]
-                    }
-                }
-            ],
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 9,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 10,
-                "col": 0
-            }
+            "raw_text": "~event valid_before {\n    x: i32\n}\n| ok\n\n// This event has an unclosed brace - should create parse_error node\n"
         },
         {
             "type": "parse_error",
@@ -86,48 +53,15 @@
             "raw_text": "~event broken_event {\n    value: i32\n| success\n\n// This event is valid - should still be parsed\n"
         },
         {
-            "type": "event_decl",
-            "name": "valid_after",
-            "path": ["valid_after"],
-            "module": "input",
-            "input": {
-                "fields": [
-                    {
-                        "name": "y",
-                        "type": "i32",
-                        "is_source": false,
-                        "is_file": false,
-                        "is_embed_file": false,
-                        "is_expression": false,
-                        "is_invocation_meta": false,
-                        "phantom": null
-                    }
-                ]
+            "type": "parse_error",
+            "code": "PARSE003",
+            "message": "single branch 'done' with no payload is redundant - remove it to make this a void event (no branches)",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 16,
+                "col": 1
             },
-            "branches": [
-                {
-                    "name": "done",
-                    "payload": {
-                        "fields": [
-
-                        ]
-                    }
-                }
-            ],
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 20,
-                "col": 0
-            }
-        },
-        {
-            "type": "host_line",
-            "module": "input",
-            "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 21,
-                "col": 0
-            }
+            "raw_text": "~event valid_after {\n    y: i32\n}\n| done\n\n// Another broken event - unclosed annotation\n"
         },
         {
             "type": "flow",
