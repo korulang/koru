@@ -5,7 +5,16 @@
 - `lib/`, `libs/` for runtime/backends; `koru_std/` is the standard library (`KORU_STDLIB`).
 - `tests/` holds integration, feature, regression, broken suites (see `tests/ORGANIZATION.md`); new repros go to `tests/regression/`.
 - `examples/` has reference programs; `scripts/` hosts helpers; `zig-out/` holds build artifacts (ignore in git).
-- Docs: `README.md`, `KORU_SYNTAX.md`, `CONTRIBUTING.md`.
+- Docs: `README.md`, `CONTRIBUTING.md`, and regression-local `README.md`/`BUG.md` files.
+
+## Language Truth Hierarchy
+- Treat runnable `.kz` tests under `tests/regression/` as the source of truth for Koru syntax and semantics.
+- Treat prose docs as commentary on nearby executable examples, not as independent syntax authority.
+- Before writing nontrivial Koru, inspect a passing regression test with the same shape.
+- If no passing example exists for the syntax shape, say so and add or request a minimal repro instead of inventing syntax.
+- Prefer subflow implementations (`~event_name = ...`) for ordinary event behavior and event composition.
+- Use `~proc event_name { ... }` only at the host/Zig or target-specific implementation boundary.
+- Treat inline flows inside procs as exceptional and optimization-hostile; do not use them as the default implementation model.
 
 ## Metacircular Safety & Collaboration
 - Assume self-hosting: validate against compiler sources and generated artifacts; avoid speculative changes without tests.
