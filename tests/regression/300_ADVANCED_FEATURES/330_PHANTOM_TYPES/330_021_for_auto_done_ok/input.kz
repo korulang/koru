@@ -4,5 +4,5 @@
 | opened _ |>
     std.control:for(0..3)
     | each _ |> _  // Loop body, obligation flows through
-    | done |> _    // Auto-discharge inserts close here (runs once)
+    |> _    // Auto-discharge inserts close here (runs once)
 pub fn main() void {}

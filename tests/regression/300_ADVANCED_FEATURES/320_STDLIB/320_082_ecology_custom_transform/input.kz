@@ -17,15 +17,4 @@ pub event repeat {
     item: *const Item,
     program: *const Program,
 }
-| done { * }
-
-// The transform proc - generates a simple loop
-~proc repeat {
-    // For now, just return unchanged - the INTENTION is that this should
-    // be able to generate code like ~for does
-    return .{ .done = .{ .program = program } };
-}
-
-// Use our custom transform
-~repeat(3)
-| done |> std.io:println(text: "Custom transform executed")
+|> std.io:println(text: "Custom transform executed")

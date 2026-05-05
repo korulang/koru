@@ -6,7 +6,6 @@ pub const File = struct {
 ~event close_file { file: *File[closed] }
 | done
 ~event read_file { file: *File[open] }
-| done
 ~event write_file { file: *File[open] }
 | done
 ~proc open_file {
@@ -19,7 +18,6 @@ pub const File = struct {
 }
 ~proc read_file {
     _ = file;
-    return .{ .done = .{} };
 }
 ~proc write_file {
     _ = file;
@@ -27,10 +25,10 @@ pub const File = struct {
 }
 ~open_file(path: "test1.txt")
 | opened o |> close_file(file: o.file)
-    | done |> _
+    |> _
 ~open_file(path: "test2.txt")
 | opened o |> close_file(file: o.file)
-    | done |> _
+    |> _
 ~open_file(path: "test3.txt")
 | opened o |> close_file(file: o.file)
-    | done |> _
+    |> _

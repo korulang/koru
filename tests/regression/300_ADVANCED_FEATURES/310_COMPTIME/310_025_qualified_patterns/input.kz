@@ -9,11 +9,9 @@ const std = @import("std");
 
 // Local event to transition to (so tap can fire)
 ~event finish {}
-| done
 
 ~proc finish {
     std.debug.print("Local print\n", .{});
-    return .{ .done = .{} };
 }
 
 ~event logger { source: []const u8 }
@@ -30,4 +28,4 @@ const std = @import("std");
 // Flow: println (void) transitions to finish
 // Tap fires because println matches print* and transitions to finish
 ~std.io:println(text: "From std.io") |> finish()
-    | done |> _
+    |> _

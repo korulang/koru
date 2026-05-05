@@ -8,5 +8,5 @@
 ~app.fs:open(path: "test.txt")
 | opened f |> with_context()
   | scoped _[@scope] |> app.fs:close(file: f.file)
-  | done |> _
+  |> _
 pub fn main() void {}

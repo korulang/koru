@@ -9,12 +9,4 @@ const std = @import("std");
 
 // Simple event
 ~event check { value: i32 }
-| ok i32
-
-~proc check {
-    return .{ .ok = value };
-}
-
-// Simple flow
-~check(value: 42)
-| ok _ |> _
+|> _

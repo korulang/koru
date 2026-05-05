@@ -5,7 +5,7 @@ const std = @import("std");
     app.db:begin(conn: _.conn)
     | begun _ |>
         app.db:do_work(tx: _.tx)
-        | done _ |> _
+        |> _
 pub fn main() void {
     std.debug.print("Cascading auto-discharge test\n", .{});
 }

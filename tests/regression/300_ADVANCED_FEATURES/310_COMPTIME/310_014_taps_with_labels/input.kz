@@ -31,13 +31,11 @@ const std = @import("std");
 
 // Recursive label using counter - tap should fire on each loop iteration
 ~event start {}
-| ready
 
 ~proc start {
-    return .{ .ready = .{} };
 }
 
 ~start()
-| ready |> #loop counter(n: 1)
+|> #loop counter(n: 1)
     | next v |> @loop(n: v)
-    | done |> _
+    |> _

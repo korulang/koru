@@ -1,20 +1,19 @@
 ~import "$std/testing"
 
 ~event do_thing {}
-| done
 
 // Test that passes - assert true
 ~test(This test passes) {
     ~do_thing = done {}
     ~do_thing()
-    | done |> assert(true)
+    |> assert(true)
 }
 
 // Test that fails deliberately - assert false
 ~test(This test should fail) {
     ~do_thing = done {}
     ~do_thing()
-    | done |> assert(false)
+    |> assert(false)
 }
 
 pub fn main() void {}

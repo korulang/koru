@@ -12,14 +12,12 @@ const std = @import("std");
 ~import "$app/test_lib/logger"
 
 ~event hello {}
-| done
 
 ~event goodbye {}
 | done
 
 ~proc hello {
     std.debug.print("Hello\n", .{});
-    return .{ .done = .{} };
 }
 
 ~proc goodbye {
@@ -30,8 +28,8 @@ const std = @import("std");
 // Module wildcard tap observes all events in input module with metatype
 ~tap(input:* -> *)
 | Profile p |> app.test_lib.logger:log(msg: p.source)
-    | done |> _
+    |> _
 
 ~hello()
-| done |> goodbye()
-    | done |> _
+|> goodbye()
+    |> _

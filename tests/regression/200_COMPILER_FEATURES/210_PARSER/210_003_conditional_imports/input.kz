@@ -17,4 +17,3 @@
 ~[debug|trace]import "$std/debug"
 
 ~event hello {}
-| done

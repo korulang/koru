@@ -5,7 +5,6 @@ const std = @import("std");
 
 // Single annotation
 ~[comptime] event single {}
-| done
 
 // Multiple annotations with | delimiter
 ~[comptime|runtime] event dual {}
@@ -13,7 +12,6 @@ const std = @import("std");
 
 // Many annotations
 ~[comptime|runtime|fuseable|inline] event many {}
-| done
 
 // Parameterized annotation (opaque string)
 ~[optimize(level: 3)] event optimized {}
@@ -21,7 +19,6 @@ const std = @import("std");
 
 // Mix of simple and parameterized
 ~[comptime|optimize(level: 3)|inline] event mixed {}
-| done
 
 ~proc single { return .{ .done = .{} }; }
 ~proc dual { return .{ .done = .{} }; }

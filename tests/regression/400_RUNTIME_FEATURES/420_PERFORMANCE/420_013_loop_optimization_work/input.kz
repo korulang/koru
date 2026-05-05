@@ -39,11 +39,9 @@ const std = @import("std");
 
 // Print result
 ~event print { result: u64 }
-| done
 
 ~proc print {
     std.debug.print("Sum: {}\n", .{result});
-    return .{ .done = .{} };
 }
 
 // Initialize array event
@@ -79,6 +77,6 @@ const std = @import("std");
 ~init_array()
 | initialized init |> #work_loop loop_step(i: 0, limit: init.array.len, sum: 0)
     | continue c |> process_element(array: init.array, i: c.i, sum: c.sum)
-        | processed p |> @work_loop(i: c.i + 1, limit: init.array.len, sum: p.sum)
-    | done d |> print(result: d.result)
-        | done |> _
+        |> @work_loop(i: c.i + 1, limit: init.array.len, sum: p.sum)
+    |> print(result: d.result)
+        |> _

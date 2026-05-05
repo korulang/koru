@@ -4,17 +4,14 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event hello {}
-| done
 
 ~event goodbye {}
 | done
 
 ~[comptime|runtime] event profiler { source: []const u8, branch: []const u8, destination: ?[]const u8, timestamp_ns: i128 }
-| done
 
 ~proc hello {
     std.debug.print("Hello executed\n", .{});
-    return .{ .done = .{} };
 }
 
 ~proc goodbye {
@@ -28,7 +25,6 @@ const std = @import("std");
     } else {
         std.debug.print("Profile: {s}.{s} -> terminal @ {}\n", .{source, branch, timestamp_ns});
     }
-    return .{ .done = .{} };
 }
 
 // Universal tap using profile meta-type
@@ -36,8 +32,8 @@ const std = @import("std");
 // NOTE: Profile uses string-based fields (no enum conversion needed)
 ~tap(* -> *)
 | Profile p |> profiler(source: p.source, branch: p.branch, destination: p.destination, timestamp_ns: p.timestamp_ns)
-    | done |> _
+    |> _
 
 ~hello()
-| done |> goodbye()
-    | done |> _
+|> goodbye()
+    |> _

@@ -12,5 +12,5 @@
 
 // Chain void event to branching event, then handle branches with nested continuations
 ~void_event() |> branching_event()
-    | done |> _
+    |> _
     | error |> _

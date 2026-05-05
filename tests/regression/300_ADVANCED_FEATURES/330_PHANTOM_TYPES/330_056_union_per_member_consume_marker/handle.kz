@@ -32,9 +32,7 @@ const Handle = struct {
 
 // Finalize - per-member consume markers: !opened discharges opened!, !closing discharges closing!
 ~pub event finalize { h: *Handle[!opened|!closing] }
-| done
 
 ~proc finalize {
     std.debug.print("Finalizing handle: {d}\n", .{h.id});
-    return .{ .done = .{} };
 }

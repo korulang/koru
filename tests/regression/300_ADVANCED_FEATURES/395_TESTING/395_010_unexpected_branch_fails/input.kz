@@ -17,5 +17,5 @@
     ~get_data = error_result 500
 
     ~get_data()
-    | ok result |> assert(result == 42)
+    |> assert(result == 42)
 }

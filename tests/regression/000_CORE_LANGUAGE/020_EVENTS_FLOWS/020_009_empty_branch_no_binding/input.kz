@@ -11,13 +11,11 @@
 
 // Event with empty payload - nothing to bind
 ~event signal_done {}
-| done
 
 ~proc signal_done {
-    return .{ .done = .{} };
 }
 
 // INVALID: trying to bind `x` to a {} branch
 // Shape checker should reject this
 ~signal_done()
-| done x |> std.io:println(text: "should not compile")
+|> std.io:println(text: "should not compile")

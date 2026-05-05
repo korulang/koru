@@ -26,14 +26,12 @@ const std = @import("std");
 | deleted
 
 ~pub event admin.reset_db {}
-| reset
 
 // Debug events (only in debug builds)
 ~pub event debug.dump_state {}
 | dumped []const u8
 
 ~pub event debug.trace { message: []const u8 }
-| traced
 
 // =============================================================================
 // REGISTRY SCOPES

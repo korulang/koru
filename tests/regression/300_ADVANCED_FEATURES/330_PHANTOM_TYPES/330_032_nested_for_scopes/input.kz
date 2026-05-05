@@ -9,7 +9,7 @@
             app.fs:open(path: "inner.txt")
             | opened _ |>
                 _  // inner_f auto-closed here (innermost @scope)
-        | done |> _
-    | done |>
+        |> _
+    |>
         app.fs:close(file: outermost_f)
 pub fn main() void {}

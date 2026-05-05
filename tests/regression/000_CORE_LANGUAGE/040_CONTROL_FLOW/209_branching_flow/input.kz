@@ -34,26 +34,22 @@ const std = @import("std");
 }
 
 ~event success { result: i32 }
-| done
 
 ~proc success {
     std.debug.print("Success: {}\n", .{result});
-    return .{ .done = .{} };
 }
 
 ~event failure { msg: []const u8 }
-| done
 
 ~proc failure {
     std.debug.print("Failure: {s}\n", .{msg});
-    return .{ .done = .{} };
 }
 
 // Flow with multiple branching paths
 ~validate(value: 42)
 | valid v |> double(value: v)
-    | ok doubled |> success(result: doubled)
-        | done |> _
+    |> success(result: doubled)
+        |> _
 | invalid e |> triple(value: -1)
-    | ok _ |> failure(msg: e)
-        | done |> _
+    |> failure(msg: e)
+        |> _

@@ -1,7 +1,6 @@
 // Test: Unknown label should produce a clear error message
 
 ~event foo {}
-| done
 
 ~foo()
-| done |> @missing()
+|> @missing()

@@ -16,4 +16,4 @@ const std = @import("std");
 // The loop lives here - user code taps it
 ~#loop tick(n: 0)
 | next v |> @loop(n: v)
-| done |> _
+|> _

@@ -9,9 +9,9 @@
 ~import "$app/db"
 
 ~app.db:connect(host: "localhost")
-| ok c |>
+|>
     app.db:begin(conn: c.conn)
-    | ok _ |>
+    |>
         // We have Transaction[started!] but never exec or commit!
         // This should be a phantom obligation error at backend stage.
         _

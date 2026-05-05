@@ -1,7 +1,5 @@
 const Connection = struct { id: i32 };
 ~pub event use_connection { conn: *Connection[connected!] }
-| done
 ~proc use_connection {
-    return .{ .done = .{} };
 }
 pub fn main() void {}

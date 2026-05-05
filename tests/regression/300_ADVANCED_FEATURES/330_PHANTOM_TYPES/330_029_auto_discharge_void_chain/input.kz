@@ -2,16 +2,4 @@
 const std = @import("std");
 const Resource = struct { id: i32 };
 ~event acquire {}
-| ok *Resource[held!]
-~proc acquire {
-    const r = std.heap.page_allocator.create(Resource) catch unreachable;
-    r.* = Resource{ .id = 42 };
-    return .{ .ok = r };
-}
-~event release { res: *Resource[!held] }
-~proc release {
-    std.debug.print("released\n", .{});
-    std.heap.page_allocator.destroy(res);
-}
-~acquire()
-| ok r |> std.io:print.ln("Got resource {{ r.id:d }}")
+|> std.io:print.ln("Got resource {{ r.id:d }}")

@@ -120,5 +120,5 @@ const DT: f64 = 0.01;
                             k.other.vz += dz * k.mass * mag;
                         }
                         |> advance_positions(bodies: k.ptr[0..k.len])
-                    | done |> energy(bodies: k.ptr[0..k.len])
+                    |> energy(bodies: k.ptr[0..k.len])
                         | e e2 |> print_energy(e: e2)

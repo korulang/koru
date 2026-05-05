@@ -40,11 +40,11 @@
 | failed []const u8
 
 ~process = validate(value: input)
-| ok a |> double(value: a)
-    | ok b |> validate(value: b)
-        | ok c |> double(value: c)
-            | ok d |> validate(value: d)
-                | ok final_ok |> success final_ok
+|> double(value: a)
+    |> validate(value: b)
+        |> double(value: c)
+            |> validate(value: d)
+                |> success final_ok
                 | failure e_err |> failed e_err
             | failure d_err |> failed d_err
         | failure c_err |> failed c_err

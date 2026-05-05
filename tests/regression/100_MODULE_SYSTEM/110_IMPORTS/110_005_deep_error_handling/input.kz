@@ -22,7 +22,6 @@ const std = @import("std");
 | failed []const u8
 
 ~event log { msg: []const u8 }
-| done
 
 ~proc step1 {
     return .{ .@"ok" = 1 };
@@ -51,21 +50,20 @@ const std = @import("std");
 
 ~proc log {
     std.debug.print("{s}\n", .{msg});
-    return .{ .@"done" = .{} };
 }
 
 // 4 levels deep with error handling at each level
 ~step1()
-| ok s1 |> step2(value: s1)
-    | ok s2 |> step3(value: s2)
-        | ok s3 |> step4(value: s3)
-            | ok _ |> log(msg: "Success!")
-                | done |> _
+|> step2(value: s1)
+    |> step3(value: s2)
+        |> step4(value: s3)
+            |> log(msg: "Success!")
+                |> _
             | failed f |> log(msg: f)
-                | done |> _
+                |> _
         | failed f |> log(msg: f)
-            | done |> _
+            |> _
     | failed f |> log(msg: f)
-        | done |> _
+        |> _
 | failed f |> log(msg: f)
-    | done |> _
+    |> _

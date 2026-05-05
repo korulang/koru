@@ -3,9 +3,8 @@
 ~import "$std/io"
 
 ~event probe {}
-| ok
 
 ~probe = ok {}
 
 ~probe()
-| ok |> std.io:println(text: "Continuation: This correctly calls io.println.handler()")
+|> std.io:println(text: "Continuation: This correctly calls io.println.handler()")

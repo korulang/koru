@@ -6,14 +6,12 @@ const std = @import("std");
 
 // Test 1: Comptime event that executes during compilation
 ~[comptime] event validateConventions {}
-| validated
 
 ~proc validateConventions {
     // This code executes at compile time!
     // We can't print, but we can do comptime-safe operations
     const conventions_valid = true;
     _ = conventions_valid;
-    return .{ .validated = .{} };
 }
 
 // Test 2: Comptime event with literal string parameter
@@ -51,5 +49,5 @@ const std = @import("std");
 | bundled _ |> _
 
 ~[comptime] preprocessMipmaps(inputDir: "assets/images")
-| ok _ |> _
+|> _
 | err _ |> _

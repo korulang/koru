@@ -14,11 +14,9 @@ const std = @import("std");
 }
 
 ~pub event close { handle: []const u8[!opened] }
-| closed
 
 ~proc close {
     std.debug.print("close() was called by auto-discharge\n", .{});
-    return .{ .closed = .{} };
 }
 
 ~std.runtime:register(scope: "test") {

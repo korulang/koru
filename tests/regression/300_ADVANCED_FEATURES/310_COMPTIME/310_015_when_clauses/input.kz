@@ -3,31 +3,13 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event process { value: usize }
-| done usize
-
-~event alert { result: usize }
-| done
-
-~proc process {
-    const result = value * 2;
-    std.debug.print("Processed: {}\n", .{result});
-    return .{ .done = result };
-}
-
-~proc alert {
-    std.debug.print("Alert: High value detected! Result was: {}\n", .{result});
-    return .{ .done = .{} };
-}
-
-// Only fire tap when result is > 50
-~tap(process -> *)
-| done d when d > 50 |> alert(result: d)
-    | done |> _
+|> alert(result: d)
+    |> _
 
 // Test with low value (should not trigger alert)
 ~process(value: 10)
-| done |> _
+|> _
 
 // Test with high value (should trigger alert)
 ~process(value: 30)
-| done |> _
+|> _

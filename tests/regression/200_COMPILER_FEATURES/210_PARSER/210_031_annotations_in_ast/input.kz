@@ -5,7 +5,6 @@ const std = @import("std");
 
 // Single annotation
 ~[comptime] event compile_only {}
-| done
 
 // Multiple annotations (inline with |)
 ~[comptime|runtime] event dual_phase {}
@@ -13,11 +12,9 @@ const std = @import("std");
 
 // Multiple annotations (should also work - future vertical syntax)
 ~[fuseable] pub event optimizable {}
-| result
 
 // Proc with annotations
 ~[inline] proc compile_only {
-    return .{ .done = .{} };
 }
 
 ~proc dual_phase {
@@ -25,5 +22,4 @@ const std = @import("std");
 }
 
 ~proc optimizable {
-    return .{ .result = .{} };
 }

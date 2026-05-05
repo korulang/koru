@@ -11,14 +11,12 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event hello {}
-| done
 
 ~event logger {}
 | done
 
 ~proc hello {
     std.debug.print("Hello\n", .{});
-    return .{ .done = .{} };
 }
 
 ~proc logger {
@@ -31,7 +29,7 @@ const std = @import("std");
 // If this fails with "undeclared identifier 'a'", metatype binding is broken
 ~tap(hello -> *)
 | Audit _ |> logger()
-    | done |> _
+    |> _
 
 ~hello()
-| done |> _
+|> _

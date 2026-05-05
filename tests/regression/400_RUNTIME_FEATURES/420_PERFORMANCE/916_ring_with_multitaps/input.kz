@@ -75,19 +75,15 @@ const MyRing = Ring(u32, 1024);
 
 // Processing event - what we do with dequeued values
 ~event process { data: u32 }
-| done
 
 ~proc process {
     std.debug.print("Processing x 1: {}\n", .{data});
-    return .{ .done = .{} };
 }
 
 ~event process_timestwo { data: u32 }
-| done
 
 ~proc process_timestwo {
     std.debug.print("Processing x 2: {}\n", .{data * 2});
-    return .{ .done = .{} };
 }
 
 // EVENT TAP: Watch ring.dequeue and process each value
@@ -99,7 +95,6 @@ const MyRing = Ring(u32, 1024);
 
 // Producer: Fill the ring with values
 ~event produce { ring: *Ring(u32, 1024), count: u32 }
-| done
 
 ~proc produce {
     var i: u32 = 0;
@@ -107,22 +102,19 @@ const MyRing = Ring(u32, 1024);
         _ = ring.tryEnqueue(i);
     }
     std.debug.print("Produced {} values\n", .{count});
-    return .{ .done = .{} };
 }
 
 // Consumer loop using label + tap
 // The tap fires automatically for each dequeued value!
 ~event start {}
-| ready
 
 ~[pure]proc start {
-    return .{ .ready = .{} };
 }
 
 var my_ring = MyRing.init();
 
 ~start()
-| ready |> produce(ring: &my_ring, count: 3)
-    | done |> #consume ring.dequeue(ring: &my_ring)
+|> produce(ring: &my_ring, count: 3)
+    |> #consume ring.dequeue(ring: &my_ring)
         | value |> @consume
         | empty |> _

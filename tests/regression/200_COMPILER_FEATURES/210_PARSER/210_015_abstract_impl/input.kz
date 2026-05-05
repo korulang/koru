@@ -65,4 +65,4 @@ const std = @import("std");
 | finished _ |> _
 
 ~process(data: 5)
-| done _ |> _
+|> _

@@ -14,11 +14,9 @@ const std = @import("std");
 }
 
 ~pub event close_handle { handle: []const u8[!opened] }
-| closed
 
 ~proc close_handle {
     std.debug.print("CLOSE\n", .{});
-    return .{ .closed = .{} };
 }
 
 ~std.runtime:register(scope: "api") {

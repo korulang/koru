@@ -52,19 +52,17 @@ const std = @import("std");
 
 // Helper to print
 ~event print_num { n: i32 }
-| done
 
 ~proc print_num {
     std.debug.print("{}\n", .{n});
-    return .{ .done = .{} };
 }
 
 // Test 1: positive value -> should output 42
 ~categorize(value: 42)
 | result r |> print_num(n: r)
-    | done |> _
+    |> _
 
 // Test 2: non-positive value -> should output 0
 ~categorize(value: 0)
 | result r |> print_num(n: r)
-    | done |> _
+    |> _

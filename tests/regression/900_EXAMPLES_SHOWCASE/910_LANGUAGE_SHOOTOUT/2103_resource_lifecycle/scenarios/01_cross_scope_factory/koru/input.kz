@@ -15,20 +15,16 @@ const File = struct { handle: i32 };
 }
 
 ~event use { file: *File[opened] }
-| used
 
 ~proc use {
     std.debug.print("Using\n", .{});
-    return .{ .used = .{} };
 }
 
 ~event close { file: *File[!opened] }
-| closed
 
 ~proc close {
     std.debug.print("Closing\n", .{});
     std.heap.page_allocator.destroy(file);
-    return .{ .closed = .{} };
 }
 
 ~event create { path: []const u8 }
@@ -40,12 +36,12 @@ const File = struct { handle: i32 };
 ~create(path: "test.txt")
 | created r |>
     use(file: r.file)
-    | used |>
+    |>
         use(file: r.file)
-        | used |>
+        |>
             use(file: r.file)
-            | used |>
+            |>
                 close(file: r.file)
-                | closed |> _
+                |> _
 
 pub fn main() void {}

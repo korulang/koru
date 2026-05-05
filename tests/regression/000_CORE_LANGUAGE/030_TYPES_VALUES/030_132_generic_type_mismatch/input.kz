@@ -12,21 +12,18 @@
 ~type(OptionalFloat = Option<f32>)
 
 ~event process_int { val: OptionalInt }
-| done
 
 ~proc process_int {
-    return .{ .done = .{} };
 }
 
 ~event main {}
-| done
 
 ~proc main {
     // ERROR: Passing OptionalFloat where OptionalInt is expected
     const f = OptionalFloat{ .some = 3.14 };
     ~process_int(val: f)
-    | done |> done {}
+    |> done {}
 }
 
 ~main()
-| done |> _
+|> _

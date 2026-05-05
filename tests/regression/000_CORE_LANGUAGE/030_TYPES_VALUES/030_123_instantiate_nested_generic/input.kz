@@ -15,14 +15,12 @@ const std = @import("std");
 ~type(WrappedIntBox = Wrapper<IntBox>)
 
 ~event test_nested {}
-| done
 
 ~proc test_nested {
     const inner = IntBox{ .value = 77 };
     const wrapped = WrappedIntBox{ .inner = inner };
     std.debug.print("Nested value: {d}\n", .{wrapped.inner.value});
-    return .{ .done = .{} };
 }
 
 ~test_nested()
-| done |> _
+|> _

@@ -8,6 +8,6 @@ const condition = true;
         std.control:if(condition)
         | then |> _  // Fine - just ends this iteration
         | else |> _  // Fine - just ends this iteration
-    | done |>
+    |>
         app.fs:close(file: f)  // Close after loop completes
 pub fn main() void {}

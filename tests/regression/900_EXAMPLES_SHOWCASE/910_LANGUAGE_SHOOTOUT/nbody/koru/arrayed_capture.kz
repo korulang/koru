@@ -131,8 +131,8 @@ const ZERO_DV = [5][3]f64{
                             | each i |> for(i+1..5)
                                 | each j |> pair_force(bi: b[i], bj: b[j], dt: DT)
                                     | result f |> captured { dv[i][0]: acc.dv[i][0] - f.fx*f.mj, dv[i][1]: acc.dv[i][1] - f.fy*f.mj, dv[i][2]: acc.dv[i][2] - f.fz*f.mj, dv[j][0]: acc.dv[j][0] + f.fx*f.mi, dv[j][1]: acc.dv[j][1] + f.fy*f.mi, dv[j][2]: acc.dv[j][2] + f.fz*f.mi }
-                                | done |> _
-                            | done |> _
+                                |> _
+                            |> _
                         | captured deltas |> apply(bodies: b[0..], dt: DT, dv: deltas.dv)
-                    | done |> energy(bodies: b[0..])
+                    |> energy(bodies: b[0..])
                         | e e2 |> print_e(e: e2)

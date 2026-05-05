@@ -9,7 +9,6 @@ const std = @import("std");
 | cleared
 
 ~pub event sprite.draw { x: i32, y: i32 }
-| drawn
 
 ~pub event texture.load { path: []const u8 }
 | loaded i32
@@ -24,7 +23,6 @@ const std = @import("std");
 }
 
 ~proc sprite.draw {
-    return .{ .@"drawn" = .{} };
 }
 
 ~proc texture.load {

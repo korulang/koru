@@ -7,7 +7,7 @@ const should_loop = true;
     | then |>
         std.control:for(0..3)
         | each _ |> _
-        | done |>
+        |>
             app.fs:close(file: f)
     | else |>
         app.fs:close(file: f)  // Still need to close if no loop

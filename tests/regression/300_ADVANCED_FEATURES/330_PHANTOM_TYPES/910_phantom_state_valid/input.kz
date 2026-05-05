@@ -15,4 +15,4 @@ const std = @import("std");
 }
 ~open_file()
 | opened o |> close_file(file: o)
-    | closed _ |> _
+    |> _

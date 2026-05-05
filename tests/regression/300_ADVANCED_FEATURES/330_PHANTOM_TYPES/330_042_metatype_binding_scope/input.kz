@@ -1,11 +1,9 @@
 ~import "$std/taps"
 ~import "$std/io"
 ~event work {}
-| done
 ~proc work {
-    return .{ .done = .{} };
 }
 ~tap(work -> *)
 | Profile p |> std.io:print.ln("Profile: {{p.source:s}}.{{p.branch:s}}")
 ~work()
-| done |> _
+|> _

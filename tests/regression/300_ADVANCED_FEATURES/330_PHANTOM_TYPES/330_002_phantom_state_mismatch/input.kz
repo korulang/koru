@@ -5,10 +5,8 @@ const File = struct {
     handle: i32,
 };
 ~event needs_fs_file { file: *File[app.lib.fs:open] }
-| processed
 ~proc needs_fs_file {
-    return .{ .processed = .{} };
 }
 ~app.lib.mipmap:load(path: "texture.png")
 | loaded m |> needs_fs_file(file: m.file)
-    | processed |> _
+    |> _

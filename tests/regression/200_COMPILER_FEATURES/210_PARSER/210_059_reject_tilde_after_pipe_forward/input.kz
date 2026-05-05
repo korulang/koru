@@ -6,20 +6,7 @@
 // ============================================================================
 
 ~event greet { name: []const u8 }
-| done []const u8
-
-~proc greet {
-    return .{ .done = "Hello!" };
-}
-
-~event farewell { name: []const u8 }
-| done []const u8
-
-~proc farewell {
-    return .{ .done = "Goodbye!" };
-}
-
-// INVALID: ~ invocation after |> is not valid Koru
+|> is not valid Koru
 ~greet(name: "World")
 |>
 ~farewell(name: "World")

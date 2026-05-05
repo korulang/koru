@@ -7,10 +7,8 @@ const std = @import("std");
     return .{ .opened = f };
 }
 ~event close_file { file: *std.fs.File[closed] }
-| done
 ~proc close_file {
-    return .{ .done = .{} };
 }
 ~open_file()
 | opened o |> close_file(file: o.file)
-    | done |> _
+    |> _

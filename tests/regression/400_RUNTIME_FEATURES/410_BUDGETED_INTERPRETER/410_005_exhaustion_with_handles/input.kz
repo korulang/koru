@@ -15,11 +15,9 @@ const std = @import("std");
 }
 
 ~pub event close { handle: []const u8[!opened] }
-| closed
 
 ~proc close {
     std.debug.print("auto-closing file\n", .{});
-    return .{ .closed = .{} };
 }
 
 ~pub event expensive_read { handle: []const u8[opened] }

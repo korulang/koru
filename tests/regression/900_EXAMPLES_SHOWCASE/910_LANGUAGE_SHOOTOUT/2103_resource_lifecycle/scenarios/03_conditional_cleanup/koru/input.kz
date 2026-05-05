@@ -30,20 +30,16 @@ const File = struct { handle: i32 };
 }
 
 ~event write { file: *File[opened], data: []const u8 }
-| written
 
 ~proc write {
     std.debug.print("Write: {s}\n", .{data});
-    return .{ .written = .{} };
 }
 
 ~event close { file: *File[!opened] }
-| closed
 
 ~proc close {
     std.debug.print("Close\n", .{});
     std.heap.page_allocator.destroy(file);
-    return .{ .closed = .{} };
 }
 
 const should_write = true;
@@ -53,11 +49,11 @@ const should_write = true;
     std.control:if(should_write)
     | then |>
         write(file: f.file, data: "hello")
-        | written |>
+        |>
             close(file: f.file)
-            | closed |> _
+            |> _
     | else |>
         close(file: f.file)
-        | closed |> _
+        |> _
 
 pub fn main() void {}

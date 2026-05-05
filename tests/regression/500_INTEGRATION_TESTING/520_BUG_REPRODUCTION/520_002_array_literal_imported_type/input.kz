@@ -31,10 +31,8 @@ const std = @import("std");
 
 // Event that accepts array of handles
 ~event joinHandles { handles: []const threading:WorkerHandle }
-| joined
 
 ~proc joinHandles {
-    return .{ .joined = .{} };
 }
 
 // Try to use array literal with imported type

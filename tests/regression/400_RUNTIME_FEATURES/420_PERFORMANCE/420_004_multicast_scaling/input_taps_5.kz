@@ -62,6 +62,6 @@ var sum5: u64 = 0;
 ~count -> * | done |> validate()
 
 ~start()
-| ready |> #loop count(i: 0)
+|> #loop count(i: 0)
     | next n |> @loop(i: n.value + 1)
-    | done |> _
+    |> _

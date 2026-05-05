@@ -20,6 +20,5 @@
 
 // Placeholder - this test documents the pattern, not a specific implementation
 ~event test.placeholder {}
-| ok
 ~proc test.placeholder { return .{ .ok = {} }; }
 ~test.placeholder()

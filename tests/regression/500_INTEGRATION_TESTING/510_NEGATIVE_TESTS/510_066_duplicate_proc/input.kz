@@ -2,7 +2,6 @@
 // Question: Should this be rejected or is last-wins intentional?
 
 ~event foo { x: i32 }
-| done
 
 ~foo = done {}
 ~foo = done {}

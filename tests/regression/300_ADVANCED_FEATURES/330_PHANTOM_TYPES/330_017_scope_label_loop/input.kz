@@ -14,5 +14,5 @@ const std = @import("std");
 | next n |>
     app.fs:open(path: "test.txt")
     | opened f |> @loop(count: n.count)  // Auto-close f before @loop
-| done |> _
+|> _
 pub fn main() void {}

@@ -34,11 +34,9 @@ const std = @import("std");
 }
 
 ~pub event print_result { value: []const u8 }
-| printed
 
 ~proc print_result {
     std.debug.print("Result: {s}\n", .{value});
-    return .{ .printed = .{} };
 }
 
 // Register events for runtime dispatch

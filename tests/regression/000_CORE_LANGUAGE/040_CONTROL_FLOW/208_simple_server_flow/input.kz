@@ -49,11 +49,9 @@ const std = @import("std");
 }
 
 ~event close { conn: u32 }
-| closed
 
 ~proc close {
     std.debug.print("Closed connection {}\n", .{conn});
-    return .{ .closed = .{} };
 }
 
 ~event log_error { conn: u32, msg: []const u8 }
@@ -65,19 +63,17 @@ const std = @import("std");
 }
 
 ~event cleanup { conn: u32 }
-| cleaned
 
 ~proc cleanup {
     std.debug.print("Cleaning up connection {}\n", .{conn});
-    return .{ .cleaned = .{} };
 }
 
 // Main flow with nested labels
 ~listen(port: 8080)
-| ready s |> #accept_loop accept(server: s)
+|> #accept_loop accept(server: s)
     | connected c |> #process_loop process(conn: c.conn)
-        | done d |> close(conn: d)
-            | closed |> @accept_loop(server: c.server)
+        |> close(conn: d)
+            |> @accept_loop(server: c.server)
         | retry r |> @process_loop(conn: r)
         | error e |> log_error(conn: e.conn, msg: e.msg)
             | logged l |> cleanup(conn: l)

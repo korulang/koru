@@ -17,10 +17,8 @@ const std = @import("std");
 
 // Close discharges the obligation
 ~pub event close { handle: []const u8[!opened] }
-| closed
 
 ~proc close {
-    return .{ .closed = .{} };
 }
 
 // Register scope - compiler infers close is discharge for open

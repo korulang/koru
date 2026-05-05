@@ -3,20 +3,17 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event http.request {}
-| done
 
 ~event http.response {}
 | done
 
 ~event db.query {}
-| done
 
 ~event logger { source: []const u8 }
 | done
 
 ~proc http.request {
     std.debug.print("HTTP request\n", .{});
-    return .{ .done = .{} };
 }
 
 ~proc http.response {
@@ -26,7 +23,6 @@ const std = @import("std");
 
 ~proc db.query {
     std.debug.print("DB query\n", .{});
-    return .{ .done = .{} };
 }
 
 ~proc logger {
@@ -37,9 +33,9 @@ const std = @import("std");
 // Tap only http.* events (not db.query)
 ~tap(http.* -> *)
 | Profile p |> logger(p.source)
-    | done |> _
+    |> _
 
 ~http.request()
-| done |> http.response()
-    | done |> db.query()
-        | done |> _
+|> http.response()
+    |> db.query()
+        |> _

@@ -192,7 +192,7 @@ const Body = struct {
 | computed cx |> calculate_momentum_y(cx.bodies)
     | computed cy |> calculate_momentum_z(cy.bodies)
         | computed cz |> apply_sun_offset(cz.bodies, cx.px, cy.py, cz.pz)
-            | adjusted a |> adjusted { bodies: a.bodies }
+            |> adjusted { bodies: a.bodies }
 
 // ============================================================================
 // ENERGY CALCULATION - Ultra granular
@@ -306,7 +306,7 @@ const Body = struct {
 | computed dv |> calculate_distance_scalar(dv.dx, dv.dy, dv.dz)
     | computed ds |> calculate_gravitational_magnitude(ds.distance, dt)
         | computed gm |> update_body_pair_velocities(dv.b1, dv.b2, ds.dx, ds.dy, ds.dz, gm.mag)
-            | updated u |> updated { b1: u.b1, b2: u.b2 }
+            |> updated { b1: u.b1, b2: u.b2 }
 
 ~event calculate_all_interactions { bodies: [5]Body, dt: f64 }
 | updated { bodies: [5]Body, dt: f64 }
@@ -399,12 +399,12 @@ const Body = struct {
 ~parse_args()
 | parsed p |> initialize_system()
     | initialized init |> offset_momentum(bodies: init.bodies)
-        | adjusted adj |> calculate_total_energy(bodies: adj.bodies)
+        |> calculate_total_energy(bodies: adj.bodies)
             | result r1 |> print_energy(energy: r1.energy, bodies: r1.bodies)
-                | done start |> #sim_loop simulation_step(bodies: start.bodies, i: 0, n: p.n)
+                |> #sim_loop simulation_step(bodies: start.bodies, i: 0, n: p.n)
                     | continue cont |> calculate_all_interactions(bodies: cont.bodies, dt: 0.01)
-                        | updated upd |> update_all_positions(bodies: upd.bodies, dt: upd.dt)
-                            | advanced adv |> @sim_loop(bodies: adv.bodies, i: cont.i + 1, n: cont.n)
-                    | done final |> calculate_total_energy(bodies: final.bodies)
+                        |> update_all_positions(bodies: upd.bodies, dt: upd.dt)
+                            |> @sim_loop(bodies: adv.bodies, i: cont.i + 1, n: cont.n)
+                    |> calculate_total_energy(bodies: final.bodies)
                         | result r2 |> print_energy(energy: r2.energy, bodies: r2.bodies)
-                            | done |> _
+                            |> _

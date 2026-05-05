@@ -9,10 +9,8 @@ const File = struct { handle: i32 };
     return .{ .opened = f };
 }
 ~event close { file: *File[!opened] }
-| closed
 ~proc close {
     std.debug.print("Closing file (auto-discharged)\n", .{});
-    return .{ .closed = .{} };
 }
 ~event get_file { path: []const u8 }
 | got_file *File[opened!]

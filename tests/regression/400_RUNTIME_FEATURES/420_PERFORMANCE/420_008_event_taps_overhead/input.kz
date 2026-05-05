@@ -24,7 +24,6 @@ var tap_count: u64 = 0;
 
 // Tap target - simulates logging/metrics
 ~event tap_point { i: u64 }
-| done
 
 ~proc tap_point {
     tap_count += 1;
@@ -32,16 +31,13 @@ var tap_count: u64 = 0;
     if (i > 999_999_999) {
         std.debug.print("Impossible\n", .{});
     }
-    return .{ .done = .{} };
 }
 
 // Print result
 ~event print_result {}
-| done
 
 ~proc print_result {
     std.debug.print("Taps called: {}\n", .{tap_count});
-    return .{ .done = .{} };
 }
 
 // Taps: Observe every 5th iteration (5 tap points)
@@ -54,4 +50,4 @@ var tap_count: u64 = 0;
 // Main loop
 ~#loop count(i: 0)
 | next n |> @loop(i: n.i)
-| done |> print_result() | done |> _
+|> print_result() | done |> _

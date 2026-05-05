@@ -33,14 +33,12 @@ const std = @import("std");
 
 // Start events for each flow
 ~event start_up {}
-| ready
 
 ~event start_down {}
 | ready
 
 ~proc start_up {
     std.debug.print("Starting count-up flow...\n", .{});
-    return .{ .ready = .{} };
 }
 
 ~proc start_down {
@@ -51,14 +49,14 @@ const std = @import("std");
 // Flow 1: Count up using label "loop"
 // This label is scoped to this flow only
 ~start_up()
-| ready |> #loop count(n: 0, direction: "up")
+|> #loop count(n: 0, direction: "up")
     | next c |> @loop(n: c, direction: "up")
-    | done |> _
+    |> _
 
 // Flow 2: Count down using SAME label name "loop"
 // This is a DIFFERENT label, scoped to this flow
 // Both flows can use the name "loop" without conflict!
 ~start_down()
-| ready |> #loop count(n: 5, direction: "down")
+|> #loop count(n: 5, direction: "down")
     | next c |> @loop(n: c, direction: "down")
-    | done |> _
+    |> _

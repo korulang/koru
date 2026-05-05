@@ -9,12 +9,4 @@ const std = @import("std");
 ~import "$app/module_b"
 
 ~pub event from_a {}
-| done []const u8
-
-~proc from_a {
-    std.debug.print("Event from module A\n", .{});
-    return .{ .done = "hello from A" };
-}
-
-~from_a()
-| done d |> std.io:println(text: d)
+|> std.io:println(text: d)

@@ -7,11 +7,9 @@ const std = @import("std");
 
 // Impure logging event (no ~[pure] annotation - does I/O)
 ~event log { msg: []const u8 }
-| done
 
 ~proc log {
     std.debug.print("[LOG] {s}\n", .{msg});
-    return .{ .done = .{} };
 }
 
 // Pure math operation
@@ -41,16 +39,13 @@ const std = @import("std");
 
 // Print result
 ~event print_number { n: i32 }
-| done
 
 ~proc print_number {
     std.debug.print("Result: {}\n", .{n});
-    return .{ .done = .{} };
 }
 
 // Main
 ~event main {}
-| done
 
 ~proc main {
     const result = compute_with_logging_event.handler(.{ .x = 21 });
@@ -61,8 +56,7 @@ const std = @import("std");
         },
     }
 
-    return .{ .done = .{} };
 }
 
 ~main()
-| done |> _
+|> _

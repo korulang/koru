@@ -10,10 +10,10 @@ const query_succeeded = true;
             app.db:commit(tx: tx)
             | committed |>
                 app.db:disconnect(conn: c)
-                | disconnected |> _
+                |> _
         | else |>
             app.db:rollback(tx: tx)
             | rolledback |>
                 app.db:disconnect(conn: c)
-                | disconnected |> _
+                |> _
 pub fn main() void {}

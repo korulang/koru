@@ -28,11 +28,9 @@ const std = @import("std");
 
 // Print result
 ~event print { result: u64 }
-| done
 
 ~proc print {
     std.debug.print("Sum: {}\n", .{result});
-    return .{ .done = .{} };
 }
 
 // Main flow: Label loop with recursive jump
@@ -48,5 +46,5 @@ const std = @import("std");
 
 ~#main_loop loop_step(i: 0, limit: 10_000_000, sum: 0)
 | continue c |> @main_loop(i: c.i + 1, limit: 10_000_000, sum: c.sum)
-| done d |> print(result: d.result)
-    | done |> _
+|> print(result: d.result)
+    |> _

@@ -2,7 +2,6 @@
 // GOOD: Backend catches with "Unknown label referenced"
 
 ~event foo {}
-| done
 
 ~foo()
-| done |> @loop
+|> @loop

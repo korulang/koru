@@ -76,7 +76,6 @@ const Body = struct {
 // ============================================================================
 
 ~event process_pair { bodies: []Body, i: usize, j: usize, dt: f64 }
-| done
 
 ~proc process_pair {
     const dx = bodies[i].x - bodies[j].x;
@@ -93,7 +92,6 @@ const Body = struct {
     bodies[j].vy += dy * bodies[i].mass * mag;
     bodies[j].vz += dz * bodies[i].mass * mag;
 
-    return .{ .done = .{} };
 }
 
 // ============================================================================
@@ -101,13 +99,11 @@ const Body = struct {
 // ============================================================================
 
 ~event update_position { body: *Body, dt: f64 }
-| done
 
 ~proc update_position {
     body.x += dt * body.vx;
     body.y += dt * body.vy;
     body.z += dt * body.vz;
-    return .{ .done = .{} };
 }
 
 // ============================================================================
@@ -115,7 +111,6 @@ const Body = struct {
 // ============================================================================
 
 ~event offset_momentum { bodies: []Body }
-| adjusted
 
 ~proc offset_momentum {
     var px: f64 = 0.0;
@@ -132,7 +127,6 @@ const Body = struct {
     bodies[0].vy = -py / SOLAR_MASS;
     bodies[0].vz = -pz / SOLAR_MASS;
 
-    return .{ .adjusted = .{} };
 }
 
 ~event calculate_energy { bodies: []const Body }
@@ -158,11 +152,9 @@ const Body = struct {
 }
 
 ~event print_energy { energy: f64 }
-| done
 
 ~proc print_energy {
     std.debug.print("{d:.9}\n", .{energy});
-    return .{ .done = .{} };
 }
 
 ~event parse_args {}
@@ -189,31 +181,29 @@ const Body = struct {
 // The body loops are still in process_all_pairs for now
 
 ~event process_all_pairs { bodies: []Body, dt: f64 }
-| done
 
 // This uses Koru ~for for the OUTER loop
 ~process_all_pairs = for(0..5)
 | each i |> for(i.val+1..5)
     | each j |> process_pair(bodies: bodies, i: i.val, j: j.val, dt: dt)
-        | done |> _
-| done |> done {}
+        |> _
+|> done {}
 
 ~event update_all_positions { bodies: []Body, dt: f64 }
-| done
 
 ~update_all_positions = for(0..5)
 | each k |> update_position(body: &bodies[k.val], dt: dt)
-    | done |> _
-| done |> done {}
+    |> _
+|> done {}
 
 ~parse_args()
 | parsed p |> initialize_bodies()
     | initialized init[mutable] |> offset_momentum(bodies: init.bodies[0..])
-        | adjusted |> calculate_energy(bodies: init.bodies[0..])
+        |> calculate_energy(bodies: init.bodies[0..])
             | result r1 |> print_energy(energy: r1.energy)
-                | done |> for(0..p.n)
+                |> for(0..p.n)
                     | each |> process_all_pairs(bodies: init.bodies[0..], dt: 0.01)
-                        | done |> update_all_positions(bodies: init.bodies[0..], dt: 0.01)
-                    | done |> calculate_energy(bodies: init.bodies[0..])
+                        |> update_all_positions(bodies: init.bodies[0..], dt: 0.01)
+                    |> calculate_energy(bodies: init.bodies[0..])
                         | result r2 |> print_energy(energy: r2.energy)
-                            | done |> _
+                            |> _

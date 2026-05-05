@@ -25,4 +25,4 @@ const std = @import("std");
 // WORKS: dotted path (local namespace)
 ~#loop mymodule.tick()
 | next _ |> @loop()
-| done |> _
+|> _

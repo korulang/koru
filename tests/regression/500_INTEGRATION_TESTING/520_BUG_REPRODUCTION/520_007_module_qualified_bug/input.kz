@@ -11,10 +11,8 @@
 ~import "$std/io"
 
 ~event probe {}
-| ok
 
 ~proc probe {
-    return .{ .ok = .{} };
 }
 
 // THIS SHOULD WORK (top-level flow)
@@ -22,4 +20,4 @@
 
 // THIS WORKS (continuation)
 ~probe()
-| ok |> std.io:println(text: "Continuation: This correctly calls io.println.handler()")
+|> std.io:println(text: "Continuation: This correctly calls io.println.handler()")

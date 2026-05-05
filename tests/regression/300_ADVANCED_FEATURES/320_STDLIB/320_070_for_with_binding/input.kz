@@ -26,28 +26,24 @@ const my_items = [_]i32{ 1, 2, 3 };
 var sum: i32 = 0;
 
 ~event add_item { value: i32 }
-| done
 
 ~proc add_item {
     sum += value;
     std.debug.print("Added {}, sum = {}\n", .{value, sum});
-    return .{ .done = .{} };
 }
 
 // Show result
 ~event show_sum {}
-| done
 
 ~proc show_sum {
     std.debug.print("Final sum: {}\n", .{sum});
-    return .{ .done = .{} };
 }
 
 // Main flow: the binding 'arr' must be captured in the switch arm
 ~get_items()
 | items arr |> for(arr)
     | each x |> add_item(value: x)
-        | done |> _
-    | done |> show_sum()
-        | done |> _
+        |> _
+    |> show_sum()
+        |> _
 | failed _ |> _

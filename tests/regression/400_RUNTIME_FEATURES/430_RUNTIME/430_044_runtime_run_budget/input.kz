@@ -4,10 +4,8 @@
 ~import "$std/io"
 
 ~pub event expensive {}
-| done
 
 ~proc expensive {
-    return .{ .done = .{} };
 }
 
 ~std.runtime:register(scope: "budget") {

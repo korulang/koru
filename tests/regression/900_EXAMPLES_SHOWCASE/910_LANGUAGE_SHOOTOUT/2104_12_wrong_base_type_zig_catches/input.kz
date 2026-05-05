@@ -18,9 +18,9 @@
 ~import "$app/db"
 
 ~app.db:connect(host: "localhost")
-| ok c |>
+|>
     app.db:begin(conn: c)
-    | ok t |>
+    |>
         // BUG: Passing t (*Transaction) to close() which expects *Connection
         // Koru won't catch this without --strict-base-types
         // Zig WILL catch this during compilation

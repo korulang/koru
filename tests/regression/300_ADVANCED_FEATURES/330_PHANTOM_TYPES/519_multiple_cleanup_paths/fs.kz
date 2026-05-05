@@ -19,9 +19,7 @@ const File = struct { handle: i32 };
 }
 
 ~pub event flush_close { file: *File[!opened] }  // Disposal option 2
-| flushed
 
 ~proc flush_close {
     std.debug.print("Flushing and closing file\n", .{});
-    return .{ .flushed = .{} };
 }

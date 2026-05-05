@@ -28,14 +28,12 @@ const std = @import("std");
 
 // Helper to print i32
 ~event print_result { value: i32 }
-| done
 
 ~proc print_result {
     std.debug.print("{}\n", .{value});
-    return .{ .done = .{} };
 }
 
 // Test: 21 * 2 = 42
 ~process(input: 21)
 | final f |> print_result(value: f)
-    | done |> _
+    |> _

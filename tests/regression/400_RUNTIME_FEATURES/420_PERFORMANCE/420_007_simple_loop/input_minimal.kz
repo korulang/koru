@@ -18,15 +18,13 @@ const std = @import("std");
 
 // Print event
 ~event print { i: u64 }
-| done
 
 ~proc print {
     std.debug.print("i = {}\n", .{i});
-    return .{ .done = .{} };
 }
 
 // Loop: count and print each iteration
 ~#loop count(i: 0)
 | next n |> print(i: n.i)
-    | done |> @loop(i: n.i)
-| done |> _
+    |> @loop(i: n.i)
+|> _

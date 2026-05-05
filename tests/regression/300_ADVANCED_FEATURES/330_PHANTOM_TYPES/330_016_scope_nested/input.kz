@@ -8,6 +8,6 @@
         | each _ |>
             app.fs:open(path: "inner.txt")
             | opened _ |> _  // Auto-close inner here
-        | done |> _  // Auto-close outer_f here
-| done |> _
+        |> _  // Auto-close outer_f here
+|> _
 pub fn main() void {}

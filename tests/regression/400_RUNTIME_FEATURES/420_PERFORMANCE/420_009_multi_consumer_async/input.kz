@@ -159,7 +159,6 @@ const AsyncHandle = struct {
 // ============================================================================
 
 ~event spawnProducer { ring: *Ring }
-| spawned
 
 ~proc spawnProducer {
     const producer = std.Thread.spawn(.{}, struct {
@@ -174,7 +173,6 @@ const AsyncHandle = struct {
     }.run, .{ring}) catch unreachable;
 
     producer.detach();
-    return .{ .spawned = .{} };
 }
 
 // ============================================================================
@@ -362,7 +360,7 @@ const AsyncHandle = struct {
 
 ~createRing()
 | created r |> spawnProducer(ring: r.ring)
-    | spawned |> startConsumers(ring: r.ring)
+    |> startConsumers(ring: r.ring)
         | started h1 |> consumeMessages.async(ring: r.ring, target: MESSAGES_PER_CONSUMER)
             | awaitable h2 |> consumeMessages.async(ring: r.ring, target: MESSAGES_PER_CONSUMER)
                 | awaitable h3 |> consumeMessages.async(ring: r.ring, target: MESSAGES_PER_CONSUMER)

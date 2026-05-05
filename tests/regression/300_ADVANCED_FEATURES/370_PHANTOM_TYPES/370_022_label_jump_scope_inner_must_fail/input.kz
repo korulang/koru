@@ -18,11 +18,9 @@ const Resource = struct { id: i32 };
 }
 
 ~event close { res: *Resource[!open] }
-| closed
 
 ~proc close {
     std.heap.page_allocator.destroy(res);
-    return .{ .closed = .{} };
 }
 
 ~pub event with_context {}
@@ -37,7 +35,7 @@ const Resource = struct { id: i32 };
 | created c |> with_context()
     | scoped _[@scope] |> create()
         | created _inner |> @loop()
-    | done |> close(res: c.res)
-        | closed |> _
+    |> close(res: c.res)
+        |> _
 
 pub fn main() void {}

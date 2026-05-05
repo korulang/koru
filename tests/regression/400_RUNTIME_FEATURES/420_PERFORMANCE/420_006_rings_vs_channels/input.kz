@@ -135,7 +135,6 @@ const MESSAGES: u64 = 10_000_000;
 }
 
 ~event spawn_producer { ring: *Ring }
-| spawned
 
 ~proc spawn_producer {
     // Spawn producer thread
@@ -153,7 +152,6 @@ const MESSAGES: u64 = 10_000_000;
     // Detach - we don't need to join
     producer.detach();
 
-    return .{ .spawned = .{} };
 }
 
 ~event dequeue { ring: *Ring }
@@ -175,7 +173,7 @@ const MESSAGES: u64 = 10_000_000;
 ~consume_loop = dequeue(ring: ring)
 | some msg |> check_if_done(sum: sum + msg.value, received: received + 1)
     | continue s |> continue { sum: s.sum, received: s.received }
-    | done s |> done { sum: s.sum }
+    |> done { sum: s.sum }
 | none |> yield_then_continue(sum: sum, received: received)
     | continue s |> continue { sum: s.sum, received: s.received }
 
@@ -220,8 +218,8 @@ const MESSAGES: u64 = 10_000_000;
 
 ~create_ring()
 | created r |> spawn_producer(r.ring)
-    | spawned |> #loop consume_loop(r.ring, sum: 0, received: 0)
+    |> #loop consume_loop(r.ring, sum: 0, received: 0)
         | continue s |> @loop(r.ring, s.sum, s.received)
-        | done s |> validate(s.sum)
+        |> validate(s.sum)
             | valid |> _
             | invalid |> _

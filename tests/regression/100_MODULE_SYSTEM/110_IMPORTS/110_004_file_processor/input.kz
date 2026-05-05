@@ -16,7 +16,7 @@ const std = @import("std");
 | success s |> app.lib.io.parse:lines(text: s.contents)
     | parsed |> app.lib.io.transform:uppercase(text: s.contents)
         | transformed t |> app.lib.io.file:write(path: "output.txt", data: t.result)
-            | written |> _
+            |> _
             | ioerror |> _
 | notfound |> _
 | ioerror |> _

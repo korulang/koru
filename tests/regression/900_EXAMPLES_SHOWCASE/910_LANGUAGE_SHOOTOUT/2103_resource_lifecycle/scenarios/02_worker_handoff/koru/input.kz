@@ -25,20 +25,16 @@ const Conn = struct { id: i32 };
 }
 
 ~event process { conn: *Conn[active] }
-| processed
 
 ~proc process {
     std.debug.print("Process: {}\n", .{conn.id});
-    return .{ .processed = .{} };
 }
 
 ~event disconnect { conn: *Conn[!active] }
-| disconnected
 
 ~proc disconnect {
     std.debug.print("Disconnect: {}\n", .{conn.id});
     std.heap.page_allocator.destroy(conn);
-    return .{ .disconnected = .{} };
 }
 
 // Main flow: create A, create B, use both, cleanup both
@@ -47,16 +43,16 @@ const Conn = struct { id: i32 };
     connect(name: "B")
     | connected b |>
         process(conn: a.conn)
-        | processed |>
+        |>
             process(conn: b.conn)
-            | processed |>
+            |>
                 process(conn: a.conn)
-                | processed |>
+                |>
                     process(conn: b.conn)
-                    | processed |>
+                    |>
                         disconnect(conn: a.conn)
-                        | disconnected |>
+                        |>
                             disconnect(conn: b.conn)
-                            | disconnected |> _
+                            |> _
 
 pub fn main() void {}

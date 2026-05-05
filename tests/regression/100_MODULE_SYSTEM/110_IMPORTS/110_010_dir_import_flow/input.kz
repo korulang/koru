@@ -20,7 +20,7 @@ const std = @import("std");
                 | response resp |> app.lib.net.tcp:connection.write(conn_id: c.conn_id, data: resp.bytes)
                     | sent |> _
                     | failed |> _
-        | closed |> _
+        |> _
         | failed |> _
     | failed |> _
 | failed |> _

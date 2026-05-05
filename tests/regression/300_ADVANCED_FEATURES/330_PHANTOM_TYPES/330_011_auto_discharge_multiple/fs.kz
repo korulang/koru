@@ -24,9 +24,7 @@ const File = struct { handle: i32 };
 
 // Abandon - discards any changes
 ~pub event abandon { file: *File[!opened] }
-| abandoned
 
 ~proc abandon {
     std.debug.print("Abandoning file (discarding changes)\n", .{});
-    return .{ .abandoned = .{} };
 }

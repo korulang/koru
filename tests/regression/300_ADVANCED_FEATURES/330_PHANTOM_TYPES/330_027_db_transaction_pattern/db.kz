@@ -44,27 +44,21 @@ const Transaction = struct {
 
 // Commit - CONSUMES transaction! obligation
 ~pub event commit { tx: *Transaction[!transaction] }
-| committed
 
 ~proc commit {
     std.debug.print("Committing transaction\n", .{});
-    return .{ .committed = .{} };
 }
 
 // Rollback - CONSUMES transaction! obligation (alternative to commit)
 ~pub event rollback { tx: *Transaction[!transaction] }
-| rolledback
 
 ~proc rollback {
     std.debug.print("Rolling back transaction\n", .{});
-    return .{ .rolledback = .{} };
 }
 
 // Disconnect - CONSUMES connected! obligation
 ~pub event disconnect { conn: *Connection[!connected] }
-| disconnected
 
 ~proc disconnect {
     std.debug.print("Disconnecting\n", .{});
-    return .{ .disconnected = .{} };
 }

@@ -42,11 +42,10 @@ const std = @import("std");
 // Use a simple noop event to create a continuation context — labeled must be
 // inside a continuation for replaceInvocationNodeRecursive to find it.
 ~event noop {}
-| done
 
 ~proc noop { return .{ .done = .{} }; }
 
 ~noop
-| done |> labeled("hello")
+|> labeled("hello")
 ~noop
-| done |> labeled()
+|> labeled()

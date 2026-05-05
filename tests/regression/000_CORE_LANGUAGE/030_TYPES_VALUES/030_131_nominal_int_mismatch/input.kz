@@ -18,7 +18,6 @@
 }
 
 ~event main {}
-| done
 
 ~proc main {
     // ERROR: Passing ProductId where UserId is expected
@@ -28,4 +27,4 @@
 }
 
 ~main()
-| done |> _
+|> _

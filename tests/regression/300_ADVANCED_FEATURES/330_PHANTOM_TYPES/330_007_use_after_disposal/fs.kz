@@ -19,9 +19,7 @@ const File = struct { handle: i32 };
 }
 
 ~pub event use_file { file: *File[opened] }  // Expects opened file
-| used
 
 ~proc use_file {
     std.debug.print("Using file\n", .{});
-    return .{ .used = .{} };
 }

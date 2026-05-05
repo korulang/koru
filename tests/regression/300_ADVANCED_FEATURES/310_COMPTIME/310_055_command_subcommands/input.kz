@@ -90,11 +90,9 @@
 ~import "$std/deps"
 
 ~event main {}
-| done
 
 ~proc main {
-    return .{ .done = .{} };
 }
 
 ~main()
-| done |> _
+|> _

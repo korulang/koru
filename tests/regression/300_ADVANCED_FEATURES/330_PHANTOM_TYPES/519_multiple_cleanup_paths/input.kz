@@ -1,4 +1,4 @@
 ~import "$app/fs"
 ~app.fs:open(path: "test.txt")
 | opened f |> app.fs:flush_close(file: f)
-    | flushed |> _
+    |> _

@@ -8,7 +8,6 @@
 }
 
 ~event hello {}
-| done
 
 ~hello()
-| done |> _
+|> _

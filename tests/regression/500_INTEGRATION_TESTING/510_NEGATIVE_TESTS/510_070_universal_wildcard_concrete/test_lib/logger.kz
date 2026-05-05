@@ -4,14 +4,12 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~pub event log { msg: []const u8 }
-| done
 
 ~proc log {
     std.debug.print("[TAP] {s}\n", .{msg});
-    return .{ .done = .{} };
 }
 
 // Universal wildcard tap using metatype (valid usage)
 ~tap(* -> *)
 | Profile p |> log(msg: p.source)
-    | done |> _
+    |> _

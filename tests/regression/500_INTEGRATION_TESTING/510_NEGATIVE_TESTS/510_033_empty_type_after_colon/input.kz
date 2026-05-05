@@ -3,4 +3,3 @@
 // Should be caught by frontend: "Expected type after ':'"
 
 ~event foo { x: }
-| done

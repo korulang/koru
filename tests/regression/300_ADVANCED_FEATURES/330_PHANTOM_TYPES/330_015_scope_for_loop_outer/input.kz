@@ -4,5 +4,5 @@
 | opened outer_f |>
     std.control:for(0..3)
     | each _ |> _  // outer_f is suspended here (@scope), disposed in done
-    | done |> _
+    |> _
 pub fn main() void {}

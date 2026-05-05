@@ -2,7 +2,6 @@
 // The parser should ignore "|>" inside quoted strings.
 
 ~event greet { text: []const u8 }
-| greeted
 
 ~greet = greeted {}
 

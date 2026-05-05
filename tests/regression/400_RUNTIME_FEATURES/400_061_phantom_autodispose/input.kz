@@ -24,22 +24,18 @@ pub const Resource = struct {
 }
 
 ~pub event destroy_resource { res: *Resource[!allocated] }
-| destroyed
 
 ~proc destroy_resource {
     std.debug.print("  Auto-discharge called!\n", .{});
     res.allocator.free(res.data);
     std.heap.page_allocator.destroy(res);
-    return .{ .destroyed = .{} };
 }
 
 // Helper to use the resource
 ~pub event use_resource { res: *Resource }
-| used
 
 ~proc use_resource {
     std.debug.print("  Using: {s}\n", .{res.data});
-    return .{ .used = .{} };
 }
 
 // Test: Create resource, use it, but DON'T manually destroy
@@ -48,7 +44,7 @@ pub const Resource = struct {
 ~create_resource(name: "AutoDisposed")
 | created r |>
     use_resource(res: r)
-    | used |> _
+    |> _
     // Obligation [allocated!] should trigger auto-discharge here
 
 ~std.io:print.ln("Test done")

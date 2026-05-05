@@ -2,4 +2,4 @@
 ~app.fs:open(path: "test.txt")
 | opened f |> app.fs:close(file: f.file)
     |> app.fs:use_file(file: f.file)  // ERROR: f.file was disposed!
-        | used |> _
+        |> _

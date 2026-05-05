@@ -31,12 +31,10 @@ pub const File = struct {
 
 // Close a file - consumes the cleanup obligation
 ~pub event close { file: *File[!opened] }
-| closed
 
 ~proc close {
     file.handle.close();
     std.heap.page_allocator.destroy(file);
-    return .{ .closed = .{} };
 }
 
 // Write to a file - requires open state but doesn't consume obligation

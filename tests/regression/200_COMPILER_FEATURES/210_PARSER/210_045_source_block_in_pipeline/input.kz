@@ -18,14 +18,12 @@
 
 // First: void event to start a pipeline
 ~event setup {}
-| ready
 
 ~proc setup {
-    return .{ .ready = .{} };
 }
 
 // Now use print.blk INSIDE the pipeline continuation
 ~setup()
-| ready |> std.io:print.blk {
+|> std.io:print.blk {
     Hello from inside a pipeline!
   }

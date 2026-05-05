@@ -13,15 +13,13 @@ const std = @import("std");
 ~type(OptionalInt = Option<i32>)
 
 ~event test_opt {}
-| done
 
 ~proc test_opt {
     const opt = OptionalInt{ .value = 123 };
     if (opt.value) |v| {
         std.debug.print("Value: {d}\n", .{v});
     }
-    return .{ .done = .{} };
 }
 
 ~test_opt()
-| done |> _
+|> _

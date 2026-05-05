@@ -43,6 +43,6 @@ const Resource = struct { id: usize };
 
 ~for(0..10)
 | each _ |> run_one()
-| done |> _
+|> _
 
 pub fn main() void {}

@@ -23,8 +23,8 @@
 // When guards on metatypes are a future feature
 ~tap(hello -> *)
 | Profile p |> logger(msg: p.source)
-    | done |> _
+    |> _
 
 ~hello()
-| ok |> _
+|> _
 | error |> _

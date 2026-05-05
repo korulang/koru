@@ -18,4 +18,4 @@
     if(i > 0)
     | then |> std.io:println(text: "nested transform")
     | else |> std.io:println(text: "first iteration")
-| done |> std.io:println(text: "done")
+|> std.io:println(text: "done")

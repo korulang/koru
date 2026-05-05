@@ -10,11 +10,9 @@ const std = @import("std");
 
 // Event that prints a number
 ~pub event print_num { n: []const u8 }
-| printed
 
 ~proc print_num {
     std.debug.print("[print_num] n = {s}\n", .{n});
-    return .{ .printed = .{} };
 }
 
 // Register events including control flow

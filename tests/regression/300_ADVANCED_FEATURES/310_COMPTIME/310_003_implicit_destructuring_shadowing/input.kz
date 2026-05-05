@@ -7,11 +7,9 @@
 const std = @import("std");
 
 ~event greet { name: []const u8 }
-| greeted
 
 ~proc greet {
     std.debug.print("Hello, {s}!\n", .{name});
-    return .{ .greeted = .{} };
 }
 
 // Test shorthand in flow invocation

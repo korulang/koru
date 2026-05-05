@@ -35,12 +35,10 @@ const File = struct { handle: i32 };
 
 // Unlock - consumes locked! (Option 1 for disposing locked!)
 ~pub event unlock { file: *File[!locked] }
-| unlocked
 
 ~proc unlock {
     std.debug.print("Unlocking\n", .{});
     std.heap.page_allocator.destroy(file);
-    return .{ .unlocked = .{} };
 }
 
 // Force close - also consumes locked! (Option 2 for disposing locked!)

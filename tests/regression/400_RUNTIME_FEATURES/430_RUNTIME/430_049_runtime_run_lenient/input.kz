@@ -6,11 +6,9 @@
 const std = @import("std");
 
 ~pub event ping {}
-| ok
 
 ~proc ping {
     std.debug.print("PING\n", .{});
-    return .{ .ok = .{} };
 }
 
 ~std.runtime:register(scope: "api") {

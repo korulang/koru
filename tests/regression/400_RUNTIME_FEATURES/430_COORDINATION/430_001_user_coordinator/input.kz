@@ -12,6 +12,5 @@
 
 // Some test code (doesn't matter - coordinator will error immediately)
 ~event test {}
-| done
 
 ~proc test { return .done; }

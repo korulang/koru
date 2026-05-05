@@ -6,29 +6,11 @@
 const std = @import("std");
 
 ~event produce { value: u32 }
-| done u32
-
-~proc produce {
-    const result = value * 2;
-    std.debug.print("Produced: {}\n", .{result});
-    return .{ .done = result };
-}
-
-~event log { result: u32 }
-| done
-
-~proc log {
-    std.debug.print("Logging: {}\n", .{result});
-    return .{ .done = .{} };
-}
-
-// Tap with when clause
-~produce -> *
-| done d when d.result > 50 |> log(result: d.result)
-    | done |> _
+|> log(result: d.result)
+    |> _
 
 ~produce(value: 10)
-| done |> _
+|> _
 
 ~produce(value: 30)
-| done |> _
+|> _

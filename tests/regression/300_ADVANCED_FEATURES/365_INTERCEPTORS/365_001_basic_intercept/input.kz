@@ -8,11 +8,9 @@ const std = @import("std");
 
 // Target event that will be intercepted
 ~event log.write { logline: []const u8 }
-| written
 
 ~proc log.write {
     std.debug.print("{s}\n", .{logline});
-    return .{ .written = .{} };
 }
 
 // Interceptor: Add prefix to all log writes
@@ -21,4 +19,4 @@ const std = @import("std");
 
 // Test flow - the interceptor should modify the logline
 ~log.write(logline: "Hello World")
-| written _ |> _
+|> _

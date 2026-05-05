@@ -8,28 +8,7 @@ const std = @import("std");
 
 // Pure event
 ~event pure_op { x: i32 }
-| done i32
-
-~[pure]proc pure_op {
-    return .{ .done = x * 2 };
-}
-
-// Impure event
-~event impure_op { x: i32 }
-| done i32
-
-~proc impure_op {
-    std.debug.print("[IMPURE] Processing {}\n", .{x});
-    return .{ .done = x * 2 };
-}
-
-// Flow that composes impure operations
-// Demonstrates that purity is per-event: if any callee is impure, the flow is impure
-~event mixed { x: i32 }
-| done i32
-
-~mixed = impure_op(x: x)
-| done d |> done { result: d.result }
+|> done { result: d.result }
 
 ~mixed(x: 21)
-| done d |> std.io:print.ln("Result: {{ d.result:d }}")
+|> std.io:print.ln("Result: {{ d.result:d }}")

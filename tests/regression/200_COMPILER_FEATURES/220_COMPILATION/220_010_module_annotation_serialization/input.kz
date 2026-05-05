@@ -10,11 +10,9 @@
 ~import "$std/io"
 
 ~event hello {}
-| done
 
 ~proc hello {
-    return .{ .done = .{} };
 }
 
 ~hello()
-| done |> _
+|> _

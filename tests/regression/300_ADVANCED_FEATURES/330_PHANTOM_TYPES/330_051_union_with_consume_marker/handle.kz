@@ -31,10 +31,8 @@ const Handle = struct {
 
 // Finalize - accepts EITHER opened OR closing, discharging whichever obligation exists
 ~pub event finalize { h: *Handle[!opened|closing] }
-| done
 
 ~proc finalize {
     std.debug.print("Finalizing handle: {d}\n", .{h.id});
     // Clean up the handle
-    return .{ .done = .{} };
 }

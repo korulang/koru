@@ -16,7 +16,7 @@ const Program = ast.Program;
 // All compiler events must be module-qualified
 ~std.compiler:coordinate =
     custom_marker()
-| done |> std.compiler:context_create(program_ast: program_ast, allocator: allocator)
+|> std.compiler:context_create(program_ast: program_ast, allocator: allocator)
   | created c0 |> std.compiler:frontend(ctx: c0)
     | ctx c1 |> std.compiler:transform_taps(ctx: c1)
       | ctx c2 |> std.compiler:analysis(ctx: c2)
@@ -32,21 +32,17 @@ const Program = ast.Program;
 
 // Helper event to print marker (must be comptime since it's called from coordinate handler)
 ~[comptime] event custom_marker {}
-| done
 
 ~proc custom_marker {
     std.debug.print("CUSTOM COORDINATOR: Pipeline override active!\n", .{});
-    return .{ .done = .{} };
 }
 
 // Simple test event
 ~pub event hello {}
-| done
 
 ~proc hello {
     std.debug.print("Hello from custom-compiled code!\n", .{});
-    return .{ .done = .{} };
 }
 
 ~hello()
-| done |> _
+|> _

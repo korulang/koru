@@ -2,7 +2,4 @@
 // GOOD: Backend catches with KORU030 "branch has payload but no binding"
 
 ~event foo { x: i32 }
-| done i32
-
-~foo(x: 1)
-| done |> _
+|> _

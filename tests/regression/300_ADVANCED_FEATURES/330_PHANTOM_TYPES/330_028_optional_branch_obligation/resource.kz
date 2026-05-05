@@ -21,9 +21,7 @@ const Handle = struct {
 
 // Disposer for the obligation (would need to be called for ?leaked)
 ~pub event close { handle: *Handle[!owned] }
-| closed
 
 ~proc close {
     std.debug.print("Closing handle\n", .{});
-    return .{ .closed = .{} };
 }

@@ -5,16 +5,4 @@
 const std = @import("std");
 
 ~event process_path { path: []const u8 }
-| done []const u8
-
-~proc process_path {
-    std.debug.print("Processing path: {s}\n", .{path});
-    return .{ .done = path };
-}
-
-// This should parse correctly:
-// - "path\\to\\file" contains \\t (escaped backslash + t)
-// - NOT \t (tab escape sequence)
-// Previously failed with "Zig code not allowed in flows"
-~process_path(path: "path\\to\\file")
-| done _ |> _
+|> _

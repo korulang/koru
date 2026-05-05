@@ -25,15 +25,13 @@ const std = @import("std");
 
 // Print result
 ~event print { result: u64 }
-| done
 
 ~proc print {
     std.debug.print("Sum: {}\n", .{result});
-    return .{ .done = .{} };
 }
 
 // Loop: count to 1 million
 ~#loop count(i: 0, sum: 0)
 | next n |> @loop(i: n.i, sum: n.sum)
-| done d |> print(result: d.result)
-    | done |> _
+|> print(result: d.result)
+    |> _

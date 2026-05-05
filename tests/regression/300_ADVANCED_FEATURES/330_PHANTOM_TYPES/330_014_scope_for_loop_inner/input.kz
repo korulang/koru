@@ -4,5 +4,5 @@
 | each _ |>
     app.fs:open(path: "test.txt")
     | opened _ |> _  // Should auto-insert close() here, per iteration
-| done |> _
+|> _
 pub fn main() void {}

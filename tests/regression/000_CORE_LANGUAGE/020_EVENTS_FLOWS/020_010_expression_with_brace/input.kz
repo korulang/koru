@@ -2,15 +2,13 @@
 // Verifies parser captures { ... } as Expression argument
 
 ~event test_expr { val: Expression }
-| done
 
 ~proc test_expr {
     const std = @import("std");
     std.debug.print("val={s}\n", .{val});
-    return .{ .done = .{} };
 }
 
 // This should parse { foo: 1 } as the Expression argument
 // Using explicit val: to avoid implicit argument issues
 ~test_expr(val: { foo: 1 })
-| done |> _
+|> _

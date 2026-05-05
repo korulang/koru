@@ -42,4 +42,4 @@ const items = [_]i32{ 1, 2, 3 };
 ~for(&items)
 | each item |> double(x: item)
     | result r |> print_num(y: r)
-| done |> finalize()
+|> finalize()

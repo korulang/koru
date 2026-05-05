@@ -7,12 +7,10 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event work {}
-| done
 
 ~event logger {}
 
 ~proc work {
-    return .{ .done = .{} };
 }
 
 ~proc logger {
@@ -24,4 +22,4 @@ const std = @import("std");
 | Transition |> logger()
 
 ~work()
-| done |> _
+|> _

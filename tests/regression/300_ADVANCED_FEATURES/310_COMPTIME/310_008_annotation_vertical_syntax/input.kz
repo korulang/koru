@@ -30,7 +30,6 @@ const std = @import("std");
 
 // Should be equivalent to inline
 ~[comptime|runtime|fuseable] event inline_equiv {}
-| done
 
 ~proc vertical_bullets { return .{ .done = .{} }; }
 ~proc vertical_params { return .{ .done = .{} }; }

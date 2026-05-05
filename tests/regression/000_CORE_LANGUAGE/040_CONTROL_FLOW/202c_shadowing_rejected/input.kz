@@ -23,11 +23,9 @@ const std = @import("std");
 }
 
 ~event show { outer_val: i32, inner_val: i32 }
-| done
 
 ~proc show {
     std.debug.print("Outer: {}, Inner: {}\n", .{outer_val, inner_val});
-    return .{ .done = .{} };
 }
 
 // ERROR: Duplicate binding name 'r'
@@ -37,4 +35,4 @@ const std = @import("std");
 ~first(value: 10)
 | result r |> second(value: r.num)
     | data r |> show(outer_val: r.num, inner_val: r.num)
-        | done |> _
+        |> _

@@ -44,7 +44,6 @@ const Transaction = struct { conn: *Connection };
 // close: consumes connection obligation, returns void
 // Marked [!] as default discharge for connections
 ~[!]pub event close { conn: *Connection[!connected] }
-| closed
 
 ~proc close {
     std.heap.page_allocator.destroy(conn);

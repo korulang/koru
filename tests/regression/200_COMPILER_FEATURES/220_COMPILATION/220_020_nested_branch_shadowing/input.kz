@@ -24,43 +24,38 @@ const Resource = struct {
 }
 
 ~event work { r: *Resource[active] }
-| done
 
 ~proc work {
     r.data[0] +%= 1;
-    return .{ .done = .{} };
 }
 
 ~event destroy { r: *Resource[!active] }
-| destroyed
 
 ~proc destroy {
     std.heap.page_allocator.destroy(r);
-    return .{ .destroyed = .{} };
 }
 
 ~event run_one { id: usize }
-| finished
 
 ~run_one = create(id: id)
 | created r |>
     work(r: r)
-    | done |>
+    |>
         work(r: r)
-        | done |>
+        |>
             work(r: r)
-            | done |>
+            |>
                 work(r: r)
-                | done |>
+                |>
                     work(r: r)
-                    | done |>
+                    |>
                         destroy(r: r)
-                        | destroyed |> finished
+                        |> finished
 
 ~for(0..10)
 | each _ |>
     run_one(id: 0)
     | finished |> _
-| done |> _
+|> _
 
 pub fn main() void {}

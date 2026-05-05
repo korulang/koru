@@ -4,12 +4,10 @@
 const std = @import("std");
 
 ~event test_pass {}
-| done
 
 ~proc test_pass {
     std.debug.print("HostTypeDecl infrastructure ready\n", .{});
-    return .{ .done = .{} };
 }
 
 ~test_pass()
-| done |> _
+|> _

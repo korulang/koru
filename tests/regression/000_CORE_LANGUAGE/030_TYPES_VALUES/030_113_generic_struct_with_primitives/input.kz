@@ -14,14 +14,12 @@ const std = @import("std");
 ~type(EmailBox = Box<EmailAddress>)
 
 ~event test_email {}
-| done
 
 ~proc test_email {
     const email: EmailAddress = "test@example.com";
     const box = EmailBox{ .value = email };
     std.debug.print("Email: {s}\n", .{box.value});
-    return .{ .done = .{} };
 }
 
 ~test_email()
-| done |> _
+|> _

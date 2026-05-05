@@ -16,4 +16,4 @@
 ~import "$app/comptime_lib"
 
 ~[comptime] app.comptime_lib:setup(config: "test-config")
-| ok _ |> _
+|> _

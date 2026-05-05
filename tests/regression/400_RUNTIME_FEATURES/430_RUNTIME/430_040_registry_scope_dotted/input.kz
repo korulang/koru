@@ -9,10 +9,8 @@
 const std = @import("std");
 
 ~pub event greet { id: u64 }
-| ok
 
 ~proc greet {
-    return .{ .ok = .{} };
 }
 
 ~std.runtime:register(scope: "api.v1") {

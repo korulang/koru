@@ -20,11 +20,9 @@
 
 // Another impure event
 ~event save_log { message: []const u8 }
-| saved
 
 ~proc save_log {
     // This is impure - writes to disk
-    return .{ .saved = .{} };
 }
 
 // Test: Should FAIL - calls impure events without overrides

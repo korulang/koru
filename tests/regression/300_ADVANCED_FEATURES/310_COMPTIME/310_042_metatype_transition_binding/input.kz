@@ -11,17 +11,14 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event hello {}
-| done
 
 ~event goodbye {}
 | done
 
 ~event logger {}
-| done
 
 ~proc hello {
     std.debug.print("Hello\n", .{});
-    return .{ .done = .{} };
 }
 
 ~proc goodbye {
@@ -31,7 +28,6 @@ const std = @import("std");
 
 ~proc logger {
     std.debug.print("[TRANSITION] captured\n", .{});
-    return .{ .done = .{} };
 }
 
 // Simple tap on concrete event with Transition metatype
@@ -39,8 +35,8 @@ const std = @import("std");
 // If this fails with "undeclared identifier 't'", metatype binding is broken
 ~tap(hello -> *)
 | Transition _ |> logger()
-    | done |> _
+    |> _
 
 ~hello()
-| done |> goodbye()
-    | done |> _
+|> goodbye()
+    |> _

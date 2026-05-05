@@ -13,22 +13,18 @@ const std = @import("std");
 
 // Event chain to create deep nesting
 ~event step1 {}
-| done
 
 ~proc step1 {
-    return .{ .done = .{} };
 }
 
 ~event step2 {}
-| done
 
 ~proc step2 {
-    return .{ .done = .{} };
 }
 
 // Main flow: for is nested 2 levels deep
 ~step1()
-| done |> step2()
-    | done |> for(0..3)
+|> step2()
+    |> for(0..3)
         | each |> std.io:println(text: "iteration")
-        | done |> std.io:println(text: "done")
+        |> std.io:println(text: "done")

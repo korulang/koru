@@ -35,7 +35,7 @@
     ~std.fs:read_lines = failed "mocked file read error"
 
     ~process_config(path: "/this/file/does/not/exist.txt")
-    | ok |> assert.fail()
+    |> assert.fail()
     | failed result |> assert(result.len > 0)
 }
 
@@ -47,6 +47,6 @@
     ~std.fs:read_lines = lines ["line1", "line2", "line3"]
 
     ~process_config(path: "/fake/path")
-    | ok result |> assert(result == 3)
+    |> assert(result == 3)
     | failed |> assert.fail()
 }

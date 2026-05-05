@@ -44,7 +44,7 @@ const entities = [_]Entity{
 ~for(&entities)
 | each e |> process_entity(e: e)
     | entity _ |> noop()
-| done |> print_done()
+|> print_done()
 
 ~event noop {}
 ~proc noop {}

@@ -3,4 +3,4 @@
 // Should say: "Event 'nonexistent' is not defined"
 
 ~nonexistent(x: 1)
-| done |> _
+|> _

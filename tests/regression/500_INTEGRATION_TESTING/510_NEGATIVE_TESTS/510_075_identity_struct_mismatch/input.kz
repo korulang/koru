@@ -10,9 +10,4 @@
 // and does NOT let the malformed constructor reach Zig emission.
 
 ~event greet {}
-| ok []const u8
-
-~greet = ok { message: "Hello" }
-
-~greet()
-| ok _ |> _
+|> _

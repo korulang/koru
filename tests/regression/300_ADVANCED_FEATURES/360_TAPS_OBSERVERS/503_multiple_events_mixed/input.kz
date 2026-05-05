@@ -31,12 +31,12 @@
 ~std.io:println(text: "Starting computation")
 
 ~compute(x: 5)
-| done d |> validate(n: d)
+|> validate(n: d)
     | valid |> std.io:println(text: "Valid result")
     | invalid |> std.io:println(text: "Invalid result")
 
 ~compute(x: -3)
-| done d |> validate(n: d)
+|> validate(n: d)
     | valid |> std.io:println(text: "Valid result")
     | invalid |> std.io:println(text: "Invalid result")
 

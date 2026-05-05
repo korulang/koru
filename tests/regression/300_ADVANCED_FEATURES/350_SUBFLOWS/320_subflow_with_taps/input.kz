@@ -26,29 +26,25 @@ const std = @import("std");
 
 // Observer that should be called by the tap
 ~event observer {}
-| done
 
 ~proc observer {
     std.debug.print("TAP FIRED: add_five -> result transition observed!\n", .{});
-    return .{ .done = .{} };
 }
 
 // Print final result
 ~event print_final { value: i32 }
-| done
 
 ~proc print_final {
     std.debug.print("Final: {}\n", .{value});
-    return .{ .done = .{} };
 }
 
 // TAP: Observe add_five -> result transitions
 // This tap should fire when the subflow transitions through add_five's result branch
 ~tap(add_five -> *)
 | result |> observer()
-    | done |> _
+    |> _
 
 // Execute the subflow - tap should fire
 ~double(value: 10)
 | result r |> print_final(value: r)
-    | done |> _
+    |> _

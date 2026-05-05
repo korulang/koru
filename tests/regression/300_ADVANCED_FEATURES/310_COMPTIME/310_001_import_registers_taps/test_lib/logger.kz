@@ -6,11 +6,9 @@ const std = @import("std");
 
 // Define a logging event
 ~pub event log { event_name: []const u8 }
-| done
 
 ~proc log {
     std.debug.print("[TAP] Intercepted event: {s}\n", .{event_name});
-    return .{ .done = .{} };
 }
 
 // Tap: Intercept transitions from compute (any destination)
@@ -18,11 +16,11 @@ const std = @import("std");
 // Note: 'input:' is the canonical namespace for entry module events
 ~tap(input:compute -> input:format)
 | result r |> log(event_name: "compute")
-    | done |> result { result: r }
+    |> result { result: r }
 
 // Tap: Intercept transitions from format (any destination)
 // When main.kz calls format(), this tap fires automatically!
 // Note: 'input:' is the canonical namespace for entry module events
 ~tap(input:format -> input:display)
 | formatted f |> log(event_name: "format")
-    | done |> formatted { formatted: f }
+    |> formatted { formatted: f }

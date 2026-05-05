@@ -55,10 +55,8 @@ var sum: u64 = 0;
 
 // Starting event to kick off the loop
 ~event start {}
-| ready
 
 ~proc start {
-    return .{ .ready = .{} };
 }
 
 // ============================================================================
@@ -76,6 +74,6 @@ var sum: u64 = 0;
 // ============================================================================
 
 ~start()
-| ready |> #loop count(i: 0)
+|> #loop count(i: 0)
     | next n |> @loop(i: n.value + 1)
-    | done |> _
+    |> _

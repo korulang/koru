@@ -174,24 +174,21 @@ const Body = struct {
 }
 
 ~event apply_sun_offset { bodies: []Body, px: f64, py: f64, pz: f64 }
-| adjusted
 
 ~proc apply_sun_offset {
     bodies[0].vx = -px / SOLAR_MASS;
     bodies[0].vy = -py / SOLAR_MASS;
     bodies[0].vz = -pz / SOLAR_MASS;
-    return .{ .adjusted = .{} };
 }
 
 // Subflow: Offset momentum by calculating each component then applying
 ~event offset_momentum { bodies: []Body }
-| adjusted
 
 ~offset_momentum = calculate_momentum_x(bodies: bodies)
 | computed cx |> calculate_momentum_y(bodies: bodies)
     | computed cy |> calculate_momentum_z(bodies: bodies)
         | computed cz |> apply_sun_offset(bodies: bodies, px: cx.px, py: cy.py, pz: cz.pz)
-            | adjusted |> adjusted {}
+            |> adjusted {}
 
 // ============================================================================
 // ENERGY CALCULATION - Ultra granular
@@ -306,7 +303,7 @@ const Body = struct {
 | computed dv |> calculate_distance_scalar(dx: dv.dx, dy: dv.dy, dz: dv.dz)
     | computed ds |> calculate_gravitational_magnitude(distance: ds.distance, dt: dt)
         | computed gm |> update_body_pair_velocities(b1: dv.b1, b2: dv.b2, dx: ds.dx, dy: ds.dy, dz: ds.dz, mag: gm.mag)
-            | updated u |> updated { b1: u.b1, b2: u.b2 }
+            |> updated { b1: u.b1, b2: u.b2 }
 
 // ============================================================================
 // NESTED LOOP DECOMPOSITION - The Ultimate Test
@@ -315,7 +312,6 @@ const Body = struct {
 
 // Helper: Update one pair of bodies in the array
 ~event update_pair_in_array { bodies: []Body, i: usize, j: usize, dt: f64 }
-| updated_array
 
 ~proc update_pair_in_array {
     const dx = bodies[i].x - bodies[j].x;
@@ -332,7 +328,6 @@ const Body = struct {
     bodies[j].vy += dy * bodies[i].mass * mag;
     bodies[j].vz += dz * bodies[i].mass * mag;
 
-    return .{ .updated_array = .{} };
 }
 
 // Inner loop iteration: process pairs for current i
@@ -363,12 +358,11 @@ const Body = struct {
 
 // Main entry point: Event-driven nested loop for all interactions
 ~event calculate_all_interactions { bodies: []Body, dt: f64 }
-| updated
 
 ~calculate_all_interactions = outer_loop_step(bodies: bodies, i: 0, dt: dt)
 | continue_outer outer |> #inner_start inner_loop_step(bodies: bodies, i: outer.i, j: outer.i + 1, dt: outer.dt)
     | continue_inner inner |> update_pair_in_array(bodies: bodies, i: inner.i, j: inner.j, dt: inner.dt)
-        | updated_array |> @inner_start(bodies: bodies, i: inner.i, j: inner.j + 1, dt: inner.dt)
+        |> @inner_start(bodies: bodies, i: inner.i, j: inner.j + 1, dt: inner.dt)
     | done_inner done_i |> outer_loop_step(bodies: bodies, i: done_i.i + 1, dt: outer.dt)
         | continue_outer co2 |> @inner_start(bodies: bodies, i: co2.i, j: co2.i + 1, dt: co2.dt)
         | done_outer |> updated {}
@@ -379,7 +373,6 @@ const Body = struct {
 // ============================================================================
 
 ~event update_all_positions { bodies: []Body, dt: f64 }
-| advanced
 
 ~proc update_all_positions {
     for (bodies) |*body| {
@@ -387,7 +380,6 @@ const Body = struct {
         body.y += dt * body.vy;
         body.z += dt * body.vz;
     }
-    return .{ .advanced = .{} };
 }
 
 // ============================================================================
@@ -395,11 +387,9 @@ const Body = struct {
 // ============================================================================
 
 ~event print_energy { energy: f64 }
-| done
 
 ~proc print_energy {
     std.debug.print("{d:.9}\n", .{energy});
-    return .{ .done = .{} };
 }
 
 ~event simulation_step { i: u32, n: u32 }
@@ -437,12 +427,12 @@ const Body = struct {
 ~parse_args()
 | parsed p |> initialize_system()
     | initialized init |> offset_momentum(bodies: init.bodies[0..])
-        | adjusted |> calculate_total_energy(bodies: init.bodies[0..])
+        |> calculate_total_energy(bodies: init.bodies[0..])
             | result r1 |> print_energy(energy: r1.energy)
-                | done |> #sim_loop simulation_step(i: 0, n: p.n)
+                |> #sim_loop simulation_step(i: 0, n: p.n)
                     | continue cont |> calculate_all_interactions(bodies: init.bodies[0..], dt: 0.01)
-                        | updated |> update_all_positions(bodies: init.bodies[0..], dt: 0.01)
-                            | advanced |> @sim_loop(i: cont.i + 1, n: cont.n)
-                    | done |> calculate_total_energy(bodies: init.bodies[0..])
+                        |> update_all_positions(bodies: init.bodies[0..], dt: 0.01)
+                            |> @sim_loop(i: cont.i + 1, n: cont.n)
+                    |> calculate_total_energy(bodies: init.bodies[0..])
                         | result r2 |> print_energy(energy: r2.energy)
-                            | done |> _
+                            |> _

@@ -7,11 +7,9 @@ const std = @import("std");
 
 // Define a logging event
 ~pub event log { event_name: []const u8 }
-| done
 
 ~proc log {
     std.debug.print("[TAP] Intercepted: {s}\n", .{event_name});
-    return .{ .done = .{} };
 }
 
 // Module-level glob: Intercept ALL events from main module
@@ -22,14 +20,14 @@ const std = @import("std");
 // Note: Tap flows must end with void - they're observers, not transformers
 ~tap(input:* -> *)
 | result |> log(event_name: "compute")
-    | done |> _
+    |> _
 
 // Tap for format event (.formatted branch)
 ~tap(input:* -> *)
 | formatted |> log(event_name: "format")
-    | done |> _
+    |> _
 
 // Tap for display event (.done branch)
 ~tap(input:* -> *)
-| done |> log(event_name: "display")
-    | done |> _
+|> log(event_name: "display")
+    |> _

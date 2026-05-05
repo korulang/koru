@@ -27,12 +27,10 @@ const std = @import("std");
 
 // Scaffold to make it compile
 ~event dummy {}
-| done
 
 ~proc dummy {
     std.debug.print("dummy\n", .{});
-    return .{ .done = .{} };
 }
 
 ~dummy()
-| done |> _
+|> _

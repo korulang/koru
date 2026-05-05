@@ -24,7 +24,7 @@ pub const Data = struct {
 // Main flow: Use shorthand syntax (r.source) which should expand to (source: r.source)
 ~start()
 | result r |> process(r.source, r.branch, r.destination)
-    | done |> _
+    |> _
 
 ~event start {}
 | result Data

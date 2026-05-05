@@ -14,7 +14,7 @@
 ~import "$app/db"
 
 ~app.db:connect(host: "localhost")
-| ok _ |>
+|>
     // We got a connection with phantom obligation [open!]
     // But we never call begin() to start a transaction!
     // The phantom obligation is NOT satisfied - should error.

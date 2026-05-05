@@ -36,6 +36,6 @@ const std = @import("std");
 // Loop with namespaced events
 ~#loop server.accept()
 | connection c |> server.handle(id: c.id)
-    | processed |> @loop()
+    |> @loop()
     | failed |> @loop()
 | stopped |> _

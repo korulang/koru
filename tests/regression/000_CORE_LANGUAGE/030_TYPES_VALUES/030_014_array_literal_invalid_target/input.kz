@@ -5,11 +5,10 @@
 // parameter must fail.
 
 ~event take { numbers: i32 }
-| done
 
 ~proc take {
     return .{ .done = {} };
 }
 
 ~take(numbers: [1, 2, 3])
-| done |> _
+|> _

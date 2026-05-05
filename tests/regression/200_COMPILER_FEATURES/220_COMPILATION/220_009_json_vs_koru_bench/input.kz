@@ -26,17 +26,4 @@ const JSON_SAMPLE =
 ;
 
 ~event bench_json {}
-| done usize
-
-~proc bench_json {
-    const parsed = std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, JSON_SAMPLE, .{}) catch {
-        return .{ .done = 0 };
-    };
-    defer parsed.deinit();
-
-    const events = parsed.value.object.get("events") orelse return .{ .done = 0 };
-    return .{ .done = events.array.items.len };
-}
-
-~bench_json()
-| done d |> std.io:print.ln("JSON: {{d:d}} events")
+|> std.io:print.ln("JSON: {{d:d}} events")

@@ -5,16 +5,14 @@
 const std = @import("std");
 
 ~event start {}
-| done
 
 ~proc start {
-    return .{ .done = .{} };
 }
 
 // Outer if contains inner if
 // Both should transform to Zig if statements
 ~start()
-| done |> if(true)
+|> if(true)
     | then |> if(false)
         | then |> _
         | else |> _

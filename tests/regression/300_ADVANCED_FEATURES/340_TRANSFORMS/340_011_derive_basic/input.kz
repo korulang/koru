@@ -13,4 +13,4 @@
 
 // Use the generated event - greet.info should exist after derive
 ~greet.info()
-| done |> _
+|> _

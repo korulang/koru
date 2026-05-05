@@ -5,6 +5,6 @@
     std.control:for(0..3)
     | each _ |>
         app.fs:close(file: f.file)  // ERROR! Would run 3 times
-        | closed _ |> _
-    | done |> _
+        |> _
+    |> _
 pub fn main() void {}

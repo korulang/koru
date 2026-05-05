@@ -55,11 +55,9 @@ const std = @import("std");
 
 // Stage 5: Display
 ~event display { text: []const u8 }
-| done
 
 ~proc display {
     std.debug.print("{s}\n", .{text});
-    return .{ .@"done" = .{} };
 }
 
 // The chain: parse -> validate -> transform -> format -> display
@@ -69,8 +67,8 @@ const std = @import("std");
     | valid v |> transform(value: v)
         | transformed t |> format(value: t)
             | formatted f |> display(text: f)
-                | done |> _
+                |> _
     | invalid i |> display(text: i)
-        | done |> _
+        |> _
 | invalid i |> display(text: i)
-    | done |> _
+    |> _

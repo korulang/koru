@@ -2,6 +2,6 @@
 ~app.fs:open(path: "test.txt")
 | opened f |> app.fs:lock(file: f)
     | locked l |> app.fs:write(file: l, data: "test")
-        | written |> app.fs:unlock(file: l)
+        |> app.fs:unlock(file: l)
             | unlocked |> _
         | err _ |> app.fs:force_close(file: l)

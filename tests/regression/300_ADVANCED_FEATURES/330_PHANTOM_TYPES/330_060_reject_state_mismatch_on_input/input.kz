@@ -1,16 +1,9 @@
 const Connection = struct { id: i32 };
 ~pub event query { conn: *Connection[connected], sql: []const u8 }
-| done
 ~proc query {
-    return .{ .done = .{} };
 }
 ~pub event get_raw_connection {}
-| ok *Connection
-~proc get_raw_connection {
-    return .{ .ok = undefined };
-}
-~get_raw_connection()
-| ok c |>
+|>
     query(conn: c.conn, sql: "SELECT 1")
-    | done |> _
+    |> _
 pub fn main() void {}

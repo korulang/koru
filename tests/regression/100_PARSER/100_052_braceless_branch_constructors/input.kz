@@ -33,7 +33,7 @@
 // Main entry point
 ~std.io:print.ln("Testing empty braceless:")
 ~empty_result()
-| ok |> std.io:print.ln("  Got ok!")
+|> std.io:print.ln("  Got ok!")
 | fail |> std.io:print.ln("  Got fail!")
 
 ~std.io:print.ln("Testing value braceless:")

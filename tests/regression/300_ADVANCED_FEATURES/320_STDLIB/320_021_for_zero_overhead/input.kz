@@ -22,4 +22,4 @@ const std = @import("std");
 
 ~for(0..5)
 | each |> std.io:println(text: "iteration")
-| done |> std.io:println(text: "done")
+|> std.io:println(text: "done")

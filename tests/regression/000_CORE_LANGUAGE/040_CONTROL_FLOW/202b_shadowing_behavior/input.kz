@@ -21,15 +21,13 @@ const std = @import("std");
 }
 
 ~event show { outer_val: i32, inner_val: i32 }
-| done
 
 ~proc show {
     std.debug.print("Outer: {}, Inner: {}\n", .{outer_val, inner_val});
-    return .{ .done = .{} };
 }
 
 // Test: Use unique binding names (r and d)
 ~first(value: 10)
 | result r |> second(value: r)
     | data d |> show(outer_val: r, inner_val: d)
-        | done |> _
+        |> _

@@ -2,6 +2,5 @@
 // This tests CODEX_REVIEW_FINDINGS CRITICAL #3
 
 ~event foo {}
-| done
 
 ~foo =

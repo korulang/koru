@@ -19,4 +19,4 @@
 ~import "$std/io"
 
 ~[comptime] app.comptime_lib:greet(name: "world")
-| ok msg |> std.io:print.ln("{{msg}}")
+|> std.io:print.ln("{{msg}}")

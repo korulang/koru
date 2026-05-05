@@ -13,11 +13,9 @@
 ~import "$std/compiler"
 
 ~event main {}
-| done
 
 ~proc main {
-    return .{ .done = .{} };
 }
 
 ~main()
-| done |> _
+|> _

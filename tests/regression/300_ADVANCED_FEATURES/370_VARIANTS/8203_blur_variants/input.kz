@@ -14,7 +14,6 @@
 // ❌ GPU code generation (future work)
 
 ~pub event blur { }
-| done
 
 ~proc blur|naive {
     return .done;

@@ -14,13 +14,11 @@ const std = @import("std");
 ~type(StringIntPair = Pair<[]const u8, i32>)
 
 ~event test_pair {}
-| done
 
 ~proc test_pair {
     const p = StringIntPair{ .first = "answer", .second = 42 };
     std.debug.print("{s}: {d}\n", .{ p.first, p.second });
-    return .{ .done = .{} };
 }
 
 ~test_pair()
-| done |> _
+|> _

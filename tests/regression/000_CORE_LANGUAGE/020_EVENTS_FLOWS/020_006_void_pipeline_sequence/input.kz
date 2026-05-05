@@ -5,12 +5,10 @@
 
 // Simple work event
 ~event work {}
-| done
 
 ~proc work {
-    return .{ .done = .{} };
 }
 
 ~work()
-| done |> std.io:print.ln("Step 1") |> work() |> std.io:print.ln("Step 2")
-    | done |> std.io:print.ln("Done!")
+|> std.io:print.ln("Step 1") |> work() |> std.io:print.ln("Step 2")
+    |> std.io:print.ln("Done!")

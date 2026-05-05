@@ -12,10 +12,10 @@
 ~import "$app/db"
 
 ~app.db:connect(host: "localhost")
-| ok c |>
+|>
     // Try to close immediately - this should FAIL!
     // close() needs [!active], but we have [connected!]
     app.db:close(conn: c.conn)
-    | ok _ |> _
+    |> _
     | err _ |> _
 | err _ |> _

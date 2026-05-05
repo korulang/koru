@@ -8,13 +8,6 @@
 ~import "$std/io"
 
 ~event provide {}
-| ok i64
-
-~proc provide {
-    return .{ .ok = 42 };
-}
-
-~provide()
-| ok val |> std.io:print.ln("value is {{ val:d }}")
+|> std.io:print.ln("value is {{ val:d }}")
 
 pub fn main() void {}

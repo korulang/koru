@@ -12,10 +12,8 @@ const std = @import("std");
 
 // Event chain to create deep nesting
 ~event step1 {}
-| done
 
 ~proc step1 {
-    return .{ .done = .{} };
 }
 
 ~event step2 {}
@@ -27,7 +25,7 @@ const std = @import("std");
 
 // Main flow: if is nested 2 levels deep
 ~step1()
-| done |> step2()
+|> step2()
     | result r |> if(r > 10)
         | then |> std.io:println(text: "greater")
         | else |> std.io:println(text: "less")

@@ -25,9 +25,7 @@ const File = struct { handle: i32 };
 
 // A logging event for taps - receives the file handle from tap binding
 ~pub event log_open { handle: i32 }
-| done
 
 ~proc log_open {
     std.debug.print("TAP: Observed file open!\n", .{});
-    return .{ .done = .{} };
 }

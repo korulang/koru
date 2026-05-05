@@ -6,25 +6,19 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event file.read {}
-| done
 
 ~proc file.read {
-    return .{ .done = .{} };
 }
 
 ~event file.write {}
-| done
 
 ~proc file.write {
     std.debug.print("Writing\n", .{});
-    return .{ .done = .{} };
 }
 
 ~event network.fetch {}
-| done
 
 ~proc network.fetch {
-    return .{ .done = .{} };
 }
 
 ~event logger { caller: []const u8 }
@@ -38,7 +32,7 @@ const std = @import("std");
 | Profile p |> logger(caller: p.source)
 
 ~file.read()
-| done |> file.write()
-    | done |> network.fetch()
-        | done |> file.write()
-            | done |> _
+|> file.write()
+    |> network.fetch()
+        |> file.write()
+            |> _

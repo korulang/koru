@@ -15,7 +15,6 @@ const std = @import("std");
 
 // Two simple events
 ~event target {}
-| done
 
 ~event other {}
 | done
@@ -23,7 +22,6 @@ const std = @import("std");
 // Procs
 ~proc target {
     std.debug.print("target called\n", .{});
-    return .{ .done = .{} };
 }
 
 ~proc other {
@@ -45,8 +43,8 @@ const std = @import("std");
 
 // Flow 1: DOES call target - tap SHOULD fire
 ~target()
-| done _ |> _
+|> _
 
 // Flow 2: does NOT call target - tap should NOT fire
 ~other()
-| done _ |> _
+|> _

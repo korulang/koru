@@ -50,9 +50,7 @@ const Connection = struct {
 
 // Close - accepts active OR paused (union!) - cleans up connection
 ~pub event close { conn: *Connection[active|paused] }
-| closed
 
 ~proc close {
     std.debug.print("Closing: {d}\n", .{conn.id});
-    return .{ .closed = .{} };
 }

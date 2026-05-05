@@ -97,7 +97,6 @@ const Body = struct {
 // ============================================================================
 
 ~event offset_momentum { bodies: []Body }
-| adjusted
 
 ~proc offset_momentum {
     var px: f64 = 0.0;
@@ -114,7 +113,6 @@ const Body = struct {
     bodies[0].vy = -py / SOLAR_MASS;
     bodies[0].vz = -pz / SOLAR_MASS;
 
-    return .{ .adjusted = .{} };
 }
 
 // ============================================================================
@@ -150,11 +148,9 @@ const Body = struct {
 // ============================================================================
 
 ~event print_energy { energy: f64 }
-| done
 
 ~proc print_energy {
     std.debug.print("{d:.9}\n", .{energy});
-    return .{ .done = .{} };
 }
 
 // ============================================================================
@@ -163,7 +159,6 @@ const Body = struct {
 // ============================================================================
 
 ~event calculate_interactions { bodies: []Body, dt: f64 }
-| updated
 
 ~proc calculate_interactions {
     var i: usize = 0;
@@ -186,7 +181,6 @@ const Body = struct {
         }
     }
 
-    return .{ .updated = .{} };
 }
 
 // ============================================================================
@@ -195,7 +189,6 @@ const Body = struct {
 // ============================================================================
 
 ~event update_positions { bodies: []Body, dt: f64 }
-| advanced
 
 ~proc update_positions {
     for (bodies) |*body| {
@@ -204,7 +197,6 @@ const Body = struct {
         body.z += dt * body.vz;
     }
 
-    return .{ .advanced = .{} };
 }
 
 // ============================================================================
@@ -251,12 +243,12 @@ const Body = struct {
 ~parse_args()
 | parsed p |> initialize_bodies()
     | initialized init |> offset_momentum(bodies: init.bodies[0..])
-        | adjusted |> calculate_energy(bodies: init.bodies[0..])
+        |> calculate_energy(bodies: init.bodies[0..])
             | result r1 |> print_energy(energy: r1.energy)
-                | done |> #sim_loop simulation_step(i: 0, n: p.n)
+                |> #sim_loop simulation_step(i: 0, n: p.n)
                     | continue cont |> calculate_interactions(bodies: init.bodies[0..], dt: 0.01)
-                        | updated |> update_positions(bodies: init.bodies[0..], dt: 0.01)
-                            | advanced |> @sim_loop(i: cont.i + 1, n: cont.n)
-                    | done |> calculate_energy(bodies: init.bodies[0..])
+                        |> update_positions(bodies: init.bodies[0..], dt: 0.01)
+                            |> @sim_loop(i: cont.i + 1, n: cont.n)
+                    |> calculate_energy(bodies: init.bodies[0..])
                         | result r2 |> print_energy(energy: r2.energy)
-                            | done |> _
+                            |> _

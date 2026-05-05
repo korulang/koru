@@ -6,10 +6,8 @@
 const std = @import("std");
 
 ~pub event debug.dump_state {}
-| dumped
 
 ~proc debug.dump_state {
-    return .{ .dumped = .{} };
 }
 
 ~[registry:scope(admin)]std.runtime:register {

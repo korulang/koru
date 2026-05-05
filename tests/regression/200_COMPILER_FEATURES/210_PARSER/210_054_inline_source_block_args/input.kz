@@ -17,7 +17,6 @@ const std = @import("std");
 }
 
 ~event setup {}
-| ready
 
 ~proc setup { return .{ .ready = .{} }; }
 
@@ -28,5 +27,5 @@ const show = true;
 
 // Inline Source block inside a pipeline continuation with args
 ~setup()
-| ready |> inline.source(expr: show) { const z = 3; }
+|> inline.source(expr: show) { const z = 3; }
     | transformed |> _

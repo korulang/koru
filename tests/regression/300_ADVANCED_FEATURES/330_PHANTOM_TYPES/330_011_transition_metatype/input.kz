@@ -1,13 +1,10 @@
 const std = @import("std");
 ~event hello {}
-| done
 ~event goodbye {}
 | done
 ~[comptime|runtime] event logger { source: []const u8, branch: []const u8, destination: ?[]const u8 }
-| done
 ~proc hello {
     std.debug.print("Hello executed\n", .{});
-    return .{ .done = .{} };
 }
 ~proc goodbye {
     std.debug.print("Goodbye executed\n", .{});
@@ -19,11 +16,10 @@ const std = @import("std");
     } else {
         std.debug.print("Transition: {s}.{s} -> terminal\n", .{source, branch});
     }
-    return .{ .done = .{} };
 }
 ~[comptime|runtime]* -> *
 | Transition t |> logger(source: taps.eventToString(t.source), branch: taps.branchToString(t.branch), destination: if (t.destination) |d| taps.eventToString(d) else null)
-    | done |> _
+    |> _
 ~hello()
-| done |> goodbye()
-    | done |> _
+|> goodbye()
+    |> _

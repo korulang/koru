@@ -37,7 +37,6 @@ const std = @import("std");
 
 // Helper to verify and print the result
 ~event verify_and_print { value: i32 }
-| done
 
 ~proc verify_and_print {
     if (value == 30) {
@@ -45,10 +44,9 @@ const std = @import("std");
     } else {
         std.debug.print("ERROR: Expected 30, got {}\n", .{value});
     }
-    return .{ .done = .{} };
 }
 
 // Test: 5 * 3 * 2 = 30
 ~process(input: 5)
 | final f |> verify_and_print(value: f)
-    | done |> _
+    |> _

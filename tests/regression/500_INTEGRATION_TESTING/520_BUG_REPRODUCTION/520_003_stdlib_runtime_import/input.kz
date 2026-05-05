@@ -19,7 +19,6 @@
 const std = @import("std");
 
 ~event test_parser_runtime {}
-| success
 
 ~proc test_parser_runtime {
     const allocator = std.heap.page_allocator;
@@ -46,7 +45,6 @@ const std = @import("std");
         },
     }
 
-    return .{ .success = .{} };
 }
 
 ~test_parser_runtime()

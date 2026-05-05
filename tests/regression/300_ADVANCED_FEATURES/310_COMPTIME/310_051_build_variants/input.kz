@@ -22,10 +22,8 @@
 }
 
 ~event blur { intensity: i32 }
-| done
 
 ~proc blur {
-    return .{ .done = .{} };
 }
 
 ~proc blur|gpu {

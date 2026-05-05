@@ -25,6 +25,6 @@
     source:maybe_str()
     | none |> std.io:print.ln("nothing")
     | some val |> std.io:print.ln("got: {{ val:s }}")
-| done |> _
+|> _
 
 pub fn main() void {}

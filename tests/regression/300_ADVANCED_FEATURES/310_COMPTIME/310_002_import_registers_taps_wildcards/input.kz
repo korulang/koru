@@ -27,7 +27,6 @@ const std = @import("std");
 | formatted []const u8
 
 ~event display { text: []const u8 }
-| done
 
 ~proc compute {
     std.debug.print("compute({d})\n", .{x});
@@ -43,11 +42,10 @@ const std = @import("std");
 
 ~proc display {
     std.debug.print("Final: {s}\n", .{text});
-    return .{ .done = .{} };
 }
 
 // Call events - the logger's universal tap should intercept them!
 ~compute(x: 42)
 | result r |> format(value: r)
     | formatted f |> display(text: f)
-        | done |> _
+        |> _

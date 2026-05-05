@@ -7,15 +7,13 @@
 const std = @import("std");
 
 ~event start {}
-| done
 
 ~proc start {
-    return .{ .done = .{} };
 }
 
 // Nested if: both in pipeline steps
 ~start()
-| done |> if(true)
+|> if(true)
     | then |> if(true)
         | then |> std.io:print.ln("inner-then")
         | else |> std.io:print.ln("inner-else")

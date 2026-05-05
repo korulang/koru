@@ -147,5 +147,5 @@ const ZERO_DV = [5][3]f64{
                                             dv[j][2]: acc.dv[j][2] + f.fz*f.mi
                                         }
                         | captured deltas |> apply(bodies: b[0..], dt: DT, deltas.dv)
-                    | done |> energy(bodies: b[0..])
+                    |> energy(bodies: b[0..])
                         | e e2 |> std.io:print.ln("{{ e2:d:.9 }}")

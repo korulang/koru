@@ -49,12 +49,10 @@ const UserInfo = struct {
 
 // Event to demonstrate access to outer scope bindings
 ~event show_values { a: i32, b: i32, c: i32 }
-| done
 
 ~proc show_values {
     // Should print values showing the scope chain worked
     std.debug.print("Values from scope chain: {} {} {}\n", .{a, b, c});
-    return .{ .done = .{} };
 }
 
 // Top-level flow to test scoping rules
@@ -64,7 +62,7 @@ const UserInfo = struct {
 | result r |> middle(y: r)
     | data d |> inner(z: d)
         | final f |> show_values(a: r, b: d, c: f)
-            | done |> _
+            |> _
 
 // The binding 'r' from outer should be accessible in all nested continuations
 // The binding 'd' from middle should be accessible in inner's continuation

@@ -15,20 +15,16 @@ const File = struct { handle: i32 };
 }
 
 ~event use { file: *File[opened] }
-| used
 
 ~proc use {
     std.debug.print("Using\n", .{});
-    return .{ .used = .{} };
 }
 
 ~event close { file: *File[!opened] }
-| closed
 
 ~proc close {
     std.debug.print("Closing\n", .{});
     std.heap.page_allocator.destroy(file);
-    return .{ .closed = .{} };
 }
 
 // Factory that escapes obligation
@@ -42,8 +38,8 @@ const File = struct { handle: i32 };
 ~create(path: "test.txt")
 | created r |>
     use(file: r.resource)
-    | used |>
+    |>
         close(file: r.resource)
-        | closed |> _
+        |> _
 
 pub fn main() void {}

@@ -4,10 +4,8 @@
 ~import "$std/io"
 
 ~pub event ping {}
-| ok
 
 ~proc ping {
-    return .{ .ok = .{} };
 }
 
 ~std.runtime:register(scope: "api") {

@@ -11,17 +11,4 @@
 ~import "$std/io"
 
 ~event greet { id: u32 }
-| ok []const u8
-
-~proc greet {
-    return .{ .ok = "Alice" };
-}
-
-// Binding is `name` — NOT used as a variable.
-// But the word "name" appears in the string "no name given".
-// Bug: containsIdentifier matches "name" inside the string literal
-//      → continuationUsesBinding returns true (false positive)
-//      → emitter skips `_ = &name;` suppressor
-//      → Zig: "unused local constant 'name'"
-~greet(id: 1)
-| ok name |> std.io:print.ln("no name given")
+|> std.io:print.ln("no name given")

@@ -6,19 +6,17 @@
 const std = @import("std");
 
 ~event start {}
-| done
 
 ~proc start {
-    return .{ .done = .{} };
 }
 
 // Three levels: if -> for -> if
 // All should transform to native Zig constructs
 ~start()
-| done |> if(true)
+|> if(true)
     | then |> for(&[_]i32{1, 2})
         | each item |> if(item > 0)
             | then |> _
             | else |> _
-        | done |> _
+        |> _
     | else |> _

@@ -19,10 +19,8 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event log { data: ?[]const u8 }
-| done
 
 ~proc log {
-    return .{ .done = .{} };
 }
 
 // THE TAP TO ANALYZE:
@@ -30,4 +28,4 @@ const std = @import("std");
 // The | done |> line is INDENTED, so it should be NESTED under Transition
 ~tap(* -> *)
 | Profile p |> log(data: p.destination)
-    | done |> _
+    |> _

@@ -1,3 +1,3 @@
 ~import "$app/bad_subflow"
 ~app.bad_subflow:bad_subflow()
-| done |> _
+|> _

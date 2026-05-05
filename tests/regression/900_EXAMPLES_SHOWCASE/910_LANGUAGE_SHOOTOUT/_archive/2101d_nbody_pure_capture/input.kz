@@ -193,5 +193,5 @@ const Body = struct {
                 |> for(0..iterations)
                     | each |> advance_velocities(bodies: b[0..], dt: DT)
                         |> advance_positions(bodies: b[0..], dt: DT)
-                    | done |> calculate_energy(bodies: b[0..])
+                    |> calculate_energy(bodies: b[0..])
                         | energy e2 |> print_energy(e: e2)

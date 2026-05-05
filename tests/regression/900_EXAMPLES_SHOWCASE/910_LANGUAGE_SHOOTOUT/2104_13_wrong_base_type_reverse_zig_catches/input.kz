@@ -7,7 +7,7 @@
 ~import "$app/db"
 
 ~app.db:connect(host: "localhost")
-| ok c |>
+|>
     // BUG: Passing c (*Connection) to commit() which expects *Transaction
     // Koru won't catch this without --strict-base-types
     // Zig WILL catch this during compilation

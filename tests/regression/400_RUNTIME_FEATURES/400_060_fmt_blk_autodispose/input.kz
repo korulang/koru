@@ -23,12 +23,10 @@ pub const Resource = struct {
 }
 
 ~pub event destroy_resource { res: *Resource[!allocated] }
-| destroyed
 
 ~proc destroy_resource {
     res.allocator.free(res.data);
     std.heap.page_allocator.destroy(res);
-    return .{ .destroyed = .{} };
 }
 
 // Simple sequential test
@@ -36,5 +34,5 @@ pub const Resource = struct {
 ~create_resource(name: "Test")
 | created r |>
     destroy_resource(res: r)
-    | destroyed |>
+    |>
         std.io:print.ln("Test done")

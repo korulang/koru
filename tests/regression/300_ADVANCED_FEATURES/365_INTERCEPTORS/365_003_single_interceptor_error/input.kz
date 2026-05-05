@@ -7,11 +7,9 @@ const std = @import("std");
 ~import "$std/interceptors"
 
 ~event log.write { logline: []const u8 }
-| written
 
 ~proc log.write {
     std.debug.print("{s}\n", .{logline});
-    return .{ .written = .{} };
 }
 
 // First interceptor - OK
@@ -23,4 +21,4 @@ const std = @import("std");
 | payload p |> payload { logline: "[B] " ++ p.logline }
 
 ~log.write(logline: "Test")
-| written _ |> _
+|> _
