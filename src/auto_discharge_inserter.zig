@@ -58,6 +58,19 @@ pub const AutoDischargeInserter = struct {
     /// Check if a binding escapes via a branch constructor field
     /// Returns true if the binding (or binding.field) appears in any field value
     fn bindingEscapesViaBranchConstructor(bc: *const ast.BranchConstructor, binding_name: []const u8) bool {
+        // Identity branch constructors use plain_value instead of fields
+        if (bc.plain_value) |plain| {
+            if (std.mem.eql(u8, plain, binding_name)) {
+                return true;
+            }
+            // Also match binding.field pattern on plain value
+            if (std.mem.startsWith(u8, plain, binding_name)) {
+                if (plain.len > binding_name.len and plain[binding_name.len] == '.') {
+                    return true;
+                }
+            }
+            return false;
+        }
         for (bc.fields) |field| {
             // Check if field expression_str references the binding
             // e.g., binding "f" matches field expression "f.file" or just "f"
@@ -1528,7 +1541,10 @@ pub const AutoDischargeInserter = struct {
                             .concrete => |c| c.consumes_obligation,
                             .state_union => |u| blk: {
                                 var any = false;
-                                for (u.members) |m| if (m.consumes_obligation) { any = true; break; };
+                                for (u.members) |m| if (m.consumes_obligation) {
+                                    any = true;
+                                    break;
+                                };
                                 break :blk any;
                             },
                             .variable => false,
@@ -1577,7 +1593,6 @@ pub const AutoDischargeInserter = struct {
     ) !TransformResult {
         _ = event_decl;
         _ = module_name;
-
 
         // For each obligation, find disposal events
         // In repeating context, only dispose current-scope obligations
@@ -2452,11 +2467,13 @@ pub const AutoDischargeInserter = struct {
                         .annotations = cloned_anns,
                     };
                 }
-                cloned.node = .{ .conditional = .{
-                    .condition = try self.allocator.dupe(u8, cond.condition),
-                    .condition_expr = cond.condition_expr, // TODO: clone if needed
-                    .branches = new_branches,
-                } };
+                cloned.node = .{
+                    .conditional = .{
+                        .condition = try self.allocator.dupe(u8, cond.condition),
+                        .condition_expr = cond.condition_expr, // TODO: clone if needed
+                        .branches = new_branches,
+                    },
+                };
             }
         }
 
@@ -2569,8 +2586,8 @@ pub const AutoDischargeInserter = struct {
     /// Converts synthetic names like "_auto_0.conn" to cleaner forms like "conn"
     /// and extracts just the field name when available.
     fn formatBindingForError(binding_name: []const u8, field_name: []const u8) []const u8 {
-        // If we have a field_name, prefer that (it's the actual payload field)
-        if (field_name.len > 0) {
+        // For identity branches, field_name is "__type_ref" - use binding_name instead
+        if (field_name.len > 0 and !std.mem.eql(u8, field_name, "__type_ref")) {
             return field_name;
         }
         // If binding is synthetic (_auto_N), try to extract the field part after the dot

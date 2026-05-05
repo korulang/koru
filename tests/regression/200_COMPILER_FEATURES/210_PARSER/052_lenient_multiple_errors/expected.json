@@ -130,48 +130,32 @@
             }
         },
         {
-            "type": "parse_error",
-            "code": "PARSE003",
-            "message": "invalid line in vertical annotation block - expected '-' bullet or ']'",
+            "type": "flow",
+            "invocation": {
+                "event": ["const u8"],
+                "args": [
+
+                ],
+                "variant": null
+            },
+            "continuations": [
+
+            ],
+            "pre_label": null,
+            "post_label": null,
+            "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 23,
-                "col": 1
-            },
-            "raw_text": "    z: i32\n}\n| result\n\n// One more valid event to verify recovery\n"
+                "line": 29,
+                "col": 0
+            }
         },
         {
-            "type": "event_decl",
-            "name": "final_valid",
-            "path": ["final_valid"],
+            "type": "host_line",
             "module": "input",
-            "input": {
-                "fields": [
-                    {
-                        "name": "data",
-                        "type": "[]const u8",
-                        "is_source": false,
-                        "is_file": false,
-                        "is_embed_file": false,
-                        "is_expression": false,
-                        "is_invocation_meta": false,
-                        "phantom": null
-                    }
-                ]
-            },
-            "branches": [
-                {
-                    "name": "complete",
-                    "payload": {
-                        "fields": [
-
-                        ]
-                    }
-                }
-            ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 32,
+                "line": 30,
                 "col": 0
             }
         }

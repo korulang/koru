@@ -37,7 +37,7 @@
                     "payload": {
                         "fields": [
                             {
-                                "name": "t",
+                                "name": "__type_ref",
                                 "type": "i32",
                                 "is_source": false,
                                 "is_file": false,
@@ -89,7 +89,7 @@
                     "payload": {
                         "fields": [
                             {
-                                "name": "code",
+                                "name": "__type_ref",
                                 "type": "u8",
                                 "is_source": false,
                                 "is_file": false,

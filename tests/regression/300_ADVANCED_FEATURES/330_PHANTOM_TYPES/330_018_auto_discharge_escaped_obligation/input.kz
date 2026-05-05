@@ -5,7 +5,7 @@
 // 2. get_file returns via branch constructor - obligation ESCAPES
 // 3. Main flow receives the obligation via binding 'f'
 // 4. Main flow terminates with '_' - obligation unsatisfied
-// 5. Auto-discharge should insert close(file: f.file) in MAIN flow
+// 5. Auto-discharge should insert close(file: f) in MAIN flow
 //
 // Expected: Compiles successfully with auto-inserted disposal in main flow
 
@@ -39,7 +39,7 @@ const File = struct { handle: i32 };
 
 // Subflow: opens file, returns via branch constructor (obligation escapes!)
 ~get_file = open(path: path)
-| opened f |> got_file { file: f.file }
+| opened f |> got_file f
 
 // Main flow: calls get_file, receives escaped obligation, terminates
 // Auto-discharge should insert close() HERE

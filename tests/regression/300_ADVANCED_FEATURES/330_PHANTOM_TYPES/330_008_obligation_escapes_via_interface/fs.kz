@@ -28,4 +28,4 @@ const File = struct { handle: i32 };
 // SUBFLOW: Delegates to open, maps opened → file_opened
 // The [opened!] obligation passes through to the caller
 ~my_subflow = open(path: "data.txt")
-| opened f |> file_opened { file: f.file }
+| opened f |> file_opened f

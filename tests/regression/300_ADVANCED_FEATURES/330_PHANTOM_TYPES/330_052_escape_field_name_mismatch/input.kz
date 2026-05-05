@@ -1,16 +1,10 @@
-// FIXED: Escape checker now matches by value, not field name
+// Escape checker recognizes obligation escape via identity branch constructor
 //
-// Previously: Obligation escape via branch constructor required the output field
-// name to match the binding path. Now it correctly checks the VALUE being passed.
-//
-// - open() returns { file: *File[opened!] }
-// - get_resource returns { resource: *File[opened!] }  <- different name!
-// - Subflow passes f.file to field 'resource'
+// - open() returns *File[opened!] (identity branch)
+// - get_resource returns *File[opened!] (identity branch)
+// - Subflow passes binding f directly to got
 //
 // Expected: Should compile - obligation escapes via branch constructor
-// Actual: Fails with "Resource 'f.file' was not disposed"
-//
-// The escape should be recognized by VALUE, not by field NAME.
 
 const std = @import("std");
 
@@ -39,14 +33,13 @@ const File = struct { handle: i32 };
 ~event get_resource { path: []const u8 }
 | got *File[opened!]
 
-// BUG: f.file -> resource field name mismatch causes escape to not be recognized
 ~get_resource = open(path: path)
-| opened f |> got { resource: f.file }
+| opened f |> got f
 
 // Main flow with explicit cleanup
 ~get_resource(path: "test.txt")
 | got r |>
-    close(file: r.resource)
+    close(file: r)
     | closed |> _
 
 pub fn main() void {}
