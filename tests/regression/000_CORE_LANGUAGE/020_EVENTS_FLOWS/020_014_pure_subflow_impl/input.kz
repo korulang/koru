@@ -1,5 +1,6 @@
 // Test: Pure subflow implementation (no proc needed)
 // From the README example - this is idiomatic Koru
+// This is the default authoring model for ordinary event behavior.
 ~import "$std/io"
 
 ~event greet { name: []const u8 }

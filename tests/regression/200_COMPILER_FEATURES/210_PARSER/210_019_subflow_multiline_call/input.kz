@@ -10,6 +10,10 @@
 // Expected: Parser should handle multi-line calls and continue parsing the flow
 // Actual: Parser loses track of subflow context after ')'
 //
+// Do not work around this by moving the event composition into a proc. Procs are
+// host/Zig implementation space; this repro exists because the subflow form is
+// the intended authoring model.
+//
 // This bug was discovered while implementing benchmark 2101b_nbody_granular,
 // which needed to pass multiple arguments to assemble_solar_system() across
 // multiple lines.

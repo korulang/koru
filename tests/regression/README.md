@@ -14,7 +14,7 @@ Koru is an **event-continuation language** designed to be embedded in Zig. It in
 - **AI-friendly**: Declarative, minimal syntax makes it trivial for AIs to generate correct flows.
 
 ### Core Philosophy
-Koru is not about adding bells and whistles. It’s about **declaring intent** as clearly as possible, then letting the compiler do the tedious parts: type checking, branch coverage, and code generation. The less ceremony in your flow code, the more focus you have for the real work—the logic inside procs.
+Koru is not about adding bells and whistles. It’s about **declaring intent** as clearly as possible, then letting the compiler do the tedious parts: type checking, branch coverage, optimization, and code generation. The default authoring model is subflow-first: keep ordinary event behavior in Koru flow syntax, and reach for `~proc` only when the implementation must cross into host/Zig or target-specific code.
 
 ---
 
@@ -292,7 +292,7 @@ Tests that verify the compiler CORRECTLY REJECTS invalid code.
 
 ### Successful Test
 ```
-Running 106_inline_flow_chained...
+Running 020_014_pure_subflow_impl...
 ✓ Compiled input.kz → backend.zig
 ✓ Generated output_emitted.zig (8753 bytes)
 ✓ Compiled to output
@@ -301,7 +301,7 @@ Running 106_inline_flow_chained...
 
 ### Failed Test (Improved Error Display)
 ```
-Running 106_inline_flow_chained...
+Running 020_014_pure_subflow_impl...
 ✓ Compiled input.kz → backend.zig
 ✓ Generated output_emitted.zig (8753 bytes)
 ✗ Compilation failed
@@ -319,7 +319,7 @@ Running 106_inline_flow_chained...
 
 ### Memory Leak Detection
 ```
-Running 105_inline_flow_basic...
+Running 020_014_pure_subflow_impl...
 ✓ Compiled input.kz → backend.zig
 ✓ Generated output_emitted.zig (8705 bytes)
 ✓ Compiled to output
@@ -464,8 +464,8 @@ Enable with `--check-leaks` flag:
 ## Test Numbering Convention
 
 ### Core Language (000-099)
-- **001-050**: Basic features (events, procs, branches)
-- **051-100**: Advanced features (subflows, inline flows)
+- **001-050**: Basic features (events, branches, subflow implementations)
+- **051-100**: Advanced features (composition, host proc boundaries)
 - **101-150**: Complex compositions
 
 ### Tap System (100-199)
@@ -501,7 +501,7 @@ Enable with `--check-leaks` flag:
 
 ### 2. Inspect Generated Files
 ```bash
-cd tests/regression/000_CORE_LANGUAGE/106_inline_flow_chained
+cd tests/regression/000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_014_pure_subflow_impl
 
 # View frontend output
 cat backend.zig | less
@@ -520,7 +520,7 @@ cat backend.err
 ./zig-out/bin/koruc input.kz
 
 # Backend compilation
-cd tests/regression/.../106_inline_flow_chained
+cd tests/regression/.../020_014_pure_subflow_impl
 zig build
 
 # Backend execution
@@ -533,9 +533,9 @@ zig build-exe output_emitted.zig
 ### 4. Compare with Working Tests
 ```bash
 # Find similar passing tests
-./run_regression.sh 105  # Simpler inline flow
-diff tests/regression/.../105_*/output_emitted.zig \
-     tests/regression/.../106_*/output_emitted.zig
+./run_regression.sh 020_014  # Pure subflow implementation
+diff tests/regression/.../020_014_*/output_emitted.zig \
+     tests/regression/300_ADVANCED_FEATURES/350_SUBFLOWS/301_subflow_immediate/output_emitted.zig
 ```
 
 ---

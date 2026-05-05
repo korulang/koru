@@ -59,11 +59,15 @@ Multi-line function calls should work seamlessly in subflows. The parser should:
 
 ## Impact
 
-This bug prevents writing readable, well-formatted subflows when events have many parameters. Users are forced to either:
+This bug prevents writing readable, well-formatted subflows when events have
+many parameters. That creates pressure to either:
 1. Use ugly single-line calls with all parameters
-2. Avoid subflows entirely and use procs with explicit Zig code
+2. Avoid subflows and move ordinary event composition into procs
 
-Neither is acceptable for a language aiming for clean, composable code.
+The second fallback is especially harmful: `~proc` is host/Zig implementation
+space, not the normal place to express Koru event flow. A parser limitation in
+subflows should not train users or agents to cross that boundary for ordinary
+logic.
 
 ## Test Discovery
 

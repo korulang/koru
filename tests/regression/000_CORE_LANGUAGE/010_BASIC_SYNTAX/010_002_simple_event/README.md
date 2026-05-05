@@ -1,6 +1,10 @@
-# Your First Event: ~event and ~proc
+# Event Interface and Host Proc Boundary
 
-This test introduces the two fundamental Koru keywords: `~event` and `~proc`.
+This test introduces `~event` and the host implementation boundary, `~proc`.
+It is intentionally minimal: it proves an event can be implemented by Zig code,
+but it is not the preferred pattern for ordinary Koru logic. When behavior can
+be expressed as event composition, prefer a subflow implementation:
+`~event_name = ...`.
 
 ## The Code
 
@@ -29,7 +33,7 @@ This declares an **event** named `hello`:
 
 Think of an event as a request with possible responses. Here, `hello` is a request that can respond with `done`.
 
-### The Proc
+### The Host Proc
 
 ```koru
 ~proc hello {
@@ -38,10 +42,14 @@ Think of an event as a request with possible responses. Here, `hello` is a reque
 }
 ```
 
-A **proc** (procedure) is code that handles an event:
+A **proc** (procedure) is host/Zig code that handles an event:
 - `~proc hello` says "this handles the `hello` event"
-- The body is regular Zig code
+- The body is regular Zig code, not Koru flow syntax
 - `return .{ .done = .{} }` returns the `done` branch
+
+Use this when the implementation must touch host/Zig APIs, target-specific
+code, or low-level behavior. For normal event composition, use a subflow
+implementation (`~hello = ...`) instead.
 
 ## Why No Output?
 
@@ -55,6 +63,9 @@ Notice how Zig and Koru coexist:
 - `std.debug.print(...)` is standard Zig
 - `~event` and `~proc` are Koru extensions
 - They integrate seamlessly
+
+That coexistence is a boundary, not an invitation to put flow-shaped Koru logic
+inside a proc.
 
 ## What's Next
 
