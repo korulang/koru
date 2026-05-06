@@ -48,13 +48,13 @@ const std = @import("std");
 | final i32
 
 ~test_multiline_call = step_a(x: 10)
-|> step_b(
+| done a |> step_b(
     a: a,
     b: 20,
     c: 30
 )
-    |> step_c(x: b)
-        |> final c
+    | done b |> step_c(x: b)
+        | done c |> final c
 
 // Main flow
 ~test_multiline_call()

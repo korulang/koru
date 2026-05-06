@@ -1,7 +1,0 @@
-// Module with empty identity branches - matching rings pattern
-
-~pub event try_op {}
-
-~proc try_op {
-    return .ok;
-}

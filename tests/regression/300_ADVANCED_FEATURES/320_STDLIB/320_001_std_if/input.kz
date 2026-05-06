@@ -13,10 +13,14 @@ const std = @import("std");
 // ============================================================================
 
 ~event my_if_impl { condition: bool }
+| then
+| else
 
 ~proc my_if_impl {
     if (condition) {
+        return .{ .then = .{} };
     } else {
+        return .{ .@"else" = .{} };
     }
 }
 
