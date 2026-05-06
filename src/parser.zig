@@ -1491,7 +1491,7 @@ pub const Parser = struct {
 
         // Reject single void-returning branch: | branch with no payload is redundant.
         // Use a void event (0 branches) instead.
-        if (branches.items.len == 1 and branches.items[0].payload.fields.len == 0) {
+        if (branches.items.len == 1 and branches.items[0].payload.fields.len == 0 and !branches.items[0].payload.is_wildcard) {
             try self.reporter.addError(
                 .PARSE003,
                 event_line_index + 1,
@@ -6075,6 +6075,22 @@ pub const Parser = struct {
                 };
             }
 
+            // Wildcard payload: | branch *
+            // Means "has bindable payload, shape unspecified". Distinguishable from
+            // identity (| branch *T[state]) because bare `*` has no following type.
+            if (std.mem.eql(u8, type_and_annotation, "*")) {
+                return ast.Branch{
+                    .name = try self.allocator.dupe(u8, branch_name),
+                    .payload = ast.Shape{
+                        .fields = &.{},
+                        .is_wildcard = true,
+                    },
+                    .is_deferred = is_deferred,
+                    .is_optional = is_optional,
+                    .annotations = try annotations.toOwnedSlice(self.allocator),
+                };
+            }
+
             // Identity branches carry the full type string (including any phantom
             // type suffix).  Phantom extraction happens below; we no longer strip
             // trailing [identifier] as a "branch annotation" because bare phantom
@@ -6207,7 +6223,8 @@ pub const Parser = struct {
         // Validate: braces must contain 2+ fields (no empty braces, no single-field braces)
         // Empty braces {} are meaningless - use void events or identity syntax instead
         // Single-field braces { x: T } should use identity syntax: | branch T
-        // Exception: { * } wildcard syntax is allowed (is_wildcard flag set)
+        // Exception: wildcards (is_wildcard flag set) are allowed via bare `*`
+        // syntax (handled in the identity-path above) — `{ * }` is rejected.
         if (payload.fields.len == 0 and !payload.is_wildcard) {
             try self.reporter.addError(
                 .PARSE003,
@@ -6370,13 +6387,16 @@ pub const Parser = struct {
             return ast.Shape{ .fields = try fields.toOwnedSlice(self.allocator) };
         }
 
-        // Check for wildcard shape: { * }
-        // Means "has bindable payload, shape unspecified"
+        // Reject `{ * }` — the wildcard syntax is bare `*`, not braces around `*`.
         if (std.mem.eql(u8, lexer.trim(content), "*")) {
-            return ast.Shape{
-                .fields = try fields.toOwnedSlice(self.allocator),
-                .is_wildcard = true,
-            };
+            try self.reporter.addError(
+                .PARSE003,
+                self.current,
+                1,
+                "wildcard payload is bare '*' — write '| branch *' instead of '| branch {{ * }}'",
+                .{},
+            );
+            return error.ParseError;
         }
 
         // Parse fields: name: type, name: type, ...

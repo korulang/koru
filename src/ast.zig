@@ -703,7 +703,7 @@ pub const DottedPath = struct {
 
 pub const Shape = struct {
     fields: []const Field,
-    is_wildcard: bool = false, // { * } - has bindable payload, shape unspecified
+    is_wildcard: bool = false, // bare `*` - has bindable payload, shape unspecified
 
     pub fn deinit(self: *Shape, allocator: std.mem.Allocator) void {
         // Deinit individual fields (they're heap-allocated even in const arrays)

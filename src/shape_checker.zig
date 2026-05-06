@@ -1401,7 +1401,7 @@ pub const ShapeChecker = struct {
             return;
         };
 
-        // Wildcard payloads ({ * }) accept any constructor shape.
+        // Wildcard payloads (bare `*`) accept any constructor shape.
         if (branch.payload.is_wildcard) return;
 
         // Classify declared shape.

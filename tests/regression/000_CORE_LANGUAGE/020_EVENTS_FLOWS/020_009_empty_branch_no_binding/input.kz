@@ -5,7 +5,7 @@
 // When a branch is declared with {} (empty), it means "no payload to bind"
 // Attempting to bind with `| done x |>` should be a shape checker error
 //
-// This is the counterpart to 020_008 which tests { * } allowing bindings
+// This is the counterpart to 020_008 which tests bare `*` allowing bindings
 
 ~import "$std/io"
 
