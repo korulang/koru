@@ -42,12 +42,12 @@ const Context = struct {
 // This syntax (`~process = ...`) creates a subflow_impl
 // Array literals inside subflow_impl flows emit incorrectly
 ~process = setup()
-|> consume(contexts: [r.c0, r.c1, r.c2])
+| ready r |> consume(contexts: [r.c0, r.c1, r.c2])
     | consumed c |> done c
 
 // Trigger the flow
 ~process(allocator: std.heap.page_allocator)
-|> report(count: d)
+| done d |> report(count: d)
 
 ~[comptime] event report { count: u32 }
 

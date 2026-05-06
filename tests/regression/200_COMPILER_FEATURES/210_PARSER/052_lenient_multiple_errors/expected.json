@@ -31,15 +31,41 @@
             }
         },
         {
-            "type": "parse_error",
-            "code": "PARSE003",
-            "message": "single branch 'ok' with no payload is redundant - remove it to make this a void event (no branches)",
+            "type": "event_decl",
+            "name": "valid_before",
+            "path": ["valid_before"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "x",
+                        "type": "i32",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false,
+                        "phantom": null
+                    }
+                ]
+            },
+            "branches": [
+
+            ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 5,
-                "col": 1
-            },
-            "raw_text": "~event valid_before {\n    x: i32\n}\n| ok\n\n// This event has an unclosed brace - should create parse_error node\n"
+                "line": 8,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 9,
+                "col": 0
+            }
         },
         {
             "type": "parse_error",
@@ -47,21 +73,47 @@
             "message": "unmatched '{' in event shape",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 11,
+                "line": 10,
                 "col": 1
             },
-            "raw_text": "~event broken_event {\n    value: i32\n| success\n\n// This event is valid - should still be parsed\n"
+            "raw_text": "~event broken_event {\n    value: i32\n\n// This event is valid - should still be parsed\n"
         },
         {
-            "type": "parse_error",
-            "code": "PARSE003",
-            "message": "single branch 'done' with no payload is redundant - remove it to make this a void event (no branches)",
+            "type": "event_decl",
+            "name": "valid_after",
+            "path": ["valid_after"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "y",
+                        "type": "i32",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false,
+                        "phantom": null
+                    }
+                ]
+            },
+            "branches": [
+
+            ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 16,
-                "col": 1
-            },
-            "raw_text": "~event valid_after {\n    y: i32\n}\n| done\n\n// Another broken event - unclosed annotation\n"
+                "line": 17,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
+                "line": 18,
+                "col": 0
+            }
         },
         {
             "type": "flow",
@@ -80,7 +132,7 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 29,
+                "line": 25,
                 "col": 0
             }
         },
@@ -89,7 +141,7 @@
             "module": "input",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/052_lenient_multiple_errors/input.kz",
-                "line": 30,
+                "line": 26,
                 "col": 0
             }
         }

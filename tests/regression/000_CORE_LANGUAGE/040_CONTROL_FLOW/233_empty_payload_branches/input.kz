@@ -7,10 +7,14 @@
 
 // Event with two branches, BOTH empty (no payload fields)
 ~event check_value { n: i32 }
+| positive
+| non_positive
 
 ~proc check_value {
     if (n > 0) {
+        return .{ .positive = .{} };
     } else {
+        return .{ .non_positive = .{} };
     }
 }
 

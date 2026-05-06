@@ -10,9 +10,11 @@ const std = @import("std");
 // Outer loop event
 ~event outer { x: i32, max: i32 }
 | next_outer { x: i32, max: i32 }
+| done_outer
 
 ~proc outer {
     if (x > max) {
+        return .{ .done_outer = .{} };
     }
 
     std.debug.print("Outer: x={}\n", .{x});

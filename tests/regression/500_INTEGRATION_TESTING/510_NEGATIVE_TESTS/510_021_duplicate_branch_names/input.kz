@@ -2,3 +2,5 @@
 // Parser catches duplicate branch names
 
 ~event foo { x: i32 }
+| done
+| done

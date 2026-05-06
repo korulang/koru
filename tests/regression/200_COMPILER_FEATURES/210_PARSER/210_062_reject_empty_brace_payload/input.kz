@@ -8,3 +8,4 @@ const std = @import("std");
 // - A void event: ~event done {} (no branches at all)
 // - Identity syntax: | done SomeType
 ~event verify {}
+| ok {}

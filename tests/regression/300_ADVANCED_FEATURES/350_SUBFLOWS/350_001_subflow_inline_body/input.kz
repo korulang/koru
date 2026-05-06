@@ -33,6 +33,7 @@ const std = @import("std");
 // [expand] event with branches — produces inline_body + switch
 ~[norun|expand]pub event check_positive { expr: Expression }
 | positive i32
+| negative
 
 // Event to test
 ~event classify { input: i32 }
@@ -46,17 +47,19 @@ const std = @import("std");
 
 // Helper to print
 ~event print_result { value: i32 }
+| done
 
 ~proc print_result {
     std.debug.print("{}\n", .{value});
+    return .{ .done = .{} };
 }
 
 // Test 1: positive value → should output 42
 ~classify(input: 42)
 | result r |> print_result(value: r)
-    |> _
+    | done |> _
 
 // Test 2: negative value → should output -1
 ~classify(input: -5)
 | result r |> print_result(value: r)
-    |> _
+    | done |> _
