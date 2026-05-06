@@ -45,7 +45,7 @@ const Resource = struct { id: i32 };
 // The `| failed |> @loop` branch has an open obligation that is never discharged.
 ~#loop create()
 | created c |> use(res: c.res)
-    |> close(res: o.res)
+    | ok o |> close(res: o.res)
         |> _
     | failed _f |> @loop()  // BUG! c.res has [open!] obligation, not discharged!
 

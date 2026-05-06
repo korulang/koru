@@ -5,5 +5,5 @@ const std = @import("std");
 
 // Base pure math event
 ~event multiply { x: i32, factor: i32 }
-|> print_result(n: d.result)
+| done d |> print_result(n: d.result)
     |> _

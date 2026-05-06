@@ -9,4 +9,4 @@
 
 // Input has 'input_val', output has 'output_val' - MISMATCH
 ~pub event mismatched { input_val: i32 }
-|> std.io:print.ln("should not reach here")
+| done d |> std.io:print.ln("should not reach here")

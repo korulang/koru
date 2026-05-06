@@ -19,4 +19,4 @@ const std = @import("std");
 
 // Test flow - the interceptor should modify the logline
 ~log.write(logline: "Hello World")
-|> _
+| written _ |> _

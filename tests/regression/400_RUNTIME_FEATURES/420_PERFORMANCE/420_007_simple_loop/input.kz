@@ -33,5 +33,5 @@ const std = @import("std");
 // Loop: count to 1 million
 ~#loop count(i: 0, sum: 0)
 | next n |> @loop(i: n.i, sum: n.sum)
-|> print(result: d.result)
+| done d |> print(result: d.result)
     |> _

@@ -5,5 +5,5 @@ const std = @import("std");
 
 // Pure math function - marked with ~[pure]
 ~event add { a: i32, b: i32 }
-|> print_number(n: d.result)
+| done d |> print_number(n: d.result)
     |> _

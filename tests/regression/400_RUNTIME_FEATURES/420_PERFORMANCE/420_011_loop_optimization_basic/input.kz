@@ -46,5 +46,5 @@ const std = @import("std");
 
 ~#main_loop loop_step(i: 0, limit: 10_000_000, sum: 0)
 | continue c |> @main_loop(i: c.i + 1, limit: 10_000_000, sum: c.sum)
-|> print(result: d.result)
+| done d |> print(result: d.result)
     |> _

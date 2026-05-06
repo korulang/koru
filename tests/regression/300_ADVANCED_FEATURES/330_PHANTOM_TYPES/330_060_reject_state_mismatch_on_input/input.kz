@@ -3,7 +3,7 @@ const Connection = struct { id: i32 };
 ~proc query {
 }
 ~pub event get_raw_connection {}
-|>
+| ok c |>
     query(conn: c.conn, sql: "SELECT 1")
     |> _
 pub fn main() void {}

@@ -21,4 +21,4 @@ const std = @import("std");
 | payload p |> payload { logline: "[B] " ++ p.logline }
 
 ~log.write(logline: "Test")
-|> _
+| written _ |> _

@@ -9,8 +9,8 @@ const std = @import("std");
 
 // Event with single pure implementation -> pure event
 ~event pure_add { x: i32, y: i32 }
-|> impure_log(msg: "Computed!")
+| done d |> impure_log(msg: "Computed!")
     |> done { result: d.result }
 
 ~compute(a: 20, b: 22)
-|> std.io:print.ln("Result: {{ d.result:d }}")
+| done d |> std.io:print.ln("Result: {{ d.result:d }}")

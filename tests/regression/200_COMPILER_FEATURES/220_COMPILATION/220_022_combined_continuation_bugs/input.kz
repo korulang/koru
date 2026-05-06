@@ -81,7 +81,7 @@ const N: usize = 10;
 ~for(0..N)
 | each i |>
     make_resource(id: i)
-    |>
+    | ready r |>
         work_done(r: r.resource)
         |>
             work_done(r: r.resource)

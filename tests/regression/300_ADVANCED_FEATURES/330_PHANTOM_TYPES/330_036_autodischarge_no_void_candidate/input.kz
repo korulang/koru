@@ -15,4 +15,4 @@ pub const Handle = struct {
 }
 const std = @import("std");
 ~open()
-|> _
+| ok _ |> _

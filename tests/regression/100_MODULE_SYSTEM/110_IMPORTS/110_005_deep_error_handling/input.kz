@@ -54,10 +54,10 @@ const std = @import("std");
 
 // 4 levels deep with error handling at each level
 ~step1()
-|> step2(value: s1)
-    |> step3(value: s2)
-        |> step4(value: s3)
-            |> log(msg: "Success!")
+| ok s1 |> step2(value: s1)
+    | ok s2 |> step3(value: s2)
+        | ok s3 |> step4(value: s3)
+            | ok _ |> log(msg: "Success!")
                 |> _
             | failed f |> log(msg: f)
                 |> _

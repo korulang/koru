@@ -47,6 +47,6 @@
     ~std.fs:read_lines = lines ["line1", "line2", "line3"]
 
     ~process_config(path: "/fake/path")
-    |> assert(result == 3)
+    | ok result |> assert(result == 3)
     | failed |> assert.fail()
 }

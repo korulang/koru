@@ -303,7 +303,7 @@ const Body = struct {
 | computed dv |> calculate_distance_scalar(dx: dv.dx, dy: dv.dy, dz: dv.dz)
     | computed ds |> calculate_gravitational_magnitude(distance: ds.distance, dt: dt)
         | computed gm |> update_body_pair_velocities(b1: dv.b1, b2: dv.b2, dx: ds.dx, dy: ds.dy, dz: ds.dz, mag: gm.mag)
-            |> updated { b1: u.b1, b2: u.b2 }
+            | updated u |> updated { b1: u.b1, b2: u.b2 }
 
 // ============================================================================
 // NESTED LOOP DECOMPOSITION - The Ultimate Test

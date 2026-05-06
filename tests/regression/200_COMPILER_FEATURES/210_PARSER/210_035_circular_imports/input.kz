@@ -9,4 +9,4 @@ const std = @import("std");
 ~import "$app/module_b"
 
 ~pub event from_a {}
-|> std.io:println(text: d)
+| done d |> std.io:println(text: d)

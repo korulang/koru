@@ -6,6 +6,6 @@ const std = @import("std");
 
 // Base pure operation
 ~event multiply { x: i32, factor: i32 }
-|> multiply(x: d1.result, factor: 2)
-    |> print_number(n: d2.result)
+| done d1 |> multiply(x: d1.result, factor: 2)
+    | done d2 |> print_number(n: d2.result)
         |> _

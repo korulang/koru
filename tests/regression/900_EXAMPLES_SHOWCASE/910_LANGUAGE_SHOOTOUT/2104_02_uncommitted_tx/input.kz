@@ -9,7 +9,7 @@
 ~import "$app/db"
 
 ~app.db:connect(host: "localhost")
-|>
+| ok c |>
     app.db:begin(conn: c.conn)
     |>
         // We have Transaction[started!] but never exec or commit!

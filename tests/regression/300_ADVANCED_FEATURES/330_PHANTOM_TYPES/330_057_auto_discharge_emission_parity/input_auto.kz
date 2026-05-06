@@ -9,5 +9,5 @@
 ~import "$std/io"
 
 ~app.pq:connect(conninfo: "host=localhost dbname=test")
-|> std.io:print.ln("Connected!")
+| ok conn |> std.io:print.ln("Connected!")
 | err msg |> std.io:print.ln("Failed: {{ msg:s }}")

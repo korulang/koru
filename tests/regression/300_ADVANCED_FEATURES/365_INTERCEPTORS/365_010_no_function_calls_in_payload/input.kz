@@ -23,4 +23,4 @@ const std = @import("std");
 | payload p |> payload { logline: p.logline ++ timestamp() }
 
 ~log.write(logline: "Test")
-|> _
+| written _ |> _

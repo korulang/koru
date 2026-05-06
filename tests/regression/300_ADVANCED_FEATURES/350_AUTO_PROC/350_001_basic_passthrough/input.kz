@@ -11,4 +11,4 @@
 
 // Event with matching input/output - NO PROC DEFINED
 ~pub event passthrough { msg: []const u8 }
-|> verify(msg: d)
+| done d |> verify(msg: d)

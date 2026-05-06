@@ -26,4 +26,4 @@ const JSON_SAMPLE =
 ;
 
 ~event bench_json {}
-|> std.io:print.ln("JSON: {{d:d}} events")
+| done d |> std.io:print.ln("JSON: {{d:d}} events")

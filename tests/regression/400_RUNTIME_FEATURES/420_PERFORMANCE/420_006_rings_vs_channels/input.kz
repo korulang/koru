@@ -171,7 +171,7 @@ const MESSAGES: u64 = 10_000_000;
 ~consume_loop = dequeue(ring: ring)
 | some msg |> check_if_done(sum: sum + msg.value, received: received + 1)
     | continue s |> continue { sum: s.sum, received: s.received }
-    |> done { sum: s.sum }
+    | done s |> done { sum: s.sum }
 | none |> yield_then_continue(sum: sum, received: received)
     | continue s |> continue { sum: s.sum, received: s.received }
 
@@ -214,6 +214,6 @@ const MESSAGES: u64 = 10_000_000;
 | created r |> spawn_producer(r.ring)
     |> #loop consume_loop(r.ring, sum: 0, received: 0)
         | continue s |> @loop(r.ring, s.sum, s.received)
-        |> validate(s.sum)
+        | done s |> validate(s.sum)
             | valid |> _
             | invalid |> _

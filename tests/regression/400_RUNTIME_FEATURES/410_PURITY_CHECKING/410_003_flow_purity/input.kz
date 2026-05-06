@@ -6,8 +6,8 @@
 
 // Pure event
 ~event add { x: i32, y: i32 }
-|> add(x: d1.result, y: c)
-    |> done { result: d2.result }
+| done d1 |> add(x: d1.result, y: c)
+    | done d2 |> done { result: d2.result }
 
 ~calculate(a: 10, b: 20, c: 12)
-|> std.io:print.ln("Result: {{ d.result:d }}")
+| done d |> std.io:print.ln("Result: {{ d.result:d }}")

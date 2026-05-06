@@ -1,4 +1,4 @@
 ~import "$app/data"
 ~app.data:alloc()
 | allocated a |> app.data:process(d: a)
-    |> _
+    | done _ |> _

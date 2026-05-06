@@ -10,5 +10,5 @@ const std = @import("std");
 // But from purity perspective, they're both pure operations
 
 ~event is_even { n: i32 }
-|> print_bool(value: d.result)
+| done d |> print_bool(value: d.result)
     |> _

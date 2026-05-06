@@ -2,5 +2,5 @@
 ~app.data:alloc()
 | allocated a |> app.data:validate(d: a)
     | validated v |> app.data:process(d: v)
-        |> app.data:finalize(d: p)
-            |> _
+        | processed p |> app.data:finalize(d: p)
+            | done _ |> _

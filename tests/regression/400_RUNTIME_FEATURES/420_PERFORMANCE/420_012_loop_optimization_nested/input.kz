@@ -60,6 +60,6 @@ const std = @import("std");
 ~#outer outer_step(i: 0, limit: 5000, sum: 0)
 | continue c_outer |> #inner inner_step(i: c_outer.i, j: c_outer.i + 1, limit: c_outer.limit, sum: c_outer.sum)
     | continue c_inner |> @inner(i: c_inner.i, j: c_inner.j + 1, limit: c_outer.limit, sum: c_inner.sum)
-    |> @outer(i: d_inner.i + 1, limit: c_outer.limit, sum: d_inner.sum)
-|> print(result: d_outer.result)
+    | done d_inner |> @outer(i: d_inner.i + 1, limit: c_outer.limit, sum: d_inner.sum)
+| done d_outer |> print(result: d_outer.result)
     |> _

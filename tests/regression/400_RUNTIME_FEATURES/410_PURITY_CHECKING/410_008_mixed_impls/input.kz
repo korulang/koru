@@ -8,7 +8,7 @@ const std = @import("std");
 
 // Pure event
 ~event pure_op { x: i32 }
-|> done { result: d.result }
+| done d |> done { result: d.result }
 
 ~mixed(x: 21)
-|> std.io:print.ln("Result: {{ d.result:d }}")
+| done d |> std.io:print.ln("Result: {{ d.result:d }}")
