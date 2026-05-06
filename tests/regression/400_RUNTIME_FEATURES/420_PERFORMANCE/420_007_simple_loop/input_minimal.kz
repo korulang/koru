@@ -6,13 +6,11 @@ const std = @import("std");
 // Count event - loop controller
 ~event count { i: u64 }
 | next u64
-| done
 
 ~proc count {
     if (i < 10) {
         return .{ .next = i + 1 };
     } else {
-        return .{ .done = .{} };
     }
 }
 

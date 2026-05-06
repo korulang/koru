@@ -51,7 +51,6 @@ const QueryResult = struct { rows: i32 };
 
 // commit: consumes transaction obligation - this is a MEANINGFUL END
 ~[!]pub event commit { tx: Transaction[!active] }
-| ok
 | err []const u8
 
 ~proc commit {
@@ -61,7 +60,6 @@ const QueryResult = struct { rows: i32 };
 
 // rollback: consumes transaction obligation - this is also a MEANINGFUL END
 ~[!]pub event rollback { tx: Transaction[!active] }
-| ok
 | err []const u8
 
 ~proc rollback {

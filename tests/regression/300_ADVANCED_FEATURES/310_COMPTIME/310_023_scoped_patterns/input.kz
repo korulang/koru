@@ -9,7 +9,6 @@ const std = @import("std");
 ~event file.read {}
 
 ~event file.write {}
-| done
 
 ~event logger {}
 
@@ -19,7 +18,6 @@ const std = @import("std");
 
 ~proc file.write {
     std.debug.print("Writing file\n", .{});
-    return .{ .done = .{} };
 }
 
 ~proc logger {

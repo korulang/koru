@@ -12,7 +12,6 @@ const std = @import("std");
 
 ~pub event connection.read { conn_id: i32 }
 | data []const u8
-| closed
 | failed []const u8
 
 ~pub event connection.write { conn_id: i32, data: []const u8 }

@@ -24,11 +24,8 @@ const Resource = struct { id: i32 };
 }
 
 ~pub event with_context {}
-| scoped
-| done
 
 ~proc with_context {
-    return .{ .scoped = .{} };
 }
 
 ~#loop create()

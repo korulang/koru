@@ -47,27 +47,21 @@ const MyRing = Ring(u32, 1024);
 
 // Can we use the GENERIC TYPE in an event shape?
 ~event ring.enqueue { ring: *Ring(u32, 1024), value: u32 }
-| enqueued
-| full
 
 ~proc ring.enqueue {
     if (ring.tryEnqueue(value)) {
         std.debug.print("Enqueued!\n", .{});
-        return .{ .enqueued = .{} };
     }
-    return .{ .full = .{} };
 }
 
 ~event ring.dequeue { ring: *Ring(u32, 1024) }
 | value u32
-| empty
 
 ~proc ring.dequeue {
     if (ring.tryDequeue()) |data| {
         std.debug.print("Got: {}\n", .{data});
         return .{ .value = data };
     }
-    return .{ .empty = .{} };
 }
 
 // Test with the generic type

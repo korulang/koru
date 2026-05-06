@@ -6,12 +6,10 @@ const std = @import("std");
 | drawn i32
 
 ~pub event clear { color: i32 }
-| cleared
 
 ~proc render {
     return .{ .@"drawn" = width * height };
 }
 
 ~proc clear {
-    return .{ .@"cleared" = .{} };
 }

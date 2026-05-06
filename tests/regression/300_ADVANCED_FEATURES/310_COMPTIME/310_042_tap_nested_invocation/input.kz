@@ -16,7 +16,6 @@ const std = @import("std");
 ~event hello {}
 
 ~event goodbye {}
-| tap_target
 
 ~event observer {}
 
@@ -26,7 +25,6 @@ const std = @import("std");
 
 ~proc goodbye {
     std.debug.print("goodbye\n", .{});
-    return .{ .tap_target = .{} };
 }
 
 ~proc observer {

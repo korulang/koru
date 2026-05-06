@@ -13,7 +13,6 @@ const std = @import("std");
 ~event hello {}
 
 ~event logger {}
-| done
 
 ~proc hello {
     std.debug.print("Hello\n", .{});
@@ -21,7 +20,6 @@ const std = @import("std");
 
 ~proc logger {
     std.debug.print("[AUDIT] captured\n", .{});
-    return .{ .done = .{} };
 }
 
 // Simple tap on concrete event with Audit metatype

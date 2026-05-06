@@ -13,7 +13,6 @@ const std = @import("std");
 ~event hello {}
 
 ~event goodbye {}
-| done
 
 ~event logger {}
 
@@ -23,7 +22,6 @@ const std = @import("std");
 
 ~proc goodbye {
     std.debug.print("Goodbye\n", .{});
-    return .{ .done = .{} };
 }
 
 ~proc logger {

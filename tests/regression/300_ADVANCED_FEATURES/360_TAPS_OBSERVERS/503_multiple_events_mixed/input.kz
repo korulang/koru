@@ -17,8 +17,6 @@
 
 // Event with two branches
 ~event validate { n: i32 }
-| valid
-| invalid
 
 ~proc validate {
     if (n > 0) {

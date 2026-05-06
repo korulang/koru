@@ -9,11 +9,9 @@ pub const Handle = struct {
     return .{ .ok = h };
 }
 ~event close { h: *Handle[!open] }
-| closed
 | error []const u8
 ~proc close {
     std.heap.page_allocator.destroy(h);
-    return .{ .closed = .{} };
 }
 const std = @import("std");
 ~open()

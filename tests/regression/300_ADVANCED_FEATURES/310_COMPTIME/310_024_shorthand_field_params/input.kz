@@ -8,11 +8,9 @@ const std = @import("std");
     branch: []const u8,
     destination: ?[]const u8,
 }
-| done
 
 ~proc process {
     std.debug.print("source={s} branch={s}\n", .{source, branch});
-    return .{ .done = .{} };
 }
 
 pub const Data = struct {

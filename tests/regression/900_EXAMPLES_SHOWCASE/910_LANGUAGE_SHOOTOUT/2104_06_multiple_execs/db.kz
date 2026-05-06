@@ -76,11 +76,9 @@ const Transaction = struct { conn_handle: i32 };
 
 // close: ONLY accepts [!active] - forces meaningful use before close
 ~pub event close { conn: *Connection[!active] }
-| ok
 | err []const u8
 
 ~proc close {
     std.debug.print("Connection closed\n", .{});
     std.heap.page_allocator.destroy(conn);
-    return .{ .ok = .{} };
 }

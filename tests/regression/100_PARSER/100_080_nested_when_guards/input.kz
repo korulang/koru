@@ -2,11 +2,9 @@
 
 ~event run {}
 | ready i32
-| err
 
 ~event poll { t: i32 }
 | key u8
-| done
 
 ~event cleanup {}
 

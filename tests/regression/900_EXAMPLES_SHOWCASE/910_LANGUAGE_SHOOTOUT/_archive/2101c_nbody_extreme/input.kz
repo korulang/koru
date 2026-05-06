@@ -394,13 +394,11 @@ const Body = struct {
 
 ~event simulation_step { i: u32, n: u32 }
 | continue { i: u32, n: u32 }
-| done
 
 ~proc simulation_step {
     if (i < n) {
         return .{ .continue = .{ .i = i, .n = n } };
     } else {
-        return .{ .done = .{} };
     }
 }
 

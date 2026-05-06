@@ -14,11 +14,9 @@ var sum5: u64 = 0;
 
 ~event count { i: u64 }
 | next u64
-| done
 
 ~proc count {
     if (i >= MESSAGES) {
-        return .{ .done = .{} };
     }
     return .{ .next = i };
 }

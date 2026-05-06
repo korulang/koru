@@ -14,10 +14,9 @@ const std = @import("std");
 ~event hello {}
 
 ~event goodbye {}
-| done
 
-~proc hello {
-    std.debug.print("Hello\n", .{});
+~proc goodbye {
+    std.debug.print("Goodbye\n", .{});
 }
 
 ~proc goodbye {

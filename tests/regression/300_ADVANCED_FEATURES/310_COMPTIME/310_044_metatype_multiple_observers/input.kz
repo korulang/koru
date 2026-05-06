@@ -7,13 +7,11 @@
 ~event hello { }
 
 ~event logger { msg: []const u8 }
-| done
 
 ~[pure]proc hello {
 }
 
 ~[pure]proc logger {
-    return .{ .done = .{} };
 }
 
 // Observe with both Profile and Transition on same event

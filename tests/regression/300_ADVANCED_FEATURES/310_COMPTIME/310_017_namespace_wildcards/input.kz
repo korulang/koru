@@ -5,12 +5,10 @@ const std = @import("std");
 ~event http.request {}
 
 ~event http.response {}
-| done
 
 ~event db.query {}
 
 ~event logger { source: []const u8 }
-| done
 
 ~proc http.request {
     std.debug.print("HTTP request\n", .{});
@@ -18,7 +16,6 @@ const std = @import("std");
 
 ~proc http.response {
     std.debug.print("HTTP response\n", .{});
-    return .{ .done = .{} };
 }
 
 ~proc db.query {
@@ -27,7 +24,6 @@ const std = @import("std");
 
 ~proc logger {
     std.debug.print("HTTP event: {s}\n", .{source});
-    return .{ .done = .{} };
 }
 
 // Tap only http.* events (not db.query)

@@ -12,16 +12,12 @@ const std = @import("std");
 ~bool(IsActive)
 
 ~event check_status { active: IsActive }
-| active
-| inactive
 
 ~proc check_status {
     if (active) {
         std.debug.print("User is active\n", .{});
-        return .{ .active = .{} };
     } else {
         std.debug.print("User is inactive\n", .{});
-        return .{ .inactive = .{} };
     }
 }
 

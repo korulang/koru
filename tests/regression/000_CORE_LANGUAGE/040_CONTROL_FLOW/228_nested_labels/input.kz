@@ -9,18 +9,15 @@ const std = @import("std");
 
 ~event outer { count: i32 }
 | continue_outer i32
-| done_outer
 
 ~event inner { count: i32 }
 | continue_inner i32
-| done_inner
 
 ~proc outer {
     std.debug.print("Outer: {}\n", .{count});
     if (count < 2) {
         return .{ .@"continue_outer" = .{ .next = count + 1 } };
     }
-    return .{ .@"done_outer" = .{} };
 }
 
 ~proc inner {
@@ -28,7 +25,6 @@ const std = @import("std");
     if (count < 2) {
         return .{ .@"continue_inner" = .{ .next = count + 1 } };
     }
-    return .{ .@"done_inner" = .{} };
 }
 
 // Nested labels: #outer contains #inner

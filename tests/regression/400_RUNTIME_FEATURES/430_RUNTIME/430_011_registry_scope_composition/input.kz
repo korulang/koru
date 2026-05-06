@@ -13,7 +13,6 @@ const std = @import("std");
 // User management events
 ~pub event users.get { id: u64 }
 | found []const u8
-| not_found
 
 ~pub event users.list {}
 | listed usize
@@ -23,7 +22,6 @@ const std = @import("std");
 
 // Admin events (restricted)
 ~pub event admin.delete_user { id: u64 }
-| deleted
 
 ~pub event admin.reset_db {}
 

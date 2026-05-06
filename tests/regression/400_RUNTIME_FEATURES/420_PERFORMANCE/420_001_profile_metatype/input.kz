@@ -6,7 +6,6 @@ const std = @import("std");
 ~event hello {}
 
 ~event goodbye {}
-| done
 
 ~[comptime|runtime] event profiler { source: []const u8, branch: []const u8, destination: ?[]const u8, timestamp_ns: i128 }
 
@@ -16,7 +15,6 @@ const std = @import("std");
 
 ~proc goodbye {
     std.debug.print("Goodbye executed\n", .{});
-    return .{ .done = .{} };
 }
 
 ~proc profiler {

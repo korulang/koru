@@ -9,7 +9,6 @@ const std = @import("std");
 | result i32
 
 ~event finish {}
-| done
 
 ~proc compute {
     return .{ .result = x * 2 };
@@ -17,7 +16,6 @@ const std = @import("std");
 
 ~proc finish {
     std.debug.print("done\n", .{});
-    return .{ .done = .{} };
 }
 
 ~compute(x: 42)

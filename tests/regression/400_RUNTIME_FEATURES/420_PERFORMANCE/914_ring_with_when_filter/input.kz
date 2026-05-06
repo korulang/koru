@@ -51,25 +51,19 @@ const MyRing = Ring(u32, 1024);
 
 // Ring operations
 ~event ring.enqueue { ring: *Ring(u32, 1024), value: u32 }
-| enqueued
-| full
 
 ~proc ring.enqueue {
     if (ring.tryEnqueue(value)) {
-        return .{ .enqueued = .{} };
     }
-    return .{ .full = .{} };
 }
 
 ~event ring.dequeue { ring: *Ring(u32, 1024) }
 | value u32
-| empty
 
 ~proc ring.dequeue {
     if (ring.tryDequeue()) |data| {
         return .{ .value = data };
     }
-    return .{ .empty = .{} };
 }
 
 // Processing event - what we do with dequeued values

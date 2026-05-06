@@ -9,7 +9,6 @@ const std = @import("std");
 - runtime
 - fuseable
 ] event vertical_bullets {}
-| done
 
 // Vertical with parameterized annotations
 ~[
@@ -17,7 +16,6 @@ const std = @import("std");
 - inline(threshold: 500)
 - gpu(target: "metal", precision: "half")
 ] event vertical_params {}
-| done
 
 // Mix of simple and complex
 ~[
@@ -26,7 +24,6 @@ const std = @import("std");
 - optimize(level: 2)
 - profile(sample_rate: 1000)
 ] event vertical_mixed {}
-| done
 
 // Should be equivalent to inline
 ~[comptime|runtime|fuseable] event inline_equiv {}

@@ -19,7 +19,6 @@
 // Result event with identity branches
 ~pub event result {}
 | ok i32
-| fail
 
 // Wrapper that uses braceless constructors in continuations
 ~pub event run_test {}

@@ -7,13 +7,11 @@ const std = @import("std");
 
 ~event check { value: i32 }
 | positive i32
-| zero
 | negative i32
 
 ~proc check {
     if (value > 0) return .{ .positive = value };
     if (value < 0) return .{ .negative = value };
-    return .{ .zero = .{} };
 }
 
 ~event handle_positive { n: i32 }

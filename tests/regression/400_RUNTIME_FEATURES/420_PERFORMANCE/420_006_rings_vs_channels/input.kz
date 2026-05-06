@@ -156,13 +156,11 @@ const MESSAGES: u64 = 10_000_000;
 
 ~event dequeue { ring: *Ring }
 | some u64
-| none
 
 ~proc dequeue {
     if (ring.tryDequeue()) |value| {
         return .{ .some = value };
     } else {
-        return .{ .none = .{} };
     }
 }
 
@@ -198,17 +196,13 @@ const MESSAGES: u64 = 10_000_000;
 }
 
 ~event validate { sum: u64 }
-| valid
-| invalid
 
 ~proc validate {
     const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
     if (sum == expected) {
         std.debug.print("✓ Koru: Validated {} messages (checksum: {})\n", .{ MESSAGES, sum });
-        return .{ .valid = .{} };
     } else {
         std.debug.print("✗ Koru: CHECKSUM MISMATCH! got {}, expected {}\n", .{ sum, expected });
-        return .{ .invalid = .{} };
     }
 }
 

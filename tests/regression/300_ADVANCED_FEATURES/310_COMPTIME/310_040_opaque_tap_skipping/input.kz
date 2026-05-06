@@ -16,7 +16,6 @@ const std = @import("std");
 
 // Internal event - marked opaque to prevent tapping
 ~[opaque] event internal_log { msg: []const u8 }
-| done
 
 ~proc hello {
     std.debug.print("Hello\n", .{});
@@ -24,7 +23,6 @@ const std = @import("std");
 
 ~proc internal_log {
     std.debug.print("[INTERNAL] {s}\n", .{msg});
-    return .{ .done = .{} };
 }
 
 // Universal tap - should wrap hello() but NOT internal_log()

@@ -1,6 +1,5 @@
 ~event match { path: []const u8, pattern: []const u8 }
 | ok []const u8
-| no_match
 
 ~test(Should fail clearly) {
     ~match = ok { path: "/", pattern: "/" }

@@ -25,12 +25,10 @@ const File = struct { handle: i32 };
 
 // Write - requires locked state (doesn't consume)
 ~pub event write { file: *File[locked], data: []const u8 }
-| written
 | err []const u8
 
 ~proc write {
     std.debug.print("Writing: {s}\n", .{data});
-    return .{ .written = .{} };
 }
 
 // Unlock - consumes locked! (Option 1 for disposing locked!)

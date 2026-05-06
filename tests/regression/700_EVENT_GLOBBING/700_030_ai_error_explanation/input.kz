@@ -15,7 +15,6 @@
 ~event broken.example {
     value: NonexistentType,  // ← This type doesn't exist
 }
-| ok
 
 ~proc broken.example {
     return .{ .ok = {} };

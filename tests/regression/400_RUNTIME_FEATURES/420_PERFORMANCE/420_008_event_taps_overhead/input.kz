@@ -12,13 +12,11 @@ var tap_count: u64 = 0;
 // Event for loop iteration
 ~event count { i: u64 }
 | next u64
-| done
 
 ~proc count {
     if (i < 1_000_000) {
         return .{ .next = i + 1 };
     } else {
-        return .{ .done = .{} };
     }
 }
 

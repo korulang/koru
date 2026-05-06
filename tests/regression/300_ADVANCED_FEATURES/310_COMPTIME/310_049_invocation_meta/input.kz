@@ -8,7 +8,6 @@ const std = @import("std");
 // A comptime event that receives metadata about its invocation
 ~[comptime]pub event check_config { meta: InvocationMeta }
 | matched []const u8
-| no_annotation
 
 ~proc check_config {
     // meta.annotations contains the flow annotations like ["release"], ["debug"]
@@ -19,7 +18,6 @@ const std = @import("std");
         // Return the first annotation as the config name
         return .{ .matched = meta.annotations[0] };
     } else {
-        return .{ .no_annotation = .{} };
     }
 }
 

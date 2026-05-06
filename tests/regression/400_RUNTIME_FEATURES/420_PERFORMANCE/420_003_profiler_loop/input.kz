@@ -11,7 +11,6 @@ const std = @import("std");
 // Outer counter event (counts outer iterations)
 ~event outer { x: i32, max_inner: i32 }
 | next_outer { x: i32, max_inner: i32 }
-| done_outer
 
 ~proc outer {
     std.debug.print("Outer: {}\n", .{x});
@@ -19,7 +18,6 @@ const std = @import("std");
     if (x < 3) {
         return .{ .next_outer = .{ .x = x, .max_inner = max_inner } };
     } else {
-        return .{ .done_outer = .{} };
     }
 }
 

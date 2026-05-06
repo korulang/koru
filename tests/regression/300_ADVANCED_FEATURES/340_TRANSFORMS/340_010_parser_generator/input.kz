@@ -10,7 +10,6 @@
 ~[derive(parser)]event token {}
 | number u64[\d+]
 | plus void[\+]
-| eof
 
 // Test the generated parser using Koru flows!
 ~token.parse(stream: "123+456")

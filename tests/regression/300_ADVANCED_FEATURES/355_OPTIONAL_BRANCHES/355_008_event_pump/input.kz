@@ -16,14 +16,12 @@ const std = @import("std");
 | ?mouse i32
 | ?window i32
 | ?timer i32
-| ?quit
 
 ~proc pump {
     const i = iteration;
 
     // After 8 iterations, quit
     if (i >= 8) {
-        return .{ .quit = .{} };
     }
 
     // Cycle: keyboard, mouse, window, timer

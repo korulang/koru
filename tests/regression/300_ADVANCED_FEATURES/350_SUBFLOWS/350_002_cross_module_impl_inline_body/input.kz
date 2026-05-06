@@ -31,7 +31,6 @@ const std = @import("std");
 // [expand] event — template produces inline_body + branches
 ~[norun|expand]pub event classify_num { expr: Expression }
 | positive i32
-| non_positive
 
 // Abstract event — simulates a library event like orisha:handler
 ~[abstract]pub event categorize { value: i32 }

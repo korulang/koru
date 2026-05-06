@@ -3,7 +3,6 @@
 
 ~pub event maybe_str {}
 | some []const u8
-| none
 
 ~proc maybe_str {
     return .{ .some = "hello" };

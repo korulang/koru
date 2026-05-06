@@ -33,7 +33,6 @@ const std = @import("std");
 // [expand] event with branches — produces inline_body + switch
 ~[norun|expand]pub event check_positive { expr: Expression }
 | positive i32
-| negative
 
 // Event to test
 ~event classify { input: i32 }

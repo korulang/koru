@@ -239,8 +239,6 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 }
 
 ~event validate { sum: u64, count: u64 }
-| valid
-| invalid
 
 ~proc validate {
     const expected_sum: u64 = TOTAL_MESSAGES * (TOTAL_MESSAGES - 1) / 2;
@@ -248,10 +246,8 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 
     if (sum == expected_sum and count == expected_count) {
         std.debug.print("✓ Threading Library: Validated {} messages across {} consumers (checksum: {})\n", .{ count, NUM_CONSUMERS, sum });
-        return .{ .valid = .{} };
     } else {
         std.debug.print("✗ Threading Library: MISMATCH! got sum={}, count={}, expected sum={}, count={}\n", .{ sum, count, expected_sum, expected_count });
-        return .{ .invalid = .{} };
     }
 }
 

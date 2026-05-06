@@ -9,7 +9,6 @@
 | error []const u8
 
 ~event logger { msg: []const u8 }
-| done
 
 ~[pure]proc process {
     if (value > 0) {
@@ -19,7 +18,6 @@
 }
 
 ~[pure]proc logger {
-    return .{ .done = .{} };
 }
 
 // Tap that captures Transition (enum-based metatype)

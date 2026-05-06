@@ -5,11 +5,8 @@
 ~import "$std/taps"
 
 ~event hello { }
-| ok
-| error
 
 ~event logger { msg: []const u8 }
-| done
 
 ~[pure]proc hello {
     return .ok;

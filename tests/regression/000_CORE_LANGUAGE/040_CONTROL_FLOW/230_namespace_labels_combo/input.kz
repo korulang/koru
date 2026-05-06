@@ -9,11 +9,8 @@ const std = @import("std");
 
 ~event server.accept {}
 | connection u32
-| stopped
 
 ~event server.handle { id: u32 }
-| processed
-| failed
 
 ~proc server.accept {
     std.debug.print("Accept\n", .{});
@@ -25,12 +22,10 @@ const std = @import("std");
     if (static.count <= 2) {
         return .{ .@"connection" = .{ .id = static.count } };
     }
-    return .{ .@"stopped" = .{} };
 }
 
 ~proc server.handle {
     std.debug.print("Handle {}\n", .{id});
-    return .{ .@"processed" = .{} };
 }
 
 // Loop with namespaced events

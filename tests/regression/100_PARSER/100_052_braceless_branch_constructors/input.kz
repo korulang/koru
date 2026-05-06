@@ -12,13 +12,10 @@
 
 // Event with identity branch
 ~pub event empty_result {}
-| ok
-| fail
 
 // Event with value branch
 ~pub event value_result {}
 | success i32
-| fail
 
 // Subflow impl using braceless syntax for empty identity branch
 // OLD syntax: ~empty_result = ok {}

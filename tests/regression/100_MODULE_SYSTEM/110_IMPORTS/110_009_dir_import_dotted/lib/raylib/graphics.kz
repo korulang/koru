@@ -6,7 +6,6 @@ const std = @import("std");
 | drawn i32
 
 ~pub event z_buffer.clear {}
-| cleared
 
 ~pub event sprite.draw { x: i32, y: i32 }
 
@@ -19,7 +18,6 @@ const std = @import("std");
 }
 
 ~proc z_buffer.clear {
-    return .{ .@"cleared" = .{} };
 }
 
 ~proc sprite.draw {
