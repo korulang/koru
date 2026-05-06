@@ -19,4 +19,4 @@ const std = @import("std");
 // Simple flow
 ~check(value: -1)
 | error _ |> _
-|> _
+| ok _ |> _

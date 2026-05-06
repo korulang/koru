@@ -48,8 +48,8 @@ const std = @import("std");
 // Flow with multiple branching paths
 ~validate(value: 42)
 | valid v |> double(value: v)
-    |> success(result: doubled)
+    | ok doubled |> success(result: doubled)
         |> _
 | invalid e |> triple(value: -1)
-    |> failure(msg: e)
+    | ok _ |> failure(msg: e)
         |> _

@@ -10,6 +10,27 @@ const std = @import("std");
 // Simple counter event
 ~event counter { n: i32 }
 | next i32
+| done i32
+
+~proc counter {
+    std.debug.print("Count: {}\n", .{n});
+
+    if (n < 5) {
+        return .{ .next = n + 1 };
+    } else {
+        return .{ .done = n };
+    }
+}
+
+// Start event to kick things off
+~event start {}
+
+~proc start {
+    std.debug.print("Starting counter...\n", .{});
+}
+
+// Flow with label on continuation (not on flow itself!)
+~start()
 |> #loop counter(n: 1)
     | next c |> @loop(n: c)
-    |> _
+    | done |> _

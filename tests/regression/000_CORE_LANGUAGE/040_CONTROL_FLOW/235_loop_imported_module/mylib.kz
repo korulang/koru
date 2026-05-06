@@ -4,6 +4,7 @@ const std = @import("std");
 
 ~pub event tick {}
 | next u32
+| done
 
 ~proc tick {
     const static = struct { var count: u32 = 0; };
@@ -11,4 +12,5 @@ const std = @import("std");
     if (static.count < 3) {
         return .{ .next = static.count };
     }
+    return .{ .done = .{} };
 }

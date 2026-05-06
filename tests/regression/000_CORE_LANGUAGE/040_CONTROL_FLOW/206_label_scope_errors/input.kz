@@ -11,9 +11,30 @@ const std = @import("std");
 // Simple counter event
 ~event counter { n: i32 }
 | next i32
+| done i32
+
+~proc counter {
+    std.debug.print("Count: {}\n", .{n});
+
+    if (n < 3) {
+        return .{ .next = n + 1 };
+    } else {
+        return .{ .done = n };
+    }
+}
+
+// Start event
+~event start {}
+
+~proc start {
+    std.debug.print("Starting...\n", .{});
+}
+
+// Flow 1 with a label
+~start()
 |> #loop counter(n: 1)
     | next c |> @loop(n: c.value)
-    |> _
+    | done |> _
 
 // Flow 2 trying to jump to Flow 1's label (should error!)
 ~start()

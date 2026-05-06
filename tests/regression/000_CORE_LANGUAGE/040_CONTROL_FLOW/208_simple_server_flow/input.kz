@@ -70,13 +70,13 @@ const std = @import("std");
 
 // Main flow with nested labels
 ~listen(port: 8080)
-|> #accept_loop accept(server: s)
+| ready s |> #accept_loop accept(server: s)
     | connected c |> #process_loop process(conn: c.conn)
-        |> close(conn: d)
+        | done d |> close(conn: d)
             |> @accept_loop(server: c.server)
         | retry r |> @process_loop(conn: r)
         | error e |> log_error(conn: e.conn, msg: e.msg)
             | logged l |> cleanup(conn: l)
-                | cleaned |> @accept_loop(server: c.server)
+                |> @accept_loop(server: c.server)
     | failed f |> @accept_loop(server: f)
 | failed _ |> _
