@@ -83,11 +83,11 @@ const N: usize = 10;
     make_resource(id: i)
     | ready r |>
         work_done(r: r.resource)
-        |>
+        | done |>
             work_done(r: r.resource)
-            |>
+            | done |>
                 work_done(r: r.resource)
-                |>
+                | done |>
                     destroy(r: r.resource)
 
 pub fn main() void {

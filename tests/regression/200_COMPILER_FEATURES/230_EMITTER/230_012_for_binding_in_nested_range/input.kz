@@ -20,4 +20,4 @@ const std = @import("std");
 ~for(0..3)
 | each i |> for(i+1..5)
     | each j |> print_pair(i: i, j: j)
-|> _
+| done |> _

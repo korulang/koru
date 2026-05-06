@@ -40,15 +40,15 @@ const Resource = struct {
 ~run_one = create(id: id)
 | created r |>
     work(r: r)
-    |>
+    | done |>
         work(r: r)
-        |>
+        | done |>
             work(r: r)
-            |>
+            | done |>
                 work(r: r)
-                |>
+                | done |>
                     work(r: r)
-                    |>
+                    | done |>
                         destroy(r: r)
                         |> finished
 
@@ -56,6 +56,6 @@ const Resource = struct {
 | each _ |>
     run_one(id: 0)
     | finished |> _
-|> _
+| done |> _
 
 pub fn main() void {}

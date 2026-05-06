@@ -35,4 +35,4 @@ const items = [_]i32{ 1, 2, 3, 4, 5 };
 // The for loop - should emit optimal Zig for
 ~for(&items)
 | each item |> process(value: item)
-|> finalize()
+| done |> finalize()

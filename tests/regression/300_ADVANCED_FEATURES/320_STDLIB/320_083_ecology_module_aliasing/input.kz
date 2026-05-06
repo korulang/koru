@@ -15,9 +15,9 @@
 // Use the alias - should still resolve keywords correctly
 ~ctrl:for(0..3)
 | each i |> std.io:println(text: "via alias")
-|> std.io:println(text: "alias worked")
+| done |> std.io:println(text: "alias worked")
 
 // Also test that keywords still work (they resolve to std.control internally)
 ~for(0..2)
 | each j |> std.io:println(text: "via keyword")
-|> std.io:println(text: "keyword worked")
+| done |> std.io:println(text: "keyword worked")
