@@ -48,19 +48,11 @@
                             }
                         ]
                     }
-                },
-                {
-                    "name": "err",
-                    "payload": {
-                        "fields": [
-
-                        ]
-                    }
                 }
             ],
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 7,
+                "line": 6,
                 "col": 0
             }
         },
@@ -100,19 +92,11 @@
                             }
                         ]
                     }
-                },
-                {
-                    "name": "done",
-                    "payload": {
-                        "fields": [
-
-                        ]
-                    }
                 }
             ],
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 11,
+                "line": 9,
                 "col": 0
             }
         },
@@ -131,7 +115,7 @@
             ],
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 13,
+                "line": 11,
                 "col": 0
             }
         },
@@ -159,7 +143,7 @@
             ],
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 15,
+                "line": 13,
                 "col": 0
             }
         },
@@ -254,31 +238,7 @@
                                     ]
                                 }
                             ]
-                        },
-                        {
-                            "branch": "done",
-                            "binding": null,
-                            "binding_type": "branch_payload",
-                            "condition": null,
-                            "step":                             {
-                                "type": "terminal"
-                            },
-                            "continuations": [
-
-                            ]
                         }
-                    ]
-                },
-                {
-                    "branch": "err",
-                    "binding": "_",
-                    "binding_type": "branch_payload",
-                    "condition": null,
-                    "step":                     {
-                        "type": "terminal"
-                    },
-                    "continuations": [
-
                     ]
                 }
             ],
@@ -287,7 +247,7 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
-                "line": 16,
+                "line": 14,
                 "col": 0
             }
         }

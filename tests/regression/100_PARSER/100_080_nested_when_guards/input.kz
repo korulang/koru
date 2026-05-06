@@ -16,5 +16,3 @@
         |> _
     | key k |> handle_key(code: k.code)
         |> _
-    | done |> _
-| err _ |> _
