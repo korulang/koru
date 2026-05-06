@@ -5,4 +5,3 @@
 const std = @import("std");
 
 ~event process_path { path: []const u8 }
-|> _

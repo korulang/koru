@@ -14,10 +14,9 @@
         app.db:exec(tx: t.tx, sql: "INSERT INTO users VALUES (1, 'alice')")
         | ok r |>
             app.db:commit(tx: r.tx)
-            |>
-                // Got connection back but forgot to close it!
-                // Connection[active!] obligation not discharged.
-                _
+            // Got connection back but forgot to close it!
+            // Connection[active!] obligation not discharged.
+            |> _
             | err _ |> _
         | err _ |> _
     | err _ |> _
