@@ -1,0 +1,19 @@
+// TEST: Reject `|> _` after a void event — redundant terminator.
+//
+// A void event call has nothing to continue from. Writing `|> _` after
+// it is pure noise: the program is bit-identical with or without the
+// terminator. The flow checker rejects this so trailing `|> _` cannot
+// creep in as a habit.
+//
+// Legal:   ~hello()
+// Legal:   ~hello() |> next()
+// Illegal: ~hello() |> _
+
+~event hello {}
+
+~proc hello {}
+
+~hello()
+|> _
+
+pub fn main() void {}

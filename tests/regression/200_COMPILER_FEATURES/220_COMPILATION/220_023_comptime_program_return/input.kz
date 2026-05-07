@@ -41,4 +41,3 @@ const ast_functional = @import("ast_functional");
 }
 
 ~hello()
-| greeted |> _

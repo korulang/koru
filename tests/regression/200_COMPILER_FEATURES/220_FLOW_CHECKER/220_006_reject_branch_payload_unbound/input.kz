@@ -1,0 +1,21 @@
+// TEST: Reject `| ok |> _` when the branch carries a payload.
+//
+// A payload-bearing branch must explicitly bind or discard its payload —
+// silently ignoring the carried value is illegal. The branch name is part
+// of the dispatch, but the value the branch carries must be acknowledged.
+//
+// Legal:   | ok x |> use(x)     — bind and use
+// Legal:   | ok _ |> _          — explicit discard
+// Illegal: | ok |> _            — neither bound nor discarded
+
+~event compute {}
+| ok i32
+
+~proc compute {
+    return .{ .ok = 42 };
+}
+
+~compute()
+| ok |> _
+
+pub fn main() void {}

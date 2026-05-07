@@ -16,5 +16,4 @@ const std = @import("std");
 const name = "World";
 
 // Shorthand form - should expand to greet(name: name)
-~greet(name)  
-| greeted |> _
+~greet(name)

@@ -7,4 +7,4 @@
 
 // The "|>" here is part of the string, not an inline continuation.
 ~greet(text: "Hello |> World")
-| greeted |> _
+|> _
