@@ -25,7 +25,6 @@
                         app.db:commit(tx: r2)
                         | ok conn2 |>
                             app.db:close(conn: conn2)
-                            |> _
                             | err _ |> _
                         | err _ |> _
                     | err _ |> _

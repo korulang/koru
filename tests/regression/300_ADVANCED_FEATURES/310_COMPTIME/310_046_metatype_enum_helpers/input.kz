@@ -27,9 +27,9 @@
     |> _
 
 ~process(value: 5)
-|> _
+| ok _ |> _
 | error _ |> _
 
 ~process(value: -1)
-|> _
+| ok _ |> _
 | error _ |> _
