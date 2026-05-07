@@ -12,8 +12,8 @@ var ring = Ring.init();
 
 // Test enqueue/dequeue with identity branches
 ~std.rings:enqueue(ring: &ring, value: 42)
-|> std.rings:enqueue(ring: &ring, value: 100)
-    |> std.rings:dequeue(ring: &ring)
+| ok |> std.rings:enqueue(ring: &ring, value: 100)
+    | ok |> std.rings:dequeue(ring: &ring)
         | some v |> std.io:print.ln("First: {{ v:d }}")
         | none |> std.io:print.ln("ERROR: empty")
     | full |> std.io:print.ln("ERROR: full")

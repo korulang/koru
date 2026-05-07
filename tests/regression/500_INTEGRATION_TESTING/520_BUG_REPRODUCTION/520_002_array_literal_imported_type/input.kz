@@ -39,4 +39,3 @@ const std = @import("std");
 ~makeHandle(id: 1)
 | made h1 |> makeHandle(id: 2)
     | made h2 |> joinHandles(handles: &[_]threading:WorkerHandle{ h1, h2 })
-        | joined |> _
