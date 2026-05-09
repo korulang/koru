@@ -8,6 +8,55 @@ the evolving ground truth.
 Koru is a compiler. Shortcuts cascade. When you hit a problem, stop and ask —
 don't silently work around it.
 
+## Branches are equal — there is no happy path
+
+Every branch on an event is just an outcome shape with a name. They are equal
+in every conceivable way. There is no privileged "success," no implicit "ok,"
+no fallback "happy path," no "sad path." `| err`, `| ok`, `| done`, `| closed`,
+`| timeout` — all the same kind of thing. Just named outcomes.
+
+Do not import vocabulary or assumptions from other languages:
+
+- No "happy path" / "sad path" / "error path."
+- No "the success case is implicit."
+- No "auto-inject an `ok` branch."
+- No reasoning by analogy to `Result<T, E>`, `Either`, exceptions, or
+  `try`/`catch`. That whole frame says "one outcome is the real one and the
+  others are deviations." Koru does not work that way.
+- No "the proc returns the value, and errors are the other thing." The proc
+  emits one of its declared branches. That's the whole model.
+
+What this means in practice:
+
+- An event with one branch `| err` is **not** "an event that fails." It is an
+  event whose only declared outcome is named `err`. If the proc body never
+  emits that outcome, the source is incoherent — the proc declared an outcome
+  it never produces.
+- An event with no branches (void) is an event with no outcome shape, full stop.
+  Not "an event that always succeeds."
+- When a test or piece of code looks malformed, ask "which named outcome is
+  this proc supposed to produce?" — not "what's the success case?"
+
+If you catch yourself reaching for happy/sad/success/error vocabulary while
+reasoning about Koru, stop. Restate in terms of named outcomes. The vocabulary
+isn't decoration; using the wrong words means you're modeling the wrong
+language.
+
+### Stdlib conventions are not language semantics
+
+The standard library converges on certain branch names by convention — `| ok`
+and `| err` for events that can fail, `| done` for void terminators, `| then`
+for continuations, etc. Readers of stdlib-shaped code will (correctly) bring
+expectations to those names.
+
+That convention lives **in the library**, not in the language. The compiler
+does not privilege `| ok` over `| err` over `| anything_else`. A user defining
+their own event can name branches `| north`, `| south`, `| sideways` and the
+core machinery treats them identically. When you see `| ok` and `| err` in a
+test, the meaning comes from stdlib usage, not from a language rule. Do not
+extrapolate from "the stdlib uses `ok` this way" to "the language treats `ok`
+specially." It doesn't.
+
 ## Never run destructive git commands without explicit approval
 
 Don't run any of these without an explicit go-ahead from the user:
@@ -130,9 +179,28 @@ Branches must carry meaningful payload. Two shapes:
   Captured with `| name x |>`, access fields as `x.a`, `x.b`.
 
 Single-field struct payloads (`| name { x: T }`) are rejected by the parser at
-the event declaration site — use identity instead. Branches with no payload
-(`| done`) are also disallowed — if there's nothing meaningful to say, the event
-should be void (no branches at all).
+the event declaration site — use identity instead.
+
+No-payload branches (`| ok`, `| done`, `| closed`) are allowed **only when the
+event has more than one branch**. The branch name itself is the dispatch
+payload when siblings exist:
+
+```koru
+~pub event close { conn: *Connection[!active] }
+| ok                    // closed cleanly, nothing to carry
+| err []const u8        // sibling makes `| ok` meaningful as a dispatch
+```
+
+What's NOT allowed: an event with a **single** no-payload branch.
+
+```koru
+~pub event ping { }
+| done                  // ❌ no information — should be a void event instead
+```
+
+If the event has nothing to say beyond "it happened," declare it as void (no
+branches at all). The single-no-payload-branch shape is just void with extra
+ceremony.
 
 The parser does NOT reject single-field shapes at the branch *constructor* site
 in flows — compile-time constructs can produce constructor-like AST nodes that
