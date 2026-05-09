@@ -127,6 +127,110 @@ zig build test-shape-checker      # Just shape checker
 zig build test-auto-discharge     # Just auto-discharge
 ```
 
+## Layout: `|>` inline by default, multi-line only for void chains
+
+Two rules govern how flows are laid out across lines.
+
+### Rule 1: `|>` is ALWAYS inline. It never starts a line.
+
+`|>` is the body delimiter of a branch handler (`| name [binding] |> body`)
+and the chain operator between void events (`~A() |> B()`). It always stays
+on the same line as what precedes it. A line that begins with `|>` (after
+whitespace) is malformed, in **every** context — including void chains.
+
+There is no "void chains may stair-step across lines" carve-out. If a chain
+gets too long for one line, the fix is to refactor — either keep it inline
+regardless of length, or write the steps as separate top-level statements
+(which is already legal for top-level void events):
+
+```koru
+// Allowed: inline chain
+~A() |> B() |> C() |> D()
+
+// Allowed: separate top-level statements
+~A()
+~B()
+~C()
+~D()
+
+// FORBIDDEN: |> at line start
+~A()
+|> B()       // ❌ malformed
+|> C()       // ❌ malformed
+```
+
+The reflex to break on `|>` is borrowed from F#/Elm/Elixir, where it's
+idiomatic. In Koru it is wrong. `|>` does not start lines.
+
+### Rule 2: Branched chains stay inline; branches go DOWN
+
+When the chain ends in (or contains) a branched event, the chain stays on one
+line, and the branches go on subsequent lines. Branch indent is determined
+by branch-handler nesting depth (see "Indent depth" below) — NOT by the
+column where the dispatch point lands mid-line.
+
+Canonical shape (from `030_011_array_literal_bindings`):
+
+```koru
+~getValue(id: 1)
+| got a |> getValue(id: 2)
+    | got b |> getValue(id: 3)
+        | got c |> sumAll(values: [a, b, c])
+            | total t |> check(expected: 60, actual: t)
+```
+
+Each `| name binding |> body` line:
+- starts with `|` (branch dispatch)
+- has its body inline after `|>`
+- nests its own branches DOWN under the body's call column
+
+Branches are NEVER on the same line as the chain whose result they dispatch
+on. They always come down.
+
+### Indent depth: branch-handler nesting only
+
+Branch indent is determined **purely by branch-handler nesting depth**. Void
+chains in front of a branched event are transparent for indent purposes — they
+do not shift anything.
+
+```koru
+~getVoid() |> someBranchedEvent()
+| ok x |> ...                       // col 0, same as if the line were
+| err e |> ...                      // just `~someBranchedEvent()` alone
+```
+
+The branches sit where they'd sit if the void chain weren't there. They do
+NOT indent under the column of `someBranchedEvent` mid-line. That position
+was never a candidate.
+
+Same principle nested:
+
+```koru
+| ok x |> doVoid() |> doBranched()
+    | b_ok y |> ...                 // +1 from `| ok x`, same as if body
+    | b_err e |> ...                // were just `doBranched()` alone
+```
+
+Each branch nesting step = +1 indent. Chain length never adds levels.
+
+### What this rules out
+
+- A `|>` line at deeper indent under a branch handler's body, with sibling
+  `|` handlers at the same indent — the malformed shape from `330_012`.
+- Trailing `|> _` on a new line — should be inline with the body.
+- Branches on the same line as the chain that produced them
+  (`~A() |> B() | ok x |> ...`) — branches always come down.
+- Mixed-indent void chains (`|> step` at one indent, then `    |> step` at
+  another) — flat or nothing.
+
+### When in doubt, read passing tests
+
+Read `tests/regression/` to see real Koru. Do NOT synthesize Koru syntax from
+analogies to other languages or from first-principles guesses about what
+"should" be valid. The language is what the code is, not what you reason it
+might be. If you produce a syntax example that you have not seen in a passing
+test, label it as a guess.
+
 ## The `~` prefix is parser mode, not a call operator
 
 `~` switches the parser from Zig to Koru. It is NEVER used inside a Koru flow.

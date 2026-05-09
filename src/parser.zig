@@ -4189,7 +4189,15 @@ pub const Parser = struct {
         var cont: ast.Continuation = undefined;
 
         if (lexer.startsWith(after_bar, ">")) {
-            // Pipeline continuation |>
+            // |> at line start is malformed: |> is inline glue only (body
+            // delimiter or void chain operator). Lines never start with |>.
+            try self.reporter.addError(
+                .KORU010,
+                location.line,
+                location.column,
+                "continuation without branch handler — '|>' at line start is not allowed; '|>' is inline glue only",
+                .{},
+            );
             cont = try self.parsePipelineContinuationBase(after_bar[1..], indent, location);
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation
@@ -4215,7 +4223,15 @@ pub const Parser = struct {
         var cont: ast.Continuation = undefined;
 
         if (lexer.startsWith(after_bar, ">")) {
-            // Pipeline continuation |>
+            // |> at line start is malformed: |> is inline glue only (body
+            // delimiter or void chain operator). Lines never start with |>.
+            try self.reporter.addError(
+                .KORU010,
+                location.line,
+                location.column,
+                "continuation without branch handler — '|>' at line start is not allowed; '|>' is inline glue only",
+                .{},
+            );
             cont = try self.parsePipelineContinuationBase(after_bar[1..], indent, location);
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation

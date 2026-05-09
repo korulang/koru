@@ -1,0 +1,24 @@
+// TEST: Reject a continuation provided without any branch handler.
+//
+// Every continuation in a flow must be a response to a named branch of the
+// preceding event. Bare `|>` tries to chain the next event without naming
+// which branch it handles — there is no implicit "positive case," no
+// default, no fallback. Every branch must be named explicitly.
+//
+// Legal:   | ok |> next()
+// Legal:   | err _ |> next()
+// Illegal: |> next()           (no branch handler — which branch is this?)
+
+~event ping {}
+| ok
+| err []const u8
+
+~proc ping {
+    return .{ .ok = .{} };
+}
+
+~ping()
+|> _
+| err _ |> _
+
+pub fn main() void {}
