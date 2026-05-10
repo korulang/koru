@@ -23,4 +23,3 @@ const std = @import("std");
 }
 
 ~test_nested()
-|> _

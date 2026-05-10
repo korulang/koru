@@ -24,4 +24,3 @@ const std = @import("std");
 }
 
 ~test_option()
-|> _
