@@ -1,14 +1,15 @@
 error[KORU010]: stray continuation line without Koru construct
   --> tests/regression/200_COMPILER_FEATURES/210_PARSER/210_059_reject_tilde_after_pipe_forward/input.kz:9:1
     |
- 9 | |> is not valid Koru
+  9 | |> is not valid Koru
     | ^
 
-error[KORU010]: continuation without branch handler — '|>' at line start is not allowed; '|>' is inline glue only
+error[KORU010]: '|>' cannot start a line
   --> tests/regression/200_COMPILER_FEATURES/210_PARSER/210_059_reject_tilde_after_pipe_forward/input.kz:11:0
     |
  11 | |>
-    | ^
+    | ^^
+  hint: '|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.
 
 error[PARSE001]: Pipeline continuation '|>' requires a step. Nested flows (~) are not allowed here.
   --> tests/regression/200_COMPILER_FEATURES/210_PARSER/210_059_reject_tilde_after_pipe_forward/input.kz:11:0

@@ -4189,13 +4189,15 @@ pub const Parser = struct {
         var cont: ast.Continuation = undefined;
 
         if (lexer.startsWith(after_bar, ">")) {
-            // |> at line start is malformed: |> is inline glue only (body
-            // delimiter or void chain operator). Lines never start with |>.
-            try self.reporter.addError(
+            // `|>` is inline glue only — it never starts a line.
+            try self.reporter.addErrorWithHintAndSpan(
                 .KORU010,
                 location.line,
                 location.column,
-                "continuation without branch handler — '|>' at line start is not allowed; '|>' is inline glue only",
+                2,
+                "'|>' cannot start a line",
+                .{},
+                "'|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.",
                 .{},
             );
             cont = try self.parsePipelineContinuationBase(after_bar[1..], indent, location);
@@ -4223,13 +4225,15 @@ pub const Parser = struct {
         var cont: ast.Continuation = undefined;
 
         if (lexer.startsWith(after_bar, ">")) {
-            // |> at line start is malformed: |> is inline glue only (body
-            // delimiter or void chain operator). Lines never start with |>.
-            try self.reporter.addError(
+            // `|>` is inline glue only — it never starts a line.
+            try self.reporter.addErrorWithHintAndSpan(
                 .KORU010,
                 location.line,
                 location.column,
-                "continuation without branch handler — '|>' at line start is not allowed; '|>' is inline glue only",
+                2,
+                "'|>' cannot start a line",
+                .{},
+                "'|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.",
                 .{},
             );
             cont = try self.parsePipelineContinuationBase(after_bar[1..], indent, location);

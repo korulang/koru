@@ -13,9 +13,10 @@ error[PARSE001]: Zig code not allowed in flows. Flows are pure plumbing - use ev
  28 | | connected |> std.debug.print("TCP connected!\n", .{})
     | ^
 
-error[KORU010]: continuation without branch handler — '|>' at line start is not allowed; '|>' is inline glue only
+error[KORU010]: '|>' cannot start a line
   --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_012_optional_parent/input.kz:33:0
     |
  33 | |> _
-    | ^
+    | ^^
+  hint: '|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.
 

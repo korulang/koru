@@ -5833,6 +5833,16 @@ pub fn main() !void {
     parser.fail_fast = fail_fast;
     defer parser.deinit();
 
+    // If we prepended a bootstrap import line above, the parser sees line numbers
+    // in INJECTED coordinates (line 1 = injected import). Tell the reporter to
+    // render previews from the user's source and translate stored line numbers
+    // back to user coordinates so error output references the user's file as
+    // they wrote it.
+    if (inject_compiler and !user_already_imported_compiler) {
+        // import_line above is `~import "$std/compiler"\n` — exactly one line.
+        try parser.reporter.setUserSource(source, 1);
+    }
+
     log.debug("DEBUG: Parser initialized, calling parse()...\n", .{});
     const parse_result = parser.parse() catch |err| {
         if (parser.reporter.hasErrors()) {

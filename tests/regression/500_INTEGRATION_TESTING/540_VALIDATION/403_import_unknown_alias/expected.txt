@@ -1,19 +1,19 @@
 error: UnknownImportAlias
-/Users/larsde/src/koru/src/module_resolver.zig:405:17: 0x104c4d4f7 in resolveBoth (koruc)
+/Users/larsde/src/koru/src/module_resolver.zig:405:17: 0x10286b843 in resolveBoth (koruc)
                 return error.UnknownImportAlias;
                 ^
-/Users/larsde/src/koru/src/parser.zig:6852:13: 0x104bf31b3 in parseAndRegisterImport (koruc)
+/Users/larsde/src/koru/src/parser.zig:6856:13: 0x10281045f in parseAndRegisterImport (koruc)
             return err;
             ^
-/Users/larsde/src/koru/src/parser.zig:6827:9: 0x104bf2d83 in parseImportDecl (koruc)
+/Users/larsde/src/koru/src/parser.zig:6831:9: 0x10281002f in parseImportDecl (koruc)
         try self.parseAndRegisterImport(path, final_name);
         ^
-/Users/larsde/src/koru/src/parser.zig:936:38: 0x104c1ad13 in parseKoruConstruct (koruc)
+/Users/larsde/src/koru/src/parser.zig:936:38: 0x102838aff in parseKoruConstruct (koruc)
             return .{ .import_decl = try self.parseImportDecl() };
                                      ^
-/Users/larsde/src/koru/src/parser.zig:736:25: 0x104c2489f in parse (koruc)
+/Users/larsde/src/koru/src/parser.zig:736:25: 0x10284272b in parse (koruc)
                         return err;
                         ^
-/Users/larsde/src/koru/src/main.zig:5843:9: 0x104d71c2f in main (koruc)
+/Users/larsde/src/koru/src/main.zig:5853:9: 0x10299057f in main (koruc)
         return err;
         ^

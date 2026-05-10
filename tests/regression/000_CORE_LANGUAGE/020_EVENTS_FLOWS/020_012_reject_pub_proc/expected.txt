@@ -1,6 +1,6 @@
 error[PARSE003]: 'pub' is not valid on proc declarations - only events can be public
   --> tests/regression/000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_012_reject_pub_proc/input.kz:9:1
     |
- 9 | ~pub proc greet {
+  9 | ~pub proc greet {
     | ^
 

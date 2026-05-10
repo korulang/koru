@@ -1,6 +1,6 @@
 error[PARSE001]: invalid flow invocation
   --> tests/regression/200_COMPILER_FEATURES/210_PARSER/210_053_reject_old_tap_syntax/input.kz:9:0
     |
- 9 | ~foo -> *
+  9 | ~foo -> *
     | ^
 
