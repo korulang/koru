@@ -11,9 +11,8 @@ const std = @import("std");
 
 // Outer if contains inner if
 // Both should transform to Zig if statements
-~start()
-|> if(true)
-    | then |> if(false)
-        | then |> _
-        | else |> _
+~start() |> if(true)
+| then |> if(false)
+    | then |> _
     | else |> _
+| else |> _

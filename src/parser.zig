@@ -4087,8 +4087,9 @@ pub const Parser = struct {
         // Each step becomes a continuation with empty branch, pointing to the next step
         // Last step gets the nested multi-line continuations
 
-        // Parse nested continuations for the LAST step
-        const nested_continuations = try self.parseNestedContinuationsForLevel(indent);
+        // parseContinuations (not parseNestedContinuationsForLevel) so same-indent
+        // branches under `~A() |> B()` attach to B, matching standalone-head shape.
+        const nested_continuations = try self.parseContinuations(indent);
 
         // Start with the last step
         var current_continuations: []ast.Continuation = nested_continuations;
