@@ -46,4 +46,3 @@ const std = @import("std");
 // This tests that a subflow can call another subflow successfully
 ~process(input: 21)
 | final f |> print_result(value: f)
-    |> _

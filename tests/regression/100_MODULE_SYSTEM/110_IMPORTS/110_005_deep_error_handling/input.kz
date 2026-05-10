@@ -58,12 +58,7 @@ const std = @import("std");
     | ok s2 |> step3(value: s2)
         | ok s3 |> step4(value: s3)
             | ok _ |> log(msg: "Success!")
-                |> _
             | failed f |> log(msg: f)
-                |> _
         | failed f |> log(msg: f)
-            |> _
     | failed f |> log(msg: f)
-        |> _
 | failed f |> log(msg: f)
-    |> _

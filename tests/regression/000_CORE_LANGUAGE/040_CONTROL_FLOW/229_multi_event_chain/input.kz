@@ -67,8 +67,5 @@ const std = @import("std");
     | valid v |> transform(value: v)
         | transformed t |> format(value: t)
             | formatted f |> display(text: f)
-                |> _
     | invalid i |> display(text: i)
-        |> _
 | invalid i |> display(text: i)
-    |> _

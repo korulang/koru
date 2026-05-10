@@ -1,4 +1,3 @@
 ~import "$app/fs"
 ~app.fs:open_two(path1: "test1.txt", path2: "test2.txt")
-| opened f |> app.fs:close(file: f.file1)  // Close first file
-    |> app.fs:close(file: f.file2)  // Close second file
+| opened f |> app.fs:close(file: f.file1) |> app.fs:close(file: f.file2)  // Close both files

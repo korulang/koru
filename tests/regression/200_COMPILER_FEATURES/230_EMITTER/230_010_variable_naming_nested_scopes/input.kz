@@ -48,10 +48,7 @@ const std = @import("std");
 // Both branched events generate `result_N` with same N
 
 ~step_one()
-|> get_value()
-    | value v1 |> print_value(v: v1)
-        |> for(0..2)
-            | each |> step_two()
-                |> get_value()
-                    | value v2 |> print_value(v: v2)
-            |> _
+~get_value()
+| value v1 |> print_value(v: v1) |> for(0..2)
+    | each |> step_two() |> get_value()
+        | value v2 |> print_value(v: v2)

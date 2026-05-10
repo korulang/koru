@@ -5,5 +5,4 @@ const File = struct {
     handle: i32,
 };
 ~app.fileops:open(path: "test.txt")
-| opened f |> app.fileops:close(file: f)  // f: *File[app.fileops:open]
-    |> std.io:println(text: "File closed successfully")
+| opened f |> app.fileops:close(file: f) |> std.io:println(text: "File closed successfully")

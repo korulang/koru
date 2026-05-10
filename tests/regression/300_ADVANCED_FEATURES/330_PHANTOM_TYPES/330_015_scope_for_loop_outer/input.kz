@@ -1,8 +1,7 @@
 ~import "$std/control"
 ~import "$app/fs"
 ~app.fs:open(path: "outer.txt")
-| opened outer_f |>
-    std.control:for(0..3)
+| opened outer_f |> std.control:for(0..3)
     | each _ |> _  // outer_f is suspended here (@scope), disposed in done
-    |> _
+    | done |> _
 pub fn main() void {}

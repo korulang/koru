@@ -46,4 +46,3 @@ const std = @import("std");
 ~compute(x: 42)
 | result r |> format(value: r)
     | formatted f |> display(text: f)
-        |> _

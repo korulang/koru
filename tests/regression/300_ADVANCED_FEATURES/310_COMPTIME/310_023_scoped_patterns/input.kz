@@ -28,6 +28,4 @@ const std = @import("std");
 ~tap(file.* -> *)
 | Transition |> logger()
 
-~file.read()
-|> file.write()
-    |> _
+~file.read() |> file.write()

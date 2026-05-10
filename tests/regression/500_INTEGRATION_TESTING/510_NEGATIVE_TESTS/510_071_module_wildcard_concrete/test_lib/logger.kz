@@ -12,4 +12,3 @@ const std = @import("std");
 // Module wildcard tap using metatype (valid usage)
 ~tap(input:* -> *)
 | Profile p |> log(msg: p.source)
-    |> _

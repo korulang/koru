@@ -1,8 +1,7 @@
 ~import "$std/control"
 ~import "$app/fs"
 ~app.fs:open(path: "outer.txt")
-| opened _ |>
-    std.control:for(0..3)
+| opened _ |> std.control:for(0..3)
     | each _ |> _  // Loop body, obligation flows through
-    |> _    // Auto-discharge inserts close here (runs once)
+    | done |> _    // Auto-discharge inserts close here (runs once)
 pub fn main() void {}

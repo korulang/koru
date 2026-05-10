@@ -36,4 +36,3 @@ const std = @import("std");
 // Test: 21 * 2 = 42
 ~process(input: 21)
 | final f |> print_result(value: f)
-    |> _

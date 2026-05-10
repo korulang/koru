@@ -62,7 +62,6 @@ const UserInfo = struct {
 | result r |> middle(y: r)
     | data d |> inner(z: d)
         | final f |> show_values(a: r, b: d, c: f)
-            |> _
 
 // The binding 'r' from outer should be accessible in all nested continuations
 // The binding 'd' from middle should be accessible in inner's continuation

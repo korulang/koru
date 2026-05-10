@@ -31,8 +31,4 @@ const std = @import("std");
 ~tap(* -> file.write)
 | Profile p |> logger(caller: p.source)
 
-~file.read()
-|> file.write()
-    |> network.fetch()
-        |> file.write()
-            |> _
+~file.read() |> file.write() |> network.fetch() |> file.write()

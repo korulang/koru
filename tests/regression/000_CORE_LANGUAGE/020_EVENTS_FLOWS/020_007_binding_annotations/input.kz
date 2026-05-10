@@ -21,4 +21,3 @@ const std = @import("std");
 // Test: Using [mutable] annotation so we can pass a mutable pointer
 ~get_data()
 | result r[mutable] |> mutate_and_print(ptr: &r)
-  |> _

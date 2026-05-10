@@ -24,7 +24,7 @@ const std = @import("std");
 
 // Main flow: for is nested 2 levels deep
 ~step1()
-|> step2()
-    |> for(0..3)
-        | each |> std.io:println(text: "iteration")
-        |> std.io:println(text: "done")
+~step2()
+~for(0..3)
+| each |> std.io:println(text: "iteration")
+| done |> std.io:println(text: "done")

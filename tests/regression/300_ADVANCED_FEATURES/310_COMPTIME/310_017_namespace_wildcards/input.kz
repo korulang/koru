@@ -29,9 +29,5 @@ const std = @import("std");
 // Tap only http.* events (not db.query)
 ~tap(http.* -> *)
 | Profile p |> logger(p.source)
-    |> _
 
-~http.request()
-|> http.response()
-    |> db.query()
-        |> _
+~http.request() |> http.response() |> db.query()

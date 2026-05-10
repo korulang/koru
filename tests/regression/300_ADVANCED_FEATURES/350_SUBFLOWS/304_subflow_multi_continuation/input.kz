@@ -49,4 +49,3 @@ const std = @import("std");
 // Test: 5 * 3 * 2 = 30
 ~process(input: 5)
 | final f |> verify_and_print(value: f)
-    |> _

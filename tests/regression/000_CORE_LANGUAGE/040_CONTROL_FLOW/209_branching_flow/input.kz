@@ -49,7 +49,5 @@ const std = @import("std");
 ~validate(value: 42)
 | valid v |> double(value: v)
     | ok doubled |> success(result: doubled)
-        |> _
 | invalid e |> triple(value: -1)
     | ok _ |> failure(msg: e)
-        |> _

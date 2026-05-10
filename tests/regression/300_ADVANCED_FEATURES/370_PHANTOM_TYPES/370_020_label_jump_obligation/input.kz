@@ -46,7 +46,6 @@ const Resource = struct { id: i32 };
 ~#loop create()
 | created c |> use(res: c.res)
     | ok o |> close(res: o.res)
-        |> _
     | failed _f |> @loop()  // BUG! c.res has [open!] obligation, not discharged!
 
 pub fn main() void {

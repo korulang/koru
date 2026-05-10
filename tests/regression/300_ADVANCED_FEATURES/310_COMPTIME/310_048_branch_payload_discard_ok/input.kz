@@ -20,4 +20,3 @@ const std = @import("std");
 
 ~compute(x: 42)
 | result _ |> finish()
-    |> _

@@ -20,12 +20,8 @@
 | [POST /users] |> ok {}
 | [nested [brackets] work] |> ok {}
 | [* -> stopped] |> ok {}  // State machine style
-|> _  // Normal branch still works
 
 // Verify nested patterns work
 ~test_patterns()
-| [/admin/*] |>
-    test_patterns()
+| [/admin/*] |> test_patterns()
     | [GET /dashboard] |> ok {}
-    |> _
-|> _

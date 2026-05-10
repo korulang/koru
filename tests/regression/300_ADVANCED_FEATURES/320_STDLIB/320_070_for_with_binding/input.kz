@@ -43,7 +43,5 @@ var sum: i32 = 0;
 ~get_items()
 | items arr |> for(arr)
     | each x |> add_item(value: x)
-        |> _
-    |> show_sum()
-        |> _
+    | done |> show_sum()
 | failed _ |> _

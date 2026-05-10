@@ -21,7 +21,6 @@ const std = @import("std");
 // Event wildcard tap observes all compute events with metatype
 ~tap(*:compute -> *)
 | Profile p |> app.test_lib.logger:log(msg: p.source)
-    |> _
 
 ~compute(x: 42)
 | result _ |> _

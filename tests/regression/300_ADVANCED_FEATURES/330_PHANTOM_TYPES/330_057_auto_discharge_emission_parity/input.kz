@@ -1,6 +1,5 @@
 ~import "$app/pq"
 ~import "$std/io"
 ~app.pq:connect(conninfo: "host=localhost dbname=test")
-| ok conn |> std.io:print.ln("Connected!")
-    |> app.pq:disconnect(conn: conn)
+| ok conn |> std.io:print.ln("Connected!") |> app.pq:disconnect(conn: conn)
 | err msg |> std.io:print.ln("Failed: {{ msg:s }}")

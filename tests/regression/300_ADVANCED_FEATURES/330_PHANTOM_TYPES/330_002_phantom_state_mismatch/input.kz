@@ -9,4 +9,3 @@ const File = struct {
 }
 ~app.lib.mipmap:load(path: "texture.png")
 | loaded m |> needs_fs_file(file: m.file)
-    |> _

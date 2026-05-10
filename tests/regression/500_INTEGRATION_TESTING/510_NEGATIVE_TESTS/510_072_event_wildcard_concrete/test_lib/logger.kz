@@ -12,4 +12,3 @@ const std = @import("std");
 // Event wildcard tap using metatype (valid usage)
 ~tap(*:log -> *)
 | Profile p |> log(msg: p.source)
-    |> _

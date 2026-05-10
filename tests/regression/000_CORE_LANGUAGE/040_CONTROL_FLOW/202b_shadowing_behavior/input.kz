@@ -30,4 +30,3 @@ const std = @import("std");
 ~first(value: 10)
 | result r |> second(value: r)
     | data d |> show(outer_val: r, inner_val: d)
-        |> _

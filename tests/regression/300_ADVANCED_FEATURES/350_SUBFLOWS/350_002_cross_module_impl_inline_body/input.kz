@@ -59,9 +59,7 @@ const std = @import("std");
 // Test 1: positive value -> should output 42
 ~categorize(value: 42)
 | result r |> print_num(n: r)
-    |> _
 
 // Test 2: non-positive value -> should output 0
 ~categorize(value: 0)
 | result r |> print_num(n: r)
-    |> _

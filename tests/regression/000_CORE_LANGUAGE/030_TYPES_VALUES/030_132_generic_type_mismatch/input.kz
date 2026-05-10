@@ -22,8 +22,6 @@
     // ERROR: Passing OptionalFloat where OptionalInt is expected
     const f = OptionalFloat{ .some = 3.14 };
     ~process_int(val: f)
-    |> done {}
 }
 
 ~main()
-|> _

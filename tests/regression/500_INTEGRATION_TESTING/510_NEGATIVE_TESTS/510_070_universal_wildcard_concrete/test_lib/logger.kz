@@ -12,4 +12,3 @@ const std = @import("std");
 // Universal wildcard tap using metatype (valid usage)
 ~tap(* -> *)
 | Profile p |> log(msg: p.source)
-    |> _

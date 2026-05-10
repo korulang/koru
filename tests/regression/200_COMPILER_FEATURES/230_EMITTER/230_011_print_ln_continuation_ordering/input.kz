@@ -46,9 +46,7 @@ const std = @import("std");
 // Main flow - matches nbody structure
 ~setup()
 | ready _ |> get_result()
-    | value v1 |> print_value(v: v1)
-        |> for(0..3)
-            | each |> step_one()
-                |> step_two()
-            |> get_result()
-                | value v2 |> std.io:print.ln("Result: {{ v2:d }}")
+    | value v1 |> print_value(v: v1) |> for(0..3)
+        | each |> step_one() |> step_two()
+        | done |> get_result()
+            | value v2 |> std.io:print.ln("Result: {{ v2:d }}")

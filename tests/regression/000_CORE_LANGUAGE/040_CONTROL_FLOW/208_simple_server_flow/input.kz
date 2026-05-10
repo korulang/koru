@@ -72,11 +72,9 @@ const std = @import("std");
 ~listen(port: 8080)
 | ready s |> #accept_loop accept(server: s)
     | connected c |> #process_loop process(conn: c.conn)
-        | done d |> close(conn: d)
-            |> @accept_loop(server: c.server)
+        | done d |> close(conn: d) |> @accept_loop(server: c.server)
         | retry r |> @process_loop(conn: r)
         | error e |> log_error(conn: e.conn, msg: e.msg)
-            | logged l |> cleanup(conn: l)
-                |> @accept_loop(server: c.server)
+            | logged l |> cleanup(conn: l) |> @accept_loop(server: c.server)
     | failed f |> @accept_loop(server: f)
 | failed _ |> _

@@ -2,12 +2,9 @@
 ~import "$app/fs"
 const condition = true;
 ~app.fs:open(path: "test.txt")
-| opened f |>
-    std.control:for(0..3)
-    | each _ |>
-        std.control:if(condition)
+| opened f |> std.control:for(0..3)
+    | each _ |> std.control:if(condition)
         | then |> _  // Fine - just ends this iteration
         | else |> _  // Fine - just ends this iteration
-    |>
-        app.fs:close(file: f)  // Close after loop completes
+    | done |> app.fs:close(file: f)  // Close after loop completes
 pub fn main() void {}
