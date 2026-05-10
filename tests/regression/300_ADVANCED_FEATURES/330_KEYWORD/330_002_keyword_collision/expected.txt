@@ -1,0 +1,19 @@
+ERROR: Ambiguous keyword 'process' - defined in:
+  - lib_a:process (from lib_a)
+  - lib_b:process (from lib_b)
+error: AmbiguousKeyword
+/Users/larsde/src/koru/src/keyword_registry.zig:97:17: 0x10503414b in resolveKeyword (koruc)
+                return error.KeywordCollision;
+                ^
+/Users/larsde/src/koru/src/main.zig:5130:13: 0x105033d47 in resolveKeywordInPath (koruc)
+            return error.AmbiguousKeyword;
+            ^
+/Users/larsde/src/koru/src/main.zig:4922:13: 0x105035587 in resolveKeywordsInItem (koruc)
+            try resolveKeywordInPath(&flow.invocation.path, registry, allocator, main_module);
+            ^
+/Users/larsde/src/koru/src/main.zig:4905:9: 0x1050358df in resolveKeywordsInAST (koruc)
+        try resolveKeywordsInItem(item, registry, allocator, main_module, items);
+        ^
+/Users/larsde/src/koru/src/main.zig:6455:9: 0x105158df7 in main (koruc)
+        try resolveKeywordsInAST(@constCast(source_file.items), &kw_registry, parse_allocator, source_file.main_module_name);
+        ^

@@ -1,0 +1,6 @@
+error[PARSE003]: [keyword] annotation requires 'pub' - only public events can be keywords
+  --> tests/regression/300_ADVANCED_FEATURES/330_KEYWORD/330_004_keyword_requires_pub/input.kz:3:1
+    |
+  3 | 
+    | ^
+

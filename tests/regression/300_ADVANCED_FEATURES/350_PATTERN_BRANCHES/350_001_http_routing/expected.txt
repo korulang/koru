@@ -1,0 +1,6 @@
+error[PARSE003]: Zig-style struct syntax '.{' is not valid in Koru parameter values — pass fields as named parameters instead
+  --> tests/regression/300_ADVANCED_FEATURES/350_PATTERN_BRANCHES/350_001_http_routing/input.kz:23:1
+    |
+ 23 | ~handle(req: .{ .method = "GET", .path = "/health" })
+    | ^
+

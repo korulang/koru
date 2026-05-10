@@ -1,0 +1,21 @@
+error[PARSE003]: import path too deep: '$app/test_lib/net/tcp' has 3 segments after alias (max: 2)
+  To fix: add a new alias to koru.json, e.g.:
+    "paths": { "mylib": "./path/to/lib" }
+  Then use: ~import "$mylib/..." (Suggested: extract 'app' as its own alias)
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_012_optional_parent/input.kz:18:1
+    |
+ 18 | ~import "$app/test_lib/net/tcp"
+    | ^
+
+error[PARSE001]: Zig code not allowed in flows. Flows are pure plumbing - use events for computation.
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_012_optional_parent/input.kz:28:0
+    |
+ 28 | | connected |> std.debug.print("TCP connected!\n", .{})
+    | ^
+
+error[KORU010]: continuation without branch handler — '|>' at line start is not allowed; '|>' is inline glue only
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_012_optional_parent/input.kz:33:0
+    |
+ 33 | |> _
+    | ^
+

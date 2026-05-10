@@ -1,0 +1,6 @@
+error[PARSE001]: Branch continuation '|' must start on a new line with proper indentation
+  --> tests/regression/200_COMPILER_FEATURES/210_PARSER/210_043_inline_continuation_rejected/input.kz:15:21
+    |
+ 15 | ~greet(name: "World") | done |> _
+    |                     ^
+

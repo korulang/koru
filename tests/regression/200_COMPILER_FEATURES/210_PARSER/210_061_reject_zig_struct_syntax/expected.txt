@@ -1,0 +1,6 @@
+error[PARSE003]: Zig-style struct syntax '.{' is not valid Koru — use 'branch_name { field: value }' instead
+  --> tests/regression/200_COMPILER_FEATURES/210_PARSER/210_061_reject_zig_struct_syntax/input.kz:13:1
+    |
+ 13 |     .{ .success = "mock response" }
+    | ^
+

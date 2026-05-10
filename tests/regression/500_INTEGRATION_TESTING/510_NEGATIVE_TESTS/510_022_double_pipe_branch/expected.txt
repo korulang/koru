@@ -1,6 +1,6 @@
 error[PARSE003]: branch missing name
-  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_022_double_pipe_branch/input.kz:6:1
+  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_022_double_pipe_branch/input.kz:5:1
     |
-  6 | || done
+  5 | || done
     | ^
 

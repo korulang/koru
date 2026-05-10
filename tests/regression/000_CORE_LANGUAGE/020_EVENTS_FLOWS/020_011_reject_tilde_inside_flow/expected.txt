@@ -1,0 +1,6 @@
+error[PARSE001]: Nested flows (~) are not allowed inside continuations. Use a bare event call instead: remove the ~ prefix.
+  --> tests/regression/000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_011_reject_tilde_inside_flow/input.kz:11:0
+    |
+ 11 | | captured |> ~std.io:println("Should reject this!")
+    | ^
+

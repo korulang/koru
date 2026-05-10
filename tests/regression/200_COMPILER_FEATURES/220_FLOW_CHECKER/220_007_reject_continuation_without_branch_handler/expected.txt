@@ -1,0 +1,6 @@
+error[KORU010]: continuation without branch handler — '|>' at line start is not allowed; '|>' is inline glue only
+  --> tests/regression/200_COMPILER_FEATURES/220_FLOW_CHECKER/220_007_reject_continuation_without_branch_handler/input.kz:21:0
+    |
+ 21 | |> _
+    | ^
+

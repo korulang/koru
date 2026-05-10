@@ -1,0 +1,12 @@
+error[KORU010]: continuation without branch handler — '|>' at line start is not allowed; '|>' is inline glue only
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:14:0
+    |
+ 14 | |> app.lib.raylib.graphics:clear(color: 0xFF0000)
+    | ^
+
+error[KORU010]: continuation without branch handler — '|>' at line start is not allowed; '|>' is inline glue only
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:16:8
+    |
+ 16 |         |> app.lib.raylib.audio:stop()
+    |        ^
+

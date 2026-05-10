@@ -1,0 +1,6 @@
+error[PARSE003]: single field in braces - use identity syntax '| ok i32' instead of '| ok { value: i32 }'
+  --> tests/regression/200_COMPILER_FEATURES/210_PARSER/210_063_reject_single_field_braces/input.kz:9:4
+    |
+ 9 | | ok { value: i32 }
+    |    ^
+

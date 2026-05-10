@@ -1,0 +1,7 @@
+error[KORU100]: unused binding 'f'
+  --> tests/regression/200_COMPILER_FEATURES/220_FLOW_CHECKER/220_001_unused_binding_error/input.kz:14:0
+    |
+ 14 | | opened f |> _
+    | ^
+  hint: discard the binding using `_` if not needed
+

@@ -1,0 +1,7 @@
+error[KORU002]: module not found: '$std/interceptors'
+  --> tests/regression/300_ADVANCED_FEATURES/365_INTERCEPTORS/365_003_single_interceptor_error/input.kz:7:1
+    |
+  7 | ~import "$std/interceptors"
+    | ^
+  hint: check the import path, koru.json paths, and KORU_STDLIB/KORU_PATH environment variables
+

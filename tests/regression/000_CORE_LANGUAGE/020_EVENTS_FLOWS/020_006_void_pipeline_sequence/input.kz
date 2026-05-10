@@ -9,6 +9,4 @@
 ~proc work {
 }
 
-~work()
-|> std.io:print.ln("Step 1") |> work() |> std.io:print.ln("Step 2")
-    |> std.io:print.ln("Done!")
+~work() |> std.io:print.ln("Step 1") |> work() |> std.io:print.ln("Step 2") |> std.io:print.ln("Done!")

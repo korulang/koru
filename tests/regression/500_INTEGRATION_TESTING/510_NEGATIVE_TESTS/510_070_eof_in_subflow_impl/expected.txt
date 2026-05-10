@@ -1,0 +1,6 @@
+error[PARSE003]: expected subflow body after '='
+  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_070_eof_in_subflow_impl/input.kz:7:1
+    |
+  7 | 
+    | ^
+

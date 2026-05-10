@@ -1,0 +1,28 @@
+error[KORU044]: cannot access private event 'app.test_lib.graphics:init' from module 'input'
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_002_directory_import_basic/input.kz:28:0
+    |
+ 28 | ~app.test_lib.graphics:init()
+    | ^
+  hint: mark the event as public with ~pub event
+
+error[KORU044]: cannot access private event 'app.test_lib.audio:init' from module 'input'
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_002_directory_import_basic/input.kz:31:0
+    |
+ 31 | ~app.test_lib.audio:init()
+    | ^
+  hint: mark the event as public with ~pub event
+
+error[KORU044]: cannot access private event 'app.test_lib.graphics:render' from module 'input'
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_002_directory_import_basic/input.kz:34:0
+    |
+ 34 | ~app.test_lib.graphics:render(frame: 42)
+    | ^
+  hint: mark the event as public with ~pub event
+
+error[KORU044]: cannot access private event 'app.test_lib.audio:play' from module 'input'
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_002_directory_import_basic/input.kz:37:0
+    |
+ 37 | ~app.test_lib.audio:play(sound: "explosion.wav")
+    | ^
+  hint: mark the event as public with ~pub event
+

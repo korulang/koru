@@ -1,0 +1,6 @@
+error[PARSE003]: import paths cannot contain '../' - use path aliases in koru.json instead
+  --> tests/regression/500_INTEGRATION_TESTING/540_VALIDATION/402_import_dotdot_forbidden/input.kz:8:1
+    |
+  8 | ~import "../koru_std/io"
+    | ^
+

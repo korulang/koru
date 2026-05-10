@@ -1,0 +1,6 @@
+error[PARSE003]: empty braces in branch payload - remove braces for void branch or use identity syntax '| ok Type'
+  --> tests/regression/200_COMPILER_FEATURES/210_PARSER/210_062_reject_empty_brace_payload/input.kz:11:4
+    |
+ 11 | | ok {}
+    |    ^
+

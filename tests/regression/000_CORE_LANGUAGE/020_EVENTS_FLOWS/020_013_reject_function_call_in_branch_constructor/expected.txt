@@ -1,0 +1,6 @@
+error[PARSE003]: branch constructor field 'value' contains a function call — branch constructors must be pure. Use event chaining instead.
+  --> tests/regression/000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_013_reject_function_call_in_branch_constructor/input.kz:31:1
+    |
+ 31 | 
+    | ^
+

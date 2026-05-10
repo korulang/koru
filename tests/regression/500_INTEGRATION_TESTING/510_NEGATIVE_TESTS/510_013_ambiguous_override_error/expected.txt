@@ -1,0 +1,7 @@
+error[KORU002]: module not found: '$std/compiler'
+  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_013_ambiguous_override_error/input.kz:0:1
+    |
+  0 | ~import "$std/compiler"
+    | ^
+  hint: check the import path, koru.json paths, and KORU_STDLIB/KORU_PATH environment variables
+

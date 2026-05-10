@@ -1,0 +1,6 @@
+error[KORU010]: stray continuation line without Koru construct
+  --> tests/regression/300_ADVANCED_FEATURES/310_COMPTIME/310_022_multiline_params/input.kz:24:1
+    |
+ 24 | | greeting |> _
+    | ^
+
