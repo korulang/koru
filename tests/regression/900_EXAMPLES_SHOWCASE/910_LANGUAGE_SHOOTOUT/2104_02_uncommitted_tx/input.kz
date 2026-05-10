@@ -10,9 +10,9 @@
 
 ~app.db:connect(host: "localhost")
 | ok c |>
-    app.db:begin(conn: c.conn)
     // We have Transaction[started!] but never exec or commit!
     // This should be a phantom obligation error at backend stage.
-    |> _
+    app.db:begin(conn: c)
+    | ok _ |> _
     | err _ |> _
 | err _ |> _

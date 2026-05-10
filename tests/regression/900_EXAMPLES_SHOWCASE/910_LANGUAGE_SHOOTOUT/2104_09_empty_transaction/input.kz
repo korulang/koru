@@ -13,14 +13,13 @@
 
 ~app.db:connect(host: "localhost")
 | ok c |>
-    app.db:begin(conn: c.conn)
+    app.db:begin(conn: c)
     | ok t |>
         // Try to commit immediately without exec - this should FAIL!
         // commit() needs [!active], but we have [started!]
-        app.db:commit(tx: t.tx)
+        app.db:commit(tx: t)
         | ok conn |>
-            app.db:close(conn: conn.conn)
-            |> _
+            app.db:close(conn: conn)
             | err _ |> _
         | err _ |> _
     | err _ |> _

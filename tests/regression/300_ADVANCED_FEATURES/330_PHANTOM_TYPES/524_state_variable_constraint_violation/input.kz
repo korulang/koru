@@ -1,3 +1,3 @@
 ~import "$app/data"
 ~app.data:gc_alloc()
-| allocated a |> app.data:process(d: a.data)  // ❌ ERROR: [gc] doesn't satisfy M'owned|borrowed
+| allocated a |> app.data:process(d: a)  // ❌ ERROR: [gc] doesn't satisfy M'owned|borrowed

@@ -15,7 +15,6 @@
 | ok c |>
     // Try to close immediately - this should FAIL!
     // close() needs [!active], but we have [connected!]
-    app.db:close(conn: c.conn)
-    |> _
+    app.db:close(conn: c)
     | err _ |> _
 | err _ |> _

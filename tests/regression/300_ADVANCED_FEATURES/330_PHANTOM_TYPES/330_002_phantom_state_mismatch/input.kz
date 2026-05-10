@@ -8,4 +8,4 @@ const File = struct {
 ~proc needs_fs_file {
 }
 ~app.lib.mipmap:load(path: "texture.png")
-| loaded m |> needs_fs_file(file: m.file)
+| loaded m |> needs_fs_file(file: m)
