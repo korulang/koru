@@ -12,9 +12,8 @@ const std = @import("std");
 
 // If contains for loop
 // Both should transform to native Zig constructs
-~start()
-|> if(true)
-    | then |> for(&[_]i32{1, 2, 3})
-        | each |> _
-        |> _
-    | else |> _
+~start() |> if(true)
+| then |> for(&[_]i32{1, 2, 3})
+    | each |> _
+    | done |> _
+| else |> _

@@ -8,7 +8,7 @@
 
 ~event branching_event {}
 
-// Chain void event to branching event, then handle branches with nested continuations
+// MUST_FAIL: branching_event is declared void (no branches), so `| error` is a
+// branch handler on an event that has no branches — category error.
 ~void_event() |> branching_event()
-    |> _
-    | error |> _
+| error |> _
