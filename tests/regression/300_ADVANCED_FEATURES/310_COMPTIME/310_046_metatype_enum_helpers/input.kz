@@ -24,7 +24,6 @@
 // The compiler should emit eventToString() and branchToString() helpers in taps namespace
 ~tap(process -> *)
 | Transition _ |> logger(msg: "transition")
-    |> _
 
 ~process(value: 5)
 | ok _ |> _

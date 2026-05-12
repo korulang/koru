@@ -16,11 +16,9 @@ const std = @import("std");
 // Note: 'input:' is the canonical namespace for entry module events
 ~tap(input:compute -> *)
 | result _ |> log(event_name: "compute")
-    |> _
 
 // Tap: Observe transitions from format (any destination)
 // When main.kz calls format(), this tap fires automatically!
 // Note: 'input:' is the canonical namespace for entry module events
 ~tap(input:format -> *)
 | formatted _ |> log(event_name: "format")
-    |> _

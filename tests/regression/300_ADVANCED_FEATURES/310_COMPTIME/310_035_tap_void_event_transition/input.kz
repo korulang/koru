@@ -30,4 +30,3 @@ const std = @import("std");
 
 // Main flow: println (void) transitions to finish (has branch)
 ~std.io:println(text: "Hello") |> finish()
-    |> _

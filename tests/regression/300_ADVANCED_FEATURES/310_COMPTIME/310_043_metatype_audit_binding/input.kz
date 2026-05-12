@@ -27,7 +27,5 @@ const std = @import("std");
 // If this fails with "undeclared identifier 'a'", metatype binding is broken
 ~tap(hello -> *)
 | Audit _ |> logger()
-    |> _
 
 ~hello()
-|> _

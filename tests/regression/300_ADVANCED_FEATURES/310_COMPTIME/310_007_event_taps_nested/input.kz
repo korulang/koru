@@ -24,7 +24,7 @@ const std = @import("std");
 
 // Tap that observes helper
 ~tap(helper -> *)
-|> log_tap()
+| Profile _ |> log_tap()
 
 // Call helper from a NESTED context (inside a continuation)
 ~event outer {}
@@ -32,6 +32,4 @@ const std = @import("std");
 ~proc outer {
 }
 
-~outer()
-|> helper()
-    |> _
+~outer() |> helper()

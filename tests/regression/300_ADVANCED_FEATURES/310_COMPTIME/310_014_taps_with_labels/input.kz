@@ -35,7 +35,6 @@ const std = @import("std");
 ~proc start {
 }
 
-~start()
-|> #loop counter(n: 1)
+~start() |> #loop counter(n: 1)
     | next v |> @loop(n: v)
-    |> _
+    | done |> _

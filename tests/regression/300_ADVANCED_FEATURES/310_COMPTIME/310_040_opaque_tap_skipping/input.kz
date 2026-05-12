@@ -28,10 +28,8 @@ const std = @import("std");
 // Universal tap - should wrap hello() but NOT internal_log()
 ~tap(* -> *)
 | Profile p |> internal_log(msg: p.source)
-    |> _
 
 // Call hello - tap should fire and call internal_log
 // The internal_log call from the tap should NOT be wrapped again
 // (it's opaque, so tap won't try to tap it)
 ~hello()
-|> _

@@ -33,8 +33,5 @@ const std = @import("std");
 // If this fails with "undeclared identifier 't'", metatype binding is broken
 ~tap(hello -> *)
 | Transition _ |> logger()
-    |> _
 
-~hello()
-|> goodbye()
-    |> _
+~hello() |> goodbye()

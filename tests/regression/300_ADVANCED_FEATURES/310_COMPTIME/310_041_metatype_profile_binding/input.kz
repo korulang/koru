@@ -27,7 +27,5 @@ const std = @import("std");
 // If this fails with "undeclared identifier 'p'", metatype binding is broken
 ~tap(hello -> *)
 | Profile p |> logger(msg: p.source)
-    |> _
 
 ~hello()
-|> _

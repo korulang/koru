@@ -9,19 +9,14 @@
 ~event logger { msg: []const u8 }
 
 ~[pure]proc hello {
-    return .ok;
 }
 
 ~[pure]proc logger {
-    return .done;
 }
 
 // For now, just verify multiple Profile observations work
 // When guards on metatypes are a future feature
 ~tap(hello -> *)
 | Profile p |> logger(msg: p.source)
-    |> _
 
 ~hello()
-|> _
-| error |> _

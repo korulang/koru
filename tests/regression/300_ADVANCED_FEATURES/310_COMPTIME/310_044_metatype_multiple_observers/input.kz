@@ -18,9 +18,6 @@
 // Both metatype handlers should fire - note multiple branch handlers in one tap()
 ~tap(hello -> *)
 | Profile p |> logger(msg: p.source)
-    |> _
 | Profile p2 |> logger(msg: p2.source)
-    |> _
 
 ~hello()
-|> _
