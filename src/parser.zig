@@ -4202,7 +4202,7 @@ pub const Parser = struct {
                 "'|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.",
                 .{},
             );
-            cont = try self.parsePipelineContinuationBase(after_bar[1..], indent, location);
+            return error.ParseError;
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation
             cont = try self.parseDerefContinuationBase(after_bar[1..], indent, location);
@@ -4238,7 +4238,7 @@ pub const Parser = struct {
                 "'|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.",
                 .{},
             );
-            cont = try self.parsePipelineContinuationBase(after_bar[1..], indent, location);
+            return error.ParseError;
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation
             cont = try self.parseDerefContinuationBase(after_bar[1..], indent, location);
