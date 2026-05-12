@@ -42,9 +42,7 @@ const std = @import("std");
 // This tap should fire when the subflow transitions through add_five's result branch
 ~tap(add_five -> *)
 | result |> observer()
-    |> _
 
 // Execute the subflow - tap should fire
 ~double(value: 10)
 | result r |> print_final(value: r)
-    |> _

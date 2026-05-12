@@ -28,4 +28,3 @@ const std = @import("std");
 // The | done |> line is INDENTED, so it should be NESTED under Transition
 ~tap(* -> *)
 | Profile p |> log(data: p.destination)
-    |> _

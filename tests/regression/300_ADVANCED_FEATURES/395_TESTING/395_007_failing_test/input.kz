@@ -5,15 +5,13 @@
 // Test that passes - assert true
 ~test(This test passes) {
     ~do_thing = done {}
-    ~do_thing()
-    |> assert(true)
+    ~do_thing() |> assert(true)
 }
 
 // Test that fails deliberately - assert false
 ~test(This test should fail) {
     ~do_thing = done {}
-    ~do_thing()
-    |> assert(false)
+    ~do_thing() |> assert(false)
 }
 
 pub fn main() void {}

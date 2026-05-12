@@ -20,14 +20,11 @@ const std = @import("std");
 // Note: Tap flows must end with void - they're observers, not transformers
 ~tap(input:* -> *)
 | result |> log(event_name: "compute")
-    |> _
 
 // Tap for format event (.formatted branch)
 ~tap(input:* -> *)
 | formatted |> log(event_name: "format")
-    |> _
 
 // Tap for display event (.done branch)
 ~tap(input:* -> *)
-|> log(event_name: "display")
-    |> _
+| Profile _ |> log(event_name: "display")

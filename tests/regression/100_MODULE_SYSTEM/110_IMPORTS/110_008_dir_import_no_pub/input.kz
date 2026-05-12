@@ -10,8 +10,6 @@ const std = @import("std");
 ~import "$app/lib/raylib"
 
 // Attempting to use non-public events should fail
-~app.lib.raylib.graphics:render(width: 1920, height: 1080)
-|> app.lib.raylib.graphics:clear(color: 0xFF0000)
-    | cleared |> app.lib.raylib.audio:play(sound_id: 42)
-        |> app.lib.raylib.audio:stop()
-            | stopped |> _
+~app.lib.raylib.graphics:render(width: 1920, height: 1080) |> app.lib.raylib.graphics:clear(color: 0xFF0000)
+    | cleared |> app.lib.raylib.audio:play(sound_id: 42) |> app.lib.raylib.audio:stop()
+        | stopped |> _

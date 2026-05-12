@@ -15,8 +15,7 @@
 
     ~event greetA {}
 
-    ~greetA = moduleB:greetB()
-    |> done {}
+    ~greetA = moduleB:greetB() |> done {}
 }
 
 // Module B imports Module A (circular!)
@@ -25,10 +24,8 @@
 
     ~event greetB {}
 
-    ~greetB = std.io:println(text: "Hello from B")
-    |> done {}
+    ~greetB = std.io:println(text: "Hello from B") |> done {}
 }
 
 // Main flow uses moduleA
-~moduleA:greetA()
-|> std.io:println(text: "Circular import worked!")
+~moduleA:greetA() |> std.io:println(text: "Circular import worked!")

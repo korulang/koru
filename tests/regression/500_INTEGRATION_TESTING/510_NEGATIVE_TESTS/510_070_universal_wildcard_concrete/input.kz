@@ -27,8 +27,5 @@ const std = @import("std");
 // Universal tap using metatype - observes ALL events
 ~tap(* -> *)
 | Profile p |> app.test_lib.logger:log(msg: p.source)
-    |> _
 
-~hello()
-|> goodbye()
-    |> _
+~hello() |> goodbye()

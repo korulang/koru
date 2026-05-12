@@ -10,9 +10,7 @@ const std = @import("std");
 ~import "$app/lib/raylib"
 
 // Full hierarchy: package.module:category.event()
-~app.lib.raylib.graphics:z_buffer.render(width: 1024, height: 768)
-|> app.lib.raylib.graphics:z_buffer.clear()
-    | cleared |> app.lib.raylib.graphics:sprite.draw(x: 100, y: 200)
-        |> app.lib.raylib.graphics:texture.load(path: "sprite.png")
-            | loaded |> _
-            | failed |> _
+~app.lib.raylib.graphics:z_buffer.render(width: 1024, height: 768) |> app.lib.raylib.graphics:z_buffer.clear()
+    | cleared |> app.lib.raylib.graphics:sprite.draw(x: 100, y: 200) |> app.lib.raylib.graphics:texture.load(path: "sprite.png")
+        | loaded |> _
+        | failed |> _

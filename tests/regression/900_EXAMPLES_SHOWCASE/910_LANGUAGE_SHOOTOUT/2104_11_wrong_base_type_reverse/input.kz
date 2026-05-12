@@ -8,8 +8,6 @@
 ~import "$app/db"
 
 ~app.db:connect(host: "localhost")
-| ok c |>
-    // BUG: Passing c (*Connection) to commit() which expects *Transaction
-    app.db:commit(tx: c)
-    |> _
+// BUG: Passing c (*Connection) to commit() which expects *Transaction
+| ok c |> app.db:commit(tx: c)
 | err _ |> _
