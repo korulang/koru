@@ -34,4 +34,3 @@ const std = @import("std");
 ~#loop count(i: 0, sum: 0)
 | next n |> @loop(i: n.i, sum: n.sum)
 | done d |> print(result: d.result)
-    |> _

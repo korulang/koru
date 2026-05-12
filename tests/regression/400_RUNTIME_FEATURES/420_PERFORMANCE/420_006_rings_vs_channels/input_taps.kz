@@ -71,7 +71,5 @@ var sum: u64 = 0;
 // Main Flow - Just a simple loop
 // ============================================================================
 
-~start()
-|> #loop count(i: 0)
+~start() |> #loop count(i: 0)
     | next n |> @loop(i: n.value + 1)
-    |> _

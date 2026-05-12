@@ -355,13 +355,10 @@ const AsyncHandle = struct {
 // All at SEMANTIC level (events), not TECHNICAL level (raw threading)!
 
 ~createRing()
-| created r |> spawnProducer(ring: r.ring)
-    |> startConsumers(ring: r.ring)
-        | started h1 |> consumeMessages.async(ring: r.ring, target: MESSAGES_PER_CONSUMER)
-            | awaitable h2 |> consumeMessages.async(ring: r.ring, target: MESSAGES_PER_CONSUMER)
-                | awaitable h3 |> consumeMessages.async(ring: r.ring, target: MESSAGES_PER_CONSUMER)
-                    | awaitable h4 |> consumeMessages.join(handles: &[_]AsyncHandle{ h1.handle, h2.handle, h3.handle, h4.handle })
-                        | all_completed results |> combineResults(results: results.results)
-                            | combined c |> validate(sum: c.total_sum, count: c.total_count)
-                                | valid |> _
-                                | invalid |> _
+| created r |> spawnProducer(ring: r.ring) |> startConsumers(ring: r.ring)
+    | started h1 |> consumeMessages.async(ring: r.ring, target: MESSAGES_PER_CONSUMER)
+        | awaitable h2 |> consumeMessages.async(ring: r.ring, target: MESSAGES_PER_CONSUMER)
+            | awaitable h3 |> consumeMessages.async(ring: r.ring, target: MESSAGES_PER_CONSUMER)
+                | awaitable h4 |> consumeMessages.join(handles: &[_]AsyncHandle{ h1.handle, h2.handle, h3.handle, h4.handle })
+                    | all_completed results |> combineResults(results: results.results)
+                        | combined c |> validate(sum: c.total_sum, count: c.total_count)

@@ -211,9 +211,8 @@ const MESSAGES: u64 = 10_000_000;
 // ============================================================================
 
 ~create_ring()
-| created r |> spawn_producer(r.ring)
-    |> #loop consume_loop(r.ring, sum: 0, received: 0)
-        | continue s |> @loop(r.ring, s.sum, s.received)
-        | done s |> validate(s.sum)
-            | valid |> _
-            | invalid |> _
+| created r |> spawn_producer(r.ring) |> #loop consume_loop(r.ring, sum: 0, received: 0)
+    | continue s |> @loop(r.ring, s.sum, s.received)
+    | done s |> validate(s.sum)
+        | valid |> _
+        | invalid |> _

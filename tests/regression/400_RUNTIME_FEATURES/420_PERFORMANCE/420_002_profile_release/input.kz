@@ -30,8 +30,5 @@ const std = @import("std");
 // NOTE: Profile uses string-based fields (no enum conversion needed)
 ~tap(* -> *)
 | Profile p |> profiler(source: p.source, branch: p.branch, destination: p.destination, timestamp_ns: p.timestamp_ns)
-    |> _
 
-~hello()
-|> goodbye()
-    |> _
+~hello() |> goodbye()

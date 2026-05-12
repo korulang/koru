@@ -107,8 +107,6 @@ const MyRing = Ring(u32, 1024);
 
 var my_ring = MyRing.init();
 
-~start()
-|> produce(ring: &my_ring, count: 3)
-    |> #consume ring.dequeue(ring: &my_ring)
-        | value |> @consume
-        | empty |> _
+~start() |> produce(ring: &my_ring, count: 3) |> #consume ring.dequeue(ring: &my_ring)
+    | value |> @consume
+    | empty |> _

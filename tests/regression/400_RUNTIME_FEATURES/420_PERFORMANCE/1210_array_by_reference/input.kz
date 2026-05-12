@@ -48,4 +48,4 @@ const LargeStruct = struct {
 // Test flow - currently copies 800 bytes twice!
 ~process_data(input: [_]f64{1.0} ** 100)
 | result r |> chain(values: r.output)
-    |> _
+    | done _ |> _
