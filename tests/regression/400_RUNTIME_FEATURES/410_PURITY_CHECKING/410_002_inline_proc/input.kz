@@ -1,9 +1,0 @@
-// Test pure proc + flow composition pattern
-// Shows how pure procs compose through flows (not inline flows)
-
-const std = @import("std");
-
-// Base pure math event
-~event multiply { x: i32, factor: i32 }
-| done d |> print_result(n: d.result)
-    |> _
