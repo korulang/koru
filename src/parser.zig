@@ -4077,7 +4077,8 @@ pub const Parser = struct {
         const continuation_part = lexer.trim(full_line[pipe_idx.? + 2 ..]);
 
         // Parse the pipeline steps from the continuation
-        const steps = try self.parsePipelineSteps(continuation_part);
+        // Inline `~A() |> ...` is a void chain, not a branch handler body.
+        const steps = try self.parsePipelineSteps(continuation_part, false, self.getCurrentLocation());
 
         if (steps.len == 0) {
             return &[_]ast.Continuation{};
@@ -4526,7 +4527,8 @@ pub const Parser = struct {
             var step: ?ast.Step = null;
 
             if (std.mem.indexOf(u8, rest, "|>")) |_| {
-                const steps = try self.parsePipelineSteps(rest);
+                // Catch-all `|? ...` body — branch handler body, `_` allowed as sole step.
+                const steps = try self.parsePipelineSteps(rest, true, location);
                 defer self.allocator.free(steps);
                 if (steps.len > 0) {
                     step = steps[0];
@@ -4803,7 +4805,8 @@ pub const Parser = struct {
 
                 // Use strict mode: only collect continuations MORE indented than this branch
                 const source_block_continuations = try self.parseContinuationsWithMode(indent, true);
-                const steps_inner = try self.parsePipelineSteps(full_rest);
+                // Source-block branch body — `_` allowed as sole step.
+                const steps_inner = try self.parsePipelineSteps(full_rest, true, location);
                 defer self.allocator.free(steps_inner);
                 if (steps_inner.len > 0) {
                     return ast.Continuation{
@@ -4955,7 +4958,8 @@ pub const Parser = struct {
                 full_rest = allocated_rest.?;
             }
 
-            const steps = try self.parsePipelineSteps(full_rest);
+            // Branch handler body — `_` allowed as sole step.
+            const steps = try self.parsePipelineSteps(full_rest, true, location);
             defer self.allocator.free(steps);
             if (steps.len > 0) {
                 step = steps[0];
@@ -5251,7 +5255,8 @@ pub const Parser = struct {
                 self.current += 1;
 
                 // Parse the invocation
-                const body_steps = try self.parsePipelineSteps(body_content);
+                // Line-start `|>` continuation (KORU010 territory) — not a branch body.
+                const body_steps = try self.parsePipelineSteps(body_content, false, location);
                 const body_step: ?ast.Step = if (body_steps.len > 0) body_steps[0] else null;
 
                 // Parse continuations of this invocation (at greater indentation than the |> line)
@@ -5308,7 +5313,8 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
-        const steps = try self.parsePipelineSteps(full_content);
+        // Line-start `|>` continuation (KORU010 territory) — not a branch body.
+        const steps = try self.parsePipelineSteps(full_content, false, location);
         const step: ?ast.Step = if (steps.len > 0) steps[0] else null;
 
         // FIX: Chain additional steps as nested continuations (same as parseBranchContinuationBase)
@@ -5361,7 +5367,12 @@ pub const Parser = struct {
         };
     }
 
-    fn parsePipelineSteps(self: *Parser, content: []const u8) ![]ast.Step {
+    fn parsePipelineSteps(
+        self: *Parser,
+        content: []const u8,
+        allow_terminal_body: bool,
+        location: errors.SourceLocation,
+    ) ![]ast.Step {
         var steps = try std.ArrayList(ast.Step).initCapacity(self.allocator, 8);
         errdefer {
             for (steps.items) |*step| {
@@ -5391,6 +5402,41 @@ pub const Parser = struct {
         // Add trailing label if present
         if (trailing_label) |label| {
             try steps.append(self.allocator, ast.Step{ .label_apply = label });
+        }
+
+        // `_` (terminal) is legal ONLY as the sole step of a branch handler body.
+        // - At index > 0 or with siblings: meaningless chain (`~A() |> _`,
+        //   `| ok |> doX() |> _`, split-pipeline tails like 2104_12).
+        // - In non-branch-body context: meaningless even alone — void chains
+        //   produce no value to discard.
+        for (steps.items, 0..) |step, i| {
+            if (step != .terminal) continue;
+            if (i > 0 or steps.items.len > 1) {
+                try self.reporter.addErrorWithHintAndSpan(
+                    .KORU010,
+                    location.line,
+                    location.column,
+                    1,
+                    "'_' is only legal as the sole body of a branch handler",
+                    .{},
+                    "'_' has meaning only as `| branch [binding] |> _`. Chaining `|> _` after another step is meaningless — drop the `|> _`.",
+                    .{},
+                );
+                return error.ParseError;
+            }
+            if (!allow_terminal_body) {
+                try self.reporter.addErrorWithHintAndSpan(
+                    .KORU010,
+                    location.line,
+                    location.column,
+                    1,
+                    "'_' is only legal as the body of a branch handler",
+                    .{},
+                    "'_' has meaning only as `| branch [binding] |> _`. Outside a branch handler body — top-level void chain, split-pipeline tail — `|> _` is meaningless.",
+                    .{},
+                );
+                return error.ParseError;
+            }
         }
 
         return steps.toOwnedSlice(self.allocator);
