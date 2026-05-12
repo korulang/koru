@@ -12,6 +12,7 @@ import { readdir, stat, access, writeFile, readFile, mkdir, symlink, unlink } fr
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execSync, spawnSync } from 'child_process';
+import { countLOC } from './count-loc.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -163,6 +164,15 @@ async function saveSnapshot() {
 		// Load unit test results if available
 		const unitTests = await loadUnitTests();
 
+		// Count lines of code per language across tracked files. Fail-soft: a
+		// counting error must never block the test snapshot from saving.
+		let loc = null;
+		try {
+			loc = await countLOC();
+		} catch (err) {
+			console.log(`  ⚠ LOC count failed: ${err.message}`);
+		}
+
 		// Scan all tests recursively (matching bash script behavior)
 		const allTests = await findAllTestDirs(REGRESSION_PATH);
 		allTests.sort((a, b) => a.directory.localeCompare(b.directory));
@@ -221,7 +231,8 @@ async function saveSnapshot() {
 			unitTests: unitTests ? {
 				summary: unitTests.summary,
 				suites: unitTests.suites
-			} : null
+			} : null,
+			loc
 		};
 
 		// Save timestamped snapshot
@@ -244,6 +255,12 @@ async function saveSnapshot() {
 		if (unitTests) {
 			const us = unitTests.summary;
 			console.log(`  Unit tests: ${us.passed}/${us.total} passed, ${us.compileErrors} compile errors`);
+		}
+		if (loc) {
+			const parts = Object.entries(loc)
+				.sort(([, a], [, b]) => b.lines - a.lines)
+				.map(([lang, info]) => `${lang} ${info.lines.toLocaleString()}`);
+			console.log(`  LOC: ${parts.join(', ')}`);
 		}
 
 		pushToBrain(snapshot);
