@@ -45,15 +45,8 @@ const File = struct { handle: i32 };
 const should_write = true;
 
 ~open(path: "test.txt")
-| opened f |>
-    std.control:if(should_write)
-    | then |>
-        write(file: f.file, data: "hello")
-        |>
-            close(file: f.file)
-            |> _
-    | else |>
-        close(file: f.file)
-        |> _
+| opened f |> std.control:if(should_write)
+    | then |> write(file: f.file, data: "hello") |> close(file: f.file)
+    | else |> close(file: f.file)
 
 pub fn main() void {}

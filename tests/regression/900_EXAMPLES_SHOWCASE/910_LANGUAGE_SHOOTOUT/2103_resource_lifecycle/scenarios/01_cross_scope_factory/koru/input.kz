@@ -34,14 +34,6 @@ const File = struct { handle: i32 };
 | opened f |> created { file: f.file }
 
 ~create(path: "test.txt")
-| created r |>
-    use(file: r.file)
-    |>
-        use(file: r.file)
-        |>
-            use(file: r.file)
-            |>
-                close(file: r.file)
-                |> _
+| created r |> use(file: r.file) |> use(file: r.file) |> use(file: r.file) |> close(file: r.file)
 
 pub fn main() void {}

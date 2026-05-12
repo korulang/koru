@@ -39,20 +39,7 @@ const Conn = struct { id: i32 };
 
 // Main flow: create A, create B, use both, cleanup both
 ~connect(name: "A")
-| connected a |>
-    connect(name: "B")
-    | connected b |>
-        process(conn: a.conn)
-        |>
-            process(conn: b.conn)
-            |>
-                process(conn: a.conn)
-                |>
-                    process(conn: b.conn)
-                    |>
-                        disconnect(conn: a.conn)
-                        |>
-                            disconnect(conn: b.conn)
-                            |> _
+| connected a |> connect(name: "B")
+    | connected b |> process(conn: a.conn) |> process(conn: b.conn) |> process(conn: a.conn) |> process(conn: b.conn) |> disconnect(conn: a.conn) |> disconnect(conn: b.conn)
 
 pub fn main() void {}

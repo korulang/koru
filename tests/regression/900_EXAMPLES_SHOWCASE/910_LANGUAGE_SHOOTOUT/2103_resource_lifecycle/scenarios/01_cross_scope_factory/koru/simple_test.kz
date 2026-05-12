@@ -28,8 +28,6 @@ const File = struct { handle: i32 };
 
 // Main flow - explicit cleanup
 ~create(path: "test.txt")
-| created r |>
-    close(file: r.resource)
-    |> _
+| created r |> close(file: r.resource)
 
 pub fn main() void {}

@@ -36,14 +36,6 @@ const File = struct { handle: i32 };
 
 // Main flow: create -> use -> use -> use -> cleanup
 ~create(path: "test.txt")
-| created r |>
-    use(file: r.resource)
-    |>
-        use(file: r.resource)
-        |>
-            use(file: r.resource)
-            |>
-                close(file: r.resource)
-                |> _
+| created r |> use(file: r.resource) |> use(file: r.resource) |> use(file: r.resource) |> close(file: r.resource)
 
 pub fn main() void {}

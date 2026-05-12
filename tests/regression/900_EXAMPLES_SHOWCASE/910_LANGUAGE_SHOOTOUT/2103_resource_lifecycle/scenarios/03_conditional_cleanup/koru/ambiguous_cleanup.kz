@@ -44,12 +44,8 @@ const should_write = true;
 
 // This should FAIL - auto-discharge can't choose between close and flush_close
 ~open(path: "test.txt")
-| opened f |>
-    std.control:if(should_write)
-    | then |>
-        write(file: f.file, data: "hello")
-        |> _
-    | else |>
-        _
+| opened f |> std.control:if(should_write)
+    | then |> write(file: f.file, data: "hello")
+    | else |> _
 
 pub fn main() void {}
