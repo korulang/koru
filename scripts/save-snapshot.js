@@ -165,10 +165,17 @@ async function saveSnapshot() {
 		const unitTests = await loadUnitTests();
 
 		// Count lines of code per language across tracked files. Fail-soft: a
-		// counting error must never block the test snapshot from saving.
+		// counting error must never block the test snapshot from saving. We
+		// only persist the language buckets on the snapshot — excluded counts
+		// are logged below for debug visibility but not surfaced on /status.
 		let loc = null;
+		let locExcludedFiles = 0;
+		let locExcludedLines = 0;
 		try {
-			loc = await countLOC();
+			const result = await countLOC();
+			loc = result.buckets;
+			locExcludedFiles = result.excludedFiles;
+			locExcludedLines = result.excludedLines;
 		} catch (err) {
 			console.log(`  ⚠ LOC count failed: ${err.message}`);
 		}
@@ -261,6 +268,9 @@ async function saveSnapshot() {
 				.sort(([, a], [, b]) => b.lines - a.lines)
 				.map(([lang, info]) => `${lang} ${info.lines.toLocaleString()}`);
 			console.log(`  LOC: ${parts.join(', ')}`);
+			if (locExcludedLines > 0) {
+				console.log(`  LOC excluded (generated): ${locExcludedLines.toLocaleString()} lines across ${locExcludedFiles} files`);
+			}
 		}
 
 		pushToBrain(snapshot);
