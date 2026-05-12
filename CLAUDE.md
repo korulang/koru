@@ -310,6 +310,62 @@ The parser does NOT reject single-field shapes at the branch *constructor* site
 in flows — compile-time constructs can produce constructor-like AST nodes that
 must be legal at parse time. The shape checker enforces validity there.
 
+## Greenfield: tests and compiler co-evolve, nobody is wrong
+
+Koru has no formal spec and no firm footing anywhere. The compiler is being
+designed. The test suite is being designed. They move together — not because
+one is the source of truth and the other follows, but because the language
+emerges from the conversation between them.
+
+Three things that follow:
+
+- **Tests are often wrong.** They encode an intent from when they were
+  written. The intent may not match where the language is now going. That's
+  not a defect — it's information about a design decision that hasn't been
+  re-examined yet.
+- **The compiler is often wrong.** It encodes rules that may be too strict,
+  too lax, or carving up the syntax wrongly. The compiler being wrong about
+  something is also information.
+- **Nobody is ever "wrong."** Not the test author. Not the commit. Not the
+  compiler change. The frame "this regression was caused by commit X" is
+  imported from production code and doesn't fit here. There is no production.
+  There is no shipped contract. There is the language we are building, and
+  every failing test is a place where two pieces of the building haven't been
+  lined up yet.
+
+### Triage is design work
+
+When a test fails, the question is never "whose fault is this?" The question
+is one of:
+
+1. **What is the test trying to say, and does the language still want to say
+   that?** If yes, the compiler needs to support it. If no, the test changes
+   or gets deleted.
+2. **What did the compiler do, and is that what the language should do?** If
+   yes, the test is encoding stale intent. If no, the compiler changes.
+3. **Are tests and compiler both encoding something the language has moved
+   past?** Then both change in the same commit and we move forward.
+
+Failure is highly appreciated. A failing test means we have evidence about a
+direction the language might want to go — or evidence that a direction we
+took isn't viable. Either way, the failure surfaced information that
+otherwise stayed implicit. **The expensive thing is failure that doesn't
+teach us anything** — not failure itself.
+
+### What this means in practice
+
+- Don't lead triage with "which commit broke this test." Lead with "what is
+  this test trying to encode, and does the language still want that?"
+- Don't apologize for or assign blame to commits, including your own. Commits
+  are moves in the design conversation, not promises being broken.
+- Don't preserve a test just because it was passing once. If the intent
+  doesn't survive the current design, the test follows the intent.
+- Don't preserve a compiler rule just because it was added recently. If the
+  shape it enforces doesn't survive contact with what tests actually want to
+  say, the rule changes.
+- When tests and compiler disagree, the answer is "what does the language
+  want?" — not "which one is correct?"
+
 ## Tests are the spec
 
 We're rewriting the language so the test suite cannot pass unless it matches
