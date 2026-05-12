@@ -13,4 +13,3 @@ const std = @import("std");
 // Profile metatype works on ANY event and ANY branch
 ~tap(*:* -> *)
 | Profile p |> log(source: p.source, branch: p.branch)
-    |> _

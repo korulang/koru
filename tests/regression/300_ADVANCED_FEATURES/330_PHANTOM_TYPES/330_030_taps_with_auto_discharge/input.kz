@@ -2,7 +2,6 @@
 ~import "$app/fs"
 ~tap(app.fs:open -> *)
 | opened |> app.fs:log_open(handle: 42)
-    |> _
 ~app.fs:open(path: "test.txt")
 | opened _ |> _
 pub fn main() void {}

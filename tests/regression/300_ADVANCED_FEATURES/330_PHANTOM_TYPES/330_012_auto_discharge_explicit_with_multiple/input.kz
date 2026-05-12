@@ -1,6 +1,5 @@
 ~import "$app/fs"
 ~app.fs:open(path: "test.txt")
 | opened f |> app.fs:lock(file: f)
-    | locked l |> app.fs:write(file: l, data: "test")
-        |> app.fs:unlock(file: l)
-        | err _ |> app.fs:force_close(file: l)
+    | locked l |> app.fs:write(file: l, data: "test") |> app.fs:unlock(file: l)
+    | err _ |> app.fs:force_close(file: l)

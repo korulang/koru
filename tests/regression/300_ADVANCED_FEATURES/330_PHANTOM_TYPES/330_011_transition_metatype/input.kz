@@ -17,7 +17,5 @@ const std = @import("std");
 }
 ~[comptime|runtime]* -> *
 | Transition t |> logger(source: taps.eventToString(t.source), branch: taps.branchToString(t.branch), destination: if (t.destination) |d| taps.eventToString(d) else null)
-    |> _
-~hello()
-|> goodbye()
-    |> _
+
+~hello() |> goodbye()
