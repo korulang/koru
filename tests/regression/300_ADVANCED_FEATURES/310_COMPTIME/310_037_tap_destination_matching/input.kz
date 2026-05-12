@@ -41,7 +41,6 @@ const std = @import("std");
 
 // Flow 1: DOES call target - tap SHOULD fire
 ~target()
-|> _
 
 // Flow 2: does NOT call target - tap should NOT fire
 ~other()

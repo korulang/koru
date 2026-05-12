@@ -11,4 +11,3 @@
 // This should parse { foo: 1 } as the Expression argument
 // Using explicit val: to avoid implicit argument issues
 ~test_expr(val: { foo: 1 })
-|> _

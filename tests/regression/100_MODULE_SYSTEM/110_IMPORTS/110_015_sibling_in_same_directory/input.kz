@@ -14,8 +14,7 @@ const std = @import("std");
 ~import "$mylib"
 
 // Call an event from the library
-~mylib:greet(name: "World")
-|> on_done()
+~mylib:greet(name: "World") |> on_done()
 
 // Handler that uses std - this will trigger ambiguity if nested
 ~event on_done {}

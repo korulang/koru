@@ -13,4 +13,3 @@
 ~event hello {}
 
 ~hello()
-|> _

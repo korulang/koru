@@ -15,4 +15,3 @@ const std = @import("std");
 
 // Subflow that calls impure event - should be transitively IMPURE
 ~log(message: "Hello")
-|> _

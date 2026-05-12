@@ -11,5 +11,4 @@
 
 // This should FAIL - "io" is not a valid module qualifier
 // Correct form is: std.io:println
-~test()
-|> io:println(text: "WRONG - should be std.io:println")
+~test() |> io:println(text: "WRONG - should be std.io:println")

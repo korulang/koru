@@ -7,4 +7,3 @@
 
 // Try to invoke it - THIS SHOULD BE A COMPILER ERROR
 ~unimplemented(x: 42)
-|> _

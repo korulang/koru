@@ -19,5 +19,4 @@
 ~std.io:println(text: "Top-level: This should call io.println.handler()")
 
 // THIS WORKS (continuation)
-~probe()
-|> std.io:println(text: "Continuation: This correctly calls io.println.handler()")
+~probe() |> std.io:println(text: "Continuation: This correctly calls io.println.handler()")

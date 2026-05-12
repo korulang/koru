@@ -23,7 +23,6 @@
 }
 
 // Now use print.blk INSIDE the pipeline continuation
-~setup()
-|> std.io:print.blk {
+~setup() |> std.io:print.blk {
     Hello from inside a pipeline!
   }

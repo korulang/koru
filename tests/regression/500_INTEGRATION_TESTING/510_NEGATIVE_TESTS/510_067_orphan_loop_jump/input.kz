@@ -3,5 +3,4 @@
 
 ~event foo {}
 
-~foo()
-|> @loop
+~foo() |> @loop

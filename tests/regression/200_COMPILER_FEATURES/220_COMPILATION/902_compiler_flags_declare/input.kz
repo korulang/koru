@@ -10,4 +10,3 @@
 ~event hello {}
 
 ~hello()
-|> _

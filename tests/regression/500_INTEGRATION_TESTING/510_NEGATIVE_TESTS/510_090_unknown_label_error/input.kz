@@ -2,5 +2,4 @@
 
 ~event foo {}
 
-~foo()
-|> @missing()
+~foo() |> @missing()

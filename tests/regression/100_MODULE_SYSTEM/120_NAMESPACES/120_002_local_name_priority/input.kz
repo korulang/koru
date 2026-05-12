@@ -19,7 +19,6 @@
 // Unqualified invocation - MUST resolve to local main_module.print_event
 // NOT to koru_std.io.print_event
 ~print()
-|> _
 
 // Explicit qualification still works for imported version
 ~std.io:println(text: "Imported println works too")

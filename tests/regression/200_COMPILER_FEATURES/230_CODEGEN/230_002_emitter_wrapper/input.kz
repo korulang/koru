@@ -21,4 +21,3 @@ const std = @import("std");
 }
 
 ~main()
-|> _

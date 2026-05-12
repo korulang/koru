@@ -4,4 +4,3 @@
 ~event std.log { msg: []const u8 }
 
 ~std.log(msg: "hello")
-|> _
