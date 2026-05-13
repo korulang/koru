@@ -1,7 +1,0 @@
-// Test: Using 'return' in flow (habit from other languages)
-// Parser catches return/break/continue and suggests '_' instead
-
-~event foo { x: i32 }
-
-~foo(x: 1)
-|> return

@@ -1,0 +1,41 @@
+// Test 240: subflows define branch semantics
+//
+// Branch names in Koru are inert identifiers. Their meaning — what
+// "return", "break", "continue", "ok", "north", or any other name
+// signifies — is defined by the SUBFLOWS that resolve them, not by
+// the compiler. This is the structural advantage over languages that
+// bake fixed semantics for certain names into their grammar.
+//
+// This test deliberately uses names that ARE keywords in other
+// languages (return, break, continue), to verify that the parser
+// carries no value judgment about them. If a "common mistakes from
+// other languages" trap is re-introduced at parser.zig parseStep,
+// this test fails. That is the point.
+
+~import "$std/io"
+
+// Lower-level event: arbitrary outcome names
+~pub event step {}
+| return
+| break
+| continue
+
+~step = continue
+
+// Outer event: its own outcome vocabulary
+~pub event run {}
+| stopped
+| iterated
+
+// Subflow: `run` is satisfied by `step`, with `step`'s outcomes
+// mapped to `run`'s. The meaning of `return`, `break`, `continue`
+// lives HERE — in user code, not in the compiler.
+~run = step()
+| return |> stopped
+| break |> stopped
+| continue |> iterated
+
+~std.io:print.ln("Testing subflow-defined semantics:")
+~run()
+| stopped |> std.io:print.ln("  stopped")
+| iterated |> std.io:print.ln("  iterated")

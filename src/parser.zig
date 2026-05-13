@@ -5445,22 +5445,6 @@ pub const Parser = struct {
             return ast.Step{ .terminal = {} };
         }
 
-        // Check for common mistakes from other languages
-        const trimmed_step = lexer.trim(clean_content);
-        if (std.mem.eql(u8, trimmed_step, "return") or
-            std.mem.eql(u8, trimmed_step, "break") or
-            std.mem.eql(u8, trimmed_step, "continue"))
-        {
-            try self.reporter.addError(
-                .PARSE003,
-                self.current,
-                1,
-                "Flows terminate with '_', not '{s}'",
-                .{trimmed_step},
-            );
-            return error.ParseError;
-        }
-
         // Check for label anchor declaration (#name event(...))
         if (lexer.startsWith(clean_content, "#")) {
             const after_hash = lexer.trim(clean_content[1..]);

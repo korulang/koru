@@ -32,7 +32,6 @@ const std = @import("std");
 }
 
 // Loop with tap - must handle all branches
-~start()
-|> #loop counter(n: 1)
-    | next v |> @loop(n: v)
-    | done _ |> _
+~start() |> #loop counter(n: 1)
+| next v |> @loop(n: v)
+| done _ |> _
