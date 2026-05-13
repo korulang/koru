@@ -202,7 +202,7 @@ pub const TapCodegen = struct {
         const writer = self.buffer.writer(self.allocator);
         
         // Generate comment
-        try writer.print("    // {} tap: ", .{@tagName(tap_type)});
+        try writer.print("    // {s} tap: ", .{@tagName(tap_type)});
         if (tap.source) |src| {
             try self.writePath(src);
         } else {
@@ -250,7 +250,7 @@ pub const TapCodegen = struct {
         const writer = self.buffer.writer(self.allocator);
         
         // Universal taps need special handling for transition binding
-        try writer.print("    // Universal {} tap\n", .{@tagName(tap_type)});
+        try writer.print("    // Universal {s} tap\n", .{@tagName(tap_type)});
         try writer.writeAll("    {\n");
         try writer.writeAll("        const transition = TransitionMetadata{\n");
         try writer.print("            .source = \"{s}\",\n", .{if (tap_type == .output) event_name else "*"});
@@ -325,8 +325,8 @@ pub const TapCodegen = struct {
             try writer.writeAll("    ");  // Extra indent for if body
         }
         
-        // Handle the continuation pipeline
-        for (continuation.pipeline) |step| {
+        // Handle the continuation node
+        if (continuation.node) |step| {
             // Add extra indentation if we're inside a where clause if block
             const indent = if (continuation.condition_expr != null) "            " else "        ";
             
@@ -353,6 +353,7 @@ pub const TapCodegen = struct {
                     try writer.writeAll(indent);
                     try writer.print("// Apply label: {s}\n", .{label});
                 },
+                else => {},
             }
         }
         
@@ -362,7 +363,7 @@ pub const TapCodegen = struct {
         }
         
         // Handle nested continuations if any
-        for (continuation.nested) |nested| {
+        for (continuation.continuations) |nested| {
             try writer.print("        switch (tap_out) {{\n", .{});
             try writer.print("            .{s} => |{s}| {{\n", .{ 
                 nested.branch, 
@@ -370,7 +371,7 @@ pub const TapCodegen = struct {
             });
             
             // Generate nested continuation
-            try self.generateContinuation(nested);
+            try self.generateContinuation(&nested);
             
             try writer.writeAll("            },\n");
             try writer.writeAll("            else => {},\n");

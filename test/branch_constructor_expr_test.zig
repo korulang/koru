@@ -21,7 +21,7 @@ test "parse branch constructor with expressions in proc" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -36,7 +36,7 @@ test "parse branch constructor with expressions in proc" {
     
     // Check that continuations have branch constructors with expressions
     for (flow.continuations) |cont| {
-        for (cont.pipeline) |step| {
+        if (cont.node) |step| {
             if (step == .branch_constructor) {
                 const bc = &step.branch_constructor;
                 
@@ -67,7 +67,7 @@ test "parse shorthand branch constructor in proc" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -82,7 +82,7 @@ test "parse shorthand branch constructor in proc" {
     
     // Check the success branch constructor
     const success_cont = flow.continuations[0];
-    const success_bc = &success_cont.pipeline[0].branch_constructor;
+    const success_bc = &success_cont.node.?.branch_constructor;
     
     try testing.expect(success_bc.has_expressions);
     try testing.expectEqual(@as(usize, 1), success_bc.fields.len);
@@ -106,7 +106,7 @@ test "where clauses with expressions in proc" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();

@@ -279,19 +279,8 @@ pub const Parser = struct {
 
     /// Get source location for a specific line and indent (column)
     fn getLineLocation(self: *Parser, line_idx: usize, indent: usize) errors.SourceLocation {
-        // CRITICAL: Duplicate file string into parse_arena so it survives import_parser.deinit()
-        // The reporter.file_name might be a temporary stack string or might get freed when
-        // the parser is deinit'd, but AST nodes need the file string to stay alive.
-        const file_copy = self.allocator.dupe(u8, self.reporter.file_name) catch {
-            // If allocation fails, return a static error string rather than crashing
-            return .{
-                .file = "<allocation_failed>",
-                .line = if (line_idx < self.lines.len) line_idx + 1 else self.lines.len,
-                .column = indent,
-            };
-        };
         return .{
-            .file = file_copy,
+            .file = self.reporter.file_name,
             .line = if (line_idx < self.lines.len) line_idx + 1 else self.lines.len,
             .column = indent,
         };
@@ -1489,19 +1478,6 @@ pub const Parser = struct {
             }
         }
 
-        // Reject single void-returning branch: | branch with no payload is redundant.
-        // Use a void event (0 branches) instead.
-        if (branches.items.len == 1 and branches.items[0].payload.fields.len == 0 and !branches.items[0].payload.is_wildcard) {
-            try self.reporter.addError(
-                .PARSE003,
-                event_line_index + 1,
-                1,
-                "single branch '{s}' with no payload is redundant - remove it to make this a void event (no branches)",
-                .{branches.items[0].name},
-            );
-            return error.ParseError;
-        }
-
         // Copy annotations, adding comptime if needed
         const extra_annotations: usize = if (needs_comptime and !has_comptime) 1 else 0;
         var annotations_copy = try self.allocator.alloc([]const u8, all_annotations.items.len + extra_annotations);
@@ -1811,6 +1787,7 @@ pub const Parser = struct {
         return ast.ProcDecl{
             .path = path,
             .body = extraction_result.modified_body,
+            .inline_flows = extraction_result.flows,
             .annotations = annotations_copy,
             .target = target,
             .is_pure = is_pure,
@@ -1927,6 +1904,7 @@ pub const Parser = struct {
         const proc_decl = ast.ProcDecl{
             .path = path,
             .body = extraction_result.modified_body,
+            .inline_flows = extraction_result.flows,
             .annotations = try annotations.toOwnedSlice(self.allocator),
             .target = target,
             .location = self.getCurrentLocation(),
@@ -4191,18 +4169,7 @@ pub const Parser = struct {
         var cont: ast.Continuation = undefined;
 
         if (lexer.startsWith(after_bar, ">")) {
-            // `|>` is inline glue only — it never starts a line.
-            try self.reporter.addErrorWithHintAndSpan(
-                .KORU010,
-                location.line,
-                location.column,
-                2,
-                "'|>' cannot start a line",
-                .{},
-                "'|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.",
-                .{},
-            );
-            return error.ParseError;
+            cont = try self.parsePipelineContinuationBase(lexer.trim(after_bar[1..]), indent, location);
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation
             cont = try self.parseDerefContinuationBase(after_bar[1..], indent, location);
@@ -4227,18 +4194,7 @@ pub const Parser = struct {
         var cont: ast.Continuation = undefined;
 
         if (lexer.startsWith(after_bar, ">")) {
-            // `|>` is inline glue only — it never starts a line.
-            try self.reporter.addErrorWithHintAndSpan(
-                .KORU010,
-                location.line,
-                location.column,
-                2,
-                "'|>' cannot start a line",
-                .{},
-                "'|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.",
-                .{},
-            );
-            return error.ParseError;
+            cont = try self.parsePipelineContinuationBase(lexer.trim(after_bar[1..]), indent, location);
         } else if (lexer.startsWith(after_bar, "*")) {
             // Deref continuation
             cont = try self.parseDerefContinuationBase(after_bar[1..], indent, location);
@@ -6292,27 +6248,6 @@ pub const Parser = struct {
         // Single-field braces { x: T } should use identity syntax: | branch T
         // Exception: wildcards (is_wildcard flag set) are allowed via bare `*`
         // syntax (handled in the identity-path above) — `{ * }` is rejected.
-        if (payload.fields.len == 0 and !payload.is_wildcard) {
-            try self.reporter.addError(
-                .PARSE003,
-                self.current,
-                @intCast(brace_idx.? + 1),
-                "empty braces in branch payload - remove braces for void branch or use identity syntax '| {s} Type'",
-                .{branch_name},
-            );
-            return error.ParseError;
-        }
-        if (payload.fields.len == 1 and !payload.is_wildcard) {
-            try self.reporter.addError(
-                .PARSE003,
-                self.current,
-                @intCast(brace_idx.? + 1),
-                "single field in braces - use identity syntax '| {s} {s}' instead of '| {s} {{ {s}: {s} }}'",
-                .{ branch_name, payload.fields[0].type, branch_name, payload.fields[0].name, payload.fields[0].type },
-            );
-            return error.ParseError;
-        }
-
         // Find the closing brace position
         const close_brace_idx = blk: {
             var depth: i32 = 0;

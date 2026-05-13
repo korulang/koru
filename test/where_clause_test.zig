@@ -14,7 +14,7 @@ test "parse where clause in continuation" {
         \\| err e |> network_error { msg: e.message }
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -81,7 +81,7 @@ test "where clause in proc context" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -118,7 +118,7 @@ test "complex where clause expressions" {
         \\| error e |> invalid { reason: e.message }
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -145,7 +145,7 @@ test "where clause with parentheses" {
         \\| result r |> reject { reason: "criteria not met" }
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -167,7 +167,7 @@ test "where clause without binding" {
         \\| result where score > 50 |> pass { }
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     // This parses with "where" as a keyword, not as the binding

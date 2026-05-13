@@ -164,10 +164,10 @@ test "Generate tap with continuation" {
     const continuation = ast.Continuation{
         .branch = "",
         .binding = null,
-        .pipeline = &[_]ast.Step{
-            .{ .invocation = invocation },
-        },
-        .nested = &[_]ast.Continuation{},
+        .condition = null,
+        .node = .{ .invocation = invocation },
+        .indent = 0,
+        .continuations = &[_]ast.Continuation{},
     };
     
     const test_tap = ast.EventTap{

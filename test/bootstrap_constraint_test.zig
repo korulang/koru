@@ -24,7 +24,7 @@ test "bootstrap library rejects inline flows in procs" {
     ;
     
     // Parse as compiler bootstrap library
-    var parser = try Parser.init(allocator, source, "test_bootstrap.kz");
+    var parser = try Parser.init(allocator, source, "test_bootstrap.kz", &[_][]const u8{}, null);
     parser.is_compiler_library = true;  // Mark as bootstrap library
     defer parser.deinit();
     
@@ -57,7 +57,7 @@ test "normal files allow inline flows in any proc" {
     ;
     
     // Parse as normal file (default)
-    var parser = try Parser.init(allocator, source, "test_normal.kz");
+    var parser = try Parser.init(allocator, source, "test_normal.kz", &[_][]const u8{}, null);
     // is_compiler_library defaults to false
     defer parser.deinit();
     
@@ -99,7 +99,7 @@ test "user compiler extensions can use inline flows" {
     ;
     
     // Parse as normal user code
-    var parser = try Parser.init(allocator, source, "user_extension.kz");
+    var parser = try Parser.init(allocator, source, "user_extension.kz", &[_][]const u8{}, null);
     parser.is_compiler_library = false;
     defer parser.deinit();
     
@@ -131,7 +131,7 @@ test "bootstrap library allows procs without inline flows" {
     ;
     
     // Parse as bootstrap library
-    var parser = try Parser.init(allocator, source, "bootstrap.kz");
+    var parser = try Parser.init(allocator, source, "bootstrap.kz", &[_][]const u8{}, null);
     parser.is_compiler_library = true;
     defer parser.deinit();
     
@@ -160,7 +160,7 @@ test "bootstrap detects flow invocations in proc body" {
     ;
     
     // Parse as bootstrap library
-    var parser = try Parser.init(allocator, source, "bootstrap.kz");
+    var parser = try Parser.init(allocator, source, "bootstrap.kz", &[_][]const u8{}, null);
     parser.is_compiler_library = true;
     defer parser.deinit();
     
@@ -187,7 +187,7 @@ test "imported libraries are not restricted" {
     ;
     
     // Parse as regular library (not bootstrap)
-    var parser = try Parser.init(allocator, source, "io.kz");
+    var parser = try Parser.init(allocator, source, "io.kz", &[_][]const u8{}, null);
     parser.is_compiler_library = false;  // Regular library
     defer parser.deinit();
     

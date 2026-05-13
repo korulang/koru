@@ -383,9 +383,9 @@ test "generate continuation with where clause" {
         .binding = "value",
         .condition = "value > 100",
         .condition_expr = &expr,
-        .pipeline = &[_]ast.Step{},
+        .node = null,
         .indent = 0,
-        .nested = &[_]ast.Continuation{},
+        .continuations = &[_]ast.Continuation{},
     };
     
     const code = try expression_codegen.generateContinuationWithWhere(

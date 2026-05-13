@@ -49,7 +49,7 @@ test "full vertical: parse -> check -> emit" {
     
     // STEP 1: PARSE
     std.debug.print("\n=== STEP 1: PARSING ===\n", .{});
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -120,7 +120,7 @@ test "end-to-end with deferred events" {
     ;
     
     // Parse
-    var parser = try Parser.init(allocator, source, "auth.kz");
+    var parser = try Parser.init(allocator, source, "auth.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();

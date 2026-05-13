@@ -20,7 +20,7 @@ test "transform context initialization" {
     var items = try std.ArrayList(ast.Item).initCapacity(allocator, 0);
     defer items.deinit(allocator);
     
-    try items.append(allocator, .{ .zig_line = try allocator.dupe(u8, "const std = @import(\"std\");") });
+    try items.append(allocator, .{ .host_line = .{ .content = try allocator.dupe(u8, "const std = @import(\"std\");")  }});
     
     var test_branches = try allocator.alloc(ast.Branch, 1);
     test_branches[0] = .{ 
@@ -103,7 +103,7 @@ test "visitor pattern - collecting visitor" {
     var items = try std.ArrayList(ast.Item).initCapacity(allocator, 0);
     defer items.deinit(allocator);
     
-    try items.append(allocator, .{ .zig_line = "const std = @import(\"std\");" });
+    try items.append(allocator, .{ .host_line = .{ .content = "const std = @import(\"std\");"  }});
     var event1_segments = try allocator.alloc([]const u8, 1);
     event1_segments[0] = try allocator.dupe(u8, "event1");
     
@@ -138,9 +138,9 @@ test "visitor pattern - collecting visitor" {
         .branch = try allocator.dupe(u8, "done"), 
         .binding = null, 
         .condition = null, 
-        .pipeline = try allocator.alloc(ast.Step, 0), 
-        .indent = 0, 
-        .nested = try allocator.alloc(ast.Continuation, 0) 
+        .node = null,
+        .indent = 0,
+        .continuations = &[_]ast.Continuation{} 
     };
     
     try items.append(allocator, .{
@@ -211,9 +211,9 @@ test "inline small events - detection" {
         .branch = try allocator.dupe(u8, "result"), 
         .binding = try allocator.dupe(u8, "r"), 
         .condition = null, 
-        .pipeline = try allocator.alloc(ast.Step, 0), 
-        .indent = 0, 
-        .nested = try allocator.alloc(ast.Continuation, 0) 
+        .node = null,
+        .indent = 0,
+        .continuations = &[_]ast.Continuation{} 
     };
     
     try items.append(allocator, .{
@@ -247,7 +247,7 @@ test "transform context - parent tracking" {
     var items = try std.ArrayList(ast.Item).initCapacity(allocator, 0);
     defer items.deinit(allocator);
     
-    try items.append(allocator, .{ .zig_line = "test" });
+    try items.append(allocator, .{ .host_line = .{ .content = "test"  }});
     
     var source_file = ast.SourceFile{
         .items = try items.toOwnedSlice(allocator),
@@ -261,7 +261,7 @@ test "transform context - parent tracking" {
     // Test parent tracking
     try std.testing.expect(ctx.currentParent() == null);
     
-    try ctx.pushParent(&source_file.items[0]);
+    try ctx.pushParent(@constCast(&source_file.items[0]));
     try std.testing.expect(ctx.currentParent() != null);
     
     ctx.popParent();
@@ -274,7 +274,7 @@ test "transform context - mark transformed" {
     var items = try std.ArrayList(ast.Item).initCapacity(allocator, 0);
     defer items.deinit(allocator);
     
-    try items.append(allocator, .{ .zig_line = "test" });
+    try items.append(allocator, .{ .host_line = .{ .content = "test"  }});
     
     var source_file = ast.SourceFile{
         .items = try items.toOwnedSlice(allocator),

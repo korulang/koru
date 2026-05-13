@@ -24,7 +24,7 @@ test "shape checker stores correct event pointers - regression" {
         \\| done |> _
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var source_file = try parser.parse();
@@ -73,7 +73,7 @@ test "shape checker validates correct branches for each event" {
         \\| delta |> _
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var source_file = try parser.parse();
@@ -105,7 +105,7 @@ test "shape checker detects wrong branch names" {
         \\| beta |> _  // WRONG - First doesn't have 'beta'
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var source_file = try parser.parse();

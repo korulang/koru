@@ -14,7 +14,7 @@ test "parse File and EmbedFile types" {
         \\| processed {}
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var result = try parser.parse();
@@ -69,7 +69,7 @@ test "serialize File and EmbedFile types" {
         \\}
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -105,7 +105,7 @@ test "File and EmbedFile with other special types" {
         \\| done {}
     ;
 
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
 
     var result = try parser.parse();

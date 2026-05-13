@@ -276,17 +276,10 @@ test "complex proc body extraction with nested braces" {
         \\}
         \\~something.after.proc()
     ;
-    
-    var err_reporter = errors.Reporter.init(allocator);
-    defer err_reporter.deinit();
-    
-    var registry = try type_registry.Registry.init(allocator);
-    defer registry.deinit();
-    
-    var p = try parser.Parser.init(allocator, source, "test.kz", &err_reporter, &registry, false);
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
-    const result = try p.parse();
+    var result = try p.parse();
     defer result.deinit();
     
     // Should have parsed both the proc and the flow after
@@ -338,17 +331,10 @@ test "proc body extraction with strings containing braces" {
         \\}
         \\~flow.after()
     ;
-    
-    var err_reporter = errors.Reporter.init(allocator);
-    defer err_reporter.deinit();
-    
-    var registry = try type_registry.Registry.init(allocator);
-    defer registry.deinit();
-    
-    var p = try parser.Parser.init(allocator, source, "test.kz", &err_reporter, &registry, false);
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
-    const result = try p.parse();
+    var result = try p.parse();
     defer result.deinit();
     
     // Should have parsed both items
@@ -390,7 +376,7 @@ test "multi-line annotation syntax for flow calls" {
     var p = try parser.Parser.init(allocator, source, "test.kz", &compiler_flags, null);
     defer p.deinit();
 
-    const result = try p.parse();
+    var result = try p.parse();
     defer result.deinit();
 
     // Should have parsed the import + 2 flow calls
@@ -442,7 +428,7 @@ test "multi-line annotation syntax for event definitions" {
     var p = try parser.Parser.init(allocator, source, "test.kz", &compiler_flags, null);
     defer p.deinit();
 
-    const result = try p.parse();
+    var result = try p.parse();
     defer result.deinit();
 
     // Should have parsed 2 events
@@ -483,7 +469,7 @@ test "multi-line annotation syntax for proc definitions" {
     var p = try parser.Parser.init(allocator, source, "test.kz", &compiler_flags, null);
     defer p.deinit();
 
-    const result = try p.parse();
+    var result = try p.parse();
     defer result.deinit();
 
     // Should have parsed 2 procs

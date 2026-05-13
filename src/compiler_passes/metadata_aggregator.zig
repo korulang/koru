@@ -83,12 +83,12 @@ pub const MetadataAggregator = struct {
     pub fn generateReport(self: *MetadataAggregator, writer: anytype) !void {
         try writer.print("=== METADATA AGGREGATION REPORT ===\n\n", .{});
         
-        var sorted_names = std.ArrayList([]const u8).init(self.allocator);
-        defer sorted_names.deinit();
+        var sorted_names = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
+        defer sorted_names.deinit(self.allocator);
         
         var iter = self.node_metadata.iterator();
         while (iter.next()) |entry| {
-            try sorted_names.append(entry.key_ptr.*);
+            try sorted_names.append(self.allocator, entry.key_ptr.*);
         }
         
         // Sort for consistent output
@@ -141,8 +141,8 @@ pub const MetadataAggregator = struct {
             var meta = self.node_metadata.get(name) orelse NodeMetadata.init(self.allocator);
             meta.node_type = .proc;
             meta.is_pure = info.isPure();
-            meta.purity_level = if (info.syntactic_pure) .syntactic 
-                               else if (info.annotated_pure) .annotated
+            meta.purity_level = if (info.annotated_pure) .annotated
+                               else if (info.transitive_pure) .verified
                                else .impure;
             
             try self.node_metadata.put(name, meta);
@@ -172,17 +172,17 @@ pub const MetadataAggregator = struct {
             const name = entry.key_ptr.*;
             const effect_set = entry.value_ptr.*;
             
-            var meta = self.node_metadata.getPtr(name) orelse {
+            var meta = self.node_metadata.getPtr(name) orelse blk: {
                 const new_name = try self.allocator.dupe(u8, name);
                 try self.node_metadata.put(new_name, NodeMetadata.init(self.allocator));
-                self.node_metadata.getPtr(new_name).?;
+                break :blk self.node_metadata.getPtr(new_name).?;
             };
             
             // Convert effect set to list
             inline for (std.meta.fields(Effect)) |field| {
                 const effect = @field(Effect, field.name);
                 if (effect_set.has(effect)) {
-                    try meta.effects.append(effect);
+                    try meta.effects.append(self.allocator, effect);
                 }
             }
             
@@ -196,16 +196,16 @@ pub const MetadataAggregator = struct {
             const name = entry.key_ptr.*;
             const effect_set = entry.value_ptr.*;
             
-            var meta = self.node_metadata.getPtr(name) orelse {
+            var meta = self.node_metadata.getPtr(name) orelse blk: {
                 const new_name = try self.allocator.dupe(u8, name);
                 try self.node_metadata.put(new_name, NodeMetadata.init(self.allocator));
-                self.node_metadata.getPtr(new_name).?;
+                break :blk self.node_metadata.getPtr(new_name).?;
             };
             
             inline for (std.meta.fields(Effect)) |field| {
                 const effect = @field(Effect, field.name);
                 if (effect_set.has(effect)) {
-                    try meta.effects.append(effect);
+                    try meta.effects.append(self.allocator, effect);
                 }
             }
             
@@ -230,16 +230,15 @@ pub const NodeMetadata = struct {
     
     pub fn init(allocator: std.mem.Allocator) NodeMetadata {
         return .{
-            .effects = std.ArrayList(Effect).init(allocator),
-            .annotations = std.ArrayList([]const u8).init(allocator),
+            .effects = std.ArrayList(Effect).initCapacity(allocator, 0) catch unreachable,
+            .annotations = std.ArrayList([]const u8).initCapacity(allocator, 0) catch unreachable,
             .compatible_backends = std.EnumSet(Backend).initFull(),
         };
     }
     
     pub fn deinit(self: *NodeMetadata, allocator: std.mem.Allocator) void {
-        _ = allocator;
-        self.effects.deinit();
-        self.annotations.deinit();
+        self.effects.deinit(allocator);
+        self.annotations.deinit(allocator);
     }
     
     pub fn updateBackendCompatibility(self: *NodeMetadata) void {

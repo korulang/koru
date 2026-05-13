@@ -90,6 +90,14 @@ pub const SymbolTable = struct {
     }
     
     pub fn deinit(self: *SymbolTable) void {
+        var event_iter = self.events.iterator();
+        while (event_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+        }
+        var proc_iter = self.procs.iterator();
+        while (proc_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+        }
         self.events.deinit();
         self.procs.deinit();
     }
@@ -195,7 +203,11 @@ pub fn cloneNode(allocator: std.mem.Allocator, node: ast.Item) !ast.Item {
             return .{ .flow = try cloneFlow(allocator, flow) };
         },
         .host_line => |line| {
-            return .{ .host_line = try allocator.dupe(u8, line) };
+            return .{ .host_line = .{
+                .content = try allocator.dupe(u8, line.content),
+                .location = line.location,
+                .module = if (line.module.len > 0) try allocator.dupe(u8, line.module) else "",
+            } };
         },
         else => return node, // TODO: Implement other node types
     }
@@ -225,11 +237,20 @@ fn cloneProc(allocator: std.mem.Allocator, proc: ast.ProcDecl) !ast.ProcDecl {
     return .{
         .path = try clonePath(allocator, proc.path),
         .body = try allocator.dupe(u8, proc.body),
+        .inline_flows = try cloneFlows(allocator, proc.inline_flows),
         .annotations = annotations,
         .target = if (proc.target) |t| try allocator.dupe(u8, t) else null,
         .location = proc.location,
         .module = try allocator.dupe(u8, proc.module),
     };
+}
+
+fn cloneFlows(allocator: std.mem.Allocator, flows: []const ast.Flow) ![]const ast.Flow {
+    var result = try allocator.alloc(ast.Flow, flows.len);
+    for (flows, 0..) |flow, i| {
+        result[i] = try cloneFlow(allocator, flow);
+    }
+    return result;
 }
 
 fn cloneFlow(allocator: std.mem.Allocator, flow: ast.Flow) !ast.Flow {
@@ -287,7 +308,7 @@ fn cloneInvocation(allocator: std.mem.Allocator, invocation: ast.Invocation) !as
     };
 }
 
-fn cloneArgs(allocator: std.mem.Allocator, args: []ast.Arg) ![]ast.Arg {
+fn cloneArgs(allocator: std.mem.Allocator, args: []const ast.Arg) ![]ast.Arg {
     var result = try allocator.alloc(ast.Arg, args.len);
     for (args, 0..) |arg, i| {
         result[i] = .{
@@ -298,7 +319,7 @@ fn cloneArgs(allocator: std.mem.Allocator, args: []ast.Arg) ![]ast.Arg {
     return result;
 }
 
-fn cloneFields(allocator: std.mem.Allocator, fields: []ast.Field) ![]ast.Field {
+fn cloneFields(allocator: std.mem.Allocator, fields: []const ast.Field) ![]ast.Field {
     var result = try allocator.alloc(ast.Field, fields.len);
     for (fields, 0..) |field, i| {
         result[i] = .{
@@ -339,19 +360,21 @@ fn cloneStep(allocator: std.mem.Allocator, step: ast.Step) !ast.Step {
             .branch_name = try allocator.dupe(u8, bc.branch_name),
             .fields = try cloneFields(allocator, bc.fields),
         }},
+        else => return step,
     }
 }
 
-fn cloneContinuations(allocator: std.mem.Allocator, continuations: []ast.Continuation) ![]ast.Continuation {
+fn cloneContinuations(allocator: std.mem.Allocator, continuations: []const ast.Continuation) ![]const ast.Continuation {
     var result = try allocator.alloc(ast.Continuation, continuations.len);
     for (continuations, 0..) |cont, i| {
         result[i] = .{
             .branch = try allocator.dupe(u8, cont.branch),
             .binding = if (cont.binding) |b| try allocator.dupe(u8, b) else null,
             .condition = if (cont.condition) |c| try allocator.dupe(u8, c) else null,
-            .pipeline = try cloneSteps(allocator, cont.pipeline),
+            .condition_expr = null,
+            .node = if (cont.node) |node| try cloneStep(allocator, node) else null,
             .indent = cont.indent,
-            .nested = try cloneContinuations(allocator, cont.nested),
+            .continuations = try cloneContinuations(allocator, cont.continuations),
         };
     }
     return result;
@@ -365,10 +388,10 @@ pub fn replaceNode(ctx: *TransformContext, index: usize, new_node: ast.Item) !vo
     if (index >= ctx.current_ast.items.len) return error.IndexOutOfBounds;
     
     // Free the old node
-    ctx.current_ast.items[index].deinit(ctx.allocator);
+    @constCast(&ctx.current_ast.items[index]).deinit(ctx.allocator);
     
     // Replace with new node
-    ctx.current_ast.items[index] = new_node;
+    @constCast(ctx.current_ast.items)[index] = new_node;
 }
 
 /// Insert a node after the specified index

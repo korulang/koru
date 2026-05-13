@@ -28,7 +28,7 @@ test "enhanced visitor framework" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -93,7 +93,7 @@ test "metadata aggregation" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -104,12 +104,12 @@ test "metadata aggregation" {
     // Run purity analysis
     var purity_analyzer = try PurityAnalyzer.init(allocator, &result.source_file);
     defer purity_analyzer.deinit();
-    const purity_metadata = try purity_analyzer.analyze();
+    var purity_metadata = try purity_analyzer.analyze();
     defer purity_metadata.deinit(allocator);
     
     // Run effect analysis
-    var effect_analyzer = EffectAnalyzer.init(allocator, &result.source_file, &purity_metadata);
-    const effect_metadata = try effect_analyzer.analyze();
+    var effect_analyzer = EffectAnalyzer.init(allocator, &result.source_file, null);
+    var effect_metadata = try effect_analyzer.analyze();
     defer effect_metadata.deinit(allocator);
     
     // Aggregate metadata
@@ -142,9 +142,9 @@ test "metadata aggregation" {
     
     // Generate report
     var report_buffer = try std.ArrayList(u8).initCapacity(allocator, 0);
-    defer report_buffer.deinit();
+    defer report_buffer.deinit(allocator);
     
-    try aggregator.generateReport(report_buffer.writer());
+    try aggregator.generateReport(report_buffer.writer(allocator));
     std.debug.print("\n{s}\n", .{report_buffer.items});
 }
 
@@ -163,8 +163,8 @@ const EffectCollectorVisitor = struct {
     }
     
     pub fn deinit(self: *EffectCollectorVisitor) void {
-        self.procs_with_io.deinit();
-        self.pure_events.deinit();
+        self.procs_with_io.deinit(self.allocator);
+        self.pure_events.deinit(self.allocator);
     }
     
     pub fn visitProcDecl(self: *EffectCollectorVisitor, ctx: anytype, proc: *ast.ProcDecl) !void {
@@ -173,7 +173,7 @@ const EffectCollectorVisitor = struct {
         for (proc.annotations) |ann| {
             if (std.mem.indexOf(u8, ann, "io") != null) {
                 const name = try pathToString(self.allocator, proc.path);
-                try self.procs_with_io.append(name);
+                try self.procs_with_io.append(self.allocator, name);
             }
         }
     }
@@ -184,18 +184,18 @@ const EffectCollectorVisitor = struct {
         for (event.annotations) |ann| {
             if (std.mem.eql(u8, ann, "pure")) {
                 const name = try pathToString(self.allocator, event.path);
-                try self.pure_events.append(name);
+                try self.pure_events.append(self.allocator, name);
             }
         }
     }
     
     fn pathToString(allocator: std.mem.Allocator, path: ast.DottedPath) ![]const u8 {
         var buf = try std.ArrayList(u8).initCapacity(allocator, 0);
-        defer buf.deinit();
+        defer buf.deinit(allocator);
         
         for (path.segments, 0..) |seg, i| {
-            if (i > 0) try buf.append(buf.allocator, '.');
-            try buf.appendSlice(buf.allocator, seg);
+            if (i > 0) try buf.append(allocator, '.');
+            try buf.appendSlice(allocator, seg);
         }
         
         return try allocator.dupe(u8, buf.items);
@@ -223,7 +223,7 @@ test "custom visitor implementation" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();

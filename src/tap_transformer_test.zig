@@ -4,6 +4,7 @@
 const std = @import("std");
 const testing = std.testing;
 const ast = @import("ast");
+const errors = @import("errors");
 const tap_transformer = @import("tap_transformer");
 const tap_registry_module = @import("tap_registry");
 
@@ -52,16 +53,13 @@ test "tap_transformer: basic subflow tap insertion" {
 
     const event_tap = ast.EventTap{
         .annotations = &[_][]const u8{},
-        .source_event_pattern = ast.EventPattern{
-            .module_qualifier = "main",
-            .path = &[_][]const u8{"add_five"},
-            .wildcard = false,
-        },
-        .continuations = try tap_continuations.toOwnedSlice(),
-        .module = "",
+        .source = ast.DottedPath{ .module_qualifier = "main", .segments = &[_][]const u8{"add_five"} },
+        .destination = null,
+        .is_input_tap = false,
+        .continuations = try tap_continuations.toOwnedSlice(allocator),
     };
 
-    try items.append(ast.Item{ .event_tap = event_tap });
+    try items.append(allocator, ast.Item{ .event_tap = event_tap });
 
     // Create subflow with continuation: five | result |> doubled { n: result.n }
     const five_invocation = ast.Invocation{
@@ -107,7 +105,7 @@ test "tap_transformer: basic subflow tap insertion" {
 
     const impl_flow = ast.Flow{
         .invocation = five_invocation,
-        .continuations = try subflow_continuations.toOwnedSlice(),
+        .continuations = try subflow_continuations.toOwnedSlice(allocator),
         .super_shape = null,
         .impl_of = ast.DottedPath{
             .module_qualifier = null,
@@ -116,10 +114,10 @@ test "tap_transformer: basic subflow tap insertion" {
         .module = "",
     };
 
-    try items.append(ast.Item{ .flow = impl_flow });
+    try items.append(allocator, ast.Item{ .flow = impl_flow });
 
     const source_ast = ast.Program{
-        .items = try items.toOwnedSlice(),
+        .items = try items.toOwnedSlice(allocator),
         .module_annotations = &[_][]const u8{},
         .main_module_name = "main",
         .allocator = allocator,
@@ -207,7 +205,7 @@ test "tap_transformer: no taps means no transformation" {
 
     const impl_flow = ast.Flow{
         .invocation = five_invocation,
-        .continuations = try subflow_continuations.toOwnedSlice(),
+        .continuations = try subflow_continuations.toOwnedSlice(allocator),
         .super_shape = null,
         .impl_of = ast.DottedPath{
             .module_qualifier = null,
@@ -216,10 +214,10 @@ test "tap_transformer: no taps means no transformation" {
         .module = "",
     };
 
-    try items.append(ast.Item{ .flow = impl_flow });
+    try items.append(allocator, ast.Item{ .flow = impl_flow });
 
     const source_ast = ast.Program{
-        .items = try items.toOwnedSlice(),
+        .items = try items.toOwnedSlice(allocator),
         .module_annotations = &[_][]const u8{},
         .main_module_name = "main",
         .allocator = allocator,
@@ -238,8 +236,8 @@ test "tap_transformer: no taps means no transformation" {
     const flow = transformed_ast.items[0].flow;
     const cont = flow.continuations[0];
 
-    try testing.expect(cont.pipeline.len == 1);
-    try testing.expectEqualStrings("doubled", cont.pipeline[0].invocation.path.segments[0]);
+    try testing.expect(cont.node != null);
+    try testing.expectEqualStrings("doubled", cont.node.?.invocation.path.segments[0]);
 
     std.debug.print("[TEST] ✅ No taps = no transformation verified\n", .{});
 }

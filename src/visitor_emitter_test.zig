@@ -3,8 +3,8 @@ const testing = std.testing;
 const ast = @import("ast");
 const emitter_helpers = @import("emitter_helpers");
 const VisitorEmitter = @import("visitor_emitter.zig").VisitorEmitter;
-const tap_registry_module = @import("tap_registry.zig");
-const type_registry_module = @import("type_registry.zig");
+const tap_registry_module = @import("tap_registry");
+const type_registry_module = @import("type_registry");
 
 // ============================================================================
 // VISITOR-BASED ORCHESTRATION TESTS

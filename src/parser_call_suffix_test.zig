@@ -14,7 +14,7 @@ test "parser captures .call suffix in proc body" {
         \\}
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     const result = try parser.parse();
@@ -51,7 +51,7 @@ test "parser captures multiline .call suffix" {
         \\}
     ;
     
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     const result = try parser.parse();

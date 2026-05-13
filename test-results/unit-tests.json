@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-05-12T18:13:49.099Z",
+  "timestamp": "2026-05-13T09:48:12.604Z",
   "summary": {
-    "passed": 95,
-    "failed": 21,
-    "compileErrors": 25,
-    "total": 116,
-    "suiteCount": 29,
+    "passed": 196,
+    "failed": 42,
+    "compileErrors": 0,
+    "total": 238,
+    "suiteCount": 23,
     "status": "failure"
   },
   "suites": [
@@ -19,223 +19,156 @@
     {
       "name": "bootstrap_constraint_tests",
       "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 6,
-      "status": "compile_error"
+      "failed": 6,
+      "total": 6,
+      "status": "failure"
     },
     {
       "name": "branch_constructor_edge_tests",
-      "passed": 0,
+      "passed": 7,
       "failed": 0,
-      "total": 0,
-      "compileErrors": 7,
-      "status": "compile_error"
+      "total": 7,
+      "status": "success"
     },
     {
       "name": "branch_constructor_expr_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 3,
-      "status": "compile_error"
+      "passed": 2,
+      "failed": 1,
+      "total": 3,
+      "status": "failure"
     },
     {
       "name": "compiler_passes_tests",
-      "passed": 0,
+      "passed": 2,
       "failed": 0,
-      "total": 0,
-      "compileErrors": 4,
-      "status": "compile_error"
+      "total": 2,
+      "status": "success"
     },
     {
       "name": "coordinator_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 5,
-      "status": "compile_error"
-    },
-    {
-      "name": "end_to_end_branch_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 3,
-      "status": "compile_error"
-    },
-    {
-      "name": "expression_codegen_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 1,
-      "status": "compile_error"
+      "passed": 4,
+      "failed": 2,
+      "total": 6,
+      "status": "failure"
     },
     {
       "name": "file_types_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 3,
-      "status": "compile_error"
-    },
-    {
-      "name": "flow_parser_tests",
-      "passed": 3,
-      "failed": 16,
-      "total": 19,
+      "passed": 2,
+      "failed": 1,
+      "total": 3,
       "status": "failure"
     },
     {
       "name": "full_pipeline_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 2,
-      "status": "compile_error"
+      "passed": 1,
+      "failed": 1,
+      "total": 2,
+      "status": "failure"
     },
     {
       "name": "immediate_return_tests",
-      "passed": 0,
+      "passed": 3,
       "failed": 0,
-      "total": 0,
-      "compileErrors": 3,
-      "status": "compile_error"
+      "total": 3,
+      "status": "success"
     },
     {
       "name": "inline_flow_extraction_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 4,
-      "status": "compile_error"
-    },
-    {
-      "name": "inline_flow_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 4,
-      "status": "compile_error"
-    },
-    {
-      "name": "integration_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 5,
-      "status": "compile_error"
-    },
-    {
-      "name": "lexer_tests",
       "passed": 3,
       "failed": 1,
       "total": 4,
       "status": "failure"
     },
     {
-      "name": "parser_tests",
-      "passed": 17,
+      "name": "inline_flow_tests",
+      "passed": 2,
       "failed": 2,
+      "total": 4,
+      "status": "failure"
+    },
+    {
+      "name": "integration_tests",
+      "passed": 9,
+      "failed": 0,
+      "total": 9,
+      "status": "success"
+    },
+    {
+      "name": "parser_tests",
+      "passed": 13,
+      "failed": 6,
       "total": 19,
       "status": "failure"
     },
     {
       "name": "purity_analyzer_tests",
       "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 4,
-      "status": "compile_error"
+      "failed": 2,
+      "total": 2,
+      "status": "failure"
     },
     {
       "name": "purity_checker_tests",
-      "passed": 0,
+      "passed": 3,
       "failed": 0,
-      "total": 0,
-      "compileErrors": 3,
-      "status": "compile_error"
+      "total": 3,
+      "status": "success"
     },
     {
       "name": "shape_checker_integration_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 11,
-      "status": "compile_error"
-    },
-    {
-      "name": "tap_codegen_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 5,
-      "status": "compile_error"
+      "passed": 4,
+      "failed": 7,
+      "total": 11,
+      "status": "failure"
     },
     {
       "name": "tap_collector_tests",
-      "passed": 0,
+      "passed": 3,
       "failed": 0,
-      "total": 0,
-      "compileErrors": 3,
-      "status": "compile_error"
+      "total": 3,
+      "status": "success"
     },
     {
       "name": "tap_transformer_tests",
-      "passed": 0,
+      "passed": 2,
       "failed": 0,
-      "total": 0,
-      "compileErrors": 2,
-      "status": "compile_error"
+      "total": 2,
+      "status": "success"
     },
     {
       "name": "transform_tests",
-      "passed": 0,
+      "passed": 6,
       "failed": 0,
-      "total": 0,
-      "compileErrors": 6,
-      "status": "compile_error"
+      "total": 6,
+      "status": "success"
     },
     {
       "name": "vertical_poc_tests",
-      "passed": 0,
+      "passed": 2,
       "failed": 0,
-      "total": 0,
-      "compileErrors": 2,
-      "status": "compile_error"
+      "total": 2,
+      "status": "success"
     },
     {
       "name": "visitor_emitter_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 1,
-      "status": "compile_error"
-    },
-    {
-      "name": "visitor_enhanced_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 5,
-      "status": "compile_error"
+      "passed": 7,
+      "failed": 2,
+      "total": 11,
+      "status": "failure"
     },
     {
       "name": "where_clause_integration_tests",
-      "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 3,
-      "status": "compile_error"
+      "passed": 1,
+      "failed": 2,
+      "total": 3,
+      "status": "failure"
     },
     {
       "name": "where_clause_tests",
       "passed": 0,
-      "failed": 0,
-      "total": 0,
-      "compileErrors": 5,
-      "status": "compile_error"
+      "failed": 5,
+      "total": 5,
+      "status": "failure"
     }
   ]
 }

@@ -16,7 +16,7 @@ test "validate complete flow" {
         \\| failure f |> _
     ;
     
-    var parser = try Parser.init(testing.allocator, source, "test.kz");
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -40,7 +40,7 @@ test "validate incomplete flow" {
         \\| success s |> _
     ;
     
-    var parser = try Parser.init(testing.allocator, source, "test.kz");
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -62,7 +62,7 @@ test "validate proc without event" {
         \\}
     ;
     
-    var parser = try Parser.init(testing.allocator, source, "test.kz");
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -83,7 +83,7 @@ test "validate flow with unknown event" {
         \\| ok |> _
     ;
     
-    var parser = try Parser.init(testing.allocator, source, "test.kz");
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -110,7 +110,7 @@ test "validate event tap with known events" {
         \\| success s |> _
     ;
     
-    var parser = try Parser.init(testing.allocator, source, "test.kz");
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -134,7 +134,7 @@ test "validate event tap with wildcard destination" {
         \\| failure f |> _
     ;
     
-    var parser = try Parser.init(testing.allocator, source, "test.kz");
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -156,7 +156,7 @@ test "validate event tap with unknown source" {
         \\| branch b |> _
     ;
     
-    var parser = try Parser.init(testing.allocator, source, "test.kz");
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -181,7 +181,7 @@ test "validate event tap with invalid branch" {
         \\| nonexistent n |> _
     ;
     
-    var parser = try Parser.init(testing.allocator, source, "test.kz");
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -209,7 +209,7 @@ test "validate event tap non-exhaustive is OK" {
         \\// Note: timeout branch not handled - this is OK for taps!
     ;
     
-    var parser = try Parser.init(testing.allocator, source, "test.kz");
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -229,7 +229,7 @@ test "validate wildcard tap with transition branch" {
         \\| transition t |> _
     ;
     
-    var parser = try Parser.init(testing.allocator, source, "test.kz");
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -260,7 +260,7 @@ test "void event with branch constructor in inline flow should fail" {
         \\}
     ;
 
-    var parser = try Parser.init(testing.allocator, source, "test.kz");
+    var parser = try Parser.init(testing.allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
 
     var parse_result = try parser.parse();

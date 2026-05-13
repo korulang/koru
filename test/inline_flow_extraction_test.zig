@@ -14,7 +14,7 @@ test "extract inline flow with return pattern" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -43,7 +43,7 @@ test "extract inline flow with const assignment" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -72,7 +72,7 @@ test "extract direct inline flow" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -109,7 +109,7 @@ test "extract multiple inline flows" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();

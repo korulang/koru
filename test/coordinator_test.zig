@@ -9,7 +9,7 @@ test "basic coordinator initialization" {
     var items = try std.ArrayList(ast.Item).initCapacity(allocator, 2);
     defer items.deinit(allocator);
     
-    try items.append(allocator, .{ .zig_line = "const std = @import(\"std\");" });
+    try items.append(allocator, .{ .host_line = .{ .content = "const std = @import(\"std\");"  }});
     try items.append(allocator, .{ 
         .event_decl = .{
             .path = .{ .segments = @constCast(&[_][]const u8{"compute"}) },
@@ -49,7 +49,7 @@ test "metrics computation" {
     var items = try std.ArrayList(ast.Item).initCapacity(allocator, 2);
     defer items.deinit(allocator);
     
-    try items.append(allocator, .{ .zig_line = "const std = @import(\"std\");" });
+    try items.append(allocator, .{ .host_line = .{ .content = "const std = @import(\"std\");"  }});
     try items.append(allocator, .{ 
         .event_decl = .{
             .path = .{ .segments = @constCast(&[_][]const u8{"event1"}) },

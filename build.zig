@@ -209,6 +209,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     tap_codegen_module.addImport("ast", ast_module);
+    tap_codegen_module.addImport("expression_codegen", expression_codegen_module);
 
     // Compiler requires collector module for ~compiler:requires AST walking
     const compiler_requires_module = b.createModule(.{
@@ -646,6 +647,7 @@ pub fn build(b: *std.Build) void {
     });
     tap_codegen_tests.root_module.addImport("tap_codegen", tap_codegen_module);
     tap_codegen_tests.root_module.addImport("ast", ast_module);
+    tap_codegen_tests.root_module.addImport("expression_codegen", expression_codegen_module);
 
     // Visitor Emitter tests - orchestration tests
     const visitor_emitter_tests = b.addTest(.{
@@ -661,6 +663,9 @@ pub fn build(b: *std.Build) void {
     visitor_emitter_tests.root_module.addImport("visitor_emitter", visitor_emitter_module);
     visitor_emitter_tests.root_module.addImport("tap_registry", tap_registry_module);
     visitor_emitter_tests.root_module.addImport("type_registry", type_registry_module);
+    visitor_emitter_tests.root_module.addImport("log", log_module);
+    visitor_emitter_tests.root_module.addImport("annotation_parser", annotation_parser_module);
+    visitor_emitter_tests.root_module.addImport("codegen_utils", codegen_utils_module);
 
     const integration_tests = b.addTest(.{
         .name = "integration_tests",
@@ -1071,6 +1076,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     tap_transformer_tests.root_module.addImport("ast", ast_module);
+    tap_transformer_tests.root_module.addImport("errors", errors_module);
     tap_transformer_tests.root_module.addImport("tap_transformer", tap_transformer_module);
     tap_transformer_tests.root_module.addImport("tap_registry", tap_registry_module);
     const run_tap_transformer_tests = b.addRunArtifact(tap_transformer_tests);

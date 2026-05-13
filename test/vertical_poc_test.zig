@@ -11,8 +11,8 @@ fn generateCode(allocator: std.mem.Allocator, source_file: *const ast.SourceFile
     // Pass through Zig lines and generate event handlers
     for (source_file.items) |item| {
         switch (item) {
-            .zig_line => |line| {
-                try buffer.appendSlice(allocator, line);
+            .host_line => |line| {
+                try buffer.appendSlice(allocator, line.content);
                 try buffer.append(allocator, '\n');
             },
             .event_decl => |event| {
@@ -137,7 +137,7 @@ test "vertical POC - parse, generate, and verify" {
     ;
     
     // Step 1: Parse
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();
@@ -147,14 +147,14 @@ test "vertical POC - parse, generate, and verify" {
     try std.testing.expect(parse_result.source_file.items.len > 0);
     
     // Count different item types
-    var zig_lines: usize = 0;
+    var host_lines: usize = 0;
     var events: usize = 0;
     var procs: usize = 0;
     var flows: usize = 0;
     
     for (parse_result.source_file.items) |item| {
         switch (item) {
-            .zig_line => zig_lines += 1,
+            .host_line => host_lines += 1,
             .event_decl => events += 1,
             .proc_decl => procs += 1,
             .flow => flows += 1,
@@ -163,7 +163,7 @@ test "vertical POC - parse, generate, and verify" {
     }
     
     // Verify expected counts
-    try std.testing.expect(zig_lines >= 2); // Comments and imports
+    try std.testing.expect(host_lines >= 2); // Comments and imports
     try std.testing.expectEqual(@as(usize, 1), events);
     try std.testing.expectEqual(@as(usize, 1), procs);
     try std.testing.expectEqual(@as(usize, 1), flows);
@@ -214,7 +214,7 @@ test "vertical POC - complex example" {
         \\| error err |> _
     ;
     
-    var parser = try Parser.init(allocator, source, "complex.kz");
+    var parser = try Parser.init(allocator, source, "complex.kz", &[_][]const u8{}, null);
     defer parser.deinit();
     
     var parse_result = try parser.parse();

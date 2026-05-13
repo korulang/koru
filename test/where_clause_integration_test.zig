@@ -13,7 +13,7 @@ test "parse and generate code for where clause" {
         \\| error e |> log.error(e)
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -54,7 +54,7 @@ test "complex where clause with logical operators" {
         \\| invalid i |> reject(i)
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -105,7 +105,7 @@ test "where clause in proc context" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();

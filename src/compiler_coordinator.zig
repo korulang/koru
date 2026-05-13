@@ -306,6 +306,9 @@ pub const ProgramAnalysis = struct {
     }
     
     pub fn deinit(self: *ProgramAnalysis) void {
+        for (self.event_graph.items) |node| {
+            self.allocator.free(node.path);
+        }
         self.event_graph.deinit(self.allocator);
         self.patterns.deinit(self.allocator);
         self.optimizations.deinit(self.allocator);

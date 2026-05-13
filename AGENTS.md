@@ -28,8 +28,12 @@
 - It is acceptable to make semantic cleanups and breaking changes when they improve honesty or clarity.
 
 ### Agent‑specific note (Codex)
-- This guidance is primarily to constrain Claude; Codex may operate with a lighter touch.
-- Codex is authorized to proceed without extra confirmations for routine changes, clean generated artifacts proactively, and treat these guidelines as flexible defaults (not hard stops).
+- Treat these guidelines as hard constraints, not flexible defaults.
+- For diagnostic requests such as “look at why tests fail”, default to read-only investigation: run the requested checks, inspect failures, and report root causes before editing.
+- Do not run `zig fmt` or any broad formatter unless the user explicitly requests formatting in the current task.
+- Do not mass-edit tests to match an assumed API. If tests appear stale, report the mismatch first.
+- Ask before changing compiler core contracts or build wiring, especially `src/ast.zig`, `src/parser.zig`, `src/lexer.zig`, `src/flow_parser.zig`, or `build.zig`.
+- If a fix appears to require touching more than three files, stop and present the scope before editing.
 
 ## Project Memory (prose)
 - Optional: `prose context` for current goals, constraints, gotchas.
@@ -45,7 +49,7 @@
 - `./zig-out/bin/koruc path/to/file.kz` — compile a Koru source file.
 
 ## Coding Style & Naming Conventions
-- Run `zig fmt` before committing; follow standard Zig style (4-space indent, lowerCamelCase for funcs/vars, UpperCamel for types).
+- Follow standard Zig style (4-space indent, lowerCamelCase for funcs/vars, UpperCamel for types). Do not run `zig fmt` unless explicitly requested.
 - Keep modules focused; prefer small helpers in `src/` over ad-hoc scripts.
 - Tests: integration files numbered `tests/integration/0N_*`, feature tests descriptive, regressions `tests/regression/bug_###.kz` or `issue_###.kz`.
 

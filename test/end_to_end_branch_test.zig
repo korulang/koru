@@ -63,7 +63,7 @@ test "end-to-end: branch constructor expressions compile and run" {
     
     // Step 1: Parse the Koru source
     const parser = @import("parser");
-    var p = try parser.Parser.init(allocator, koru_source, "test.kz");
+    var p = try parser.Parser.init(allocator, koru_source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var parse_result = try p.parse();
@@ -123,7 +123,7 @@ test "end-to-end: complex expression evaluation" {
     ;
     
     const parser = @import("parser");
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -137,7 +137,7 @@ test "end-to-end: complex expression evaluation" {
     try testing.expectEqualStrings("o.count > 0", flow.continuations[0].condition.?);
     
     // Verify complex expressions in branch constructor
-    const bc = &flow.continuations[0].pipeline[0].branch_constructor;
+    const bc = &flow.continuations[0].node.?.branch_constructor;
     try testing.expectEqualStrings("average", bc.fields[1].name);
     try testing.expectEqualStrings("o.sum / o.count", bc.fields[1].expression_str.?);
     
@@ -157,7 +157,7 @@ test "end-to-end: empty and single-field constructors" {
     ;
     
     const parser = @import("parser");
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -167,11 +167,11 @@ test "end-to-end: empty and single-field constructors" {
     const flow = &proc.inline_flows[0];
     
     // First continuation has empty constructor
-    const empty_bc = &flow.continuations[0].pipeline[0].branch_constructor;
+    const empty_bc = &flow.continuations[0].node.?.branch_constructor;
     try testing.expectEqual(@as(usize, 0), empty_bc.fields.len);
     
     // Second has single shorthand field
-    const single_bc = &flow.continuations[1].pipeline[0].branch_constructor;
+    const single_bc = &flow.continuations[1].node.?.branch_constructor;
     try testing.expectEqual(@as(usize, 1), single_bc.fields.len);
     try testing.expectEqualStrings("message", single_bc.fields[0].name);
     try testing.expectEqualStrings("e.message", single_bc.fields[0].expression_str.?);

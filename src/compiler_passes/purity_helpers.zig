@@ -37,7 +37,7 @@ pub fn hasAnnotation(annotations: []const []const u8, annotation: []const u8) bo
 /// Convert a DottedPath to a string
 pub fn pathToString(allocator: std.mem.Allocator, path: ast.DottedPath) ![]const u8 {
     var buf = try std.ArrayList(u8).initCapacity(allocator, 0);
-    defer buf.deinit();
+    defer buf.deinit(allocator);
     for (path.segments, 0..) |seg, i| {
         if (i > 0) try buf.append(allocator, '.');
         try buf.appendSlice(allocator, seg);

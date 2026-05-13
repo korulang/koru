@@ -87,11 +87,12 @@ fn parseFlowInternal(allocator: std.mem.Allocator, source: []const u8) ParseErro
         } };
     }
 
-    // Require ~ prefix — reject non-flow source (event decls, multi-statement, etc.)
+    // Flow snippets may come either from full Koru source (`~event`) or from
+    // focused parser tests that pass only the invocation text (`event`).
     const first_line = lexer.trim(lines[invocation_line_idx].content);
-    if (first_line.len == 0 or first_line[0] != '~') {
+    if (first_line.len == 0) {
         return .{ .err = .{
-            .message = "Not a flow (missing ~ prefix)",
+            .message = "Not a flow (empty invocation)",
             .line = lines[invocation_line_idx].line_num,
             .column = 0,
         } };

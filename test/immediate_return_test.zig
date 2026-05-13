@@ -15,7 +15,7 @@ test "parse immediate return syntax" {
         \\~test.mock = success { value: 42 }
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     const result = try p.parse();
@@ -24,29 +24,21 @@ test "parse immediate return syntax" {
         mut_result.deinit();
     }
     
-    // Should have 3 items: event decl, zig_line (comment), and subflow impl
+    // Should have 3 items: event decl, host line (comment), and immediate impl
     try testing.expectEqual(@as(usize, 3), result.source_file.items.len);
     
-    // Check the subflow impl (now at index 2)
-    const subflow = result.source_file.items[2].subflow_impl;
+    // Check the immediate impl (now at index 2)
+    const immediate = result.source_file.items[2].immediate_impl;
     
     // Event path should be test.mock
-    try testing.expectEqual(@as(usize, 2), subflow.event_path.segments.len);
-    try testing.expectEqualStrings("test", subflow.event_path.segments[0]);
-    try testing.expectEqualStrings("mock", subflow.event_path.segments[1]);
+    try testing.expectEqual(@as(usize, 2), immediate.event_path.segments.len);
+    try testing.expectEqualStrings("test", immediate.event_path.segments[0]);
+    try testing.expectEqualStrings("mock", immediate.event_path.segments[1]);
     
-    // Body should be immediate
-    switch (subflow.body) {
-        .immediate => |bc| {
-            try testing.expectEqualStrings("success", bc.branch_name);
-            try testing.expectEqual(@as(usize, 1), bc.fields.len);
-            try testing.expectEqualStrings("value", bc.fields[0].name);
-            try testing.expectEqualStrings("42", bc.fields[0].type); // 'type' holds the value expression
-        },
-        .flow => {
-            try testing.expect(false); // Should not be a flow!
-        },
-    }
+    try testing.expectEqualStrings("success", immediate.value.branch_name);
+    try testing.expectEqual(@as(usize, 1), immediate.value.fields.len);
+    try testing.expectEqualStrings("value", immediate.value.fields[0].name);
+    try testing.expectEqualStrings("42", immediate.value.fields[0].expression_str.?);
 }
 
 test "parse immediate return with multiple fields" {
@@ -59,7 +51,7 @@ test "parse immediate return with multiple fields" {
         \\~user.get = found { name: "Alice", email: "alice@test.com" }
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     const result = try p.parse();
@@ -68,21 +60,14 @@ test "parse immediate return with multiple fields" {
         mut_result.deinit();
     }
     
-    const subflow = result.source_file.items[1].subflow_impl;
+    const immediate = result.source_file.items[1].immediate_impl;
     
-    switch (subflow.body) {
-        .immediate => |bc| {
-            try testing.expectEqualStrings("found", bc.branch_name);
-            try testing.expectEqual(@as(usize, 2), bc.fields.len);
-            try testing.expectEqualStrings("name", bc.fields[0].name);
-            try testing.expectEqualStrings("\"Alice\"", bc.fields[0].type);
-            try testing.expectEqualStrings("email", bc.fields[1].name);
-            try testing.expectEqualStrings("\"alice@test.com\"", bc.fields[1].type);
-        },
-        .flow => {
-            try testing.expect(false); // Should not be a flow!
-        },
-    }
+    try testing.expectEqualStrings("found", immediate.value.branch_name);
+    try testing.expectEqual(@as(usize, 2), immediate.value.fields.len);
+    try testing.expectEqualStrings("name", immediate.value.fields[0].name);
+    try testing.expectEqualStrings("\"Alice\"", immediate.value.fields[0].expression_str.?);
+    try testing.expectEqualStrings("email", immediate.value.fields[1].name);
+    try testing.expectEqualStrings("\"alice@test.com\"", immediate.value.fields[1].expression_str.?);
 }
 
 test "parse regular subflow still works" {
@@ -96,7 +81,7 @@ test "parse regular subflow still works" {
         \\| success s |> done { result: s.output }
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     const result = try p.parse();
@@ -105,18 +90,11 @@ test "parse regular subflow still works" {
         mut_result.deinit();
     }
     
-    const subflow = result.source_file.items[1].subflow_impl;
+    const flow = result.source_file.items[1].flow;
     
-    // Should be a flow, not immediate
-    switch (subflow.body) {
-        .flow => |f| {
-            try testing.expectEqual(@as(usize, 2), f.invocation.path.segments.len);
-            try testing.expectEqualStrings("compute", f.invocation.path.segments[0]);
-            try testing.expectEqualStrings("run", f.invocation.path.segments[1]);
-            try testing.expectEqual(@as(usize, 1), f.continuations.len);
-        },
-        .immediate => {
-            try testing.expect(false); // Should be a flow!
-        },
-    }
+    try testing.expect(flow.impl_of != null);
+    try testing.expectEqual(@as(usize, 2), flow.invocation.path.segments.len);
+    try testing.expectEqualStrings("compute", flow.invocation.path.segments[0]);
+    try testing.expectEqualStrings("run", flow.invocation.path.segments[1]);
+    try testing.expectEqual(@as(usize, 1), flow.continuations.len);
 }

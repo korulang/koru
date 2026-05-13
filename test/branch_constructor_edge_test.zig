@@ -14,7 +14,7 @@ test "empty branch constructor" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -27,7 +27,7 @@ test "empty branch constructor" {
     
     // Check empty constructors
     for (flow.continuations) |cont| {
-        for (cont.pipeline) |step| {
+        if (cont.node) |step| {
             if (step == .branch_constructor) {
                 const bc = &step.branch_constructor;
                 // Empty constructors should have 0 fields
@@ -50,7 +50,7 @@ test "nested field access in branch constructor" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -58,7 +58,7 @@ test "nested field access in branch constructor" {
     
     const proc = result.source_file.items[0].proc_decl;
     const flow = &proc.inline_flows[0];
-    const bc = &flow.continuations[0].pipeline[0].branch_constructor;
+    const bc = &flow.continuations[0].node.?.branch_constructor;
     
     // Check nested field access
     try testing.expectEqualStrings("content", bc.fields[0].name);
@@ -82,7 +82,7 @@ test "complex expressions in branch constructor" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -90,7 +90,7 @@ test "complex expressions in branch constructor" {
     
     const proc = result.source_file.items[0].proc_decl;
     const flow = &proc.inline_flows[0];
-    const bc = &flow.continuations[0].pipeline[0].branch_constructor;
+    const bc = &flow.continuations[0].node.?.branch_constructor;
     
     // Check complex expressions
     try testing.expectEqualStrings("count", bc.fields[0].name);
@@ -119,7 +119,7 @@ test "mixed literals and expressions" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -127,7 +127,7 @@ test "mixed literals and expressions" {
     
     const proc = result.source_file.items[0].proc_decl;
     const flow = &proc.inline_flows[0];
-    const bc = &flow.continuations[0].pipeline[0].branch_constructor;
+    const bc = &flow.continuations[0].node.?.branch_constructor;
     
     // Check mix of expressions and literals
     try testing.expectEqualStrings("data", bc.fields[0].name);
@@ -154,7 +154,7 @@ test "single field shorthand" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -162,7 +162,7 @@ test "single field shorthand" {
     
     const proc = result.source_file.items[0].proc_decl;
     const flow = &proc.inline_flows[0];
-    const bc = &flow.continuations[0].pipeline[0].branch_constructor;
+    const bc = &flow.continuations[0].node.?.branch_constructor;
     
     // Shorthand should extract field name from expression
     try testing.expectEqual(@as(usize, 1), bc.fields.len);
@@ -187,7 +187,7 @@ test "conflicting shapes across branches" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -221,7 +221,7 @@ test "branch constructor outside proc context fails" {
         \\    | ok o |> success { data: o.value }
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();

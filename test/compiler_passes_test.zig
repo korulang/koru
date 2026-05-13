@@ -42,7 +42,7 @@ test "compiler passes pipeline" {
     ;
     
     // Parse the source
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -55,7 +55,7 @@ test "compiler passes pipeline" {
     var purity_analyzer = try PurityAnalyzer.init(allocator, &result.source_file);
     defer purity_analyzer.deinit();
     
-    const purity_metadata = try purity_analyzer.analyze();
+    var purity_metadata = try purity_analyzer.analyze();
     defer purity_metadata.deinit(allocator);
     
     // Check purity results
@@ -65,7 +65,7 @@ test "compiler passes pipeline" {
         const info = entry.value_ptr.*;
         std.debug.print("  {s}: syntactic={}, annotated={}, final={}\n", .{
             name,
-            info.syntactic_pure,
+            info.transitive_pure,
             info.annotated_pure,
             info.isPure(),
         });
@@ -73,9 +73,9 @@ test "compiler passes pipeline" {
     
     // Pass 2: Effect Analysis (uses purity data)
     std.debug.print("\n--- Pass 2: Effect Analysis ---\n", .{});
-    var effect_analyzer = EffectAnalyzer.init(allocator, &result.source_file, &purity_metadata);
+    var effect_analyzer = EffectAnalyzer.init(allocator, &result.source_file, null);
     
-    const effect_metadata = try effect_analyzer.analyze();
+    var effect_metadata = try effect_analyzer.analyze();
     defer effect_metadata.deinit(allocator);
     
     // Check effect results
@@ -143,7 +143,7 @@ test "effect annotation parsing" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();

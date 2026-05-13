@@ -46,7 +46,7 @@ test "transitive purity analysis" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -56,7 +56,8 @@ test "transitive purity analysis" {
     var analyzer = try PurityAnalyzer.init(allocator, &result.source_file);
     defer analyzer.deinit();
     
-    try analyzer.analyze();
+    var metadata = try analyzer.analyze();
+    defer metadata.deinit(allocator);
     
     std.debug.print("\n=== FINAL PURITY RESULTS ===\n", .{});
     
@@ -125,7 +126,7 @@ test "cycle detection in purity analysis" {
         \\}
     ;
     
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
     
     var result = try p.parse();
@@ -134,7 +135,8 @@ test "cycle detection in purity analysis" {
     var analyzer = try PurityAnalyzer.init(allocator, &result.source_file);
     defer analyzer.deinit();
     
-    try analyzer.analyze();
+    var metadata = try analyzer.analyze();
+    defer metadata.deinit(allocator);
     
     // All should handle cycles gracefully
     std.debug.print("\n=== CYCLE TEST RESULTS ===\n", .{});
@@ -159,10 +161,11 @@ test "cycle detection in purity analysis" {
 }
 
 fn pathToString(allocator: std.mem.Allocator, path: ast.DottedPath) ![]const u8 {
-    var buf = std.ArrayList(u8).init(allocator);
+    var buf = try std.ArrayList(u8).initCapacity(allocator, 0);
+    defer buf.deinit(allocator);
     for (path.segments, 0..) |seg, i| {
-        if (i > 0) try buf.append('.');
-        try buf.appendSlice(seg);
+        if (i > 0) try buf.append(allocator, '.');
+        try buf.appendSlice(allocator, seg);
     }
-    return buf.toOwnedSlice();
+    return buf.toOwnedSlice(allocator);
 }

@@ -7,7 +7,7 @@ const PurityChecker = @import("purity_checker.zig").PurityChecker;
 fn findProc(source: *ast.Program, name: []const u8) ?*ast.ProcDecl {
     for (source.items) |*item| {
         if (item.* == .proc_decl) {
-            const proc = &item.proc_decl;
+            const proc = @constCast(&item.proc_decl);
             // Match single-segment path
             if (proc.path.segments.len == 1 and
                 std.mem.eql(u8, proc.path.segments[0], name)) {
@@ -22,7 +22,7 @@ fn findProc(source: *ast.Program, name: []const u8) ?*ast.ProcDecl {
 fn findEvent(source: *ast.Program, name: []const u8) ?*ast.EventDecl {
     for (source.items) |*item| {
         if (item.* == .event_decl) {
-            const event = &item.event_decl;
+            const event = @constCast(&item.event_decl);
             // Match single-segment path
             if (event.path.segments.len == 1 and
                 std.mem.eql(u8, event.path.segments[0], name)) {
@@ -49,7 +49,7 @@ test "proc with pure annotation is marked pure" {
         \\}
     ;
 
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
 
     var parse_result = try parser.parse();
@@ -75,7 +75,7 @@ test "proc without pure annotation is not pure" {
         \\}
     ;
 
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
 
     var parse_result = try parser.parse();
@@ -103,7 +103,7 @@ test "pure proc calling no events is transitively pure" {
         \\}
     ;
 
-    var parser = try Parser.init(allocator, source, "test.kz");
+    var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
 
     var parse_result = try parser.parse();

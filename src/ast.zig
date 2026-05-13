@@ -170,8 +170,8 @@ pub const SuperShape = struct {
 
 pub const Program = struct {
     items: []const Item,
-    module_annotations: []const []const u8,  // Module-level annotations (e.g., ~[compiler])
-    main_module_name: []const u8,  // Canonical name of the main module (e.g., "input" from input.kz)
+    module_annotations: []const []const u8 = &.{},  // Module-level annotations (e.g., ~[compiler])
+    main_module_name: []const u8 = "",  // Canonical name of the main module (e.g., "input" from input.kz)
     allocator: std.mem.Allocator,
 
     /// TypeRegistry for this program (opaque to avoid circular import with type_registry.zig)
@@ -190,7 +190,9 @@ pub const Program = struct {
         }
         self.allocator.free(@constCast(self.module_annotations));
         // Free main module name
-        self.allocator.free(@constCast(self.main_module_name));
+        if (self.main_module_name.len > 0) {
+            self.allocator.free(@constCast(self.main_module_name));
+        }
     }
 
     /// Check if this AST contains any parse errors
@@ -203,16 +205,18 @@ pub const Program = struct {
     }
 };
 
+pub const SourceFile = Program;
+
 pub const HostLine = struct {
     content: []const u8,
 
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
-    module: []const u8,
+    module: []const u8 = "",
 
     pub fn deinit(self: *HostLine, allocator: std.mem.Allocator) void {
         allocator.free(self.content);
-        allocator.free(self.module);
+        if (self.module.len > 0) allocator.free(self.module);
     }
 };
 
@@ -317,7 +321,7 @@ pub const EventDecl = struct {
 
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
-    module: []const u8,  // Canonical module path (e.g., "input", "lib/fs")
+    module: []const u8 = "",  // Canonical module path (e.g., "input", "lib/fs")
 
     /// Returns true if this event is comptime-only (should not be emitted to backend)
     /// Comptime-only events have Program, Source, or Expression parameters
@@ -359,7 +363,7 @@ pub const EventDecl = struct {
             allocator.free(ann);
         }
         allocator.free(@constCast(self.annotations));
-        allocator.free(self.module);
+        if (self.module.len > 0) allocator.free(self.module);
     }
 };
 
@@ -376,6 +380,7 @@ pub const HostTypeDecl = struct {
 pub const ProcDecl = struct {
     path: DottedPath,
     body: []const u8, // Opaque code (language determined by target)
+    inline_flows: []const Flow = &.{}, // Flows extracted from host-language proc bodies
     annotations: []const []const u8 = &[_][]const u8{}, // Proc annotations like [pure|async]
     target: ?[]const u8 = null, // Language target: "gpu", "js", "python", null = Zig
     is_impl: bool = false,  // True if event_path has module qualifier (cross-module implementation)
@@ -387,17 +392,24 @@ pub const ProcDecl = struct {
 
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
-    module: []const u8,
+    module: []const u8 = "",
 
     pub fn deinit(self: *ProcDecl, allocator: std.mem.Allocator) void {
         self.path.deinit(allocator);
         allocator.free(self.body);
+        for (self.inline_flows) |*flow| {
+            var mutable_flow = flow.*;
+            mutable_flow.deinit(allocator);
+        }
+        if (self.inline_flows.len > 0) {
+            allocator.free(@constCast(self.inline_flows));
+        }
         for (self.annotations) |ann| {
             allocator.free(ann);
         }
         allocator.free(@constCast(self.annotations));
         if (self.target) |t| allocator.free(t);
-        allocator.free(self.module);
+        if (self.module.len > 0) allocator.free(self.module);
     }
 };
 
@@ -532,7 +544,7 @@ pub const Flow = struct {
 
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
-    module: []const u8,
+    module: []const u8 = "",
 
     /// Returns true if this flow is a cross-module implementation override.
     /// Uses the stored is_impl flag set at parse time (pre-canonicalization).
@@ -571,7 +583,7 @@ pub const Flow = struct {
             var mutable_io = io.*;
             mutable_io.deinit(allocator);
         }
-        allocator.free(self.module);
+        if (self.module.len > 0) allocator.free(self.module);
     }
 };
 
@@ -584,7 +596,7 @@ pub const EventTap = struct {
 
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
-    module: []const u8,
+    module: []const u8 = "",
 
     pub fn deinit(self: *EventTap, allocator: std.mem.Allocator) void {
         if (self.source) |*s| {
@@ -604,7 +616,7 @@ pub const EventTap = struct {
             allocator.free(ann);
         }
         allocator.free(@constCast(self.annotations));
-        allocator.free(self.module);
+        if (self.module.len > 0) allocator.free(self.module);
     }
 };
 
@@ -632,7 +644,7 @@ pub const ImmediateImpl = struct {
 
     // FOUNDATIONAL: Every item knows where it came from
     location: errors.SourceLocation = .{ .file = "generated", .line = 0, .column = 0 },
-    module: []const u8,
+    module: []const u8 = "",
 
     // Stored at parse time: true if event_path had module qualifier before canonicalization
     is_impl: bool = false,
@@ -649,7 +661,7 @@ pub const ImmediateImpl = struct {
             allocator.free(ann);
         }
         allocator.free(@constCast(self.annotations));
-        allocator.free(self.module);
+        if (self.module.len > 0) allocator.free(self.module);
     }
 };
 

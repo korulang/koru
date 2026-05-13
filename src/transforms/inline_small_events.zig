@@ -58,7 +58,7 @@ pub const InlineSmallEventsTransform = struct {
         while (i > 0) {
             i -= 1;
             const inlined = inlined_codes.items[i];
-            const new_item = ast.Item{ .host_line = inlined.code };
+            const new_item = ast.Item{ .host_line = .{ .content = inlined.code } };
             try transform.replaceNode(self.context, inlined.flow_index, new_item);
             self.inlined_count += 1;
         }

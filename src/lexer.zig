@@ -387,22 +387,7 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
                 // Use depth-aware colon search to handle { field: value } expressions
                 const colon_idx = indexOfAtDepthZero(arg_slice, ':');
 
-                // Check if this colon is a module qualifier (input:event) vs named arg (name: value)
-                // Module qualifier: no space after colon, followed by identifier char
-                // Named arg: space after colon, or complex expression follows
-                const is_module_qualifier = if (colon_idx) |idx| blk: {
-                    if (idx + 1 >= arg_slice.len) break :blk false;
-                    const after_colon = arg_slice[idx + 1];
-                    // If immediately followed by identifier char (no space), it's a module qualifier
-                    // e.g., "input:main_event" vs "name: value"
-                    if (after_colon != ' ' and after_colon != '\t' and
-                        (std.ascii.isAlphabetic(after_colon) or after_colon == '_' or after_colon == '*')) {
-                        break :blk true;
-                    }
-                    break :blk false;
-                } else false;
-
-                if (colon_idx != null and !is_module_qualifier) {
+                if (colon_idx != null) {
                     const idx = colon_idx.?;
                     // Explicit form: name: value
                     const name = try allocator.dupe(u8, trim(arg_slice[0..idx]));
@@ -635,4 +620,3 @@ test "parseArgs" {
     try std.testing.expectEqualStrings("mode", args[1].name);
     try std.testing.expectEqualStrings("read", args[1].value);
 }
-

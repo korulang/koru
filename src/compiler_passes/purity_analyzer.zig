@@ -144,9 +144,8 @@ pub const PurityAnalyzer = struct {
         var proc_iter = self.proc_map.iterator();
         while (proc_iter.next()) |entry| {
             const proc_name = entry.key_ptr.*;
-            const proc = entry.value_ptr.*;
 
-            var call_info = CallInfo{
+            const call_info = CallInfo{
                 .calls = std.ArrayList([]const u8).initCapacity(self.allocator, 0) catch unreachable,
             };
 

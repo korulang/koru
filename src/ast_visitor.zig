@@ -31,7 +31,7 @@ pub const ASTVisitor = struct {
     visitLabelPre: ?*const fn (self: *ASTVisitor, label: *ast.LabelDecl) anyerror!TraversalControl = null,
     visitImmediateImplPre: ?*const fn (self: *ASTVisitor, ii: *ast.ImmediateImpl) anyerror!TraversalControl = null,
     visitImportPre: ?*const fn (self: *ASTVisitor, import: *ast.ImportDecl) anyerror!TraversalControl = null,
-    visitHostLinePre: ?*const fn (self: *ASTVisitor, line: *[]const u8) anyerror!TraversalControl = null,
+    visitHostLinePre: ?*const fn (self: *ASTVisitor, line: *ast.HostLine) anyerror!TraversalControl = null,
 
     // Visitor methods for each node type (post-visit)
     visitSourceFilePost: ?*const fn (self: *ASTVisitor, file: *ast.Program) anyerror!void = null,
@@ -41,7 +41,7 @@ pub const ASTVisitor = struct {
     visitLabelPost: ?*const fn (self: *ASTVisitor, label: *ast.LabelDecl) anyerror!void = null,
     visitImmediateImplPost: ?*const fn (self: *ASTVisitor, ii: *ast.ImmediateImpl) anyerror!void = null,
     visitImportPost: ?*const fn (self: *ASTVisitor, import: *ast.ImportDecl) anyerror!void = null,
-    visitHostLinePost: ?*const fn (self: *ASTVisitor, line: *[]const u8) anyerror!void = null,
+    visitHostLinePost: ?*const fn (self: *ASTVisitor, line: *ast.HostLine) anyerror!void = null,
     
     /// Start traversal from the root
     pub fn visit(self: *ASTVisitor, source_file: *ast.Program) !void {
@@ -66,13 +66,14 @@ pub const ASTVisitor = struct {
         
         // Visit children
         for (file.items, 0..) |*item, i| {
+            const mutable_item = @constCast(item);
             // Track parent if we have context
             if (self.context) |ctx| {
-                try ctx.pushParent(item);
+                try ctx.pushParent(mutable_item);
             }
             defer if (self.context) |ctx| ctx.popParent();
             
-            const control = try self.visitItem(item, i);
+            const control = try self.visitItem(mutable_item, i);
             if (control == .stop_traversal) return .stop_traversal;
         }
         
@@ -98,6 +99,7 @@ pub const ASTVisitor = struct {
             .immediate_impl => |*ii| return self.visitImmediateImpl(ii),
             .import_decl => |*import| return self.visitImport(import),
             .host_line => |*line| return self.visitHostLine(line),
+            else => return .continue_traversal,
         }
     }
     
@@ -266,7 +268,7 @@ pub const ASTVisitor = struct {
         return .continue_traversal;
     }
     
-    fn visitHostLine(self: *ASTVisitor, line: *[]const u8) !TraversalControl {
+    fn visitHostLine(self: *ASTVisitor, line: *ast.HostLine) !TraversalControl {
         // Pre-visit
         if (self.order == .pre_order or self.order == .both) {
             if (self.visitHostLinePre) |visitor| {

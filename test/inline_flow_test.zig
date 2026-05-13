@@ -25,7 +25,7 @@ test "inline flow extraction" {
         \\}
     ;
 
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
 
     var result = try p.parse();
@@ -81,7 +81,7 @@ test "complex nested inline flow" {
         \\}
     ;
 
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
 
     var result = try p.parse();
@@ -108,7 +108,7 @@ test "complex nested inline flow" {
                 
                 // Check nested continuations exist
                 const ready_cont = flow.continuations[0];
-                try std.testing.expect(ready_cont.pipeline.len > 0);
+                try std.testing.expect(ready_cont.node != null);
             },
             else => {},
         }
@@ -138,7 +138,7 @@ test "proc annotations" {
         \\}
     ;
 
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
 
     var result = try p.parse();
@@ -197,7 +197,7 @@ test "multiple inline flows in one proc" {
         \\}
     ;
 
-    var p = try parser.Parser.init(allocator, source, "test.kz");
+    var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer p.deinit();
 
     var result = try p.parse();
