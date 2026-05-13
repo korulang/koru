@@ -31,11 +31,9 @@ const std = @import("std");
 }
 
 // Flow 1 with a label
-~start()
-|> #loop counter(n: 1)
-    | next c |> @loop(n: c.value)
-    | done |> _
+~start() |> #loop counter(n: 1)
+| next c |> @loop(n: c.value)
+| done |> _
 
 // Flow 2 trying to jump to Flow 1's label (should error!)
-~start()
-|> @loop(n: 1)  // ERROR: 'loop' is not in scope here
+~start() |> @loop(n: 1)  // ERROR: 'loop' is not in scope here

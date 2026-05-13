@@ -46,9 +46,8 @@ const std = @import("std");
 
 // Flow with nested labels
 // Both loops now have matching signatures (x: i32, max_inner: i32)
-~start()
-|> #outer_loop outer(x: 1, max_inner: 2)
-    | next_outer o |> #inner_loop inner(x: o.x, y: 1, max_inner: o.max_inner)
-        | next_inner i |> @inner_loop(x: i.x, y: i.y, max_inner: i.max_inner)
-        | done_inner d |> @outer_loop(x: d.x, max_inner: d.max_inner)
-    | done_outer |> _
+~start() |> #outer_loop outer(x: 1, max_inner: 2)
+| next_outer o |> #inner_loop inner(x: o.x, y: 1, max_inner: o.max_inner)
+    | next_inner i |> @inner_loop(x: i.x, y: i.y, max_inner: i.max_inner)
+    | done_inner d |> @outer_loop(x: d.x, max_inner: d.max_inner)
+| done_outer |> _

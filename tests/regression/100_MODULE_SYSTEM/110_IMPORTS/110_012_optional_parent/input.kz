@@ -30,4 +30,3 @@ const std = @import("std");
 
 // Run test
 ~test()
-|> _

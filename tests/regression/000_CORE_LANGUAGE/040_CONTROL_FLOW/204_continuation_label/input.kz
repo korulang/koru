@@ -30,7 +30,6 @@ const std = @import("std");
 }
 
 // Flow with label on continuation (not on flow itself!)
-~start()
-|> #loop counter(n: 1)
-    | next c |> @loop(n: c)
-    | done |> _
+~start() |> #loop counter(n: 1)
+| next c |> @loop(n: c)
+| done |> _
