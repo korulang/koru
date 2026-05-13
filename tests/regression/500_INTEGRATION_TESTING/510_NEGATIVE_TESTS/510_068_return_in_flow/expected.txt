@@ -1,10 +1,3 @@
-error[KORU010]: '|>' cannot start a line
-  --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_068_return_in_flow/input.kz:7:0
-    |
-  7 | |> return
-    | ^^
-  hint: '|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.
-
 error[PARSE003]: Flows terminate with '_', not 'return'
   --> tests/regression/500_INTEGRATION_TESTING/510_NEGATIVE_TESTS/510_068_return_in_flow/input.kz:7:1
     |

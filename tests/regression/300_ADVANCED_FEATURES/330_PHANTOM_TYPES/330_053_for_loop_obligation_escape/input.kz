@@ -22,6 +22,4 @@ const allocator = std.heap.c_allocator;
     create(id: i)
     | created r |>
         use(r)  // use it, but can't dispose - no destroy event exists!
-|>
-    _
 pub fn main() void {}

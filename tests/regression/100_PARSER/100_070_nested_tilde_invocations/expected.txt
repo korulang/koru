@@ -1,6 +1,6 @@
 error[PARSE001]: Nested flows (~) are not allowed inside continuations. Use a bare event call instead: remove the ~ prefix.
   --> tests/regression/100_PARSER/100_070_nested_tilde_invocations/input.kz:18:0
     |
- 18 | | done d |> ~inner(x: d.value)
+ 18 | | done d |> ~inner(x: d.value) |> nop()
     | ^
 

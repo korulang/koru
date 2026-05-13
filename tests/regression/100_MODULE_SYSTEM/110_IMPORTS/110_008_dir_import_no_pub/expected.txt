@@ -1,14 +1,28 @@
-error[KORU010]: '|>' cannot start a line
-  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:14:0
+error[KORU044]: cannot access private event 'app.lib.raylib.graphics:render' from module 'input'
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:13:0
     |
- 14 | |> app.lib.raylib.graphics:clear(color: 0xFF0000)
-    | ^^
-  hint: '|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.
+ 13 | ~app.lib.raylib.graphics:render(width: 1920, height: 1080) |> app.lib.raylib.graphics:clear(color: 0xFF0000)
+    | ^
+  hint: mark the event as public with ~pub event
 
-error[KORU010]: '|>' cannot start a line
-  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:16:8
+error[KORU044]: cannot access private event 'app.lib.raylib.graphics:clear' from module 'input'
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:16:0
     |
- 16 |         |> app.lib.raylib.audio:stop()
-    |        ^^
-  hint: '|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.
+ 16 | 
+    | ^
+  hint: mark the event as public with ~pub event
+
+error[KORU044]: cannot access private event 'app.lib.raylib.audio:play' from module 'input'
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:14:4
+    |
+ 14 |     | cleared |> app.lib.raylib.audio:play(sound_id: 42) |> app.lib.raylib.audio:stop()
+    |    ^
+  hint: mark the event as public with ~pub event
+
+error[KORU044]: cannot access private event 'app.lib.raylib.audio:stop' from module 'input'
+  --> tests/regression/100_MODULE_SYSTEM/110_IMPORTS/110_008_dir_import_no_pub/input.kz:14:4
+    |
+ 14 |     | cleared |> app.lib.raylib.audio:play(sound_id: 42) |> app.lib.raylib.audio:stop()
+    |    ^
+  hint: mark the event as public with ~pub event
 

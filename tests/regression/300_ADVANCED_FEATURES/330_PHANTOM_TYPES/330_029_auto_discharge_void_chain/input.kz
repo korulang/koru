@@ -1,5 +1,0 @@
-~import "$std/io"
-const std = @import("std");
-const Resource = struct { id: i32 };
-~event acquire {}
-| ok r |> std.io:print.ln("Got resource {{ r.id:d }}")
