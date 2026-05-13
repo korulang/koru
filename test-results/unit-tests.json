@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-05-13T10:56:55.209Z",
+  "timestamp": "2026-05-13T11:57:00.104Z",
   "summary": {
-    "passed": 196,
-    "failed": 42,
+    "passed": 190,
+    "failed": 48,
     "compileErrors": 0,
     "total": 238,
-    "suiteCount": 23,
+    "suiteCount": 24,
     "status": "failure"
   },
   "suites": [
@@ -53,8 +53,8 @@
     },
     {
       "name": "file_types_tests",
-      "passed": 2,
-      "failed": 1,
+      "passed": 1,
+      "failed": 2,
       "total": 3,
       "status": "failure"
     },
@@ -67,10 +67,10 @@
     },
     {
       "name": "immediate_return_tests",
-      "passed": 3,
-      "failed": 0,
+      "passed": 2,
+      "failed": 1,
       "total": 3,
-      "status": "success"
+      "status": "failure"
     },
     {
       "name": "inline_flow_extraction_tests",
@@ -95,8 +95,8 @@
     },
     {
       "name": "parser_tests",
-      "passed": 13,
-      "failed": 6,
+      "passed": 17,
+      "failed": 2,
       "total": 19,
       "status": "failure"
     },
@@ -109,15 +109,15 @@
     },
     {
       "name": "purity_checker_tests",
-      "passed": 3,
-      "failed": 0,
+      "passed": 2,
+      "failed": 1,
       "total": 3,
-      "status": "success"
+      "status": "failure"
     },
     {
       "name": "shape_checker_integration_tests",
-      "passed": 4,
-      "failed": 7,
+      "passed": 2,
+      "failed": 9,
       "total": 11,
       "status": "failure"
     },
@@ -144,16 +144,23 @@
     },
     {
       "name": "vertical_poc_tests",
-      "passed": 2,
-      "failed": 0,
+      "passed": 0,
+      "failed": 2,
       "total": 2,
-      "status": "success"
+      "status": "failure"
     },
     {
       "name": "visitor_emitter_tests",
       "passed": 7,
       "failed": 2,
       "total": 11,
+      "status": "failure"
+    },
+    {
+      "name": "visitor_enhanced_tests",
+      "passed": 0,
+      "failed": 3,
+      "total": 3,
       "status": "failure"
     },
     {

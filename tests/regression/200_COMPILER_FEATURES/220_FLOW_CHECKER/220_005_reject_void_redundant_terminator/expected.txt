@@ -1,7 +1,7 @@
-error[KORU010]: '_' is only legal as the body of a branch handler
+error[KORU010]: '|>' cannot start a line
   --> tests/regression/200_COMPILER_FEATURES/220_FLOW_CHECKER/220_005_reject_void_redundant_terminator/input.kz:17:0
     |
  17 | |> _
-    | ^
-  hint: '_' has meaning only as `| branch [binding] |> _`. Outside a branch handler body — top-level void chain, split-pipeline tail — `|> _` is meaningless.
+    | ^^
+  hint: '|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.
 
