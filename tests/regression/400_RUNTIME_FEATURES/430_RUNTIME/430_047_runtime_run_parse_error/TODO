@@ -1,0 +1,1 @@
+Parked: runtime/interpreter bug family deferred (2026-05-15). std.runtime:run accepts "ping()" (no leading ~) and returns result instead of parse_error. Surfaces design question — is interpreter source implicit-Koru or does it require ~? Defer with rest of runtime work.

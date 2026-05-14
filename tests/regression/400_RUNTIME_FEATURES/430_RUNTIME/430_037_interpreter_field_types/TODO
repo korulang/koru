@@ -1,0 +1,1 @@
+Parked: runtime/interpreter bug family deferred (2026-05-15). Interpreter FieldValue propagation — v.num reads 0 instead of int_val. Unpark with rest of std.runtime / std.interpreter work.
