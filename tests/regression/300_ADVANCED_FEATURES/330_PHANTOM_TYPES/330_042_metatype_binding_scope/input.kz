@@ -6,4 +6,3 @@
 ~tap(work -> *)
 | Profile p |> std.io:print.ln("Profile: {{p.source:s}}.{{p.branch:s}}")
 ~work()
-|> _

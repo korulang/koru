@@ -43,9 +43,7 @@ const std = @import("std");
 // inside a continuation for replaceInvocationNodeRecursive to find it.
 ~event noop {}
 
-~proc noop { return .{ .done = .{} }; }
+~proc noop {}
 
-~noop
-|> labeled("hello")
-~noop
-|> labeled()
+~noop() |> labeled("hello")
+~noop() |> labeled()

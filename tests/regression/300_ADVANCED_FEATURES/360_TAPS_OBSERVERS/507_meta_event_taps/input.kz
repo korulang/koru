@@ -18,12 +18,10 @@
 const std = @import("std");
 
 // Tap program start
-~tap(koru:start -> *)
-|> std.io:println(text: "START: Program beginning")
+~tap(koru:start -> *) |> std.io:println(text: "START: Program beginning")
 
 // Tap program end
-~tap(koru:end -> *)
-|> std.io:println(text: "END: Program finishing")
+~tap(koru:end -> *) |> std.io:println(text: "END: Program finishing")
 
 // Main flow
 ~greet(name: "World")
