@@ -688,7 +688,7 @@ pub const ShapeChecker = struct {
             for (tap.continuations) |cont| {
                 if (cont.branch.len == 0 and !std.mem.eql(u8, cont.branch, "transition")) {
                     log.debug("ERROR: Invalid branch name in wildcard tap\n", .{});
-                    try self.reporter.addError(.KORU021, location.line, location.column, "invalid branch name in wildcard tap", .{});
+                    try self.reporter.addErrorAtLocation(.KORU021, location, "invalid branch name in wildcard tap", .{});
                     // Continue checking for more errors
                 }
             }
@@ -732,7 +732,7 @@ pub const ShapeChecker = struct {
             if (!found) {
                 log.debug("ERROR: Event '{s}.{s}' has no branch '{s}'\n",
                     .{event_decl.path.segments[0], event_decl.path.segments[event_decl.path.segments.len - 1], cont.branch});
-                try self.reporter.addError(.KORU021, location.line, location.column, "event '{s}.{s}' has no branch '{s}'",
+                try self.reporter.addErrorAtLocation(.KORU021, location, "event '{s}.{s}' has no branch '{s}'",
                     .{event_decl.path.segments[0], event_decl.path.segments[event_decl.path.segments.len - 1], cont.branch});
                 // Continue checking for more errors
             }
@@ -816,7 +816,7 @@ pub const ShapeChecker = struct {
         // Report errors
         for (result.missing_branches) |branch_name| {
             log.debug("ERROR: Branch '{s}' must be handled but no continuation found\n", .{branch_name});
-            try self.reporter.addError(.KORU022, location.line, location.column,
+            try self.reporter.addErrorAtLocation(.KORU022, location,
                 "branch '{s}' must be handled but no continuation found", .{branch_name});
             has_errors = true;
         }
@@ -834,7 +834,7 @@ pub const ShapeChecker = struct {
                 available_branches.items
             else
                 "(none)";
-            try self.reporter.addError(.KORU021, location.line, location.column,
+            try self.reporter.addErrorAtLocation(.KORU021, location,
                 "event '{s}' has no branch '{s}' (available: {s})", .{ event_name, branch_name, available_str });
             has_errors = true;
         }
@@ -851,7 +851,7 @@ pub const ShapeChecker = struct {
                 if (!std.mem.eql(u8, branch.name, cont.branch)) continue;
                 const has_payload = branch.payload.is_wildcard or branch.payload.fields.len > 0;
                 if (has_payload and cont.binding == null) {
-                    try self.reporter.addError(.KORU030, location.line, location.column,
+                    try self.reporter.addErrorAtLocation(.KORU030, location,
                         "branch '{s}' has payload but no binding", .{branch.name});
                     has_errors = true;
                 }
@@ -949,7 +949,7 @@ pub const ShapeChecker = struct {
                     // This is the only step, check nested continuations
                     if (cont.continuations.len == 0 and nested_event_info.decl.branches.len > 0) {
                         // Missing nested continuations for branching step
-                        try self.reporter.addError(.KORU022, location.line, location.column,
+                        try self.reporter.addErrorAtLocation(.KORU022, location,
                             "event '{s}' invoked in pipeline but its branches are not handled",
                             .{nested_event_name});
                         has_errors = true;
@@ -1071,7 +1071,7 @@ pub const ShapeChecker = struct {
                     if (self.events.get(nested_event_name)) |nested_event_info| {
                         // Check nested continuation coverage
                         if (cont.continuations.len == 0 and nested_event_info.decl.branches.len > 0) {
-                            try self.reporter.addError(.KORU022, location.line, location.column,
+                            try self.reporter.addErrorAtLocation(.KORU022, location,
                                 "event '{s}' invoked but its branches are not handled",
                                 .{nested_event_name});
                             all_valid = false;
@@ -1241,10 +1241,9 @@ pub const ShapeChecker = struct {
         const label_info = self.labels.getPtr(label_name) orelse {
             // Label doesn't exist!
             log.debug("ERROR: Jump to unknown label '{s}'\n", .{label_name});
-            try self.reporter.addError(
+            try self.reporter.addErrorAtLocation(
                 .KORU041,
-                continuation.location.line,
-                continuation.location.column,
+                continuation.location,
                 "unknown label '@{s}'",
                 .{label_name},
             );
@@ -1258,10 +1257,9 @@ pub const ShapeChecker = struct {
         if (label_info.is_pre_invocation) {
             if (!is_parameterized) {
                 log.debug("ERROR: Pre-invocation label '{s}' requires parameters\n", .{label_name});
-                try self.reporter.addError(
+                try self.reporter.addErrorAtLocation(
                     .KORU045,
-                    continuation.location.line,
-                    continuation.location.column,
+                    continuation.location,
                     "label '@{s}' requires parameters (it's a pre-invocation label)",
                     .{label_name},
                 );
@@ -1277,10 +1275,9 @@ pub const ShapeChecker = struct {
             // Post-invocation label (#label pattern) - no parameters expected
             if (is_parameterized) {
                 log.debug("ERROR: Post-invocation label '{s}' does not accept parameters\n", .{label_name});
-                try self.reporter.addError(
+                try self.reporter.addErrorAtLocation(
                     .KORU046,
-                    continuation.location.line,
-                    continuation.location.column,
+                    continuation.location,
                     "label '@{s}' does not accept parameters (it's a post-invocation label)",
                     .{label_name},
                 );
@@ -1331,10 +1328,9 @@ pub const ShapeChecker = struct {
                 const label_name = step.label_with_invocation.label;
                 if (self.labels.get(label_name) == null) {
                     log.debug("ERROR: Unknown label '{s}'\n", .{label_name});
-                    try self.reporter.addError(
+                    try self.reporter.addErrorAtLocation(
                         .KORU041,
-                        cont.location.line,
-                        cont.location.column,
+                        cont.location,
                         "unknown label '@{s}'",
                         .{label_name},
                     );
@@ -1346,10 +1342,9 @@ pub const ShapeChecker = struct {
                 const label_name = step.label_jump.label;
                 if (self.labels.get(label_name) == null) {
                     log.debug("ERROR: Unknown label '{s}'\n", .{label_name});
-                    try self.reporter.addError(
+                    try self.reporter.addErrorAtLocation(
                         .KORU041,
-                        cont.location.line,
-                        cont.location.column,
+                        cont.location,
                         "unknown label '@{s}'",
                         .{label_name},
                     );
@@ -1417,10 +1412,9 @@ pub const ShapeChecker = struct {
         if (decl_is_identity) {
             if (ctor_has_fields) {
                 const decl_type = branch.payload.fields[0].type;
-                try self.reporter.addError(
+                try self.reporter.addErrorAtLocation(
                     .KORU030,
-                    ii.location.line,
-                    ii.location.column,
+                    ii.location,
                     "branch '{s}' of event '{s}' is declared identity ('| {s} {s}') — construct with '{s} value', not '{s} {{ ... }}'",
                     .{ constructor.branch_name, event_path, constructor.branch_name, decl_type, constructor.branch_name, constructor.branch_name },
                 );
@@ -1428,10 +1422,9 @@ pub const ShapeChecker = struct {
             // Bare value or empty is acceptable for identity.
         } else if (decl_is_void) {
             if (ctor_has_fields or ctor_has_plain_value) {
-                try self.reporter.addError(
+                try self.reporter.addErrorAtLocation(
                     .KORU030,
-                    ii.location.line,
-                    ii.location.column,
+                    ii.location,
                     "branch '{s}' of event '{s}' is declared void — construct with just '{s}', no payload",
                     .{ constructor.branch_name, event_path, constructor.branch_name },
                 );
@@ -1439,10 +1432,9 @@ pub const ShapeChecker = struct {
         } else {
             // Declared multi-field struct.
             if (ctor_has_plain_value) {
-                try self.reporter.addError(
+                try self.reporter.addErrorAtLocation(
                     .KORU030,
-                    ii.location.line,
-                    ii.location.column,
+                    ii.location,
                     "branch '{s}' of event '{s}' has multi-field payload — construct with '{s} {{ field: value, ... }}'",
                     .{ constructor.branch_name, event_path, constructor.branch_name },
                 );
