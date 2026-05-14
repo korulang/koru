@@ -91,7 +91,7 @@ pub fn main() void {
             std.debug.print("PARSE ERROR: {s} at line {d}\n", .{e.message, e.line});
         },
         .validation_error => |e| {
-            std.debug.print("VALIDATION ERROR: {s}\n", .{e.message});
+            std.debug.print("VALIDATION ERROR: {s}\n", .{e});
         },
         .dispatch_error => |e| {
             std.debug.print("DISPATCH ERROR: {s} - {s}\n", .{e.event_name, e.message});
