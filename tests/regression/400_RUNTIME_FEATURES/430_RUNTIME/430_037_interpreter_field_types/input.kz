@@ -32,6 +32,6 @@ const TEST_SOURCE =
     | result r |> std.io:print.ln("SUCCESS branch={{ r.value.branch:s }}")
     | exhausted e |> std.io:print.ln("EXHAUSTED: {{ e.last_event:s }}")
     | parse_error e |> std.io:print.ln("PARSE ERROR: {{ e.message:s }}")
-    | validation_error e |> std.io:print.ln("VALIDATION ERROR: {{ e.message:s }}")
+    | validation_error e |> std.io:print.ln("VALIDATION ERROR: {{ e:s }}")
     | dispatch_error e |> std.io:print.ln("DISPATCH ERROR: {{ e.message:s }}")
 | not_found |> std.io:print.ln("SCOPE NOT FOUND")

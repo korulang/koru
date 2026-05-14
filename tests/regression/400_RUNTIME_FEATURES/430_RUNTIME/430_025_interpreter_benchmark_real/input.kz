@@ -66,5 +66,5 @@ const FLOW_SOURCE =
 | result r |> std.io:print.ln("Success: branch {{ r.value.branch:s }}")
 | exhausted e |> std.io:print.ln("Exhausted: {{ e.last_event:s }}")
 | parse_error e |> std.io:print.ln("Error: {{ e.message:s }}")
-| validation_error e |> std.io:print.ln("Error: {{ e.message:s }}")
+| validation_error e |> std.io:print.ln("Error: {{ e:s }}")
 | dispatch_error e |> std.io:print.ln("Error: {{ e.message:s }}")

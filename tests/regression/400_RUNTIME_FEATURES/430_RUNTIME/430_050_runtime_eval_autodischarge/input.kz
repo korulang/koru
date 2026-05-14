@@ -27,7 +27,7 @@ const std = @import("std");
 const TEST_SOURCE = "~open_handle()";
 
 ~std.runtime:parse.source(source: TEST_SOURCE, file_name: "runtime_eval_autodischarge.kz", allocator: std.heap.page_allocator)
-| parsed p |> std.runtime:eval(ast: p.ast, scope: "api")
+| parsed p |> std.runtime:eval(ast: p, scope: "api")
     | result _ |> std.io:print.ln("OK")
     | exhausted _ |> std.io:print.ln("EXHAUSTED")
     | validation_error _ |> std.io:print.ln("VALIDATION ERROR")

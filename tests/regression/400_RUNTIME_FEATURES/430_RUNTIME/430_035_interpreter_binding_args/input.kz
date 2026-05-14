@@ -24,7 +24,7 @@ const std = @import("std");
 ~pub event consume { n: []const u8 }
 | echoed []const u8
 
-~consume = std.io:print.ln("[consume] received n = '{{n:s}}'") |> echoed { got: n }
+~consume = std.io:print.ln("[consume] received n = '{{n:s}}'") |> echoed n
 
 ~std.runtime:register(scope: "test") {
     produce
@@ -46,5 +46,5 @@ const TEST_FLOW =
 | result r |> std.io:print.ln("Result: {{ r.value.branch:s }}")
 | exhausted e |> std.io:print.ln("Exhausted: {{ e.last_event:s }}")
 | parse_error e |> std.io:print.ln("Parse error: {{ e.message:s }}")
-| validation_error e |> std.io:print.ln("Validation error: {{ e.message:s }}")
+| validation_error e |> std.io:print.ln("Validation error: {{ e:s }}")
 | dispatch_error e |> std.io:print.ln("Dispatch error: {{ e.message:s }}")
