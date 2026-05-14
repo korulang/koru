@@ -1,6 +1,6 @@
 error[KORU050]: branch 'high' has multiple when-clauses but no else case - add one continuation without 'when'
-  --> tests/regression/200_COMPILER_FEATURES/210_PARSER/210_007_flow_checker_missing_else/input.kz:13:0
+  --> tests/regression/200_COMPILER_FEATURES/210_PARSER/210_007_flow_checker_missing_else/input.kz:14:0
     |
- 13 | ~check(x: 10, y: 5)
+ 14 | ~check(x: 10, y: 5)
     | ^
 

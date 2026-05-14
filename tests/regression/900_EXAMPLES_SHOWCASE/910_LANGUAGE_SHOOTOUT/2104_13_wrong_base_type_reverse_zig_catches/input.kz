@@ -6,9 +6,9 @@
 
 ~import "$app/db"
 
+// BUG: the `| ok c |> app.db:commit(tx: c)` handler below passes c
+// (*Connection) to commit() which expects *Transaction. Koru won't catch
+// this without --strict-base-types, but Zig WILL during compilation.
 ~app.db:connect(host: "localhost")
-// BUG: Passing c (*Connection) to commit() which expects *Transaction
-// Koru won't catch this without --strict-base-types
-// Zig WILL catch this during compilation
 | ok c |> app.db:commit(tx: c)
 | err _ |> _

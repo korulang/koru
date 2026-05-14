@@ -4117,6 +4117,40 @@ pub const Parser = struct {
         return self.parseContinuationsWithMode(base_indent, false);
     }
 
+    /// Caller is on a comment-only line while scanning for branch handlers
+    /// inside a flow chain. Peek ahead past further comments and blanks: if
+    /// the next meaningful line is a continuation `|`, the comment is
+    /// splitting a chain from its branch handlers (or sibling handlers from
+    /// each other) — emit KORU010 and return true. Otherwise return false;
+    /// the chain has ended at the comment and the caller should bail out.
+    fn rejectChainSplittingComment(self: *Parser) !bool {
+        var peek = self.current + 1;
+        while (peek < self.lines.len) {
+            const next = self.lines[peek];
+            const trimmed = lexer.trim(next);
+            if (trimmed.len == 0) return false;
+            if (lexer.isCommentLine(next)) {
+                peek += 1;
+                continue;
+            }
+            if (lexer.isContinuationLine(next)) {
+                const indent = lexer.getIndent(self.lines[self.current]);
+                try self.reporter.addErrorWithHint(
+                    .KORU010,
+                    self.current + 1,
+                    indent + 1,
+                    "comment line inside a flow chain",
+                    .{},
+                    "comments cannot split a flow from its branch handlers. Move the comment above the whole flow, or trail it after a complete line: '| ok |> done()  // note'.",
+                    .{},
+                );
+                return true;
+            }
+            return false;
+        }
+        return false;
+    }
+
     /// Parse continuations with optional strict indentation mode.
     /// When require_more_indented is true, only collect continuations that are
     /// MORE indented than base_indent (indent > base_indent). This is used after
@@ -4138,10 +4172,9 @@ pub const Parser = struct {
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
 
-            // Skip comment lines but continue looking for continuations
             if (lexer.isCommentLine(line)) {
-                self.current += 1;
-                continue;
+                if (try self.rejectChainSplittingComment()) return error.ParseError;
+                break;
             }
 
             // Check if this is a continuation
@@ -4269,10 +4302,9 @@ pub const Parser = struct {
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
 
-            // Skip comment lines but continue looking for continuations
             if (lexer.isCommentLine(line)) {
-                self.current += 1;
-                continue;
+                if (try self.rejectChainSplittingComment()) return error.ParseError;
+                break;
             }
 
             if (!lexer.isContinuationLine(line)) break;
@@ -5028,10 +5060,9 @@ pub const Parser = struct {
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
 
-            // Skip comment lines but continue scanning
             if (lexer.isCommentLine(line)) {
-                self.current += 1;
-                continue;
+                if (try self.rejectChainSplittingComment()) return error.ParseError;
+                break;
             }
 
             // Check if this is a continuation line

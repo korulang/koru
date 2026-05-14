@@ -17,11 +17,11 @@
 
 ~import "$app/db"
 
+// BUG: the `| ok t |> app.db:close(conn: t)` handler below passes t
+// (*Transaction) to close() which expects *Connection. Koru won't catch
+// this without --strict-base-types, but Zig WILL during compilation.
 ~app.db:connect(host: "localhost")
 | ok c |> app.db:begin(conn: c)
-    // BUG: Passing t (*Transaction) to close() which expects *Connection
-    // Koru won't catch this without --strict-base-types
-    // Zig WILL catch this during compilation
     | ok t |> app.db:close(conn: t)
     | err _ |> _
 | err _ |> _

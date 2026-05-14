@@ -9,9 +9,9 @@
 | high i32
 | low i32
 
-// Invalid: Two when-clauses but NO else case (non-exhaustive)
+// Invalid: Two when-clauses but NO else case (non-exhaustive).
+// The chain below is missing a `| high h |> _` else handler.
 ~check(x: 10, y: 5)
 | high h when h.x > 10 |> _
 | high h when h.x > 5 |> _
-// Missing: | high h |> _ (else case)
 | low |> _

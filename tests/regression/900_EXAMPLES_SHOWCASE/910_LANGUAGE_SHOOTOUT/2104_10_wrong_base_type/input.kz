@@ -13,11 +13,12 @@
 
 ~import "$app/db"
 
+// BUG: the `| ok t |> app.db:close(conn: t)` handler below passes t
+// (*Transaction) to close() which expects *Connection. Both have [active]
+// state and the same struct layout — only the type name differs. Koru MUST
+// catch this.
 ~app.db:connect(host: "localhost")
 | ok c |> app.db:begin(conn: c)
-    // BUG: Passing t (*Transaction) to close() which expects *Connection
-    // Both have [active] state, both have same struct layout
-    // Only the TYPE NAME differs - Koru MUST catch this!
     | ok t |> app.db:close(conn: t)
     | err _ |> _
 | err _ |> _

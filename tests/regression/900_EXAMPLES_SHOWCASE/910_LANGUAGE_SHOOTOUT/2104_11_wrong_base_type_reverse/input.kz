@@ -7,7 +7,8 @@
 
 ~import "$app/db"
 
+// BUG: the `| ok c |> app.db:commit(tx: c)` handler below passes c
+// (*Connection) to commit() which expects *Transaction.
 ~app.db:connect(host: "localhost")
-// BUG: Passing c (*Connection) to commit() which expects *Transaction
 | ok c |> app.db:commit(tx: c)
 | err _ |> _

@@ -1,0 +1,17 @@
+// Test: A standalone // comment between a flow head and its branch handlers
+// is rejected. Comments are not allowed to split a chain. Move the prose
+// above the whole flow, or trail it after a complete line.
+//
+// Defends: parser rule that the chain is the documentation — comments
+// inside a chain are an admission of defeat and should be banned.
+
+~event work {}
+| ok i32
+| err []const u8
+
+~proc work { return .{ .ok = 1 }; }
+
+~work()
+// this comment splits the chain from its branch handlers
+| ok x |> _
+| err _ |> _

@@ -1,0 +1,1 @@
+error[KORU010]: comment line inside a flow chain
