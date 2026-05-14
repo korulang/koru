@@ -192,18 +192,7 @@
                                 }
                             },
                             "continuations": [
-                                {
-                                    "branch": "",
-                                    "binding": null,
-                                    "binding_type": "branch_payload",
-                                    "condition": null,
-                                    "step":                                     {
-                                        "type": "terminal"
-                                    },
-                                    "continuations": [
 
-                                    ]
-                                }
                             ]
                         },
                         {
@@ -225,18 +214,7 @@
                                 }
                             },
                             "continuations": [
-                                {
-                                    "branch": "",
-                                    "binding": null,
-                                    "binding_type": "branch_payload",
-                                    "condition": null,
-                                    "step":                                     {
-                                        "type": "terminal"
-                                    },
-                                    "continuations": [
 
-                                    ]
-                                }
                             ]
                         }
                     ]

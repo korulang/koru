@@ -26,6 +26,5 @@ const show = true;
 | transformed |> _
 
 // Inline Source block inside a pipeline continuation with args
-~setup()
-|> inline.source(expr: show) { const z = 3; }
-    | transformed |> _
+~setup() |> inline.source(expr: show) { const z = 3; }
+| transformed |> _

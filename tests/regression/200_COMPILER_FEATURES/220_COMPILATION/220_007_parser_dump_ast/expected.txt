@@ -14,18 +14,11 @@
                 ]
             },
             "branches": [
-                {
-                    "name": "done",
-                    "payload": {
-                        "fields": [
 
-                        ]
-                    }
-                }
             ],
             "location": {
                 "file": "test.kz",
-                "line": 2,
+                "line": 1,
                 "col": 0
             }
         }

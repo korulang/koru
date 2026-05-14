@@ -288,7 +288,7 @@
                                         "text": "show",
                                         "location": {
                                             "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                                            "line": 32,
+                                            "line": 31,
                                             "col": 0
                                         },
                                         "scope": {
@@ -305,7 +305,7 @@
                                         "text": "const z = 3;",
                                         "location": {
                                             "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_054_inline_source_block_args/input.kz",
-                                            "line": 32,
+                                            "line": 31,
                                             "col": 0
                                         },
                                         "scope": {

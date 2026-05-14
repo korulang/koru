@@ -13,7 +13,6 @@ const std = @import("std");
 // Sample code to parse
 const SAMPLE =
     \\~event hello {}
-    \\| done
 ;
 
 // Flow: parse → dump → print (pure Koru!)
