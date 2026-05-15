@@ -1,8 +1,0 @@
-~import "$app/fs"
-~pub event with_context {}
-~proc with_context {
-}
-~app.fs:open(path: "test.txt")
-| opened f |> with_context()
-  | scoped _[@scope] |> app.fs:close(file: f.file)
-pub fn main() void {}
