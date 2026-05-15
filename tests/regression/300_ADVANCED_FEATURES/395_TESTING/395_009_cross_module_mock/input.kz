@@ -34,7 +34,8 @@
     // This returns a simple string ([]const u8), which works without array literals
     ~std.fs:read_lines = failed "mocked file read error"
 
-    ~process_config(path: "/this/file/does/not/exist.txt") |> assert.fail()
+    ~process_config(path: "/this/file/does/not/exist.txt")
+    | ok _ |> assert.fail()
     | failed result |> assert(result.len > 0)
 }
 

@@ -1,17 +1,25 @@
+// Test: Test framework reports passing and failing tests
+//
+// Two ~test bodies — one asserts true, one asserts false.
+// post.sh runs `zig test` on the emitted output and inverts
+// the exit code: a non-zero zig-test exit means the deliberately
+// failing test was correctly detected.
+
 ~import "$std/testing"
 
 ~event do_thing {}
+| done u32
 
-// Test that passes - assert true
 ~test(This test passes) {
-    ~do_thing = done {}
-    ~do_thing() |> assert(true)
+    ~do_thing = done 1
+    ~do_thing()
+    | done _ |> assert(true)
 }
 
-// Test that fails deliberately - assert false
 ~test(This test should fail) {
-    ~do_thing = done {}
-    ~do_thing() |> assert(false)
+    ~do_thing = done 1
+    ~do_thing()
+    | done _ |> assert(false)
 }
 
 pub fn main() void {}

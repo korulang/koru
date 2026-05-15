@@ -1,32 +1,21 @@
-// Test: Impure events with overrides work
+// Test: Impure event with override works
 //
-// Same as 395_005 but WITH overrides provided.
-// This should compile and pass.
+// Pair to 395_005 (impure event without override errors).
+// Verifies that the mock substitution replaces the impure
+// proc body and the mocked branch value propagates through
+// the binding.
 
 ~import "$std/testing"
 
-// Impure event - Zig proc without ~[pure]
 ~event fetch_user { id: u32 }
 | found []const u8
 
 ~proc fetch_user {
-    // This is impure - does I/O (simulated)
     return .{ .found = "Alice" };
 }
 
-// Another impure event
-~event save_log { message: []const u8 }
-
-~proc save_log {
-    // This is impure - writes to disk
-    return .{ .saved = {} };
-}
-
-// Test: Should PASS - overrides provided for impure events
-// Verify the mock value propagates through the chain
-~test(Impure events with overrides work) {
+~test(Impure event with override works) {
     ~fetch_user = found "TestUser"
-    ~save_log = saved
 
     ~fetch_user(id: 1)
     | found u |> assert(u.len == 8)
