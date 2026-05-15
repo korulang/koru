@@ -2790,45 +2790,94 @@ pub const Parser = struct {
             const brace_idx = std.mem.lastIndexOf(u8, remaining, "{") orelse unreachable;
             const invocation_str = lexer.trim(remaining[0..brace_idx]);
 
-            invocation = try self.parseEventInvocation(invocation_str);
-
-            // Look up the event to determine if it expects Source
-            const path_str = try self.pathToString(invocation.path);
-            defer self.allocator.free(path_str);
-
-            if (self.registry.getEventType(path_str)) |event_type| {
-                // Check if it has any Source parameter
-                var has_source_param = false;
-                if (event_type.input_shape) |shape| {
-                    for (shape.fields) |field| {
-                        if (field.is_source) {
-                            has_source_param = true;
-                            break;
-                        }
+            // Detect inline chain: `head() |> ... |> terminal {` where the terminal carries
+            // a multi-line source block. The current branch was designed for a single
+            // invocation before the `{`; for chains, the source-block decision belongs to
+            // the terminal event, not the head. Reuse parsePipelineContinuationBase, which
+            // already handles multi-line source blocks for new-line `|>` continuations.
+            const inline_pipe_arrow = blk: {
+                var i: usize = 0;
+                var paren_depth: i32 = 0;
+                var brace_depth: i32 = 0;
+                var in_string = false;
+                while (i + 1 < invocation_str.len) : (i += 1) {
+                    const c = invocation_str[i];
+                    if (c == '"' and (i == 0 or invocation_str[i - 1] != '\\')) {
+                        in_string = !in_string;
+                        continue;
+                    }
+                    if (in_string) continue;
+                    if (c == '(') paren_depth += 1;
+                    if (c == ')') paren_depth -= 1;
+                    if (c == '{') brace_depth += 1;
+                    if (c == '}') brace_depth -= 1;
+                    if (paren_depth == 0 and brace_depth == 0 and c == '|' and invocation_str[i + 1] == '>') {
+                        break :blk i;
                     }
                 }
+                break :blk null;
+            };
 
-                if (has_source_param) {
-                    // Parse as Source block (raw text) - used by both implicit flow and templates
+            if (inline_pipe_arrow) |pipe_idx| {
+                // Chain detected. Split head/tail and route tail through the same
+                // continuation parser used by new-line `|>` steps.
+                const head_str = lexer.trim(invocation_str[0..pipe_idx]);
+                const tail_str = lexer.trim(invocation_str[pipe_idx + 2 ..]);
+                const tail_with_brace = try std.fmt.allocPrint(self.allocator, "{s} {{", .{tail_str});
+                defer self.allocator.free(tail_with_brace);
+
+                invocation = try self.parseEventInvocation(head_str);
+
+                const tail_cont = try self.parsePipelineContinuationBase(
+                    tail_with_brace,
+                    lexer.getIndent(line),
+                    self.getCurrentLocation(),
+                );
+
+                var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                try cont_list.append(self.allocator, tail_cont);
+                continuations = try cont_list.toOwnedSlice(self.allocator);
+            } else {
+                invocation = try self.parseEventInvocation(invocation_str);
+
+                // Look up the event to determine if it expects Source
+                const path_str = try self.pathToString(invocation.path);
+                defer self.allocator.free(path_str);
+
+                if (self.registry.getEventType(path_str)) |event_type| {
+                    // Check if it has any Source parameter
+                    var has_source_param = false;
+                    if (event_type.input_shape) |shape| {
+                        for (shape.fields) |field| {
+                            if (field.is_source) {
+                                has_source_param = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (has_source_param) {
+                        // Parse as Source block (raw text) - used by both implicit flow and templates
+                        uses_implicit_source = true;
+                        const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), null, false);
+                        implicit_source_text = result.source;
+                        implicit_source_phantom_type = result.phantom_type;
+                        continuations = result.continuations;
+                    } else {
+                        // Parse as implicit flow block (no Source parameter)
+                        uses_implicit_flow = true;
+                        continuations = try self.parseImplicitFlowBlock(lexer.getIndent(line));
+                    }
+                } else {
+                    // Event not found in registry - might be a keyword that hasn't been resolved yet.
+                    // Assume it takes a Source parameter (optimistic parsing).
+                    // If it's truly invalid, later passes will catch it after keyword resolution.
                     uses_implicit_source = true;
                     const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), null, false);
                     implicit_source_text = result.source;
                     implicit_source_phantom_type = result.phantom_type;
                     continuations = result.continuations;
-                } else {
-                    // Parse as implicit flow block (no Source parameter)
-                    uses_implicit_flow = true;
-                    continuations = try self.parseImplicitFlowBlock(lexer.getIndent(line));
                 }
-            } else {
-                // Event not found in registry - might be a keyword that hasn't been resolved yet.
-                // Assume it takes a Source parameter (optimistic parsing).
-                // If it's truly invalid, later passes will catch it after keyword resolution.
-                uses_implicit_source = true;
-                const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), null, false);
-                implicit_source_text = result.source;
-                implicit_source_phantom_type = result.phantom_type;
-                continuations = result.continuations;
             }
         } else {
             // Regular invocation (no implicit flow/source block)
