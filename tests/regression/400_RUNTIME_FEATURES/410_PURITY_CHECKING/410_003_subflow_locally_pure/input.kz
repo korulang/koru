@@ -1,0 +1,18 @@
+// Layer 1 demonstration: subflows are ALWAYS locally pure
+// because they are pure composition of dispatches. The body of
+// a subflow has no execution that produces side effects.
+//
+// Whether the subflow is *transitively* pure depends on what
+// it dispatches into — that is Layer 2 (covered by 410_007/010).
+// Here we only assert: is_pure=true on the subflow itself.
+
+const std = @import("std");
+
+~[pure] event a {}
+~[pure] event b {}
+
+~proc a {}
+~proc b {}
+
+// Subflow composing two dispatches. Locally pure by structure.
+~a() |> b()

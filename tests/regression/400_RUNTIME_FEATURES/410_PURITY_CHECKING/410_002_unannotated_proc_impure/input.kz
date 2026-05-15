@@ -1,0 +1,15 @@
+// Layer 1 demonstration: an unannotated proc is structurally impure
+// (Zig is opaque to Koru's analysis, so we must assume the worst).
+// No annotation is needed to "declare" impurity — it's the default.
+
+const std = @import("std");
+
+~event log { message: []const u8 }
+
+~proc log {
+    std.debug.print("LOG: {s}\n", .{message});
+}
+
+~event main {}
+
+~log(message: "hello")

@@ -1,7 +1,0 @@
-// Test: Subflow calling pure proc should be transitively pure
-// Pure proc → Subflow calls it → Subflow should be transitively pure
-
-const std = @import("std");
-
-// Pure math operation
-~event double { x: i32 }

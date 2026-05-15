@@ -1,0 +1,18 @@
+// Layer 3 demonstration: annotations are open metadata at the frontend.
+// `[pure]` on an event is redundant (events derive purity from impls,
+// not from annotations) but it is NOT an error. The frontend accepts it.
+//
+// This test passes if the program compiles cleanly. The purity pass
+// either ignores the annotation or computes a redundantly-correct
+// result. Neither rejection nor error.
+
+const std = @import("std");
+
+// [pure] on an event — redundant but legal
+~[pure] event noop {}
+
+~proc noop {}
+
+~event main {}
+
+~noop()
