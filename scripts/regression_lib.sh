@@ -25,6 +25,40 @@ mark_test_passed() {
     fi
 }
 
+# Match a patterns file against an actual-output file.
+# Each non-empty, non-comment line in the patterns file is a POSIX ERE regex
+# that MUST match somewhere in the actual output (grep -E semantics).
+# Returns 0 if all patterns match, 1 otherwise. On failure, prints the
+# patterns that failed to match with their line numbers.
+check_expected_patterns() {
+    local patterns_file="$1"
+    local actual_file="$2"
+    local unmatched=()
+    local line_num=0
+    local pattern
+    while IFS= read -r pattern || [ -n "$pattern" ]; do
+        line_num=$((line_num + 1))
+        [ -z "$pattern" ] && continue
+        case "$pattern" in
+            \#*) continue ;;
+        esac
+        if ! grep -qE -- "$pattern" "$actual_file"; then
+            unmatched+=("$line_num: $pattern")
+        fi
+    done < "$patterns_file"
+
+    if [ ${#unmatched[@]} -eq 0 ]; then
+        return 0
+    fi
+
+    echo "  Patterns not matched in actual output:"
+    local entry
+    for entry in "${unmatched[@]}"; do
+        echo "    $entry"
+    done
+    return 1
+}
+
 regression_run_one_test() {
     local test_dir="$1"
     local TEST_NAME
@@ -184,9 +218,18 @@ regression_run_one_test() {
     # CRITICAL: Tests that define expected output MUST run to validate it
     # Otherwise they dishonestly pass by claiming "compile only" when they should verify output
     # Note: Tests with EXPECT file use a different validation mechanism (expected errors/output patterns)
-    if [ -f "$test_dir/expected.txt" ] && [ ! -f "$test_dir/MUST_RUN" ] && [ ! -f "$test_dir/EXPECT" ]; then
-        echo -e "${RED}❌ Test has expected.txt but no MUST_RUN marker${NC}"
-        echo "  This test expects output but won't run! Add MUST_RUN or remove expected.txt"
+    if [ -f "$test_dir/expected.txt" ] && [ -f "$test_dir/expected_patterns.txt" ]; then
+        echo -e "${RED}❌ Test has both expected.txt and expected_patterns.txt${NC}"
+        echo "  Use exactly one: expected.txt for exact match, expected_patterns.txt for regex per line"
+        rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
+        echo "config-error" > "$test_dir/FAILURE"
+        FAILED_TESTS="$FAILED_TESTS $TEST_NAME(config-error)"
+        return 0
+    fi
+    if { [ -f "$test_dir/expected.txt" ] || [ -f "$test_dir/expected_patterns.txt" ]; } \
+       && [ ! -f "$test_dir/MUST_RUN" ] && [ ! -f "$test_dir/EXPECT" ]; then
+        echo -e "${RED}❌ Test has expected output but no MUST_RUN or EXPECT marker${NC}"
+        echo "  This test expects output but won't run! Add MUST_RUN/EXPECT or remove the expected file"
         rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
         echo "config-error" > "$test_dir/FAILURE"
         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(config-error)"
@@ -326,7 +369,32 @@ regression_run_one_test() {
                         fi
                         return 0
                     fi
-                    # No expected.txt - just check the error was expected (legacy behavior)
+                    # Check for expected_patterns.txt - if present, every regex must match
+                    if [ -f "$test_dir/expected_patterns.txt" ]; then
+                        if check_expected_patterns "$test_dir/expected_patterns.txt" "$test_dir/compile_kz.err"; then
+                            if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
+                                echo -e "${RED}❌ Expected frontend error but memory leak detected ($LEAK_PHASE)${NC}"
+                                echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
+                                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
+                                LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                            else
+                                echo -e "${GREEN}✅ PASS (error output matches expected_patterns.txt)${NC}"
+                                mark_test_passed "$test_dir"
+                                PASSED_TESTS=$((PASSED_TESTS + 1))
+                                if [ "$HAS_MEMORY_LEAK" = true ]; then
+                                    LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                                fi
+                            fi
+                        else
+                            echo -e "${RED}❌ Error output patterns did not all match${NC}"
+                            echo "  Patterns: $test_dir/expected_patterns.txt"
+                            echo "  Actual:   $test_dir/compile_kz.err"
+                            echo "error-output" > "$test_dir/FAILURE"
+                            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(error-output)"
+                        fi
+                        return 0
+                    fi
+                    # No expected.txt or expected_patterns.txt - just check the error was expected (legacy behavior)
                     if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
                         echo -e "${RED}❌ Expected frontend error but memory leak detected ($LEAK_PHASE)${NC}"
                         echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
@@ -869,6 +937,51 @@ EOF
                 # Use head to limit output but show enough to see what's wrong
                 diff -u "$test_dir/expected.txt" "$test_dir/actual.txt" | head -15 | sed 's/^/    /'
                 echo "  Full files: $test_dir/expected.txt vs $test_dir/actual.txt"
+                echo "output" > "$test_dir/FAILURE"
+                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(output)"
+            fi
+        elif [ -f "$test_dir/expected_patterns.txt" ]; then
+            if check_expected_patterns "$test_dir/expected_patterns.txt" "$test_dir/actual.txt"; then
+                if [ -f "$test_dir/post.sh" ]; then
+                    if (cd "$test_dir" && bash post.sh) > "$test_dir/post.log" 2>&1; then
+                        if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
+                            echo -e "${RED}❌ PASS but memory leak detected ($LEAK_PHASE)${NC}"
+                            echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
+                            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
+                            LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                        else
+                            echo -e "${GREEN}✅ PASS (patterns + post-validated)${NC}"
+                            mark_test_passed "$test_dir"
+                            PASSED_TESTS=$((PASSED_TESTS + 1))
+                            if [ "$HAS_MEMORY_LEAK" = true ]; then
+                                LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                            fi
+                        fi
+                    else
+                        echo -e "${RED}❌ Post-validation failed${NC}"
+                        echo "  See $test_dir/post.log for details"
+                        echo "post-validation" > "$test_dir/FAILURE"
+                        FAILED_TESTS="$FAILED_TESTS $TEST_NAME(post-validation)"
+                    fi
+                else
+                    if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
+                        echo -e "${RED}❌ PASS but memory leak detected ($LEAK_PHASE)${NC}"
+                        echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
+                        FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
+                        LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                    else
+                        echo -e "${GREEN}✅ PASS (patterns matched)${NC}"
+                        mark_test_passed "$test_dir"
+                        PASSED_TESTS=$((PASSED_TESTS + 1))
+                        if [ "$HAS_MEMORY_LEAK" = true ]; then
+                            LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                        fi
+                    fi
+                fi
+            else
+                echo -e "${RED}❌ Output patterns did not all match${NC}"
+                echo "  Patterns: $test_dir/expected_patterns.txt"
+                echo "  Actual:   $test_dir/actual.txt"
                 echo "output" > "$test_dir/FAILURE"
                 FAILED_TESTS="$FAILED_TESTS $TEST_NAME(output)"
             fi
