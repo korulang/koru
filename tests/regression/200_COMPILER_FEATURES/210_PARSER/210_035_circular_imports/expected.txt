@@ -1,2 +1,1 @@
-Event from module A
-hello from A
+input.kz received: hello from input

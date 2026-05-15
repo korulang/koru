@@ -1,6 +1,10 @@
-// Module B - imports module A (creating a cycle)
+// Module B - imports input.kz back, closing the cycle.
+// from_b dispatches back into input's from_a, then relays its result.
 
 ~import "$app/input"
 
-~pub event from_b {}
-| done []const u8
+~pub event from_b { msg: []const u8 }
+| relayed []const u8
+
+~from_b = app.input:from_a(msg: msg)
+    | received r |> relayed r

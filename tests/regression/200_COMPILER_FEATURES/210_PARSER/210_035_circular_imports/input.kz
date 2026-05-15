@@ -1,12 +1,24 @@
 // Test: Circular Imports
 //
-// Tests that circular/mutual imports don't crash the compiler.
-// A imports B, B imports A - this should work without infinite loop.
-
-const std = @import("std");
-~import "$std/io"
+// input.kz imports module_b.kz, which imports input.kz back.
+// Proves: (1) circular imports compile without infinite loop,
+//         (2) cross-module dispatch works in BOTH directions across the cycle.
+//
+// Flow: top-level invokes module_b's event, which calls back into input's
+// event, which prints. If any link in the cycle breaks, the expected
+// output disappears and the test fails loudly.
 
 ~import "$app/module_b"
 
-~pub event from_a {}
-| done d |> std.io:println(text: d)
+const std = @import("std");
+
+~pub event from_a { msg: []const u8 }
+| received []const u8
+
+~proc from_a {
+    std.debug.print("input.kz received: {s}\n", .{msg});
+    return .{ .received = msg };
+}
+
+~app.module_b:from_b(msg: "hello from input")
+| relayed _ |> _
