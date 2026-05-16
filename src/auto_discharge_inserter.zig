@@ -1897,9 +1897,27 @@ pub const AutoDischargeInserter = struct {
 
         if (original_is_terminator) {
             if (disposal_is_void) {
-                // Void disposal replacing a terminal — flat structure, no children.
-                // This must produce the same AST shape as an explicit hand-written
-                // void event call so the emitter generates identical Zig.
+                // Void disposal replacing a terminal. Two sub-cases:
+                //   .terminal           — `|> _`, no value to preserve, flat result.
+                //   .branch_constructor — `|> result "x"`, the constructor IS the
+                //                         subflow's return value and must survive
+                //                         the discharge. Chain it after the disposal.
+                const preserves_value = original.node != null and
+                    original.node.? == .branch_constructor;
+                const child_conts = if (preserves_value) blk: {
+                    var cont = try self.allocator.alloc(ast.Continuation, 1);
+                    cont[0] = .{
+                        .branch = "",
+                        .binding = null,
+                        .binding_annotations = &[_][]const u8{},
+                        .condition = null,
+                        .node = original.node,
+                        .indent = original.indent + 1,
+                        .continuations = &[_]ast.Continuation{},
+                        .location = original.location,
+                    };
+                    break :blk @as([]const ast.Continuation, cont);
+                } else &[_]ast.Continuation{};
                 return .{
                     .branch = try self.allocator.dupe(u8, original.branch),
                     .binding = if (original.binding) |b| try self.allocator.dupe(u8, b) else null,
@@ -1907,7 +1925,7 @@ pub const AutoDischargeInserter = struct {
                     .condition = if (original.condition) |c| try self.allocator.dupe(u8, c) else null,
                     .node = .{ .invocation = disposal_invocation },
                     .indent = original.indent,
-                    .continuations = &[_]ast.Continuation{},
+                    .continuations = child_conts,
                     .location = original.location,
                 };
             } else {
