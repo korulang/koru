@@ -3435,7 +3435,9 @@ const usage_footer =
     \\
     \\Examples:
     \\  koruc init                  # Initialize project in current directory
-    \\  koruc hello.kz              # Compile hello.kz
+    \\  koruc run hello.kz          # Compile and run hello.kz
+    \\  koruc build hello.kz        # Compile hello.kz to an executable
+    \\  koruc hello.kz              # Compile hello.kz to .zig
     \\  koruc -o output.zig app.kz  # Compile to output.zig
     \\  koruc --check app.kz        # Check without emitting
     \\  koruc app.kz install        # Install npm dependencies
@@ -3447,6 +3449,8 @@ const usage_footer =
 const usage = usage_header ++
     \\Commands:
     \\  init                 Initialize a new Koru project in the current directory
+    \\  build <input.kz>     Compile <input.kz> to an executable
+    \\  run <input.kz>       Compile <input.kz> and run it
     \\  zen                  Display the Zen of Koru
     \\  i, install           Install npm packages from ~std.package:requires.npm
 ++ usage_footer;
@@ -3879,6 +3883,8 @@ fn printDynamicHelp(allocator: std.mem.Allocator, program: *const ast.Program) !
     try printStdout(allocator, "Commands:\n", .{});
     // Always show built-in commands
     try printStdout(allocator, "  {s:<20} {s}\n", .{ "init", "Initialize a new Koru project in the current directory" });
+    try printStdout(allocator, "  {s:<20} {s}\n", .{ "build <input.kz>", "Compile <input.kz> to an executable" });
+    try printStdout(allocator, "  {s:<20} {s}\n", .{ "run <input.kz>", "Compile <input.kz> and run it" });
     try printStdout(allocator, "  {s:<20} {s}\n", .{ "zen", "Display the Zen of Koru" });
 
     // Print discovered commands

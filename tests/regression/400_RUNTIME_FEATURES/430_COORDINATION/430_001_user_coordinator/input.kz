@@ -8,7 +8,7 @@
 
 // Override coordinate - just return error immediately
 // Cross-module subflow override: the colon in the path makes it an impl.
-~std.compiler:coordinate = error { message: "Testing!" }
+~std.compiler:coordinate = error "Testing!"
 
 // Some test code (doesn't matter - coordinator will error immediately)
 ~event test {}

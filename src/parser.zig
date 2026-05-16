@@ -4881,6 +4881,35 @@ pub const Parser = struct {
                 const steps_inner = try self.parsePipelineSteps(full_rest, true, location);
                 defer self.allocator.free(steps_inner);
                 if (steps_inner.len > 0) {
+                    // Build chain when body has multiple steps (e.g. `step1() |> step2 { ... }`).
+                    // Without this, steps_inner[1..] were silently discarded, dropping any
+                    // binding usage in the chain tail and producing false KORU100 errors.
+                    // Mirrors the chain-build pattern in the non-multi-line path below.
+                    var current_nested: []const ast.Continuation = source_block_continuations;
+
+                    if (steps_inner.len > 1) {
+                        var step_idx: usize = steps_inner.len;
+                        while (step_idx > 1) { // Skip steps_inner[0], it's the head node
+                            step_idx -= 1;
+
+                            var cont_list = try std.ArrayList(ast.Continuation).initCapacity(self.allocator, 1);
+                            try cont_list.append(self.allocator, ast.Continuation{
+                                .branch = try self.allocator.dupe(u8, ""), // Empty branch for void chain step
+                                .binding = null,
+                                .binding_annotations = &[_][]const u8{},
+                                .binding_type = .branch_payload,
+                                .condition = null,
+                                .condition_expr = null,
+                                .node = steps_inner[step_idx],
+                                .indent = indent,
+                                .continuations = current_nested,
+                                .location = location,
+                            });
+
+                            current_nested = try cont_list.toOwnedSlice(self.allocator);
+                        }
+                    }
+
                     return ast.Continuation{
                         .branch = owned_branch,
                         .binding = binding,
@@ -4890,7 +4919,7 @@ pub const Parser = struct {
                         .condition_expr = condition_expr,
                         .node = steps_inner[0],
                         .indent = indent,
-                        .continuations = source_block_continuations,
+                        .continuations = current_nested,
                         .location = location,
                     };
                 }

@@ -1,0 +1,18 @@
+// Layer 2 demonstration (event derivation, positive case):
+// an event with a [pure] proc impl derives is_pure=true on
+// the event itself. The event doesn't carry an annotation —
+// purity is computed from impls.
+
+const std = @import("std");
+
+~event compute { x: i32 }
+| result i32
+
+~[pure] proc compute {
+    return .{ .result = x * 2 };
+}
+
+~event main {}
+
+~compute(x: 21)
+| result _ |> _

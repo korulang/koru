@@ -1,0 +1,16 @@
+// Layer 2 demonstration (event derivation, negative case):
+// an event with an unannotated proc impl derives is_pure=false on
+// the event itself. The proc is structurally impure (Layer 1) and
+// the event inherits that.
+
+const std = @import("std");
+
+~event log { message: []const u8 }
+
+~proc log {
+    std.debug.print("LOG: {s}\n", .{message});
+}
+
+~event main {}
+
+~log(message: "hello")
