@@ -1,0 +1,57 @@
+// NEGATIVE TEST: Identity branch decl + struct-shape proc return.
+//
+// `connect` declares `| ok Connection[open!]` — an identity branch whose
+// payload IS a Connection. But its proc returns `.{ .ok = .{ .conn = ... } }`
+// — a struct shape. The two don't match.
+//
+// The shape checker should reject this with a clear error pointing at the
+// mismatch between the branch declaration and the constructor.
+//
+// Today this input segfaults the phantom semantic checker at
+// findDisposalEventsForState because phantom_state slices in BindingContext
+// go stale once the malformed state path is propagated through recursive
+// validateContinuation frames. The compiler should never segfault on user
+// input — a clean shape error is the correct outcome.
+
+const std = @import("std");
+
+const Connection = struct { handle: i32 };
+const Transaction = struct { conn_handle: i32 };
+
+~pub event connect { host: []const u8 }
+| ok Connection[open!]
+| err []const u8
+
+~proc connect {
+    _ = host;
+    return .{ .ok = .{ .conn = .{ .handle = 1 } } };
+}
+
+~pub event begin { conn: Connection[!open] }
+| ok Transaction[active!]
+| err []const u8
+
+~proc begin {
+    return .{ .ok = .{ .tx = .{ .conn_handle = conn.handle } } };
+}
+
+~[!]pub event commit { tx: Transaction[!active] }
+| err []const u8
+
+~proc commit {
+    _ = tx;
+    return .ok;
+}
+
+~event report_err { stage: []const u8, msg: []const u8 }
+
+~proc report_err {
+    std.debug.print("{s} err: {s}\n", .{ stage, msg });
+}
+
+~connect(host: "localhost")
+| ok c1 |> begin(conn: c1.conn)
+  | ok c2 |> commit(tx: c2.tx)
+    | err msg |> report_err(stage: "commit", msg: msg)
+  | err msg |> report_err(stage: "begin", msg: msg)
+| err msg |> report_err(stage: "connect", msg: msg)

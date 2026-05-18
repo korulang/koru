@@ -729,13 +729,31 @@ EOF
                 # Backend execution failed - check if this was expected
                 BACKEND_ERROR_EXPECTED=false
 
-                # Check for MUST_FAIL marker - negative tests that must fail to pass
+                # Check for MUST_FAIL marker - negative tests that must fail to pass.
+                # If expected_patterns.txt is present, pin the error reason: every regex
+                # must match backend.err. Without this gate, a segfault (or any unrelated
+                # failure) would count as "expected" and mask real bugs.
                 if [ -f "$test_dir/MUST_FAIL" ]; then
                     if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
                         echo -e "${RED}❌ Expected failure (MUST_FAIL) but memory leak detected ($LEAK_PHASE)${NC}"
                         echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                    elif [ -f "$test_dir/expected_patterns.txt" ]; then
+                        if check_expected_patterns "$test_dir/expected_patterns.txt" "$test_dir/backend.err"; then
+                            echo -e "${GREEN}✅ PASS (MUST_FAIL + error matches expected_patterns.txt)${NC}"
+                            mark_test_passed "$test_dir"
+                            PASSED_TESTS=$((PASSED_TESTS + 1))
+                            if [ "$HAS_MEMORY_LEAK" = true ]; then
+                                LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                            fi
+                        else
+                            echo -e "${RED}❌ MUST_FAIL failed at backend, but error did not match expected_patterns.txt${NC}"
+                            echo "  Patterns: $test_dir/expected_patterns.txt"
+                            echo "  Actual:   $test_dir/backend.err"
+                            echo "wrong-error" > "$test_dir/FAILURE"
+                            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(wrong-error)"
+                        fi
                     else
                         echo -e "${GREEN}✅ PASS (expected failure - MUST_FAIL)${NC}"
                         mark_test_passed "$test_dir"

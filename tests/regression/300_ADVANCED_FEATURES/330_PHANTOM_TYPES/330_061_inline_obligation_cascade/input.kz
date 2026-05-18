@@ -1,0 +1,82 @@
+// Phantom obligation cascade through five nested branch-handler levels,
+// with all event declarations INLINE in this file.
+//
+// State machine (every event handles | ok and | err):
+//   connect()  -> *Connection[connected!]
+//   begin()    -> *Transaction[started!]      (consumes [!connected])
+//   exec()     -> *Transaction[active!]       (consumes [!started])
+//   commit()   -> *Connection[active!]        (consumes [!active])
+//   close()    -> void                        (consumes [!active])
+//
+// Mirrors $app/db usage in 2104_03_valid_commit, but with declarations
+// co-located rather than imported — exercises the inline-decl path
+// through the phantom checker's recursive validateContinuation.
+
+const std = @import("std");
+
+const Connection = struct { handle: i32 };
+const Transaction = struct { conn_handle: i32 };
+
+~pub event connect { host: []const u8 }
+| ok *Connection[connected!]
+| err []const u8
+
+~proc connect {
+    _ = host;
+    const c = std.heap.page_allocator.create(Connection) catch unreachable;
+    c.* = Connection{ .handle = 1 };
+    return .{ .ok = c };
+}
+
+~pub event begin { conn: *Connection[!connected|!active] }
+| ok *Transaction[started!]
+| err []const u8
+
+~proc begin {
+    const tx = std.heap.page_allocator.create(Transaction) catch unreachable;
+    tx.* = Transaction{ .conn_handle = conn.handle };
+    return .{ .ok = tx };
+}
+
+~pub event exec { tx: *Transaction[!started|!active], sql: []const u8 }
+| ok *Transaction[active!]
+| err []const u8
+
+~proc exec {
+    std.debug.print("EXEC: {s}\n", .{sql});
+    return .{ .ok = tx };
+}
+
+~pub event commit { tx: *Transaction[!active] }
+| ok *Connection[active!]
+| err []const u8
+
+~proc commit {
+    std.debug.print("COMMIT\n", .{});
+    const c = std.heap.page_allocator.create(Connection) catch unreachable;
+    c.* = Connection{ .handle = tx.conn_handle };
+    std.heap.page_allocator.destroy(tx);
+    return .{ .ok = c };
+}
+
+~pub event close { conn: *Connection[!active] }
+| ok
+| err []const u8
+
+~proc close {
+    std.debug.print("CLOSE\n", .{});
+    std.heap.page_allocator.destroy(conn);
+    return .{ .ok = .{} };
+}
+
+~connect(host: "localhost")
+| ok c |> begin(conn: c)
+    | ok t |> exec(tx: t, sql: "INSERT INTO x VALUES (1)")
+        | ok r |> commit(tx: r)
+            | ok conn |> close(conn: conn)
+                | ok |> _
+                | err _ |> _
+            | err _ |> _
+        | err _ |> _
+    | err _ |> _
+| err _ |> _

@@ -1,0 +1,23 @@
+// Test 430_011: Timed Compiler Pipeline
+//
+// Wraps the compilation pipeline with timing instrumentation
+// using std.time from the standard library.
+
+~import "$std/compiler"
+~import "$std/time"
+~import "$std/io"
+
+const std = @import("std");
+
+// Override the compiler coordinator - TIME the pipeline!
+~std.compiler:coordinate = std.time:now()
+| t start |> std.compiler:coordinate.default(program_ast, allocator)
+    | coordinated c |> std.time:report(start: start, label: "Compilation") |> coordinated {
+        ast: c.ast,
+        code: c.code,
+        metrics: c.metrics
+    }
+    | error e |> error e
+
+// The actual program - this compiles and runs!
+~std.io:print.ln("hello from timed compilation!")

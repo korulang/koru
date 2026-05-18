@@ -1,0 +1,21 @@
+// Layer 2 demonstration (positive case): a subflow dispatching ONLY
+// into pure events should be transitively pure. Mirrors 410_010's
+// negative case (subflow dispatching impure → transitively impure).
+//
+// Pairs with 410_010 to pin both directions of transitive propagation.
+
+const std = @import("std");
+
+// Pure operation
+~event compute { x: i32 }
+| result i32
+
+~[pure] proc compute {
+    return .{ .result = x * 2 };
+}
+
+~event main {}
+
+// Subflow dispatching pure event — should be transitively PURE
+~compute(x: 21)
+| result _ |> _
