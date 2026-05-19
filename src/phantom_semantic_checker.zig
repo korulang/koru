@@ -108,8 +108,12 @@ pub const PhantomSemanticChecker = struct {
 
     /// Build a map of all events for disposal suggestions
     fn buildDisposalEventMap(self: *PhantomSemanticChecker, source_ast: *const ast.Program) !void {
-        for (source_ast.items) |item| {
-            switch (item) {
+        // Index-based iteration to get stable pointers into the AST. Capturing
+        // by value (|item|) yields a stack-local copy that dies at the end of
+        // the iteration; pointers taken into that copy (via |*event_decl|)
+        // dangle once the loop advances. See module_decl branch below.
+        for (source_ast.items, 0..) |_, top_idx| {
+            switch (source_ast.items[top_idx]) {
                 .event_decl => |*event_decl| {
                     const qualified_name = try self.buildDisposalQualifiedEventName(event_decl);
                     try self.disposal_event_map.put(qualified_name, .{
