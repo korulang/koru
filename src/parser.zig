@@ -1765,6 +1765,9 @@ pub const Parser = struct {
         const path = try lexer.parseQualifiedPath(self.allocator, path_for_parsing, ast);
 
         // Proc bodies are always host language in braces
+        // Capture the body's start line BEFORE extractProcBody advances self.current,
+        // so inline-flow rejection can point at the right source location.
+        const body_start_line = self.current;
         const raw_body = try self.extractProcBody(after_proc[delimiter_idx..]);
 
         // Check if this proc has the [raw] annotation - if so, skip inline flow extraction
@@ -1780,7 +1783,7 @@ pub const Parser = struct {
         const extraction_result = if (has_raw_annotation)
             FlowExtractionResult{ .flows = &.{}, .modified_body = raw_body }
         else
-            try self.extractInlineFlows(raw_body, path);
+            try self.extractInlineFlows(raw_body, path, body_start_line);
 
         // Copy annotations
         var annotations_copy = try self.allocator.alloc([]const u8, annotations.len);
@@ -1889,7 +1892,10 @@ pub const Parser = struct {
 
         const path = try lexer.parseQualifiedPath(self.allocator, path_for_parsing, ast);
 
-        // Extract the body (balanced braces)
+        // Extract the body (balanced braces).
+        // Capture the body's start line BEFORE extractProcBody advances self.current,
+        // so inline-flow rejection can point at the right source location.
+        const body_start_line = self.current;
         const raw_body = try self.extractProcBody(path_start[brace_idx..]);
 
         // Check if this proc has the [raw] annotation - if so, skip inline flow extraction
@@ -1905,7 +1911,7 @@ pub const Parser = struct {
         const extraction_result = if (has_raw_annotation)
             FlowExtractionResult{ .flows = &.{}, .modified_body = raw_body }
         else
-            try self.extractInlineFlows(raw_body, path);
+            try self.extractInlineFlows(raw_body, path, body_start_line);
 
         // Debug output for flow extraction
         const path_debug = try self.pathToString(path);
@@ -1937,7 +1943,7 @@ pub const Parser = struct {
         flows: []ast.Flow,
     };
 
-    fn extractInlineFlows(self: *Parser, body: []const u8, proc_path: ast.DottedPath) !FlowExtractionResult {
+    fn extractInlineFlows(self: *Parser, body: []const u8, proc_path: ast.DottedPath, body_start_line: usize) !FlowExtractionResult {
         var extracted_flows = try std.ArrayList(ast.Flow).initCapacity(self.allocator, 0);
         errdefer {
             for (extracted_flows.items) |*flow| {
@@ -1989,6 +1995,20 @@ pub const Parser = struct {
             };
 
             if (has_inline_flow) {
+                // FEATURE GATE: inline flows in proc bodies are currently disabled.
+                // The extraction + codegen path below is preserved (unreachable from
+                // user code) so we can re-enable the feature later by removing this
+                // rejection block. See koru/CLAUDE.md and the regression-triage doc.
+                try errors.inlineFlowInProc(
+                    &self.reporter,
+                    body_start_line + i,
+                    current_indent + 1,
+                    trimmed,
+                );
+                return error.ParseError;
+            }
+
+            if (false) {
                 // Found an inline flow!
 
                 // Collect all lines belonging to this flow

@@ -1,0 +1,4 @@
+error\[KORU003\]
+inline flows are not supported
+~ping\(\)
+input\.kz:16

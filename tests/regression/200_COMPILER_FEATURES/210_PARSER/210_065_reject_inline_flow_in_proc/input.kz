@@ -1,0 +1,17 @@
+// TEST: MUST_FAIL — inline flows in proc bodies are rejected at parse time.
+//
+// Status: feature is currently disabled. The parser short-circuits with
+// KORU003 before reaching the extraction path. Backend codegen for inline
+// flows remains in the codebase (unreachable) so the feature can be
+// re-enabled later by removing the rejection block in extractInlineFlows.
+
+~event ping {}
+
+~proc ping {
+}
+
+~event main {}
+
+~proc main {
+    ~ping()
+}

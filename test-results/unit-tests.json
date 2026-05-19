@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-05-18T14:55:42.206Z",
+  "timestamp": "2026-05-19T22:34:52.140Z",
   "summary": {
-    "passed": 190,
-    "failed": 48,
+    "passed": 193,
+    "failed": 45,
     "compileErrors": 0,
     "total": 238,
-    "suiteCount": 24,
+    "suiteCount": 21,
     "status": "failure"
   },
   "suites": [
@@ -21,20 +21,6 @@
       "passed": 0,
       "failed": 6,
       "total": 6,
-      "status": "failure"
-    },
-    {
-      "name": "branch_constructor_edge_tests",
-      "passed": 7,
-      "failed": 0,
-      "total": 7,
-      "status": "success"
-    },
-    {
-      "name": "branch_constructor_expr_tests",
-      "passed": 2,
-      "failed": 1,
-      "total": 3,
       "status": "failure"
     },
     {
@@ -73,16 +59,9 @@
       "status": "failure"
     },
     {
-      "name": "inline_flow_extraction_tests",
-      "passed": 3,
-      "failed": 1,
-      "total": 4,
-      "status": "failure"
-    },
-    {
       "name": "inline_flow_tests",
-      "passed": 2,
-      "failed": 2,
+      "passed": 1,
+      "failed": 3,
       "total": 4,
       "status": "failure"
     },
@@ -102,10 +81,10 @@
     },
     {
       "name": "purity_analyzer_tests",
-      "passed": 0,
-      "failed": 2,
+      "passed": 2,
+      "failed": 0,
       "total": 2,
-      "status": "failure"
+      "status": "success"
     },
     {
       "name": "purity_checker_tests",

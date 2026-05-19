@@ -4,6 +4,7 @@ pub const ErrorCode = enum(u16) {
     // Construct errors
     KORU001, // Unknown construct after ~
     KORU002, // Module not found (import resolution failed)
+    KORU003, // Inline flow in proc body (feature disabled)
     KORU010, // Stray continuation (| without context)
     
     // Branch errors
@@ -384,6 +385,18 @@ pub fn moduleNotFound(reporter: *ErrorReporter, line: usize, column: usize, impo
         "module not found: '{s}'",
         .{import_path},
         "check the import path, koru.json paths, and KORU_STDLIB/KORU_PATH environment variables",
+        .{},
+    );
+}
+
+pub fn inlineFlowInProc(reporter: *ErrorReporter, line: usize, column: usize, snippet: []const u8) !void {
+    try reporter.addErrorWithHint(
+        .KORU003,
+        line,
+        column,
+        "inline flows are not supported inside `~proc` bodies: {s}",
+        .{snippet},
+        "lift this into a top-level subflow (e.g. `~my_event = call(args) | branch x |> done {{}}`) or invoke the event from outside the proc body",
         .{},
     );
 }
