@@ -859,7 +859,7 @@ EOF
                             FAILED_TESTS="$FAILED_TESTS $TEST_NAME(wrong-error)"
                         fi
                         BACKEND_ERROR_EXPECTED=true
-                    elif [ -f "$test_dir/EXPECT" ]; then
+                    elif [ -f "$test_dir/EXPECT" ] && expect_has_assertions "$test_dir/EXPECT"; then
                         check_expect_assertions "$test_dir/EXPECT" "$test_dir/backend.err"
                         case $? in
                             0)
@@ -879,10 +879,27 @@ EOF
                                 FAILED_TESTS="$FAILED_TESTS $TEST_NAME(wrong-error)"
                                 BACKEND_ERROR_EXPECTED=true
                                 ;;
-                            # 2: EXPECT had no CONTAINS/NOT_CONTAINS — let expected_error.txt
-                            # or EXPECT=BACKEND_COMPILE_ERROR (below) try; otherwise the
-                            # no-pin branch at end will fail this test.
+                            # 2 can't happen here — guarded by expect_has_assertions.
                         esac
+                    elif [ -f "$test_dir/post.sh" ]; then
+                        # Custom validation for negative tests. Runs in test dir;
+                        # exit 0 = pass, non-zero = fail. Use when the diagnostic
+                        # shape is too rich for a regex pin — multiple required
+                        # substrings, absence-checks, semantic assertions.
+                        if (cd "$test_dir" && bash post.sh) > "$test_dir/post.log" 2>&1; then
+                            echo -e "${GREEN}✅ PASS (MUST_FAIL + post.sh validated)${NC}"
+                            mark_test_passed "$test_dir"
+                            PASSED_TESTS=$((PASSED_TESTS + 1))
+                            if [ "$HAS_MEMORY_LEAK" = true ]; then
+                                LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                            fi
+                        else
+                            echo -e "${RED}❌ MUST_FAIL post.sh validation failed${NC}"
+                            echo "  See $test_dir/post.log for details"
+                            echo "post-validation" > "$test_dir/FAILURE"
+                            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(post-validation)"
+                        fi
+                        BACKEND_ERROR_EXPECTED=true
                     fi
                 fi
 
