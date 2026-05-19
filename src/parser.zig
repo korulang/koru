@@ -167,6 +167,16 @@ fn hasTopLevelArrow(s: []const u8) bool {
 }
 
 /// Find '{' at top level (not inside (), [] or strings)
+/// startsWithKeyword: true iff `s` begins with `keyword` AND the next char is
+/// a non-identifier (whitespace / `{` / `(` / EOL). Prevents `~process_int`
+/// from being mis-classified as `~proc`, etc.
+fn startsWithKeyword(s: []const u8, keyword: []const u8) bool {
+    if (!std.mem.startsWith(u8, s, keyword)) return false;
+    if (s.len == keyword.len) return true;
+    const next = s[keyword.len];
+    return !(std.ascii.isAlphanumeric(next) or next == '_');
+}
+
 fn findTopLevelBrace(s: []const u8) ?usize {
     var paren_depth: i32 = 0;
     var bracket_depth: i32 = 0;
@@ -1976,12 +1986,29 @@ pub const Parser = struct {
 
             // Check if this line contains an inline flow
             // Patterns: "~...", "return ~...", "const name = ~..."
+            //
+            // Keyword filter uses word-boundary check — `~process_int` must not
+            // be mis-read as `~proc`, and `~event_handler` must not be mis-read
+            // as `~event`. The next char after the keyword must be a non-identifier
+            // (space, `{`, `(`, end-of-line, etc.) for it to count as a keyword.
             const has_inline_flow = blk: {
-                if (lexer.startsWith(trimmed, "~") and
-                    !lexer.startsWith(trimmed, "~proc") and
-                    !lexer.startsWith(trimmed, "~event"))
-                {
-                    break :blk true;
+                if (lexer.startsWith(trimmed, "~")) {
+                    if (startsWithKeyword(trimmed, "~proc") or
+                        startsWithKeyword(trimmed, "~event") or
+                        startsWithKeyword(trimmed, "~import") or
+                        startsWithKeyword(trimmed, "~pub") or
+                        startsWithKeyword(trimmed, "~for") or
+                        startsWithKeyword(trimmed, "~if") or
+                        startsWithKeyword(trimmed, "~else") or
+                        startsWithKeyword(trimmed, "~while") or
+                        startsWithKeyword(trimmed, "~match") or
+                        startsWithKeyword(trimmed, "~struct") or
+                        startsWithKeyword(trimmed, "~type"))
+                    {
+                        // host-language keyword, not an inline flow
+                    } else {
+                        break :blk true;
+                    }
                 }
                 if (lexer.startsWith(trimmed, "return ~")) {
                     break :blk true;
