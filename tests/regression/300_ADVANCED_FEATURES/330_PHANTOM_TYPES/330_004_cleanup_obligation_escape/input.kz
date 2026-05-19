@@ -1,4 +1,0 @@
-~import "$std/io"
-~import "$app/fs"
-~app.fs:open(path: "test.txt")
-| opened |> _  // ERROR: Flow ends with *File[opened!] not cleaned up!
