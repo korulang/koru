@@ -27,7 +27,7 @@ RUN set -eux; \
     zig version
 
 # Install the Koru npm package from the local tarball.
-COPY korulang-koru-0.1.6.tgz /tmp/koru.tgz
+COPY korulang-koru-0.1.7.tgz /tmp/koru.tgz
 RUN npm install -g /tmp/koru.tgz && rm /tmp/koru.tgz && koruc --version || true
 
 WORKDIR /work

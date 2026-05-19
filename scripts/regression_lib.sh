@@ -59,6 +59,83 @@ check_expected_patterns() {
     return 1
 }
 
+# Check EXPECT-file assertions against an actual-output file.
+# Recognized lines (after skipping blanks, #-comments, and one leading
+# category marker like SUCCESS / FRONTEND_COMPILE_ERROR / MUST_FAIL):
+#   CONTAINS <substr>        — substr must appear in target (literal)
+#   NOT_CONTAINS <substr>    — substr must NOT appear in target
+#   STDOUT_CONTAINS:<substr> — substr must appear (alias of CONTAINS)
+# Returns:
+#   0 = at least one assertion was present and ALL satisfied
+#   1 = at least one assertion failed (details printed)
+#   2 = no recognized assertions in the file (caller should fall through)
+check_expect_assertions() {
+    local expect_file="$1"
+    local actual_file="$2"
+    local failed=()
+    local count=0
+    local seen_first_non_comment=false
+    local line substr
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        case "$line" in \#*) continue ;; esac
+        # First non-comment line: skip if it's a known category marker
+        if [ "$seen_first_non_comment" = false ]; then
+            seen_first_non_comment=true
+            case "$line" in
+                SUCCESS|COMPILE_ONLY|FRONTEND_COMPILE_ERROR|BACKEND_COMPILE_ERROR|BACKEND_RUNTIME_ERROR|BACKEND_EXEC_ERROR|MUST_FAIL)
+                    continue ;;
+            esac
+        fi
+        case "$line" in
+            "CONTAINS "*)
+                count=$((count + 1))
+                substr="${line#CONTAINS }"
+                if ! grep -qF -- "$substr" "$actual_file" 2>/dev/null; then
+                    failed+=("CONTAINS '$substr' not found")
+                fi
+                ;;
+            "NOT_CONTAINS "*)
+                count=$((count + 1))
+                substr="${line#NOT_CONTAINS }"
+                if grep -qF -- "$substr" "$actual_file" 2>/dev/null; then
+                    failed+=("NOT_CONTAINS '$substr' should not appear")
+                fi
+                ;;
+            "STDOUT_CONTAINS:"*)
+                count=$((count + 1))
+                substr="${line#STDOUT_CONTAINS:}"
+                if ! grep -qF -- "$substr" "$actual_file" 2>/dev/null; then
+                    failed+=("STDOUT_CONTAINS '$substr' not found")
+                fi
+                ;;
+        esac
+    done < "$expect_file"
+
+    if [ "$count" -eq 0 ]; then
+        return 2
+    fi
+    if [ ${#failed[@]} -eq 0 ]; then
+        return 0
+    fi
+    echo "  EXPECT assertions not satisfied (target: $actual_file):"
+    local entry
+    for entry in "${failed[@]}"; do
+        echo "    $entry"
+    done
+    return 1
+}
+
+# Probe whether an EXPECT file contains any CONTAINS / NOT_CONTAINS /
+# STDOUT_CONTAINS assertion lines. Returns 0 if at least one exists, 1 otherwise.
+# Used by callers that need to choose a control-flow branch BEFORE running the
+# full assertion check.
+expect_has_assertions() {
+    local expect_file="$1"
+    [ -f "$expect_file" ] || return 1
+    grep -qE '^(CONTAINS |NOT_CONTAINS |STDOUT_CONTAINS:)' "$expect_file"
+}
+
 regression_run_one_test() {
     local test_dir="$1"
     local TEST_NAME
@@ -389,6 +466,31 @@ regression_run_one_test() {
                             echo -e "${RED}❌ Error output patterns did not all match${NC}"
                             echo "  Patterns: $test_dir/expected_patterns.txt"
                             echo "  Actual:   $test_dir/compile_kz.err"
+                            echo "error-output" > "$test_dir/FAILURE"
+                            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(error-output)"
+                        fi
+                        return 0
+                    fi
+                    # Check for EXPECT assertions (CONTAINS / NOT_CONTAINS) against compile_kz.err
+                    if expect_has_assertions "$test_dir/EXPECT"; then
+                        if check_expect_assertions "$test_dir/EXPECT" "$test_dir/compile_kz.err"; then
+                            if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
+                                echo -e "${RED}❌ Expected frontend error but memory leak detected ($LEAK_PHASE)${NC}"
+                                echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
+                                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
+                                LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                            else
+                                echo -e "${GREEN}✅ PASS (EXPECT assertions matched in compile_kz.err)${NC}"
+                                mark_test_passed "$test_dir"
+                                PASSED_TESTS=$((PASSED_TESTS + 1))
+                                if [ "$HAS_MEMORY_LEAK" = true ]; then
+                                    LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                                fi
+                            fi
+                        else
+                            echo -e "${RED}❌ EXPECT assertions did not match compile_kz.err${NC}"
+                            echo "  EXPECT: $test_dir/EXPECT"
+                            echo "  Actual: $test_dir/compile_kz.err"
                             echo "error-output" > "$test_dir/FAILURE"
                             FAILED_TESTS="$FAILED_TESTS $TEST_NAME(error-output)"
                         fi
@@ -730,15 +832,17 @@ EOF
                 BACKEND_ERROR_EXPECTED=false
 
                 # Check for MUST_FAIL marker - negative tests that must fail to pass.
-                # If expected_patterns.txt is present, pin the error reason: every regex
-                # must match backend.err. Without this gate, a segfault (or any unrelated
-                # failure) would count as "expected" and mask real bugs.
+                # The error reason MUST be pinned by one of: expected_patterns.txt,
+                # EXPECT with CONTAINS/NOT_CONTAINS assertions, expected_error.txt, or
+                # EXPECT=BACKEND_COMPILE_ERROR. Without a pin, a segfault or any
+                # unrelated failure would count as "expected" and mask real bugs.
                 if [ -f "$test_dir/MUST_FAIL" ]; then
                     if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
                         echo -e "${RED}❌ Expected failure (MUST_FAIL) but memory leak detected ($LEAK_PHASE)${NC}"
                         echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                        BACKEND_ERROR_EXPECTED=true
                     elif [ -f "$test_dir/expected_patterns.txt" ]; then
                         if check_expected_patterns "$test_dir/expected_patterns.txt" "$test_dir/backend.err"; then
                             echo -e "${GREEN}✅ PASS (MUST_FAIL + error matches expected_patterns.txt)${NC}"
@@ -754,15 +858,32 @@ EOF
                             echo "wrong-error" > "$test_dir/FAILURE"
                             FAILED_TESTS="$FAILED_TESTS $TEST_NAME(wrong-error)"
                         fi
-                    else
-                        echo -e "${GREEN}✅ PASS (expected failure - MUST_FAIL)${NC}"
-                        mark_test_passed "$test_dir"
-                        PASSED_TESTS=$((PASSED_TESTS + 1))
-                        if [ "$HAS_MEMORY_LEAK" = true ]; then
-                            LEAKED_TESTS=$((LEAKED_TESTS + 1))
-                        fi
+                        BACKEND_ERROR_EXPECTED=true
+                    elif [ -f "$test_dir/EXPECT" ]; then
+                        check_expect_assertions "$test_dir/EXPECT" "$test_dir/backend.err"
+                        case $? in
+                            0)
+                                echo -e "${GREEN}✅ PASS (MUST_FAIL + EXPECT assertions matched)${NC}"
+                                mark_test_passed "$test_dir"
+                                PASSED_TESTS=$((PASSED_TESTS + 1))
+                                if [ "$HAS_MEMORY_LEAK" = true ]; then
+                                    LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                                fi
+                                BACKEND_ERROR_EXPECTED=true
+                                ;;
+                            1)
+                                echo -e "${RED}❌ MUST_FAIL failed at backend, but EXPECT assertions did not match${NC}"
+                                echo "  EXPECT:  $test_dir/EXPECT"
+                                echo "  Actual:  $test_dir/backend.err"
+                                echo "wrong-error" > "$test_dir/FAILURE"
+                                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(wrong-error)"
+                                BACKEND_ERROR_EXPECTED=true
+                                ;;
+                            # 2: EXPECT had no CONTAINS/NOT_CONTAINS — let expected_error.txt
+                            # or EXPECT=BACKEND_COMPILE_ERROR (below) try; otherwise the
+                            # no-pin branch at end will fail this test.
+                        esac
                     fi
-                    BACKEND_ERROR_EXPECTED=true
                 fi
 
                 # Check for expected_error.txt
@@ -807,7 +928,17 @@ EOF
                 fi
 
                 # If error wasn't expected, mark as failure
-                if [ "$BACKEND_ERROR_EXPECTED" = false ]; then
+                if [ "$BACKEND_ERROR_EXPECTED" = false ] && [ -f "$test_dir/MUST_FAIL" ]; then
+                    echo -e "${RED}❌ MUST_FAIL test has no error pin${NC}"
+                    echo "  Backend failed, but nothing pinned which error to expect."
+                    echo "  Add one of:"
+                    echo "    - expected_patterns.txt (regex per line, matched against backend.err)"
+                    echo "    - EXPECT with CONTAINS / NOT_CONTAINS assertions"
+                    echo "    - expected_error.txt (substring of expected error)"
+                    echo "    - EXPECT line: BACKEND_COMPILE_ERROR (bare marker, accepts any backend failure)"
+                    echo "no-error-pin" > "$test_dir/FAILURE"
+                    FAILED_TESTS="$FAILED_TESTS $TEST_NAME(no-error-pin)"
+                elif [ "$BACKEND_ERROR_EXPECTED" = false ]; then
                     echo -e "${RED}❌ Backend execution failed${NC}"
                     if [ -s "$test_dir/backend.err" ]; then
                         if [ "$VERBOSE" = true ]; then
@@ -1000,6 +1131,28 @@ EOF
                 echo -e "${RED}❌ Output patterns did not all match${NC}"
                 echo "  Patterns: $test_dir/expected_patterns.txt"
                 echo "  Actual:   $test_dir/actual.txt"
+                echo "output" > "$test_dir/FAILURE"
+                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(output)"
+            fi
+        elif [ -f "$test_dir/EXPECT" ] && expect_has_assertions "$test_dir/EXPECT"; then
+            if check_expect_assertions "$test_dir/EXPECT" "$test_dir/actual.txt"; then
+                if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
+                    echo -e "${RED}❌ PASS but memory leak detected ($LEAK_PHASE)${NC}"
+                    echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
+                    FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
+                    LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                else
+                    echo -e "${GREEN}✅ PASS (EXPECT assertions matched)${NC}"
+                    mark_test_passed "$test_dir"
+                    PASSED_TESTS=$((PASSED_TESTS + 1))
+                    if [ "$HAS_MEMORY_LEAK" = true ]; then
+                        LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                    fi
+                fi
+            else
+                echo -e "${RED}❌ EXPECT assertions did not match actual output${NC}"
+                echo "  EXPECT: $test_dir/EXPECT"
+                echo "  Actual: $test_dir/actual.txt"
                 echo "output" > "$test_dir/FAILURE"
                 FAILED_TESTS="$FAILED_TESTS $TEST_NAME(output)"
             fi
