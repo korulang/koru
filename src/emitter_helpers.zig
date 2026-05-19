@@ -1678,12 +1678,41 @@ fn emitSubflowContinuationsWithDepth(
         // Void event - emit step directly without switch
         const cont = &remaining_conts[0];
 
+        // If the next continuation needs to switch on a result (has a non-empty
+        // branch), we must KEEP this step's return value instead of discarding
+        // it — otherwise the downstream switch falls back to a stale `result`
+        // (e.g. the head's void return). Assigning to `nested_result_{depth}`
+        // lines up with the result_var formula used by the switch path
+        // (`nested_result_{depth - 1}` at depth+1).
+        const next_needs_switch = cont.continuations.len > 0 and
+            !std.mem.eql(u8, cont.continuations[0].branch, "");
+
+        // When we override the parent's result variable, discard it so Zig
+        // doesn't flag it as an unused local constant. Parent variable is
+        // `result` at depth 0, `nested_result_{depth-1}` otherwise.
+        if (next_needs_switch) {
+            try emitter.write(indent);
+            if (depth == 0) {
+                try emitter.write("_ = &result;\n");
+            } else {
+                var buf: [48]u8 = undefined;
+                const discard = try std.fmt.bufPrint(&buf, "_ = &nested_result_{d};\n", .{depth - 1});
+                try emitter.write(discard);
+            }
+        }
+
         // Emit the step if present
         if (cont.node) |step| {
             switch (step) {
                 .invocation => |inv| {
                     try emitter.write(indent);
-                    try emitter.write("_ = ");
+                    if (next_needs_switch) {
+                        var buf: [32]u8 = undefined;
+                        const decl = try std.fmt.bufPrint(&buf, "const nested_result_{d} = ", .{depth});
+                        try emitter.write(decl);
+                    } else {
+                        try emitter.write("_ = ");
+                    }
 
                     // Emit module qualifier if present
                     if (inv.path.module_qualifier) |mq| {
@@ -1739,7 +1768,9 @@ fn emitSubflowContinuationsWithDepth(
             }
         }
 
-        // Recurse for nested continuations
+        // Recurse for nested continuations. Bump depth only when we assigned a
+        // result above, so the recursive switch picks up our `nested_result_{depth}`
+        // via its own `nested_result_{(depth+1) - 1}` lookup.
         if (cont.continuations.len > 0) {
             try emitSubflowContinuationsWithDepth(
                 emitter,
@@ -1747,7 +1778,7 @@ fn emitSubflowContinuationsWithDepth(
                 0,
                 indent,
                 all_items,
-                depth,
+                if (next_needs_switch) depth + 1 else depth,
                 tap_registry,
                 type_registry,
                 main_module_name,
