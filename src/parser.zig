@@ -3727,7 +3727,37 @@ pub const Parser = struct {
             defer _ = self.context_stack.pop();
 
             const invocation = try self.parseEventInvocation(body_str);
-            const continuations = try self.parseContinuations(lexer.getIndent(line));
+
+            // If body has an inline |> chain (e.g. `head() |> tail() | branch ...`),
+            // parseEventInvocation only captured the head; route the tail through
+            // parseInlineContinuation so the next step isn't silently dropped.
+            const has_inline_chain = blk: {
+                var i: usize = 0;
+                var paren_depth: i32 = 0;
+                var brace_depth: i32 = 0;
+                var in_string = false;
+                while (i + 1 < body_str.len) : (i += 1) {
+                    const c = body_str[i];
+                    if (c == '"' and (i == 0 or body_str[i - 1] != '\\')) {
+                        in_string = !in_string;
+                        continue;
+                    }
+                    if (in_string) continue;
+                    if (c == '(') paren_depth += 1;
+                    if (c == ')') paren_depth -= 1;
+                    if (c == '{') brace_depth += 1;
+                    if (c == '}') brace_depth -= 1;
+                    if (paren_depth == 0 and brace_depth == 0 and c == '|' and body_str[i + 1] == '>') {
+                        break :blk true;
+                    }
+                }
+                break :blk false;
+            };
+
+            const continuations = if (has_inline_chain)
+                try self.parseInlineContinuation(body_str, lexer.getIndent(line))
+            else
+                try self.parseContinuations(lexer.getIndent(line));
 
             return ast.Item{ .flow = .{
                 .invocation = invocation,
