@@ -1,6 +1,45 @@
 # Diagnostic Gaps — Parser & Frontend
 
-**Surfaced while fixing 220_022_combined_continuation_bugs.** Three places where the user gets a worse error than they should — two are missing Koru diagnostics that fall through to raw Zig errors against machine-generated code; one is an existing diagnostic whose hint is incomplete.
+**Surfaced while fixing 220_022_combined_continuation_bugs and looking at 8401_custom_coordinator_bug.** Four findings — one is a parser **data-loss bug** (the most serious), two are missing Koru diagnostics that fall through to raw Zig errors against machine-generated code, one is an existing diagnostic whose hint is incomplete.
+
+---
+
+## 0. Parser silently drops second call in `~event = void_call() |> next_call(...)` body chain
+
+**Status:** SEVERE. Captured by `tests/regression/200_COMPILER_FEATURES/210_PARSER/210_064_parser_drops_second_call_after_void/` (10 lines, no imports/qualifiers/annotations). Also surfaces in the wild at `tests/regression/400_RUNTIME_FEATURES/430_COORDINATION/8401_custom_coordinator_bug/` (the same bug inside an abstract-event override).
+
+**Source:**
+
+```koru
+~run = ping() |> make_payload()
+| created v |> consume(v)
+```
+
+**`--ast-json` output** for the synthesis flow (`impl_of: ["run"]`):
+
+```json
+{
+  "invocation": { "event": ["ping"], "args": [] },
+  "continuations": [
+    { "branch": "created", "binding": "v", "step": { "type": "invocation", "invocation": { "event": ["consume"], "args": [{"name": "v", "value": "v"}] } } }
+  ]
+}
+```
+
+`make_payload()` is completely absent from the AST. The `| created v |>` branch handler — intended for `make_payload`'s `created` branch — gets reattached to `ping`'s (void) result.
+
+**User-visible symptom** (varies by chain shape downstream):
+
+- 210_064 (simple): `error[KORU021]: event 'input:ping' has no branch 'created' (available: (none))`
+- 8401 (complex chain with abstract override): pure Zig error `output_emitted.zig:743:24: error: else prong required when switching on type 'void'` (no Koru diagnostic at all — the wrong AST passes frontend, fails at zig compile of the emitted code).
+
+**Where the work lives:** unknown — needs investigation of the parser code that handles `~event = expression` synthesis bodies, specifically the chaining behavior when the leading call returns void.
+
+**Fix-verification test:** 210_064 flips green when the parser correctly retains both invocations; 8401 should also flip green from the same fix (verifies the more complex shape works).
+
+---
+
+## Three further findings (post-parse)
 
 ---
 
@@ -108,8 +147,9 @@ Hint extended with these two layouts so users hitting KORU010 from either patter
 
 ---
 
-## Priority order (cheapest first)
+## Priority order
 
-1. **Patch KORU010 hint** — string change, biggest payoff per line. Anyone hitting `|>` rules today gets misled.
-2. **Add KORU0xx for `| branch |>` on void event** — every user trying to chain void events the wrong way hits this.
-3. **Add KORU0xx for invalid field access on branch binding** — broader scope (needs the type-checker to know branch-binding payload types).
+1. **Finding #0 — parser drops second call in void-leading synthesis body.** Severity: data loss. Untargeted edits to the parser to "fix this" risk wider damage; needs focused diagnosis. The minimal test (210_064) gives an unambiguous tripwire. Highest priority.
+2. **Patch KORU010 hint** — string change, biggest payoff per line. Anyone hitting `|>` rules today gets misled.
+3. **Add KORU0xx for `| branch |>` on void event** — every user trying to chain void events the wrong way hits this.
+4. **Add KORU0xx for invalid field access on branch binding** — broader scope (needs the type-checker to know branch-binding payload types).

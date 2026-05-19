@@ -1,0 +1,40 @@
+// Test: Parser drops second call when chain body starts with a void call
+//
+// Reproduces a parser data-loss bug observed in 8401_custom_coordinator_bug.
+// In a synthesis body of the shape `~event = void_call() |> next_call(...)`,
+// the parser silently drops `next_call(...)` from the AST. Visible via
+// --ast-json (only the void call's invocation appears in the flow), and
+// downstream as a Zig codegen error (switch on void) because the branch
+// handler intended for next_call attaches to the void call's result.
+//
+// Captured here (10 lines, no imports, no qualifiers, no annotations) to give
+// the parser-fix worker an unambiguous failing test. The 8401 capture also
+// fails, but in a much busier setting (abstract-event override + comptime
+// markers + std.compiler imports).
+
+const std = @import("std");
+
+~event ping {}
+~proc ping {
+    std.debug.print("ping\n", .{});
+}
+
+~event make_payload {}
+| created u32
+
+~proc make_payload {
+    return .{ .created = 42 };
+}
+
+~event consume { v: u32 }
+~proc consume {
+    std.debug.print("got {}\n", .{v});
+}
+
+~event run {}
+~run = ping() |> make_payload()
+| created v |> consume(v)
+
+~run()
+
+pub fn main() void {}
