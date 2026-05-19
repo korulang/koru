@@ -4,9 +4,16 @@
 
 ---
 
-## 0. Parser silently drops second call in `~event = void_call() |> next_call(...)` body chain
+## 0. ~~Parser silently drops second call in `~event = void_call() |> next_call(...)` body chain~~ — **FIXED**
 
-**Status:** SEVERE. Captured by `tests/regression/200_COMPILER_FEATURES/210_PARSER/210_064_parser_drops_second_call_after_void/` (10 lines, no imports/qualifiers/annotations). Also surfaces in the wild at `tests/regression/400_RUNTIME_FEATURES/430_COORDINATION/8401_custom_coordinator_bug/` (the same bug inside an abstract-event override).
+**Status:** RESOLVED. Both `210_064_parser_drops_second_call_after_void` and `8401_custom_coordinator_bug` are now passing.
+
+**Where the fix landed:**
+
+- `src/parser.zig` `parseSubflowImpl` (~line 3729) — added inline-`|>` detection on the body; when present, routes the tail through the existing `parseInlineContinuation` helper instead of letting `parseEventInvocation` silently slice at the first `|`. Pure addition, gated on `|>` presence.
+- `src/emitter_helpers.zig` `emitSubflowContinuationsWithDepth` (~line 1677, void-continuation branch) — when the void-chain step has continuations with a real branch (i.e. a downstream switch), the step's return value is now bound to `const nested_result_{depth} = ...` instead of `_ = ...`, and recursion bumps `depth + 1` so the switch's `result_var` formula (`nested_result_{depth - 1}`) picks it up. Also emits `_ = &result;` (or the depth-N equivalent) to silence the now-unused parent variable. All gated on `next_needs_switch`; the all-void-chain case (e.g. 220_021) is unchanged.
+
+Original problem statement preserved below for reference:
 
 **Source:**
 
@@ -149,7 +156,7 @@ Hint extended with these two layouts so users hitting KORU010 from either patter
 
 ## Priority order
 
-1. **Finding #0 — parser drops second call in void-leading synthesis body.** Severity: data loss. Untargeted edits to the parser to "fix this" risk wider damage; needs focused diagnosis. The minimal test (210_064) gives an unambiguous tripwire. Highest priority.
+1. ~~Finding #0 — parser drops second call in void-leading synthesis body.~~ **DONE.**
 2. **Patch KORU010 hint** — string change, biggest payoff per line. Anyone hitting `|>` rules today gets misled.
 3. **Add KORU0xx for `| branch |>` on void event** — every user trying to chain void events the wrong way hits this.
 4. **Add KORU0xx for invalid field access on branch binding** — broader scope (needs the type-checker to know branch-binding payload types).
