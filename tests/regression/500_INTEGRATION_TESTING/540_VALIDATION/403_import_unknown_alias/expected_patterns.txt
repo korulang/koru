@@ -1,0 +1,8 @@
+# Test 403: Unknown import aliases must produce a clear error.
+# Pin the user-visible error code plus the call chain that produced it.
+# Hex addresses and exact line numbers in src/*.zig are intentionally not pinned —
+# they shift with every build / refactor.
+^error: UnknownImportAlias$
+module_resolver\.zig:[0-9]+:[0-9]+: 0x[0-9a-f]+ in resolveBoth \(koruc\)
+parser\.zig:[0-9]+:[0-9]+: 0x[0-9a-f]+ in parseAndRegisterImport \(koruc\)
+parser\.zig:[0-9]+:[0-9]+: 0x[0-9a-f]+ in parseImportDecl \(koruc\)

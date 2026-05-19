@@ -1,0 +1,17 @@
+# Test 518: Obligation lost at subflow boundary
+#
+# INTENT: `bad_subflow` opens a file (creates *File[opened!]) inside
+# its proc but its signature declares `done {}` with no `[!]`
+# discharge or `[opened!]` re-export. The obligation is dropped at
+# the subflow boundary. Phantom checker should reject with a clean
+# KORU diagnostic about the lost obligation, pointing at the user's
+# source.
+#
+# CURRENTLY: Backend codegen emits invalid Zig (`use of undeclared
+# identifier '__inline_flow_1'`) — frontend lets the malformed
+# subflow through. Real compiler bug — pin captures INTENT, test
+# stays red as wrong-error until the obligation-at-boundary path is
+# enforced before codegen.
+error\[KORU\d+\]
+obligation
+input\.kz

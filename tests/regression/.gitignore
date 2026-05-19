@@ -26,6 +26,7 @@
 !**/expected.txt
 !**/expected_output.txt
 !**/expected_error.txt
+!**/expected_patterns.txt
 !**/expected.json
 !**/EXPECT
 !**/COMPILE_ONLY

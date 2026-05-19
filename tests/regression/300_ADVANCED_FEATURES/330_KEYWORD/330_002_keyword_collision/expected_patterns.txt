@@ -1,0 +1,10 @@
+# Test 330_002: Ambiguous keyword collision must produce a user-facing diagnostic
+# naming the keyword and both defining modules, plus pin the call chain.
+# Hex addresses and exact line numbers in src/*.zig shift with every build.
+^ERROR: Ambiguous keyword 'process' - defined in:$
+^  - lib_a:process \(from lib_a\)$
+^  - lib_b:process \(from lib_b\)$
+^error: AmbiguousKeyword$
+keyword_registry\.zig:[0-9]+:[0-9]+: 0x[0-9a-f]+ in resolveKeyword \(koruc\)
+main\.zig:[0-9]+:[0-9]+: 0x[0-9a-f]+ in resolveKeywordInPath \(koruc\)
+main\.zig:[0-9]+:[0-9]+: 0x[0-9a-f]+ in resolveKeywordsInAST \(koruc\)

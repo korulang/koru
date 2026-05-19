@@ -1,0 +1,15 @@
+# Test 330_062: Identity branch decl + struct-shape proc return.
+#
+# The shape checker must reject this with a clean, KORU-coded error
+# pointing at the mismatch BEFORE the phantom checker recurses on the
+# malformed state path. Today this segfaults at
+# phantom_semantic_checker.zig:1496 in findDisposalEventsForState.
+#
+# These patterns pin the SEMANTIC content of the eventual error without
+# over-constraining wording. The error must:
+#   1. Carry a KORU error code (not crash with a Zig stack trace)
+#   2. Name the structural mismatch — "identity" branch shape
+#   3. Point at the user's source location
+error\[KORU\d+\]
+identity
+input\.kz:

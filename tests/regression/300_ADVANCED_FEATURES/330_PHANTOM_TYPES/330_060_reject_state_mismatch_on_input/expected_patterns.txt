@@ -1,0 +1,17 @@
+# Test 330_060: Phantom state mismatch on event input
+#
+# INTENT: `query` declares `conn: *Connection[connected]` but the
+# call site passes `c` from `| ok c |>` of `get_raw_connection`,
+# which has no tracked phantom state. Phantom checker should reject
+# this at semantic time with a clear KORU diagnostic about the
+# missing required state, pointing at the user's source.
+#
+# CURRENTLY: Phantom checker lets it through; backend codegen emits
+# invalid Zig (`expected ')', found ':'` from output_emitted.zig).
+# Real compiler bug — pin captures INTENT, test stays red as
+# wrong-error until the phantom checker enforces input state on
+# `[connected]` (non-cleanup) arguments.
+error\[KORU\d+\]
+phantom state
+connected
+input\.kz
