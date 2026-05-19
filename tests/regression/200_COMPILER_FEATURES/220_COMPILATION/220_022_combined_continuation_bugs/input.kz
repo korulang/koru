@@ -70,7 +70,7 @@ const allocator = std.heap.c_allocator;
 
 // BUG #3: f.r -> resource field name mismatch
 ~make_resource = create(id: id)
-| created f |> ready { resource: f.r }
+| created f |> ready f
 
 // ============================================================
 // COMBINED TEST: Bugs #2 and #3 (void chaining is parser issue)
@@ -81,14 +81,7 @@ const N: usize = 10;
 ~for(0..N)
 | each i |>
     make_resource(id: i)
-    | ready r |>
-        work_done(r: r.resource)
-        | done |>
-            work_done(r: r.resource)
-            | done |>
-                work_done(r: r.resource)
-                | done |>
-                    destroy(r: r.resource)
+    | ready r |> work_done(r) |> work_done(r) |> work_done(r) |> destroy(r)
 
 pub fn main() void {
     std.debug.print("All continuation bugs fixed!\n", .{});

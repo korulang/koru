@@ -29,28 +29,24 @@ const DT: f64 = 0.01;
     { x: 1.28943695621391310e+01, y: -1.51111514016986312e+01, z: -2.23307578892655734e-01, vx: 2.96460137564761618e-03 * DAYS_PER_YEAR, vy: 2.37847173959480950e-03 * DAYS_PER_YEAR, vz: -2.96589568540237556e-05 * DAYS_PER_YEAR, mass: 4.36624404335156298e-05 * SOLAR_MASS },
     { x: 1.53796971148509165e+01, y: -2.59193146099879641e+01, z: 1.79258772950371181e-01, vx: 2.68067772490389322e-03 * DAYS_PER_YEAR, vy: 1.62824170038242295e-03 * DAYS_PER_YEAR, vz: -9.51592254519715870e-05 * DAYS_PER_YEAR, mass: 5.15138902046611451e-05 * SOLAR_MASS },
 }
-| kernel k |>
-    std.kernel:step(0..10)
-    | step |>
-        std.kernel:pairwise {
-        const dx = k.x - k.other.x;
-        const dy = k.y - k.other.y;
-        const dz = k.z - k.other.z;
-        const dsq = dx*dx + dy*dy + dz*dz;
-        const mag = DT / (dsq * @sqrt(dsq));
-        k.vx -= dx * k.other.mass * mag;
-        k.vy -= dy * k.other.mass * mag;
-        k.vz -= dz * k.other.mass * mag;
-        k.other.vx += dx * k.mass * mag;
-        k.other.vy += dy * k.mass * mag;
-        k.other.vz += dz * k.mass * mag;
-        }
-        |> std.kernel:self {
-        k.x += DT * k.vx;
-        k.y += DT * k.vy;
-        k.z += DT * k.vz;
-    }
-| computed c |>
-    std.io:print.blk {
+| kernel k |> std.kernel:step(0..10)
+    | step |> std.kernel:pairwise {
+            const dx = k.x - k.other.x;
+            const dy = k.y - k.other.y;
+            const dz = k.z - k.other.z;
+            const dsq = dx*dx + dy*dy + dz*dz;
+            const mag = DT / (dsq * @sqrt(dsq));
+            k.vx -= dx * k.other.mass * mag;
+            k.vy -= dy * k.other.mass * mag;
+            k.vz -= dz * k.other.mass * mag;
+            k.other.vx += dx * k.mass * mag;
+            k.other.vy += dy * k.mass * mag;
+            k.other.vz += dz * k.mass * mag;
+        } |> std.kernel:self {
+                k.x += DT * k.vx;
+                k.y += DT * k.vy;
+                k.z += DT * k.vz;
+            }
+| computed c |> std.io:print.blk {
         vx[0]={{ c[0].vx:f }}
     }
