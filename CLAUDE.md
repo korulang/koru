@@ -46,6 +46,45 @@ Performance position, with receipts:
   analysis. Receipts live in `korulang_org/`. Always show source when
   citing; never call a number "unarguable."
 
+## Koru is emit-only with the host language
+
+The Koru → Zig direction is parsing, checking, and code generation. The
+reverse direction — Zig → Koru — does not exist. Koru never reads, lexes,
+parses, or otherwise analyzes host-language source. The contract is
+one-directional, on purpose.
+
+What this means concretely:
+
+- **Proc bodies are opaque strings.** Inside `~proc name { ... }`, the
+  braces enclose host-language code. The parser extracts inline
+  `~event(...)` invocations from the body for separate processing, but
+  the rest of the text — including `return .{ ... }` statements — is
+  forwarded to Zig unchanged. The shape checker cannot validate a struct
+  constructor inside a proc return because it never sees one. The matching
+  mechanism for that case lives at the `~event = branch payload`
+  immediate-impl level, which IS parsed as Koru.
+- **Source blocks are opaque payloads.** A proc that takes a source block
+  receives bytes. Userland procs can interpret them. The Koru compiler
+  itself does not.
+- **No "just read the Zig and check the field name" pass.** Even when it
+  would be diagnostically useful, Koru does not introspect generated or
+  user-written Zig.
+
+When a test demands a diagnostic that would require reading proc body Zig
+(e.g. "shape_checker should reject a malformed `return .{ .ok = ... }`
+inside a `~proc`"), the answer is one of:
+
+- Move the check to a Koru-parsed surface (immediate-impl, branch
+  constructor in flow context, event declaration shape).
+- Catch the consequence downstream through Koru's own state tracking
+  (phantom checker noticing the binding has the wrong shape).
+- Accept that Zig-side errors are the right tool for that failure mode
+  and lighten the pin.
+
+The frame "Koru should parse Zig to catch X" is not a viable path. If the
+diagnostic matters, push the relevant information up to a Koru-parsed
+surface; don't reach down into the host language to inspect it.
+
 ## Branches are equal — there is no happy path
 
 Every branch on an event is just an outcome shape with a name. They are equal
