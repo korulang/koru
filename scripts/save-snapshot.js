@@ -57,9 +57,17 @@ async function readFirstLine(path) {
  *
  * categoryPath is the full hierarchy path, e.g. "000_CORE_LANGUAGE/010_BASIC_SYNTAX"
  */
-async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = false) {
+async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = false, categoryTodo = false, categoryTodoDesc = '') {
 	const tests = [];
 	const entries = await readdir(basePath);
+
+	// Category-level TODO marker on this dir (propagates to all tests below).
+	const ownTodo = await fileExists(join(basePath, 'TODO'));
+	const ownInput = await fileExists(join(basePath, 'input.kz'));
+	const ownTodoIsCategory = ownTodo && !ownInput;
+	const ownTodoDesc = ownTodoIsCategory ? await readFirstLine(join(basePath, 'TODO')) : '';
+	const effectiveCategoryTodo = categoryTodo || ownTodoIsCategory;
+	const effectiveCategoryTodoDesc = categoryTodoDesc || ownTodoDesc;
 
 	for (const entry of entries) {
 		if (entry === '_archive') continue;
@@ -77,9 +85,20 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 		const skip = await fileExists(join(fullPath, 'SKIP'));
 		const broken = await fileExists(join(fullPath, 'BROKEN'));
 
-		// Match bash script filtering - only count valid tests
-		// if [ ! -f "$test_dir/input.kz" ] && [ ! -f "$test_dir/TODO" ] && [ ! -f "$test_dir/SKIP" ] && [ ! -f "$test_dir/BROKEN" ]; then continue; fi
-		const isValidTest = isTestDir && (hasInput || todo || skip || broken);
+		// A TEST has input.kz (or, for stub tests, only TODO/SKIP/BROKEN markers
+		// next to no input.kz). A CATEGORY has no input.kz and may carry a
+		// category-level TODO/SKIP marker for its children. We disambiguate by
+		// checking whether this dir contains any test-pattern children — if it
+		// does, the TODO/SKIP here is category-level, not test-level.
+		let hasTestPatternChild = false;
+		if (!hasInput && (todo || skip || broken)) {
+			try {
+				const children = await readdir(fullPath);
+				hasTestPatternChild = children.some(c => /^\d+[a-z]?_/.test(c));
+			} catch {}
+		}
+		const isCategoryMarker = !hasInput && (todo || skip || broken) && hasTestPatternChild;
+		const isValidTest = isTestDir && (hasInput || ((todo || skip || broken) && !isCategoryMarker));
 
 		if (isValidTest) {
 			// This is a test directory!
@@ -93,13 +112,17 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 				failureReason = await readFirstLine(join(fullPath, 'FAILURE'));
 			}
 
-			const todoDesc = todo ? await readFirstLine(join(fullPath, 'TODO')) : '';
+			const todoDesc = todo
+				? await readFirstLine(join(fullPath, 'TODO'))
+				: (effectiveCategoryTodo ? effectiveCategoryTodoDesc : '');
 			const skipReason = skip ? await readFirstLine(join(fullPath, 'SKIP')) : '';
 			const brokenReason = broken ? await readFirstLine(join(fullPath, 'BROKEN')) : '';
 
 			// Determine status with proper precedence (matching bash script)
 			let status = 'untested';
 			if (todo) {
+				status = 'todo';
+			} else if (effectiveCategoryTodo) {
 				status = 'todo';
 			} else if (categorySkipped) {
 				status = 'skipped';
@@ -138,7 +161,9 @@ async function findAllTestDirs(basePath, categoryPath = null, categorySkipped = 
 		const subTests = await findAllTestDirs(
 			fullPath,
 			subCategoryPath,
-			subCategorySkipped
+			subCategorySkipped,
+			effectiveCategoryTodo,
+			effectiveCategoryTodoDesc
 		);
 		tests.push(...subTests);
 	}

@@ -168,6 +168,8 @@ regression_run_one_test() {
     SKIP_CATEGORY=false
     BENCHMARK_CATEGORY=false
     BENCHMARK_REASON=""
+    TODO_CATEGORY=false
+    TODO_REASON=""
     if [ "$PARENT_DIR" != "regression" ] && [ "$PARENT_DIR" != "$CURRENT_CATEGORY" ]; then
         CURRENT_CATEGORY="$PARENT_DIR"
         # Extract category name from directory name
@@ -201,6 +203,14 @@ regression_run_one_test() {
             echo -e "${CYAN}📊 Category benchmark: $BENCHMARK_REASON${NC}"
             echo ""
         fi
+
+        # Check for category-level TODO file
+        if [ -f "$CATEGORY_DIR/TODO" ]; then
+            TODO_CATEGORY=true
+            TODO_REASON=$(head -1 "$CATEGORY_DIR/TODO" 2>/dev/null || echo "No description provided")
+            echo -e "${YELLOW}📝 Category TODO: $TODO_REASON${NC}"
+            echo ""
+        fi
     elif [ "$PARENT_DIR" != "regression" ]; then
         # Still in same category, check if category was marked to skip
         CATEGORY_DIR="$(dirname "$test_dir")"
@@ -210,6 +220,10 @@ regression_run_one_test() {
         if [ -f "$CATEGORY_DIR/BENCHMARK" ]; then
             BENCHMARK_CATEGORY=true
             BENCHMARK_REASON=$(head -1 "$CATEGORY_DIR/BENCHMARK" 2>/dev/null || echo "No description")
+        fi
+        if [ -f "$CATEGORY_DIR/TODO" ]; then
+            TODO_CATEGORY=true
+            TODO_REASON=$(head -1 "$CATEGORY_DIR/TODO" 2>/dev/null || echo "No description provided")
         fi
     fi
 
@@ -241,6 +255,16 @@ regression_run_one_test() {
         TODO_FEATURE=$(head -1 "$test_dir/TODO" 2>/dev/null || echo "No description provided")
         echo "  Feature: $TODO_FEATURE"
         TODO_TESTS=$((TODO_TESTS + 1))  # Count separately from skips
+        return 0
+    fi
+
+    # Check for category-level TODO - mark all tests in this category as TODO
+    if [ "$TODO_CATEGORY" = true ]; then
+        echo -e "${YELLOW}📝 TODO (category)${NC}"
+        if [ -n "$TODO_REASON" ]; then
+            echo "  Feature: $TODO_REASON"
+        fi
+        TODO_TESTS=$((TODO_TESTS + 1))
         return 0
     fi
 

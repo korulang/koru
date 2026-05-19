@@ -70,9 +70,17 @@ async function loadFromSnapshot() {
 // Filesystem fallback (used when no snapshot exists)
 // ---------------------------------------------------------------------------
 
-async function getTestCases(categoryPath, categorySlugPath, categorySkipped = false) {
+async function getTestCases(categoryPath, categorySlugPath, categorySkipped = false, categoryTodo = false, categoryTodoDesc = '') {
 	const tests = [];
 	const entries = await readdir(categoryPath);
+
+	// A TODO file directly in this category dir marks every test below it as
+	// TODO (unless an individual test has a more specific marker). Mirrors how
+	// SKIP propagates.
+	const ownTodo = await fileExists(join(categoryPath, 'TODO'));
+	const ownTodoDesc = ownTodo ? await readFirstLine(join(categoryPath, 'TODO')) : '';
+	const effectiveCategoryTodo = categoryTodo || ownTodo;
+	const effectiveCategoryTodoDesc = categoryTodoDesc || ownTodoDesc;
 
 	for (const entry of entries) {
 		if (entry === '_archive') continue;
@@ -89,22 +97,28 @@ async function getTestCases(categoryPath, categorySlugPath, categorySkipped = fa
 			const skip = await fileExists(join(testPath, 'SKIP'));
 			const broken = await fileExists(join(testPath, 'BROKEN'));
 
-			if (!hasInput && !todo && !skip && !broken) {
+			// A dir with no input.kz is a sub-category — recurse and let
+			// category-level markers (TODO/SKIP) propagate to its children.
+			// (Per-test TODO/SKIP/BROKEN markers always sit next to an input.kz.)
+			if (!hasInput) {
 				const subCategorySkipped = categorySkipped || skip;
 				const subCategorySlugPath = categorySlugPath ? `${categorySlugPath}/${entry}` : entry;
-				const subTests = await getTestCases(testPath, subCategorySlugPath, subCategorySkipped);
+				const subTests = await getTestCases(testPath, subCategorySlugPath, subCategorySkipped, effectiveCategoryTodo, effectiveCategoryTodoDesc);
 				tests.push(...subTests);
 				continue;
 			}
 
 			let failureReason = '';
 			if (failure) failureReason = await readFirstLine(join(testPath, 'FAILURE'));
-			const todoDesc = todo ? await readFirstLine(join(testPath, 'TODO')) : '';
+			const todoDesc = todo
+				? await readFirstLine(join(testPath, 'TODO'))
+				: (effectiveCategoryTodo ? effectiveCategoryTodoDesc : '');
 			const skipReason = skip ? await readFirstLine(join(testPath, 'SKIP')) : '';
 			const brokenReason = broken ? await readFirstLine(join(testPath, 'BROKEN')) : '';
 
 			let status = 'untested';
 			if (todo) status = 'todo';
+			else if (effectiveCategoryTodo) status = 'todo';
 			else if (categorySkipped) status = 'skipped';
 			else if (skip) status = 'skipped';
 			else if (broken) status = 'broken';
