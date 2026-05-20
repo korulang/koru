@@ -8,10 +8,14 @@ if [ ! -f "backend.zig" ]; then
     exit 1
 fi
 
+# AST literal moved from backend.zig to program_ast.zig (split landed 2026-05-20).
+# Concatenate both so grep -n / sed -n by line number still work.
+cat backend.zig program_ast.zig 2>/dev/null > _combined_emit.zig
+
 # Find the event declaration for compute
-EVENT_LINE=$(grep -n 'event_decl = EventDecl' backend.zig | while read line; do
+EVENT_LINE=$(grep -n 'event_decl = EventDecl' _combined_emit.zig | while read line; do
     linenum=$(echo "$line" | cut -d: -f1)
-    if sed -n "$((linenum)),$((linenum + 5))p" backend.zig | grep -q '"compute"'; then
+    if sed -n "$((linenum)),$((linenum + 5))p" _combined_emit.zig | grep -q '"compute"'; then
         echo "$linenum"
         break
     fi
@@ -22,7 +26,7 @@ if [ -z "$EVENT_LINE" ]; then
     exit 1
 fi
 
-EVENT=$(sed -n "$((EVENT_LINE)),$((EVENT_LINE + 40))p" backend.zig)
+EVENT=$(sed -n "$((EVENT_LINE)),$((EVENT_LINE + 40))p" _combined_emit.zig)
 
 if echo "$EVENT" | grep -q 'is_pure = true'; then
     echo "✓ compute event: is_pure = true (derived from pure proc impl)"

@@ -7,10 +7,14 @@ if [ ! -f "backend.zig" ]; then
     exit 1
 fi
 
+# AST literal moved from backend.zig to program_ast.zig (split landed 2026-05-20).
+# Concatenate both so grep -n / sed -n by line number still work.
+cat backend.zig program_ast.zig 2>/dev/null > _combined_emit.zig
+
 # Confirm the compute proc has the expected pure flags (sanity check)
-PROC_LINE=$(grep -n 'proc_decl = ProcDecl' backend.zig | while read line; do
+PROC_LINE=$(grep -n 'proc_decl = ProcDecl' _combined_emit.zig | while read line; do
     linenum=$(echo "$line" | cut -d: -f1)
-    if sed -n "$((linenum)),$((linenum + 5))p" backend.zig | grep -q '"compute"'; then
+    if sed -n "$((linenum)),$((linenum + 5))p" _combined_emit.zig | grep -q '"compute"'; then
         echo "$linenum"
         break
     fi
@@ -21,7 +25,7 @@ if [ -z "$PROC_LINE" ]; then
     exit 1
 fi
 
-PROC=$(sed -n "$((PROC_LINE)),$((PROC_LINE + 15))p" backend.zig)
+PROC=$(sed -n "$((PROC_LINE)),$((PROC_LINE + 15))p" _combined_emit.zig)
 
 if echo "$PROC" | grep -q 'is_pure = true'; then
     echo "✓ compute proc: is_pure = true"
@@ -38,9 +42,9 @@ else
 fi
 
 # Find the top-level subflow that dispatches compute
-FLOW_LINE=$(grep -n '\.flow = Flow{' backend.zig | while read line; do
+FLOW_LINE=$(grep -n '\.flow = Flow{' _combined_emit.zig | while read line; do
     linenum=$(echo "$line" | cut -d: -f1)
-    if sed -n "$((linenum)),$((linenum + 10))p" backend.zig | grep -q '"compute"'; then
+    if sed -n "$((linenum)),$((linenum + 10))p" _combined_emit.zig | grep -q '"compute"'; then
         echo "$linenum"
         break
     fi
@@ -51,7 +55,7 @@ if [ -z "$FLOW_LINE" ]; then
     exit 1
 fi
 
-FLOW=$(sed -n "${FLOW_LINE},$((FLOW_LINE + 50))p" backend.zig)
+FLOW=$(sed -n "${FLOW_LINE},$((FLOW_LINE + 50))p" _combined_emit.zig)
 
 if echo "$FLOW" | grep -q '.is_pure = true'; then
     echo "✓ subflow: is_pure = true (Layer 1 — composition is locally pure)"

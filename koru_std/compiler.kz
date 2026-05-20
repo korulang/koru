@@ -110,6 +110,16 @@ pub const CompilerContext = struct {
     });
     ast_module.addImport("errors", errors_module);
 
+    // Program AST module - per-user PROGRAM_AST constant, emitted alongside backend.zig.
+    // Split out so backend.zig itself stays byte-identical across user programs and
+    // Zig's content-addressed cache hits.
+    const program_ast_module = b.createModule(.{
+        .root_source_file = b.path("program_ast.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    program_ast_module.addImport("ast", ast_module);
+
     // Lexer module - tokenization
     const lexer_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
@@ -422,6 +432,7 @@ pub const CompilerContext = struct {
 
     // Add all imports to the backend executable
     exe.root_module.addImport("ast", ast_module);
+    exe.root_module.addImport("program_ast", program_ast_module);
     exe.root_module.addImport("ast_functional", ast_functional_module);
     exe.root_module.addImport("ast_serializer", ast_serializer_module);
     exe.root_module.addImport("log", log_module);

@@ -102,17 +102,28 @@ fn printStderr(allocator: std.mem.Allocator, comptime fmt: []const u8, args: any
 
 /// Generate the backend code that will perform code generation at compile-time
 /// This is Pass 2 of the Koru compiler - the Zig backend
-fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8, input_file: []const u8, source_file: *ast.Program, use_visitor: bool, config: *const CompilerConfig, has_transforms: bool) ![]const u8 {
-    var buffer = try std.ArrayList(u8).initCapacity(allocator, serialized_ast.len + 2048);
+fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, source_file: *ast.Program, use_visitor: bool, config: *const CompilerConfig, has_transforms: bool) ![]const u8 {
+    _ = input_file; // The per-user filename used to land in the header comment.
+    // Dropping it keeps backend.zig byte-identical across user programs so
+    // Zig's content-addressed cache hits across compiles. Per-user identity
+    // lives in program_ast.zig, which IS unique per program.
+
+    var buffer = try std.ArrayList(u8).initCapacity(allocator, 16 * 1024);
     const writer = buffer.writer(allocator);
 
-    // Write header
-    try writer.print("// Koru Backend (Pass 2) for: {s}\n", .{input_file});
+    // Header
+    try writer.writeAll("// Koru Backend (Pass 2) — thin driver; PROGRAM_AST lives in program_ast.zig\n");
     try writer.writeAll("// This file IS the compiler backend - it generates final code at compile-time\n\n");
 
-    // Include the serialized AST
-    try writer.writeAll(serialized_ast);
-    try writer.writeAll("\n\n");
+    // Pull Program type and maybeDeinitAst from the per-user program_ast module.
+    // NOTE: we do NOT alias PROGRAM_AST itself with a `const`. Zig copies the value
+    // at the alias site, producing a different address — which breaks the identity
+    // check `source_ast == &PROGRAM_AST` inside maybeDeinitAst (compiled in
+    // program_ast.zig) and makes us free rodata-backed strings. Reference the
+    // constant via `program_ast_mod.PROGRAM_AST` instead.
+    try writer.writeAll("const program_ast_mod = @import(\"program_ast\");\n");
+    try writer.writeAll("const Program = program_ast_mod.Program;\n");
+    try writer.writeAll("const maybeDeinitAst = program_ast_mod.maybeDeinitAst;\n\n");
 
     // Import emitter_helpers at top level so build:config can be queried during compilation
     try writer.writeAll("const emitter_helpers = @import(\"emitter_helpers\");\n");
@@ -860,7 +871,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                         \\        if (__koru_std.mem.eql(u8, args[1], "{s}")) {{
                         \\            __koru_std.debug.print("🔧 Running command: {s}\n", .{{}});
                         \\            _ = {s}.{s}_event.handler(.{{
-                        \\                .program = &PROGRAM_AST,
+                        \\                .program = &program_ast_mod.PROGRAM_AST,
                         \\                .allocator = allocator,
                         \\                .argv = args[2..],
                         \\            }});
@@ -874,7 +885,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
                         \\        if (__koru_std.mem.eql(u8, args[1], "{s}")) {{
                         \\            __koru_std.debug.print("🔧 Running command: {s}\n", .{{}});
                         \\            _ = {s}_event.handler(.{{
-                        \\                .program = &PROGRAM_AST,
+                        \\                .program = &program_ast_mod.PROGRAM_AST,
                         \\                .allocator = allocator,
                         \\                .argv = args[2..],
                         \\            }});
@@ -902,10 +913,10 @@ fn generateBackendCode(allocator: std.mem.Allocator, serialized_ast: []const u8,
             \\    // Apply compiler passes
             \\    // Each pass takes PROGRAM_AST pointer and current AST pointer
             \\    // Returns same pointer if no changes, or new heap-allocated AST if optimized
-            \\    const current_ast: *const Program = &PROGRAM_AST;
+            \\    const current_ast: *const Program = &program_ast_mod.PROGRAM_AST;
             \\
             \\    // DUMP POINT 1: Original AST at backend entry
-            \\    dumpAST(&PROGRAM_AST, "1-backend-start", compile_allocator);
+            \\    dumpAST(&program_ast_mod.PROGRAM_AST, "1-backend-start", compile_allocator);
             \\
             \\    // More passes can go here...
             \\
@@ -6616,8 +6627,9 @@ pub fn main() !void {
     const has_transforms = comptime_result.transform_count > 0;
     // No defer needed - compile_arena handles cleanup automatically
 
-    // Generate the backend code (includes metacircular compiler)
-    const backend_code = try generateBackendCode(compile_allocator, serialized_ast, input, final_ast, use_visitor, &compiler_config, has_transforms);
+    // Generate the backend code (now a thin driver; PROGRAM_AST lives in program_ast.zig
+    // for Zig's content-addressed cache to hit across user programs)
+    const backend_code = try generateBackendCode(compile_allocator, input, final_ast, use_visitor, &compiler_config, has_transforms);
     // No defer needed - compile_arena handles cleanup automatically
 
     // Write the backend to the output file
@@ -6626,8 +6638,17 @@ pub fn main() !void {
 
     try out_file.writeAll(backend_code);
 
-    // Write backend_output_emitted.zig for comptime handlers to same directory as backend.zig
     const output_dir = std.fs.path.dirname(output) orelse ".";
+
+    // Write program_ast.zig: the per-user AST literal lives here so backend.zig
+    // can be byte-identical across user programs and cache.
+    const program_ast_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "program_ast.zig" });
+    defer allocator.free(program_ast_path);
+    const program_ast_file = try std.fs.cwd().createFile(program_ast_path, .{});
+    defer program_ast_file.close();
+    try program_ast_file.writeAll(serialized_ast);
+
+    // Write backend_output_emitted.zig for comptime handlers to same directory as backend.zig
     const backend_output_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "backend_output_emitted.zig" });
     defer allocator.free(backend_output_path);
     const backend_output_file = try std.fs.cwd().createFile(backend_output_path, .{});

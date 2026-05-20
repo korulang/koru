@@ -6,11 +6,15 @@ if [ ! -f "backend.zig" ]; then
     exit 1
 fi
 
+# AST literal moved from backend.zig to program_ast.zig (split landed 2026-05-20).
+# Concatenate both so grep -n / sed -n by line number still work.
+cat backend.zig program_ast.zig 2>/dev/null > _combined_emit.zig
+
 # Check log proc - should be IMPURE (not marked ~[pure])
-PROC_LINE=$(grep -n 'proc_decl = ProcDecl' backend.zig | while read line; do
+PROC_LINE=$(grep -n 'proc_decl = ProcDecl' _combined_emit.zig | while read line; do
     linenum=$(echo "$line" | cut -d: -f1)
     # Check if "log" appears in next 5 lines
-    if sed -n "$((linenum)),$((linenum + 5))p" backend.zig | grep -q '"log"'; then
+    if sed -n "$((linenum)),$((linenum + 5))p" _combined_emit.zig | grep -q '"log"'; then
         echo "$linenum"
         break
     fi
@@ -21,7 +25,7 @@ if [ -z "$PROC_LINE" ]; then
     exit 1
 fi
 
-PROC=$(sed -n "$((PROC_LINE)),$((PROC_LINE + 15))p" backend.zig)
+PROC=$(sed -n "$((PROC_LINE)),$((PROC_LINE + 15))p" _combined_emit.zig)
 
 if echo "$PROC" | grep -q 'is_pure = false'; then
     echo "✓ log proc: is_pure = false (unmarked, defaults to impure)"
@@ -38,10 +42,10 @@ else
 fi
 
 # Check the top-level subflow - should be transitively IMPURE
-FLOW_LINE=$(grep -n '\.flow = Flow{' backend.zig | while read line; do
+FLOW_LINE=$(grep -n '\.flow = Flow{' _combined_emit.zig | while read line; do
     linenum=$(echo "$line" | cut -d: -f1)
     # Check if "log" appears in next 10 lines
-    if sed -n "$((linenum)),$((linenum + 10))p" backend.zig | grep -q '"log"'; then
+    if sed -n "$((linenum)),$((linenum + 10))p" _combined_emit.zig | grep -q '"log"'; then
         echo "$linenum"
         break
     fi
@@ -52,7 +56,7 @@ if [ -z "$FLOW_LINE" ]; then
     exit 1
 fi
 
-FLOW=$(sed -n "${FLOW_LINE},$((FLOW_LINE + 50))p" backend.zig)
+FLOW=$(sed -n "${FLOW_LINE},$((FLOW_LINE + 50))p" _combined_emit.zig)
 
 # Flows are always locally pure
 if echo "$FLOW" | grep -q '.is_pure = true'; then

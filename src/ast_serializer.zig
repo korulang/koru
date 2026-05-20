@@ -152,9 +152,10 @@ pub const AstSerializer = struct {
         try self.writeLine("};");
         try self.writeLine("");
 
-        // Generate helper function for safely deinit'ing transformed ASTs
+        // Generate helper function for safely deinit'ing transformed ASTs.
+        // `pub` so backend.zig can call it via @import("program_ast").maybeDeinitAst.
         try self.writeLine("/// Helper to safely deinit transformed ASTs while preserving PROGRAM_AST");
-        try self.writeLine("fn maybeDeinitAst(source_ast: *const Program) void {");
+        try self.writeLine("pub fn maybeDeinitAst(source_ast: *const Program) void {");
         self.indent();
         try self.writeLine("if (source_ast == &PROGRAM_AST) {");
         self.indent();
@@ -222,38 +223,39 @@ pub const AstSerializer = struct {
         try self.writeLine("const ast = @import(\"ast\");");
         try self.writeLine("");
 
-        // Create local aliases for all AST types used in serialization
+        // Create local aliases for all AST types used in serialization.
+        // `pub` so backend.zig can re-import them from program_ast.zig.
         try self.writeLine("// Type aliases for convenience");
-        try self.writeLine("const Program = ast.Program;");
-        try self.writeLine("const Item = ast.Item;");
-        try self.writeLine("const HostLine = ast.HostLine;");
-        try self.writeLine("const EventDecl = ast.EventDecl;");
-        try self.writeLine("const HostTypeDecl = ast.HostTypeDecl;");
-        try self.writeLine("const ProcDecl = ast.ProcDecl;");
-        try self.writeLine("const Flow = ast.Flow;");
-        try self.writeLine("const EventTap = ast.EventTap;");
-        try self.writeLine("const LabelDecl = ast.LabelDecl;");
-        try self.writeLine("const ImmediateImpl = ast.ImmediateImpl;");
-        try self.writeLine("const ImportDecl = ast.ImportDecl;");
-        try self.writeLine("const ModuleDecl = ast.ModuleDecl;");
-        try self.writeLine("const DottedPath = ast.DottedPath;");
-        try self.writeLine("const Shape = ast.Shape;");
-        try self.writeLine("const Field = ast.Field;");
-        try self.writeLine("const Branch = ast.Branch;");
-        try self.writeLine("const BranchVariant = ast.BranchVariant;");
-        try self.writeLine("const SuperShape = ast.SuperShape;");
-        try self.writeLine("const Invocation = ast.Invocation;");
-        try self.writeLine("const Continuation = ast.Continuation;");
-        try self.writeLine("const BindingType = ast.BindingType;");
-        try self.writeLine("const Step = ast.Step;");
-        try self.writeLine("const Arg = ast.Arg;");
-        try self.writeLine("const BranchConstructor = ast.BranchConstructor;");
-        try self.writeLine("const Expression = ast.Expression;");
-        try self.writeLine("const SourceLocation = ast.SourceLocation;");
-        try self.writeLine("const Source = ast.Source;");
-        try self.writeLine("const CapturedExpression = ast.CapturedExpression;");
-        try self.writeLine("const CapturedScope = ast.CapturedScope;");
-        try self.writeLine("const ScopeBinding = ast.ScopeBinding;");
+        try self.writeLine("pub const Program = ast.Program;");
+        try self.writeLine("pub const Item = ast.Item;");
+        try self.writeLine("pub const HostLine = ast.HostLine;");
+        try self.writeLine("pub const EventDecl = ast.EventDecl;");
+        try self.writeLine("pub const HostTypeDecl = ast.HostTypeDecl;");
+        try self.writeLine("pub const ProcDecl = ast.ProcDecl;");
+        try self.writeLine("pub const Flow = ast.Flow;");
+        try self.writeLine("pub const EventTap = ast.EventTap;");
+        try self.writeLine("pub const LabelDecl = ast.LabelDecl;");
+        try self.writeLine("pub const ImmediateImpl = ast.ImmediateImpl;");
+        try self.writeLine("pub const ImportDecl = ast.ImportDecl;");
+        try self.writeLine("pub const ModuleDecl = ast.ModuleDecl;");
+        try self.writeLine("pub const DottedPath = ast.DottedPath;");
+        try self.writeLine("pub const Shape = ast.Shape;");
+        try self.writeLine("pub const Field = ast.Field;");
+        try self.writeLine("pub const Branch = ast.Branch;");
+        try self.writeLine("pub const BranchVariant = ast.BranchVariant;");
+        try self.writeLine("pub const SuperShape = ast.SuperShape;");
+        try self.writeLine("pub const Invocation = ast.Invocation;");
+        try self.writeLine("pub const Continuation = ast.Continuation;");
+        try self.writeLine("pub const BindingType = ast.BindingType;");
+        try self.writeLine("pub const Step = ast.Step;");
+        try self.writeLine("pub const Arg = ast.Arg;");
+        try self.writeLine("pub const BranchConstructor = ast.BranchConstructor;");
+        try self.writeLine("pub const Expression = ast.Expression;");
+        try self.writeLine("pub const SourceLocation = ast.SourceLocation;");
+        try self.writeLine("pub const Source = ast.Source;");
+        try self.writeLine("pub const CapturedExpression = ast.CapturedExpression;");
+        try self.writeLine("pub const CapturedScope = ast.CapturedScope;");
+        try self.writeLine("pub const ScopeBinding = ast.ScopeBinding;");
     }
 
     fn serializeItem(self: *AstSerializer, item: *const ast.Item) !void {

@@ -8,7 +8,11 @@ if [ ! -f "backend.zig" ]; then
     exit 1
 fi
 
-if grep -q '"noop"' backend.zig; then
+# AST literal moved from backend.zig to program_ast.zig (split landed 2026-05-20).
+# Concatenate both so grep finds serialized AST contents regardless of layout.
+cat backend.zig program_ast.zig 2>/dev/null > _combined_emit.zig
+
+if grep -q '"noop"' _combined_emit.zig; then
     echo "✓ program with [pure] on event compiled cleanly (annotations are open metadata)"
 else
     echo "✗ FAIL: noop event not found in backend.zig"
