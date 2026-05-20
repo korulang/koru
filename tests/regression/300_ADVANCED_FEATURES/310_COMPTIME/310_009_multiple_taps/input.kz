@@ -5,8 +5,9 @@
 const std = @import("std");
 ~import "$std/taps"
 
-// Event with a branch to tap
+// Event with an identity branch for the taps to observe
 ~event hello {}
+| greeted []const u8
 
 // Void observer events
 ~event tap1 {}
@@ -15,6 +16,7 @@ const std = @import("std");
 
 ~proc hello {
     std.debug.print("Main flow executed\n", .{});
+    return .{ .greeted = "go" };
 }
 
 ~proc tap1 {
@@ -27,12 +29,12 @@ const std = @import("std");
 
 // First tap on hello
 ~tap(hello -> *)
-| tap_target |> tap1()
+| greeted _ |> tap1()
 
 // Second tap on hello (should also fire!)
 ~tap(hello -> *)
-| tap_target |> tap2()
+| greeted _ |> tap2()
 
 // Execute hello - should trigger both taps
 ~hello()
-| tap_target |> _
+| greeted _ |> _

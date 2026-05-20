@@ -4,11 +4,14 @@
 const std = @import("std");
 ~import "$std/taps"
 
-// Event with a branch to tap (tap_target = test scaffolding name)
+// Event with an identity branch — taps work by observing TRANSITIONS,
+// so the event needs a real branch to fire on.
 ~event hello {}
+| greeted []const u8
 
 ~proc hello {
     std.debug.print("Main flow executed\n", .{});
+    return .{ .greeted = "go" };
 }
 
 // Void observer event
@@ -18,10 +21,10 @@ const std = @import("std");
     std.debug.print("TAP observed!\n", .{});
 }
 
-// Tap that observes hello and logs via tap_action
+// Tap that observes hello's `greeted` branch and logs via tap_action
 ~tap(hello -> *)
-| tap_target |> tap_action()
+| greeted _ |> tap_action()
 
 // Main flow that triggers the tap
 ~hello()
-| tap_target |> _
+| greeted _ |> _

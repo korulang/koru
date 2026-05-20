@@ -4,13 +4,14 @@
 const std = @import("std");
 ~import "$std/taps"
 
-// An event with a branch that can be tapped
-// NOTE: Taps work by observing TRANSITIONS (branches), not void events!
-// The branch is named 'tap_target' to make clear this is TEST SCAFFOLDING.
+// An event with an identity branch that can be tapped.
+// Taps work by observing TRANSITIONS (branches), not void events!
 ~event hello {}
+| greeted []const u8
 
 ~proc hello {
     std.debug.print("Hello executed\n", .{});
+    return .{ .greeted = "go" };
 }
 
 // A void observer event - no return needed
@@ -20,11 +21,11 @@ const std = @import("std");
     std.debug.print("Observer fired!\n", .{});
 }
 
-// TAP: Observe hello -> * | tap_target
-// Using the new library syntax instead of special ~hello -> * syntax
+// TAP: Observe hello -> * | greeted
+// Using the library syntax instead of a special form
 ~tap(hello -> *)
-| tap_target |> observer()
+| greeted _ |> observer()
 
-// Execute hello - tap should fire on tap_target branch
+// Execute hello - tap should fire on the greeted branch
 ~hello()
-| tap_target |> _
+| greeted _ |> _

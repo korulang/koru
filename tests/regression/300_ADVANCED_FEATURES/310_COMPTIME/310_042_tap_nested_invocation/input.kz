@@ -5,7 +5,7 @@
 // to an event, regardless of where they appear in the call graph.
 //
 // Structure:
-//   ~hello() | tap_target |> goodbye() | tap_target |> _
+//   ~hello() | said _ |> goodbye() | said _ |> _
 //
 // The tap on 'goodbye' should fire even though goodbye() is nested
 // inside hello()'s continuation, not a top-level flow.
@@ -14,17 +14,21 @@ const std = @import("std");
 ~import "$std/taps"
 
 ~event hello {}
+| said []const u8
 
 ~event goodbye {}
+| said []const u8
 
 ~event observer {}
 
 ~proc hello {
     std.debug.print("hello\n", .{});
+    return .{ .said = "go" };
 }
 
 ~proc goodbye {
     std.debug.print("goodbye\n", .{});
+    return .{ .said = "go" };
 }
 
 ~proc observer {
@@ -33,9 +37,9 @@ const std = @import("std");
 
 // Tap on goodbye - should fire even when goodbye is nested
 ~tap(goodbye -> *)
-| tap_target |> observer()
+| said _ |> observer()
 
 // hello is top-level, goodbye is NESTED in hello's continuation
 ~hello()
-| tap_target |> goodbye()
-    | tap_target |> _
+| said _ |> goodbye()
+    | said _ |> _
