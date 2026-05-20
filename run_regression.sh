@@ -59,6 +59,14 @@ VERBOSE=false
 # Use --keep-artifacts to preserve per-test build artifacts for successful tests
 KEEP_ARTIFACTS=false
 
+# Cache mode (default: OFF). When ON, per-test fingerprints are used to skip
+# tests whose inputs haven't changed since the last successful run.
+# Set via --cache; disabled with --no-cache (default).
+# Verify mode runs each test both cached and uncached and asserts identical
+# outcomes — used to validate the cache logic itself.
+CACHE_MODE=off
+VERIFY_CACHE=false
+
 # Priority list flag (default: OFF)
 # Use --priority to list all priority items
 SHOW_PRIORITY=false
@@ -111,6 +119,9 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  --verbose                              Show full stderr output on failures (not truncated)"
     echo "  --priority                             List all tests marked as PRIORITY"
     echo "  --clean                                Clean all Zig caches before running (fresh build)"
+    echo "  --cache                                Enable per-test result cache (skip unchanged tests)"
+    echo "  --no-cache                             Disable result cache (default)"
+    echo "  --verify-cache                         Run each test twice (cached + uncached), assert parity"
     echo "  --keep-artifacts                        Keep per-test artifacts even on success (uses lots of disk)"
     echo "  --parallel N                           Run N tests concurrently (default: 1 = sequential)"
     echo ""
@@ -387,6 +398,19 @@ while [[ $# -gt 0 ]]; do
             CLEAN_CACHE=true
             shift
             ;;
+        --cache)
+            CACHE_MODE=on
+            shift
+            ;;
+        --no-cache)
+            CACHE_MODE=off
+            shift
+            ;;
+        --verify-cache)
+            CACHE_MODE=on
+            VERIFY_CACHE=true
+            shift
+            ;;
         --keep-artifacts)
             KEEP_ARTIFACTS=true
             shift
@@ -513,6 +537,25 @@ mkdir -p "$ZIG_GLOBAL_CACHE"
 # Export artifact retention flag for regression_lib.sh
 export KEEP_ARTIFACTS
 
+# Export cache config for run_single_test.sh.
+export KORU_CACHE_MODE="$CACHE_MODE"
+if [ "$CACHE_MODE" = "on" ]; then
+    # shellcheck source=scripts/regression_cache.sh
+    source "$(dirname "${BASH_SOURCE[0]}")/scripts/regression_cache.sh"
+    export KORU_COMPILER_MTIME
+    KORU_COMPILER_MTIME=$(cache_compute_compiler_mtime "$(pwd)")
+    echo "💾 Result cache ENABLED (compiler snapshot mtime: $KORU_COMPILER_MTIME)"
+    if [ "$VERIFY_CACHE" = true ]; then
+        echo "🔍 Cache parity verification ENABLED — running each test twice"
+        export KORU_VERIFY_CACHE=on
+    fi
+fi
+# --clean should also drop per-test cache fingerprints (the Zig cache cleanup
+# above leaves them intact otherwise).
+if [ "$CLEAN_CACHE" = true ]; then
+    find tests/regression -name ".cache-fingerprint" -delete 2>/dev/null || true
+fi
+
 if [ "$CHECK_LEAKS" = true ]; then
     echo "🔍 Memory leak checking ENABLED - leaks will fail tests"
 else
@@ -578,15 +621,20 @@ PY
 
     # Clean up previous SUCCESS/FAILURE markers for tests we're about to run.
     # Match serial behavior: do not clear markers for TODO/SKIP/BENCHMARK/BROKEN or category-skipped tests.
-    while IFS= read -r -d '' dir; do
-        if [ -f "$dir/BENCHMARK" ] || [ -f "$dir/TODO" ] || [ -f "$dir/SKIP" ] || [ -f "$dir/BROKEN" ]; then
-            continue
-        fi
-        if [ -f "$(dirname "$dir")/SKIP" ]; then
-            continue
-        fi
-        rm -f "$dir/SUCCESS" "$dir/FAILURE" 2>/dev/null
-    done < "$FILTERED_LIST"
+    # When --cache is on, leave markers in place: cache_check uses the prior
+    # SUCCESS marker as evidence of a passing prior run, and regression_run_one_test
+    # clears markers internally before re-running anyway.
+    if [ "${KORU_CACHE_MODE:-off}" != "on" ]; then
+        while IFS= read -r -d '' dir; do
+            if [ -f "$dir/BENCHMARK" ] || [ -f "$dir/TODO" ] || [ -f "$dir/SKIP" ] || [ -f "$dir/BROKEN" ]; then
+                continue
+            fi
+            if [ -f "$(dirname "$dir")/SKIP" ]; then
+                continue
+            fi
+            rm -f "$dir/SUCCESS" "$dir/FAILURE" 2>/dev/null
+        done < "$FILTERED_LIST"
+    fi
 
     # Run in parallel, capture output for debugging only
     PARALLEL_OUTPUT="/tmp/koru-parallel-output.txt"
@@ -783,7 +831,64 @@ while IFS= read -r -d '' test_dir; do
 
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
+    # Cache short-circuit (serial path). Mirrors run_single_test.sh logic.
+    SERIAL_CACHE_HIT=false
+    if [ "${KORU_CACHE_MODE:-off}" = "on" ]; then
+        TEST_CATEGORY_DIR="$(dirname "$test_dir")"
+        if [ ! -f "$test_dir/BENCHMARK" ] && [ ! -f "$test_dir/TODO" ] && \
+           [ ! -f "$test_dir/SKIP" ] && [ ! -f "$test_dir/BROKEN" ] && \
+           [ ! -f "$TEST_CATEGORY_DIR/SKIP" ] && [ ! -f "$TEST_CATEGORY_DIR/BENCHMARK" ] && \
+           [ ! -f "$TEST_CATEGORY_DIR/TODO" ]; then
+            if cache_check "$test_dir" "$KORU_COMPILER_MTIME"; then
+                SERIAL_CACHE_HIT=true
+            fi
+        fi
+    fi
+
+    if [ "$SERIAL_CACHE_HIT" = true ]; then
+        # Determine cached outcome from disk markers.
+        cached_outcome="unknown"
+        [ -f "$test_dir/SUCCESS" ] && [ ! -f "$test_dir/FAILURE" ] && cached_outcome="pass"
+        [ -f "$test_dir/FAILURE" ] && cached_outcome="fail"
+
+        if [ "${KORU_VERIFY_CACHE:-off}" = "on" ]; then
+            # regression_run_one_test increments counters internally; do not double-count.
+            rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
+            cache_invalidate "$test_dir"
+            regression_run_one_test "$test_dir" >/dev/null 2>&1
+            uncached_outcome="unknown"
+            [ -f "$test_dir/SUCCESS" ] && [ ! -f "$test_dir/FAILURE" ] && uncached_outcome="pass"
+            [ -f "$test_dir/FAILURE" ] && uncached_outcome="fail"
+
+            if [ "$cached_outcome" = "$uncached_outcome" ]; then
+                cache_write "$test_dir" "./zig-out/bin/koruc" "$KORU_COMPILER_MTIME"
+                echo -e "${GREEN}✓ PARITY${NC}  ${DIM:-}$(basename "$test_dir")${NC} ${DIM:-}(cached+uncached both $cached_outcome)${NC}"
+            else
+                echo "cache_said=$cached_outcome uncached_said=$uncached_outcome" > "$test_dir/PARITY_VIOLATION"
+                echo -e "${RED}🚨 PARITY VIOLATION${NC} $(basename "$test_dir") ${DIM:-}(cache: $cached_outcome, uncached: $uncached_outcome)${NC}"
+            fi
+        else
+            if [ "$cached_outcome" = "pass" ]; then
+                echo -e "${GREEN}💾 CACHED${NC} ${GREEN}✓${NC} ${DIM:-}$(basename "$test_dir")${NC}"
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+            else
+                reason=$(head -1 "$test_dir/FAILURE" 2>/dev/null || echo "cached-fail")
+                echo -e "${RED}💾 CACHED${NC} ${RED}✗${NC} ${DIM:-}$(basename "$test_dir")${NC} ${DIM:-}($reason)${NC}"
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+            fi
+            CACHED_TESTS=$((${CACHED_TESTS:-0} + 1))
+        fi
+        continue
+    fi
+
     regression_run_one_test "$test_dir"
+
+    # Update cache after test ran. Cache_write writes on either outcome and
+    # refuses if neither SUCCESS nor FAILURE exists (test didn't complete).
+    if [ "${KORU_CACHE_MODE:-off}" = "on" ]; then
+        cache_write "$test_dir" "./zig-out/bin/koruc" "$KORU_COMPILER_MTIME" \
+            || cache_invalidate "$test_dir"
+    fi
 done < <(
     # Sort to maintain consistent ordering
     FILTER_PATTERNS=()

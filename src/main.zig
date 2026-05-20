@@ -3423,6 +3423,7 @@ const usage_header =
     \\  -o, --output <file>   Output file (default: <input>.zig)
     \\  -c, --check          Check only, don't emit code
     \\  --ast-json           Output AST as JSON (for parser tests)
+    \\  --list-imports       Output transitive resolved import paths as JSON array
     \\  --registry-json      Output TypeRegistry as JSON (for debugging)
     \\  --fail-fast          Stop at first parse error (default: continue)
     \\  --visitor            Use visitor pattern backend (experimental)
@@ -5620,6 +5621,7 @@ pub fn main() !void {
     var check_only = false;
     var use_visitor = false; // Visitor pattern needs more work before becoming default
     var ast_json_mode = false; // Output AST as JSON
+    var list_imports_mode = false; // Output transitive imports as JSON list (for harness caching)
     var registry_json_mode = false; // Output TypeRegistry as JSON
     var ccp_mode = false; // CCP daemon mode for Studio integration
     var fail_fast = false; // Stop at first parse error (default: lenient mode)
@@ -5648,6 +5650,9 @@ pub fn main() !void {
             try compiler_config.addFlag("ccp");
         } else if (std.mem.eql(u8, arg, "--ast-json")) {
             ast_json_mode = true;
+        } else if (std.mem.eql(u8, arg, "--list-imports")) {
+            list_imports_mode = true;
+            build_executable = false;
         } else if (std.mem.eql(u8, arg, "--registry-json")) {
             registry_json_mode = true;
             build_executable = false;
@@ -6326,6 +6331,21 @@ pub fn main() !void {
         }
 
         try imported_modules.append(allocator, module);
+    }
+
+    // --list-imports: emit transitive resolved canonical paths as a JSON array, then exit.
+    // Used by the regression harness to fingerprint a test's dependency set for caching.
+    if (list_imports_mode) {
+        try printStdout(allocator, "[", .{});
+        var first_import = true;
+        var path_iter = imported_paths.keyIterator();
+        while (path_iter.next()) |path_ptr| {
+            if (!first_import) try printStdout(allocator, ",", .{});
+            first_import = false;
+            try printStdout(allocator, "\"{s}\"", .{path_ptr.*});
+        }
+        try printStdout(allocator, "]\n", .{});
+        return;
     }
 
     // compiler is now auto-injected as an import (unless --compiler=disable)

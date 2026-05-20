@@ -14,6 +14,8 @@ fi
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./scripts/regression_lib.sh
 source "$SCRIPT_DIR/scripts/regression_lib.sh"
+# shellcheck source=./scripts/regression_cache.sh
+source "$SCRIPT_DIR/scripts/regression_cache.sh"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -25,14 +27,79 @@ NC='\033[0m'
 # Ensure category logic starts clean when invoked per-test.
 CURRENT_CATEGORY=""
 
+TEST_NAME=$(basename "$test_dir")
+CATEGORY_DIR="$(dirname "$test_dir")"
+
+# Cache mode is opt-in via KORU_CACHE_MODE=on (set by run_regression.sh --cache).
+# When on, check fingerprint before running; skip the actual test on cache hit.
+CACHE_HIT=false
+if [ "${KORU_CACHE_MODE:-off}" = "on" ]; then
+    # Compute compiler mtime if the suite didn't already export it.
+    if [ -z "${KORU_COMPILER_MTIME:-}" ]; then
+        KORU_COMPILER_MTIME=$(cache_compute_compiler_mtime "$SCRIPT_DIR")
+    fi
+    # Don't try to cache skip/todo/broken/benchmark — those have their own
+    # marker semantics and re-run cheaply.
+    if [ ! -f "$test_dir/BENCHMARK" ] && [ ! -f "$test_dir/TODO" ] && \
+       [ ! -f "$test_dir/SKIP" ] && [ ! -f "$test_dir/BROKEN" ] && \
+       [ ! -f "$CATEGORY_DIR/SKIP" ] && [ ! -f "$CATEGORY_DIR/BENCHMARK" ] && \
+       [ ! -f "$CATEGORY_DIR/TODO" ]; then
+        if cache_check "$test_dir" "$KORU_COMPILER_MTIME"; then
+            CACHE_HIT=true
+        fi
+    fi
+fi
+
+if [ "$CACHE_HIT" = true ]; then
+    # Determine what the cached outcome was from the markers on disk.
+    cached_outcome="unknown"
+    [ -f "$test_dir/SUCCESS" ] && [ ! -f "$test_dir/FAILURE" ] && cached_outcome="pass"
+    [ -f "$test_dir/FAILURE" ] && cached_outcome="fail"
+
+    if [ "${KORU_VERIFY_CACHE:-off}" = "on" ]; then
+        # Force a fresh uncached run and compare outcomes.
+        rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
+        cache_invalidate "$test_dir"
+        regression_run_one_test "$test_dir" >/dev/null 2>&1
+        uncached_outcome="unknown"
+        [ -f "$test_dir/SUCCESS" ] && [ ! -f "$test_dir/FAILURE" ] && uncached_outcome="pass"
+        [ -f "$test_dir/FAILURE" ] && uncached_outcome="fail"
+
+        if [ "$cached_outcome" = "$uncached_outcome" ]; then
+            cache_write "$test_dir" "$SCRIPT_DIR/zig-out/bin/koruc" "$KORU_COMPILER_MTIME"
+            echo -e "${GREEN}✓ PARITY${NC}  ${DIM}$TEST_NAME${NC} ${DIM}(cached+uncached both $cached_outcome)${NC}"
+            [ "$cached_outcome" = "pass" ] && exit 0 || exit 1
+        else
+            echo "cache_said=$cached_outcome uncached_said=$uncached_outcome" > "$test_dir/PARITY_VIOLATION"
+            echo -e "${RED}🚨 PARITY VIOLATION${NC} $TEST_NAME ${DIM}(cache: $cached_outcome, uncached: $uncached_outcome)${NC}"
+            exit 1
+        fi
+    fi
+
+    if [ "$cached_outcome" = "pass" ]; then
+        echo -e "${GREEN}💾 CACHED${NC} ${GREEN}✓${NC} ${DIM}$TEST_NAME${NC}"
+        exit 0
+    else
+        reason=$(head -1 "$test_dir/FAILURE" 2>/dev/null || echo "cached-fail")
+        echo -e "${RED}💾 CACHED${NC} ${RED}✗${NC} ${DIM}$TEST_NAME${NC} ${DIM}($reason)${NC}"
+        exit 1
+    fi
+fi
+
 if [ "${REGRESSION_QUIET:-false}" = "true" ]; then
     regression_run_one_test "$test_dir" >/dev/null 2>&1
 else
     regression_run_one_test "$test_dir"
 fi
 
-TEST_NAME=$(basename "$test_dir")
-CATEGORY_DIR="$(dirname "$test_dir")"
+# After the test ran, update the cache. Both pass and fail outcomes are
+# cacheable — if inputs haven't changed, the outcome won't change either.
+# cache_write internally requires SUCCESS or FAILURE to exist (so a crash
+# mid-run doesn't poison the cache).
+if [ "${KORU_CACHE_MODE:-off}" = "on" ]; then
+    cache_write "$test_dir" "$SCRIPT_DIR/zig-out/bin/koruc" "$KORU_COMPILER_MTIME" \
+        || cache_invalidate "$test_dir"
+fi
 
 if [ -f "$test_dir/BENCHMARK" ]; then
     echo -e "${CYAN}📊 BENCH${NC}  ${DIM}$TEST_NAME${NC}"
