@@ -1275,4 +1275,53 @@ pub fn build(b: *std.Build) void {
     const run_bench_interpreter = b.addRunArtifact(bench_interpreter_exe);
     const bench_interpreter_step = b.step("bench-interpreter", "Run interpreter eval benchmark");
     bench_interpreter_step.dependOn(&run_bench_interpreter.step);
+
+    // ============================================================
+    // libkoru-srclib.a — static library of compiler internals
+    // ============================================================
+    //
+    // Per-user `./backend` executables (emitted by koruc) currently @import
+    // src/*.zig modules directly, which means Zig pulls all of src/ into each
+    // user's compilation unit (~11MB monolithic backend_zcu.o, ~3.5s incremental).
+    //
+    // This library packages those modules into a prebuilt .a so per-user builds
+    // can link against it instead of recompiling src/ from source. Pairs with
+    // the extern-decl refactor of generated backend.zig (Phase 2+ work).
+    //
+    // Phase 1 (this commit): just produce the .a, don't change consumer wiring.
+    const koru_srclib_facade_module = b.createModule(.{
+        .root_source_file = b.path("src/koru_lib_facade.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    koru_srclib_facade_module.addImport("annotation_parser", annotation_parser_module);
+    koru_srclib_facade_module.addImport("ast", ast_module);
+    koru_srclib_facade_module.addImport("ast_functional", ast_functional_module);
+    koru_srclib_facade_module.addImport("ast_serializer", ast_serializer_module);
+    koru_srclib_facade_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
+    koru_srclib_facade_module.addImport("codegen_utils", codegen_utils_module);
+    koru_srclib_facade_module.addImport("dead_strip", dead_strip_module);
+    koru_srclib_facade_module.addImport("emit_build_zig", emit_build_zig_module);
+    koru_srclib_facade_module.addImport("emitter_helpers", emitter_helpers_module);
+    koru_srclib_facade_module.addImport("errors", errors_module);
+    koru_srclib_facade_module.addImport("expression_parser", expression_parser_module);
+    koru_srclib_facade_module.addImport("flow_checker", flow_checker_module);
+    koru_srclib_facade_module.addImport("log", log_module);
+    koru_srclib_facade_module.addImport("parser", parser_module);
+    koru_srclib_facade_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
+    koru_srclib_facade_module.addImport("purity_analyzer", purity_analyzer_module);
+    koru_srclib_facade_module.addImport("runtime_registry", runtime_registry_module);
+    koru_srclib_facade_module.addImport("shape_checker", shape_checker_module);
+    koru_srclib_facade_module.addImport("tap_registry", tap_registry_module);
+    koru_srclib_facade_module.addImport("tap_transformer", tap_transformer_module);
+    koru_srclib_facade_module.addImport("transform_pass_runner", transform_pass_runner_module);
+    koru_srclib_facade_module.addImport("type_registry", type_registry_module);
+    koru_srclib_facade_module.addImport("visitor_emitter", visitor_emitter_module);
+
+    const koru_srclib = b.addLibrary(.{
+        .name = "koru-srclib",
+        .linkage = .static,
+        .root_module = koru_srclib_facade_module,
+    });
+    b.installArtifact(koru_srclib);
 }
