@@ -6611,7 +6611,19 @@ pub fn main() !void {
             log.debug("DEBUG:   Module: {s} (has_comptime: {any})\n", .{ module.logical_name, module.annotations });
         }
     }
-    const comptime_result = try generateComptimeBackendEmitted(compile_allocator, &source_file, &user_registry);
+
+    // Stage-A dead-strip: remove event/proc decls that aren't reachable from any
+    // flow root (including the default ~coordinate body in koru_std/compiler.kz,
+    // user flows, and taps). Shrinks backend_output_emitted.zig — the metacircular
+    // backend only needs handlers for events that something actually invokes.
+    // Leaves source_file unchanged; downstream collectors use the original AST.
+    const dead_strip_mod = @import("dead_strip");
+    var backend_strip = dead_strip_mod.DeadStripPass.init(compile_allocator);
+    defer backend_strip.deinit();
+    const stripped_program = try backend_strip.run(&source_file);
+    log.debug("Stage-A backend dead-strip: removed {d} unreachable items\n", .{backend_strip.stripped_count});
+    const backend_source_file = @constCast(stripped_program);
+    const comptime_result = try generateComptimeBackendEmitted(compile_allocator, backend_source_file, &user_registry);
     const comptime_backend_code = comptime_result.code;
     const has_transforms = comptime_result.transform_count > 0;
     // No defer needed - compile_arena handles cleanup automatically

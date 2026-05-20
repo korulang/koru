@@ -61,6 +61,9 @@ pub const DeadStripPass = struct {
                 .flow => |flow| {
                     try self.collectFromInvocation(&flow.invocation);
                     try self.collectFromContinuations(flow.continuations);
+                    // ~name = body syntax: flow implements the named event.
+                    // Mark the implemented event as used so its event_decl survives.
+                    if (flow.impl_of) |*p| try self.markPath(p);
                 },
                 .event_tap => |tap| {
                     if (tap.source) |source| try self.markPath(&source);
@@ -238,7 +241,10 @@ pub const DeadStripPass = struct {
 
     fn hasRetain(annotations: []const []const u8) bool {
         for (annotations) |ann| {
+            // [retain] = explicit retention; [command] = CLI entry point invoked
+            // from main() outside the flow graph, so flow-walk reachability misses it.
             if (std.mem.eql(u8, ann, "retain")) return true;
+            if (std.mem.eql(u8, ann, "command")) return true;
         }
         return false;
     }

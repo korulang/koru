@@ -539,6 +539,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     dead_strip_module.addImport("ast", ast_module);
+    dead_strip_module.addImport("log", log_module);
     exe.root_module.addImport("dead_strip", dead_strip_module);
 
     // Transform Collector module for two-layer AST transformation
