@@ -584,8 +584,11 @@ pub const VisitorEmitter = struct {
         // This is important because nested modules like std.control need to be checked too
         try self.collectModulesRecursively(source_file.items, &modules);
 
-        // Emit main_module struct start
-        try emitter.emitMainModuleStart(self.code_emitter);
+        // Emit main_module struct start. CompilerEnv is pub only for the
+        // comptime_only emission (backend_output_emitted.zig) so phantom_semantic_checker
+        // and friends can see it via @hasDecl(root, ...) when they're compiled
+        // as part of that addObject. See emitMainModuleStart docstring.
+        try emitter.emitMainModuleStart(self.code_emitter, self.emit_mode == .comptime_only);
         self.code_emitter.indent_level = 1;  // Set indent for main_module contents
 
         // Phase 1: Emit all declarations inside main_module (events, procs, flows, etc.)

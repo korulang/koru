@@ -212,22 +212,70 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
         // Use the old implementation
         try writer.writeAll("// Metacircular Code Generator\n\n");
 
-        // Import libraries used by multiple compiler procs
-        try writer.writeAll("const ast_functional = @import(\"ast_functional\");\n");
-        // Library-first architecture: Import reusable build.zig generation library
-        try writer.writeAll("const emit_build_zig = @import(\"emit_build_zig\");\n");
-        // Import comptime handlers (available during backend compilation)
-        try writer.writeAll("const backend_output = @import(\"backend_output_emitted.zig\");\n\n");
+        // Import ast for type access in extern fn signatures.
+        // (ast_functional + emit_build_zig were unused dead imports — dropped.)
+        // (backend_output_emitted.zig is no longer source-imported here; backend.zig
+        //  reaches it via extern fn so it can be a separate compilation unit.)
+        try writer.writeAll("const __koru_ast = @import(\"ast\");\n\n");
+
+        // Extern wrappers — backend_output_emitted.zig exports these as
+        // `pub export fn`. C-ABI flat extern struct because Zig 0.15 won't let
+        // extern fn carry Zig-native unions/slices. Both sides must declare
+        // structurally-identical types; the wrapper translates back to Zig-native
+        // before invoking the real handler.
+        try writer.writeAll(
+            \\const KoruCoordinateResult = extern struct {
+            \\    is_error: bool,
+            \\    code_ptr: [*]const u8,
+            \\    code_len: usize,
+            \\    metrics_ptr: [*]const u8,
+            \\    metrics_len: usize,
+            \\    error_ptr: [*]const u8,
+            \\    error_len: usize,
+            \\};
+            \\extern fn koru_coordinate(
+            \\    program_ast: *const __koru_ast.Program,
+            \\    allocator: *const __koru_std.mem.Allocator,
+            \\) KoruCoordinateResult;
+            \\
+            \\extern fn koru_command_dispatch(
+            \\    name: *const anyopaque, // *const []const u8
+            \\    program: *const __koru_ast.Program,
+            \\    allocator: *const __koru_std.mem.Allocator,
+            \\    argv: *const anyopaque, // *const []const []const u8 (Zig slice; cast on the other side)
+            \\) void;
+            \\
+            \\extern fn koru_run_pass(
+            \\    annotation: *const anyopaque, // *const []const u8
+            \\    program: *const __koru_ast.Program,
+            \\    allocator: *const __koru_std.mem.Allocator,
+            \\    out_program: *?*const __koru_ast.Program,
+            \\) bool;
+            \\
+            \\
+        );
 
         // Note: comptime_main() is now called from compiler.passes.evaluate_comptime
         // It executes at Zig runtime (when ./backend runs), not Zig comptime
 
-        // Re-export transform dispatcher if it exists (makes it available via @import("root"))
-        // This allows evaluate_comptime pass to call Root.process_all_transforms()
+        // Re-export transform dispatcher via @import("root") so the
+        // evaluate_comptime pass can call Root.process_all_transforms(). The
+        // body forwards to the koru_run_pass extern wrapper exported by
+        // backend_output_emitted.zig.
         if (has_transforms) {
             try writer.writeAll(
-                \\// Re-export transform dispatcher to make it available via @import("root")
-                \\pub const process_all_transforms = backend_output.process_all_transforms;
+                \\// Re-export transform dispatcher — Zig-side shim around the extern wrapper
+                \\// so existing callers in src/ see an unchanged calling convention.
+                \\pub fn process_all_transforms(
+                \\    annotation: []const u8,
+                \\    program: *const __koru_ast.Program,
+                \\    allocator: __koru_std.mem.Allocator,
+                \\) !*const __koru_ast.Program {
+                \\    var out_program: ?*const __koru_ast.Program = null;
+                \\    const ok = koru_run_pass(@ptrCast(&annotation), program, &allocator, &out_program);
+                \\    if (!ok) return error.TransformFailed;
+                \\    return out_program orelse return error.TransformFailed;
+                \\}
                 \\
                 \\
             );
@@ -767,37 +815,29 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
         // via cross-module subflow overrides - no special detection needed!
         // ============================================================================
 
-        // Add runtime emitter that calls the coordinate event from backend_output_emitted.zig
+        // Runtime emitter — calls the coordinate event through the C-ABI
+        // extern wrapper (`koru_coordinate`) exported by backend_output_emitted.zig.
+        // The C-ABI shape lives only at the boundary; we rehydrate slices on this side.
         try writer.writeAll(
             \\// Runtime emitter - calls the coordinate event from compiler.kz
             \\// The visitor emitter handles abstract/impl resolution automatically
             \\const RuntimeEmitter = struct {
             \\    pub fn emit(allocator: __koru_std.mem.Allocator, source_ast: *const Program) ![]const u8 {
-            \\
-        );
-
-        // Call the coordinate event - abstract/impl mechanism handles user overrides
-        try writer.writeAll("        // Call coordinate event (uses cross-module override if provided, otherwise default)\n");
-        try writer.writeAll("        const result = backend_output.koru_");
-        try writer.writeAll(compiler_module);
-        try writer.writeAll(".coordinate_event.handler(.{ .program_ast = source_ast, .allocator = allocator });\n\n");
-
-        try writer.writeAll(
-            \\        // Handle both success and error branches
-            \\        switch (result) {
-            \\            .coordinated => |r| {
-            \\                __koru_std.debug.print("🎯 Compiler coordination: {s}\n", .{r.metrics});
-            \\                return r.code;
-            \\            },
-            \\            .@"error" => |e| {
-            \\                __koru_std.debug.print("❌ Compiler coordination error: {s}\n", .{e});
-            \\                return error.CompilerCoordinationFailed;
-            \\            },
+            \\        const result = koru_coordinate(source_ast, &allocator);
+            \\        if (result.is_error) {
+            \\            const e = result.error_ptr[0..result.error_len];
+            \\            __koru_std.debug.print("❌ Compiler coordination error: {s}\n", .{e});
+            \\            return error.CompilerCoordinationFailed;
             \\        }
+            \\        const metrics = result.metrics_ptr[0..result.metrics_len];
+            \\        const code = result.code_ptr[0..result.code_len];
+            \\        __koru_std.debug.print("🎯 Compiler coordination: {s}\n", .{metrics});
+            \\        return code;
             \\    }
             \\};
             \\
         );
+        _ = compiler_module;
 
         // AST dump helper for observability during development (backend.zig version - no JSON)
         try writer.writeAll(
@@ -864,47 +904,26 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
                 \\
             );
 
-            // Generate command checks
-            // Commands call MODULE.EVENT_event.handler(.{ .program = ..., .allocator = ..., .argv = ... })
+            // Generate command checks. All commands route through the single
+            // `koru_command_dispatch` extern wrapper, which is emitted in
+            // backend_output_emitted.zig with a name → handler switch generated
+            // from the same cmd_result. Backend.zig no longer reaches into the
+            // backend_output namespace here.
             for (cmd_result.commands[0..cmd_result.count]) |cmd| {
+                _ = cmd.module_path;
+                _ = cmd.handler_name;
                 var buf: [1024]u8 = undefined;
-                if (cmd.module_path) |mod_path| {
-                    // Convert module path to emitted Zig namespace
-                    // All module paths are prefixed with koru_ in emitted code:
-                    //   std.build → koru_std.build
-                    //   koru.docker → koru_koru.docker
-                    //   orisha → koru_orisha
-                    var zig_mod_path: [256]u8 = undefined;
-                    const zig_mod = try std.fmt.bufPrint(&zig_mod_path, "backend_output.koru_{s}", .{mod_path});
-
-                    const line = try std.fmt.bufPrint(&buf,
-                        \\        if (__koru_std.mem.eql(u8, args[1], "{s}")) {{
-                        \\            __koru_std.debug.print("🔧 Running command: {s}\n", .{{}});
-                        \\            _ = {s}.{s}_event.handler(.{{
-                        \\                .program = &program_ast_mod.PROGRAM_AST,
-                        \\                .allocator = allocator,
-                        \\                .argv = args[2..],
-                        \\            }});
-                        \\            return;
-                        \\        }}
-                        \\
-                    , .{ cmd.name, cmd.name, zig_mod, cmd.handler_name });
-                    try writer.writeAll(line);
-                } else {
-                    const line = try std.fmt.bufPrint(&buf,
-                        \\        if (__koru_std.mem.eql(u8, args[1], "{s}")) {{
-                        \\            __koru_std.debug.print("🔧 Running command: {s}\n", .{{}});
-                        \\            _ = {s}_event.handler(.{{
-                        \\                .program = &program_ast_mod.PROGRAM_AST,
-                        \\                .allocator = allocator,
-                        \\                .argv = args[2..],
-                        \\            }});
-                        \\            return;
-                        \\        }}
-                        \\
-                    , .{ cmd.name, cmd.name, cmd.handler_name });
-                    try writer.writeAll(line);
-                }
+                const line = try std.fmt.bufPrint(&buf,
+                    \\        if (__koru_std.mem.eql(u8, args[1], "{s}")) {{
+                    \\            __koru_std.debug.print("🔧 Running command: {s}\n", .{{}});
+                    \\            const cmd_name: []const u8 = "{s}";
+                    \\            const argv_slice: []const []const u8 = args[2..];
+                    \\            koru_command_dispatch(@ptrCast(&cmd_name), &program_ast_mod.PROGRAM_AST, &allocator, @ptrCast(&argv_slice));
+                    \\            return;
+                    \\        }}
+                    \\
+                , .{ cmd.name, cmd.name, cmd.name });
+                try writer.writeAll(line);
             }
 
             try writer.writeAll(
@@ -1165,6 +1184,129 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
     // Generate transform handlers into backend_output_emitted.zig
     // These need to be in the same file as evaluate_comptime so it can call them
     const transform_count = try generateTransformHandlersToEmitter(&code_emitter, allocator, source_file);
+
+    // Extern wrappers — `pub export fn` shims that backend.zig calls via
+    // `extern fn`. C-ABI flat extern struct because Zig 0.15 won't let extern fn
+    // carry Zig-native unions/slices. The wrapper rehydrates slices internally
+    // before invoking the real Zig-native handler.
+    try code_emitter.write(
+        \\
+        \\// ============================================================
+        \\// EXTERN WRAPPERS — link-time entry points for backend.zig
+        \\// ============================================================
+        \\
+        \\const __KoruCoordinateResult = extern struct {
+        \\    is_error: bool,
+        \\    code_ptr: [*]const u8,
+        \\    code_len: usize,
+        \\    metrics_ptr: [*]const u8,
+        \\    metrics_len: usize,
+        \\    error_ptr: [*]const u8,
+        \\    error_len: usize,
+        \\};
+        \\pub export fn koru_coordinate(
+        \\    program_ast: *const __koru_ast.Program,
+        \\    allocator: *const __koru_std.mem.Allocator,
+        \\) __KoruCoordinateResult {
+        \\    const result = koru_std.compiler.coordinate_event.handler(.{
+        \\        .program_ast = program_ast,
+        \\        .allocator = allocator.*,
+        \\    });
+        \\    return switch (result) {
+        \\        .coordinated => |r| .{
+        \\            .is_error = false,
+        \\            .code_ptr = r.code.ptr,
+        \\            .code_len = r.code.len,
+        \\            .metrics_ptr = r.metrics.ptr,
+        \\            .metrics_len = r.metrics.len,
+        \\            .error_ptr = "".ptr,
+        \\            .error_len = 0,
+        \\        },
+        \\        .@"error" => |e| .{
+        \\            .is_error = true,
+        \\            .code_ptr = "".ptr,
+        \\            .code_len = 0,
+        \\            .metrics_ptr = "".ptr,
+        \\            .metrics_len = 0,
+        \\            .error_ptr = e.ptr,
+        \\            .error_len = e.len,
+        \\        },
+        \\    };
+        \\}
+        \\
+    );
+
+    // koru_command_dispatch — routes CLI command invocations to the right event
+    // handler. Generated from cmd_result so the dispatch knows the user's
+    // commands.
+    const cmd_result = try collectCommands(allocator, source_file);
+    try code_emitter.write(
+        \\pub export fn koru_command_dispatch(
+        \\    name: *const anyopaque,
+        \\    program: *const __koru_ast.Program,
+        \\    allocator: *const __koru_std.mem.Allocator,
+        \\    argv: *const anyopaque,
+        \\) void {
+        \\    const name_typed: *const []const u8 = @ptrCast(@alignCast(name));
+        \\    const argv_typed: *const []const []const u8 = @ptrCast(@alignCast(argv));
+        \\
+    );
+    for (cmd_result.commands[0..cmd_result.count]) |cmd| {
+        var buf: [1024]u8 = undefined;
+        if (cmd.module_path) |mod_path| {
+            const line = try std.fmt.bufPrint(&buf,
+                \\    if (__koru_std.mem.eql(u8, name_typed.*, "{s}")) {{
+                \\        _ = koru_{s}.{s}_event.handler(.{{
+                \\            .program = program,
+                \\            .allocator = allocator.*,
+                \\            .argv = argv_typed.*,
+                \\        }});
+                \\        return;
+                \\    }}
+                \\
+            , .{ cmd.name, mod_path, cmd.handler_name });
+            try code_emitter.write(line);
+        } else {
+            const line = try std.fmt.bufPrint(&buf,
+                \\    if (__koru_std.mem.eql(u8, name_typed.*, "{s}")) {{
+                \\        _ = main_module.{s}_event.handler(.{{
+                \\            .program = program,
+                \\            .allocator = allocator.*,
+                \\            .argv = argv_typed.*,
+                \\        }});
+                \\        return;
+                \\    }}
+                \\
+            , .{ cmd.name, cmd.handler_name });
+            try code_emitter.write(line);
+        }
+    }
+    try code_emitter.write(
+        \\}
+        \\
+    );
+
+    // koru_run_pass — wraps the existing run_pass for cross-unit linkage.
+    // Always emitted (the extern fn declaration on backend.zig side is only
+    // emitted when has_transforms is true, but an extra unreferenced symbol
+    // here costs nothing).
+    if (transform_count > 0) {
+        try code_emitter.write(
+            \\pub export fn koru_run_pass(
+            \\    annotation: *const anyopaque,
+            \\    program: *const __koru_ast.Program,
+            \\    allocator: *const __koru_std.mem.Allocator,
+            \\    out_program: *?*const __koru_ast.Program,
+            \\) bool {
+            \\    const annotation_typed: *const []const u8 = @ptrCast(@alignCast(annotation));
+            \\    out_program.* = run_pass(annotation_typed.*, program, allocator.*) catch {
+            \\        return false;
+            \\    };
+            \\    return true;
+            \\}
+            \\
+        );
+    }
 
     // Get the generated code and trim to actual size
     const generated = code_emitter.getOutput();
