@@ -1,0 +1,15 @@
+~import "$std/io"
+~import "$std/compiler"
+
+const answer = 42;
+const debug = true;
+
+~if(debug == true)
+| then |> std.io:print.blk {
+        {% if debug %}DEBUG: {% endif %}Hello, from Koru! The answer is {{ answer:d }}
+    }
+| else |> std.io:print.ln("Prod")
+
+~std.compiler:analysis = std.io:println(text: "Running compiler analysis") |> std.compiler:analysis.default(ctx)
+    | ctx c5 |> ctx c5
+    | failed f |> failed { ctx: f.ctx, message: f.message }
