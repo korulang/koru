@@ -87,47 +87,87 @@ Ship `koruc make-portable <file.kz>` (or similar): given a `.kz` file, extract a
 
 Each phase is independently shippable. The partial-program tenet means intermediate states are valid: nothing breaks if Phase 1 lands but Phase 2 hasn't.
 
-### Phase 1: Variant-mandatory
+### Phase 1: Variant-mandatory — **LANDED 2026-05-22**
 
-**Scope:** make naked `~proc name { ... }` unresolvable. Sweep existing procs to add `|zig` (or the appropriate host).
+Landed on `main` across commits `70905a38` (sweep), `6511e5af` (resolver), `5083e05a` (followup), `00e2243f` / `ca0bba25` (test-fixture corrections). Final suite state: **507/540 in-scope passing (93.9%)**, identical failure count to pre-Phase-1 baseline (22 pre-existing failures, none introduced).
 
-**Code changes:**
+**What shipped:**
 
-- Resolver behavior: if a proc declaration has no variant string and a call site has no explicit variant and no build mapping resolves to it, that's a compile-time error rather than the implicit-default fallback that exists today. The error message must teach: name the variant, suggest `|zig` for current code, point at the call site.
-- The variant resolver itself stays the same (it already handles variant strings as opaque). Only the "fall back to bareword proc" path goes away.
-- **Open question (decide in implementation):** when a call site has no variant and exactly ONE variant is defined, does the resolver pick it automatically? Design conversation favored YES (for migration ergonomics) — commit to that here unless evidence pushes otherwise.
+- New error code `KORU110` in `src/errors.zig` ("Variant / multi-host" category, gap-filling between `KORU100` binding and the unused-200 range).
+- New check in `src/flow_checker.zig` (`validateInvocationResolution` + `checkInvocationVariants`): for each invocation in a flow, walk all `proc_decl`s (top-level + inside `module_decl.items`) matching the path. If at least one matches AND every match has `target == null` → emit `KORU110` with a teaching hint suggesting `|zig`.
+- 1321 bare `~proc` declarations across `koru_std/` + `tests/` + sibling repo `orisha/lib/` tagged with `|zig`. `dist/` excluded (gitignored, regenerates).
+- Two new regression tests under `tests/regression/300_ADVANCED_FEATURES/370_VARIANTS/`: `8211_bare_proc_call_site_fails` (MUST_FAIL + pinned `expected.txt`) and `8212_bare_proc_no_call_site_succeeds` (COMPILE_ONLY, partial-program tenet).
 
-**Mechanical sweep:**
+**Decisions made during implementation:**
 
-- Repo-wide grep: ~326 procs in `koru_std/` + `demos/` + `dist/koru_std/`, ~1174 in `tests/regression/`, ~9 in `orisha/`. Total ~1500 proc declarations get `|zig` appended (or whatever host applies — the regression tests have some `|gpu` and `|js` already, leave those alone).
-- The sweep is mechanical: regex-match `^~proc <name>(\s*\{|\s*$)` and replace with `^~proc <name>|zig`. The few existing variant procs need to be skipped.
+- **Abstract events exempt.** Procs implementing an event annotated `[abstract]` are skipped — the abstract-override mechanism is a distinct resolution path. Exemption lives in `checkInvocationVariants`: lookup the event via `findEventDecl`; if it has the `abstract` annotation, return without checking.
+- **Single-variant auto-resolution = YES.** Already true in practice after the sweep — every event has its `|zig` variant and the existing emitter picks `|zig` as the default when no variant is registered. No emitter change needed for Phase 1.
+- **Colon-qualified `~proc name:event { ... }` not retagged.** The abstract-event-override syntax (e.g. `~proc input:greet`) is exempted via the `[abstract]` event annotation, not via path inspection. The parser inconsistency where `is_impl` isn't set on `ProcDecl` (it is on `Flow`) is a separate known issue, deferred.
+- **Multi-variant disambiguation deferred.** The case `|zig` + `|gpu` + bare call site → ambiguous. Existing emitter handles it via the "default to zig" path; tightening that is a follow-up beyond Phase 1's scope.
 
-**Tests** (new, under `tests/regression/300_ADVANCED_FEATURES/370_VARIANTS/`):
+**Followup lessons learned (read these before the next big sweep):**
 
-- `MUST_FAIL`: bare proc declaration with no variant + call site, no build mapping → "no resolvable variant" error.
-- `SUCCESS`: bare proc declaration with no variant + zero call sites → compiles (partial-program tenet).
-- `SUCCESS`: explicit variant + bare call site + only one variant defined → resolver picks it.
-- `SUCCESS`: existing `8201_variants_basic` and `8205_zig_and_gpu_variants` continue to pass after the sweep.
+1. **Original regex was too narrow.** `^~proc <name>` missed `~[pure] proc`, `~[comptime] proc`, `~[runtime] proc`, `~[inline] proc`, `~[comptime|runtime] proc`, `~pub proc`. Caught and fixed across 15 sites. Use this regex going forward:
+   ```
+   ^(~(?:pub\s+|\[[^\]]+\]\s*)+proc\s+[\w.*]+)(?![\w.*|:])    # annotated forms
+   ^(~proc\s+[\w.*]+)(?![\w.*|:])                              # plain
+   ```
+2. **Programmatic `ProcDecl` constructions need `target` too.** Three sites synthesize ProcDecl directly: `koru_std/kernel.kz` (lines 947, 1039 — `kernel_init_*` from the comptime kernel transform) and `koru_std/parser_generator.kz:179`. All three default `target` to null. Caused `KORU110` to fire at stage C with synthesized event names like `kernel_init_2255387733`. Any new transform that synthesizes procs must set `target = "zig"`.
+3. **MUST_FAIL form-under-test is sacrosanct.** `tests/regression/000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_012_reject_pub_proc` exists to verify `~pub proc` is rejected. The sweep mechanically tagged it `~pub proc greet|zig {`, then `expected.txt` was refreshed to match — the test kept passing but no longer exercised the form it claimed to. Restored. Captured in memory as `feedback_must_fail_sweep_exclusion.md`. Next sweep must skip MUST_FAIL files whose target line is the rejected form.
+4. **Sibling-repo sweep needed too.** `~/src/orisha/lib/` had bare procs the koru sweep couldn't reach. Always cross-check sibling repos when koru regression tests import them (e.g. `350_*` orisha router tests).
 
 ### Phase 2: Multi-extension file discovery
 
 **Scope:** teach the resolver and file-discovery layer about `.k`, `.kjs`, `.kc`, etc. The parser itself does not change.
 
+Plan refined 2026-05-22 after verifying all referenced line numbers against current `main`. Open in a fresh session — Phase 1 is fully landed; this is the next coherent piece.
+
 **Code changes:**
 
-- New `src/file_types.zig` (or addition to `config.zig`): canonical list of valid Koru file extensions, plus `isKoruFile(name)` and `koruExtensionOf(name)` helpers. Initial list: `[".k", ".kz", ".kjs", ".kc", ".kgpu"]`. Hardcoded; expand as new hosts are added.
-- `src/module_resolver.zig:276`: directory enumeration filter changes from `endsWith(".kz")` to `isKoruFile(name)`.
-- `src/module_resolver.zig:369, 429, 561, 601, 633, 686, 737`: the "add `.kz` if needed" patterns become "try each Koru extension in order until one resolves" OR "fail with explicit-extension-required error." Recommend the former for ergonomics.
-- `src/parser.zig:357, 7016`: module name derivation strips any Koru extension via `koruExtensionOf()`, not just `.kz`.
-- `src/main.zig:938, 940, 2799, 2801, 3189`: input-file detection uses `isKoruFile()`.
+- New `src/file_types.zig`: ~20-line module with the canonical extension list and two helpers.
+  ```zig
+  // Longest-first ordering so .kgpu matches before .k for greedy detection.
+  pub const koru_extensions = [_][]const u8{ ".kgpu", ".kjs", ".kz", ".kc", ".k" };
+  pub fn isKoruFile(name: []const u8) bool;
+  pub fn koruExtensionOf(name: []const u8) ?[]const u8;  // returns the matching ext slice or null
+  ```
+  Hardcoded list — expand as new hosts are added. Avoid adding `config.zig` coupling; keep this as a pure module.
 
-**Estimated diff:** 60-80 lines across `module_resolver.zig`, `parser.zig`, `main.zig`. Mechanical. No semantic changes — the parser remains extension-agnostic.
+- **`src/module_resolver.zig`** — new helper `resolveKoruFile(allocator, base_path) !?[]const u8` that consolidates the existing inline "needs_ext / allocPrint / access" dance:
+  - If `base_path` already has a Koru extension, `access()` it; return resolved path or null.
+  - Otherwise iterate `koru_extensions`, `access()` each candidate, return the first that exists.
+  - Caller decides how to handle null (set `result.file_path` or skip).
 
-**Tests** (new directory, e.g. `tests/regression/100_FILE_LAYOUT/`):
+  Then swap the 8 callsites (all verified at these exact lines on `main` as of 2026-05-22):
+
+  | Line | Current shape | Notes |
+  |------|---------------|-------|
+  | 276  | `if (!endsWith(entry.name, ".kz")) continue;` | Directory enum filter; change to `if (!isKoruFile(entry.name)) continue;` |
+  | 369-384 | needs_ext + access + set file_path | Replace block with `resolveKoruFile` call |
+  | 429-434 | needs_ext + access (inside `checkBoth` closure) | Same swap |
+  | 561-... | needs_ext + access | Same swap |
+  | 601-606 | **No access check today** — just appends `.kz` and returns | Multi-extension forces adding an `access()` here. Adds one stat() per absolute-path import. Acceptable cost. |
+  | 633-657 | needs_ext + access | Same swap |
+  | 686-710 | needs_ext + access | Same swap |
+  | 737-... | needs_ext + access | Same swap |
+
+- **`src/parser.zig`**:
+  - Line 357: replace `if (endsWith(basename, ".kz")) { name_without_ext = basename[0..len-3]; }` with `if (koruExtensionOf(basename)) |ext| { name_without_ext = basename[0..basename.len - ext.len]; }`.
+  - Line 7016: same swap inside the namespace-builder block.
+
+- **`src/main.zig`**:
+  - Lines 938, 940, 2799, 2801: replace `endsWith(args[1], ".kz")` (inside raw Zig string literals `\\`) with `isKoruFile(args[1])`. Note these are embedded in emitted Zig — the generated binary must also know about extensions.
+  - Line 3189-3190: `if (endsWith(path_to_convert, ".kz"))` → use `koruExtensionOf`.
+  - **Plan addition (not in original):** lines 3245-3248 build `parent_path` by appending `.kz` literally (e.g. `$std/io.kz` from `$std/io/file`). This needs to preserve the parent's actual extension. Strategy: try each extension at this site too, or first lookup the parent file's existing extension via filesystem. TBD during implementation.
+
+**Estimated diff:** 80-100 lines net (down from inline-block count since `resolveKoruFile` consolidates 7 sites). Mechanical aside from the lines 3245-3248 nuance. No semantic changes elsewhere — the parser remains extension-agnostic.
+
+**Tests** (new directory `tests/regression/100_FILE_LAYOUT/`):
 
 - `SUCCESS`: module directory with `foo.kz` + `bar.kjs` resolves both files.
 - `SUCCESS`: `~import "foo"` slurps all sibling `.k*` files when `foo/` is a directory.
 - `SUCCESS`: a project with only `.kz` files keeps working identically (back-compat).
+- (Add as discovered:) regression for the absolute-path stat() addition at line 601, and for the parent-path nuance at lines 3245-3248.
 
 ### Phase 3: Contract uniqueness rule
 
