@@ -674,10 +674,24 @@ pub fn emitHostLine(emitter: *CodeEmitter, content: []const u8) !void {
 }
 
 /// Emit main_module struct start
-pub fn emitMainModuleStart(emitter: *CodeEmitter) !void {
-    // Import CompilerEnv from root (backend.zig) so procs can check compiler flags
-    try emitter.write("// Access compiler flags from backend.zig via root import\n");
-    try emitter.write("const CompilerEnv = @import(\"root\").CompilerEnv;\n\n");
+///
+/// `pub_compiler_env` controls visibility of the CompilerEnv re-export:
+///   - true  → backend_output_emitted.zig (comptime_only). pub is required so
+///             src/ code compiled into the addObject (phantom_semantic_checker,
+///             etc.) can see CompilerEnv via `@hasDecl(root, ...)` — that
+///             builtin only crosses file boundaries through pub decls.
+///   - false → output_emitted.zig (runtime_only / user output). pub here would
+///             make `std.testing.refAllDeclsRecursive` (used by zig test
+///             autorun) eagerly resolve `@import("compiler_env")`, which has
+///             no module wired in the user's standalone build → compile error.
+///             Non-pub keeps the decl invisible to refAllDeclsRecursive.
+pub fn emitMainModuleStart(emitter: *CodeEmitter, pub_compiler_env: bool) !void {
+    try emitter.write("// Access compiler flags via the per-user compiler_env module\n");
+    if (pub_compiler_env) {
+        try emitter.write("pub const CompilerEnv = @import(\"compiler_env\").CompilerEnv;\n\n");
+    } else {
+        try emitter.write("const CompilerEnv = @import(\"compiler_env\").CompilerEnv;\n\n");
+    }
     try emitter.write("pub const main_module = struct {\n");
 }
 

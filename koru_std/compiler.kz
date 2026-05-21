@@ -120,6 +120,14 @@ pub const CompilerContext = struct {
     });
     program_ast_module.addImport("ast", ast_module);
 
+    // Compiler env module - per-user CompilerEnv struct (flags + env vars).
+    // Also split out for the same byte-identical-backend.zig reason.
+    const compiler_env_module = b.createModule(.{
+        .root_source_file = b.path("compiler_env.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Lexer module - tokenization
     const lexer_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/lexer.zig" },
@@ -431,8 +439,51 @@ pub const CompilerContext = struct {
     transform_pass_runner_module.addImport("liquid", liquid_module);
 
     // Add all imports to the backend executable
+    // Backend_output_emitted as its own compilation unit, linked via addObject.
+    // This is the slice-B move: backend.zig no longer @import-s this file, so
+    // it doesn't get fused into backend.zig's compilation unit.
+    const backend_output_module = b.createModule(.{
+        .root_source_file = b.path("backend_output_emitted.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    backend_output_module.addImport("ast", ast_module);
+    backend_output_module.addImport("log", log_module);
+    backend_output_module.addImport("emitter_helpers", emitter_helpers_module);
+    backend_output_module.addImport("compiler_env", compiler_env_module);
+    backend_output_module.addImport("tap_registry", tap_registry_module);
+    backend_output_module.addImport("annotation_parser", annotation_parser_module);
+    backend_output_module.addImport("type_registry", type_registry_module);
+    backend_output_module.addImport("codegen_utils", codegen_utils_module);
+    backend_output_module.addImport("transform_pass_runner", transform_pass_runner_module);
+    backend_output_module.addImport("parser", parser_module);
+    backend_output_module.addImport("ast_functional", ast_functional_module);
+    backend_output_module.addImport("flow_checker", flow_checker_module);
+    backend_output_module.addImport("shape_checker", shape_checker_module);
+    backend_output_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
+    backend_output_module.addImport("auto_discharge_inserter", auto_discharge_inserter_module);
+    backend_output_module.addImport("dead_strip", dead_strip_module);
+    backend_output_module.addImport("purity_analyzer", purity_analyzer_module);
+    backend_output_module.addImport("visitor_emitter", visitor_emitter_module);
+    backend_output_module.addImport("emit_build_zig", emit_build_zig_module);
+    backend_output_module.addImport("ast_serializer", ast_serializer_module);
+    backend_output_module.addImport("runtime_registry", runtime_registry_module);
+    backend_output_module.addImport("tap_transformer", tap_transformer_module);
+    backend_output_module.addImport("expression_parser", expression_parser_module);
+    backend_output_module.addImport("errors", errors_module);
+    backend_output_module.addImport("continuation_codegen", continuation_codegen_module);
+    backend_output_module.addImport("template_utils", template_utils_module);
+    backend_output_module.addImport("liquid", liquid_module);
+
+    const backend_output_obj = b.addObject(.{
+        .name = "backend_output",
+        .root_module = backend_output_module,
+    });
+    exe.addObject(backend_output_obj);
+
     exe.root_module.addImport("ast", ast_module);
     exe.root_module.addImport("program_ast", program_ast_module);
+    exe.root_module.addImport("compiler_env", compiler_env_module);
     exe.root_module.addImport("ast_functional", ast_functional_module);
     exe.root_module.addImport("ast_serializer", ast_serializer_module);
     exe.root_module.addImport("log", log_module);

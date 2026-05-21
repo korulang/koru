@@ -219,7 +219,7 @@ test "emit main module start and end" {
     var buffer: [4096]u8 = undefined;
     var code_emitter = emitter.CodeEmitter.init(&buffer);
 
-    try emitter.emitMainModuleStart(&code_emitter);
+    try emitter.emitMainModuleStart(&code_emitter, false);
     try code_emitter.writeLine("    // test content");
     try emitter.emitMainModuleEnd(&code_emitter);
 
