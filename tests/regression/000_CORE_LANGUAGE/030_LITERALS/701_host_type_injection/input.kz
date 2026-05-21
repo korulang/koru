@@ -5,7 +5,7 @@ const std = @import("std");
 
 ~event test_pass {}
 
-~proc test_pass {
+~proc test_pass|zig {
     std.debug.print("HostTypeDecl infrastructure ready\n", .{});
 }
 

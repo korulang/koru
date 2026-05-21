@@ -16,21 +16,21 @@ const std = @import("std");
 ~event double { x: i32 }
 | result i32
 
-~proc double {
+~proc double|zig {
     return .{ .result = x * 2 };
 }
 
 // Event 2: print a number
 ~event print_num { y: i32 }
 
-~proc print_num {
+~proc print_num|zig {
     std.debug.print("{}\n", .{y});
 }
 
 // Event to finalize
 ~event finalize {}
 
-~proc finalize {
+~proc finalize|zig {
     std.debug.print("done\n", .{});
 }
 

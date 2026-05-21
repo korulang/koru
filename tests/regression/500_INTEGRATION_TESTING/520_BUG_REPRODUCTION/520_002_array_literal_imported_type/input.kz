@@ -20,7 +20,7 @@ const std = @import("std");
 ~event makeHandle { id: u64 }
 | made threading:WorkerHandle
 
-~proc makeHandle {
+~proc makeHandle|zig {
     // Create a dummy handle (just for testing codegen)
     const handle = threading:WorkerHandle{
         .thread = undefined,
@@ -32,7 +32,7 @@ const std = @import("std");
 // Event that accepts array of handles
 ~event joinHandles { handles: []const threading:WorkerHandle }
 
-~proc joinHandles {
+~proc joinHandles|zig {
 }
 
 // Try to use array literal with imported type

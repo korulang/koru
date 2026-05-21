@@ -7,23 +7,23 @@ const std = @import("std");
 
 ~event file.read {}
 
-~proc file.read {
+~proc file.read|zig {
 }
 
 ~event file.write {}
 
-~proc file.write {
+~proc file.write|zig {
     std.debug.print("Writing\n", .{});
 }
 
 ~event network.fetch {}
 
-~proc network.fetch {
+~proc network.fetch|zig {
 }
 
 ~event logger { caller: []const u8 }
 
-~proc logger {
+~proc logger|zig {
     std.debug.print("write called from: {s}\n", .{caller});
 }
 

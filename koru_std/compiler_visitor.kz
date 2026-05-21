@@ -10,7 +10,7 @@
 ~event compiler.emit.buffer {}
 | allocated { buffer: []u8, size: usize }
 
-~proc compiler.emit.buffer {
+~proc compiler.emit.buffer|zig {
     const size = 64 * 1024; // 64KB buffer
     var buffer: [size]u8 = undefined;
     return .{ .allocated = .{ .buffer = &buffer, .size = size } };
@@ -171,7 +171,7 @@ const VisitorContext = struct {
 };
 
 // The visitor pattern implementation
-~proc createASTVisitor {
+~proc createASTVisitor|zig {
     const ASTVisitor = struct {
         emitter: *CodeEmitter,
         context: VisitorContext,
@@ -474,7 +474,7 @@ const VisitorContext = struct {
 ~event compiler.emit.zig.visitor {}
 | emitted []const u8
 
-~proc compiler.emit.zig.visitor {
+~proc compiler.emit.zig.visitor|zig {
     // Get a buffer
     var buffer: [64 * 1024]u8 = undefined;
     

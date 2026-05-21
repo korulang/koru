@@ -13,14 +13,14 @@ const std = @import("std");
 // Print text without newline
 ~pub event print { text: []const u8 }
 
-~proc print {
+~proc print|zig {
     std.debug.print("{s}", .{text});
 }
 
 // Print text with newline
 ~pub event println { text: []const u8 }
 
-~proc println {
+~proc println|zig {
     std.debug.print("{s}\n", .{text});
 }
 
@@ -40,7 +40,7 @@ const std = @import("std");
 | eof
 | failed []const u8
 
-~proc readln {
+~proc readln|zig {
     // TODO: Implement actual stdin reading
     // For now, return a placeholder
     return .{ .failed = "readln not yet implemented" };
@@ -51,7 +51,7 @@ const std = @import("std");
 ~pub event read.ln {}
 | ok []const u8
 
-~proc read.ln {
+~proc read.ln|zig {
     const stdin = std.fs.File.stdin();
     var buf: [4096]u8 = undefined;
     const n = stdin.read(&buf) catch return .{ .ok = "" };
@@ -77,7 +77,7 @@ const std = @import("std");
 // Print error to stderr
 ~pub event eprintln { message: []const u8 }
 
-~proc eprintln {
+~proc eprintln|zig {
     const stderr = std.fs.File.stderr().writer();
     stderr.print("ERROR: {s}\n", .{message}) catch {
         // Fall back to debug print if stderr fails
@@ -88,14 +88,14 @@ const std = @import("std");
 // Success message with green color (if terminal supports it)
 ~pub event success { message: []const u8 }
 
-~proc success {
+~proc success|zig {
     std.debug.print("✅ {s}\n", .{message});
 }
 
 // Warning message
 ~pub event warn { message: []const u8 }
 
-~proc warn {
+~proc warn|zig {
     std.debug.print("⚠️  {s}\n", .{message});
 }
 
@@ -109,7 +109,7 @@ const std = @import("std");
 | eof
 | failed []const u8
 
-~proc read_stdin {
+~proc read_stdin|zig {
     const stdin = std.fs.File.stdin();
     const content = stdin.readToEndAlloc(std.heap.page_allocator, 1024 * 1024 * 10) catch |err| {
         const msg = switch (err) {
@@ -132,7 +132,7 @@ const std = @import("std");
 | not_found
 | failed []const u8
 
-~proc read_file {
+~proc read_file|zig {
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         return switch (err) {
             error.FileNotFound => .{ .not_found = .{} },
@@ -158,7 +158,7 @@ const std = @import("std");
 ~pub event args {}
 | ok []const []const u8
 
-~proc args {
+~proc args|zig {
     var arg_list = std.ArrayList([]const u8).init(std.heap.page_allocator);
     var iter = std.process.args();
     while (iter.next()) |arg| {
@@ -194,7 +194,7 @@ const std = @import("std");
     expr: []const u8,
 }
 
-~proc print.ln {
+~proc print.ln|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -567,7 +567,7 @@ const std = @import("std");
     text: []const u8,
 }
 
-~proc print.blk {
+~proc print.blk|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 

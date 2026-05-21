@@ -5,7 +5,7 @@ const std = @import("std");
 
 ~pub event log { source: []const u8, branch: []const u8 }
 
-~proc log {
+~proc log|zig {
     std.debug.print("[TAP] Profile: {s}.{s}\n", .{source, branch});
 }
 

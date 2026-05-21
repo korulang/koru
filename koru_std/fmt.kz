@@ -27,7 +27,7 @@ pub const FormattedText = struct {
 
 ~pub event fmt.dealloc { formatted: *FormattedText[!allocated] }
 
-~proc fmt.dealloc {
+~proc fmt.dealloc|zig {
     formatted.allocator.free(formatted.text);
     std.heap.page_allocator.destroy(formatted);
 }
@@ -59,7 +59,7 @@ pub const FormattedText = struct {
     text: []const u8,
 }
 
-~proc fmt.blk {
+~proc fmt.blk|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -314,7 +314,7 @@ pub const FormattedText = struct {
 }
 | line []const u8
 
-~proc ln {
+~proc ln|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 

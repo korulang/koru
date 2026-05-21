@@ -3,6 +3,6 @@
 
 ~[keyword] event private_thing {}
 
-~proc private_thing {
+~proc private_thing|zig {
     // This should never run - the error is at parse time
 }

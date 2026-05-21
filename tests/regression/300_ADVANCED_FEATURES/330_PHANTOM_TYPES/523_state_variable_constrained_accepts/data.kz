@@ -4,7 +4,7 @@ const Data = struct { value: i32 };
 ~pub event alloc {}
 | allocated *Data[owned]
 
-~proc alloc {
+~proc alloc|zig {
     const allocator = std.heap.page_allocator;
     const d = allocator.create(Data) catch unreachable;
     d.* = Data{ .value = 42 };
@@ -14,7 +14,7 @@ const Data = struct { value: i32 };
 ~pub event borrow { other: *Data[owned] }
 | borrowed *Data[borrowed]
 
-~proc borrow {
+~proc borrow|zig {
     return .{ .borrowed = other };
 }
 
@@ -23,6 +23,6 @@ const Data = struct { value: i32 };
 ~pub event process { d: *Data[M'owned|borrowed] }
 | done *Data[M'owned|borrowed]  // Preserves whichever state was passed
 
-~proc process {
+~proc process|zig {
     return .{ .done = d };
 }

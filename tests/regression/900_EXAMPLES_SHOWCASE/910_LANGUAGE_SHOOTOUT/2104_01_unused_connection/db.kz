@@ -22,7 +22,7 @@ const QueryResult = struct { rows: i32 };
 | ok *Connection[open!]
 | err []const u8
 
-~proc connect {
+~proc connect|zig {
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .handle = 42 };
     return .{ .ok = c };
@@ -33,7 +33,7 @@ const QueryResult = struct { rows: i32 };
 | ok *Transaction[active!]
 | err []const u8
 
-~proc begin {
+~proc begin|zig {
     const tx = std.heap.page_allocator.create(Transaction) catch unreachable;
     tx.* = Transaction{ .conn_handle = conn.handle };
     std.heap.page_allocator.destroy(conn);
@@ -45,7 +45,7 @@ const QueryResult = struct { rows: i32 };
 | ok { tx: *Transaction[active], result: QueryResult }
 | err { tx: *Transaction[active], msg: []const u8 }
 
-~proc execute {
+~proc execute|zig {
     std.debug.print("Executing: {s}\n", .{sql});
     return .{ .ok = .{ .tx = tx, .result = .{ .rows = 1 } } };
 }
@@ -55,7 +55,7 @@ const QueryResult = struct { rows: i32 };
 // Void event (no branches) so [!] works correctly
 ~[!]pub event commit { tx: *Transaction[!active] }
 
-~proc commit {
+~proc commit|zig {
     std.debug.print("COMMIT\n", .{});
     std.heap.page_allocator.destroy(tx);
 }
@@ -64,7 +64,7 @@ const QueryResult = struct { rows: i32 };
 // Also marked [!] as alternative discharge
 ~[!]pub event rollback { tx: *Transaction[!active] }
 
-~proc rollback {
+~proc rollback|zig {
     std.debug.print("ROLLBACK\n", .{});
     std.heap.page_allocator.destroy(tx);
 }

@@ -13,25 +13,25 @@ const std = @import("std");
 // Void event (like advance_velocities)
 ~event step_one {}
 
-~proc step_one {}
+~proc step_one|zig {}
 
 // Another void event (like advance_positions)
 ~event step_two {}
 
-~proc step_two {}
+~proc step_two|zig {}
 
 // Branched event (like calculate_energy)
 ~event get_result {}
 | value i32
 
-~proc get_result {
+~proc get_result|zig {
     return .{ .value = 42 };
 }
 
 // Print event with a result (like print_energy)
 ~event print_value { v: i32 }
 
-~proc print_value {
+~proc print_value|zig {
     std.debug.print("{d}\n", .{v});
 }
 
@@ -39,7 +39,7 @@ const std = @import("std");
 ~event setup {}
 | ready i32
 
-~proc setup {
+~proc setup|zig {
     return .{ .ready = 1 };
 }
 

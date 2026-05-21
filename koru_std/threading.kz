@@ -41,7 +41,7 @@ pub const WorkerHandle = struct {
 
 ~event worker.spawn { work_fn: WorkFn, context: *anyopaque }
 
-~proc worker.spawn {
+~proc worker.spawn|zig {
     // Spawn thread with work function
     const thread = std.Thread.spawn(.{}, struct {
         fn run(fn_ptr: WorkFn, ctx: *anyopaque) void {
@@ -62,7 +62,7 @@ pub const WorkerHandle = struct {
 ~event worker.spawn.async { work_fn: WorkFn, context: *anyopaque }
 | awaitable WorkerHandle
 
-~proc worker.spawn.async {
+~proc worker.spawn.async|zig {
     // Spawn thread with work function
     // Work function is responsible for writing result to context
     const thread = std.Thread.spawn(.{}, struct {
@@ -86,7 +86,7 @@ pub const WorkerHandle = struct {
 ~event worker.spawn.await { handle: WorkerHandle }
 | completed *anyopaque
 
-~proc worker.spawn.await {
+~proc worker.spawn.await|zig {
     // Block until thread completes
     handle.thread.join();
 
@@ -103,7 +103,7 @@ pub const WorkerHandle = struct {
 ~event worker.spawn.join { handles: []const WorkerHandle }
 | all_completed []*anyopaque
 
-~proc worker.spawn.join {
+~proc worker.spawn.join|zig {
     // Allocate results array
     const results = std.heap.page_allocator.alloc(*anyopaque, handles.len) catch unreachable;
 

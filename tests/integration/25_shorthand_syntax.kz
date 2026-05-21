@@ -38,17 +38,17 @@ const std = @import("std");
 | failed f |> _ // Error
 
 // Proc implementations  
-~proc db.insert {
+~proc db.insert|zig {
     if (std.mem.eql(u8, e.table, "users")) {
         return .{ .inserted = 42 };
     }
     return .{ .inserted = 99 };
 }
 
-~proc user.create {
+~proc user.create|zig {
     return .{ .success = .{ .id = 42, .name = e.name, .email = e.email } };
 }
 
-~proc notify.welcome {
+~proc notify.welcome|zig {
     std.debug.print("Welcome email sent to {} at {s}\n", .{e.user_id, e.user_email});
 }

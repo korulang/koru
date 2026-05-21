@@ -1,7 +1,7 @@
 ~import "$std/taps"
 ~import "$std/io"
 ~event work {}
-~proc work {
+~proc work|zig {
 }
 ~tap(work -> *)
 | Profile p |> std.io:print.ln("Profile: {{p.source:s}}.{{p.branch:s}}")

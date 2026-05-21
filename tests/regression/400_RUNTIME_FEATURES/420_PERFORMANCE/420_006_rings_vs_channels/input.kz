@@ -127,7 +127,7 @@ const MESSAGES: u64 = 10_000_000;
 ~event create_ring {}
 | created *Ring
 
-~proc create_ring {
+~proc create_ring|zig {
     // Allocate ring on heap (needs to outlive this function)
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
     ring_storage.* = Ring.init();
@@ -136,7 +136,7 @@ const MESSAGES: u64 = 10_000_000;
 
 ~event spawn_producer { ring: *Ring }
 
-~proc spawn_producer {
+~proc spawn_producer|zig {
     // Spawn producer thread
     const producer = std.Thread.spawn(.{}, struct {
         fn run(r: *Ring) void {
@@ -157,7 +157,7 @@ const MESSAGES: u64 = 10_000_000;
 ~event dequeue { ring: *Ring }
 | some u64
 
-~proc dequeue {
+~proc dequeue|zig {
     if (ring.tryDequeue()) |value| {
         return .{ .some = value };
     } else {
@@ -179,7 +179,7 @@ const MESSAGES: u64 = 10_000_000;
 | continue { sum: u64, received: u64 }
 | done u64
 
-~proc check_if_done {
+~proc check_if_done|zig {
     if (received >= MESSAGES) {
         return .{ .done = sum };
     } else {
@@ -190,14 +190,14 @@ const MESSAGES: u64 = 10_000_000;
 ~event yield_then_continue { sum: u64, received: u64 }
 | continue { sum: u64, received: u64 }
 
-~proc yield_then_continue {
+~proc yield_then_continue|zig {
     std.Thread.yield() catch {};
     return .{ .continue = .{ .sum = sum, .received = received } };
 }
 
 ~event validate { sum: u64 }
 
-~proc validate {
+~proc validate|zig {
     const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
     if (sum == expected) {
         std.debug.print("✓ Koru: Validated {} messages (checksum: {})\n", .{ MESSAGES, sum });

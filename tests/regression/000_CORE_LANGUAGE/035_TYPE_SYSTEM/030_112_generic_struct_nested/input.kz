@@ -13,7 +13,7 @@ const std = @import("std");
 
 ~event test_result {}
 
-~proc test_result {
+~proc test_result|zig {
     const success = IntResult{ .ok = 42, .err = null };
     if (success.ok) |val| {
         std.debug.print("Ok: {d}\n", .{val});

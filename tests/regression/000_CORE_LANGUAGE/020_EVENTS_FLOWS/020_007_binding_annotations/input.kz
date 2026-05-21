@@ -6,14 +6,14 @@ const std = @import("std");
 ~event get_data {}
 | result i32
 
-~proc get_data {
+~proc get_data|zig {
     return .{ .result = 42 };
 }
 
 // This event mutates the value it receives via a pointer
 ~event mutate_and_print { ptr: *i32 }
 
-~proc mutate_and_print {
+~proc mutate_and_print|zig {
     ptr.* += 1;  // Mutate the value
     std.debug.print("Value: {d}\n", .{ptr.*});
 }

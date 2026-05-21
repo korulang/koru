@@ -63,7 +63,7 @@ const CompileFlag = struct {
 // ================================================================
 // This demonstrates how a real compiler pass would use BuildSteps
 
-~proc compile.proc_target {
+~proc compile.proc_target|zig {
     const allocator = std.heap.page_allocator;
 
     // Example: If target is "gpu", generate GPU build steps

@@ -14,16 +14,16 @@ const std = @import("std");
 
 ~event tap2 {}
 
-~proc hello {
+~proc hello|zig {
     std.debug.print("Main flow executed\n", .{});
     return .{ .greeted = "go" };
 }
 
-~proc tap1 {
+~proc tap1|zig {
     std.debug.print("First tap observed!\n", .{});
 }
 
-~proc tap2 {
+~proc tap2|zig {
     std.debug.print("Second tap observed!\n", .{});
 }
 

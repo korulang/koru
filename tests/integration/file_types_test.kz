@@ -25,18 +25,18 @@
 | built []const u8
 
 // Test implementations
-~proc transpiler {
+~proc transpiler|zig {
     // Process file at compile-time
     // In real usage, would parse/transform the source
     return .{ .transpiled = "transpiled" };
 }
 
-~proc assets {
+~proc assets|zig {
     // Return embedded file data
     return .{ .loaded = e.icon };
 }
 
-~proc builder {
+~proc builder|zig {
     // Use config and template at compile-time
     // Resource available at runtime
     return .{ .built = "built" };

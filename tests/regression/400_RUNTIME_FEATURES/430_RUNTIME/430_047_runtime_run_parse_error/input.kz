@@ -6,7 +6,7 @@
 ~pub event ping {}
 | ok u64
 
-~proc ping {
+~proc ping|zig {
     return .{ .ok = 1 };
 }
 

@@ -5,7 +5,7 @@ const std = @import("std");
 ~pub event uppercase { text: []const u8 }
 | transformed []const u8
 
-~proc uppercase {
+~proc uppercase|zig {
     // Stub implementation for test
     return .{ .@"transformed" = .{ .result = "" } };
 }

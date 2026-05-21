@@ -22,7 +22,7 @@ const std = @import("std");
 | high []const u8
 | low []const u8
 
-~proc check {
+~proc check|zig {
     // Parse value as number, return high if > 50
     const num = std.fmt.parseInt(i32, value, 10) catch 0;
     if (num > 50) {

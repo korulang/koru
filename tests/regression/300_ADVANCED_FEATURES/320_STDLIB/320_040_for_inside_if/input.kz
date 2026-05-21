@@ -7,7 +7,7 @@ const std = @import("std");
 
 ~event start {}
 
-~proc start {
+~proc start|zig {
 }
 
 // If contains for loop

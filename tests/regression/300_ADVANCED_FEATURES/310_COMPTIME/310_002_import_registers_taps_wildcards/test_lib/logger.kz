@@ -7,7 +7,7 @@ const std = @import("std");
 // Define a logging event
 ~pub event log { event_name: []const u8 }
 
-~proc log {
+~proc log|zig {
     std.debug.print("[TAP] Intercepted event: {s}\n", .{event_name});
 }
 

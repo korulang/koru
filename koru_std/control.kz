@@ -22,7 +22,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc if {
+~proc if|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -346,7 +346,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc for {
+~proc for|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -761,7 +761,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc capture {
+~proc capture|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
     const codegen_utils = @import("codegen_utils");
@@ -1397,7 +1397,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc const {
+~proc const|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
     const codegen_utils = @import("codegen_utils");

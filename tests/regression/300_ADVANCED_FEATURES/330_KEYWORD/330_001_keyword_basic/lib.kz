@@ -2,7 +2,7 @@
 
 ~[keyword]pub event greet { name: []const u8 }
 
-~proc greet {
+~proc greet|zig {
     const std = @import("std");
     std.debug.print("Hello, {s}!\n", .{name});
 }

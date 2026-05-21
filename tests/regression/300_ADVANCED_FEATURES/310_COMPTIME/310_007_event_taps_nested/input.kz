@@ -12,13 +12,13 @@ const std = @import("std");
 
 ~event helper {}
 
-~proc helper {
+~proc helper|zig {
     std.debug.print("Helper executed\n", .{});
 }
 
 ~event log_tap {}
 
-~proc log_tap {
+~proc log_tap|zig {
     std.debug.print("TAP executed from nested context!\n", .{});
 }
 
@@ -29,7 +29,7 @@ const std = @import("std");
 // Call helper from a NESTED context (inside a continuation)
 ~event outer {}
 
-~proc outer {
+~proc outer|zig {
 }
 
 ~outer() |> helper()

@@ -16,15 +16,15 @@ const std = @import("std");
 
 ~event logger {}
 
-~proc hello {
+~proc hello|zig {
     std.debug.print("Hello\n", .{});
 }
 
-~proc goodbye {
+~proc goodbye|zig {
     std.debug.print("Goodbye\n", .{});
 }
 
-~proc logger {
+~proc logger|zig {
     std.debug.print("[TRANSITION] captured\n", .{});
 }
 

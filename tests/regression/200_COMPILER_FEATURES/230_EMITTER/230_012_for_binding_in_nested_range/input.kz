@@ -11,7 +11,7 @@ const std = @import("std");
 
 ~event print_pair { i: usize, j: usize }
 
-~proc print_pair {
+~proc print_pair|zig {
     std.debug.print("{},{}\n", .{i, j});
 }
 

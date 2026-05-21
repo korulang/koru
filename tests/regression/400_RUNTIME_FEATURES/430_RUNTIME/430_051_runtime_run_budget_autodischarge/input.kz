@@ -8,20 +8,20 @@ const std = @import("std");
 ~pub event open_handle {}
 | opened []const u8[opened!]
 
-~proc open_handle {
+~proc open_handle|zig {
     std.debug.print("OPEN\n", .{});
     return .{ .opened = "h1" };
 }
 
 ~pub event close_handle { handle: []const u8[!opened] }
 
-~proc close_handle {
+~proc close_handle|zig {
     std.debug.print("CLOSE\n", .{});
 }
 
 ~pub event step {}
 
-~proc step {
+~proc step|zig {
     std.debug.print("STEP\n", .{});
 }
 

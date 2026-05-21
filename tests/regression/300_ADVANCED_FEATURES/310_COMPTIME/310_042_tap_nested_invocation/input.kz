@@ -21,17 +21,17 @@ const std = @import("std");
 
 ~event observer {}
 
-~proc hello {
+~proc hello|zig {
     std.debug.print("hello\n", .{});
     return .{ .said = "go" };
 }
 
-~proc goodbye {
+~proc goodbye|zig {
     std.debug.print("goodbye\n", .{});
     return .{ .said = "go" };
 }
 
-~proc observer {
+~proc observer|zig {
     std.debug.print("TAP FIRED!\n", .{});
 }
 

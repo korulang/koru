@@ -2,7 +2,7 @@
 | continue i32
 | done
 
-~proc counter.tick {
+~proc counter.tick|zig {
     if (e.value >= 10) {
         return .{ .@"done" = .{} };
     }

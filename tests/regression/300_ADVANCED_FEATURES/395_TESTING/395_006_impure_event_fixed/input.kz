@@ -10,7 +10,7 @@
 ~event fetch_user { id: u32 }
 | found []const u8
 
-~proc fetch_user {
+~proc fetch_user|zig {
     return .{ .found = "Alice" };
 }
 

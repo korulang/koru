@@ -11,7 +11,7 @@
 ~event compute {}
 | ok i32
 
-~proc compute {
+~proc compute|zig {
     return .{ .ok = 42 };
 }
 

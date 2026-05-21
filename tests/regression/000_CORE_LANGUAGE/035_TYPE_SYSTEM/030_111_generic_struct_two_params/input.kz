@@ -15,7 +15,7 @@ const std = @import("std");
 
 ~event test_pair {}
 
-~proc test_pair {
+~proc test_pair|zig {
     const p = StringIntPair{ .first = "answer", .second = 42 };
     std.debug.print("{s}: {d}\n", .{ p.first, p.second });
 }

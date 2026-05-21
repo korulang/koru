@@ -12,7 +12,7 @@
 // A real event that IS called
 ~pub event greet {}
 
-~proc greet {
+~proc greet|zig {
     std.debug.print("hello\n", .{});
 }
 

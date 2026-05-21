@@ -9,10 +9,10 @@ const std = @import("std");
 ~pub event response.build { status: i32, body: []const u8 }
 | response []const u8
 
-~proc request.parse {
+~proc request.parse|zig {
     return .{ .@"request" = .{ .method = "GET", .path = "/" } };
 }
 
-~proc response.build {
+~proc response.build|zig {
     return .{ .@"response" = .{ .bytes = "HTTP/1.1 200 OK" } };
 }

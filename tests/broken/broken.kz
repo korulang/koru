@@ -13,7 +13,7 @@
 // | missing |> log.error (msg: "branch doesn't exist")
 
 // TEST 3: Correct usage - this should compile
-~proc test.foo {
+~proc test.foo|zig {
     return .@"ok"(.{ .y = e.x * 2 });
 }
 

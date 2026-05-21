@@ -31,7 +31,7 @@ const Entity = struct {
 ~test_event = result e
 
 ~event print_result { e: Entity }
-~proc print_result {
+~proc print_result|zig {
     std.debug.print("Got entity {d}\n", .{ e.id });
 }
 

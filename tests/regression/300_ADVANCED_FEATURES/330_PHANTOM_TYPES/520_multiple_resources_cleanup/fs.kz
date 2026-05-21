@@ -4,7 +4,7 @@ const File = struct { handle: i32 };
 ~pub event open_two { path1: []const u8, path2: []const u8 }
 | opened { file1: *File[opened!], file2: *File[opened!] }  // TWO obligations!
 
-~proc open_two {
+~proc open_two|zig {
     std.debug.print("Opening two files: {s}, {s}\n", .{path1, path2});
     const allocator = std.heap.page_allocator;
     const f1 = allocator.create(File) catch unreachable;
@@ -16,6 +16,6 @@ const File = struct { handle: i32 };
 
 ~pub event close { file: *File[!opened] }  // Consumes one obligation
 
-~proc close {
+~proc close|zig {
     std.debug.print("Closing file\n", .{});
 }

@@ -12,7 +12,7 @@ const std = @import("std");
 | next i32
 | done i32
 
-~proc counter {
+~proc counter|zig {
     std.debug.print("Count: {}\n", .{n});
 
     if (n < 5) {
@@ -25,7 +25,7 @@ const std = @import("std");
 // Start event to kick things off
 ~event start {}
 
-~proc start {
+~proc start|zig {
     std.debug.print("Starting counter...\n", .{});
 }
 

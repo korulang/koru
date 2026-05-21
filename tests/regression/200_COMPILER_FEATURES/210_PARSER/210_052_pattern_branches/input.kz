@@ -10,7 +10,7 @@
 // Simple event to test pattern branches
 ~event test_patterns {}
 
-~proc test_patterns {
+~proc test_patterns|zig {
 }
 
 // Test that pattern branches parse correctly

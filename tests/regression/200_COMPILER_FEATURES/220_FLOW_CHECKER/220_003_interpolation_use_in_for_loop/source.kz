@@ -4,6 +4,6 @@
 ~pub event maybe_str {}
 | some []const u8
 
-~proc maybe_str {
+~proc maybe_str|zig {
     return .{ .some = "hello" };
 }

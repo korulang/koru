@@ -53,21 +53,21 @@ const std = @import("std");
 | failed f |> _
 
 // Proc implementations
-~proc db.save {
+~proc db.save|zig {
     if (e.id == 0) {
         return .{ .error = "Invalid ID" };
     }
     return .{ .saved = .{} };
 }
 
-~proc validate.item {
+~proc validate.item|zig {
     if (std.mem.eql(u8, e.name, "")) {
         return .{ .invalid = .{} };
     }
     return .{ .valid = e.name };
 }
 
-~proc fetch.details {
+~proc fetch.details|zig {
     return .{ .found = .{ 
         .full_name = "John Doe",
         .address = "123 Main St"

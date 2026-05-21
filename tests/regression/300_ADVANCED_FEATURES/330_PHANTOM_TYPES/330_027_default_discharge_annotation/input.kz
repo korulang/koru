@@ -3,18 +3,18 @@ const std = @import("std");
 const File = struct { handle: i32, dirty: bool };
 ~event open { path: []const u8 }
 | opened *File[opened!]
-~proc open {
+~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42, .dirty = false };
     return .{ .opened = f };
 }
 ~[!]event close { file: *File[!opened] }
-~proc close {
+~proc close|zig {
     std.debug.print("closed\n", .{});
     std.heap.page_allocator.destroy(file);
 }
 ~event flush_close { file: *File[!opened] }
-~proc flush_close {
+~proc flush_close|zig {
     std.debug.print("flushing...\n", .{});
     std.heap.page_allocator.destroy(file);
 }

@@ -1,13 +1,13 @@
 const std = @import("std");
 ~event open_file {}
 | opened *std.fs.File[open]
-~proc open_file {
+~proc open_file|zig {
     const allocator = std.heap.page_allocator;
     const f = allocator.create(std.fs.File) catch unreachable;
     return .{ .opened = f };
 }
 ~event close_file { file: *std.fs.File[closed] }
-~proc close_file {
+~proc close_file|zig {
 }
 ~open_file()
 | opened o |> close_file(file: o.file)

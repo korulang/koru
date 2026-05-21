@@ -49,7 +49,7 @@ const RuntimeFile = struct {
 // GPU Compiler Pass Implementation
 // ================================================================
 
-~proc compile.target {
+~proc compile.target|zig {
     const allocator = std.heap.page_allocator;
 
     // Only handle "gpu" target

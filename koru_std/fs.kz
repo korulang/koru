@@ -14,7 +14,7 @@ const std = @import("std");
 | lines [][]const u8
 | failed []const u8
 
-~proc read_lines {
+~proc read_lines|zig {
     // Open the file
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         const msg = switch (err) {

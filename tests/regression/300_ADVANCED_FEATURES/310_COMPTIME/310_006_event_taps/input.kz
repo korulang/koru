@@ -9,7 +9,7 @@ const std = @import("std");
 ~event hello {}
 | greeted []const u8
 
-~proc hello {
+~proc hello|zig {
     std.debug.print("Main flow executed\n", .{});
     return .{ .greeted = "go" };
 }
@@ -17,7 +17,7 @@ const std = @import("std");
 // Void observer event
 ~event tap_action {}
 
-~proc tap_action {
+~proc tap_action|zig {
     std.debug.print("TAP observed!\n", .{});
 }
 

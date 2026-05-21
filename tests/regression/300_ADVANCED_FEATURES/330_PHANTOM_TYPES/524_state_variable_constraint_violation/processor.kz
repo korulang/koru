@@ -3,6 +3,6 @@
 ~pub event process { data: *Data[M'owned|borrowed] }
 | done *Data[M'owned|borrowed]
 
-~proc process {
+~proc process|zig {
     return .{ .done = data };
 }

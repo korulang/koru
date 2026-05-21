@@ -419,7 +419,7 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
 | null
 | error []const u8
 
-~proc eval {
+~proc eval|zig {
     const result = evaluate(expression, bindings) catch |err| {
         return .{ .error = @errorName(err) };
     };
@@ -442,7 +442,7 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
 | false
 | error []const u8
 
-~proc eval_bool {
+~proc eval_bool|zig {
     const result = evaluate(expression, bindings) catch |err| {
         return .{ .error = @errorName(err) };
     };

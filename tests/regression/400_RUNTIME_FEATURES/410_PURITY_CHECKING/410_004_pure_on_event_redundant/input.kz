@@ -11,7 +11,7 @@ const std = @import("std");
 // [pure] on an event — redundant but legal
 ~[pure] event noop {}
 
-~proc noop {}
+~proc noop|zig {}
 
 ~event main {}
 

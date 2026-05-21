@@ -8,7 +8,7 @@ const std = @import("std");
 ~event check_expr { expr: Expression }
 
 // Proc receives expr as []const u8
-~proc check_expr {
+~proc check_expr|zig {
     std.debug.print("Expression: {s}\n", .{expr});
 }
 

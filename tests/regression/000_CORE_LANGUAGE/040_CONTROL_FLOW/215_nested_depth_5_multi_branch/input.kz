@@ -14,7 +14,7 @@
 | ok i32
 | failure []const u8
 
-~proc validate {
+~proc validate|zig {
     if (value > 0) {
         return .{ .ok = value };
     } else {
@@ -26,7 +26,7 @@
 | ok i32
 | failure []const u8
 
-~proc double {
+~proc double|zig {
     if (value < 100) {
         return .{ .ok = value * 2 };
     } else {

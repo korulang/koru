@@ -87,7 +87,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc init {
+~proc init|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -1113,7 +1113,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc pairwise {
+~proc pairwise|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -1457,7 +1457,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc self {
+~proc self|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -1690,7 +1690,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc step {
+~proc step|zig {
     _ = expr;
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");

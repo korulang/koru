@@ -332,7 +332,7 @@ fn floatOp(l: f64, r: f64, op: ArithOp) EvalError!Value {
 | else
 | error []const u8
 
-~proc if {
+~proc if|zig {
     const result = evaluate(expression, bindings) catch |err| {
         return .{ .error = @errorName(err) };
     };

@@ -2,5 +2,5 @@
 
 ~pub event sub_hello {}
 
-~proc sub_hello {
+~proc sub_hello|zig {
 }

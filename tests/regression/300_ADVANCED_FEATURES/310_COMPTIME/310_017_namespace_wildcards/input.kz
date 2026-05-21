@@ -10,19 +10,19 @@ const std = @import("std");
 
 ~event logger { source: []const u8 }
 
-~proc http.request {
+~proc http.request|zig {
     std.debug.print("HTTP request\n", .{});
 }
 
-~proc http.response {
+~proc http.response|zig {
     std.debug.print("HTTP response\n", .{});
 }
 
-~proc db.query {
+~proc db.query|zig {
     std.debug.print("DB query\n", .{});
 }
 
-~proc logger {
+~proc logger|zig {
     std.debug.print("HTTP event: {s}\n", .{source});
 }
 

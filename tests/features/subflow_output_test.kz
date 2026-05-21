@@ -33,7 +33,7 @@
   | invalid |> _
 | invalid |> _
 
-~proc data.validate {
+~proc data.validate|zig {
     if (e.value > 50) {
         return .{ .@"valid" = .{ .result = e.value } };
     } else {
@@ -41,6 +41,6 @@
     }
 }
 
-~proc data.transform {
+~proc data.transform|zig {
     return .{ .@"done" = .{ .output = e.input * 2 } };
 }

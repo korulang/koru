@@ -168,7 +168,7 @@ pub fn MpmcRing(comptime T: type, comptime capacity: usize) type {
 | ok
 | full
 
-~proc enqueue {
+~proc enqueue|zig {
     // Cast to concrete ring type - user ensures type safety
     const typed_ring: *MpmcRing(u64, 1024) = @ptrCast(@alignCast(ring));
     if (typed_ring.tryEnqueue(value)) {
@@ -181,7 +181,7 @@ pub fn MpmcRing(comptime T: type, comptime capacity: usize) type {
 | some u64
 | none
 
-~proc dequeue {
+~proc dequeue|zig {
     const typed_ring: *MpmcRing(u64, 1024) = @ptrCast(@alignCast(ring));
     if (typed_ring.tryDequeue()) |v| {
         return .{ .some = v };  // Identity branch - value IS the payload

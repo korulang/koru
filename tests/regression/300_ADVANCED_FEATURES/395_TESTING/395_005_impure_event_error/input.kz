@@ -12,7 +12,7 @@
 ~event fetch_user { id: u32 }
 | found []const u8
 
-~proc fetch_user {
+~proc fetch_user|zig {
     // This is impure - does I/O (simulated)
     return .{ .found = "Alice" };
 }
@@ -20,7 +20,7 @@
 // Another impure event
 ~event save_log { message: []const u8 }
 
-~proc save_log {
+~proc save_log|zig {
     // This is impure - writes to disk
 }
 

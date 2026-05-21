@@ -7,7 +7,7 @@ const std = @import("std");
 
 ~pub event debug.dump_state {}
 
-~proc debug.dump_state {
+~proc debug.dump_state|zig {
 }
 
 ~[registry:scope(admin)]std.runtime:register {

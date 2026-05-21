@@ -12,7 +12,7 @@
 ~event getUserData { }
 | data { name: []const u8, age: i32 }
 
-~proc getUserData {
+~proc getUserData|zig {
     return .{ .data = .{ .name = "Alice", .age = 42 } };
 }
 
@@ -21,7 +21,7 @@
 | rendered []const u8
 
 // Comptime proc that receives Source with captured scope
-~proc renderHTML {
+~proc renderHTML|zig {
     // For now, just verify syntax works and return hardcoded HTML
     // In the future, source.scope.bindings will contain the captured 'u' binding
     return .{ .rendered = "<div>Captured binding in scope!</div>" };

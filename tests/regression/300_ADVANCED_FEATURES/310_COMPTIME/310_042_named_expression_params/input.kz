@@ -16,7 +16,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc operation {
+~proc operation|zig {
     // Both expr and guard should be available as []const u8
     std.debug.print("[operation] expr='{s}' guard='{s}'\n", .{ expr, guard });
     return .{ .transformed = program };
@@ -28,7 +28,7 @@ const std = @import("std");
 // Scaffold to make it compile
 ~event dummy {}
 
-~proc dummy {
+~proc dummy|zig {
     std.debug.print("dummy\n", .{});
 }
 

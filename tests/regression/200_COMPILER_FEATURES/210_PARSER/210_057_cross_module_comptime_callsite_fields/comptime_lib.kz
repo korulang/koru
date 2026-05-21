@@ -9,7 +9,7 @@ const std = @import("std");
 ~[comptime|norun] pub event greet { name: []const u8 }
 | ok []const u8
 
-~proc greet {
+~proc greet|zig {
     _ = name;
     return .{ .ok = "hello" };
 }

@@ -15,19 +15,19 @@
 const std = @import("std");
 
 ~event ping {}
-~proc ping {
+~proc ping|zig {
     std.debug.print("ping\n", .{});
 }
 
 ~event make_payload {}
 | created u32
 
-~proc make_payload {
+~proc make_payload|zig {
     return .{ .created = 42 };
 }
 
 ~event consume { v: u32 }
-~proc consume {
+~proc consume|zig {
     std.debug.print("got {}\n", .{v});
 }
 

@@ -10,7 +10,7 @@ const std = @import("std");
 ~event outer { x: i32 }
 | result i32
 
-~proc outer {
+~proc outer|zig {
     // x is accessible here directly
     return .{ .result = x };
 }
@@ -18,14 +18,14 @@ const std = @import("std");
 ~event middle { y: i32 }
 | data i32
 
-~proc middle {
+~proc middle|zig {
     return .{ .data = y * 2 };
 }
 
 ~event inner { z: i32 }
 | final i32
 
-~proc inner {
+~proc inner|zig {
     return .{ .final = z * 3 };
 }
 
@@ -41,7 +41,7 @@ const UserInfo = struct {
     },
 };
 
-~proc nested_data {
+~proc nested_data|zig {
     // Access nested field
     const len: i32 = @intCast(info.profile.name.len);
     return .{ .processed = len };
@@ -50,7 +50,7 @@ const UserInfo = struct {
 // Event to demonstrate access to outer scope bindings
 ~event show_values { a: i32, b: i32, c: i32 }
 
-~proc show_values {
+~proc show_values|zig {
     // Should print values showing the scope chain worked
     std.debug.print("Values from scope chain: {} {} {}\n", .{a, b, c});
 }

@@ -42,7 +42,7 @@
     argv: []const []const u8,
 }
 
-~proc install {
+~proc install|zig {
     // argv is available for future use (e.g., --production flag)
 
     const std = @import("std");
@@ -131,7 +131,7 @@
 // Koru packages distributed via npm
 ~[comptime|norun]pub event requires.npm { source: Source }
 
-~proc requires.npm {
+~proc requires.npm|zig {
     // Void event - no return value needed
     // The compiler collects these during post-semantic analysis
 }
@@ -139,20 +139,20 @@
 // Koru packages distributed via Cargo
 ~[comptime|norun]pub event requires.cargo { source: Source }
 
-~proc requires.cargo {
+~proc requires.cargo|zig {
     // Void event - collected by compiler
 }
 
 // Koru packages distributed via Go modules
 ~[comptime|norun]pub event requires.go { source: Source }
 
-~proc requires.go {
+~proc requires.go|zig {
     // Void event - collected by compiler
 }
 
 // Koru packages distributed via pip
 ~[comptime|norun]pub event requires.pip { source: Source }
 
-~proc requires.pip {
+~proc requires.pip|zig {
     // Void event - collected by compiler
 }

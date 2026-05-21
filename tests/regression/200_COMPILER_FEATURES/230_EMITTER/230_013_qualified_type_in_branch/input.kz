@@ -9,6 +9,6 @@
 ~pub event passthrough { ctx: std.compiler:CompilerContext }
 | ctx std.compiler:CompilerContext
 
-~proc passthrough {
+~proc passthrough|zig {
     return .{ .ctx = ctx };
 }

@@ -2,7 +2,7 @@
 | success []const u8
 | failure u8
 
-~proc file.read {
+~proc file.read|zig {
     // Simulated implementation
     return .{ .@"success" = .{ .contents = "test data" } };
 }
@@ -11,14 +11,14 @@
 | success
 | failure u8
 
-~proc file.print {
+~proc file.print|zig {
     // Simulated implementation
     return .{ .@"success" = .{} };
 }
 
 ~event proc.exit { errno: u8 }  // Void event - no branches
 
-~proc proc.exit {
+~proc proc.exit|zig {
     // Void event - no return value needed
 }
 

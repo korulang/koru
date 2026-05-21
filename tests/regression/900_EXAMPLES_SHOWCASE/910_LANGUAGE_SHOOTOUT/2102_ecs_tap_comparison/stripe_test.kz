@@ -18,7 +18,7 @@ const Entity = struct {
 ~pub event process_entity { e: Entity }
 | entity Entity
 
-~proc process_entity {
+~proc process_entity|zig {
     return .{ .entity = e };
 }
 
@@ -27,7 +27,7 @@ const Entity = struct {
 | entity ent when ent.e.has_damage |> handle_damage(e: ent.e)
 
 ~event handle_damage { e: Entity }
-~proc handle_damage {
+~proc handle_damage|zig {
     std.debug.print("DAMAGE on Entity {d}!\n", .{ e.id });
 }
 
@@ -47,9 +47,9 @@ const entities = [_]Entity{
 | done |> print_done()
 
 ~event noop {}
-~proc noop {}
+~proc noop|zig {}
 
 ~event print_done {}
-~proc print_done {
+~proc print_done|zig {
     std.debug.print("Done!\n", .{});
 }

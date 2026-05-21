@@ -48,7 +48,7 @@ const MyRing = Ring(u32, 1024);
 // Can we use the GENERIC TYPE in an event shape?
 ~event ring.enqueue { ring: *Ring(u32, 1024), value: u32 }
 
-~proc ring.enqueue {
+~proc ring.enqueue|zig {
     if (ring.tryEnqueue(value)) {
         std.debug.print("Enqueued!\n", .{});
     }
@@ -57,7 +57,7 @@ const MyRing = Ring(u32, 1024);
 ~event ring.dequeue { ring: *Ring(u32, 1024) }
 | value u32
 
-~proc ring.dequeue {
+~proc ring.dequeue|zig {
     if (ring.tryDequeue()) |data| {
         std.debug.print("Got: {}\n", .{data});
         return .{ .value = data };

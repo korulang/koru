@@ -14,7 +14,7 @@ const std = @import("std");
 ~event compute { x: i32 }
 | result i32
 
-~proc compute {
+~proc compute|zig {
     return .{ .result = x * 2 };
 }
 

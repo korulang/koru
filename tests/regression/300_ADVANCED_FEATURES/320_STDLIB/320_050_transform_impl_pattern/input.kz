@@ -12,7 +12,7 @@ const Item = ast.Item;
 
 ~[norun]pub event sample_impl {}
 
-~proc sample_transform {
+~proc sample_transform|zig {
     // Deriving flow from item
     const flow = if (item.* == .flow)
         &item.flow

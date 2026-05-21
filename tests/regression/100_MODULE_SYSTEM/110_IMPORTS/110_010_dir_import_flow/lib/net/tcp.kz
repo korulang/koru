@@ -18,18 +18,18 @@ const std = @import("std");
 | sent i32
 | failed []const u8
 
-~proc server.listen {
+~proc server.listen|zig {
     return .{ .@"listening" = .{ .server_id = 1 } };
 }
 
-~proc server.accept {
+~proc server.accept|zig {
     return .{ .@"connection" = .{ .conn_id = 100 } };
 }
 
-~proc connection.read {
+~proc connection.read|zig {
     return .{ .@"data" = .{ .bytes = "GET / HTTP/1.1" } };
 }
 
-~proc connection.write {
+~proc connection.write|zig {
     return .{ .@"sent" = .{ .bytes_written = 100 } };
 }

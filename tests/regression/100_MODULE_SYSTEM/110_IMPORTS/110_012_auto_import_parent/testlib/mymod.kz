@@ -2,5 +2,5 @@
 
 ~pub event parent_hello {}
 
-~proc parent_hello {
+~proc parent_hello|zig {
 }

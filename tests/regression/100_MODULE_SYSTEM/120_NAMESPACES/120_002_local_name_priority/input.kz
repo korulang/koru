@@ -11,7 +11,7 @@
 // This MUST take priority for unqualified invocations
 ~event print {}
 
-~proc print {
+~proc print|zig {
     const std = @import("std");
     std.debug.print("Local print called\n", .{});
 }

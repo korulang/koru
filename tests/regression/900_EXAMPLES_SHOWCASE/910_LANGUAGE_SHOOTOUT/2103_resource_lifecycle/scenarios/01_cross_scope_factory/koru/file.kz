@@ -18,7 +18,7 @@ pub const File = struct {
 | opened *File[opened!]
 | error []const u8
 
-~proc open {
+~proc open|zig {
     const f = std.fs.cwd().createFile(path, .{}) catch |e| {
         return .{ .@"error" = .{ .msg = @errorName(e) } };
     };
@@ -32,7 +32,7 @@ pub const File = struct {
 // Close a file - consumes the cleanup obligation
 ~pub event close { file: *File[!opened] }
 
-~proc close {
+~proc close|zig {
     file.handle.close();
     std.heap.page_allocator.destroy(file);
 }
@@ -42,7 +42,7 @@ pub const File = struct {
 | written usize
 | error []const u8
 
-~proc write {
+~proc write|zig {
     const bytes = file.handle.write(data) catch |e| {
         return .{ .@"error" = .{ .msg = @errorName(e) } };
     };
@@ -54,7 +54,7 @@ pub const File = struct {
 ~pub event close_batch { files: []*File[!opened] }
 | closed usize
 
-~proc close_batch {
+~proc close_batch|zig {
     for (files) |file_ptr| {
         file_ptr.handle.close();
         std.heap.page_allocator.destroy(file_ptr);

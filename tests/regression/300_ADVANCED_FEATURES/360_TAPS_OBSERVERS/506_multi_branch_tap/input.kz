@@ -13,7 +13,7 @@ const std = @import("std");
 | success i32
 | error []const u8
 
-~proc process {
+~proc process|zig {
     if (value > 0) {
         return .{ .success = value * 2 };
     }
@@ -22,18 +22,18 @@ const std = @import("std");
 
 // Multiple handlers for success branch - both should fire
 ~event log_success { result: i32 }
-~proc log_success {
+~proc log_success|zig {
     std.debug.print("LOG: success with {d}\n", .{result});
 }
 
 ~event audit_success { result: i32 }
-~proc audit_success {
+~proc audit_success|zig {
     std.debug.print("AUDIT: success with {d}\n", .{result});
 }
 
 // Single handler for error branch
 ~event log_error { msg: []const u8 }
-~proc log_error {
+~proc log_error|zig {
     std.debug.print("LOG: error - {s}\n", .{msg});
 }
 

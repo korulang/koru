@@ -17,14 +17,14 @@ const std = @import("std");
 // Void event (no branches)
 ~event step_one {}
 
-~proc step_one {
+~proc step_one|zig {
     // Does nothing, just tests void event handling
 }
 
 // Another void event
 ~event step_two {}
 
-~proc step_two {
+~proc step_two|zig {
     // Does nothing
 }
 
@@ -32,14 +32,14 @@ const std = @import("std");
 ~event get_value {}
 | value i32
 
-~proc get_value {
+~proc get_value|zig {
     return .{ .value = 42 };
 }
 
 // Event to print
 ~event print_value { v: i32 }
 
-~proc print_value {
+~proc print_value|zig {
     std.debug.print("{d}\n", .{v});
 }
 

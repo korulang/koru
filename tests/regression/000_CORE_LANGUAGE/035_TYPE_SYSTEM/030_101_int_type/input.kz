@@ -13,7 +13,7 @@ const std = @import("std");
 
 ~event lookup_user { id: UserId }
 
-~proc lookup_user {
+~proc lookup_user|zig {
     std.debug.print("Looking up user: {d}\n", .{id});
 }
 

@@ -5,14 +5,14 @@
 ~event test.simple {}
 | ok
 
-~proc test.simple {
+~proc test.simple|zig {
     return .{ .@"ok" = .{} };
 }
 
 ~event test.withData { value: i32 }
 | result i32
 
-~proc test.withData {
+~proc test.withData|zig {
     return .{ .@"result" = .{ .num = e.value * 2 } };
 }
 

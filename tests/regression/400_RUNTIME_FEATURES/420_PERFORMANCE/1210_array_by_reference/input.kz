@@ -30,7 +30,7 @@ const LargeStruct = struct {
 ~event process_data { input: [100]f64 }
 | result [100]f64
 
-~proc process_data {
+~proc process_data|zig {
     var output_data = input;
     for (&output_data) |*val| {
         val.* *= 2.0;
@@ -41,7 +41,7 @@ const LargeStruct = struct {
 ~event chain { values: [100]f64 }
 | done [100]f64
 
-~proc chain {
+~proc chain|zig {
     return .{ .done = values };
 }
 

@@ -16,7 +16,7 @@
 
 ~pub event main { }
 
-~proc main {
+~proc main|zig {
     const x: u32 = 42;
     _ = x;
 }

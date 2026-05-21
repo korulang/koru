@@ -8,7 +8,7 @@ const std = @import("std");
 | listening u16
 | error []const u8
 
-~proc tcp.listen {
+~proc tcp.listen|zig {
     std.debug.print("[NET] Server would listen on port {}\n", .{port});
     // For demo, just return success
     return .{ .@"listening" = .{ .port = port } };
@@ -19,7 +19,7 @@ const std = @import("std");
 | connection u32
 | error []const u8
 
-~proc tcp.accept {
+~proc tcp.accept|zig {
     std.debug.print("[NET] Would accept connection\n", .{});
     return .{ .@"connection" = .{ .id = 1 } };
 }
@@ -30,7 +30,7 @@ const std = @import("std");
 | closed
 | error []const u8
 
-~proc tcp.read {
+~proc tcp.read|zig {
     // Return sample HTTP request
     const sample = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
     return .{ .@"data" = .{ .bytes = sample } };
@@ -41,7 +41,7 @@ const std = @import("std");
 | sent usize
 | error []const u8
 
-~proc tcp.write {
+~proc tcp.write|zig {
     std.debug.print("[NET] Would write {} bytes\n", .{data.len});
     return .{ .@"sent" = .{ .bytes = data.len } };
 }
@@ -49,6 +49,6 @@ const std = @import("std");
 // Close connection (stub)  
 ~pub event tcp.close { id: u32 }
 
-~proc tcp.close {
+~proc tcp.close|zig {
     std.debug.print("[NET] Connection {} closed\n", .{id});
 }

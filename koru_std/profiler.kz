@@ -44,7 +44,7 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
 // Event: Write Chrome Tracing header
 ~[comptime|runtime] event write_header {}
 
-~proc write_header {
+~proc write_header|zig {
     // Only create file if not already created by write_event
     // (write_event runs BEFORE write_header due to universal tap ordering)
     if (profile_file == null) {
@@ -75,7 +75,7 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
     timestamp_ns: i128,
 }
 
-~proc write_event {
+~proc write_event|zig {
     // Don't create new file after profiler has finished (prevents truncating data)
     if (profiler_finished) {
         return;
@@ -150,7 +150,7 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
 // Event: Write Chrome Tracing footer and close file
 ~[comptime|runtime] event write_footer {}
 
-~proc write_footer {
+~proc write_footer|zig {
     const file = profile_file orelse return;
 
     // Write the final buffered event (if any) with small duration

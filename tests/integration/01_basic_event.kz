@@ -5,7 +5,7 @@
 | success i32
 | failure []const u8
 
-~proc basic.compute {
+~proc basic.compute|zig {
     if (e.value > 0) {
         return .{ .@"success" = .{ .result = e.value * 2 } };
     }

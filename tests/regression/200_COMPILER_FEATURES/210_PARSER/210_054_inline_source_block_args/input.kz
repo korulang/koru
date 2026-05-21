@@ -12,13 +12,13 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc inline.source {
+~proc inline.source|zig {
     return .{ .transformed = program };
 }
 
 ~event setup {}
 
-~proc setup { return .{ .ready = .{} }; }
+~proc setup|zig { return .{ .ready = .{} }; }
 
 // Inline Source block on one line with args + nested braces
 const show = true;

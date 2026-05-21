@@ -14,7 +14,7 @@ const std = @import("std");
 ~event triple { value: i32 }
 | tripled i32
 
-~proc triple {
+~proc triple|zig {
     return .{ .tripled = value * 3 };
 }
 
@@ -22,7 +22,7 @@ const std = @import("std");
 ~event double { value: i32 }
 | doubled i32
 
-~proc double {
+~proc double|zig {
     return .{ .doubled = value * 2 };
 }
 
@@ -38,7 +38,7 @@ const std = @import("std");
 // Helper to verify and print the result
 ~event verify_and_print { value: i32 }
 
-~proc verify_and_print {
+~proc verify_and_print|zig {
     if (value == 30) {
         std.debug.print("30\n", .{});
     } else {

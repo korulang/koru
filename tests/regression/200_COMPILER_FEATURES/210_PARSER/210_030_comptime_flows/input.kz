@@ -7,7 +7,7 @@ const std = @import("std");
 // Test 1: Comptime event that executes during compilation
 ~[comptime] event validateConventions {}
 
-~proc validateConventions {
+~proc validateConventions|zig {
     // This code executes at compile time!
     // We can't print, but we can do comptime-safe operations
     const conventions_valid = true;
@@ -20,7 +20,7 @@ const std = @import("std");
 }
 | bundled i32
 
-~proc bundleAssets {
+~proc bundleAssets|zig {
     // Comptime asset bundling - executes during compilation
     const asset_count = dir.len; // Can operate on comptime strings
     _ = asset_count;
@@ -34,7 +34,7 @@ const std = @import("std");
 | ok i32
 | err []const u8
 
-~proc preprocessMipmaps {
+~proc preprocessMipmaps|zig {
     // Comptime mipmap preprocessing
     const dir_len = inputDir.len;
     _ = dir_len;

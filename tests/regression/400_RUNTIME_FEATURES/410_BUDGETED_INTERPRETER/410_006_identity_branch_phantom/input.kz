@@ -13,7 +13,7 @@
 // Discharge event
 ~pub event destroy { h: []const u8[!active] }
 
-~proc destroy {
+~proc destroy|zig {
     std.debug.print("destroyed: {s}\n", .{h});
 }
 

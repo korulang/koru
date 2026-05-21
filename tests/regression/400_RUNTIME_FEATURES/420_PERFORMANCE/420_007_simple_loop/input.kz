@@ -12,7 +12,7 @@ const std = @import("std");
 | next { i: u64, sum: u64 }
 | done u64
 
-~proc count {
+~proc count|zig {
     const new_i = i + 1;
     const new_sum = sum + i;
 
@@ -26,7 +26,7 @@ const std = @import("std");
 // Print result
 ~event print { result: u64 }
 
-~proc print {
+~proc print|zig {
     std.debug.print("Sum: {}\n", .{result});
 }
 

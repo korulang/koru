@@ -28,7 +28,7 @@ const koru_parser = @import("koru_parser");
 }
 | transformed *const Program
 
-~proc register {
+~proc register|zig {
     const ast_reg = @import("ast");
     const ast_functional = @import("ast_functional");
     const CompilerEnvRt = @import("root").CompilerEnv;
@@ -1258,7 +1258,7 @@ fn buildScopeTable() []const ScopeRuntime {
 
 // Look up scope dispatcher by name
 // Dispatchers are generated into main_module with naming convention: dispatch_<scope>
-~proc get_scope {
+~proc get_scope|zig {
     inline for (comptime buildScopeTable()) |scope_info| {
         if (std.mem.eql(u8, name, scope_info.name)) {
             return .{ .scope = .{
@@ -1300,7 +1300,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 | parsed koru_parser.ParseResult
 | parse_error []const u8
 
-~proc parse.source {
+~proc parse.source|zig {
     var parser = koru_parser.Parser.init(allocator, source, file_name, &[_][]const u8{}, null) catch |err| {
         return .{ .parse_error = @errorName(err) };
     };
@@ -1332,7 +1332,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 | dispatch_error { event_name: []const u8, message: []const u8 }
 | scope_not_found []const u8
 
-~proc eval {
+~proc eval|zig {
     const interpreter_mod = @import("root").koru_std.interpreter;
 
     var flow_to_run: ?*const ast_mod.Flow = null;
@@ -1416,7 +1416,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 | dispatch_error { event_name: []const u8, message: []const u8 }
 | scope_not_found []const u8
 
-~proc run {
+~proc run|zig {
     const interpreter_mod = @import("root").koru_std.interpreter;
 
     const scope_result = get_scope_event.handler(.{ .name = scope });
@@ -1537,7 +1537,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 | dispatch_error { event_name: []const u8, message: []const u8 }
 | scope_not_found []const u8
 
-~proc run_cached {
+~proc run_cached|zig {
     const interpreter_mod = @import("root").koru_std.interpreter;
 
     const scope_result = get_scope_event.handler(.{ .name = scope });
@@ -1596,7 +1596,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 
 ~[comptime]pub event collect_scopes {}
 
-~proc collect_scopes {
+~proc collect_scopes|zig {
     // Access PROGRAM_AST from backend
     const root = @import("root");
     const ast_items = root.PROGRAM_AST.items;

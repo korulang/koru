@@ -12,7 +12,7 @@ const std = @import("std");
 | valid i32
 | invalid []const u8
 
-~proc validate {
+~proc validate|zig {
     if (value > 0) {
         return .{ .valid = value };
     }
@@ -22,26 +22,26 @@ const std = @import("std");
 ~event double { value: i32 }
 | ok i32
 
-~proc double {
+~proc double|zig {
     return .{ .ok = value * 2 };
 }
 
 ~event triple { value: i32 }
 | ok i32
 
-~proc triple {
+~proc triple|zig {
     return .{ .ok = value * 3 };
 }
 
 ~event success { result: i32 }
 
-~proc success {
+~proc success|zig {
     std.debug.print("Success: {}\n", .{result});
 }
 
 ~event failure { msg: []const u8 }
 
-~proc failure {
+~proc failure|zig {
     std.debug.print("Failure: {s}\n", .{msg});
 }
 

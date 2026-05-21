@@ -19,7 +19,7 @@ const std = @import("std");
 
 ~event test {}
 
-~proc test {
+~proc test|zig {
     std.debug.print("Test: optional parent\n", .{});
 }
 

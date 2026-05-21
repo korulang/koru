@@ -9,7 +9,7 @@ const std = @import("std");
     destination: ?[]const u8,
 }
 
-~proc process {
+~proc process|zig {
     std.debug.print("source={s} branch={s}\n", .{source, branch});
 }
 
@@ -26,7 +26,7 @@ pub const Data = struct {
 ~event start {}
 | result Data
 
-~proc start {
+~proc start|zig {
     const data = Data{
         .source = "test_event",
         .branch = "success",

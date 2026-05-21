@@ -28,19 +28,19 @@ const std = @import("std");
 
 ~event display { text: []const u8 }
 
-~proc compute {
+~proc compute|zig {
     std.debug.print("compute({d})\n", .{x});
     return .{ .result = x * 2 };
 }
 
-~proc format {
+~proc format|zig {
     std.debug.print("format({d})\n", .{value});
     // Allocate temporary string for testing
     const text = "formatted";
     return .{ .formatted = text };
 }
 
-~proc display {
+~proc display|zig {
     std.debug.print("Final: {s}\n", .{text});
 }
 

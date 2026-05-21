@@ -9,7 +9,7 @@ const std = @import("std");
 | error []const u8
 | ok i32
 
-~proc check {
+~proc check|zig {
     if (value < 0) {
         return .{ .@"error" = "negative" };
     }

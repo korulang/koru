@@ -28,7 +28,7 @@ pub const Params = struct {
 ~pub event incoming {}
 | request Request
 
-~proc incoming {
+~proc incoming|zig {
     return .{ .request = .{ .method = "GET", .path = "/users/42" } };
 }
 

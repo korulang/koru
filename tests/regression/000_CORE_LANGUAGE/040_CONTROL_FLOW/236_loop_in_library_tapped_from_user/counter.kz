@@ -6,7 +6,7 @@ const std = @import("std");
 | next u32
 | done
 
-~proc tick {
+~proc tick|zig {
     if (n < 5) {
         return .{ .next = n + 1 };
     }

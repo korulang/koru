@@ -23,7 +23,7 @@ const std = @import("std");
 ~pub event now {}
 | t i128
 
-~proc now {
+~proc now|zig {
     return .{ .t = std.time.nanoTimestamp() };
 }
 
@@ -35,7 +35,7 @@ const std = @import("std");
 ~pub event elapsed { start: i128 }
 | duration { ns: i128, us: f64, ms: f64, s: f64 }
 
-~proc elapsed {
+~proc elapsed|zig {
     const end = std.time.nanoTimestamp();
     const ns = end - start;
     const ns_f: f64 = @floatFromInt(ns);
@@ -50,7 +50,7 @@ const std = @import("std");
 // Print elapsed time to stderr (for use inside comptime event overrides)
 ~pub event report { start: i128, label: []const u8 }
 
-~proc report {
+~proc report|zig {
     const end = std.time.nanoTimestamp();
     const ns = end - start;
     const ms: f64 = @as(f64, @floatFromInt(ns)) / 1_000_000.0;

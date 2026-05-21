@@ -12,7 +12,7 @@
 
 ~event probe {}
 
-~proc probe {
+~proc probe|zig {
 }
 
 // THIS SHOULD WORK (top-level flow)

@@ -6,8 +6,8 @@ const std = @import("std");
 
 ~event stop {}
 
-~proc play {
+~proc play|zig {
 }
 
-~proc stop {
+~proc stop|zig {
 }

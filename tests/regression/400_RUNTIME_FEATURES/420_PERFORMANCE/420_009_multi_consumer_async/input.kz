@@ -148,7 +148,7 @@ const AsyncHandle = struct {
 ~event createRing {}
 | created *Ring
 
-~proc createRing {
+~proc createRing|zig {
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
     ring_storage.* = Ring.init();
     return .{ .created = ring_storage };
@@ -160,7 +160,7 @@ const AsyncHandle = struct {
 
 ~event spawnProducer { ring: *Ring }
 
-~proc spawnProducer {
+~proc spawnProducer|zig {
     const producer = std.Thread.spawn(.{}, struct {
         fn run(r: *Ring) void {
             var i: u64 = 0;
@@ -184,7 +184,7 @@ const AsyncHandle = struct {
 ~event consumeMessages { ring: *Ring, target: u64 }
 | completed { sum: u64, count: u64 }
 
-~proc consumeMessages {
+~proc consumeMessages|zig {
     var sum: u64 = 0;
     var received: u64 = 0;
 
@@ -209,7 +209,7 @@ const AsyncHandle = struct {
 ~event consumeMessages.async { ring: *Ring, target: u64 }
 | awaitable AsyncHandle
 
-~proc consumeMessages.async {
+~proc consumeMessages.async|zig {
     // Allocate result storage (shared between thread and caller)
     const result_storage = std.heap.page_allocator.create(ConsumeResult) catch unreachable;
     result_storage.* = .{ .sum = 0, .count = 0 };
@@ -245,7 +245,7 @@ const AsyncHandle = struct {
 ~event consumeMessages.await { handle: AsyncHandle }
 | completed { sum: u64, count: u64 }
 
-~proc consumeMessages.await {
+~proc consumeMessages.await|zig {
     handle.thread.join();
     const result = handle.result_ptr.*;
     return .{ .completed = .{ .sum = result.sum, .count = result.count } };
@@ -260,7 +260,7 @@ const AsyncHandle = struct {
 ~event consumeMessages.join { handles: []const AsyncHandle }
 | all_completed []const ConsumeResult
 
-~proc consumeMessages.join {
+~proc consumeMessages.join|zig {
     // Allocate results array
     const results = std.heap.page_allocator.alloc(ConsumeResult, handles.len) catch unreachable;
 
@@ -280,7 +280,7 @@ const AsyncHandle = struct {
 ~event combineResults { results: []const ConsumeResult }
 | combined { total_sum: u64, total_count: u64 }
 
-~proc combineResults {
+~proc combineResults|zig {
     var total_sum: u64 = 0;
     var total_count: u64 = 0;
 
@@ -298,7 +298,7 @@ const AsyncHandle = struct {
 
 ~event validate { sum: u64, count: u64 }
 
-~proc validate {
+~proc validate|zig {
     const expected_sum: u64 = TOTAL_MESSAGES * (TOTAL_MESSAGES - 1) / 2;
     const expected_count: u64 = TOTAL_MESSAGES;
 
@@ -316,7 +316,7 @@ const AsyncHandle = struct {
 ~event startConsumers { ring: *Ring }
 | started AsyncHandle
 
-~proc startConsumers {
+~proc startConsumers|zig {
     // Just delegate to .async
     const result_storage = std.heap.page_allocator.create(ConsumeResult) catch unreachable;
     result_storage.* = .{ .sum = 0, .count = 0 };

@@ -17,7 +17,7 @@ const Resource = struct { id: i32 };
 ~event create {}
 | created *Resource[open!]
 
-~proc create {
+~proc create|zig {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
     r.* = .{ .id = 42 };
     return .{ .created = r };
@@ -27,7 +27,7 @@ const Resource = struct { id: i32 };
 | ok *Resource[open]
 | failed *Resource[open]
 
-~proc use {
+~proc use|zig {
     // Simulate sometimes failing
     if (res.id == 42) {
         return .{ .ok = res };
@@ -37,7 +37,7 @@ const Resource = struct { id: i32 };
 
 ~event close { res: *Resource[!open] }
 
-~proc close {
+~proc close|zig {
     std.heap.page_allocator.destroy(res);
 }
 

@@ -35,7 +35,7 @@ const std = @import("std");
 // Test the nested one would be here (removed - only one main flow allowed)
 
 // Proc implementations
-~proc test.data {
+~proc test.data|zig {
     if (e.value > 0) {
         return .{ .@"success" = .{ .data = e.value * 2 } };
     } else {
@@ -43,6 +43,6 @@ const std = @import("std");
     }
 }
 
-~proc io.print {
+~proc io.print|zig {
     std.debug.print("{s}\n", .{e.msg});
 }

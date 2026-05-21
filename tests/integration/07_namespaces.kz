@@ -6,11 +6,11 @@
 ~event foo.baz { y: u32 }  
 | done u32
 
-~proc foo.bar {
+~proc foo.bar|zig {
     return .{ .@"ok" = .{ .result = e.x + 1 } };
 }
 
-~proc foo.baz {
+~proc foo.baz|zig {
     return .{ .@"done" = .{ .value = e.y * 2 } };
 }
 

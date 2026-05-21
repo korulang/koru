@@ -623,7 +623,7 @@ pub const CompilerContext = struct {
 ~pub event context_create { program_ast: *const Program, allocator: std.mem.Allocator }
 | created CompilerContext
 
-~proc context_create {
+~proc context_create|zig {
     const ctx = CompilerContext{
         .ast = program_ast,
         .original_ast = program_ast,  // Initially same as ast, preserved across filtering
@@ -642,7 +642,7 @@ pub const CompilerContext = struct {
 ~pub event metrics_format { passes_completed: u32, allocator: std.mem.Allocator }
 | formatted []const u8
 
-~proc metrics_format {
+~proc metrics_format|zig {
     const metrics = std.fmt.allocPrint(
         allocator,
         "Passes: {d} (flow-based: frontend, analysis, emission)",
@@ -660,7 +660,7 @@ pub const CompilerContext = struct {
     flag: []const u8
 }
 
-~proc ast_dump {
+~proc ast_dump|zig {
     // Serialize AST to JSON
     const ast_serializer = @import("ast_serializer");
     var serializer = ast_serializer.AstSerializer.init(ctx.allocator) catch unreachable;
@@ -704,7 +704,7 @@ pub const CompilerContext = struct {
 ~[comptime|abstract] pub event transform_taps { ctx: CompilerContext }
 | ctx CompilerContext
 
-~proc transform_taps {
+~proc transform_taps|zig {
     // Build tap registry from AST (before transformation removes taps)
     const tap_registry_module = @import("tap_registry");
     const registry_ptr = ctx.allocator.create(tap_registry_module.TapRegistry) catch unreachable;
@@ -742,7 +742,7 @@ pub const CompilerContext = struct {
 
 // Test generation implementation
 // Finds ~test invocations in AST and generates Zig test blocks
-~proc test_generation {
+~proc test_generation|zig {
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "test_generation";
 
@@ -1268,7 +1268,7 @@ const emitFlowWithMocks = struct {
 | ctx CompilerContext
 
 // Implementation of Zig code emission - this IS ComptimeEmitter as a Koru proc!
-~proc emit_zig {
+~proc emit_zig|zig {
     // NEW VISITOR-BASED IMPLEMENTATION!
     // Replaces the 2184-line procedural emitter with visitor orchestrator
 
@@ -1403,7 +1403,7 @@ const joinPathAlloc = struct {
 }.call;
 
 // Parser service implementation - wraps the Koru parser for comptime use
-~proc parse {
+~proc parse|zig {
     const Parser = @import("parser").Parser;
     // Note: 'std' is already imported at top level by the emitter
 
@@ -1437,7 +1437,7 @@ const joinPathAlloc = struct {
 
 // Comptime evaluation pass - executes events with Program/Source parameters
 // This runs BEFORE emission so comptime events can transform the AST
-~proc evaluate_comptime {
+~proc evaluate_comptime|zig {
     const isProgramType = struct {
         fn check(raw_type: []const u8) bool {
             var t = raw_type;
@@ -1822,7 +1822,7 @@ const joinPathAlloc = struct {
 }
 
 // Structural shape checker implementation
-~proc check_structure {
+~proc check_structure|zig {
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "check_structure";
@@ -1911,7 +1911,7 @@ const joinPathAlloc = struct {
 
 // Flow checker implementation
 // Validates control flow properties like when-clause exhaustiveness
-~proc check_flow {
+~proc check_flow|zig {
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "check_flow";
@@ -2003,7 +2003,7 @@ const joinPathAlloc = struct {
   "type": "boolean"
 }
 
-~proc pass_auto_discharge {
+~proc pass_auto_discharge|zig {
     // Check if auto-discharge is disabled entirely
     if (CompilerEnv.hasFlag("auto-discharge=disable")) {
         // Skip auto-discharge pass - let phantom errors fire
@@ -2085,7 +2085,7 @@ const joinPathAlloc = struct {
 
 // Semantic phantom type checker implementation
 // Validates module-qualified phantom states and their compatibility
-~proc check_phantom_semantic {
+~proc check_phantom_semantic|zig {
     log.debug("\n[PHANTOM-KORU] Starting phantom check proc...\n", .{});
     // Need mutable ctx to append errors
     var mutable_ctx = ctx;
@@ -2164,7 +2164,7 @@ const joinPathAlloc = struct {
 
 // Purity checker implementation
 // Tracks [pure] annotations - developer assertion, trusted without verification
-~proc check_purity {
+~proc check_purity|zig {
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "check_purity";
 
@@ -2178,7 +2178,7 @@ const joinPathAlloc = struct {
 // Dead Strip Pass
 // Removes unreachable events and flows from the AST
 // Walks from entry points (top-level flows), marks reachable events, prunes the rest
-~proc pass_dead_strip {
+~proc pass_dead_strip|zig {
     var mutable_ctx = ctx;
     mutable_ctx.current_pass = "dead_strip";
 
@@ -2199,7 +2199,7 @@ const joinPathAlloc = struct {
 // CCP Observability Injection Pass
 // Injects universal observability taps into the user's AST
 // This makes every compiled program self-observing by adding emit_json and ~* -> * tap
-~proc inject_ccp {
+~proc inject_ccp|zig {
     // Inject CCP observability helpers as self-contained Zig code
     // Uses __ccp_std local import to avoid namespace pollution
 
@@ -2220,7 +2220,7 @@ const joinPathAlloc = struct {
 ~pub event process_ccp_commands { ctx: CompilerContext }
 | ctx CompilerContext
 
-~proc process_ccp_commands {
+~proc process_ccp_commands|zig {
     // TODO: Check if --ccp flag is enabled via CompilerEnv
     // TODO: Attempt non-blocking stdin read for JSONL commands
     // TODO: Parse and dispatch commands to appropriate handlers

@@ -12,7 +12,7 @@ const Connection = struct {
 ~pub event create {}
 | created *Connection[idle]
 
-~proc create {
+~proc create|zig {
     std.debug.print("Creating connection\n", .{});
     const allocator = std.heap.page_allocator;
     const c = allocator.create(Connection) catch unreachable;
@@ -24,7 +24,7 @@ const Connection = struct {
 ~pub event connect { conn: *Connection[idle] }
 | connected *Connection[active]
 
-~proc connect {
+~proc connect|zig {
     std.debug.print("Connecting: {d}\n", .{conn.id});
     return .{ .connected = conn };
 }
@@ -33,7 +33,7 @@ const Connection = struct {
 ~pub event pause { conn: *Connection[active] }
 | paused *Connection[paused]
 
-~proc pause {
+~proc pause|zig {
     std.debug.print("Pausing: {d}\n", .{conn.id});
     return .{ .paused = conn };
 }
@@ -43,7 +43,7 @@ const Connection = struct {
 ~pub event resume { conn: *Connection[paused|active] }
 | resumed *Connection[active]
 
-~proc resume {
+~proc resume|zig {
     std.debug.print("Resuming/continuing: {d}\n", .{conn.id});
     return .{ .resumed = conn };
 }
@@ -51,6 +51,6 @@ const Connection = struct {
 // Close - accepts active OR paused (union!) - cleans up connection
 ~pub event close { conn: *Connection[active|paused] }
 
-~proc close {
+~proc close|zig {
     std.debug.print("Closing: {d}\n", .{conn.id});
 }

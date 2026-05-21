@@ -7,9 +7,9 @@ const std = @import("std");
 
 ~pub event clear { color: i32 }
 
-~proc render {
+~proc render|zig {
     return .{ .@"drawn" = width * height };
 }
 
-~proc clear {
+~proc clear|zig {
 }

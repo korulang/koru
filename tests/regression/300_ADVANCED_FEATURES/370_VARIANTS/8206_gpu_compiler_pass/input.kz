@@ -23,7 +23,7 @@ const std = @import("std");
 | compiled []const u8
 | unsupported []const u8
 
-~proc compile.target {
+~proc compile.target|zig {
     const allocator = std.heap.page_allocator;
 
     // Only handle "gpu" target

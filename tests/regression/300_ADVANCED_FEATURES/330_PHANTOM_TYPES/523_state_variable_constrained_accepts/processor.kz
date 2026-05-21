@@ -4,6 +4,6 @@
 ~pub event process { data: *Data[M'owned|borrowed] }
 | done *Data[M'owned|borrowed]  // Preserves whichever state was passed
 
-~proc process {
+~proc process|zig {
     return .{ .done = data };
 }

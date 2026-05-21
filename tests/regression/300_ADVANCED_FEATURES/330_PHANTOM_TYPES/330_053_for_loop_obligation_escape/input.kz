@@ -8,13 +8,13 @@ const Resource = struct {
 const allocator = std.heap.c_allocator;
 ~event create { id: usize }
 | created *Resource[active!]
-~proc create {
+~proc create|zig {
     const r = allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = id };
     return .{ .created = r };
 }
 ~event use { r: *Resource[active] }
-~proc use {
+~proc use|zig {
     std.debug.print("using {}\n", .{r.id});
 }
 ~for(0..10)

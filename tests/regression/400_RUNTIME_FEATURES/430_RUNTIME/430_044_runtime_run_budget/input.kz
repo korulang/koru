@@ -5,7 +5,7 @@
 
 ~pub event expensive {}
 
-~proc expensive {
+~proc expensive|zig {
 }
 
 ~std.runtime:register(scope: "budget") {

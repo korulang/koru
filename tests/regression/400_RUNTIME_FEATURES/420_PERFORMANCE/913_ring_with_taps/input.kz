@@ -52,7 +52,7 @@ const MyRing = Ring(u32, 1024);
 // Ring operations
 ~event ring.enqueue { ring: *Ring(u32, 1024), value: u32 }
 
-~proc ring.enqueue {
+~proc ring.enqueue|zig {
     if (ring.tryEnqueue(value)) {
     }
 }
@@ -60,7 +60,7 @@ const MyRing = Ring(u32, 1024);
 ~event ring.dequeue { ring: *Ring(u32, 1024) }
 | value u32
 
-~proc ring.dequeue {
+~proc ring.dequeue|zig {
     if (ring.tryDequeue()) |data| {
         return .{ .value = data };
     }
@@ -69,7 +69,7 @@ const MyRing = Ring(u32, 1024);
 // Processing event - what we do with dequeued values
 ~event process { data: u32 }
 
-~proc process {
+~proc process|zig {
     std.debug.print("Processing: {}\n", .{data});
 }
 
@@ -81,7 +81,7 @@ const MyRing = Ring(u32, 1024);
 // Producer: Fill the ring with values
 ~event produce { ring: *Ring(u32, 1024), count: u32 }
 
-~proc produce {
+~proc produce|zig {
     var i: u32 = 0;
     while (i < count) : (i += 1) {
         _ = ring.tryEnqueue(i);
@@ -93,7 +93,7 @@ const MyRing = Ring(u32, 1024);
 // The tap fires automatically for each dequeued value!
 ~event start {}
 
-~proc start {
+~proc start|zig {
 }
 
 var my_ring = MyRing.init();

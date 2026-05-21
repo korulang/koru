@@ -10,13 +10,13 @@ const std = @import("std");
 // Local event to transition to (so tap can fire)
 ~event finish {}
 
-~proc finish {
+~proc finish|zig {
     std.debug.print("Local print\n", .{});
 }
 
 ~event logger { source: []const u8 }
 
-~proc logger {
+~proc logger|zig {
     std.debug.print("Observed: {s}\n", .{source});
 }
 

@@ -14,7 +14,7 @@ const std = @import("std");
 | valid []const u8
 | invalid []const u8
 
-~proc validate {
+~proc validate|zig {
     // Simple validation - non-empty = valid
     if (data.len > 0) {
         return .{ .valid = data };
@@ -25,7 +25,7 @@ const std = @import("std");
 ~pub event transform { input: []const u8 }
 | transformed []const u8
 
-~proc transform {
+~proc transform|zig {
     // Simple transform - uppercase first char (just return as-is for test)
     return .{ .transformed = input };
 }

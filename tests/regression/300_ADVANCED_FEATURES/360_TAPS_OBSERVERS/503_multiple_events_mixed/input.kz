@@ -11,7 +11,7 @@
 ~event compute { x: i32 }
 | done i32
 
-~proc compute {
+~proc compute|zig {
     return .{ .done = x * 2 };
 }
 
@@ -20,7 +20,7 @@
 | valid
 | invalid
 
-~proc validate {
+~proc validate|zig {
     if (n > 0) {
         return .valid;
     }

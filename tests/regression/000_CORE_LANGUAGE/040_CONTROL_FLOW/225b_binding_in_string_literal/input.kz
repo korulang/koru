@@ -13,7 +13,7 @@
 ~event greet { id: u32 }
 | ok []const u8
 
-~proc greet {
+~proc greet|zig {
     return .{ .ok = "Alice" };
 }
 

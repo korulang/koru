@@ -7,7 +7,7 @@ const File = struct { handle: i32 };
 ~event open { path: []const u8 }
 | opened *File[opened!]
 
-~proc open {
+~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
     return .{ .opened = f };
@@ -15,7 +15,7 @@ const File = struct { handle: i32 };
 
 ~event close { file: *File[!opened] }
 
-~proc close {
+~proc close|zig {
     std.heap.page_allocator.destroy(file);
 }
 

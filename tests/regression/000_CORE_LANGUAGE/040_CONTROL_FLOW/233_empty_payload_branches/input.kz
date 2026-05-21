@@ -10,7 +10,7 @@
 | positive
 | non_positive
 
-~proc check_value {
+~proc check_value|zig {
     if (n > 0) {
         return .{ .positive = .{} };
     } else {

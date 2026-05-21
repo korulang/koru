@@ -13,7 +13,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc render.file {
+~proc render.file|zig {
     // Just print what we received to prove file was read
     std.debug.print("File content: '{s}'\n", .{source.text});
     std.debug.print("Phantom type: '{s}'\n", .{source.phantom_type orelse "none"});

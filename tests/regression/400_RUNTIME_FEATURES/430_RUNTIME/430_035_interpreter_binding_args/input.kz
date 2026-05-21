@@ -16,7 +16,7 @@ const std = @import("std");
 ~pub event produce {}
 | value []const u8
 
-~proc produce {
+~proc produce|zig {
     return .{ .value = "42" };
 }
 

@@ -16,7 +16,7 @@ fn getN() usize {
 
 ~event print_result { sum: i64 }
 
-~proc print_result {
+~proc print_result|zig {
     std.debug.print("Koru runtime sum: {d}\n", .{sum});
 }
 

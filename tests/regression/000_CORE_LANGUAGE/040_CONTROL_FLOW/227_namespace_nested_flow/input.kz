@@ -16,12 +16,12 @@ const std = @import("std");
 | sent usize
 | failed []const u8
 
-~proc net.connect {
+~proc net.connect|zig {
     std.debug.print("Connecting to {s}\n", .{e.host});
     return .{ .@"connected" = .{ .id = 42 } };
 }
 
-~proc net.send {
+~proc net.send|zig {
     std.debug.print("Sending {} bytes on connection {}\n", .{data.len, id});
     return .{ .@"sent" = .{ .bytes = e.data.len } };
 }

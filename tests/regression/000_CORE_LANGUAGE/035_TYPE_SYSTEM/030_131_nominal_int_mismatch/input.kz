@@ -13,13 +13,13 @@
 ~event get_user { id: UserId }
 | found []const u8
 
-~proc get_user {
+~proc get_user|zig {
     return .{ .found = "Alice" };
 }
 
 ~event main {}
 
-~proc main {
+~proc main|zig {
     // ERROR: Passing ProductId where UserId is expected
     const pid: ProductId = 42;
     ~get_user(id: pid)

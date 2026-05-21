@@ -15,7 +15,7 @@ pub const Resource = struct {
 ~pub event create_resource { name: []const u8 }
 | created *Resource[allocated!]
 
-~proc create_resource {
+~proc create_resource|zig {
     const alloc = std.heap.page_allocator;
     const data = std.fmt.allocPrint(alloc, "Resource: {s}", .{name}) catch unreachable;
     const res = alloc.create(Resource) catch unreachable;
@@ -25,7 +25,7 @@ pub const Resource = struct {
 
 ~pub event destroy_resource { res: *Resource[!allocated] }
 
-~proc destroy_resource {
+~proc destroy_resource|zig {
     std.debug.print("  Auto-discharge called!\n", .{});
     res.allocator.free(res.data);
     std.heap.page_allocator.destroy(res);
@@ -34,7 +34,7 @@ pub const Resource = struct {
 // Helper to use the resource
 ~pub event use_resource { res: *Resource }
 
-~proc use_resource {
+~proc use_resource|zig {
     std.debug.print("  Using: {s}\n", .{res.data});
 }
 

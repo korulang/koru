@@ -15,7 +15,7 @@
 | ?warning []const u8
 | ?debug []const u8
 
-~proc process {
+~proc process|zig {
     if (value < 5) {
         return .{ .debug = "Small value" };
     }

@@ -11,8 +11,8 @@ const std = @import("std");
 ~[pure] event a {}
 ~[pure] event b {}
 
-~proc a {}
-~proc b {}
+~proc a|zig {}
+~proc b|zig {}
 
 // Subflow composing two dispatches. Locally pure by structure.
 ~a() |> b()

@@ -26,6 +26,6 @@ const std = @import("std");
 // Test default proc without variant (should still work)
 ~pub event greet { }
 
-~proc greet {
+~proc greet|zig {
     return .done;
 }

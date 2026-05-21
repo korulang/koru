@@ -12,7 +12,7 @@ const std = @import("std");
 ~pub event add { a: []const u8, b: []const u8 }
 | sum i64
 
-~proc add {
+~proc add|zig {
     const a_val = std.fmt.parseInt(i64, a, 10) catch 0;
     const b_val = std.fmt.parseInt(i64, b, 10) catch 0;
     return .{ .sum = a_val + b_val };
@@ -21,7 +21,7 @@ const std = @import("std");
 ~pub event multiply { value: []const u8, by: []const u8 }
 | product i64
 
-~proc multiply {
+~proc multiply|zig {
     const val = std.fmt.parseInt(i64, value, 10) catch 0;
     const by_val = std.fmt.parseInt(i64, by, 10) catch 0;
     return .{ .product = val * by_val };
@@ -30,7 +30,7 @@ const std = @import("std");
 ~pub event subtract { value: []const u8, by: []const u8 }
 | difference i64
 
-~proc subtract {
+~proc subtract|zig {
     const val = std.fmt.parseInt(i64, value, 10) catch 0;
     const by_val = std.fmt.parseInt(i64, by, 10) catch 0;
     return .{ .difference = val - by_val };

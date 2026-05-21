@@ -24,7 +24,7 @@ var sum: u64 = 0;
 ~event count { i: u64 }
 | next u64
 
-~proc count {
+~proc count|zig {
     if (i >= MESSAGES) {
     }
     return .{ .next = i };
@@ -36,13 +36,13 @@ var sum: u64 = 0;
 
 ~event accumulate { value: u64 }
 
-~proc accumulate {
+~proc accumulate|zig {
     sum += value;
 }
 
 ~event validate {}
 
-~proc validate {
+~proc validate|zig {
     const expected: u64 = MESSAGES * (MESSAGES - 1) / 2;
     if (sum == expected) {
         std.debug.print("✓ Taps: Validated {} messages (checksum: {})\n", .{ MESSAGES, sum });
@@ -54,7 +54,7 @@ var sum: u64 = 0;
 // Starting event to kick off the loop
 ~event start {}
 
-~proc start {
+~proc start|zig {
 }
 
 // ============================================================================

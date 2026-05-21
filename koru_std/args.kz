@@ -26,7 +26,7 @@ fn _get_argv() [][:0]u8 {
 ~pub event all {}
 | args [][:0]u8
 
-~proc all {
+~proc all|zig {
     return .{ .args = _get_argv() };
 }
 
@@ -37,7 +37,7 @@ fn _get_argv() [][:0]u8 {
 ~pub event count {}
 | count usize
 
-~proc count {
+~proc count|zig {
     return .{ .count = _get_argv().len };
 }
 
@@ -49,7 +49,7 @@ fn _get_argv() [][:0]u8 {
 | arg [:0]u8
 | out_of_bounds
 
-~proc get {
+~proc get|zig {
     const argv = _get_argv();
     if (index >= argv.len) {
         return .{ .out_of_bounds = .{} };
@@ -64,7 +64,7 @@ fn _get_argv() [][:0]u8 {
 ~pub event rest {}
 | args [][:0]u8
 
-~proc rest {
+~proc rest|zig {
     const argv = _get_argv();
     if (argv.len <= 1) {
         return .{ .args = &.{} };

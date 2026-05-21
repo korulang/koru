@@ -7,7 +7,7 @@ const std = @import("std");
 ~[comptime]event log_expr { expr: Expression }
 
 // Proc that receives the expression as []const u8
-~proc log_expr {
+~proc log_expr|zig {
     std.debug.print("Expression: {s}\n", .{expr});
 }
 
@@ -20,7 +20,7 @@ const std = @import("std");
 // Event with multiple Expression parameters - first is implicit 'expr', others must be named
 ~[comptime]event multi_expr { expr: Expression, guard: Expression }
 
-~proc multi_expr {
+~proc multi_expr|zig {
     std.debug.print("Main: {s}, Guard: {s}\n", .{expr, guard});
 }
 

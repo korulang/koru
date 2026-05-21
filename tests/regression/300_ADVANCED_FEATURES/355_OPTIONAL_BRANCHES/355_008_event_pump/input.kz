@@ -17,7 +17,7 @@ const std = @import("std");
 | ?window i32
 | ?timer i32
 
-~proc pump {
+~proc pump|zig {
     const i = iteration;
 
     // After 8 iterations, quit

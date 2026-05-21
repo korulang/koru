@@ -20,7 +20,7 @@ const std = @import("std");
 
 ~event log { data: ?[]const u8 }
 
-~proc log {
+~proc log|zig {
 }
 
 // THE TAP TO ANALYZE:

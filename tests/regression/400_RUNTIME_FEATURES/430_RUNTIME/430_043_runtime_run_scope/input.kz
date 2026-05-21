@@ -8,7 +8,7 @@ const std = @import("std");
 ~pub event greet { name: []const u8 }
 | greeted []const u8
 
-~proc greet {
+~proc greet|zig {
     return .{ .greeted = name };
 }
 

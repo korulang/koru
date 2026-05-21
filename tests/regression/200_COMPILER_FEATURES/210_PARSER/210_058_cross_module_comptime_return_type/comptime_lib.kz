@@ -10,7 +10,7 @@ const std = @import("std");
 | ok
 | err []const u8
 
-~proc sql {
+~proc sql|zig {
     _ = query;
     return .{ .ok = .{} };
 }

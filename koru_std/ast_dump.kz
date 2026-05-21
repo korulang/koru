@@ -13,7 +13,7 @@ const std = @import("std");
 // Void event: Dump AST to stderr with stage label
 ~pub event dump_ast { ctx: CompilerContext, stage: []const u8 }
 
-~proc dump_ast {
+~proc dump_ast|zig {
     // TODO: Use ast_serializer to generate JSON
     // For now, just print stage marker
     std.debug.print("\n[AST DUMP: {s}]\n", .{stage});

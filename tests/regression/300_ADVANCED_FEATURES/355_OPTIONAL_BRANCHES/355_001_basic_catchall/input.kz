@@ -15,7 +15,7 @@
 | ?warning []const u8
 | ?debug []const u8
 
-~proc process {
+~proc process|zig {
     // When value > 100, return optional warning branch
     if (value > 100) {
         return .{ .warning = "Value is large" };

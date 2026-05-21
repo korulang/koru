@@ -11,14 +11,14 @@ const std = @import("std");
 ~pub event open { path: []const u8 }
 | opened []const u8[opened!]
 
-~proc open {
+~proc open|zig {
     return .{ .opened = "file_1" };
 }
 
 // Close discharges the obligation
 ~pub event close { handle: []const u8[!opened] }
 
-~proc close {
+~proc close|zig {
 }
 
 // Register scope - compiler infers close is discharge for open

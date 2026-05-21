@@ -148,7 +148,7 @@ pub const ParseResult = parser_impl.ParseResult;
 | parsed parser_impl.ParseResult
 | parse_error []const u8
 
-~proc parse.source {
+~proc parse.source|zig {
     // Initialize parser (empty compiler flags, no resolver for standalone parsing)
     var p = parser_impl.Parser.init(allocator, source, file_name, &[_][]const u8{}, null) catch |err| {
         return .{ .parse_error = @errorName(err) };
@@ -171,7 +171,7 @@ pub const ParseResult = parser_impl.ParseResult;
 | dumped []const u8
 | dump_error []const u8
 
-~proc dump.ast {
+~proc dump.ast|zig {
     var serializer = ast_serializer.AstSerializer.init(allocator) catch |err| {
         return .{ .dump_error = @errorName(err) };
     };

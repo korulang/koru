@@ -14,7 +14,7 @@ const std = @import("std");
 
 ~event print_results { outer_count: i32, inner_count: i32 }
 
-~proc print_results {
+~proc print_results|zig {
     std.debug.print("outer={d}, inner={d}\n", .{outer_count, inner_count});
 }
 

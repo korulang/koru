@@ -14,7 +14,7 @@ const std = @import("std");
 ~event get_count {}
 | result u32
 
-~proc get_count {
+~proc get_count|zig {
     return .{ .result = 3 };
 }
 

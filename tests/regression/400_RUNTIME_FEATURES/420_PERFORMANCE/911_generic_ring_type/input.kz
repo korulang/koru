@@ -41,7 +41,7 @@ pub const RingU32 = struct {
 // Now try using it in an event shape
 ~event ring.enqueue { ring: *RingU32, value: u32 }
 
-~proc ring.enqueue {
+~proc ring.enqueue|zig {
     if (ring.tryEnqueue(value)) {
         std.debug.print("Enqueued!\n", .{});
     }
@@ -50,7 +50,7 @@ pub const RingU32 = struct {
 ~event ring.dequeue { ring: *RingU32 }
 | value u32
 
-~proc ring.dequeue {
+~proc ring.dequeue|zig {
     if (ring.tryDequeue()) |data| {
         std.debug.print("Got: {}\n", .{data});
         return .{ .value = data };

@@ -7,7 +7,7 @@ const std = @import("std");
 
 ~pub event ping {}
 
-~proc ping {
+~proc ping|zig {
     std.debug.print("PING\n", .{});
 }
 

@@ -28,7 +28,7 @@ const std = @import("std");
 // Should be equivalent to inline
 ~[comptime|runtime|fuseable] event inline_equiv {}
 
-~proc vertical_bullets { return .{ .done = .{} }; }
-~proc vertical_params { return .{ .done = .{} }; }
-~proc vertical_mixed { return .{ .done = .{} }; }
-~proc inline_equiv { return .{ .done = .{} }; }
+~proc vertical_bullets|zig { return .{ .done = .{} }; }
+~proc vertical_params|zig { return .{ .done = .{} }; }
+~proc vertical_mixed|zig { return .{ .done = .{} }; }
+~proc inline_equiv|zig { return .{ .done = .{} }; }

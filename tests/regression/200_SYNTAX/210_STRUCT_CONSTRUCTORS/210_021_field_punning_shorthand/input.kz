@@ -10,7 +10,7 @@ pub const Point = struct { x: i32, y: i32 };
 ~event make_point { x: i32, y: i32 }
 | point Point
 
-~proc make_point {
+~proc make_point|zig {
     return .{ .point = Point{ .x = x, .y = y } };
 }
 

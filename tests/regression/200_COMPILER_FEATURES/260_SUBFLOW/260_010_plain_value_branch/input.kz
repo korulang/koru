@@ -19,7 +19,7 @@ const std = @import("std");
 // Printer event
 ~event print_results { a: i32, b: i32 }
 
-~proc print_results {
+~proc print_results|zig {
     std.debug.print("{} {}\n", .{ a, b });
 }
 

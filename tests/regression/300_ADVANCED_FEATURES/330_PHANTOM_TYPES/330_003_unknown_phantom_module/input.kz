@@ -4,6 +4,6 @@ const File = struct {
     handle: i32,
 };
 ~event check_file { file: *File[unknown:open] }
-~proc check_file {
+~proc check_file|zig {
 }
 ~std.io:println(text: "Test file - phantom checker should fail before this runs")

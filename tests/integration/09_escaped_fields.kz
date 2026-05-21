@@ -6,7 +6,7 @@
 | success i32  // 'return' is a keyword
 | failure []const u8  // 'error' is a keyword
 
-~proc data.process {
+~proc data.process|zig {
     if (e.input < 0) {
         return .{ .@"failure" = .{ .@"error" = "negative value" } };
     }
@@ -21,11 +21,11 @@
 ~event doSomething { value: i32 }
 | done
 
-~proc doSomething {
+~proc doSomething|zig {
     return .{ .@"done" = .{} };
 }
 
 ~event logError { msg: []const u8 }
-~proc logError {
+~proc logError|zig {
     // Void event
 }

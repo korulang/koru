@@ -6,14 +6,14 @@ const std = @import("std");
 ~event logger.info { msg: []const u8 }
 // No branches - void event
 
-~proc logger.info {
+~proc logger.info|zig {
     std.debug.print("INFO: {s}\n", .{e.msg});
 }
 
 ~event app.start { }
 | ready { }
 
-~proc app.start {
+~proc app.start|zig {
     return .{ .@"ready" = .{} };
 }
 

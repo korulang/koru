@@ -8,7 +8,7 @@ const std = @import("std");
 | request { method: []const u8, path: []const u8, headers: []const u8, body: []const u8 }
 | invalid []const u8
 
-~proc http.parse_request {
+~proc http.parse_request|zig {
     const allocator = std.heap.page_allocator;
     
     // Find the end of the request line
@@ -55,7 +55,7 @@ const std = @import("std");
 ~pub event http.response { status: u16, status_text: []const u8, headers: []const u8, body: []const u8 }
 | formatted []const u8
 
-~proc http.response {
+~proc http.response|zig {
     const allocator = std.heap.page_allocator;
     
     const response = std.fmt.allocPrint(allocator, 
@@ -75,7 +75,7 @@ const std = @import("std");
 | matched []const u8  // For simplicity, params as comma-separated string
 | no_match
 
-~proc http.match_route {
+~proc http.match_route|zig {
     // Simple exact match for now
     if (std.mem.eql(u8, path, pattern)) {
         return .{ .@"matched" = .{ .params = "" } };
@@ -96,7 +96,7 @@ const std = @import("std");
 ~pub event http.json_response { status: u16, json: []const u8 }
 | response []const u8
 
-~proc http.json_response {
+~proc http.json_response|zig {
     const allocator = std.heap.page_allocator;
     
     const status_text = switch (status) {
@@ -123,7 +123,7 @@ const std = @import("std");
 ~pub event http.html_response { status: u16, html: []const u8 }
 | response []const u8
 
-~proc http.html_response {
+~proc http.html_response|zig {
     const allocator = std.heap.page_allocator;
     
     const status_text = switch (status) {
@@ -148,7 +148,7 @@ const std = @import("std");
 ~pub event http.mime_type { extension: []const u8 }
 | type []const u8
 
-~proc http.mime_type {
+~proc http.mime_type|zig {
     const mime = if (std.mem.eql(u8, extension, ".html")) "text/html"
         else if (std.mem.eql(u8, extension, ".css")) "text/css"
         else if (std.mem.eql(u8, extension, ".js")) "application/javascript"
@@ -167,7 +167,7 @@ const std = @import("std");
 | decoded []const u8
 | error []const u8
 
-~proc http.url_decode {
+~proc http.url_decode|zig {
     const allocator = std.heap.page_allocator;
     var result = std.ArrayList(u8).init(allocator);
     
@@ -202,7 +202,7 @@ const std = @import("std");
 ~pub event http.parse_query { query: []const u8 }
 | params []const u8  // Simplified: key=value,key2=value2 format
 
-~proc http.parse_query {
+~proc http.parse_query|zig {
     const allocator = std.heap.page_allocator;
     var result = std.ArrayList(u8).init(allocator);
     

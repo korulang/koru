@@ -21,9 +21,9 @@ const std = @import("std");
 // Future syntax experimentation
 ~[inline@500] event at_syntax {}
 
-~proc colon_separated { return .{ .done = .{} }; }
-~proc version_check { return .{ .done = .{} }; }
-~proc spaced { return .{ .done = .{} }; }
-~proc nested { return .{ .done = .{} }; }
-~proc url_annot { return .{ .done = .{} }; }
-~proc at_syntax { return .{ .done = .{} }; }
+~proc colon_separated|zig { return .{ .done = .{} }; }
+~proc version_check|zig { return .{ .done = .{} }; }
+~proc spaced|zig { return .{ .done = .{} }; }
+~proc nested|zig { return .{ .done = .{} }; }
+~proc url_annot|zig { return .{ .done = .{} }; }
+~proc at_syntax|zig { return .{ .done = .{} }; }

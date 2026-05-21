@@ -1,6 +1,6 @@
 const Connection = struct { id: i32 };
 ~pub event query { conn: *Connection[connected], sql: []const u8 }
-~proc query {
+~proc query|zig {
 }
 ~pub event get_raw_connection {}
 | ok c |>

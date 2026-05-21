@@ -13,7 +13,7 @@ const std = @import("std");
 | next u32
 | done
 
-~proc mymodule.tick {
+~proc mymodule.tick|zig {
     const static = struct { var count: u32 = 0; };
     static.count += 1;
     if (static.count < 3) {

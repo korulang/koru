@@ -15,7 +15,7 @@ const std = @import("std");
 | result []const u8
 | error []const u8
 
-~proc compute {
+~proc compute|zig {
     const a_val = std.fmt.parseInt(i64, a, 10) catch 0;
     const b_val = std.fmt.parseInt(i64, b, 10) catch 0;
 
@@ -35,7 +35,7 @@ const std = @import("std");
 
 ~pub event print_result { value: []const u8 }
 
-~proc print_result {
+~proc print_result|zig {
     std.debug.print("Result: {s}\n", .{value});
 }
 

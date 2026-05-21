@@ -21,7 +21,7 @@
 ~pub event optimize { ctx: std.compiler:CompilerContext }
 | ctx std.compiler:CompilerContext
 
-~proc optimize {
+~proc optimize|zig {
     // Phase 1: Infrastructure - pass through unchanged
     // This establishes the pass in the pipeline
 

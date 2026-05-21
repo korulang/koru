@@ -16,7 +16,7 @@ pub const DomainUser = struct {
 }
 | created DomainUser
 
-~proc create {
+~proc create|zig {
     const new_user = DomainUser{
         .email = email,
         .role = role,

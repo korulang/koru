@@ -3,7 +3,7 @@
 ~event log.debug { msg: []const u8 }
 // No branches - this is a void event
 
-~proc log.debug {
+~proc log.debug|zig {
     const std = @import("std");
     std.debug.print("DEBUG: {s}\n", .{e.msg});
     // Void events have no return
@@ -12,7 +12,7 @@
 ~event log.info { msg: []const u8 }
 // Another void event
 
-~proc log.info {
+~proc log.info|zig {
     const std = @import("std");
     std.debug.print("INFO: {s}\n", .{e.msg});
     // Void events have no return
@@ -22,7 +22,7 @@
 | success i32
 | failure []const u8
 
-~proc do.work {
+~proc do.work|zig {
     if (e.input < 0) {
         return .{ .@"failure" = .{ .errmsg = "negative input" } };
     }

@@ -37,7 +37,7 @@ const std = @import("std");
 | result i32
 
 // Default implementation (fallback)
-~proc categorize {
+~proc categorize|zig {
     return .{ .result = -999 };
 }
 
@@ -52,7 +52,7 @@ const std = @import("std");
 // Helper to print
 ~event print_num { n: i32 }
 
-~proc print_num {
+~proc print_num|zig {
     std.debug.print("{}\n", .{n});
 }
 

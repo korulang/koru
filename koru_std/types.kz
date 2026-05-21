@@ -50,7 +50,7 @@ const std = @import("std");
 
 ~[norun]pub event struct.impl { name: []const u8 }
 
-~proc struct {
+~proc struct|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -179,14 +179,14 @@ const std = @import("std");
 // Declare a Zig enum type
 ~[comptime|norun]pub event enum { expr: Expression, source: Source }
 
-~proc enum {
+~proc enum|zig {
     // Emits: `pub const Name = enum { ...source... };` (or without pub)
 }
 
 // Declare a Zig union type
 ~[comptime|norun]pub event union { expr: Expression, source: Source }
 
-~proc union {
+~proc union|zig {
     // Emits: `pub const Name = union { ...source... };` (or without pub)
     // Or: `pub const Name = union(EnumType) { ...source... };` for tagged unions
 }
@@ -212,7 +212,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc string {
+~proc string|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -271,7 +271,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc int {
+~proc int|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -328,7 +328,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc float {
+~proc float|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -385,7 +385,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc bool {
+~proc bool|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -453,7 +453,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc type {
+~proc type|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 

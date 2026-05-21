@@ -25,21 +25,21 @@ const std = @import("std");
 ~event step_a { x: i32 }
 | done i32
 
-~proc step_a {
+~proc step_a|zig {
     return .{ .done = x + 1 };
 }
 
 ~event step_b { a: i32, b: i32, c: i32 }
 | done i32
 
-~proc step_b {
+~proc step_b|zig {
     return .{ .done = a + b + c };
 }
 
 ~event step_c { x: i32 }
 | done i32
 
-~proc step_c {
+~proc step_c|zig {
     return .{ .done = x * 2 };
 }
 

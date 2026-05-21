@@ -12,12 +12,12 @@
 
 ~event send_email { to: EmailAddress }
 
-~proc send_email {
+~proc send_email|zig {
 }
 
 ~event main {}
 
-~proc main {
+~proc main|zig {
     // ERROR: Passing UserName where EmailAddress is expected
     const name: UserName = "alice";
     ~send_email(to: name)

@@ -37,7 +37,7 @@ const std = @import("std");
 | rejected r |> _
 
 // Proc implementations
-~proc fetch.order {
+~proc fetch.order|zig {
     if (e.id > 0) {
         return .{ .found = .{ 
             .order_id = e.id,
@@ -48,7 +48,7 @@ const std = @import("std");
     return .{ .not_found = .{} };
 }
 
-~proc parse.result {
+~proc parse.result|zig {
     return .{ .parsed = .{
         .value = e.text,
         .info = "metadata"

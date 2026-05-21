@@ -19,6 +19,6 @@ const std = @import("std");
 // Handler that uses std - this will trigger ambiguity if nested
 ~event on_done {}
 
-~proc on_done {
+~proc on_done|zig {
     std.debug.print("Done!\n", .{});
 }

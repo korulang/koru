@@ -36,7 +36,7 @@ const ast_functional = @import("ast_functional");
 // A simple runtime event to verify compilation works
 ~event hello {}
 
-~proc hello {
+~proc hello|zig {
     std.debug.print("Hello from augmented program!\n", .{});
 }
 

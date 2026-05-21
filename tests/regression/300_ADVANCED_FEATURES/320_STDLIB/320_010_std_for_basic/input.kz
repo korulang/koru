@@ -17,7 +17,7 @@ var sum: i32 = 0;
 // Event to process each item
 ~event process { value: i32 }
 
-~proc process {
+~proc process|zig {
     sum += value;
     std.debug.print("{}\n", .{value});
 }
@@ -25,7 +25,7 @@ var sum: i32 = 0;
 // Event to finalize
 ~event finalize {}
 
-~proc finalize {
+~proc finalize|zig {
     std.debug.print("Sum: {}\n", .{sum});
 }
 

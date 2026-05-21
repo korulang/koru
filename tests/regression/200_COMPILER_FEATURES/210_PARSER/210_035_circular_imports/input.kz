@@ -15,7 +15,7 @@ const std = @import("std");
 ~pub event from_a { msg: []const u8 }
 | received []const u8
 
-~proc from_a {
+~proc from_a|zig {
     std.debug.print("input.kz received: {s}\n", .{msg});
     return .{ .received = msg };
 }

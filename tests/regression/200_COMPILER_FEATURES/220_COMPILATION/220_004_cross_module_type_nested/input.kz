@@ -22,7 +22,7 @@ const std = @import("std");
 }
 | granted bool
 
-~proc grant_access {
+~proc grant_access|zig {
     std.debug.print("Granting access: {s} as {s} (perms: {d})\n",
         .{user_data.email, user_data.role, user_data.permissions});
     return .{ .granted = true };

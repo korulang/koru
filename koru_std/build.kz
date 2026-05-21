@@ -99,7 +99,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 | ?added
 | ?parse_error []const u8
 
-~proc requires {
+~proc requires|zig {
     // Validate Source syntax
     // Can be called programmatically by collect() to validate each requirement
     // TODO: Actually validate Zig syntax
@@ -131,7 +131,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 | skipped []const u8
 | invalid_event []const u8
 
-~proc variants {
+~proc variants|zig {
     // Check if this config's annotation matches the --build flag
     if (!matchesFlags(meta.annotations)) {
         return .{ .skipped = "no matching build flag" };
@@ -220,7 +220,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 | configured usize
 | skipped []const u8
 
-~proc config {
+~proc config|zig {
     if (!matchesFlags(meta.annotations)) {
         return .{ .skipped = "no matching build flag" };
     }
@@ -463,7 +463,7 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 }
 | collected compiler_types.CompilerContext
 
-~proc collect {
+~proc collect|zig {
     // Extract nested fields from ctx (auto-destructuring only works for top-level event params)
     const allocator = ctx.allocator;
     const ast_items = ctx.ast.items;

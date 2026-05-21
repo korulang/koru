@@ -15,7 +15,7 @@ const std = @import("std");
 
 ~event test_box {}
 
-~proc test_box {
+~proc test_box|zig {
     const uid: UserId = 999;
     const box = UserIdBox{ .value = uid };
     std.debug.print("UserId: {d}\n", .{box.value});

@@ -7,7 +7,7 @@ const std = @import("std");
 
 ~event print_int { value: i32 }
 
-~proc print_int {
+~proc print_int|zig {
     std.debug.print("{d}\n", .{value});
 }
 

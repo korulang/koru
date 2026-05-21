@@ -29,7 +29,7 @@ const allocator = std.heap.c_allocator;
 
 ~event work_void { r: *Resource }
 
-~proc work_void {
+~proc work_void|zig {
     r.data[0] +%= 1;
 }
 
@@ -40,7 +40,7 @@ const allocator = std.heap.c_allocator;
 
 ~event work_done { r: *Resource }
 
-~proc work_done {
+~proc work_done|zig {
     r.data[0] +%= 1;
 }
 
@@ -52,7 +52,7 @@ const allocator = std.heap.c_allocator;
 ~event create { id: usize }
 | created *Resource[active!]
 
-~proc create {
+~proc create|zig {
     const r = allocator.create(Resource) catch unreachable;
     r.* = Resource{ .id = id, .data = undefined };
     return .{ .created = r };
@@ -60,7 +60,7 @@ const allocator = std.heap.c_allocator;
 
 ~event destroy { r: *Resource[!active] }
 
-~proc destroy {
+~proc destroy|zig {
     allocator.destroy(r);
 }
 
