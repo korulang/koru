@@ -7,7 +7,7 @@ const std = @import("std");
 ~event count { i: u64 }
 | next u64
 
-~proc count {
+~proc count|zig {
     if (i < 10) {
         return .{ .next = i + 1 };
     } else {
@@ -17,7 +17,7 @@ const std = @import("std");
 // Print event
 ~event print { i: u64 }
 
-~proc print {
+~proc print|zig {
     std.debug.print("i = {}\n", .{i});
 }
 

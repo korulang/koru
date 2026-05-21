@@ -15,21 +15,21 @@ var process_count: i32 = 0;
 // Void events have no output branches
 ~event setup {}
 
-~proc setup {
+~proc setup|zig {
     setup_count += 1;
     std.debug.print("Setup: count={}\n", .{setup_count});
 }
 
 ~event cleanup {}
 
-~proc cleanup {
+~proc cleanup|zig {
     cleanup_count += 1;
     std.debug.print("Cleanup: count={}\n", .{cleanup_count});
 }
 
 ~event process {}
 
-~proc process {
+~proc process|zig {
     process_count += 1;
     std.debug.print("Process: count={}\n", .{process_count});
 }
@@ -48,7 +48,7 @@ var process_count: i32 = 0;
 // Verify with a regular event
 ~event verify {}
 
-~proc verify {
+~proc verify|zig {
     if (setup_count == 1 and process_count == 3 and cleanup_count == 1) {
         std.debug.print("Void events work correctly\n", .{});
     } else {

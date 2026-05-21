@@ -12,6 +12,6 @@
 
 ~[transform]event badTransform { count: i32 } -> (result: i32)
 
-~proc badTransform {
+~proc badTransform|zig {
     return .{ .result = count * 2 };
 }

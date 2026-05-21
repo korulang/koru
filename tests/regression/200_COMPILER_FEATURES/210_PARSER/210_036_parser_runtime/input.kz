@@ -19,7 +19,7 @@ const SAMPLE_CODE =
 // Event to inspect AST - using module:Type syntax!
 ~event inspect_ast { result: std.parser:ParseResult }
 
-~proc inspect_ast {
+~proc inspect_ast|zig {
     std.debug.print("Parsed {} items\n", .{result.source_file.items.len});
 
     for (result.source_file.items) |item| {
@@ -46,7 +46,7 @@ const SAMPLE_CODE =
 // Event to report error - returns done when complete
 ~event report_error { message: []const u8 }
 
-~proc report_error {
+~proc report_error|zig {
     std.debug.print("Parse error: {s}\n", .{message});
 }
 

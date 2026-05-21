@@ -16,7 +16,7 @@ const std = @import("std");
 
 ~event test_nested {}
 
-~proc test_nested {
+~proc test_nested|zig {
     const inner = IntBox{ .value = 77 };
     const wrapped = WrappedIntBox{ .inner = inner };
     std.debug.print("Nested value: {d}\n", .{wrapped.inner.value});

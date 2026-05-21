@@ -16,7 +16,7 @@
     value: NonexistentType,  // ← This type doesn't exist
 }
 
-~proc broken.example {
+~proc broken.example|zig {
 }
 
 ~broken.example(value: 42)

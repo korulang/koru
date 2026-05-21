@@ -35,7 +35,7 @@
 ~pub event optimize { ctx: std.compiler:CompilerContext }
 | ctx std.compiler:CompilerContext
 
-~proc optimize {
+~proc optimize|zig {
     // Phase 1: Detect checker events
     // A checker event has:
     // - Event with two branches: continue_X and done_X

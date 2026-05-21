@@ -12,7 +12,7 @@ const std = @import("std");
 
 ~event server.handle { id: u32 }
 
-~proc server.accept {
+~proc server.accept|zig {
     std.debug.print("Accept\n", .{});
     // Simulate accepting 2 connections then stopping
     const static = struct {
@@ -24,7 +24,7 @@ const std = @import("std");
     }
 }
 
-~proc server.handle {
+~proc server.handle|zig {
     std.debug.print("Handle {}\n", .{id});
 }
 

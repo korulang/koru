@@ -3,5 +3,5 @@
 
 ~pub event root_hello {}
 
-~proc root_hello {
+~proc root_hello|zig {
 }

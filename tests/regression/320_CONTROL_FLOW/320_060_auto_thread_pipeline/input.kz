@@ -27,14 +27,14 @@ const std = @import("std");
 ~pub event from { source: []const i32 }
 | seq []const i32
 
-~proc from {
+~proc from|zig {
     return .{ .seq = source };
 }
 
 ~pub event where { pred: bool, seq: []const i32 }
 | seq []const i32
 
-~proc where {
+~proc where|zig {
     // Simplified: just return input (real impl would filter)
     _ = pred;
     return .{ .seq = seq };
@@ -43,7 +43,7 @@ const std = @import("std");
 ~pub event select_len { seq: []const i32 }
 | seq []const usize
 
-~proc select_len {
+~proc select_len|zig {
     // Return length instead of elements (simplified transform)
     _ = seq;
     var result: []const usize = &[_]usize{ seq.len };
@@ -54,7 +54,7 @@ const std = @import("std");
 ~pub event count { seq: []const i32 }
 | count usize
 
-~proc count {
+~proc count|zig {
     return .{ .count = seq.len };
 }
 
@@ -76,6 +76,6 @@ const test_data = [_]i32{ 1, 2, 3, 4, 5 };
 
 ~event print_result { value: usize }
 
-~proc print_result {
+~proc print_result|zig {
     std.debug.print("Count: {d}\n", .{value});
 }

@@ -10,7 +10,7 @@ const Data = struct { content: []const u8 };
 ~pub event open { path: []const u8 }
 | opened *File[opened!]
 
-~proc open {
+~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
     return .{ .opened = f };
@@ -20,7 +20,7 @@ const Data = struct { content: []const u8 };
 ~pub event read { file: *File[opened!] }
 | data { file: *File[opened!], content: *Data[data!] }
 
-~proc read {
+~proc read|zig {
     const d = std.heap.page_allocator.create(Data) catch unreachable;
     d.* = Data{ .content = "test content" };
     return .{ .data = .{ .file = file, .content = d } };
@@ -29,13 +29,13 @@ const Data = struct { content: []const u8 };
 // Close file - consumes opened!
 ~pub event close { file: *File[!opened] }
 
-~proc close {
+~proc close|zig {
     std.heap.page_allocator.destroy(file);
 }
 
 // Free data - consumes data!
 ~pub event free { content: *Data[!data] }
 
-~proc free {
+~proc free|zig {
     std.heap.page_allocator.destroy(content);
 }

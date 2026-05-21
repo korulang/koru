@@ -52,7 +52,7 @@ const std = @import("std");
 // Mock Compiler Passes (simplified for testing)
 // ================================================================
 
-~proc compile.target {
+~proc compile.target|zig {
     const allocator = std.heap.page_allocator;
 
     // GPU target: Wrap GLSL code in Zig wrapper
@@ -151,6 +151,6 @@ const std = @import("std");
 ~pub event greet { }
 | done { }
 
-~proc greet {
+~proc greet|zig {
     return .{ .done = .{} };
 }

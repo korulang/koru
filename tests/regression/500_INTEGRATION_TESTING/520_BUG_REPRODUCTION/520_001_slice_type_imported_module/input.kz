@@ -20,7 +20,7 @@ const std = @import("std");
 ~event getHandles {}
 | got []const threading:WorkerHandle
 
-~proc getHandles {
+~proc getHandles|zig {
     // Create empty slice just to test codegen
     const handles = std.heap.page_allocator.alloc(threading:WorkerHandle, 0) catch unreachable;
     return .{ .got = handles };

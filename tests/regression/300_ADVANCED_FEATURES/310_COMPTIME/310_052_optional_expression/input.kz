@@ -17,7 +17,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc labeled {
+~proc labeled|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 
@@ -43,7 +43,7 @@ const std = @import("std");
 // inside a continuation for replaceInvocationNodeRecursive to find it.
 ~event noop {}
 
-~proc noop {}
+~proc noop|zig {}
 
 ~noop() |> labeled("hello")
 ~noop() |> labeled()

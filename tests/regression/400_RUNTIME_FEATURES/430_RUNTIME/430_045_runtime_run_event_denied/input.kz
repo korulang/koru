@@ -5,12 +5,12 @@
 
 ~pub event allowed {}
 
-~proc allowed {
+~proc allowed|zig {
 }
 
 ~pub event denied {}
 
-~proc denied {
+~proc denied|zig {
 }
 
 ~std.runtime:register(scope: "limited") {

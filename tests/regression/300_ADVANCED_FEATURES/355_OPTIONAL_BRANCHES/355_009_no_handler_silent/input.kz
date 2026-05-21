@@ -12,7 +12,7 @@
 | success u32
 | ?warning []const u8
 
-~proc process {
+~proc process|zig {
     if (value > 100) {
         return .{ .warning = "Value too large" };
     }

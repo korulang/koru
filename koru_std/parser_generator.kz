@@ -32,7 +32,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc parser {
+~proc parser|zig {
     const ast = @import("ast");
 
     // Build the event name from path segments

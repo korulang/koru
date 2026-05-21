@@ -35,7 +35,7 @@ pub const JsonValue = union(enum) {
 ~pub event object.new { allocator: ?std.mem.Allocator }
 | ok *JsonObject[building!]
 
-~proc object.new {
+~proc object.new|zig {
     const alloc = allocator orelse std.heap.page_allocator;
     
     const obj = alloc.create(JsonObject) catch {
@@ -56,7 +56,7 @@ pub const JsonValue = union(enum) {
 ~pub event object.set { obj: *JsonObject[building!], key: []const u8, value: JsonValue }
 | ok *JsonObject[building!]
 
-~proc object.set {
+~proc object.set|zig {
     const writer = obj.buffer.writer();
     
     // Add comma if not first field
@@ -100,7 +100,7 @@ pub const JsonValue = union(enum) {
 ~pub event object.finish { obj: *JsonObject[!building] }
 | json []const u8
 
-~proc object.finish {
+~proc object.finish|zig {
     obj.buffer.append('}') catch {};
     const result = obj.buffer.toOwnedSlice() catch "";
     // Note: caller owns the slice, should free with obj.allocator
@@ -114,7 +114,7 @@ pub const JsonValue = union(enum) {
 ~pub event array.new { allocator: ?std.mem.Allocator }
 | ok *JsonObject[building!]  // Reuse JsonObject for simplicity
 
-~proc array.new {
+~proc array.new|zig {
     const alloc = allocator orelse std.heap.page_allocator;
     
     const obj = alloc.create(JsonObject) catch {
@@ -135,7 +135,7 @@ pub const JsonValue = union(enum) {
 ~pub event array.push { arr: *JsonObject[building!], value: JsonValue }
 | ok *JsonObject[building!]
 
-~proc array.push {
+~proc array.push|zig {
     const writer = arr.buffer.writer();
     
     if (arr.field_count > 0) {
@@ -172,7 +172,7 @@ pub const JsonValue = union(enum) {
 ~pub event array.finish { arr: *JsonObject[!building] }
 | json []const u8
 
-~proc array.finish {
+~proc array.finish|zig {
     arr.buffer.append(']') catch {};
     const result = arr.buffer.toOwnedSlice() catch "";
     return .{ .json = result };
@@ -186,7 +186,7 @@ pub const JsonValue = union(enum) {
 | ok []const u8
 | not_found
 
-~proc get.string {
+~proc get.string|zig {
     // Find "key":"value"
     var search_buf: [256]u8 = undefined;
     const search_key = std.fmt.bufPrint(&search_buf, "\"{s}\":\"", .{key}) catch {
@@ -223,7 +223,7 @@ pub const JsonValue = union(enum) {
 | ok i64
 | not_found
 
-~proc get.int {
+~proc get.int|zig {
     // Find "key":number
     var search_buf: [256]u8 = undefined;
     const search_key = std.fmt.bufPrint(&search_buf, "\"{s}\":", .{key}) catch {

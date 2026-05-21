@@ -6,7 +6,7 @@ const std = @import("std");
 
 ~event log { message: []const u8 }
 
-~proc log {
+~proc log|zig {
     std.debug.print("LOG: {s}\n", .{message});
 }
 

@@ -14,7 +14,7 @@
 | ?warning []const u8
 | ?debug []const u8
 
-~proc analyze {
+~proc analyze|zig {
     if (value > 100) {
         return .{ .warning = "Large value" };
     }

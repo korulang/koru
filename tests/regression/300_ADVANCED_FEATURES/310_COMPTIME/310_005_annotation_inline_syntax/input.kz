@@ -18,8 +18,8 @@ const std = @import("std");
 // Mix of simple and parameterized
 ~[comptime|optimize(level: 3)|inline] event mixed {}
 
-~proc single { return .{ .done = .{} }; }
-~proc dual { return .{ .done = .{} }; }
-~proc many { return .{ .done = .{} }; }
-~proc optimized { return .{ .done = .{} }; }
-~proc mixed { return .{ .done = .{} }; }
+~proc single|zig { return .{ .done = .{} }; }
+~proc dual|zig { return .{ .done = .{} }; }
+~proc many|zig { return .{ .done = .{} }; }
+~proc optimized|zig { return .{ .done = .{} }; }
+~proc mixed|zig { return .{ .done = .{} }; }

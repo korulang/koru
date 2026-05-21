@@ -21,7 +21,7 @@
 }
 | transformed *const Program
 
-~proc ring.* {
+~proc ring.*|zig {
     const std = @import("std");
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");

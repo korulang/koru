@@ -6,10 +6,10 @@ const std = @import("std");
 
 ~pub event shutdown {}
 
-~proc init {
+~proc init|zig {
     std.debug.print("Physics initialized\n", .{});
 }
 
-~proc shutdown {
+~proc shutdown|zig {
     std.debug.print("Physics shutdown\n", .{});
 }

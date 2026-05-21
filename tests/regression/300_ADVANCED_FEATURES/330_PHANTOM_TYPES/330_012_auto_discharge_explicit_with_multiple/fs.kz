@@ -9,7 +9,7 @@ const File = struct { handle: i32 };
 ~pub event open { path: []const u8 }
 | opened *File[opened!]
 
-~proc open {
+~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
     return .{ .opened = f };
@@ -19,7 +19,7 @@ const File = struct { handle: i32 };
 ~pub event lock { file: *File[!opened] }
 | locked *File[locked!]
 
-~proc lock {
+~proc lock|zig {
     return .{ .locked = file };
 }
 
@@ -27,14 +27,14 @@ const File = struct { handle: i32 };
 ~pub event write { file: *File[locked], data: []const u8 }
 | err []const u8
 
-~proc write {
+~proc write|zig {
     std.debug.print("Writing: {s}\n", .{data});
 }
 
 // Unlock - consumes locked! (Option 1 for disposing locked!)
 ~pub event unlock { file: *File[!locked] }
 
-~proc unlock {
+~proc unlock|zig {
     std.debug.print("Unlocking\n", .{});
     std.heap.page_allocator.destroy(file);
 }
@@ -42,7 +42,7 @@ const File = struct { handle: i32 };
 // Force close - also consumes locked! (Option 2 for disposing locked!)
 ~pub event force_close { file: *File[!locked] }
 
-~proc force_close {
+~proc force_close|zig {
     std.debug.print("Force closing\n", .{});
     std.heap.page_allocator.destroy(file);
 }

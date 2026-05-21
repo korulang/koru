@@ -37,7 +37,7 @@ const Body = struct {
 ~event initialize_bodies {}
 | bodies [5]Body
 
-~proc initialize_bodies {
+~proc initialize_bodies|zig {
     return .{ .bodies = [_]Body{
         .{ .x = 0, .y = 0, .z = 0, .vx = 0, .vy = 0, .vz = 0, .mass = SOLAR_MASS },
         .{
@@ -82,7 +82,7 @@ const Body = struct {
 // Void event - no branches needed!
 ~event offset_momentum { bodies: []Body }
 
-~proc offset_momentum {
+~proc offset_momentum|zig {
     var px: f64 = 0.0;
     var py: f64 = 0.0;
     var pz: f64 = 0.0;
@@ -102,7 +102,7 @@ const Body = struct {
 ~event calculate_energy { bodies: []const Body }
 | energy f64
 
-~proc calculate_energy {
+~proc calculate_energy|zig {
     var e: f64 = 0.0;
 
     for (bodies, 0..) |body, i| {
@@ -124,7 +124,7 @@ const Body = struct {
 // Void event - advances velocities
 ~event advance_velocities { bodies: []Body, dt: f64 }
 
-~proc advance_velocities {
+~proc advance_velocities|zig {
     var i: usize = 0;
     while (i < 5) : (i += 1) {
         var j: usize = i + 1;
@@ -150,7 +150,7 @@ const Body = struct {
 // Void event - advances positions
 ~event advance_positions { bodies: []Body, dt: f64 }
 
-~proc advance_positions {
+~proc advance_positions|zig {
     for (bodies) |*body| {
         body.x += dt * body.vx;
         body.y += dt * body.vy;
@@ -161,7 +161,7 @@ const Body = struct {
 // Void event - print energy (workaround for print.ln bug)
 ~event print_energy { e: f64 }
 
-~proc print_energy {
+~proc print_energy|zig {
     std.debug.print("{d:.9}\n", .{e});
 }
 
@@ -169,7 +169,7 @@ const Body = struct {
 ~event parse_args {}
 | n u32
 
-~proc parse_args {
+~proc parse_args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
     defer std.process.argsFree(std.heap.page_allocator, args);
 

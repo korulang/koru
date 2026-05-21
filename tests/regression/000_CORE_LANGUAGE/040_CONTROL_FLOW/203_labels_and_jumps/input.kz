@@ -12,7 +12,7 @@ const std = @import("std");
 | next { value: i32, target: i32 }
 | done i32
 
-~proc count {
+~proc count|zig {
     std.debug.print("Count: {}\n", .{current});
 
     if (current < target) {

@@ -25,7 +25,7 @@ const fixed_msg = "Always works!";
 // Declare output event
 ~event io.output { text: []const u8 }
 
-~proc io.output {
+~proc io.output|zig {
     const std = @import("std");
     std.debug.print("{s}\n", .{e.text});
 }

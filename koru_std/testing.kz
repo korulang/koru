@@ -241,7 +241,7 @@ const validateMocks = struct {
 | ok
 | failed []const u8
 
-~proc validate_mocks {
+~proc validate_mocks|zig {
     if (validateMocks(allocator, program, mocks, source)) {
         return .{ .ok = .{} };
     }
@@ -250,7 +250,7 @@ const validateMocks = struct {
 
 // Test transform - generates proper Zig test blocks
 // NEW ARCHITECTURE: Run transforms on parsed Source, then use normal emitter
-~proc test {
+~proc test|zig {
     const std_import = @import("std");
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
@@ -809,7 +809,7 @@ const emitFlowWithMocks = struct {
 }
 | transformed *const Program
 
-~proc assert {
+~proc assert|zig {
     const std_import = @import("std");
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
@@ -880,7 +880,7 @@ const emitFlowWithMocks = struct {
 // Simple pass - marks a test branch as passing (noop)
 ~[keyword|comptime|transform|pure] pub event assert.ok {}
 
-~proc assert.ok {
+~proc assert.ok|zig {
     // assert.ok is a pass-through checkpoint - do nothing
     // The test passed this branch by reaching this point
 }

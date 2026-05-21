@@ -20,14 +20,14 @@ const std = @import("std");
 ~event get_params {}
 | result { count: u32, items: [5]i32 }
 
-~proc get_params {
+~proc get_params|zig {
     return .{ .result = .{ .count = 3, .items = .{ 10, 20, 30, 40, 50 } } };
 }
 
 // Event to process items (void - no branches, for use inside for loop)
 ~event process_item { value: i32 }
 
-~proc process_item {
+~proc process_item|zig {
     std.debug.print("Processing: {d}\n", .{value});
 }
 

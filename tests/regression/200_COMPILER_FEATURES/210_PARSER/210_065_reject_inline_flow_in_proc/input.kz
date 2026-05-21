@@ -7,11 +7,11 @@
 
 ~event ping {}
 
-~proc ping {
+~proc ping|zig {
 }
 
 ~event main {}
 
-~proc main {
+~proc main|zig {
     ~ping()
 }

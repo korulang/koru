@@ -14,7 +14,7 @@ const std = @import("std");
 | parsed i32
 | invalid []const u8
 
-~proc parse {
+~proc parse|zig {
     const value = std.fmt.parseInt(i32, input, 10) catch {
         return .{ .@"invalid" = "Not a number" };
     };
@@ -26,7 +26,7 @@ const std = @import("std");
 | valid i32
 | invalid []const u8
 
-~proc validate {
+~proc validate|zig {
     if (value < 0 or value > 100) {
         return .{ .@"invalid" = "Out of range" };
     }
@@ -37,7 +37,7 @@ const std = @import("std");
 ~event transform { value: i32 }
 | transformed i32
 
-~proc transform {
+~proc transform|zig {
     return .{ .@"transformed" = value * 2 };
 }
 
@@ -45,7 +45,7 @@ const std = @import("std");
 ~event format { value: i32 }
 | formatted []const u8
 
-~proc format {
+~proc format|zig {
     const allocator = std.heap.page_allocator;
     const text = std.fmt.allocPrint(allocator, "Result: {}", .{value}) catch {
         return .{ .@"formatted" = "Error formatting" };
@@ -56,7 +56,7 @@ const std = @import("std");
 // Stage 5: Display
 ~event display { text: []const u8 }
 
-~proc display {
+~proc display|zig {
     std.debug.print("{s}\n", .{text});
 }
 

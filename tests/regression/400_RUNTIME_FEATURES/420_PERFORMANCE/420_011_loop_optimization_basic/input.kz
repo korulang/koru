@@ -17,7 +17,7 @@ const std = @import("std");
 | continue { i: u64, sum: u64 }
 | done u64
 
-~proc loop_step {
+~proc loop_step|zig {
     if (i < limit) {
         const new_sum = sum + i;
         return .{ .continue = .{ .i = i, .sum = new_sum } };
@@ -29,7 +29,7 @@ const std = @import("std");
 // Print result
 ~event print { result: u64 }
 
-~proc print {
+~proc print|zig {
     std.debug.print("Sum: {}\n", .{result});
 }
 

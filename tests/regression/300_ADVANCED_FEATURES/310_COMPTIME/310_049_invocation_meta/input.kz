@@ -9,7 +9,7 @@ const std = @import("std");
 ~[comptime]pub event check_config { meta: InvocationMeta }
 | matched []const u8
 
-~proc check_config {
+~proc check_config|zig {
     // meta.annotations contains the flow annotations like ["release"], ["debug"]
     // meta.path contains the full path like "check_config"
     // meta.location contains the source location

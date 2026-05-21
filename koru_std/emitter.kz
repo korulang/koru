@@ -20,7 +20,7 @@ const ast = @import("ast");
 | emitted []const u8
 | failed []const u8
 
-~proc emit.program {
+~proc emit.program|zig {
     // Create a large buffer for emission
     const MAX_SIZE = 512 * 1024; // 512KB
     const buffer = allocator.alloc(u8, MAX_SIZE) catch |err| {

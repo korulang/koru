@@ -13,14 +13,14 @@ const std = @import("std");
 ~event inner { count: i32 }
 | continue_inner i32
 
-~proc outer {
+~proc outer|zig {
     std.debug.print("Outer: {}\n", .{count});
     if (count < 2) {
         return .{ .@"continue_outer" = .{ .next = count + 1 } };
     }
 }
 
-~proc inner {
+~proc inner|zig {
     std.debug.print("  Inner: {}\n", .{count});
     if (count < 2) {
         return .{ .@"continue_inner" = .{ .next = count + 1 } };

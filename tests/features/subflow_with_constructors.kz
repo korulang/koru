@@ -33,7 +33,7 @@ const std = @import("std");
 ~event log.error { code: u32, message: []const u8 }
 
 // Procs
-~proc validate.input {
+~proc validate.input|zig {
     if (e.value > 0 and e.value < 1000) {
         return .{ .@"valid" = .{ .value = e.value } };
     } else {
@@ -41,7 +41,7 @@ const std = @import("std");
     }
 }
 
-~proc process.value {
+~proc process.value|zig {
     if (e.data % 2 == 0) {
         return .{ .@"done" = .{ .result = e.data * 2 } };
     } else {
@@ -49,10 +49,10 @@ const std = @import("std");
     }
 }
 
-~proc log.info {
+~proc log.info|zig {
     std.debug.print("INFO: {s}\n", .{e.msg});
 }
 
-~proc log.error {
+~proc log.error|zig {
     std.debug.print("ERROR {}: {s}\n", .{ e.code, e.message });
 }

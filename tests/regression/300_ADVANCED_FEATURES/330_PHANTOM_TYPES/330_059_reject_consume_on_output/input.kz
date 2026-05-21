@@ -1,7 +1,7 @@
 const Connection = struct { id: i32 };
 ~pub event connect { url: []const u8 }
 | ok *Connection[!connected]
-~proc connect {
+~proc connect|zig {
     return .{ .ok = undefined };
 }
 pub fn main() void {}

@@ -16,8 +16,8 @@ const std = @import("std");
 ~[inline] proc compile_only {
 }
 
-~proc dual_phase {
+~proc dual_phase|zig {
 }
 
-~proc optimizable {
+~proc optimizable|zig {
 }

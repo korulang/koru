@@ -14,7 +14,7 @@ const std = @import("std");
 ~pub event greet { name: []const u8 }
 | greeted []const u8
 
-~proc greet {
+~proc greet|zig {
     std.debug.print("GREET handler: Hello, {s}!\n", .{name});
     return .{ .greeted = "Hello!" };
 }
@@ -22,7 +22,7 @@ const std = @import("std");
 ~pub event farewell { name: []const u8 }
 | departed []const u8
 
-~proc farewell {
+~proc farewell|zig {
     std.debug.print("FAREWELL handler: Goodbye, {s}!\n", .{name});
     return .{ .departed = "Goodbye!" };
 }

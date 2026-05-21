@@ -16,7 +16,7 @@
 ~event getUserData { }
 | data { name: []const u8, age: i32 }
 
-~proc getUserData {
+~proc getUserData|zig {
     return .{ .data = .{ .name = "Alice", .age = 42 } };
 }
 
@@ -29,7 +29,7 @@ const std = @import("std");
 | transformed *const Program
 | failed []const u8
 
-~proc renderHTML {
+~proc renderHTML|zig {
     // THE BREAKTHROUGH: Access captured bindings at comptime!
     // source.scope.bindings should contain the 'u' binding from the continuation
 

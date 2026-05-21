@@ -17,7 +17,7 @@ fn helper(x: []const u8) []const u8 { return x; }
 ~event greet { name: []const u8 }
 | greeting []const u8
 
-~proc greet {
+~proc greet|zig {
     const buf = std.fmt.comptimePrint("Hello {s}", .{name});
     return .{ .greeting = buf };
 }

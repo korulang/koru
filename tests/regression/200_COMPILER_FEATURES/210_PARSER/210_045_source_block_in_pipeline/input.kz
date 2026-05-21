@@ -19,7 +19,7 @@
 // First: void event to start a pipeline
 ~event setup {}
 
-~proc setup {
+~proc setup|zig {
 }
 
 // Now use print.blk INSIDE the pipeline continuation

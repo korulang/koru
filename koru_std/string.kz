@@ -32,7 +32,7 @@ pub const String = struct {
 | ok *String[view!]
 | err []const u8
 
-~proc new {
+~proc new|zig {
     const data = allocator.alloc(u8, text.len) catch {
         return .{ .err = "allocation failed" };
     };
@@ -51,7 +51,7 @@ pub const String = struct {
 | ok *String[view!]
 | err []const u8
 
-~proc from_page {
+~proc from_page|zig {
     const allocator = std.heap.page_allocator;
     const data = allocator.alloc(u8, text.len) catch {
         return .{ .err = "allocation failed" };
@@ -74,7 +74,7 @@ pub const String = struct {
 ~pub event take { s: *String[!view] }
 | instance *String[instance!]
 
-~proc take {
+~proc take|zig {
     return .{ .instance = s };
 }
 
@@ -82,7 +82,7 @@ pub const String = struct {
 ~pub event release { s: *String[!instance] }
 | view *String[view!]
 
-~proc release {
+~proc release|zig {
     return .{ .view = s };
 }
 
@@ -93,7 +93,7 @@ pub const String = struct {
 // Free - works on either view or instance
 ~pub event free { s: *String[!view|instance] }
 
-~proc free {
+~proc free|zig {
     s.allocator.free(s.data);
     s.allocator.destroy(s);
 }
@@ -105,14 +105,14 @@ pub const String = struct {
 ~pub event read { s: *String[view|instance] }
 | slice []const u8
 
-~proc read {
+~proc read|zig {
     return .{ .slice = s.data };
 }
 
 ~pub event len { s: *String[view|instance] }
 | len usize
 
-~proc len {
+~proc len|zig {
     return .{ .len = s.data.len };
 }
 
@@ -124,7 +124,7 @@ pub const String = struct {
 | ok
 | err []const u8
 
-~proc append {
+~proc append|zig {
     const new_len = s.data.len + text.len;
     const new_data = s.allocator.realloc(s.data, new_len) catch {
         return .{ .err = "realloc failed" };
@@ -136,6 +136,6 @@ pub const String = struct {
 
 ~pub event clear { s: *String[instance] }
 
-~proc clear {
+~proc clear|zig {
     s.data.len = 0;
 }

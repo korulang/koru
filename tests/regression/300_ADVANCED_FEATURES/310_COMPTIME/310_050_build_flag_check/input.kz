@@ -11,7 +11,7 @@ const Root = @import("root");
 | activated []const u8
 | skipped []const u8
 
-~proc check_build {
+~proc check_build|zig {
     // If no annotations, skip
     if (meta.annotations.len == 0) {
         return .{ .skipped = "no annotation" };

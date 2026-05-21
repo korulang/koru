@@ -44,7 +44,7 @@
     argv: []const []const u8,
 }
 
-~proc deps {
+~proc deps|zig {
     const std = @import("std");
 
     // Helper types
@@ -544,7 +544,7 @@
 
 ~[comptime|norun]pub event requires.system { source: Source }
 
-~proc requires.system {
+~proc requires.system|zig {
     // Void event - collected during AST walking
 }
 
@@ -554,6 +554,6 @@
 
 ~[comptime|norun]pub event requires.zig { source: Source }
 
-~proc requires.zig {
+~proc requires.zig|zig {
     // Void event - collected during AST walking / build.zig.zon generation
 }

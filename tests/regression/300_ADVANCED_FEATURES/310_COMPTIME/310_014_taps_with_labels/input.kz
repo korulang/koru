@@ -12,7 +12,7 @@ const std = @import("std");
 | next i32
 | done i32
 
-~proc counter {
+~proc counter|zig {
     if (n < 3) {
         return .{ .next = n + 1 };
     }
@@ -21,7 +21,7 @@ const std = @import("std");
 
 ~event log_iteration { value: i32 }
 
-~proc log_iteration {
+~proc log_iteration|zig {
     std.debug.print("Iteration: {}\n", .{value});
 }
 
@@ -32,7 +32,7 @@ const std = @import("std");
 // Recursive label using counter - tap should fire on each loop iteration
 ~event start {}
 
-~proc start {
+~proc start|zig {
 }
 
 ~start() |> #loop counter(n: 1)

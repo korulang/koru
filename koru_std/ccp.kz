@@ -31,7 +31,7 @@ const std = @import("std");
     timestamp_ns: i128,
 }
 
-~proc emit_transition {
+~proc emit_transition|zig {
     var buffer: [8192]u8 = undefined;
     var pos: usize = 0;
 

@@ -10,7 +10,7 @@ const std = @import("std");
 
 ~event print_results { outer_val: i32, inner_val: i32 }
 
-~proc print_results {
+~proc print_results|zig {
     std.debug.print("{d},{d}\n", .{outer_val, inner_val});
 }
 

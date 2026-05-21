@@ -24,7 +24,7 @@ const std = @import("std");
 ~pub event db.user.get { id: i32 }
 | found []const u8
 
-~proc db.user.get {
+~proc db.user.get|zig {
     if (id == 1) {
         return .{ .found = "Alice" };
     }

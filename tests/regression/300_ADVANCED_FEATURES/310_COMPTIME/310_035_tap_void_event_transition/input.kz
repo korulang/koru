@@ -12,7 +12,7 @@ const std = @import("std");
 // Logger to observe taps
 ~event log { msg: []const u8 }
 
-~proc log {
+~proc log|zig {
     std.debug.print("TAP: {s}\n", .{msg});
 }
 
@@ -24,7 +24,7 @@ const std = @import("std");
 // Flow: println transitions to a local event
 ~event finish {}
 
-~proc finish {
+~proc finish|zig {
     std.debug.print("Done\n", .{});
 }
 

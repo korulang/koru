@@ -25,7 +25,7 @@ const std = @import("std");
 }
 | registered bool
 
-~proc register_user {
+~proc register_user|zig {
     // Print the user's information
     std.debug.print("Registering user: {s}, age {d}\n", .{user_data.name, user_data.age});
     return .{ .registered = true };

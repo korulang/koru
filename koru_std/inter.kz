@@ -34,7 +34,7 @@ const std = @import("std");
 | launched
 | skipped
 
-~proc start {
+~proc start|zig {
     // Always print to verify the integration works
     log.debug("\n[INTER] inter:start called with {d} contexts\n", .{contexts.len});
 

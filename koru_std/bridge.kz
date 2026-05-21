@@ -72,7 +72,7 @@ pub const Bridge = struct {
 ~pub event create { id: []const u8 }
 | session *Bridge[session!]
 
-~proc create {
+~proc create|zig {
     const allocator = std.heap.page_allocator;
     const br = allocator.create(Bridge) catch unreachable;
     br.* = Bridge.init(allocator, id);
@@ -86,7 +86,7 @@ pub const Bridge = struct {
 ~pub event get_handles { br: *Bridge }
 | handles u32
 
-~proc get_handles {
+~proc get_handles|zig {
     return .{ .handles = br.getHandleCount() };
 }
 
@@ -97,7 +97,7 @@ pub const Bridge = struct {
 ~pub event close { br: *Bridge[!session] }
 | closed u32
 
-~proc close {
+~proc close|zig {
     const count = br.getHandleCount();
     br.dischargeAll(null); // TODO: pass dispatcher
     br.deinit();
@@ -117,7 +117,7 @@ pub const Bridge = struct {
 | pass u32
 | fail []const u8
 
-~proc test_run {
+~proc test_run|zig {
     const rt = @import("root").koru_std.runtime;
 
     // Create bridge instance

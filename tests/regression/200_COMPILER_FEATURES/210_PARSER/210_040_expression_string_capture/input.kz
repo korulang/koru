@@ -6,7 +6,7 @@ const std = @import("std");
 ~[comptime|transform]event test.expr { expr: Expression, program: *const Program, allocator: std.mem.Allocator }
 | transformed *const Program
 
-~proc test.expr {
+~proc test.expr|zig {
     std.debug.print("Captured expression: '{s}'\n", .{expr});
     return .{ .transformed = program };
 }

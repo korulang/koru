@@ -13,7 +13,7 @@ const std = @import("std");
 
 ~event report_temp { temp: Temperature }
 
-~proc report_temp {
+~proc report_temp|zig {
     std.debug.print("Temperature: {d:.1}\n", .{temp});
 }
 

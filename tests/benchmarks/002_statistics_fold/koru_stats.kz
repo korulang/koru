@@ -23,7 +23,7 @@ fn getN() usize {
 
 ~event print_stats { sum: i64, sum_sq: i64, count: i64, min_val: i64, max_val: i64 }
 
-~proc print_stats {
+~proc print_stats|zig {
     const mean: f64 = @as(f64, @floatFromInt(sum)) / @as(f64, @floatFromInt(count));
     const variance: f64 = (@as(f64, @floatFromInt(sum_sq)) / @as(f64, @floatFromInt(count))) - (mean * mean);
 

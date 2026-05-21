@@ -25,7 +25,7 @@
 | error e |> failed { reason: e.msg, code: 500 }
 
 // Proc implementation
-~proc process.data {
+~proc process.data|zig {
     if (e.value > 50) {
         return .{ .@"success" = .{ .result = e.value } };
     } else {

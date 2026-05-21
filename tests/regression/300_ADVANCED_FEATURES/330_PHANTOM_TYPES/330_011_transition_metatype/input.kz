@@ -2,10 +2,10 @@ const std = @import("std");
 ~event hello {}
 ~event goodbye {}
 ~[comptime|runtime] event logger { source: []const u8, branch: []const u8, destination: ?[]const u8 }
-~proc hello {
+~proc hello|zig {
     std.debug.print("Hello executed\n", .{});
 }
-~proc goodbye {
+~proc goodbye|zig {
     std.debug.print("Goodbye executed\n", .{});
 }
 ~[comptime|runtime] proc logger {

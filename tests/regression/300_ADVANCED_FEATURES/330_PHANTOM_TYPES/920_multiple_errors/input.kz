@@ -6,18 +6,18 @@ pub const File = struct {
 ~event close_file { file: *File[closed] }
 ~event read_file { file: *File[open] }
 ~event write_file { file: *File[open] }
-~proc open_file {
+~proc open_file|zig {
     const f = File{ .handle = 42 };
     return .{ .opened = &f };
 }
-~proc close_file {
+~proc close_file|zig {
     _ = file;
     return .{ .done = .{} };
 }
-~proc read_file {
+~proc read_file|zig {
     _ = file;
 }
-~proc write_file {
+~proc write_file|zig {
     _ = file;
     return .{ .done = .{} };
 }

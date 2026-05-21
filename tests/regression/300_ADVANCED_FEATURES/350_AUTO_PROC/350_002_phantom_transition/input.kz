@@ -11,7 +11,7 @@ const Resource = struct { value: i32 };
 ~pub event create { value: i32 }
 | created *Resource[state_a!]
 
-~proc create {
+~proc create|zig {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
     r.* = Resource{ .value = value };
     return .{ .created = r };
@@ -26,7 +26,7 @@ const Resource = struct { value: i32 };
 // Cleanup state_b - has a proc (does real work)
 ~pub event cleanup { r: *Resource[!state_b] }
 
-~proc cleanup {
+~proc cleanup|zig {
     std.debug.print("cleaned up resource with value {d}\n", .{r.value});
     std.heap.page_allocator.destroy(r);
 }

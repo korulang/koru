@@ -12,7 +12,7 @@
 ~event ping {}
 | pong []const u8
 
-~proc ping {
+~proc ping|zig {
     return .{ .pong = "Pong!" };
 }
 

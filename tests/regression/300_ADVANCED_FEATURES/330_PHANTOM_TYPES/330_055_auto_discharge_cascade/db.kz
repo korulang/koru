@@ -14,7 +14,7 @@ const Transaction = struct { conn: *Connection };
 ~pub event connect { host: []const u8 }
 | connected *Connection[connected!]
 
-~proc connect {
+~proc connect|zig {
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .handle = 42 };
     return .{ .connected = c };
@@ -24,7 +24,7 @@ const Transaction = struct { conn: *Connection };
 ~pub event begin { conn: *Connection[!connected] }
 | begun *Transaction[in_transaction!]
 
-~proc begin {
+~proc begin|zig {
     const tx = std.heap.page_allocator.create(Transaction) catch unreachable;
     tx.* = Transaction{ .conn = conn };
     return .{ .begun = tx };
@@ -35,7 +35,7 @@ const Transaction = struct { conn: *Connection };
 ~[!]pub event commit { tx: *Transaction[!in_transaction] }
 | committed *Connection[connected!]
 
-~proc commit {
+~proc commit|zig {
     const c = tx.conn;
     std.heap.page_allocator.destroy(tx);
     return .{ .committed = c };
@@ -45,7 +45,7 @@ const Transaction = struct { conn: *Connection };
 // Marked [!] as default discharge for connections
 ~[!]pub event close { conn: *Connection[!connected] }
 
-~proc close {
+~proc close|zig {
     std.heap.page_allocator.destroy(conn);
     return .closed;
 }
@@ -54,7 +54,7 @@ const Transaction = struct { conn: *Connection };
 ~pub event do_work { tx: *Transaction[in_transaction] }
 | done *Transaction[in_transaction]
 
-~proc do_work {
+~proc do_work|zig {
     std.debug.print("Working with transaction...\n", .{});
     return .{ .done = tx };
 }

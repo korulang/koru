@@ -5,7 +5,7 @@ const std = @import("std");
 ~pub event lines { text: []const u8 }
 | parsed [][]const u8
 
-~proc lines {
+~proc lines|zig {
     // Stub implementation for test
     const empty: [][]const u8 = &.{};
     return .{ .@"parsed" = .{ .lines = empty } };

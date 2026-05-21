@@ -15,7 +15,7 @@
 | transformed *const Program
 
 // Transform proc - replaces invocation with inline comment
-~proc log.* {
+~proc log.*|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
     const allocator = @import("std").heap.page_allocator;

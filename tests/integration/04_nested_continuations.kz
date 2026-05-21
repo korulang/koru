@@ -7,7 +7,7 @@ const std = @import("std");
 | valid i32
 | invalid { }
 
-~proc data.validate {
+~proc data.validate|zig {
     if (e.input >= 0 and e.input <= 100) {
         return .{ .@"valid" = .{ .value = e.input } };
     }
@@ -18,7 +18,7 @@ const std = @import("std");
 | done i32
 | failed { }
 
-~proc data.process {
+~proc data.process|zig {
     if (e.val != 0) {
         return .{ .@"done" = .{ .result = @divTrunc(100, e.val) } };
     }
@@ -27,7 +27,7 @@ const std = @import("std");
 
 ~event io.report { msg: []const u8 }
 
-~proc io.report {
+~proc io.report|zig {
     std.debug.print("{s}\n", .{e.msg});
 }
 

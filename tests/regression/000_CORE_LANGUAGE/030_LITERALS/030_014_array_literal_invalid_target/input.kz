@@ -6,7 +6,7 @@
 
 ~event take { numbers: i32 }
 
-~proc take {
+~proc take|zig {
     return .{ .done = {} };
 }
 

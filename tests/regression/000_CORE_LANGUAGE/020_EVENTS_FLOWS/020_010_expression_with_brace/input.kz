@@ -3,7 +3,7 @@
 
 ~event test_expr { val: Expression }
 
-~proc test_expr {
+~proc test_expr|zig {
     const std = @import("std");
     std.debug.print("val={s}\n", .{val});
 }

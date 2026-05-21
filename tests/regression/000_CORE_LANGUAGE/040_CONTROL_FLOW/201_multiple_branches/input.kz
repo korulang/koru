@@ -10,7 +10,7 @@ const std = @import("std");
 | zero
 | negative i32
 
-~proc check {
+~proc check|zig {
     if (value > 0) return .{ .positive = value };
     if (value < 0) return .{ .negative = value };
     return .{ .zero = .{} };
@@ -18,19 +18,19 @@ const std = @import("std");
 
 ~event handle_positive { n: i32 }
 
-~proc handle_positive {
+~proc handle_positive|zig {
     std.debug.print("Positive branch works: {}\n", .{n});
 }
 
 ~event handle_zero {}
 
-~proc handle_zero {
+~proc handle_zero|zig {
     std.debug.print("Zero branch works\n", .{});
 }
 
 ~event handle_negative { n: i32 }
 
-~proc handle_negative {
+~proc handle_negative|zig {
     std.debug.print("Negative branch works: {}\n", .{n});
 }
 

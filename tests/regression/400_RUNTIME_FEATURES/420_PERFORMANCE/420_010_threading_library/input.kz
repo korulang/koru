@@ -176,7 +176,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 ~event createRing {}
 | created *Ring
 
-~proc createRing {
+~proc createRing|zig {
     const ring_storage = std.heap.page_allocator.create(Ring) catch unreachable;
     ring_storage.* = Ring.init();
     return .{ .created = ring_storage };
@@ -184,7 +184,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 
 ~event spawnProducer { ring: *Ring }
 
-~proc spawnProducer {
+~proc spawnProducer|zig {
     const producer = std.Thread.spawn(.{}, struct {
         fn run(r: *Ring) void {
             var i: u64 = 0;
@@ -206,7 +206,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 ~event spawnConsumer { ring: *Ring, target: u64 }
 | spawned *ConsumerContext
 
-~proc spawnConsumer {
+~proc spawnConsumer|zig {
     // Allocate context on heap (must outlive this function)
     const ctx = std.heap.page_allocator.create(ConsumerContext) catch unreachable;
     ctx.* = .{
@@ -226,7 +226,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 ~event combineResults { contexts: []*ConsumerContext }
 | combined { total_sum: u64, total_count: u64 }
 
-~proc combineResults {
+~proc combineResults|zig {
     var total_sum: u64 = 0;
     var total_count: u64 = 0;
 
@@ -240,7 +240,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 
 ~event validate { sum: u64, count: u64 }
 
-~proc validate {
+~proc validate|zig {
     const expected_sum: u64 = TOTAL_MESSAGES * (TOTAL_MESSAGES - 1) / 2;
     const expected_count: u64 = TOTAL_MESSAGES;
 
@@ -258,14 +258,14 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 ~event castToOpaque { context: *ConsumerContext }
 | casted *anyopaque
 
-~proc castToOpaque {
+~proc castToOpaque|zig {
     return .{ .casted = @as(*anyopaque, @ptrCast(context)) };
 }
 
 ~event extractContexts { results: []*anyopaque }
 | extracted []*ConsumerContext
 
-~proc extractContexts {
+~proc extractContexts|zig {
     const contexts = std.heap.page_allocator.alloc(*ConsumerContext, results.len) catch unreachable;
 
     for (results, 0..) |result, i| {
@@ -292,7 +292,7 @@ fn consumerWorker(ctx: *anyopaque) *anyopaque {
 ~event collectHandles { h1: threading:WorkerHandle, h2: threading:WorkerHandle, h3: threading:WorkerHandle, h4: threading:WorkerHandle }
 | collected { handles: []const threading:WorkerHandle }
 
-~proc collectHandles {
+~proc collectHandles|zig {
     const handles = std.heap.page_allocator.alloc(threading:WorkerHandle, 4) catch unreachable;
     handles[0] = h1;
     handles[1] = h2;

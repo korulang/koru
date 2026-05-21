@@ -13,7 +13,7 @@
 | ?warning []const u8
 | ?err []const u8
 
-~proc process {
+~proc process|zig {
     if (value == 0) {
         return .{ .err = "Zero value" };
     }

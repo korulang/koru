@@ -37,7 +37,7 @@ const Body = struct {
 ~event create_sun {}
 | created Body
 
-~proc create_sun {
+~proc create_sun|zig {
     const sun = Body{
         .x = 0, .y = 0, .z = 0,
         .vx = 0, .vy = 0, .vz = 0,
@@ -49,7 +49,7 @@ const Body = struct {
 ~event create_jupiter {}
 | created Body
 
-~proc create_jupiter {
+~proc create_jupiter|zig {
     const jupiter = Body{
         .x = 4.84143144246472090e+00,
         .y = -1.16032004402742839e+00,
@@ -65,7 +65,7 @@ const Body = struct {
 ~event create_saturn {}
 | created Body
 
-~proc create_saturn {
+~proc create_saturn|zig {
     const saturn = Body{
         .x = 8.34336671824457987e+00,
         .y = 4.12479856412430479e+00,
@@ -81,7 +81,7 @@ const Body = struct {
 ~event create_uranus {}
 | created Body
 
-~proc create_uranus {
+~proc create_uranus|zig {
     const uranus = Body{
         .x = 1.28943695621391310e+01,
         .y = -1.51111514016986312e+01,
@@ -97,7 +97,7 @@ const Body = struct {
 ~event create_neptune {}
 | created Body
 
-~proc create_neptune {
+~proc create_neptune|zig {
     const neptune = Body{
         .x = 1.53796971148509165e+01,
         .y = -2.59193146099879641e+01,
@@ -119,7 +119,7 @@ const Body = struct {
 }
 | assembled [5]Body
 
-~proc assemble_solar_system {
+~proc assemble_solar_system|zig {
     const bodies_array = [_]Body{ sun, jupiter, saturn, uranus, neptune };
     return .{ .assembled = bodies_array };
 }
@@ -143,7 +143,7 @@ const Body = struct {
 ~event calculate_momentum_x { bodies: []Body }
 | computed f64
 
-~proc calculate_momentum_x {
+~proc calculate_momentum_x|zig {
     var px: f64 = 0.0;
     for (bodies) |body| {
         px += body.vx * body.mass;
@@ -154,7 +154,7 @@ const Body = struct {
 ~event calculate_momentum_y { bodies: []Body }
 | computed f64
 
-~proc calculate_momentum_y {
+~proc calculate_momentum_y|zig {
     var py: f64 = 0.0;
     for (bodies) |body| {
         py += body.vy * body.mass;
@@ -165,7 +165,7 @@ const Body = struct {
 ~event calculate_momentum_z { bodies: []Body }
 | computed f64
 
-~proc calculate_momentum_z {
+~proc calculate_momentum_z|zig {
     var pz: f64 = 0.0;
     for (bodies) |body| {
         pz += body.vz * body.mass;
@@ -175,7 +175,7 @@ const Body = struct {
 
 ~event apply_sun_offset { bodies: []Body, px: f64, py: f64, pz: f64 }
 
-~proc apply_sun_offset {
+~proc apply_sun_offset|zig {
     bodies[0].vx = -px / SOLAR_MASS;
     bodies[0].vy = -py / SOLAR_MASS;
     bodies[0].vz = -pz / SOLAR_MASS;
@@ -197,7 +197,7 @@ const Body = struct {
 ~event sum_kinetic_energies { bodies: []const Body }
 | computed f64
 
-~proc sum_kinetic_energies {
+~proc sum_kinetic_energies|zig {
     var total: f64 = 0.0;
     for (bodies) |body| {
         total += 0.5 * body.mass * (body.vx * body.vx + body.vy * body.vy + body.vz * body.vz);
@@ -208,7 +208,7 @@ const Body = struct {
 ~event sum_potential_energies { bodies: []const Body }
 | computed f64
 
-~proc sum_potential_energies {
+~proc sum_potential_energies|zig {
     var total: f64 = 0.0;
     for (bodies, 0..) |body, i| {
         var j = i + 1;
@@ -226,7 +226,7 @@ const Body = struct {
 ~event combine_energies { ke: f64, pe: f64 }
 | computed f64
 
-~proc combine_energies {
+~proc combine_energies|zig {
     const total = ke + pe;
     return .{ .computed = total };
 }
@@ -247,7 +247,7 @@ const Body = struct {
 ~event calculate_distance_vector { b1: Body, b2: Body }
 | computed { dx: f64, dy: f64, dz: f64, b1: Body, b2: Body }
 
-~proc calculate_distance_vector {
+~proc calculate_distance_vector|zig {
     const dx = b1.x - b2.x;
     const dy = b1.y - b2.y;
     const dz = b1.z - b2.z;
@@ -257,7 +257,7 @@ const Body = struct {
 ~event calculate_distance_scalar { dx: f64, dy: f64, dz: f64 }
 | computed { distance: f64, dx: f64, dy: f64, dz: f64 }
 
-~proc calculate_distance_scalar {
+~proc calculate_distance_scalar|zig {
     const distance = @sqrt(dx * dx + dy * dy + dz * dz);
     return .{ .computed = .{ .distance = distance, .dx = dx, .dy = dy, .dz = dz } };
 }
@@ -265,7 +265,7 @@ const Body = struct {
 ~event calculate_gravitational_magnitude { distance: f64, dt: f64 }
 | computed { mag: f64, dt: f64 }
 
-~proc calculate_gravitational_magnitude {
+~proc calculate_gravitational_magnitude|zig {
     const mag = dt / (distance * distance * distance);
     return .{ .computed = .{ .mag = mag, .dt = dt } };
 }
@@ -280,7 +280,7 @@ const Body = struct {
 }
 | updated { b1: Body, b2: Body }
 
-~proc update_body_pair_velocities {
+~proc update_body_pair_velocities|zig {
     var updated_b1 = b1;
     var updated_b2 = b2;
 
@@ -313,7 +313,7 @@ const Body = struct {
 // Helper: Update one pair of bodies in the array
 ~event update_pair_in_array { bodies: []Body, i: usize, j: usize, dt: f64 }
 
-~proc update_pair_in_array {
+~proc update_pair_in_array|zig {
     const dx = bodies[i].x - bodies[j].x;
     const dy = bodies[i].y - bodies[j].y;
     const dz = bodies[i].z - bodies[j].z;
@@ -335,7 +335,7 @@ const Body = struct {
 | continue_inner { i: usize, j: usize, dt: f64 }
 | done_inner usize
 
-~proc inner_loop_step {
+~proc inner_loop_step|zig {
     if (j < bodies.len) {
         return .{ .continue_inner = .{ .i = i, .j = j, .dt = dt } };
     } else {
@@ -348,7 +348,7 @@ const Body = struct {
 | continue_outer { i: usize, dt: f64 }
 | done_outer f64
 
-~proc outer_loop_step {
+~proc outer_loop_step|zig {
     if (i < bodies.len) {
         return .{ .continue_outer = .{ .i = i, .dt = dt } };
     } else {
@@ -374,7 +374,7 @@ const Body = struct {
 
 ~event update_all_positions { bodies: []Body, dt: f64 }
 
-~proc update_all_positions {
+~proc update_all_positions|zig {
     for (bodies) |*body| {
         body.x += dt * body.vx;
         body.y += dt * body.vy;
@@ -388,14 +388,14 @@ const Body = struct {
 
 ~event print_energy { energy: f64 }
 
-~proc print_energy {
+~proc print_energy|zig {
     std.debug.print("{d:.9}\n", .{energy});
 }
 
 ~event simulation_step { i: u32, n: u32 }
 | continue { i: u32, n: u32 }
 
-~proc simulation_step {
+~proc simulation_step|zig {
     if (i < n) {
         return .{ .continue = .{ .i = i, .n = n } };
     } else {
@@ -405,7 +405,7 @@ const Body = struct {
 ~event parse_args {}
 | parsed u32
 
-~proc parse_args {
+~proc parse_args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
     defer std.process.argsFree(std.heap.page_allocator, args);
 

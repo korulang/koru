@@ -30,7 +30,7 @@
 | failure |> proc.exit (errno: 1)
 
 // Proc implementations
-~proc file.read {
+~proc file.read|zig {
     const f = std.fs.openFile(e.path, .{}) catch |err| {
         return .{ .@"failure" = .{ .errno = @intFromError(err) } };
     };
@@ -41,13 +41,13 @@
     return .{ .@"success" = .{ .contents = contents } };
 }
 
-~proc file.print {
+~proc file.print|zig {
     std.io.getStdOut().writeAll(e.contents) catch |err| {
         return .{ .@"failure" = .{ .errno = @intFromError(err) } };
     };
     return .{ .@"success" = .{} };
 }
 
-~proc proc.exit {
+~proc proc.exit|zig {
     std.os.exit(e.errno);
 }

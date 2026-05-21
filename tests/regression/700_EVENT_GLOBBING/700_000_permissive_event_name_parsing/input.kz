@@ -26,7 +26,7 @@
     event_name: []const u8,
 }
 
-~proc test.* {
+~proc test.*|zig {
     // Just accept everything for this test
     return .{ .ok = {} };
 }

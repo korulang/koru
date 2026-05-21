@@ -29,7 +29,7 @@ const std = @import("std");
 ~[abstract] event coordinate { ctx: i32 }
 | finished i32
 
-~proc coordinate {
+~proc coordinate|zig {
     std.debug.print("Default coordination: {}\n", .{ctx});
     return .{ .finished = ctx };
 }
@@ -43,7 +43,7 @@ const std = @import("std");
 ~event double { value: i32 }
 | result i32
 
-~proc double {
+~proc double|zig {
     return .{ .result = value * 2 };
 }
 

@@ -13,7 +13,7 @@ const Conn = struct { handle: i32 };
 | ok *Conn[connected!]
 | err []const u8
 
-~proc connect {
+~proc connect|zig {
     const conn = std.heap.page_allocator.create(Conn) catch unreachable;
     conn.* = Conn{ .handle = 42 };
     return .{ .ok = conn };
@@ -22,6 +22,6 @@ const Conn = struct { handle: i32 };
 // Disconnect - consumes connected obligation (void return)
 ~pub event disconnect { conn: *Conn[!connected] }
 
-~proc disconnect {
+~proc disconnect|zig {
     std.heap.page_allocator.destroy(conn);
 }

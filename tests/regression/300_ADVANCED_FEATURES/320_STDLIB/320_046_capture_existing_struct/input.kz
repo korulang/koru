@@ -18,7 +18,7 @@ const Entity = struct {
 
 ~event print_health { value: i32 }
 
-~proc print_health {
+~proc print_health|zig {
     std.debug.print("{d}\n", .{value});
 }
 

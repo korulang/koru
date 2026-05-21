@@ -13,7 +13,7 @@ const std = @import("std");
 
 ~event send_email { to: EmailAddress }
 
-~proc send_email {
+~proc send_email|zig {
     std.debug.print("Sending to: {s}\n", .{to});
 }
 

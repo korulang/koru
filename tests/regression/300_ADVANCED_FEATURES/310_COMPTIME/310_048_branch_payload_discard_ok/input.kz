@@ -10,11 +10,11 @@ const std = @import("std");
 
 ~event finish {}
 
-~proc compute {
+~proc compute|zig {
     return .{ .result = x * 2 };
 }
 
-~proc finish {
+~proc finish|zig {
     std.debug.print("done\n", .{});
 }
 

@@ -17,7 +17,7 @@ const std = @import("std");
 | success []const u8
 | error []const u8  // "error" is a Zig reserved keyword!
 
-~proc process_file {
+~proc process_file|zig {
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         return .{ .@"error" = @errorName(err) };
     };

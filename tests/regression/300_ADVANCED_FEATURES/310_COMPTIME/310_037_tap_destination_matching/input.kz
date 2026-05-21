@@ -19,11 +19,11 @@ const std = @import("std");
 ~event other {}
 
 // Procs
-~proc target {
+~proc target|zig {
     std.debug.print("target called\n", .{});
 }
 
-~proc other {
+~proc other|zig {
     std.debug.print("other called\n", .{});
 }
 

@@ -5,7 +5,7 @@ const std = @import("std");
 | done
 | error []const u8
 
-~proc process.item {
+~proc process.item|zig {
     // Simulate processing
     if (std.mem.eql(u8, e.item, "error")) {
         return .@"error"(.{ .msg = "Processing failed" });
@@ -19,7 +19,7 @@ const std = @import("std");
 ~event log.error { msg: []const u8 }
 | logged
 
-~proc log.error {
+~proc log.error|zig {
     std.debug.print("ERROR: {s}\n", .{e.msg});
     return .@"logged"(.{});
 }
@@ -27,7 +27,7 @@ const std = @import("std");
 ~event log.info { msg: []const u8 }
 | logged
 
-~proc log.info {
+~proc log.info|zig {
     std.debug.print("INFO: {s}\n", .{e.msg});
     return .@"logged"(.{});
 }
@@ -35,7 +35,7 @@ const std = @import("std");
 ~event std.debug.print { msg: []const u8 }
 | printed
 
-~proc std.debug.print {
+~proc std.debug.print|zig {
     std.debug.print("{s}\n", .{e.msg});
     return .@"printed"(.{});
 }

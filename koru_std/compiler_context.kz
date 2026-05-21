@@ -58,7 +58,7 @@ pub const CompilerContext = struct {
 }
 | created CompilerContext
 
-~proc init {
+~proc init|zig {
     var ctx = CompilerContext{
         .ast = ast,
         .allocator = allocator,
@@ -76,7 +76,7 @@ pub const CompilerContext = struct {
 ~pub event begin_pass { ctx: CompilerContext, name: []const u8 }
 | continued CompilerContext
 
-~proc begin_pass {
+~proc begin_pass|zig {
     var ctx = ctx;
     ctx.current_pass = name;
 
@@ -92,7 +92,7 @@ pub const CompilerContext = struct {
 ~pub event end_pass { ctx: CompilerContext }
 | continued CompilerContext
 
-~proc end_pass {
+~proc end_pass|zig {
     var ctx = ctx;
 
     if (ctx.current_pass != null) {
@@ -119,7 +119,7 @@ pub const CompilerContext = struct {
 }
 | continued CompilerContext
 
-~proc report_error {
+~proc report_error|zig {
     var ctx = ctx;
 
     // Append to errors list
@@ -157,7 +157,7 @@ pub const CompilerContext = struct {
 }
 | continued CompilerContext
 
-~proc report_warning {
+~proc report_warning|zig {
     var ctx = ctx;
 
     // Append to warnings list
@@ -191,7 +191,7 @@ pub const CompilerContext = struct {
 ~pub event info { ctx: CompilerContext, message: []const u8 }
 | continued CompilerContext
 
-~proc info {
+~proc info|zig {
     // TODO: Check if --verbose flag is set before printing
     // if (CompilerEnv.hasFlag("verbose")) {
         std.debug.print("INFO: {s}\n", .{message});
@@ -205,7 +205,7 @@ pub const CompilerContext = struct {
 | yes CompilerContext
 | no CompilerContext
 
-~proc should_abort {
+~proc should_abort|zig {
     const ctx = ctx;
 
     const should_abort = (ctx.error_policy == .abort_on_first and ctx.errors.items.len > 0);
@@ -221,7 +221,7 @@ pub const CompilerContext = struct {
 ~pub event pass_count { ctx: CompilerContext }
 | count { ctx: CompilerContext, value: u32 }
 
-~proc pass_count {
+~proc pass_count|zig {
     return .{ .count = .{
         .ctx = ctx,
         .value = ctx.passes_completed
@@ -232,7 +232,7 @@ pub const CompilerContext = struct {
 ~pub event error_count { ctx: CompilerContext }
 | count { ctx: CompilerContext, value: u32 }
 
-~proc error_count {
+~proc error_count|zig {
     const err_count: u32 = @intCast(ctx.errors.items.len);
     return .{ .count = .{
         .ctx = ctx,
@@ -244,7 +244,7 @@ pub const CompilerContext = struct {
 ~pub event warning_count { ctx: CompilerContext }
 | count { ctx: CompilerContext, value: u32 }
 
-~proc warning_count {
+~proc warning_count|zig {
     const warn_count: u32 = @intCast(ctx.warnings.items.len);
     return .{ .count = .{
         .ctx = ctx,
@@ -256,7 +256,7 @@ pub const CompilerContext = struct {
 ~pub event update_ast { ctx: CompilerContext, ast: Program }
 | continued CompilerContext
 
-~proc update_ast {
+~proc update_ast|zig {
     var ctx = ctx;
     ctx.ast = ast;
     return .{ .continued = ctx };

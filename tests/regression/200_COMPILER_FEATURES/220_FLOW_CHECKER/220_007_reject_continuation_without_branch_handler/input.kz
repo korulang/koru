@@ -13,7 +13,7 @@
 | ok
 | err []const u8
 
-~proc ping {
+~proc ping|zig {
     return .{ .ok = .{} };
 }
 

@@ -9,7 +9,7 @@
 ~event compute { x: i32 }
 | done i32
 
-~proc compute {
+~proc compute|zig {
     return .{ .done = x };
 }
 
@@ -23,7 +23,7 @@
 
 ~event blur { intensity: i32 }
 
-~proc blur {
+~proc blur|zig {
 }
 
 ~proc blur|gpu {

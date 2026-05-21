@@ -10,10 +10,10 @@ const std = @import("std");
 
 ~event logger {}
 
-~proc work {
+~proc work|zig {
 }
 
-~proc logger {
+~proc logger|zig {
     std.debug.print("observed\n", .{});
 }
 

@@ -43,7 +43,7 @@ const std = @import("std");
 // Declare print events for output
 ~event io.print { msg: []const u8 }
 
-~proc io.print {
+~proc io.print|zig {
     std.debug.print("{s}\n", .{e.msg});
 }
 
@@ -53,7 +53,7 @@ const std = @import("std");
 | not_found |> io.print(msg: "User not found") |> _
 
 // Proc for db.lookup (for the complex version)
-~proc db.lookup {
+~proc db.lookup|zig {
     if (e.id == 1) {
         return .{ .success = .{ .name = "Real User", .email = "real@example.com" } };
     }

@@ -21,7 +21,7 @@ const Context = struct {
 ~[comptime] event setup {}
 | ready { c0: Context, c1: Context, c2: Context }
 
-~proc setup {
+~proc setup|zig {
     return .{ .ready = .{
         .c0 = .{ .id = 0 },
         .c1 = .{ .id = 1 },
@@ -33,7 +33,7 @@ const Context = struct {
 ~[comptime] event consume { contexts: []const Context }
 | consumed u32
 
-~proc consume {
+~proc consume|zig {
     std.debug.print("[COMPTIME] Processing {} contexts\n", .{contexts.len});
     return .{ .consumed = @intCast(contexts.len) };
 }
@@ -51,7 +51,7 @@ const Context = struct {
 
 ~[comptime] event report { count: u32 }
 
-~proc report {
+~proc report|zig {
     if (count == 3) {
         std.debug.print("PASS: subflow array literal works\n", .{});
     } else {

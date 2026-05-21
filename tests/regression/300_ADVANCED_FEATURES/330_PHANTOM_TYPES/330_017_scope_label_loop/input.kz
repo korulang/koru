@@ -2,7 +2,7 @@
 const std = @import("std");
 ~event iterate { count: i32 }
 | next i32
-~proc iterate {
+~proc iterate|zig {
     if (count < 3) {
         return .{ .next = count + 1 };
     } else {

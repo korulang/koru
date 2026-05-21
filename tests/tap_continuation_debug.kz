@@ -8,7 +8,7 @@
 ~event log { data: i32 }
 | done
 
-~proc log {
+~proc log|zig {
     return .{ .done = .{} };
 }
 

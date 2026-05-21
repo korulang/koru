@@ -6,6 +6,6 @@ const std = @import("std");
 
 ~event hello {}
 
-~proc hello {
+~proc hello|zig {
     std.debug.print("Event executed\n", .{});
 }

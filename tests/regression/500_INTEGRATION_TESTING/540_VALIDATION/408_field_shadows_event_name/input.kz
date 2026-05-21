@@ -9,7 +9,7 @@ const std = @import("std");
 ~event window { window: i32 }
 | success i32
 
-~proc window {
+~proc window|zig {
     std.debug.print("Window size: {d}\n", .{window});
     return .{ .success = window * 2 };
 }

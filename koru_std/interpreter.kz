@@ -288,7 +288,7 @@ pub const Value = struct {
 ~[retain]pub event value.stringify { value: Value }
 | json []const u8
 
-~proc value.stringify {
+~proc value.stringify|zig {
     return .{ .json = value.toJsonBuf() };
 }
 
@@ -1014,7 +1014,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 | validation_error []const u8
 | dispatch_error { event_name: []const u8, message: []const u8 }
 
-~proc run {
+~proc run|zig {
     const koru_errors = @import("koru_errors");
     const koru_ast = @import("koru_ast");
 
@@ -1159,7 +1159,7 @@ fn exprFloatOp(l: f64, r: f64, op: ExprArithOp) ExprEvalError!ExprValue {
 
 // Cached fast path: reuse parsed flow when the source string matches.
 // Falls back to the full parser if parsing fails.
-~proc run_cached {
+~proc run_cached|zig {
     const koru_errors = @import("koru_errors");
     const koru_ast = @import("koru_ast");
 
@@ -2235,7 +2235,7 @@ fn executeFlow(
 // EVAL PROC - Execute pre-parsed AST (fast path, no parsing!)
 // ============================================================================
 
-~proc eval {
+~proc eval|zig {
     std.debug.print("[EVAL] Starting execution of pre-parsed flow\n", .{});
 
     const allocator = InterpreterThreadState.prepare();

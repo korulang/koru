@@ -9,7 +9,7 @@
 | ok i32
 | err []const u8
 
-~proc work { return .{ .ok = 1 }; }
+~proc work|zig { return .{ .ok = 1 }; }
 
 ~work()
 // this comment splits the chain from its branch handlers

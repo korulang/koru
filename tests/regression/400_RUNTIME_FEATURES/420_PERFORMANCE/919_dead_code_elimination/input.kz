@@ -11,7 +11,7 @@ const std = @import("std");
 | ?warning { code: u32, msg: []const u8 }  // OPTIONAL - expensive validation
 | ?debug []const u8      // OPTIONAL - detailed logging
 
-~proc analyze {
+~proc analyze|zig {
     const len = data.len;
 
     // This expensive validation should be ELIMINATED

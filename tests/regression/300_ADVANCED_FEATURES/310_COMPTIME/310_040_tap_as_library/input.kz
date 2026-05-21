@@ -9,7 +9,7 @@ const std = @import("std");
 ~event hello {}
 | greeted []const u8
 
-~proc hello {
+~proc hello|zig {
     std.debug.print("Hello executed\n", .{});
     return .{ .greeted = "go" };
 }
@@ -17,7 +17,7 @@ const std = @import("std");
 // A void observer event - no return needed
 ~event observer {}
 
-~proc observer {
+~proc observer|zig {
     std.debug.print("Observer fired!\n", .{});
 }
 

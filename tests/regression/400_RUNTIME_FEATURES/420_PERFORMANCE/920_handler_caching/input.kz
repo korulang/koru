@@ -12,7 +12,7 @@ const std = @import("std");
 | ?difference u32      // OPTIONAL
 | ?quotient u32        // OPTIONAL
 
-~proc compute {
+~proc compute|zig {
     const s = x + y;
     const p = x * y;
     const d = if (x > y) x - y else y - x;

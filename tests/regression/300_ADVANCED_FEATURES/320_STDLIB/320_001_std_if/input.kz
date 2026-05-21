@@ -16,7 +16,7 @@ const std = @import("std");
 | then
 | else
 
-~proc my_if_impl {
+~proc my_if_impl|zig {
     if (condition) {
         return .{ .then = .{} };
     } else {
@@ -36,7 +36,7 @@ const std = @import("std");
 }
 | transformed *const Program
 
-~proc my_if {
+~proc my_if|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
 

@@ -4,7 +4,7 @@ const std = @import("std");
 ~pub event start { port: u16 }
 | started u16
 
-~proc start {
+~proc start|zig {
     std.debug.print("Server starting on port {}\n", .{port});
     return .{ .started = port };
 }

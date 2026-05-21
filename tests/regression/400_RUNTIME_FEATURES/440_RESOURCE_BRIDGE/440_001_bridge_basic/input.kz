@@ -16,7 +16,7 @@ var test_pool = HandlePool.init(std.heap.page_allocator);
 
 ~pub event close { handle: []const u8[!opened] }
 
-~proc close {
+~proc close|zig {
     std.debug.print("close() called\n", .{});
 }
 

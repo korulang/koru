@@ -12,7 +12,7 @@ const std = @import("std");
 | next_outer { x: i32, max_inner: i32 }
 | done_outer
 
-~proc outer {
+~proc outer|zig {
     std.debug.print("Outer: {}\n", .{x});
 
     if (x < 3) {
@@ -27,7 +27,7 @@ const std = @import("std");
 | next_inner { x: i32, y: i32, max_inner: i32 }
 | done_inner { x: i32, max_inner: i32 }
 
-~proc inner {
+~proc inner|zig {
     std.debug.print("  Inner: {}, {}\n", .{x, y});
 
     if (y < max_inner) {
@@ -40,7 +40,7 @@ const std = @import("std");
 // Start event
 ~event start {}
 
-~proc start {
+~proc start|zig {
     std.debug.print("Starting nested loops...\n", .{});
 }
 

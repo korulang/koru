@@ -8,11 +8,11 @@ const std = @import("std");
 
 ~event second {}
 
-~proc first {
+~proc first|zig {
     std.debug.print("First\n", .{});
 }
 
-~proc second {
+~proc second|zig {
     std.debug.print("Second\n", .{});
 }
 

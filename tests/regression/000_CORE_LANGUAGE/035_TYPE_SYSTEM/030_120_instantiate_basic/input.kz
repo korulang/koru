@@ -14,7 +14,7 @@ const std = @import("std");
 
 ~event test_opt {}
 
-~proc test_opt {
+~proc test_opt|zig {
     const opt = OptionalInt{ .value = 123 };
     if (opt.value) |v| {
         std.debug.print("Value: {d}\n", .{v});

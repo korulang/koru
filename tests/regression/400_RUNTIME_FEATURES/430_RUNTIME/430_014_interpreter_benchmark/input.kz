@@ -10,7 +10,7 @@ const std = @import("std");
 ~pub event ping { value: []const u8 }
 | pong []const u8
 
-~proc ping {
+~proc ping|zig {
     return .{ .pong = value };
 }
 

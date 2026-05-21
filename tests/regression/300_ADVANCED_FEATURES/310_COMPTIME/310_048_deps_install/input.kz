@@ -23,7 +23,7 @@
 
 ~event main {}
 
-~proc main {
+~proc main|zig {
 }
 
 ~main()

@@ -13,7 +13,7 @@ const Transaction = struct { handle: i32 };  // Same layout as Connection!
 | ok *Connection[active!]
 | err []const u8
 
-~proc connect {
+~proc connect|zig {
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .handle = 42 };
     return .{ .ok = c };
@@ -25,7 +25,7 @@ const Transaction = struct { handle: i32 };  // Same layout as Connection!
 | ok *Transaction[active!]
 | err []const u8
 
-~proc begin {
+~proc begin|zig {
     const tx = std.heap.page_allocator.create(Transaction) catch unreachable;
     tx.* = Transaction{ .handle = conn.handle };
     std.heap.page_allocator.destroy(conn);
@@ -36,7 +36,7 @@ const Transaction = struct { handle: i32 };  // Same layout as Connection!
 // This should ONLY accept Connection, NOT Transaction!
 ~[!]pub event close { conn: *Connection[!active] }
 
-~proc close {
+~proc close|zig {
     std.debug.print("Connection closed (handle={})\n", .{conn.handle});
     std.heap.page_allocator.destroy(conn);
 }
@@ -45,7 +45,7 @@ const Transaction = struct { handle: i32 };  // Same layout as Connection!
 // This should ONLY accept Transaction, NOT Connection!
 ~[!]pub event commit { tx: *Transaction[!active] }
 
-~proc commit {
+~proc commit|zig {
     std.debug.print("COMMIT (handle={})\n", .{tx.handle});
     std.heap.page_allocator.destroy(tx);
 }

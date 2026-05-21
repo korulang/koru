@@ -6,7 +6,7 @@
 
 ~event test {}
 
-~proc test {
+~proc test|zig {
 }
 
 // This should FAIL - "io" is not a valid module qualifier

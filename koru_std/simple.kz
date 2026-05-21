@@ -2,7 +2,7 @@
 
 ~pub event test.hello {}
 
-~proc test.hello {
+~proc test.hello|zig {
     const std = @import("std");
     std.debug.print("Hello from Koru std!\n", .{});
 }

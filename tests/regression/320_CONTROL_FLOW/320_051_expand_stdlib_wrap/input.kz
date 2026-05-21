@@ -30,7 +30,7 @@ var numbers = [_]i32{ 5, 2, 8, 1, 9, 3 };
 // Verify it worked
 ~event verify {}
 
-~proc verify {
+~proc verify|zig {
     // Check sorted order
     var prev: i32 = numbers[0];
     for (numbers[1..]) |n| {

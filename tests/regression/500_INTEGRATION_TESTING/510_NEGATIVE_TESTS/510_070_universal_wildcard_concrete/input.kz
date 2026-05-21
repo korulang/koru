@@ -15,11 +15,11 @@ const std = @import("std");
 
 ~event goodbye {}
 
-~proc goodbye {
+~proc goodbye|zig {
     std.debug.print("Goodbye\n", .{});
 }
 
-~proc goodbye {
+~proc goodbye|zig {
     std.debug.print("Goodbye\n", .{});
     return .{ .done = .{} };
 }

@@ -1,7 +1,7 @@
 // This should fail: calling an event that doesn't exist
 ~event main {}
 
-~proc main {
+~proc main|zig {
     const result = nonexistent_event.handler(.{ .x = 10 });
 }
 

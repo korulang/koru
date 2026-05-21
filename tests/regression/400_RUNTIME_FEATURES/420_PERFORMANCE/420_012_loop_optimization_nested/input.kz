@@ -16,7 +16,7 @@ const std = @import("std");
 | continue { i: u64, j: u64, sum: u64 }
 | done { i: u64, sum: u64 }
 
-~proc inner_step {
+~proc inner_step|zig {
     if (j < limit) {
         // Triangular sum: add i*limit + j
         const new_sum = sum + (i * limit + j);
@@ -31,7 +31,7 @@ const std = @import("std");
 | continue { i: u64, limit: u64, sum: u64 }
 | done u64
 
-~proc outer_step {
+~proc outer_step|zig {
     if (i < limit) {
         return .{ .continue = .{ .i = i, .limit = limit, .sum = sum } };
     } else {
@@ -42,7 +42,7 @@ const std = @import("std");
 // Print result
 ~event print { result: u64 }
 
-~proc print {
+~proc print|zig {
     std.debug.print("Sum: {}\n", .{result});
 }
 

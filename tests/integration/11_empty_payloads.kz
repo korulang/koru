@@ -7,7 +7,7 @@
 | busy
 | done
 
-~proc state.change {
+~proc state.change|zig {
     // Just return ready for testing
     return .{ .@"ready" = .{} };
 }
@@ -17,7 +17,7 @@
 | completed u32
 | failed
 
-~proc task.run {
+~proc task.run|zig {
     if (e.id == 0) {
         return .{ .@"failed" = .{} };
     }

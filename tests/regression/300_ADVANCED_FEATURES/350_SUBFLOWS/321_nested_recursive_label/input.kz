@@ -6,7 +6,7 @@
 | continue_outer u32
 | done_outer u32
 
-~proc outer_step {
+~proc outer_step|zig {
     if (i < 2) {
         return .{ .continue_outer = i };
     } else {
@@ -18,7 +18,7 @@
 | continue_inner { i: u32, j: u32 }
 | done_inner u32
 
-~proc inner_step {
+~proc inner_step|zig {
     if (j < 2) {
         return .{ .continue_inner = .{ .i = i, .j = j } };
     } else {
@@ -29,7 +29,7 @@
 ~event process_pair { i: u32, j: u32 }
 | processed { i: u32, j: u32 }
 
-~proc process_pair {
+~proc process_pair|zig {
     return .{ .processed = .{ .i = i, .j = j } };
 }
 

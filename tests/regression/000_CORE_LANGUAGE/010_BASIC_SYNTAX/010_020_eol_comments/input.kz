@@ -5,7 +5,7 @@ const std = @import("std"); // This is an EOL comment
 
 ~event greet {} // Event with EOL comment
 
-~proc greet {
+~proc greet|zig {
     std.debug.print("Hello!\n", .{}); // Print with comment
 }
 

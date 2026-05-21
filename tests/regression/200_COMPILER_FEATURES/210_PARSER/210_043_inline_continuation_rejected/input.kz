@@ -7,7 +7,7 @@
 ~event greet { name: []const u8 }
 | done []const u8
 
-~proc greet {
+~proc greet|zig {
     return .{ .done = "Hello!" };
 }
 

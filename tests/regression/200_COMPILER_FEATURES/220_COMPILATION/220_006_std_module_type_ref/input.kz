@@ -19,14 +19,14 @@ const std = @import("std");
 }
 | processed usize
 
-~proc process_ast {
+~proc process_ast|zig {
     return .{ .processed = result.source_file.items.len };
 }
 
 // Event to report count
 ~event report { count: usize }
 
-~proc report {
+~proc report|zig {
     std.debug.print("AST has {} items\n", .{count});
 }
 

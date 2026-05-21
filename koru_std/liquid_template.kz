@@ -33,7 +33,7 @@ const std = @import("std");
     text: []const u8,
 }
 
-~proc emit {
+~proc emit|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
     const liquid = @import("liquid");

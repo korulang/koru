@@ -9,15 +9,15 @@ const std = @import("std");
 
 ~[comptime|runtime] event profiler { source: []const u8, branch: []const u8, destination: ?[]const u8, timestamp_ns: i128 }
 
-~proc hello {
+~proc hello|zig {
     std.debug.print("Hello executed\n", .{});
 }
 
-~proc goodbye {
+~proc goodbye|zig {
     std.debug.print("Goodbye executed\n", .{});
 }
 
-~proc profiler {
+~proc profiler|zig {
     if (destination) |dest| {
         std.debug.print("Profile: {s}.{s} -> {s} @ {}\n", .{source, branch, dest, timestamp_ns});
     } else {

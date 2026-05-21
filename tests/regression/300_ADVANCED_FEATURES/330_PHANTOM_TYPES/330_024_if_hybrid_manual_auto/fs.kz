@@ -12,7 +12,7 @@ const File = struct {
 ~pub event open { path: []const u8 }
 | opened *File[opened!]
 
-~proc open {
+~proc open|zig {
     std.debug.print("Opening file: {s}\n", .{path});
     const allocator = std.heap.page_allocator;
     const f = allocator.create(File) catch unreachable;
@@ -23,6 +23,6 @@ const File = struct {
 // Close a file - CONSUMES opened! state (disposes the resource)
 ~pub event close { file: *File[!opened] }
 
-~proc close {
+~proc close|zig {
     std.debug.print("Closing file\n", .{});
 }

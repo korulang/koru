@@ -13,16 +13,16 @@ const std = @import("std");
 | loaded i32
 | failed []const u8
 
-~proc z_buffer.render {
+~proc z_buffer.render|zig {
     return .{ .@"drawn" = .{ .pixels = width * height } };
 }
 
-~proc z_buffer.clear {
+~proc z_buffer.clear|zig {
 }
 
-~proc sprite.draw {
+~proc sprite.draw|zig {
 }
 
-~proc texture.load {
+~proc texture.load|zig {
     return .{ .@"loaded" = .{ .texture_id = 42 } };
 }

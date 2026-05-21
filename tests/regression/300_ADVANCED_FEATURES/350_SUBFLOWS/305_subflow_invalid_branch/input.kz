@@ -11,7 +11,7 @@ const std = @import("std");
 ~event double { value: i32 }
 | doubled i32
 
-~proc double {
+~proc double|zig {
     return .{ .doubled = value * 2 };
 }
 

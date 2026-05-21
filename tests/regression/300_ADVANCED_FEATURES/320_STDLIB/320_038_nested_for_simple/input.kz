@@ -7,7 +7,7 @@ const std = @import("std");
 
 ~event start {}
 
-~proc start {
+~proc start|zig {
 }
 
 // Outer for contains inner for

@@ -21,7 +21,7 @@ var bridge_pool = HandlePool.init(std.heap.page_allocator);
 
 ~pub event close { handle: []const u8[!opened] }
 
-~proc close {
+~proc close|zig {
     std.debug.print("close() called for handle\n", .{});
 }
 
@@ -54,7 +54,7 @@ const SESSION_2 = "~close(handle: \"file_1\")\n| closed |> result {}";
 | done { after_open: u32, after_close: u32 }
 | fail []const u8
 
-~proc run_session_2 {
+~proc run_session_2|zig {
     std.debug.print("Session 1 left {} handle(s) on bridge\n", .{handles_after_open});
 
     // Run session 2 to discharge the handle

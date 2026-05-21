@@ -45,7 +45,7 @@ const Body = struct {
 ~event initialize_bodies {}
 | initialized [5]Body
 
-~proc initialize_bodies {
+~proc initialize_bodies|zig {
     // Sun, Jupiter, Saturn, Uranus, Neptune
     const bodies_data = [_]Body{
         .{ // Sun
@@ -100,7 +100,7 @@ const Body = struct {
 
 ~event offset_momentum { bodies: []Body }
 
-~proc offset_momentum {
+~proc offset_momentum|zig {
     var px: f64 = 0.0;
     var py: f64 = 0.0;
     var pz: f64 = 0.0;
@@ -124,7 +124,7 @@ const Body = struct {
 ~event calculate_energy { bodies: []const Body }
 | result f64
 
-~proc calculate_energy {
+~proc calculate_energy|zig {
     var e: f64 = 0.0;
 
     for (bodies, 0..) |body, i| {
@@ -151,7 +151,7 @@ const Body = struct {
 
 ~event print_energy { energy: f64 }
 
-~proc print_energy {
+~proc print_energy|zig {
     std.debug.print("{d:.9}\n", .{energy});
 }
 
@@ -162,7 +162,7 @@ const Body = struct {
 
 ~event calculate_interactions { bodies: []Body, dt: f64 }
 
-~proc calculate_interactions {
+~proc calculate_interactions|zig {
     var i: usize = 0;
     while (i < bodies.len) : (i += 1) {
         var j: usize = i + 1;
@@ -192,7 +192,7 @@ const Body = struct {
 
 ~event update_positions { bodies: []Body, dt: f64 }
 
-~proc update_positions {
+~proc update_positions|zig {
     for (bodies) |*body| {
         body.x += dt * body.vx;
         body.y += dt * body.vy;
@@ -208,7 +208,7 @@ const Body = struct {
 ~event parse_args {}
 | parsed u32
 
-~proc parse_args {
+~proc parse_args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
     defer std.process.argsFree(std.heap.page_allocator, args);
 

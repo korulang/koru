@@ -22,7 +22,7 @@ const Transaction = struct { conn_handle: i32 };
 | ok Connection[open!]
 | err []const u8
 
-~proc connect {
+~proc connect|zig {
     _ = host;
     return .{ .ok = .{ .conn = .{ .handle = 1 } } };
 }
@@ -31,21 +31,21 @@ const Transaction = struct { conn_handle: i32 };
 | ok Transaction[active!]
 | err []const u8
 
-~proc begin {
+~proc begin|zig {
     return .{ .ok = .{ .tx = .{ .conn_handle = conn.handle } } };
 }
 
 ~[!]pub event commit { tx: Transaction[!active] }
 | err []const u8
 
-~proc commit {
+~proc commit|zig {
     _ = tx;
     return .ok;
 }
 
 ~event report_err { stage: []const u8, msg: []const u8 }
 
-~proc report_err {
+~proc report_err|zig {
     std.debug.print("{s} err: {s}\n", .{ stage, msg });
 }
 

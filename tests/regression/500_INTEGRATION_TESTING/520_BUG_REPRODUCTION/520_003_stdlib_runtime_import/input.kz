@@ -20,7 +20,7 @@ const std = @import("std");
 
 ~event test_parser_runtime {}
 
-~proc test_parser_runtime {
+~proc test_parser_runtime|zig {
     const allocator = std.heap.page_allocator;
 
     // This code is CORRECT but won't work until ~build.requires is implemented

@@ -11,7 +11,7 @@
 // Simple event to prove main program runs
 ~event greet { name: []const u8 }
 
-~proc greet {
+~proc greet|zig {
     std.debug.print("Hello, {s}!\n", .{name});
 }
 

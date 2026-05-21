@@ -27,7 +27,7 @@ const DT: f64 = 0.01;
 ~event parse_args {}
 | n u32
 
-~proc parse_args {
+~proc parse_args|zig {
     const args = std.process.argsAlloc(std.heap.page_allocator) catch unreachable;
     defer std.process.argsFree(std.heap.page_allocator, args);
     if (args.len < 2) {
@@ -40,7 +40,7 @@ const DT: f64 = 0.01;
 // Offset momentum so system has zero total momentum
 ~event offset_momentum { bodies: []Body }
 
-~proc offset_momentum {
+~proc offset_momentum|zig {
     var px: f64 = 0;
     var py: f64 = 0;
     var pz: f64 = 0;
@@ -58,7 +58,7 @@ const DT: f64 = 0.01;
 ~event energy { bodies: []const Body }
 | e f64
 
-~proc energy {
+~proc energy|zig {
     var e: f64 = 0;
     for (bodies, 0..) |b, i| {
         e += 0.5 * b.mass * (b.vx * b.vx + b.vy * b.vy + b.vz * b.vz);
@@ -75,14 +75,14 @@ const DT: f64 = 0.01;
 // Print energy value
 ~event print_energy { e: f64 }
 
-~proc print_energy {
+~proc print_energy|zig {
     std.debug.print("{d:.9}\n", .{e});
 }
 
 // Update positions after velocity changes
 ~event advance_positions { bodies: []Body }
 
-~proc advance_positions {
+~proc advance_positions|zig {
     for (bodies) |*b| {
         b.x += DT * b.vx;
         b.y += DT * b.vy;

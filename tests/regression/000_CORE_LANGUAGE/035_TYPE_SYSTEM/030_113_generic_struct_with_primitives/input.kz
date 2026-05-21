@@ -15,7 +15,7 @@ const std = @import("std");
 
 ~event test_email {}
 
-~proc test_email {
+~proc test_email|zig {
     const email: EmailAddress = "test@example.com";
     const box = EmailBox{ .value = email };
     std.debug.print("Email: {s}\n", .{box.value});

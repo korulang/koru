@@ -23,16 +23,16 @@ const std = @import("std");
 ~read_and_print ("input.txt")
 
 // Proc implementations
-~proc file.read {
+~proc file.read|zig {
     // Simple test implementation - just return success with dummy data
     return .{ .@"success" = .{ .contents = "test file contents" } };
 }
 
-~proc file.print {
+~proc file.print|zig {
     std.debug.print("PRINT: {s}\n", .{e.contents});
     return .{ .@"success" = .{} };
 }
 
-~proc proc.exit {
+~proc proc.exit|zig {
     std.process.exit(e.errno);
 }

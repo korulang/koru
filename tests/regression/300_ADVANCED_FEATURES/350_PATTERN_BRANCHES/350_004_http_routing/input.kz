@@ -10,7 +10,7 @@ const std = @import("std");
 ~pub event handle { method: []const u8, path: []const u8 }
 | response { status: u16, body: []const u8 }
 
-~proc handle {
+~proc handle|zig {
     if (std.mem.eql(u8, method, "GET")) {
         // Check /users/:id pattern
         if (std.mem.startsWith(u8, path, "/users/")) {

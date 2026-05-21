@@ -18,7 +18,7 @@ const std = @import("std");
 // Event that takes nominal types
 ~event greet_user { name: Username, id: UserId }
 
-~proc greet_user {
+~proc greet_user|zig {
     std.debug.print("Hello {s} (ID: {d})\n", .{ name, id });
 }
 

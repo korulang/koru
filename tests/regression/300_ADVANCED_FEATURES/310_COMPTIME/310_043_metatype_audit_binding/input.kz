@@ -14,11 +14,11 @@ const std = @import("std");
 
 ~event logger {}
 
-~proc hello {
+~proc hello|zig {
     std.debug.print("Hello\n", .{});
 }
 
-~proc logger {
+~proc logger|zig {
     std.debug.print("[AUDIT] captured\n", .{});
 }
 

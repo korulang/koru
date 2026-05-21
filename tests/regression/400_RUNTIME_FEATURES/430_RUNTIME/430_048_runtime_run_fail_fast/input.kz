@@ -5,7 +5,7 @@
 
 ~pub event ping {}
 
-~proc ping {
+~proc ping|zig {
 }
 
 ~std.runtime:register(scope: "api") {

@@ -15,7 +15,7 @@ const std = @import("std");
 | active
 | inactive
 
-~proc check_status {
+~proc check_status|zig {
     if (active) {
         std.debug.print("User is active\n", .{});
         return .{ .active = .{} };

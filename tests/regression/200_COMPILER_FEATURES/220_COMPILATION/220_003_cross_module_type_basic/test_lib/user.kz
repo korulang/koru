@@ -14,7 +14,7 @@ pub const User = struct {
 }
 | created User
 
-~proc create {
+~proc create|zig {
     const t_user = User{
         .name = name,
         .age = age,

@@ -9,7 +9,7 @@
 | ?warning []const u8   // OPTIONAL
 
 // Proc implementation that can return both branches
-~proc process {
+~proc process|zig {
     if (value > 100) {
         return .{ .warning = "Large value" };
     }

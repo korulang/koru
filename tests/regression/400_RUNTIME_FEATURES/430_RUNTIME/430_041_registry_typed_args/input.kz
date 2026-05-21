@@ -17,7 +17,7 @@ const std = @import("std");
     count: i64,
 }
 
-~proc set_config {
+~proc set_config|zig {
     return .{ .ok = .{
         .enabled = enabled,
         .ratio = ratio,

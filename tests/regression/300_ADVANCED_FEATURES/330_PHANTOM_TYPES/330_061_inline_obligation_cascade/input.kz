@@ -21,7 +21,7 @@ const Transaction = struct { conn_handle: i32 };
 | ok *Connection[connected!]
 | err []const u8
 
-~proc connect {
+~proc connect|zig {
     _ = host;
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .handle = 1 };
@@ -32,7 +32,7 @@ const Transaction = struct { conn_handle: i32 };
 | ok *Transaction[started!]
 | err []const u8
 
-~proc begin {
+~proc begin|zig {
     const tx = std.heap.page_allocator.create(Transaction) catch unreachable;
     tx.* = Transaction{ .conn_handle = conn.handle };
     return .{ .ok = tx };
@@ -42,7 +42,7 @@ const Transaction = struct { conn_handle: i32 };
 | ok *Transaction[active!]
 | err []const u8
 
-~proc exec {
+~proc exec|zig {
     std.debug.print("EXEC: {s}\n", .{sql});
     return .{ .ok = tx };
 }
@@ -51,7 +51,7 @@ const Transaction = struct { conn_handle: i32 };
 | ok *Connection[active!]
 | err []const u8
 
-~proc commit {
+~proc commit|zig {
     std.debug.print("COMMIT\n", .{});
     const c = std.heap.page_allocator.create(Connection) catch unreachable;
     c.* = Connection{ .handle = tx.conn_handle };
@@ -63,7 +63,7 @@ const Transaction = struct { conn_handle: i32 };
 | ok
 | err []const u8
 
-~proc close {
+~proc close|zig {
     std.debug.print("CLOSE\n", .{});
     std.heap.page_allocator.destroy(conn);
     return .{ .ok = .{} };

@@ -9,7 +9,7 @@ const File = struct {
 ~pub event load { path: []const u8 }
 | loaded *File[open]
 
-~proc load {
+~proc load|zig {
     const allocator = std.heap.page_allocator;
     const f = allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };

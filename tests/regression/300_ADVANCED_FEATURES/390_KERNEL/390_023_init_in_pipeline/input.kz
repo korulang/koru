@@ -10,7 +10,7 @@
 ~event get_count {}
 | n u32
 
-~proc get_count {
+~proc get_count|zig {
     return .{ .n = 3 };
 }
 

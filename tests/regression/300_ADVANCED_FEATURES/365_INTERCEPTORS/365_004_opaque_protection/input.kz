@@ -12,7 +12,7 @@ const std = @import("std");
 | valid u32
 | invalid []const u8
 
-~proc auth.verify {
+~proc auth.verify|zig {
     if (std.mem.eql(u8, token, "secret")) {
         return .{ .valid = 42 };
     }

@@ -12,7 +12,7 @@
 | ok i32
 | err []const u8
 
-~proc divide {
+~proc divide|zig {
     if (b == 0) {
         return .{ .err = "Division by zero" };
     }

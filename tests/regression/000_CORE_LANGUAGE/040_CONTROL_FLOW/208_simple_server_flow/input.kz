@@ -12,7 +12,7 @@ const std = @import("std");
 | ready u32
 | failed []const u8
 
-~proc listen {
+~proc listen|zig {
     std.debug.print("Listening on port {}\n", .{port});
     if (port == 0) {
         return .{ .failed = "Invalid port" };
@@ -24,7 +24,7 @@ const std = @import("std");
 | connected { conn: u32, server: u32 }
 | failed u32
 
-~proc accept {
+~proc accept|zig {
     std.debug.print("Accepting connection\n", .{});
     if (server == 9999) {
         return .{ .failed = server };
@@ -37,7 +37,7 @@ const std = @import("std");
 | retry u32
 | error { conn: u32, msg: []const u8 }
 
-~proc process {
+~proc process|zig {
     std.debug.print("Processing connection {}\n", .{conn});
     if (conn % 3 == 0) {
         return .{ .error = .{ .conn = conn, .msg = "Processing error" } };
@@ -50,21 +50,21 @@ const std = @import("std");
 
 ~event close { conn: u32 }
 
-~proc close {
+~proc close|zig {
     std.debug.print("Closed connection {}\n", .{conn});
 }
 
 ~event log_error { conn: u32, msg: []const u8 }
 | logged u32
 
-~proc log_error {
+~proc log_error|zig {
     std.debug.print("Error on connection {}: {s}\n", .{conn, msg});
     return .{ .logged = conn };
 }
 
 ~event cleanup { conn: u32 }
 
-~proc cleanup {
+~proc cleanup|zig {
     std.debug.print("Cleaning up connection {}\n", .{conn});
 }
 

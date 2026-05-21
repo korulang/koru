@@ -15,7 +15,7 @@ pub const Point = struct {
 ~event sumPoints { points: []const Point }
 | result { total_x: i32, total_y: i32 }
 
-~proc sumPoints {
+~proc sumPoints|zig {
     var tx: i32 = 0;
     var ty: i32 = 0;
     for (points) |p| {
@@ -27,7 +27,7 @@ pub const Point = struct {
 
 ~event check { expected_x: i32, expected_y: i32, actual_x: i32, actual_y: i32 }
 
-~proc check {
+~proc check|zig {
     if (expected_x != actual_x or expected_y != actual_y) {
         std.debug.print("FAIL: expected ({}, {}), got ({}, {})\n", .{ expected_x, expected_y, actual_x, actual_y });
         std.process.exit(1);

@@ -16,7 +16,7 @@
 | transformed *const Program
 | compile_error []const u8
 
-~proc log.* {
+~proc log.*|zig {
     const std = @import("std");
     const allocator = std.heap.page_allocator;
     const valid_levels = [_][]const u8{ "error", "warn", "info", "debug" };

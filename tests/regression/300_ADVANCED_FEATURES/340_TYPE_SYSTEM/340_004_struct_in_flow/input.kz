@@ -16,7 +16,7 @@
 ~event greet { player: Player }
 | greeted []const u8
 
-~proc greet {
+~proc greet|zig {
     return .{ .greeted = player.name };
 }
 

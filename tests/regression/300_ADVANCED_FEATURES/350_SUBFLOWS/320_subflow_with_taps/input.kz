@@ -12,7 +12,7 @@ const std = @import("std");
 ~event add_five { value: i32 }
 | result i32
 
-~proc add_five {
+~proc add_five|zig {
     std.debug.print("add_five: {} + 5 = {}\n", .{value, value + 5});
     return .{ .result = value + 5 };
 }
@@ -27,14 +27,14 @@ const std = @import("std");
 // Observer that should be called by the tap
 ~event observer {}
 
-~proc observer {
+~proc observer|zig {
     std.debug.print("TAP FIRED: add_five -> result transition observed!\n", .{});
 }
 
 // Print final result
 ~event print_final { value: i32 }
 
-~proc print_final {
+~proc print_final|zig {
     std.debug.print("Final: {}\n", .{value});
 }
 

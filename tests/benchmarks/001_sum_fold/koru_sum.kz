@@ -12,7 +12,7 @@ const N: i64 = 100_000_000;
 
 ~event print_result { sum: i64, time_ms: i64 }
 
-~proc print_result {
+~proc print_result|zig {
     std.debug.print("Koru capture sum: {d}\n", .{sum});
     std.debug.print("Time: {d} ms\n", .{time_ms});
 }
@@ -21,7 +21,7 @@ const N: i64 = 100_000_000;
 ~event timed_capture_sum {}
 | done { sum: i64, time_ms: i64 }
 
-~proc timed_capture_sum {
+~proc timed_capture_sum|zig {
     const timer = std.time.Timer.start() catch unreachable;
 
     // Use capture to accumulate - this is what we're benchmarking!

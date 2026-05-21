@@ -11,7 +11,7 @@
 
 ~event hello {}
 
-~proc hello {}
+~proc hello|zig {}
 
 ~hello()
 |> _

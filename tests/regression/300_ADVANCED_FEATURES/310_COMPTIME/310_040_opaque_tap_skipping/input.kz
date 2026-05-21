@@ -17,11 +17,11 @@ const std = @import("std");
 // Internal event - marked opaque to prevent tapping
 ~[opaque] event internal_log { msg: []const u8 }
 
-~proc hello {
+~proc hello|zig {
     std.debug.print("Hello\n", .{});
 }
 
-~proc internal_log {
+~proc internal_log|zig {
     std.debug.print("[INTERNAL] {s}\n", .{msg});
 }
 

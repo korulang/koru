@@ -23,32 +23,32 @@ const std = @import("std");
 
 ~event log { msg: []const u8 }
 
-~proc step1 {
+~proc step1|zig {
     return .{ .@"ok" = 1 };
 }
 
-~proc step2 {
+~proc step2|zig {
     if (value < 0) {
         return .{ .@"failed" = "step2 failed" };
     }
     return .{ .@"ok" = value + 1 };
 }
 
-~proc step3 {
+~proc step3|zig {
     if (value < 0) {
         return .{ .@"failed" = "step3 failed" };
     }
     return .{ .@"ok" = value + 1 };
 }
 
-~proc step4 {
+~proc step4|zig {
     if (value < 0) {
         return .{ .@"failed" = "step4 failed" };
     }
     return .{ .@"ok" = value + 1 };
 }
 
-~proc log {
+~proc log|zig {
     std.debug.print("{s}\n", .{msg});
 }
 

@@ -5,7 +5,7 @@
 
 ~pub event greet {}
 
-~proc greet {
+~proc greet|zig {
 }
 
 ~std.runtime:register(scope: "exists") {

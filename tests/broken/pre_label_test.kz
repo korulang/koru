@@ -4,7 +4,7 @@ const std = @import("std");
 | ok i32  
 | retry i32
 
-~proc test.run {
+~proc test.run|zig {
     if (e.input < 5) {
         return .@"retry"(.{ .value = e.input + 1 });
     }
@@ -14,7 +14,7 @@ const std = @import("std");
 ~event io.log { msg: []const u8 }
 | done
 
-~proc io.log {
+~proc io.log|zig {
     std.debug.print("{s}\n", .{e.msg});
     return .@"done"(.{});
 }

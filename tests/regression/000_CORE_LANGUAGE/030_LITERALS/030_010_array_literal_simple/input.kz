@@ -10,7 +10,7 @@ const std = @import("std");
 ~event sum { numbers: []const i32 }
 | result i32
 
-~proc sum {
+~proc sum|zig {
     var total: i32 = 0;
     for (numbers) |n| {
         total += n;
@@ -20,7 +20,7 @@ const std = @import("std");
 
 ~event check { expected: i32, actual: i32 }
 
-~proc check {
+~proc check|zig {
     if (expected != actual) {
         std.debug.print("FAIL: expected {}, got {}\n", .{ expected, actual });
         std.process.exit(1);

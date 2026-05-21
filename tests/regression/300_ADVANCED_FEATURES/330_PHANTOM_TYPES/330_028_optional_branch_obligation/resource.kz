@@ -12,7 +12,7 @@ const Handle = struct {
 | success u32
 | ?leaked *Handle[owned!]  // Optional with obligation!
 
-~proc risky {
+~proc risky|zig {
     // Always succeeds in this test, but the event DECLARES
     // that it COULD return ?leaked with an obligation
     std.debug.print("Operation succeeded\n", .{});
@@ -22,6 +22,6 @@ const Handle = struct {
 // Disposer for the obligation (would need to be called for ?leaked)
 ~pub event close { handle: *Handle[!owned] }
 
-~proc close {
+~proc close|zig {
     std.debug.print("Closing handle\n", .{});
 }

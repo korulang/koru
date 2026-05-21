@@ -14,12 +14,12 @@ const std = @import("std");
 // Event chain to create deep nesting
 ~event step1 {}
 
-~proc step1 {
+~proc step1|zig {
 }
 
 ~event step2 {}
 
-~proc step2 {
+~proc step2|zig {
 }
 
 // Main flow: for is nested 2 levels deep

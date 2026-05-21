@@ -18,7 +18,7 @@
 | ?warning { msg: []const u8, level: u32 }
 | ?debug []const u8
 
-~proc process {
+~proc process|zig {
     // Return warning with different levels based on value
     if (value > 100) {
         return .{ .warning = .{ .msg = "Very large", .level = 10 } };

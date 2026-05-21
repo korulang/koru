@@ -13,7 +13,7 @@ var tap_count: u64 = 0;
 ~event count { i: u64 }
 | next u64
 
-~proc count {
+~proc count|zig {
     if (i < 1_000_000) {
         return .{ .next = i + 1 };
     } else {
@@ -23,7 +23,7 @@ var tap_count: u64 = 0;
 // Tap target - simulates logging/metrics
 ~event tap_point { i: u64 }
 
-~proc tap_point {
+~proc tap_point|zig {
     tap_count += 1;
     // Touch parameter to avoid unused warning
     if (i > 999_999_999) {
@@ -34,7 +34,7 @@ var tap_count: u64 = 0;
 // Print result
 ~event print_result {}
 
-~proc print_result {
+~proc print_result|zig {
     std.debug.print("Taps called: {}\n", .{tap_count});
 }
 

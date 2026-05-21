@@ -49,7 +49,7 @@ var metatype_global_counter: usize = 0;
 }
 | transformed *const Program
 
-~proc tap {
+~proc tap|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
     const errors = @import("errors");

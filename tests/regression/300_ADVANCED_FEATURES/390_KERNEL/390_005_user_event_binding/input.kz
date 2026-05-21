@@ -13,7 +13,7 @@
 }
 
 ~event print_mass { value: f64 }
-~proc print_mass {
+~proc print_mass|zig {
     const std = @import("std");
     std.debug.print("mass={d}\n", .{value});
 }
