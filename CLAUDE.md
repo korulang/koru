@@ -184,13 +184,24 @@ stages: `FRONTEND_COMPILE_ERROR` = A, `BACKEND_COMPILE_ERROR` = B,
 
 ## Regression suite etiquette
 
-The full suite takes 40+ minutes; the user runs it themselves. Use targeted
-commands:
+Run the full suite whenever it makes sense — **always with `--cache --parallel 8`**:
 
 ```bash
-./run_regression.sh --status       # See current state
-./run_regression.sh --regressions  # Find failing tests
-./run_regression.sh --history 123  # Check specific test history
+./run_regression.sh --cache --parallel 8     # full suite, cached, fast
+./run_regression.sh --no-cache --parallel 8  # clean baseline (~11 min, slower)
+```
+
+The cache skips tests whose inputs haven't changed since the last run, so most
+invocations finish in seconds-to-a-minute. Use `--no-cache` only when you need
+a clean baseline (e.g. after a sweep that touched many files, or when
+investigating cache-correctness).
+
+Targeted commands for inspection:
+
+```bash
+./run_regression.sh --status       # Current state from snapshot
+./run_regression.sh --regressions  # Failing tests + when they last passed
+./run_regression.sh --history 123  # History across all snapshots
 ./run_regression.sh 330_016        # Run a single test
 ./run_regression.sh 330            # Run a range (330-339)
 ```
