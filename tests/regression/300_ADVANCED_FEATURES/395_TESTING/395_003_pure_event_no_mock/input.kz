@@ -9,7 +9,7 @@
 ~event add_numbers { a: u32, b: u32 }
 | result u32
 
-~[pure] proc add_numbers {
+~[pure] proc add_numbers|zig {
     return .{ .result = a + b };
 }
 

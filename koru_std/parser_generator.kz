@@ -182,7 +182,7 @@ const std = @import("std");
             .module_qualifier = event_decl.path.module_qualifier,
         },
         .body = proc_body_str,
-        .target = null, // null = Zig
+        .target = allocator.dupe(u8, "zig") catch unreachable,
         .module = event_decl.module,
         .location = event_decl.location,
 

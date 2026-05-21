@@ -30,7 +30,7 @@ const std = @import("std");
 // Logger for tap - void return
 ~event log {}
 
-~[pure] proc log {
+~[pure] proc log|zig {
     std.debug.print("TAP: going to target\n", .{});
 }
 

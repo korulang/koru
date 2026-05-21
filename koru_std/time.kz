@@ -64,13 +64,13 @@ const std = @import("std");
 // Sleep for specified milliseconds
 ~[runtime] pub event sleep_ms { ms: u64 }
 
-~[runtime] proc sleep_ms {
+~[runtime] proc sleep_ms|zig {
     std.time.sleep(ms * 1_000_000);
 }
 
 // Sleep for specified seconds
 ~[runtime] pub event sleep_s { s: u64 }
 
-~[runtime] proc sleep_s {
+~[runtime] proc sleep_s|zig {
     std.time.sleep(s * 1_000_000_000);
 }

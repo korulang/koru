@@ -27,7 +27,7 @@
 | valid
 | insufficient
 
-~[pure] proc validate.amount {
+~[pure] proc validate.amount|zig {
     if (amount <= balance) {
         return .{ .valid = .{} };
     } else {

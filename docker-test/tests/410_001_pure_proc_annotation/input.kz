@@ -7,7 +7,7 @@ const std = @import("std");
 ~event compute { x: i32 }
 | result i32
 
-~[pure] proc compute {
+~[pure] proc compute|zig {
     return .{ .result = x * 2 };
 }
 

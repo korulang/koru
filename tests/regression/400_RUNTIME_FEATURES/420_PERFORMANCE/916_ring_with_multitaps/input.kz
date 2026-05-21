@@ -102,7 +102,7 @@ const MyRing = Ring(u32, 1024);
 // The tap fires automatically for each dequeued value!
 ~event start {}
 
-~[pure]proc start {
+~[pure]proc start|zig {
 }
 
 var my_ring = MyRing.init();

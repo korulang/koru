@@ -6,6 +6,6 @@
 | greeted []const u8
 
 // This should cause a compiler error - pub is not valid on procs
-~pub proc greet {
+~pub proc greet|zig {
     return .{ .greeted = "Hello!" };
 }

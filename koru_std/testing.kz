@@ -888,7 +888,7 @@ const emitFlowWithMocks = struct {
 // Simple fail - fails the test with optional message
 ~[keyword] pub event assert.fail { message: ?[]const u8 }
 
-~[pure] proc assert.fail {
+~[pure] proc assert.fail|zig {
     const msg = message orelse "Assertion failed";
     @panic(msg);
 }

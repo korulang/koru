@@ -10,14 +10,14 @@
 
 ~event logger { msg: []const u8 }
 
-~[pure]proc process {
+~[pure]proc process|zig {
     if (value > 0) {
         return .{ .ok = value };
     }
     return .{ .error = "negative" };
 }
 
-~[pure]proc logger {
+~[pure]proc logger|zig {
 }
 
 // Tap that captures Transition (enum-based metatype)

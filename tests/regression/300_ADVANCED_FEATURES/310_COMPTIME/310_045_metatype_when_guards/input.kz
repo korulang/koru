@@ -8,10 +8,10 @@
 
 ~event logger { msg: []const u8 }
 
-~[pure]proc hello {
+~[pure]proc hello|zig {
 }
 
-~[pure]proc logger {
+~[pure]proc logger|zig {
 }
 
 // For now, just verify multiple Profile observations work

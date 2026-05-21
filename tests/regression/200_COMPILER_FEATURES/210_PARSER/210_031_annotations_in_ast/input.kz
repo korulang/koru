@@ -13,7 +13,7 @@ const std = @import("std");
 ~[fuseable] pub event optimizable {}
 
 // Proc with annotations
-~[inline] proc compile_only {
+~[inline] proc compile_only|zig {
 }
 
 ~proc dual_phase|zig {
