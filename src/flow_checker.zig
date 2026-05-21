@@ -121,11 +121,98 @@ pub const FlowChecker = struct {
 
         // === BACKEND CHECKS (semantic, require event lookups and transforms) ===
 
+        // KORU110: bare ~proc declarations (no |variant) are unresolvable.
+        // Walk all invocations in this flow and flag any whose event resolves
+        // only to bare procs. Runs in both modes — it's a structural rule.
+        if (!is_transformed) {
+            try self.validateInvocationResolution(flow);
+        }
+
         if (self.mode == .all and !is_transformed) {
             // Validate branch coverage (KORU021, KORU022)
             // Only run in 'all' mode - requires transforms to be applied first
             // Skip for transformed flows - their branch structure has changed
             try self.validateBranchCoverage(flow, location);
+        }
+    }
+
+    /// KORU110: visit every invocation in `flow` (top-level + nested) and verify
+    /// the resolution rule. After Phase 1 of MULTI_HOST_PLAN, bare ~proc
+    /// declarations are parseable but unresolvable — only |variant-tagged
+    /// procs participate in resolution.
+    fn validateInvocationResolution(self: *FlowChecker, flow: *const ast.Flow) !void {
+        try self.checkInvocationVariants(&flow.invocation, flow.location);
+        for (flow.continuations) |*cont| {
+            try self.checkContinuationInvocations(cont);
+        }
+    }
+
+    fn checkContinuationInvocations(self: *FlowChecker, cont: *const ast.Continuation) !void {
+        if (cont.node) |node| {
+            if (node == .invocation) {
+                try self.checkInvocationVariants(&node.invocation, cont.location);
+            }
+        }
+        for (cont.continuations) |*nested| {
+            try self.checkContinuationInvocations(nested);
+        }
+    }
+
+    /// Emit KORU110 if every matching ~proc for this invocation's path is bare
+    /// (target == null). Abstract events ([abstract] annotation) are exempt —
+    /// they use a distinct override mechanism whose interaction with variants
+    /// is a separate design decision (see MULTI_HOST_PLAN.md).
+    fn checkInvocationVariants(self: *FlowChecker, inv: *const ast.Invocation, location: errors.SourceLocation) !void {
+        const items = self.ast_items orelse return;
+
+        // Exempt abstract events: resolution flows through the abstract-override
+        // mechanism, not direct proc dispatch.
+        if (self.findEventDecl(&inv.path)) |event_decl| {
+            if (event_decl.hasAnnotation("abstract")) return;
+        }
+
+        var has_match = false;
+        var has_variant_proc = false;
+
+        for (items) |*item| {
+            switch (item.*) {
+                .proc_decl => |*proc| {
+                    if (!pathSegmentsEqual(inv.path.segments, proc.path.segments)) continue;
+                    has_match = true;
+                    if (proc.target != null) has_variant_proc = true;
+                },
+                .module_decl => |*module| {
+                    for (module.items) |*mod_item| {
+                        if (mod_item.* != .proc_decl) continue;
+                        const proc = mod_item.proc_decl;
+                        if (!pathSegmentsEqual(inv.path.segments, proc.path.segments)) continue;
+                        has_match = true;
+                        if (proc.target != null) has_variant_proc = true;
+                    }
+                },
+                else => {},
+            }
+        }
+
+        if (has_match and !has_variant_proc) {
+            // Build a dotted event name for the diagnostic
+            var name_buf = std.ArrayList(u8){};
+            defer name_buf.deinit(self.allocator);
+            for (inv.path.segments, 0..) |seg, i| {
+                if (i > 0) try name_buf.append(self.allocator, '.');
+                try name_buf.appendSlice(self.allocator, seg);
+            }
+            const event_name = name_buf.items;
+
+            try self.reporter.addErrorWithHint(
+                .KORU110,
+                location.line,
+                location.column,
+                "event '{s}' is called but its ~proc declaration has no |variant tag — bare procs are unresolvable",
+                .{event_name},
+                "tag the proc with a host: `~proc {s}|zig {{ ... }}` (or another host like |gpu, |js)",
+                .{event_name},
+            );
         }
     }
 
@@ -661,6 +748,14 @@ fn isIdentifierChar(c: u8) bool {
            (c >= 'A' and c <= 'Z') or
            (c >= '0' and c <= '9') or
            c == '_';
+}
+
+fn pathSegmentsEqual(a: []const []const u8, b: []const []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |sa, sb| {
+        if (!std.mem.eql(u8, sa, sb)) return false;
+    }
+    return true;
 }
 
 fn containsIdentifier(text: []const u8, ident: []const u8) bool {
