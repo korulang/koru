@@ -199,11 +199,19 @@ Back-compat is implicitly proven by the 507 pre-existing `.kz`-only tests contin
 - A bare "no events in host file" rule would force all helper events into the public `.k` contract OR force subflows to be inline-only. Both are bad: the contract gets polluted with internal scaffolding, or subflows lose composability.
 - The pub/private split lets `.k` stay clean (only public events) while `.kz` keeps its private events for internal subflow plumbing. Implementation expressivity is preserved; public surface is still a literal file you can read.
 
-**Precondition (must land before Phase 3):**
+**Preconditions (must land before Phase 3):**
 
-The silent first-wins collision at `src/type_registry.zig:178-184` (`if (self.events.get(path)) |existing| { return; }`) needs to become a real error. Today, if two files in the same canonical namespace both register an event under the same path, the second is silently dropped. This masks the Phase 3 violation case (`.k` and `.kz` both declare `~pub event compute`) at the registry layer, so the Phase 3 check would only fire if it ran *before* registry population. Cleaner: registry hard-errors on unexpected duplicate registration; Phase 3's check fires earlier (during merge or shape-checking) and produces a domain-specific error before the registry sees the collision.
+Two independent fixes, both small, both useful regardless of whether Phase 3 ever ships.
 
-This precondition is its own small commit, can ship independently, and fixes a real "silent fallback" antipattern regardless of whether Phase 3 ever lands.
+1. **Registry collision hygiene.** The silent first-wins collision at `src/type_registry.zig:178-184` (`if (self.events.get(path)) |existing| { return; }`) needs to become a real error. Today, if two files in the same canonical namespace both register an event under the same path, the second is silently dropped. This masks the Phase 3 violation case (`.k` and `.kz` both declare `~pub event compute`) at the registry layer, so the Phase 3 check would only fire if it ran *before* registry population. Cleaner: registry hard-errors on unexpected duplicate registration; Phase 3's check fires earlier (during merge or shape-checking) and produces a domain-specific error before the registry sees the collision. Own small commit, fixes a "silent fallback" antipattern.
+
+2. **Companion-file loading.** Phase 2's `resolveKoruFile` returns the FIRST extension that hits (probe order: `.kgpu, .kjs, .kz, .kc, .k`). When `helper.k` AND `helper.kz` both exist as siblings, `.kz` wins and `.k` is silently invisible — the opposite of what Phase 3's model wants. For Phase 3 to compare events across `.k` and its implementation companions, the loader must detect and load BOTH (or all relevant) files when they share a stem. Two implementation strategies:
+   - **Resolver returns a list.** `resolveKoruFile` becomes `resolveKoruFiles` (plural), returning all matching companion paths. `processImport` then iterates and merges. More invasive but symmetric.
+   - **Post-resolve companion sweep.** Keep `resolveKoruFile` as-is for the primary hit, then explicitly look for a sibling `<stem>.k` (or vice versa: find host companions to a `.k`) and load it as an additional source for the same module. Less invasive but adds a special case.
+
+   Either approach is fine; pick during implementation. Both keep today's behavior identical when only one file in the stem exists (the common case).
+
+Both preconditions are required before Phase 3's shape_checker change can do anything meaningful — the registry fix removes silent masking from below, the companion-file loading provides the inputs the check needs from above.
 
 **Code changes (Phase 3 proper):**
 
@@ -260,8 +268,10 @@ Phase-by-phase regression tests as outlined above. The existing variant test sui
 
 1. **Phase 1 first.** Smallest contained change; immediately validates the "variants as primary host axis" framing. Sweep is mechanical but large (~1500 procs); good first session because it's contained and reversible.
 2. **Phase 2 second.** Builds file-discovery infrastructure without requiring Phase 3's semantic rule. Can ship in isolation; multi-file modules with `.k` files become *possible* but not yet *enforced*.
-3. **Phase 3 precondition: registry-collision hygiene.** Turn the silent first-wins skip in `src/type_registry.zig:178-184` into a hard error on unexpected duplicate registration. Its own small commit, lands independently, fixes a real silent-fallback antipattern.
-4. **Phase 3 once the precondition is in.** The two-rule contract/implementation event location check fires during shape-checking. Needs Phase 2 (multi-file modules exist) and the precondition (registry doesn't mask the violation).
+3. **Phase 3 preconditions (two small commits, can land in either order).**
+   a. **Registry-collision hygiene.** Turn the silent first-wins skip in `src/type_registry.zig:178-184` into a hard error on unexpected duplicate registration. Fixes a "silent fallback" antipattern.
+   b. **Companion-file loading.** Teach the loader to load BOTH `helper.k` and `helper.kz` (or whatever companion implementation file exists) when both are present. Today the probe-order resolver returns only the first hit (`.kz` beats `.k`), silently dropping the other. Phase 3's check needs both files visible.
+4. **Phase 3 once both preconditions are in.** The two-rule contract/implementation event location check fires during shape-checking. Needs Phase 2 (multi-file modules exist) and both preconditions (registry doesn't mask; loader sees both files).
 5. **Phase 4 last.** Tooling benefits from Phases 1-3 being settled; the tool's output needs to compile correctly under the new rules.
 
 Each phase ships as its own commit (or PR-shaped unit). Don't bundle them. The regression suite proves each phase independently.
