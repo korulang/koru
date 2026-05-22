@@ -201,18 +201,28 @@ The original plan put this under "Phase 3 preconditions" because Phase 3's check
 
 `tests/regression/100_MODULE_SYSTEM/140_FILE_LAYOUT/140_005_companion_k_and_kz/` — `.k` declares the event, `.kz` declares the proc, `input.kz` calls through. Expected SUCCESS; today fails because `.k` is invisible. Land this test in the suite first as a captured regression; implement the fix in a separate session.
 
-**Implementation strategies (pick during implementation):**
+**Where the fix actually lives (architectural note):**
 
-1. **Resolver returns a list.** `resolveKoruFile` / `resolveKoruFileIn` become plural (`resolveKoruFiles` / `resolveKoruFilesIn`), returning every matching companion path. Callers iterate and merge. More invasive; symmetric.
-2. **Post-resolve companion sweep.** Keep the primary resolver as-is for the first hit, then explicitly look for sibling `<stem>.<other-ext>` files and load them as additional sources for the same module. Less invasive; adds a special case at each callsite.
+`resolveKoruFile` (`src/module_resolver.zig:15-27`) is a pure path-probing helper — it stat()s candidate paths and returns the first hit as `?[]u8`. The 8 callsites of `resolveKoruFile` / `resolveKoruFileIn` (lines 415, 464, 583, 614, 646, 682, 716, etc.) each take that single path and hand it to whatever parses/loads modules. The companion-loading bug is therefore NOT inside the resolver — it's at the *next* layer, the one that turns "resolved file path" into "parsed module AST."
 
-Either approach must preserve today's behavior for the common case (only one file in the stem exists). Decide during implementation; not pre-decided here.
+So the two strategies below differ in where the symmetry break lives:
+
+1. **Resolver returns a list.** `resolveKoruFile` / `resolveKoruFileIn` become plural (`resolveKoruFiles` / `resolveKoruFilesIn`), returning every matching companion path. `ResolveResult` likely grows from `{ file_path, dir_path }` to carry multiple file paths. Every callsite changes to iterate. More invasive; symmetric — the resolver itself becomes companion-aware.
+2. **Post-resolve companion sweep.** Keep the resolver returning the first hit. Add a *single* injection point at the parseModule/processImport layer that, given a resolved primary file path, explicitly looks up siblings sharing the stem and parses them as additional sources for the same module. Less invasive — only the one merge point changes. The asymmetry is contained.
+
+Strategy 2 is probably the better fit given the current shape — `ResolveResult` is single-file by design and changing that ripples through the 8 callsites for what is really a "discover companion files at module-load time" concern. But verify by reading the parse/load layer first; either strategy is defensible.
+
+Either approach must preserve today's behavior for the common case (only one file in the stem exists).
 
 **Other things to verify during implementation:**
 
 - **Module-name derivation.** When `foo.k`, `foo.kz`, `foo.kjs` all exist in the same directory, the module is `foo` and all three contribute. Verify the merge path treats them as one canonical namespace (confirmed in the plan's open questions, line 285).
 - **Directory submodule enumeration.** `parser.zig:7081` and the directory loader in `main.zig:3528` walk directories listing files. Companion pairs inside a directory (`lib/contract.k` + `lib/contract.kz`) need the same companion-loading rules as top-level siblings.
 - **`backend.zig` and the embedded string template.** The generated backend's `endsWith` OR chain (`main.zig:945-950`, `main.zig:2806-2811`) recognizes Koru source files but does not pair them. If the backend has its own enumeration logic, companion-loading needs to be propagated there too.
+
+**Baseline at handoff (2026-05-22 14:07 run):**
+
+Full suite with `--no-cache --parallel 8`: **511/545 in-scope passed (93.8%), 23 failed.** Pre-Phase-2 baseline was 22 failures; the +1 is `140_005_companion_k_and_kz` (the captured bug). Every other failure matches the existing list. The rename sweep (multi-host → multi-variant) and the plan reframe introduced zero regressions. The next session starts from a clean baseline with the failing test as its anchor.
 
 ### Phase 3: Contract / implementation event location rule
 
