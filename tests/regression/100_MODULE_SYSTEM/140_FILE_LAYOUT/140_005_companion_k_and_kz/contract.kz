@@ -1,0 +1,9 @@
+// Phase 2.1: implementation companion to contract.k. Carries the proc body
+// only — the event declaration lives in the sibling .k file. The two files
+// merge into one module named `contract`.
+
+const std = @import("std");
+
+~proc compute|zig {
+    return .{ .done = x + 100 };
+}

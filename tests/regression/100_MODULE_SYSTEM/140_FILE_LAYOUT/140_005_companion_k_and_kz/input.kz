@@ -1,0 +1,15 @@
+// Phase 2.1: prove .k + .kz companions both load.
+//
+// The event `compute` is declared ONLY in contract.k. The proc `compute|zig`
+// lives ONLY in contract.kz. For this call site to resolve, the resolver
+// must load both files into the `app.contract` module. Today contract.kz
+// wins the probe-order race and contract.k is silently dropped, so this
+// call site fails. Once the companion-loading fix lands, prints 142.
+
+const std = @import("std");
+
+~import "$std/io"
+~import "$app/contract"
+
+~app.contract:compute(x: 42)
+| done v |> std.io:print.ln("{{ v:d }}")

@@ -181,6 +181,37 @@ Back-compat is implicitly proven by the 507 pre-existing `.kz`-only tests contin
 2. **Plan-quoted line tables undercount.** The plan listed 8 + 2 + 5 = 15 sites; reality was 8 + 4 + 6 = 18. `grep -nE '"\.kz"|endsWith.*\.kz'` over the three files immediately surfaced the extras. Always grep before trusting a line-number table from a prior session.
 3. **`index.kz` is a third-class identifier alongside `endsWith(".kz")`.** The literal string `"index.kz"` appears in basename equality checks and `allocPrint` calls; pure regex sweeps for `\.kz` miss them. Grep both `\.kz` and `index\.kz` patterns.
 
+### Phase 2.1: Companion-file loading — **PENDING (bug, not feature)**
+
+**Status:** Phase 2 declared itself landed prematurely. The file-extension and discovery layer shipped, but the layout the design move was actually about — `helper.k` (contract) paired with `helper.kz` (implementation) as siblings sharing a stem — does not work. This is a Phase 2 completion bug, not a Phase 3 precondition; reclassified 2026-05-22.
+
+**The bug:** `src/module_resolver.zig` `resolveKoruFile` (lines 15-27) and `resolveKoruFileIn` (lines 33-49) both loop `file_types.koru_extensions` and `return` on the first hit. Probe order is `.kgpu, .kjs, .kz, .kc, .k`. When `helper.k` and `helper.kz` both exist, `.kz` is the first hit and `.k` is silently invisible — never opened, never parsed, never registered. The contract file is dead weight on disk.
+
+**Why this is Phase 2, not Phase 3:**
+
+The original plan put this under "Phase 3 preconditions" because Phase 3's check needs both files visible to compare them. But the breakage exists today, in Phase 2, regardless of whether Phase 3 ever ships:
+
+- Move 2 promised (line 54): *"The `.k` file holds the event signature once; each host's implementation lives in its own file."* That promise is false today.
+- Phase 4's migration tool (`koruc make-portable`) would produce a `helper.k` + `helper.kz` pair as its canonical output. Today that output is silently broken — the `.k` file produces nothing.
+- A test exists for `.k`-only contracts (`140_002_k_pure_contract`, COMPILE_ONLY, partial-program tenet). There is no test for `.k` + `.kz` as a working sibling pair — that's the gap.
+
+**Failing test (entry point):**
+
+`tests/regression/100_MODULE_SYSTEM/140_FILE_LAYOUT/140_005_companion_k_and_kz/` — `.k` declares the event, `.kz` declares the proc, `input.kz` calls through. Expected SUCCESS; today fails because `.k` is invisible. Land this test in the suite first as a captured regression; implement the fix in a separate session.
+
+**Implementation strategies (pick during implementation):**
+
+1. **Resolver returns a list.** `resolveKoruFile` / `resolveKoruFileIn` become plural (`resolveKoruFiles` / `resolveKoruFilesIn`), returning every matching companion path. Callers iterate and merge. More invasive; symmetric.
+2. **Post-resolve companion sweep.** Keep the primary resolver as-is for the first hit, then explicitly look for sibling `<stem>.<other-ext>` files and load them as additional sources for the same module. Less invasive; adds a special case at each callsite.
+
+Either approach must preserve today's behavior for the common case (only one file in the stem exists). Decide during implementation; not pre-decided here.
+
+**Other things to verify during implementation:**
+
+- **Module-name derivation.** When `foo.k`, `foo.kz`, `foo.kjs` all exist in the same directory, the module is `foo` and all three contribute. Verify the merge path treats them as one canonical namespace (confirmed in the plan's open questions, line 285).
+- **Directory submodule enumeration.** `parser.zig:7081` and the directory loader in `main.zig:3528` walk directories listing files. Companion pairs inside a directory (`lib/contract.k` + `lib/contract.kz`) need the same companion-loading rules as top-level siblings.
+- **`backend.zig` and the embedded string template.** The generated backend's `endsWith` OR chain (`main.zig:945-950`, `main.zig:2806-2811`) recognizes Koru source files but does not pair them. If the backend has its own enumeration logic, companion-loading needs to be propagated there too.
+
 ### Phase 3: Contract / implementation event location rule
 
 **Refined 2026-05-22** after a design conversation that narrowed the original "no events at all in host files" framing into a pub/private split. The narrower rule preserves subflow ergonomics while still making the public surface of a module a literal file you can read.
@@ -201,17 +232,13 @@ Back-compat is implicitly proven by the 507 pre-existing `.kz`-only tests contin
 
 **Preconditions (must land before Phase 3):**
 
-Two independent fixes, both small, both useful regardless of whether Phase 3 ever ships.
+Phase 2.1 (companion-file loading) must already be landed — the check has nothing to compare otherwise.
+
+One additional precondition, small and useful regardless of whether Phase 3 ever ships:
 
 1. **Registry collision hygiene.** The silent first-wins collision at `src/type_registry.zig:178-184` (`if (self.events.get(path)) |existing| { return; }`) needs to become a real error. Today, if two files in the same canonical namespace both register an event under the same path, the second is silently dropped. This masks the Phase 3 violation case (`.k` and `.kz` both declare `~pub event compute`) at the registry layer, so the Phase 3 check would only fire if it ran *before* registry population. Cleaner: registry hard-errors on unexpected duplicate registration; Phase 3's check fires earlier (during merge or shape-checking) and produces a domain-specific error before the registry sees the collision. Own small commit, fixes a "silent fallback" antipattern.
 
-2. **Companion-file loading.** Phase 2's `resolveKoruFile` returns the FIRST extension that hits (probe order: `.kgpu, .kjs, .kz, .kc, .k`). When `helper.k` AND `helper.kz` both exist as siblings, `.kz` wins and `.k` is silently invisible — the opposite of what Phase 3's model wants. For Phase 3 to compare events across `.k` and its implementation companions, the loader must detect and load BOTH (or all relevant) files when they share a stem. Two implementation strategies:
-   - **Resolver returns a list.** `resolveKoruFile` becomes `resolveKoruFiles` (plural), returning all matching companion paths. `processImport` then iterates and merges. More invasive but symmetric.
-   - **Post-resolve companion sweep.** Keep `resolveKoruFile` as-is for the primary hit, then explicitly look for a sibling `<stem>.k` (or vice versa: find host companions to a `.k`) and load it as an additional source for the same module. Less invasive but adds a special case.
-
-   Either approach is fine; pick during implementation. Both keep today's behavior identical when only one file in the stem exists (the common case).
-
-Both preconditions are required before Phase 3's shape_checker change can do anything meaningful — the registry fix removes silent masking from below, the companion-file loading provides the inputs the check needs from above.
+The registry fix removes silent masking from below; Phase 2.1's companion loading provides the inputs the Phase 3 check needs from above. Both must be in before the shape_checker change can do anything meaningful.
 
 **Code changes (Phase 3 proper):**
 
@@ -268,11 +295,10 @@ Phase-by-phase regression tests as outlined above. The existing variant test sui
 
 1. **Phase 1 first.** Smallest contained change; immediately validates the "variants as primary host axis" framing. Sweep is mechanical but large (~1500 procs); good first session because it's contained and reversible.
 2. **Phase 2 second.** Builds file-discovery infrastructure without requiring Phase 3's semantic rule. Can ship in isolation; multi-file modules with `.k` files become *possible* but not yet *enforced*.
-3. **Phase 3 preconditions (two small commits, can land in either order).**
-   a. **Registry-collision hygiene.** Turn the silent first-wins skip in `src/type_registry.zig:178-184` into a hard error on unexpected duplicate registration. Fixes a "silent fallback" antipattern.
-   b. **Companion-file loading.** Teach the loader to load BOTH `helper.k` and `helper.kz` (or whatever companion implementation file exists) when both are present. Today the probe-order resolver returns only the first hit (`.kz` beats `.k`), silently dropping the other. Phase 3's check needs both files visible.
-4. **Phase 3 once both preconditions are in.** The two-rule contract/implementation event location check fires during shape-checking. Needs Phase 2 (multi-file modules exist) and both preconditions (registry doesn't mask; loader sees both files).
-5. **Phase 4 last.** Tooling benefits from Phases 1-3 being settled; the tool's output needs to compile correctly under the new rules.
+3. **Phase 2.1 — completion bug.** Companion-file loading. Today the probe-order resolver returns only the first hit (`.kz` beats `.k`), silently dropping any sibling contract file. The `.k` + `.kz` sibling layout the design promised does not actually work. Land the failing test (`140_005_companion_k_and_kz`) first, then teach the loader to load all companion files when they share a stem.
+4. **Phase 3 precondition: registry-collision hygiene.** Turn the silent first-wins skip in `src/type_registry.zig:178-184` into a hard error on unexpected duplicate registration. Fixes a "silent fallback" antipattern. Small standalone commit.
+5. **Phase 3 once 2.1 and the registry fix are in.** The two-rule contract/implementation event location check fires during shape-checking. Needs Phase 2 (multi-file modules exist), Phase 2.1 (loader sees both files), and the registry fix (no silent masking).
+6. **Phase 4 last.** Tooling benefits from earlier phases being settled; the tool's output needs to compile correctly under the new rules.
 
 Each phase ships as its own commit (or PR-shaped unit). Don't bundle them. The regression suite proves each phase independently.
 
