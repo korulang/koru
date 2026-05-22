@@ -181,23 +181,54 @@ Back-compat is implicitly proven by the 507 pre-existing `.kz`-only tests contin
 2. **Plan-quoted line tables undercount.** The plan listed 8 + 2 + 5 = 15 sites; reality was 8 + 4 + 6 = 18. `grep -nE '"\.kz"|endsWith.*\.kz'` over the three files immediately surfaced the extras. Always grep before trusting a line-number table from a prior session.
 3. **`index.kz` is a third-class identifier alongside `endsWith(".kz")`.** The literal string `"index.kz"` appears in basename equality checks and `allocPrint` calls; pure regex sweeps for `\.kz` miss them. Grep both `\.kz` and `index\.kz` patterns.
 
-### Phase 3: Contract uniqueness rule
+### Phase 3: Contract / implementation event location rule
 
-**Scope:** semantic check that enforces "if a `.k` file declares an event, no sibling host-file may re-declare it."
+**Refined 2026-05-22** after a design conversation that narrowed the original "no events at all in host files" framing into a pub/private split. The narrower rule preserves subflow ergonomics while still making the public surface of a module a literal file you can read.
 
-**Code changes:**
+**The rule (two statements, fire as a pair):**
 
-- Shape checker (or new dedicated pass): walk the module's AST after all sibling files are slurped; check for duplicate event declarations across files; if a `.k` file declared the event, the duplicate in a host file is the violation.
-- Error message: `event 'compute' is declared in foo.k:N and re-declared in foo.kz:M. The .k file is the contract; remove the duplicate from foo.kz and keep only the proc body.`
+1. **Events in `.k` must be `~pub`.** Private events in `.k` are illegal. A private declaration in a contract file is dead syntax — no procs live in `.k` (those are implementation), so nothing inside `.k` can call a private event, and nothing outside can see it.
+2. **When `.k` exists, sibling implementation files (`.kz`, `.kjs`, `.kc`, `.kgpu`) cannot declare `~pub event`.** They can still declare non-public events — internal subflow scaffolding is preserved. Public events live in `.k` exclusively.
 
-**Estimated diff:** 10-20 lines in the shape checker pass.
+**Both rules fire only when `.k` is present in the module.** No `.k`? Today's behavior holds: implementation files can have public events freely. The rule is opt-in per module, and migration cost is zero — existing single-file `.kz` projects keep working.
 
-**Tests:**
+**Orthogonal to variants — explicitly:** A single `.kz` containing `~proc foo|zig { ... }`, `~proc foo|gpu { ... }`, and `~proc foo|js { ... }` mixed inside is fine and will keep being fine. The rule is about *where public event declarations live*, not about which host languages a given file can mix. A `.kz` that's a companion to a `.k` can absolutely have variant-soup procs inside; what it can't have is `~pub event` declarations. The two axes (file-extension split vs in-file variant mixing) are independent organizational choices.
 
-- `MUST_FAIL`: `.k` + `.kz` both declare same event.
-- `SUCCESS`: `.k` declares event, `.kz` declares only `~proc` for that event.
+**Why pub/private (vs the original "no events at all" framing):**
+
+- A bare "no events in host file" rule would force all helper events into the public `.k` contract OR force subflows to be inline-only. Both are bad: the contract gets polluted with internal scaffolding, or subflows lose composability.
+- The pub/private split lets `.k` stay clean (only public events) while `.kz` keeps its private events for internal subflow plumbing. Implementation expressivity is preserved; public surface is still a literal file you can read.
+
+**Precondition (must land before Phase 3):**
+
+The silent first-wins collision at `src/type_registry.zig:178-184` (`if (self.events.get(path)) |existing| { return; }`) needs to become a real error. Today, if two files in the same canonical namespace both register an event under the same path, the second is silently dropped. This masks the Phase 3 violation case (`.k` and `.kz` both declare `~pub event compute`) at the registry layer, so the Phase 3 check would only fire if it ran *before* registry population. Cleaner: registry hard-errors on unexpected duplicate registration; Phase 3's check fires earlier (during merge or shape-checking) and produces a domain-specific error before the registry sees the collision.
+
+This precondition is its own small commit, can ship independently, and fixes a real "silent fallback" antipattern regardless of whether Phase 3 ever lands.
+
+**Code changes (Phase 3 proper):**
+
+- New error code: probably `KORU111` (continuing the variant-mandatory `KORU110` family). `KORU200` is already taken by ambiguous-module.
+- Check location: shape_checker is the natural home — it runs after AST canonicalization and has access to all module items. Needs each `EventDecl` to carry its source file (probably already in `SourceLocation`; verify during implementation).
+- Two checks, both fired per merged module that contains a `.k` file:
+  1. Walk `.k` items, error on any `EventDecl` where `is_public == false`.
+  2. Walk implementation-file items, error on any `EventDecl` where `is_public == true`.
+
+**Estimated diff:** 30-50 lines in the shape checker pass + the `KORU111` definition + 2 test fixtures. The precondition (registry hardening) is another ~10 lines.
+
+**Tests** (extends `tests/regression/100_MODULE_SYSTEM/140_FILE_LAYOUT/`):
+
+- `MUST_FAIL`: `.k` file declares a private event (`~event foo`, no `~pub`) → `KORU111` "private event in contract file."
+- `MUST_FAIL`: `.k` declares `~pub event compute`, `.kz` also declares `~pub event compute` → `KORU111` "public event in implementation file."
+- `SUCCESS`: `.k` has `~pub event compute`, `.kz` has only `~proc compute|zig { ... }` and a private `~event _helper` for an internal subflow.
 - `SUCCESS`: `.k` declares event with NO implementation anywhere (partial-program tenet).
-- `SUCCESS`: `.kz` declares event + proc inline, no `.k` file in module → works as today.
+- `SUCCESS`: `.kz` declares `~pub event` + proc inline, no `.k` file in module → works as today (rule is opt-in).
+- `SUCCESS`: `.k` + `.kz` where the `.kz` mixes `~proc foo|zig`, `~proc foo|gpu`, `~proc foo|js` — the variant-mixing axis is orthogonal to the contract-split axis.
+
+**Open questions to resolve during implementation (don't pre-decide):**
+
+1. **Imports in `.k` for typed payloads.** An event like `~pub event create_user { role: Role }` references a user-defined type. If `Role` lives in another module, `.k` would need to import. The two-rule Phase 3 doesn't restrict imports, so this isn't blocked — but the natural extension is "contracts can import other contracts (other `.k` files)." Defer the decision; cross the bridge when a test demands it.
+2. **What else belongs in `.k`?** The design conversation deliberately narrowed scope to events. Whether `.k` should also be restricted to *only* events (no top-level Zig blocks, no annotations, no module-level constants) is a separate question. Address piecemeal as the need arises.
+3. **Inter-host implementation pairing.** If `.k` + `.kz` + `.kjs` all coexist, and `.kjs` only implements *some* of the events declared in `.k`, that's a partial-program state — still legal, only the uncalled events stay unresolvable per Phase 1's rule. Confirm during implementation that the resolution check handles this gracefully (it should already, since variant resolution is per-call-site).
 
 ### Phase 4: Migration tool
 
@@ -229,8 +260,9 @@ Phase-by-phase regression tests as outlined above. The existing variant test sui
 
 1. **Phase 1 first.** Smallest contained change; immediately validates the "variants as primary host axis" framing. Sweep is mechanical but large (~1500 procs); good first session because it's contained and reversible.
 2. **Phase 2 second.** Builds file-discovery infrastructure without requiring Phase 3's semantic rule. Can ship in isolation; multi-file modules with `.k` files become *possible* but not yet *enforced*.
-3. **Phase 3 once Phase 2 is in.** The duplicate-declaration check needs multi-file modules to exist first.
-4. **Phase 4 last.** Tooling benefits from Phases 1-3 being settled; the tool's output needs to compile correctly under the new rules.
+3. **Phase 3 precondition: registry-collision hygiene.** Turn the silent first-wins skip in `src/type_registry.zig:178-184` into a hard error on unexpected duplicate registration. Its own small commit, lands independently, fixes a real silent-fallback antipattern.
+4. **Phase 3 once the precondition is in.** The two-rule contract/implementation event location check fires during shape-checking. Needs Phase 2 (multi-file modules exist) and the precondition (registry doesn't mask the violation).
+5. **Phase 4 last.** Tooling benefits from Phases 1-3 being settled; the tool's output needs to compile correctly under the new rules.
 
 Each phase ships as its own commit (or PR-shaped unit). Don't bundle them. The regression suite proves each phase independently.
 
