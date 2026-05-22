@@ -48,6 +48,48 @@ pub fn resolveKoruFileIn(allocator: std.mem.Allocator, base: []const u8, name: [
     return null;
 }
 
+/// Find Koru companion files for `primary_path`: siblings in the same
+/// directory sharing the same stem but with a different Koru extension.
+///
+/// Phase 2.1: enables the `.k` (contract) + `.kz` (Zig implementation)
+/// sibling layout that Phase 2 promised. `resolveKoruFile` only returns
+/// the first-hit; the loader needs to discover and parse the rest.
+///
+/// `primary_path` must already point at an existing Koru file (carry a
+/// Koru extension); companions are detected via stem-equality. The primary
+/// itself is excluded from the result.
+///
+/// Returns an owned slice of owned, canonicalized paths. Caller frees each
+/// element and the outer slice. Empty slice (not null) when no companions
+/// exist.
+pub fn findCompanionFiles(allocator: std.mem.Allocator, primary_path: []const u8) ![][]u8 {
+    var companions = std.ArrayList([]u8){ .items = &.{}, .capacity = 0 };
+    errdefer {
+        for (companions.items) |c| allocator.free(c);
+        companions.deinit(allocator);
+    }
+
+    const primary_basename = std.fs.path.basename(primary_path);
+    const primary_ext = file_types.koruExtensionOf(primary_basename) orelse {
+        return try companions.toOwnedSlice(allocator);
+    };
+    const stem = primary_basename[0 .. primary_basename.len - primary_ext.len];
+    const dir = std.fs.path.dirname(primary_path) orelse ".";
+
+    for (file_types.koru_extensions) |ext| {
+        if (std.mem.eql(u8, ext, primary_ext)) continue;
+        const name_with_ext = try std.fmt.allocPrint(allocator, "{s}{s}", .{ stem, ext });
+        defer allocator.free(name_with_ext);
+        const candidate = try std.fs.path.join(allocator, &[_][]const u8{ dir, name_with_ext });
+        defer allocator.free(candidate);
+        std.fs.cwd().access(candidate, .{}) catch continue;
+        const resolved = try std.fs.path.resolve(allocator, &[_][]const u8{candidate});
+        try companions.append(allocator, resolved);
+    }
+
+    return try companions.toOwnedSlice(allocator);
+}
+
 
 /// ModuleResolver handles finding and loading Koru modules from various locations
 /// Search order:

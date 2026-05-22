@@ -3487,46 +3487,6 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
         }
     }.load;
 
-    // Helper to load file module
-    const loadFile = struct {
-        fn load(alloc: std.mem.Allocator, parse_alloc: std.mem.Allocator, file_path: []const u8) !struct {
-            public_events: []ast.EventDecl,
-            source_file: ast.Program,
-        } {
-            const file = try std.fs.cwd().openFile(file_path, .{});
-            defer file.close();
-
-            const source = try file.readToEndAlloc(parse_alloc, 1024 * 1024);
-            var parser = try Parser.init(parse_alloc, source, file_path, &[_][]const u8{}, null);
-            parser.fail_fast = false; // Don't validate event refs during import - allows transitive imports with circular deps
-            defer parser.deinit();
-
-            const parse_result = try parser.parse();
-
-            // Abort on parse errors in imported files
-            if (parser.reporter.hasErrors() or parse_result.source_file.hasParseErrors()) {
-                const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
-                try parser.reporter.printErrors(stderr_writer);
-                if (!parser.reporter.hasErrors()) {
-                    try printAstParseErrors(&parse_result.source_file, stderr_writer);
-                }
-                std.process.exit(1);
-            }
-
-            var public_events = std.ArrayListAligned(ast.EventDecl, null){ .items = &.{}, .capacity = 0 };
-            for (parse_result.source_file.items) |item| {
-                if (item == .event_decl and item.event_decl.is_public) {
-                    try public_events.append(alloc, item.event_decl);
-                }
-            }
-
-            return .{
-                .public_events = try public_events.toOwnedSlice(alloc),
-                .source_file = parse_result.source_file,
-            };
-        }
-    }.load;
-
     // Use local_name if provided (for synthetic imports like auto-parent and auto-index),
     // otherwise derive from path
     const module_name = if (import_decl.local_name) |ln|
@@ -3578,7 +3538,7 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
 
         // index file exists - parse it and use its content
         log.debug("  Loading index file from directory: {s}\n", .{index_path});
-        const index_data = try loadFile(allocator, parse_allocator, index_path);
+        const index_data = try loadFileWithCompanions(allocator, parse_allocator, index_path);
 
         return ImportedModule{
             .logical_name = module_name,
@@ -3592,17 +3552,119 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
         // ONLY file
         log.debug("  Importing file only: {s}\n", .{import_decl.path});
 
-        const file_data = try loadFile(allocator, parse_allocator, resolved.file_path.?);
+        const merged = try loadFileWithCompanions(allocator, parse_allocator, resolved.file_path.?);
 
         return ImportedModule{
             .logical_name = module_name,
             .canonical_path = try allocator.dupe(u8, resolved.file_path.?),
-            .public_events = file_data.public_events,
-            .source_file = file_data.source_file,
+            .public_events = merged.public_events,
+            .source_file = merged.source_file,
             .is_directory = false,
             .submodules = &.{},
         };
     }
+}
+
+/// Load a Koru file plus any companion files (same directory, same stem,
+/// different Koru extension) and merge their items into a single
+/// `ast.Program`. Phase 2.1: the `.k` (contract) + `.kz` (implementation)
+/// sibling layout was promised by Phase 2 but the resolver returns only
+/// one path. Companion sweep happens here, at the layer that turns a
+/// resolved path into a parsed module.
+///
+/// The primary file's `main_module_name` is preserved; companions
+/// contribute their `items` and `module_annotations` only. Allocations on
+/// `parse_alloc` (the arena) survive for the rest of compilation; orphan
+/// per-file arrays from the individual `loadFile` calls are not freed
+/// because the arena owns them.
+const LoadedFile = struct {
+    public_events: []ast.EventDecl,
+    source_file: ast.Program,
+};
+
+fn loadFileWithCompanions(
+    allocator: std.mem.Allocator,
+    parse_allocator: std.mem.Allocator,
+    primary_path: []const u8,
+) !LoadedFile {
+    const loadFile = struct {
+        fn load(alloc: std.mem.Allocator, parse_alloc: std.mem.Allocator, file_path: []const u8) !LoadedFile {
+            const file = try std.fs.cwd().openFile(file_path, .{});
+            defer file.close();
+
+            const source = try file.readToEndAlloc(parse_alloc, 1024 * 1024);
+            var parser = try Parser.init(parse_alloc, source, file_path, &[_][]const u8{}, null);
+            parser.fail_fast = false;
+            defer parser.deinit();
+
+            const parse_result = try parser.parse();
+
+            if (parser.reporter.hasErrors() or parse_result.source_file.hasParseErrors()) {
+                const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+                try parser.reporter.printErrors(stderr_writer);
+                if (!parser.reporter.hasErrors()) {
+                    try printAstParseErrors(&parse_result.source_file, stderr_writer);
+                }
+                std.process.exit(1);
+            }
+
+            var public_events = std.ArrayListAligned(ast.EventDecl, null){ .items = &.{}, .capacity = 0 };
+            for (parse_result.source_file.items) |item| {
+                if (item == .event_decl and item.event_decl.is_public) {
+                    try public_events.append(alloc, item.event_decl);
+                }
+            }
+
+            return .{
+                .public_events = try public_events.toOwnedSlice(alloc),
+                .source_file = parse_result.source_file,
+            };
+        }
+    }.load;
+
+    const companions = try module_resolver_mod.findCompanionFiles(allocator, primary_path);
+    defer {
+        for (companions) |c| allocator.free(c);
+        allocator.free(companions);
+    }
+
+    const primary = try loadFile(allocator, parse_allocator, primary_path);
+
+    if (companions.len == 0) {
+        return primary;
+    }
+
+    log.debug("  Phase 2.1: merging {} companion file(s) for {s}\n", .{ companions.len, primary_path });
+
+    var merged_items = std.ArrayList(ast.Item){ .items = &.{}, .capacity = 0 };
+    try merged_items.appendSlice(parse_allocator, primary.source_file.items);
+
+    var merged_annotations = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
+    try merged_annotations.appendSlice(parse_allocator, primary.source_file.module_annotations);
+
+    var merged_events = std.ArrayList(ast.EventDecl){ .items = &.{}, .capacity = 0 };
+    try merged_events.appendSlice(allocator, primary.public_events);
+    allocator.free(primary.public_events);
+
+    for (companions) |companion_path| {
+        log.debug("    Companion: {s}\n", .{companion_path});
+        const companion = try loadFile(allocator, parse_allocator, companion_path);
+        try merged_items.appendSlice(parse_allocator, companion.source_file.items);
+        try merged_annotations.appendSlice(parse_allocator, companion.source_file.module_annotations);
+        try merged_events.appendSlice(allocator, companion.public_events);
+        allocator.free(companion.public_events);
+    }
+
+    return .{
+        .public_events = try merged_events.toOwnedSlice(allocator),
+        .source_file = ast.Program{
+            .items = try merged_items.toOwnedSlice(parse_allocator),
+            .module_annotations = try merged_annotations.toOwnedSlice(parse_allocator),
+            .main_module_name = primary.source_file.main_module_name,
+            .allocator = parse_allocator,
+            .type_registry = primary.source_file.type_registry,
+        },
+    };
 }
 
 // Split usage into header and footer for dynamic command insertion

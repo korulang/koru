@@ -5,6 +5,7 @@ const errors = @import("errors");
 const type_registry = @import("type_registry");
 const expression_parser = @import("expression_parser");
 const ModuleResolver = @import("module_resolver").ModuleResolver;
+const module_resolver_mod = @import("module_resolver");
 const file_types = @import("file_types");
 
 // Re-export ExpressionParser for runtime use (e.g., interpreter ~if)
@@ -7094,6 +7095,19 @@ pub const Parser = struct {
         // Process file import (if file was found)
         if (result.file_path) |file_path| {
             try self.parseAndRegisterSingleFile(file_path, namespace);
+
+            // Phase 2.1: also parse companion files sharing the stem
+            // (e.g. `contract.k` alongside `contract.kz`). The resolver
+            // returns only the first-hit; the contract file gets dropped
+            // unless we look for its siblings explicitly.
+            const companions = try module_resolver_mod.findCompanionFiles(resolver.allocator, file_path);
+            defer {
+                for (companions) |c| resolver.allocator.free(c);
+                resolver.allocator.free(companions);
+            }
+            for (companions) |companion_path| {
+                try self.parseAndRegisterSingleFile(companion_path, namespace);
+            }
         }
     }
 
