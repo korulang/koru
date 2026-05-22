@@ -1,0 +1,11 @@
+// Phase 3 captured failing test: private event in .k must be rejected
+// with KORU111. Today the compiler accepts it silently; this test pins
+// the violation until the validator pass lands.
+
+const std = @import("std");
+
+~import "$std/io"
+~import "$app/contract"
+
+~app.contract:compute(x: 42)
+| done v |> std.io:print.ln("{{ v:d }}")

@@ -404,6 +404,16 @@ pub fn build(b: *std.Build) void {
     validate_abstract_impl_module.addImport("errors", errors_module);
     validate_abstract_impl_module.addImport("log", log_module);
 
+    // Validate Contract/Implementation file split module (Phase 3, KORU111)
+    const validate_contract_impl_module = b.createModule(.{
+        .root_source_file = b.path("src/validate_contract_impl.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    validate_contract_impl_module.addImport("ast", ast_module);
+    validate_contract_impl_module.addImport("errors", errors_module);
+    validate_contract_impl_module.addImport("file_types", file_types_module);
+
     // Resolve Abstract/Impl module - renames defaults to .default when overrides exist
     const resolve_abstract_impl_module = b.createModule(.{
         .root_source_file = b.path("src/resolve_abstract_impl.zig"),
@@ -493,6 +503,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("canonicalize_names", canonicalize_names_module);
     exe.root_module.addImport("meta_events", meta_events_module);
     exe.root_module.addImport("validate_abstract_impl", validate_abstract_impl_module);
+    exe.root_module.addImport("validate_contract_impl", validate_contract_impl_module);
     exe.root_module.addImport("resolve_abstract_impl", resolve_abstract_impl_module);
     exe.root_module.addImport("interpreter", interpreter_module);
     exe.root_module.addImport("flow_parser", flow_parser_module);

@@ -1,0 +1,5 @@
+const std = @import("std");
+
+~proc compute|zig {
+    return .{ .done = x + 100 };
+}

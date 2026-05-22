@@ -1,0 +1,12 @@
+// Phase 3 captured failing test: when .k exists, the sibling .kz cannot
+// also declare ~pub event. Today both declarations land (the registry
+// silently drops the duplicate); this test pins KORU111 until the
+// validator pass lands.
+
+const std = @import("std");
+
+~import "$std/io"
+~import "$app/contract"
+
+~app.contract:compute(x: 42)
+| done v |> std.io:print.ln("{{ v:d }}")

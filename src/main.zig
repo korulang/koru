@@ -3592,8 +3592,14 @@ fn loadFileWithCompanions(
             const file = try std.fs.cwd().openFile(file_path, .{});
             defer file.close();
 
+            // Dupe the path into the arena: the parser stores it on reporter.file_name
+            // (and thus on every EventDecl/SourceLocation it produces), so it must
+            // survive for the lifetime of the AST — caller may free the original
+            // immediately after loadFile returns.
+            const file_path_owned = try parse_alloc.dupe(u8, file_path);
+
             const source = try file.readToEndAlloc(parse_alloc, 1024 * 1024);
-            var parser = try Parser.init(parse_alloc, source, file_path, &[_][]const u8{}, null);
+            var parser = try Parser.init(parse_alloc, source, file_path_owned, &[_][]const u8{}, null);
             parser.fail_fast = false;
             defer parser.deinit();
 
@@ -6754,6 +6760,21 @@ pub fn main() !void {
     const meta_events = @import("meta_events");
     try meta_events.injectMetaEvents(parse_allocator, &source_file);
     log.debug("Injected meta-events: koru:start, koru:end\n", .{});
+
+    // Phase 3 KORU111: enforce contract/implementation file split.
+    // Must run BEFORE enforceInvocationVisibility — the structural rule
+    // (private event in .k file is malformed) should fire before the
+    // downstream visibility consequence (call site can't reach private event).
+    // Otherwise users see KORU044 "private event cannot be accessed" when
+    // the real diagnostic is "you shouldn't have declared this event
+    // private inside a .k contract file in the first place."
+    const validate_contract_impl = @import("validate_contract_impl");
+    try validate_contract_impl.validate(source_file.items, &parser.reporter);
+    if (parser.reporter.hasErrors()) {
+        const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+        try parser.reporter.printErrors(stderr_writer);
+        std.process.exit(1);
+    }
 
     // Populate invocation.source_module for visibility enforcement
     try populateInvocationSourceModules(@constCast(source_file.items), parse_allocator, source_file.main_module_name);
