@@ -1,8 +1,10 @@
-# Multi-Host Plan
+# Multi-Variant Plan
 
-A design + implementation plan for making Koru genuinely multi-host at the language and file-system level. Captures decisions from a design conversation on 2026-05-21 so future sessions can execute without reconstructing the rationale.
+A design + implementation plan for making Koru genuinely multi-variant at the language and file-system level. Captures decisions from a design conversation on 2026-05-21 so future sessions can execute without reconstructing the rationale.
 
-**End state:** Koru is a bounded contract (events, flows, types, obligations) that can talk to multiple host languages simultaneously, with file-system organization that reflects which host owns which implementation. Zig is the current default host, but the language stops privileging it at every layer.
+**Naming note (renamed 2026-05-22):** Previously titled "Multi-Host Plan." The framing was wrong — "host" implied different machines, but Zig, C, and GLSL variants all run on the same host (CPU+GPU on one machine is still one host). The real axis is **variants**: multiple implementations of one event contract, possibly differing in host language, possibly differing in target processor, possibly both. "Host language" remains a correct term for the language a variant's body is written in; "multi-host" / "cross-host" / "inter-host" have been replaced by their "-variant" counterparts throughout.
+
+**End state:** Koru is a bounded contract (events, flows, types, obligations) that can talk to multiple host languages simultaneously, with file-system organization that reflects which variant owns which implementation. Zig is the current default host language, but the language stops privileging it at every layer.
 
 ---
 
@@ -14,13 +16,13 @@ What's missing:
 
 - Naked `~proc name { ... }` defaults to "Zig body" implicitly. The language privileges Zig at this layer.
 - All files share a single `.kz` extension. The "this file is Koru with Zig bodies" convention is implicit.
-- Migration between hosts requires polyglot files with Zig and GLSL and JavaScript side by side.
+- Migration between host languages requires polyglot files with Zig and GLSL and JavaScript side by side.
 
 ---
 
 ## Design moves
 
-Four design choices, each independently motivated, in service of the same goal: make Koru's multi-host story load-bearing at every layer instead of opt-in.
+Four design choices, each independently motivated, in service of the same goal: make Koru's multi-variant story load-bearing at every layer instead of opt-in.
 
 ### Move 1: Variant-mandatory (parseable but unresolvable)
 
@@ -31,16 +33,16 @@ Make `~proc name { ... }` (no variant) parseable but **unresolvable**.
 
 **Why:**
 
-- The "default to Zig" pattern hides what's actually happening — the body is in a *host*, and which host is a real choice. Implicit defaults that hide choices are the same shape as Koru's other ceremony rejections: `| name { x: T }` rejected (use `| name T`), solo `| done` branches rejected (use void), mid-chain comments rejected (KORU010). Same principle: when the implicit shortcut hides what's happening, the explicit form is the only legal form.
-- Extends the "branches are equal" principle one level down: no host is privileged. Zig is one host of many.
+- The "default to Zig" pattern hides what's actually happening — the body is in a *host language*, and which host language is a real choice. Implicit defaults that hide choices are the same shape as Koru's other ceremony rejections: `| name { x: T }` rejected (use `| name T`), solo `| done` branches rejected (use void), mid-chain comments rejected (KORU010). Same principle: when the implicit shortcut hides what's happening, the explicit form is the only legal form.
+- Extends the "branches are equal" principle one level down: no host language is privileged. Zig is one variant of many.
 
 **Why parseable-but-unresolvable, not illegal:**
 
-- Reserves the bareword form for a future **universal body language** in pure Koru that compiles to any host. If that ships, `~proc compute { ... }` becomes "the body is in Koru's portable language; emit for any target." The syntactic slot is held now without committing what fills it later.
+- Reserves the bareword form for a future **universal body language** in pure Koru that compiles to any host language. If that ships, `~proc compute { ... }` becomes "the body is in Koru's portable language; emit for any target." The syntactic slot is held now without committing what fills it later.
 
 ### Move 2: Multi-extension file layout
 
-Introduce file extensions that name the host:
+Introduce file extensions that name the host language:
 
 - `.k` — pure Koru. Event declarations, types, obligations. **No proc bodies.**
 - `.kz` — Koru with Zig bodies. As today.
@@ -51,19 +53,19 @@ The convention: K + host-language abbreviation. The parser doesn't care which fi
 
 **Why:**
 
-- The contract has a single source of truth. The `.k` file holds the event signature *once*; each host's implementation lives in its own file. Implementations can't drift from the contract because the contract is one declaration, not many.
+- The contract has a single source of truth. The `.k` file holds the event signature *once*; each host language's implementation lives in its own file. Implementations can't drift from the contract because the contract is one declaration, not many.
 - Migration becomes mechanical. Extract events to `.k`, write a `.kjs` alongside the `.kz`, cross-test, deprecate. Each step is small.
-- Cross-host property testing falls out: `compute|zig` in `compute.kz` and `compute|js` in `compute.kjs` can be fuzzed with the same inputs, equivalence checked.
-- The file extension signals cognitive mode. Opening `foo.kjs` tells you "JavaScript inside braces." Opening `foo.k` tells you "no host, this is the contract."
+- Cross-variant property testing falls out: `compute|zig` in `compute.kz` and `compute|js` in `compute.kjs` can be fuzzed with the same inputs, equivalence checked.
+- The file extension signals cognitive mode. Opening `foo.kjs` tells you "JavaScript inside braces." Opening `foo.k` tells you "no host language, this is the contract."
 
 ### Move 3: Contract uniqueness rule
 
-If a `.k` file in a module declares an event, no sibling host-file in the same module may re-declare the same event.
+If a `.k` file in a module declares an event, no sibling implementation file in the same module may re-declare the same event.
 
 **Why:**
 
 - Enforces "single source of truth for the contract." Without this rule, the `.k` file would be decorative.
-- Composes with Koru's partial-program tenet: an event declared in `.k` with no implementation in any host file is fine, as long as nobody calls it. Migration states are always valid.
+- Composes with Koru's partial-program tenet: an event declared in `.k` with no implementation in any companion file is fine, as long as nobody calls it. Migration states are always valid.
 
 ### Move 4: Migration tool
 
@@ -77,7 +79,7 @@ Ship `koruc make-portable <file.kz>` (or similar): given a `.kz` file, extract a
 
 ## Explicitly deferred
 
-**The universal body language.** Move 1 reserves the syntactic slot for it; Move 2 reserves `.k` as its natural home. **We are NOT implementing it in this work.** It's a much bigger piece for later — a real Koru-native body language that compiles to multiple hosts. The reserved slots make it forward-compatible; nothing in this plan commits to building it.
+**The universal body language.** Move 1 reserves the syntactic slot for it; Move 2 reserves `.k` as its natural home. **We are NOT implementing it in this work.** It's a much bigger piece for later — a real Koru-native body language that compiles to multiple host languages. The reserved slots make it forward-compatible; nothing in this plan commits to building it.
 
 **Inter-variant linking compatibility.** The capability where `foo|c` and `bar|zig` can be auto-linked because they share C ABI, or `foo|js` and `bar|ts` can interop because they share a runtime. Build-step rules for compatible-implementation pairing. Mentioned in the design conversation as something the architecture enables; not in this plan's scope.
 
@@ -93,7 +95,7 @@ Landed on `main` across commits `70905a38` (sweep), `6511e5af` (resolver), `5083
 
 **What shipped:**
 
-- New error code `KORU110` in `src/errors.zig` ("Variant / multi-host" category, gap-filling between `KORU100` binding and the unused-200 range).
+- New error code `KORU110` in `src/errors.zig` ("Variant" category, gap-filling between `KORU100` binding and the unused-200 range).
 - New check in `src/flow_checker.zig` (`validateInvocationResolution` + `checkInvocationVariants`): for each invocation in a flow, walk all `proc_decl`s (top-level + inside `module_decl.items`) matching the path. If at least one matches AND every match has `target == null` → emit `KORU110` with a teaching hint suggesting `|zig`.
 - 1321 bare `~proc` declarations across `koru_std/` + `tests/` + sibling repo `orisha/lib/` tagged with `|zig`. `dist/` excluded (gitignored, regenerates).
 - Two new regression tests under `tests/regression/300_ADVANCED_FEATURES/370_VARIANTS/`: `8211_bare_proc_call_site_fails` (MUST_FAIL + pinned `expected.txt`) and `8212_bare_proc_no_call_site_succeeds` (COMPILE_ONLY, partial-program tenet).
@@ -191,7 +193,7 @@ Back-compat is implicitly proven by the 507 pre-existing `.kz`-only tests contin
 
 The original plan put this under "Phase 3 preconditions" because Phase 3's check needs both files visible to compare them. But the breakage exists today, in Phase 2, regardless of whether Phase 3 ever ships:
 
-- Move 2 promised (line 54): *"The `.k` file holds the event signature once; each host's implementation lives in its own file."* That promise is false today.
+- Move 2 promised (line 54): *"The `.k` file holds the event signature once; each host language's implementation lives in its own file."* That promise is false today.
 - Phase 4's migration tool (`koruc make-portable`) would produce a `helper.k` + `helper.kz` pair as its canonical output. Today that output is silently broken — the `.k` file produces nothing.
 - A test exists for `.k`-only contracts (`140_002_k_pure_contract`, COMPILE_ONLY, partial-program tenet). There is no test for `.k` + `.kz` as a working sibling pair — that's the gap.
 
@@ -214,7 +216,7 @@ Either approach must preserve today's behavior for the common case (only one fil
 
 ### Phase 3: Contract / implementation event location rule
 
-**Refined 2026-05-22** after a design conversation that narrowed the original "no events at all in host files" framing into a pub/private split. The narrower rule preserves subflow ergonomics while still making the public surface of a module a literal file you can read.
+**Refined 2026-05-22** after a design conversation that narrowed the original "no events at all in implementation files" framing into a pub/private split. The narrower rule preserves subflow ergonomics while still making the public surface of a module a literal file you can read.
 
 **The rule (two statements, fire as a pair):**
 
@@ -227,7 +229,7 @@ Either approach must preserve today's behavior for the common case (only one fil
 
 **Why pub/private (vs the original "no events at all" framing):**
 
-- A bare "no events in host file" rule would force all helper events into the public `.k` contract OR force subflows to be inline-only. Both are bad: the contract gets polluted with internal scaffolding, or subflows lose composability.
+- A bare "no events in implementation file" rule would force all helper events into the public `.k` contract OR force subflows to be inline-only. Both are bad: the contract gets polluted with internal scaffolding, or subflows lose composability.
 - The pub/private split lets `.k` stay clean (only public events) while `.kz` keeps its private events for internal subflow plumbing. Implementation expressivity is preserved; public surface is still a literal file you can read.
 
 **Preconditions (must land before Phase 3):**
@@ -263,7 +265,7 @@ The registry fix removes silent masking from below; Phase 2.1's companion loadin
 
 1. **Imports in `.k` for typed payloads.** An event like `~pub event create_user { role: Role }` references a user-defined type. If `Role` lives in another module, `.k` would need to import. The two-rule Phase 3 doesn't restrict imports, so this isn't blocked — but the natural extension is "contracts can import other contracts (other `.k` files)." Defer the decision; cross the bridge when a test demands it.
 2. **What else belongs in `.k`?** The design conversation deliberately narrowed scope to events. Whether `.k` should also be restricted to *only* events (no top-level Zig blocks, no annotations, no module-level constants) is a separate question. Address piecemeal as the need arises.
-3. **Inter-host implementation pairing.** If `.k` + `.kz` + `.kjs` all coexist, and `.kjs` only implements *some* of the events declared in `.k`, that's a partial-program state — still legal, only the uncalled events stay unresolvable per Phase 1's rule. Confirm during implementation that the resolution check handles this gracefully (it should already, since variant resolution is per-call-site).
+3. **Inter-variant implementation pairing.** If `.k` + `.kz` + `.kjs` all coexist, and `.kjs` only implements *some* of the events declared in `.k`, that's a partial-program state — still legal, only the uncalled events stay unresolvable per Phase 1's rule. Confirm during implementation that the resolution check handles this gracefully (it should already, since variant resolution is per-call-site).
 
 ### Phase 4: Migration tool
 
@@ -287,13 +289,13 @@ The registry fix removes silent masking from below; Phase 2.1's companion loadin
 
 Phase-by-phase regression tests as outlined above. The existing variant test suite (`tests/regression/300_ADVANCED_FEATURES/370_VARIANTS/`) is the natural home for Phase 1 additions. Phases 2-3 get a new directory under `tests/regression/100_FILE_LAYOUT/` or similar. Phase 4 lives under tooling tests.
 
-**Cross-host property testing as a capability** falls out of the design but doesn't need its own implementation — once you can declare `compute|zig` and `compute|js` in sibling files, the test framework can already fuzz both with the same inputs and assert output equivalence. No new test infrastructure needed.
+**Cross-variant property testing as a capability** falls out of the design but doesn't need its own implementation — once you can declare `compute|zig` and `compute|js` in sibling files, the test framework can already fuzz both with the same inputs and assert output equivalence. No new test infrastructure needed.
 
 ---
 
 ## Sequencing
 
-1. **Phase 1 first.** Smallest contained change; immediately validates the "variants as primary host axis" framing. Sweep is mechanical but large (~1500 procs); good first session because it's contained and reversible.
+1. **Phase 1 first.** Smallest contained change; immediately validates the "variants as primary axis" framing. Sweep is mechanical but large (~1500 procs); good first session because it's contained and reversible.
 2. **Phase 2 second.** Builds file-discovery infrastructure without requiring Phase 3's semantic rule. Can ship in isolation; multi-file modules with `.k` files become *possible* but not yet *enforced*.
 3. **Phase 2.1 — completion bug.** Companion-file loading. Today the probe-order resolver returns only the first hit (`.kz` beats `.k`), silently dropping any sibling contract file. The `.k` + `.kz` sibling layout the design promised does not actually work. Land the failing test (`140_005_companion_k_and_kz`) first, then teach the loader to load all companion files when they share a stem.
 4. **Phase 3 precondition: registry-collision hygiene.** Turn the silent first-wins skip in `src/type_registry.zig:178-184` into a hard error on unexpected duplicate registration. Fixes a "silent fallback" antipattern. Small standalone commit.
@@ -319,5 +321,5 @@ This plan came out of a design conversation on 2026-05-21 between Lars (language
 Key conversational anchors, in case future-me needs to reconstruct:
 
 - The "AI-first, bordering on AI-native" frame motivates these moves because they push more of Koru's identity into structural choices (file layout, mandatory variants) and out of conventions (Zig as the implicit default).
-- The "branches are equal" principle from this repo's CLAUDE.md ("there is no happy path") extends one level down to "hosts are equal" — Zig is one host of many.
+- The "branches are equal" principle from this repo's CLAUDE.md ("there is no happy path") extends one level down to "variants are equal" — Zig is one variant of many. (Originally framed as "hosts are equal" — see the naming note at the top of this file for why that was reworded.)
 - The partial-program tenet (declared events without implementations compile fine if uncalled) makes the multi-file split and the parseable-but-unresolvable variant rule both ergonomic to migrate into.

@@ -1,6 +1,6 @@
 // Test 8212: Bare ~proc with NO call site compiles (partial-program tenet).
 //
-// Phase 1 of MULTI_HOST_PLAN.md: `~proc name { ... }` (no |variant) is
+// Phase 1 of MULTI_VARIANT_PLAN.md: `~proc name { ... }` (no |variant) is
 // parseable but unresolvable. With zero call sites, the unresolvable proc
 // is dead code — compilation still succeeds because the resolution rule
 // only fires at call sites.
