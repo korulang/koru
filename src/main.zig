@@ -21,6 +21,8 @@ const emit_build_zig = @import("emit_build_zig");
 const PackageRequirementsCollector = @import("package_requires").PackageRequirementsCollector;
 const emit_package_files = @import("emit_package_files");
 const ModuleResolver = @import("module_resolver").ModuleResolver;
+const module_resolver_mod = @import("module_resolver");
+const file_types = @import("file_types");
 const project_template = @import("project_template.zig");
 const Config = @import("config").Config;
 const annotation_parser = @import("annotation_parser");
@@ -935,9 +937,14 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
         // Continue with normal compilation flow
         try writer.writeAll(
             \\    // NOTE: args[1] is the output exe name when called from frontend,
-            \\    // but when running backend directly, args[1] might be the input .kz file.
+            \\    // but when running backend directly, args[1] might be the input Koru source file.
             \\    // Detect this case and default to "a.out" instead of overwriting the source!
-            \\    const output_exe = if (args.len > 1 and !__koru_std.mem.endsWith(u8, args[1], ".kz")) args[1] else "a.out";
+            \\    const output_exe = if (args.len > 1 and
+            \\        !__koru_std.mem.endsWith(u8, args[1], ".kgpu") and
+            \\        !__koru_std.mem.endsWith(u8, args[1], ".kjs") and
+            \\        !__koru_std.mem.endsWith(u8, args[1], ".kz") and
+            \\        !__koru_std.mem.endsWith(u8, args[1], ".kc") and
+            \\        !__koru_std.mem.endsWith(u8, args[1], ".k")) args[1] else "a.out";
             \\
             \\    // Apply compiler passes
             \\    // Each pass takes PROGRAM_AST pointer and current AST pointer
@@ -2796,9 +2803,14 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
         \\
         \\    const emitted_file = "output_emitted.zig";
         \\    // NOTE: args[1] is the output exe name when called from frontend,
-        \\    // but when running backend directly, args[1] might be the input .kz file.
+        \\    // but when running backend directly, args[1] might be the input Koru source file.
         \\    // Detect this case and default to "a.out" instead of overwriting the source!
-        \\    const output_exe = if (args.len > 1 and !__koru_std.mem.endsWith(u8, args[1], ".kz")) args[1] else "a.out";
+        \\    const output_exe = if (args.len > 1 and
+        \\        !__koru_std.mem.endsWith(u8, args[1], ".kgpu") and
+        \\        !__koru_std.mem.endsWith(u8, args[1], ".kjs") and
+        \\        !__koru_std.mem.endsWith(u8, args[1], ".kz") and
+        \\        !__koru_std.mem.endsWith(u8, args[1], ".kc") and
+        \\        !__koru_std.mem.endsWith(u8, args[1], ".k")) args[1] else "a.out";
         \\
         \\    var actual_len: usize = generated_code.len;
         \\    while (actual_len > 0 and generated_code[actual_len - 1] == 0) {
@@ -3186,9 +3198,9 @@ fn deriveCanonicalName(allocator: std.mem.Allocator, import_path: []const u8) ![
         }
     }
 
-    // Remove .kz extension if present
-    const without_ext = if (std.mem.endsWith(u8, path_to_convert, ".kz"))
-        path_to_convert[0 .. path_to_convert.len - 3]
+    // Remove Koru extension if present
+    const without_ext = if (file_types.koruExtensionOf(path_to_convert)) |ext|
+        path_to_convert[0 .. path_to_convert.len - ext.len]
     else
         path_to_convert;
 
@@ -3217,6 +3229,32 @@ fn deriveCanonicalName(allocator: std.mem.Allocator, import_path: []const u8) ![
     }
 }
 
+/// Probe each Koru extension on `stem` (an alias-prefixed module path stem
+/// like "$std/io" or "$std/index"). Returns the first stem+extension that
+/// resolves to an existing file through the resolver, or null. Caller owns
+/// the returned path string.
+fn probeImportExtensions(
+    allocator: std.mem.Allocator,
+    resolver: *ModuleResolver,
+    stem: []const u8,
+    base_file: []const u8,
+) !?[]u8 {
+    for (file_types.koru_extensions) |ext| {
+        const candidate = try std.fmt.allocPrint(allocator, "{s}{s}", .{ stem, ext });
+        var maybe = resolver.resolveBoth(candidate, base_file) catch |err| {
+            allocator.free(candidate);
+            if (err == error.ModuleNotFound) continue;
+            return err;
+        };
+        defer maybe.deinit(allocator);
+        if (maybe.file_path != null) {
+            return candidate;
+        }
+        allocator.free(candidate);
+    }
+    return null;
+}
+
 /// Queue parent imports for aliased paths.
 /// For "$std/io/file" this queues "$std/io" as an additional import.
 /// This enables parent module utilities to be available when importing submodules.
@@ -3242,26 +3280,18 @@ fn queueParentImports(
     if (subpath.len == 0) return;
     const last_slash = std.mem.lastIndexOf(u8, subpath, "/") orelse return;
 
-    // Build parent path: $alias/parent.kz (e.g., "$std/io.kz" from "$std/io/file")
-    // Append .kz to ensure we only import the FILE, not the directory (which would include submodules)
+    // Build parent stem and probe each Koru extension (e.g., $std/io.kz,
+    // $std/io.kjs, ...). Append an extension so we only consider the FILE,
+    // not the directory (which would include submodules). First hit wins.
     const parent_subpath = subpath[0..last_slash];
-    const parent_path = try std.fmt.allocPrint(allocator, "{s}/{s}.kz", .{ alias, parent_subpath });
-    defer allocator.free(parent_path);
+    const parent_stem = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ alias, parent_subpath });
+    defer allocator.free(parent_stem);
 
-    // Check if parent file actually exists before queueing
-    var resolved = resolver.resolveBoth(parent_path, base_file) catch |err| {
-        if (err == error.ModuleNotFound) {
-            // Parent file doesn't exist - that's fine, skip it silently
-            return;
-        }
-        return err;
-    };
-    defer resolved.deinit(allocator);
-
-    // Only queue if there's actually a file to import
-    if (resolved.file_path == null) {
+    const parent_path = (try probeImportExtensions(allocator, resolver, parent_stem, base_file)) orelse {
+        // No parent file exists for any Koru extension — fine, skip silently.
         return;
-    }
+    };
+    defer allocator.free(parent_path);
 
     // Build namespace for parent: alias.parent (e.g., "std.io")
     const alias_name = alias[1..]; // Remove $
@@ -3317,31 +3347,29 @@ fn queueIndexImport(
     const slash_pos = std.mem.indexOf(u8, import_path, "/") orelse return;
     const alias = import_path[0..slash_pos]; // e.g., "$std"
 
-    // Build index path: $alias/index.kz
-    const index_path = try std.fmt.allocPrint(allocator, "{s}/index.kz", .{alias});
+    // Build index stem and probe each Koru extension ($alias/index.kz,
+    // $alias/index.kjs, ...). First hit wins.
+    const index_stem = try std.fmt.allocPrint(allocator, "{s}/index", .{alias});
+    defer allocator.free(index_stem);
+
+    const index_path = (try probeImportExtensions(allocator, resolver, index_stem, base_file)) orelse {
+        // No index file exists for any Koru extension — fine, skip silently.
+        return;
+    };
     defer allocator.free(index_path);
 
-    // Check if index.kz actually exists before queueing
-    var resolved = resolver.resolveBoth(index_path, base_file) catch |err| {
-        if (err == error.ModuleNotFound) {
-            // index.kz doesn't exist - that's fine, skip it silently
-            return;
-        }
-        return err;
-    };
+    // Re-resolve to get the canonical file path for the entry-file dedup check.
+    var resolved = try resolver.resolveBoth(index_path, base_file);
     defer resolved.deinit(allocator);
-
-    // Only queue if there's actually a file to import
-    if (resolved.file_path == null) {
-        return;
-    }
 
     // CRITICAL: Don't queue if the resolved file is the entry file itself!
     // This prevents the main file from being imported as a module when it
     // imports something from its own namespace (e.g., $orisha/router from src/index.kz)
-    if (std.mem.eql(u8, resolved.file_path.?, entry_file)) {
-        log.debug("AUTO-IMPORT: Skipping index '{s}' (same as entry file)\n", .{resolved.file_path.?});
-        return;
+    if (resolved.file_path) |fp| {
+        if (std.mem.eql(u8, fp, entry_file)) {
+            log.debug("AUTO-IMPORT: Skipping index '{s}' (same as entry file)\n", .{fp});
+            return;
+        }
     }
 
     // Namespace is just the alias name (e.g., "std")
@@ -3400,10 +3428,15 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
                     continue;
                 }
 
-                // Skip index.kz - it represents the directory itself, not a submodule
-                // The directory's source_file is populated from index.kz separately
-                if (std.mem.eql(u8, std.fs.path.basename(file_path), "index.kz")) {
-                    log.debug("SUBMODULE: Skipping index.kz '{s}' (loaded as directory source)\n", .{file_path});
+                // Skip index.<ext> - it represents the directory itself, not a submodule.
+                // The directory's source_file is populated from the index file separately.
+                const submod_basename = std.fs.path.basename(file_path);
+                const is_index = if (file_types.koruExtensionOf(submod_basename)) |ext|
+                    std.mem.eql(u8, submod_basename[0 .. submod_basename.len - ext.len], "index")
+                else
+                    false;
+                if (is_index) {
+                    log.debug("SUBMODULE: Skipping index file '{s}' (loaded as directory source)\n", .{file_path});
                     continue;
                 }
 
@@ -3435,8 +3468,8 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
                 }
 
                 const basename = std.fs.path.basename(file_path);
-                const submod_name = if (std.mem.endsWith(u8, basename, ".kz"))
-                    basename[0 .. basename.len - 3]
+                const submod_name = if (file_types.koruExtensionOf(basename)) |ext|
+                    basename[0 .. basename.len - ext.len]
                 else
                     basename;
 
@@ -3523,31 +3556,28 @@ fn processImport(allocator: std.mem.Allocator, parse_allocator: std.mem.Allocato
 
         const submodules = try loadSubmodules(allocator, parse_allocator, resolver, resolved.dir_path.?, entry_file);
 
-        // FIX: Load index.kz content for the directory's source_file
-        // Previously this was empty, causing flow arguments (like Source blocks) to be lost
-        const index_path = try std.fs.path.join(allocator, &.{ resolved.dir_path.?, "index.kz" });
+        // FIX: Load index.<ext> content for the directory's source_file.
+        // Previously this was empty, causing flow arguments (like Source blocks) to be lost.
+        // Phase 2: probe all Koru extensions so .kjs/.k/etc. projects can have
+        // their own index.<ext> file.
+        const maybe_index_path = try module_resolver_mod.resolveKoruFileIn(allocator, resolved.dir_path.?, "index");
+        if (maybe_index_path == null) {
+            // No index file - use empty source_file (original behavior)
+            log.debug("  No index.<ext> file found in directory\n", .{});
+            return ImportedModule{
+                .logical_name = module_name,
+                .canonical_path = try allocator.dupe(u8, resolved.dir_path.?),
+                .public_events = &.{},
+                .source_file = .{ .items = &.{}, .module_annotations = &.{}, .main_module_name = try parse_allocator.dupe(u8, module_name), .allocator = parse_allocator },
+                .is_directory = true,
+                .submodules = submodules,
+            };
+        }
+        const index_path = maybe_index_path.?;
         defer allocator.free(index_path);
 
-        // Check if index.kz exists and load it
-        const index_file = std.fs.cwd().openFile(index_path, .{}) catch |err| {
-            if (err == error.FileNotFound) {
-                // No index.kz - use empty source_file (original behavior)
-                log.debug("  No index.kz found in directory\n", .{});
-                return ImportedModule{
-                    .logical_name = module_name,
-                    .canonical_path = try allocator.dupe(u8, resolved.dir_path.?),
-                    .public_events = &.{},
-                    .source_file = .{ .items = &.{}, .module_annotations = &.{}, .main_module_name = try parse_allocator.dupe(u8, module_name), .allocator = parse_allocator },
-                    .is_directory = true,
-                    .submodules = submodules,
-                };
-            }
-            return err;
-        };
-        index_file.close();
-
-        // index.kz exists - parse it and use its content
-        log.debug("  Loading index.kz from directory: {s}\n", .{index_path});
+        // index file exists - parse it and use its content
+        log.debug("  Loading index file from directory: {s}\n", .{index_path});
         const index_data = try loadFile(allocator, parse_allocator, index_path);
 
         return ImportedModule{

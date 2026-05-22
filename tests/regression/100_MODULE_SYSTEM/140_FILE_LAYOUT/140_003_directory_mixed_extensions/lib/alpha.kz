@@ -1,0 +1,10 @@
+// Sibling 1: standard .kz file.
+
+const std = @import("std");
+
+~pub event greet_alpha {}
+| spoken []const u8
+
+~proc greet_alpha|zig {
+    return .{ .spoken = "alpha (kz)" };
+}

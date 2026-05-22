@@ -116,58 +116,70 @@ Landed on `main` across commits `70905a38` (sweep), `6511e5af` (resolver), `5083
 3. **MUST_FAIL form-under-test is sacrosanct.** `tests/regression/000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_012_reject_pub_proc` exists to verify `~pub proc` is rejected. The sweep mechanically tagged it `~pub proc greet|zig {`, then `expected.txt` was refreshed to match — the test kept passing but no longer exercised the form it claimed to. Restored. Captured in memory as `feedback_must_fail_sweep_exclusion.md`. Next sweep must skip MUST_FAIL files whose target line is the rejected form.
 4. **Sibling-repo sweep needed too.** `~/src/orisha/lib/` had bare procs the koru sweep couldn't reach. Always cross-check sibling repos when koru regression tests import them (e.g. `350_*` orisha router tests).
 
-### Phase 2: Multi-extension file discovery
+### Phase 2: Multi-extension file discovery — **LANDED 2026-05-22**
 
-**Scope:** teach the resolver and file-discovery layer about `.k`, `.kjs`, `.kc`, etc. The parser itself does not change.
+Landed on branch `phase-2-multi-extension`. Final suite state: **511/544 in-scope passing (93.9%)**, identical failure count to pre-Phase-2 baseline (22 pre-existing failures, none introduced; +4 new tests under `100_MODULE_SYSTEM/140_FILE_LAYOUT/`).
 
-Plan refined 2026-05-22 after verifying all referenced line numbers against current `main`. Open in a fresh session — Phase 1 is fully landed; this is the next coherent piece.
+**What shipped:**
 
-**Code changes:**
-
-- New `src/file_types.zig`: ~20-line module with the canonical extension list and two helpers.
+- New `src/file_types.zig` (~60 lines including 4 unit tests). Canonical extension list — longest-first ordering for greedy matching:
   ```zig
-  // Longest-first ordering so .kgpu matches before .k for greedy detection.
   pub const koru_extensions = [_][]const u8{ ".kgpu", ".kjs", ".kz", ".kc", ".k" };
   pub fn isKoruFile(name: []const u8) bool;
-  pub fn koruExtensionOf(name: []const u8) ?[]const u8;  // returns the matching ext slice or null
+  pub fn koruExtensionOf(name: []const u8) ?[]const u8;  // longest-first match
   ```
-  Hardcoded list — expand as new hosts are added. Avoid adding `config.zig` coupling; keep this as a pure module.
+  Hardcoded list — pure module, no `config.zig` coupling. Wired into `build.zig` with its own `file_extension_tests` target (the name `file_types_tests` was already taken by an unrelated File/EmbedFile AST test).
 
-- **`src/module_resolver.zig`** — new helper `resolveKoruFile(allocator, base_path) !?[]const u8` that consolidates the existing inline "needs_ext / allocPrint / access" dance:
-  - If `base_path` already has a Koru extension, `access()` it; return resolved path or null.
-  - Otherwise iterate `koru_extensions`, `access()` each candidate, return the first that exists.
-  - Caller decides how to handle null (set `result.file_path` or skip).
+- **`src/module_resolver.zig`** — two new helpers consolidate the previous "needs_ext / allocPrint / access" dance:
+  - `pub fn resolveKoruFile(allocator, base_path) !?[]u8` — probes Koru extensions on an absolute path.
+  - `pub fn resolveKoruFileIn(allocator, base, name) !?[]u8` — probes extensions for `<base>/<name>`.
 
-  Then swap the 8 callsites (all verified at these exact lines on `main` as of 2026-05-22):
+  All 8 callsites swapped (verified line numbers held). The line 601-606 absolute-path branch now does an `access()` it didn't before — old behavior was "blindly append `.kz` and return without checking" which masked broken imports as downstream file-open errors. Now returns `error.ModuleNotFound` cleanly.
 
-  | Line | Current shape | Notes |
-  |------|---------------|-------|
-  | 276  | `if (!endsWith(entry.name, ".kz")) continue;` | Directory enum filter; change to `if (!isKoruFile(entry.name)) continue;` |
-  | 369-384 | needs_ext + access + set file_path | Replace block with `resolveKoruFile` call |
-  | 429-434 | needs_ext + access (inside `checkBoth` closure) | Same swap |
-  | 561-... | needs_ext + access | Same swap |
-  | 601-606 | **No access check today** — just appends `.kz` and returns | Multi-extension forces adding an `access()` here. Adds one stat() per absolute-path import. Acceptable cost. |
-  | 633-657 | needs_ext + access | Same swap |
-  | 686-710 | needs_ext + access | Same swap |
-  | 737-... | needs_ext + access | Same swap |
+- **`src/parser.zig`** — 4 sites (plan undercounted by 2): the original 357 and 7018, plus the parallel block at 7030 (non-aliased import namespace) and 7081 (directory enumeration). All swap `endsWith(basename, ".kz")` → `koruExtensionOf(basename)` with `basename[0..basename.len - ext.len]`.
 
-- **`src/parser.zig`**:
-  - Line 357: replace `if (endsWith(basename, ".kz")) { name_without_ext = basename[0..len-3]; }` with `if (koruExtensionOf(basename)) |ext| { name_without_ext = basename[0..basename.len - ext.len]; }`.
-  - Line 7016: same swap inside the namespace-builder block.
+- **`src/main.zig`** — 6 sites (plan listed 5):
+  - Lines 945-950, 2806-2811 (was 938-940, 2799-2801): embedded raw Zig string literals emit a multi-line `endsWith` OR chain across all five Koru extensions. The generated backend binary must recognize Koru source files independently of the compiler.
+  - Line 3190: `koruExtensionOf` swap.
+  - Line 3245-3248 (the flagged wrinkle for parent_path) — strategy chosen: probe each extension at the caller via new `probeImportExtensions` helper.
+  - Line 3321 (`index_path` builder for auto-import) — same wrinkle, same strategy.
+  - Line 3405 (basename eql `"index.kz"` in submodule enumeration) — replaced with a stripped-basename equality check using `koruExtensionOf`.
+  - Line 3438: `koruExtensionOf` swap for `submod_name`.
+  - Line 3528 (loading `<dir>/index.kz` as the directory's source) — swapped to `resolveKoruFileIn(allocator, dir, "index")`.
 
-- **`src/main.zig`**:
-  - Lines 938, 940, 2799, 2801: replace `endsWith(args[1], ".kz")` (inside raw Zig string literals `\\`) with `isKoruFile(args[1])`. Note these are embedded in emitted Zig — the generated binary must also know about extensions.
-  - Line 3189-3190: `if (endsWith(path_to_convert, ".kz"))` → use `koruExtensionOf`.
-  - **Plan addition (not in original):** lines 3245-3248 build `parent_path` by appending `.kz` literally (e.g. `$std/io.kz` from `$std/io/file`). This needs to preserve the parent's actual extension. Strategy: try each extension at this site too, or first lookup the parent file's existing extension via filesystem. TBD during implementation.
+- **Generator updates** (Phase 2 also touches the metacircular build emission). 6 places emit `build_backend.zig`-shaped code that declares the koru `src/` modules; each gained a `file_types_module` declaration and an `addImport("file_types", file_types_module)` on both `module_resolver_module` and `parser_module`:
+  - `koru_std/build.zig`
+  - `koru_std/build_backend.zig`
+  - `koru_std/compiler.kz`
+  - `koru_std/parser.kz`
+  - `koru_std/interpreter.kz`
+  - `koru_std/backend.zig` (the embedded `\\`-prefixed string template)
 
-**Estimated diff:** 80-100 lines net (down from inline-block count since `resolveKoruFile` consolidates 7 sites). Mechanical aside from the lines 3245-3248 nuance. No semantic changes elsewhere — the parser remains extension-agnostic.
+  Missing this is what broke ~470 tests on the first build — the koruc compiler itself compiled fine, but every test's metacircular backend compilation failed with `no module named 'file_types' available within module 'parser'`. The 6-generator update brought the pass rate back to baseline + 4.
 
-**Tests** (new directory `tests/regression/100_FILE_LAYOUT/`):
+**Tests (`tests/regression/100_MODULE_SYSTEM/140_FILE_LAYOUT/`):**
 
-- `SUCCESS`: module directory with `foo.kz` + `bar.kjs` resolves both files.
-- `SUCCESS`: `~import "foo"` slurps all sibling `.k*` files when `foo/` is a directory.
-- `SUCCESS`: a project with only `.kz` files keeps working identically (back-compat).
-- (Add as discovered:) regression for the absolute-path stat() addition at line 601, and for the parent-path nuance at lines 3245-3248.
+The plan suggested top-level `100_FILE_LAYOUT/` but `100_` was already taken — placed under `100_MODULE_SYSTEM/140_FILE_LAYOUT/` to keep related discovery tests together.
+
+- `140_001_kjs_extension_import` — `.kjs` helper resolves as a sibling import (the analog of `110_001_file_import_basic`).
+- `140_002_k_pure_contract` — `.k` file with only event declarations; COMPILE_ONLY (partial-program tenet).
+- `140_003_directory_mixed_extensions` — directory containing both `alpha.kz` and `beta.kjs`; both load, both events emit output.
+- `140_004_index_kjs_directory_source` — directory whose source file is `index.kjs` instead of `index.kz`; resolves correctly.
+
+Back-compat is implicitly proven by the 507 pre-existing `.kz`-only tests continuing to pass through the new code paths.
+
+**Decisions made during implementation:**
+
+- **Probe order = match order.** Used the same longest-first ordering (`.kgpu, .kjs, .kz, .kc, .k`) for both extension recognition AND file-system probing. A separate probe order biased toward `.kz` would save 2 wasted stat() calls per legacy import, but adds dual-ordering complexity. The 2 stat() calls are negligible compared to actual file parsing; revisit only if profiling demands it.
+- **Absolute-path resolution now fails loudly.** Old `resolve()` blindly returned the path with `.kz` appended without checking; downstream file-open errors hid the bad import. New behavior returns `error.ModuleNotFound` at resolution time, matching how other paths fail.
+- **Probe-via-resolver helper lives in `main.zig`.** `probeImportExtensions` takes an alias-prefixed stem (`$std/io`) and tries each extension through `resolver.resolveBoth`. Distinct from `resolveKoruFile`/`resolveKoruFileIn` which operate on filesystem paths directly. Different layers, different helpers.
+- **Index-file probing extends to all sites.** `queueIndexImport` (3321), the submodule-enumeration skip (3405), and the directory-source loader (3528) all now know that `index.<ext>` may use any Koru extension, not just `.kz`. The `index` convention is now multi-extension-aware end-to-end.
+
+**Followup lessons learned (read before any future addImport-style sweep):**
+
+1. **Generator sweep must accompany source sweep.** Anything that adds a new module to `src/` must also propagate the declaration through all 6 metacircular generators. The compiler itself building successfully says nothing about whether per-test backend compilation will succeed. Always run at least one regression test after a module addition before declaring the build clean.
+2. **Plan-quoted line tables undercount.** The plan listed 8 + 2 + 5 = 15 sites; reality was 8 + 4 + 6 = 18. `grep -nE '"\.kz"|endsWith.*\.kz'` over the three files immediately surfaced the extras. Always grep before trusting a line-number table from a prior session.
+3. **`index.kz` is a third-class identifier alongside `endsWith(".kz")`.** The literal string `"index.kz"` appears in basename equality checks and `allocPrint` calls; pure regex sweeps for `\.kz` miss them. Grep both `\.kz` and `index\.kz` patterns.
 
 ### Phase 3: Contract uniqueness rule
 

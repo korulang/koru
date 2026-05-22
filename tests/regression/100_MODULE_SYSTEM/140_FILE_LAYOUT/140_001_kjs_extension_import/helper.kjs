@@ -1,0 +1,12 @@
+// Helper module sitting in a .kjs file. Phase 2 file-discovery should
+// resolve `~import "$app/helper"` to this file just as it would for
+// `helper.kz`.
+
+const std = @import("std");
+
+~pub event greet { name: []const u8 }
+| greeted []const u8
+
+~proc greet|zig {
+    return .{ .greeted = "Hello!" };
+}
