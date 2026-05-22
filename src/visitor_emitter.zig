@@ -257,6 +257,14 @@ pub const VisitorEmitter = struct {
     module_runtime_flows: std.ArrayList([]const u8),  // Collected runtime flow calls from library modules
     koru_start_flow_name: ?[]const u8,  // Name of koru:start meta-event flow (if present)
     koru_end_flow_name: ?[]const u8,    // Name of koru:end meta-event flow (if present)
+    /// Default variant for proc-body emission. When no explicit build:variants
+    /// registration exists for an event, the proc whose `target` matches this
+    /// string is the one emitted. Default `"zig"` so existing call sites in
+    /// koru_std (user-space compiler code that constructs a VisitorEmitter
+    /// without setting this field) keep their current behavior. Koruc's own
+    /// callers assign `visitor_emitter.lang = config.lang` after init.
+    /// Variant-tag namespace ("zig", "js", "gpu", ...).
+    lang: []const u8 = "zig",
 
     const ComptimeFlowCall = struct {
         call_path: []const u8,
@@ -309,6 +317,8 @@ pub const VisitorEmitter = struct {
             .module_runtime_flows = .empty,
             .koru_start_flow_name = null,  // Will be set if koru:start flow is emitted
             .koru_end_flow_name = null,    // Will be set if koru:end flow is emitted
+            // `.lang` intentionally omitted — uses the struct default `"zig"`.
+            // Koruc's own callers assign `lang = config.lang` after init.
         };
     }
 
@@ -1646,7 +1656,7 @@ pub const VisitorEmitter = struct {
                         }
                         if (path_matches) {
                             if (proc.target) |target| {
-                                if (!eql(u8, target, "zig")) continue;
+                                if (!eql(u8, target, self.lang)) continue;
                             }
                             // Emit the proc as _default_handler (before handler function)
                             try self.code_emitter.writeIndent();
@@ -2181,8 +2191,9 @@ pub const VisitorEmitter = struct {
                                     // Variant registered: only use the proc that matches
                                     if (!eql(u8, target, rv)) continue;
                                 } else {
-                                    // No variant registered: only use zig/default
-                                    if (!eql(u8, target, "zig")) continue;
+                                    // No variant registered: only use the default lang
+                                    // (configured via `--lang=<name>`, defaults to "zig").
+                                    if (!eql(u8, target, self.lang)) continue;
                                 }
                             } else {
                                 // proc.target == null (bare proc): skip if a specific variant was registered
@@ -2794,11 +2805,17 @@ pub const VisitorEmitter = struct {
         for (items_to_search) |impl_item| {
             switch (impl_item) {
                 .proc_decl => |proc| {
-                    // Only emit handlers for Zig variant procs (target != null and target != "zig")
+                    // Only emit handlers for variant procs whose target differs from
+                    // the default lang. The default-lang proc was already emitted as
+                    // the main handler above, so skip it here.
                     if (proc.target) |target| {
-                        if (eql(u8, target, "zig")) continue;
+                        if (eql(u8, target, self.lang)) continue;
                         // Foreign-language targets are only safe to emit when explicitly
                         // selected via build:variants (their bodies aren't valid Zig).
+                        // TODO(js-emitter): this list is correct only when self.lang == "zig".
+                        // When a non-Zig backend is the default, "foreign" should mean
+                        // "any variant whose body isn't valid in self.lang." Address in
+                        // Move 3 once the JS emitter is real.
                         const foreign_targets = [_][]const u8{ "gpu", "js", "python", "wasm", "glsl" };
                         var is_foreign = false;
                         for (foreign_targets) |ft| {
