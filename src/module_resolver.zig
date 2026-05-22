@@ -1,6 +1,52 @@
 const std = @import("std");
 const log = @import("log");
 const Config = @import("config").Config;
+const file_types = @import("file_types");
+
+
+/// Try to resolve `base_path` to an existing Koru file on disk.
+///
+/// If `base_path` already has a Koru extension (.k/.kz/.kjs/.kc/.kgpu),
+/// check whether that exact file exists. Otherwise, probe each Koru
+/// extension in canonical (longest-first) order and return the first hit.
+///
+/// Returns an owned, canonicalized path on success, or null if no candidate
+/// exists. Caller owns the result and must free it.
+pub fn resolveKoruFile(allocator: std.mem.Allocator, base_path: []const u8) !?[]u8 {
+    if (file_types.isKoruFile(base_path)) {
+        std.fs.cwd().access(base_path, .{}) catch return null;
+        return try std.fs.path.resolve(allocator, &[_][]const u8{base_path});
+    }
+    for (file_types.koru_extensions) |ext| {
+        const candidate = try std.fmt.allocPrint(allocator, "{s}{s}", .{ base_path, ext });
+        defer allocator.free(candidate);
+        std.fs.cwd().access(candidate, .{}) catch continue;
+        return try std.fs.path.resolve(allocator, &[_][]const u8{candidate});
+    }
+    return null;
+}
+
+/// As `resolveKoruFile`, but joins `base` and `name` first. `name` may or
+/// may not already carry a Koru extension.
+///
+/// Returns an owned, canonicalized path on success, or null. Caller owns.
+pub fn resolveKoruFileIn(allocator: std.mem.Allocator, base: []const u8, name: []const u8) !?[]u8 {
+    if (file_types.isKoruFile(name)) {
+        const candidate = try std.fs.path.join(allocator, &[_][]const u8{ base, name });
+        defer allocator.free(candidate);
+        std.fs.cwd().access(candidate, .{}) catch return null;
+        return try std.fs.path.resolve(allocator, &[_][]const u8{candidate});
+    }
+    for (file_types.koru_extensions) |ext| {
+        const name_with_ext = try std.fmt.allocPrint(allocator, "{s}{s}", .{ name, ext });
+        defer allocator.free(name_with_ext);
+        const candidate = try std.fs.path.join(allocator, &[_][]const u8{ base, name_with_ext });
+        defer allocator.free(candidate);
+        std.fs.cwd().access(candidate, .{}) catch continue;
+        return try std.fs.path.resolve(allocator, &[_][]const u8{candidate});
+    }
+    return null;
+}
 
 
 /// ModuleResolver handles finding and loading Koru modules from various locations
@@ -273,9 +319,9 @@ pub const ModuleResolver = struct {
         var iter = dir.iterate();
         while (try iter.next()) |entry| {
             if (entry.kind != .file) continue;
-            if (!std.mem.endsWith(u8, entry.name, ".kz")) continue;
+            if (!file_types.isKoruFile(entry.name)) continue;
 
-            // Build full path: dir_path/file.kz
+            // Build full path: dir_path/file.<ext>
             const full_path = try std.fs.path.join(
                 self.allocator,
                 &[_][]const u8{ dir_path, entry.name }
@@ -365,23 +411,12 @@ pub const ModuleResolver = struct {
                         found_something = true;
                     }
 
-                    // Check file
-                    const needs_ext = !std.mem.endsWith(u8, absolute_path, ".kz");
-                    const path_with_ext = if (needs_ext)
-                        try std.fmt.allocPrint(self.allocator, "{s}.kz", .{absolute_path})
-                    else
-                        try self.allocator.dupe(u8, absolute_path);
-                    defer self.allocator.free(path_with_ext);
-
-                    if (std.fs.cwd().access(path_with_ext, .{})) |_| {
-                        const file_resolved = try std.fs.path.resolve(
-                            self.allocator,
-                            &[_][]const u8{path_with_ext}
-                        );
+                    // Check file (probe all Koru extensions if base doesn't carry one)
+                    if (try resolveKoruFile(self.allocator, absolute_path)) |file_resolved| {
                         result.file_path = file_resolved;
                         log.debug("    ✓ FOUND file: {s}\n", .{file_resolved});
                         found_something = true;
-                    } else |_| {}
+                    }
 
                     // If we found something at this fallback path, return it
                     if (found_something) {
@@ -425,26 +460,12 @@ pub const ModuleResolver = struct {
                     found_any = true;
                 }
 
-                // Check file
-                const needs_ext = !std.mem.endsWith(u8, import, ".kz");
-                const path_with_ext = if (needs_ext)
-                    try std.fmt.allocPrint(alloc, "{s}.kz", .{import})
-                else
-                    try alloc.dupe(u8, import);
-                defer alloc.free(path_with_ext);
-
-                const file_candidate = try std.fs.path.join(
-                    alloc,
-                    &[_][]const u8{ base, path_with_ext }
-                );
-                defer alloc.free(file_candidate);
-
-                if (std.fs.cwd().access(file_candidate, .{})) |_| {
-                    const resolved = try std.fs.path.resolve(alloc, &[_][]const u8{file_candidate});
+                // Check file (probe all Koru extensions if import doesn't carry one)
+                if (try resolveKoruFileIn(alloc, base, import)) |resolved| {
                     res.file_path = resolved;
                     log.debug("      ✓ FOUND file: {s}\n", .{resolved});
                     found_any = true;
-                } else |_| {}
+                }
 
                 return found_any;
             }
@@ -558,22 +579,11 @@ pub const ModuleResolver = struct {
                         return resolved;
                     }
 
-                    // Check if it's a file (add .kz if needed)
-                    const needs_ext = !std.mem.endsWith(u8, absolute_path, ".kz");
-                    const path_with_ext = if (needs_ext)
-                        try std.fmt.allocPrint(self.allocator, "{s}.kz", .{absolute_path})
-                    else
-                        try self.allocator.dupe(u8, absolute_path);
-                    defer self.allocator.free(path_with_ext);
-
-                    if (std.fs.cwd().access(path_with_ext, .{})) |_| {
-                        const resolved = try std.fs.path.resolve(
-                            self.allocator,
-                            &[_][]const u8{path_with_ext}
-                        );
+                    // Check if it's a file (probe all Koru extensions if base doesn't carry one)
+                    if (try resolveKoruFile(self.allocator, absolute_path)) |resolved| {
                         log.debug("    ✓ FOUND file: {s}\n", .{resolved});
                         return resolved;
-                    } else |_| {
+                    } else {
                         log.debug("    ✗ Not found, trying next fallback...\n", .{});
                     }
                 }
@@ -598,12 +608,13 @@ pub const ModuleResolver = struct {
             if (isDirectory(resolved_import_path)) {
                 return try self.allocator.dupe(u8, resolved_import_path);
             }
-            // Otherwise add .kz extension if needed
-            const needs_ext = !std.mem.endsWith(u8, resolved_import_path, ".kz");
-            if (needs_ext) {
-                return try std.fmt.allocPrint(self.allocator, "{s}.kz", .{resolved_import_path});
+            // Probe for an existing Koru file (any extension). Phase 2 adds
+            // one stat() per absolute-path import that previously had none —
+            // the old code blindly appended .kz without checking.
+            if (try resolveKoruFile(self.allocator, resolved_import_path)) |resolved| {
+                return resolved;
             }
-            return try self.allocator.dupe(u8, resolved_import_path);
+            return error.ModuleNotFound;
         }
         
         // 2. Try relative to the importing file
@@ -630,30 +641,13 @@ pub const ModuleResolver = struct {
                 log.debug("    ✗ Not a directory\n", .{});
             }
 
-            // Try as file - add .kz extension only if not already present
-            const needs_ext = !std.mem.endsWith(u8, resolved_import_path, ".kz");
-            const path_with_ext = if (needs_ext)
-                try std.fmt.allocPrint(self.allocator, "{s}.kz", .{resolved_import_path})
-            else
-                try self.allocator.dupe(u8, resolved_import_path);
-            defer self.allocator.free(path_with_ext);
-
-            const file_candidate = try std.fs.path.join(
-                self.allocator,
-                &[_][]const u8{ base_dir, path_with_ext }
-            );
-            defer self.allocator.free(file_candidate);
-
-            log.debug("    Checking file: {s}\n", .{file_candidate});
-            if (std.fs.cwd().access(file_candidate, .{})) |_| {
-                const resolved = try std.fs.path.resolve(
-                    self.allocator,
-                    &[_][]const u8{file_candidate}
-                );
+            // Try as file (probe all Koru extensions if import doesn't carry one)
+            log.debug("    Checking file in: {s}\n", .{base_dir});
+            if (try resolveKoruFileIn(self.allocator, base_dir, resolved_import_path)) |resolved| {
                 log.debug("    ✓ FOUND file: {s}\n", .{resolved});
                 return resolved;
-            } else |err| {
-                log.debug("    ✗ Not found: {}\n", .{err});
+            } else {
+                log.debug("    ✗ Not found\n", .{});
             }
         } else {
             log.debug("    (skipped - no base file)\n", .{});
@@ -683,30 +677,13 @@ pub const ModuleResolver = struct {
                 log.debug("      ✗ Not a directory\n", .{});
             }
 
-            // Try file - add .kz extension only if not already present
-            const needs_ext = !std.mem.endsWith(u8, resolved_import_path, ".kz");
-            const path_with_ext = if (needs_ext)
-                try std.fmt.allocPrint(self.allocator, "{s}.kz", .{resolved_import_path})
-            else
-                try self.allocator.dupe(u8, resolved_import_path);
-            defer self.allocator.free(path_with_ext);
-
-            const file_candidate = try std.fs.path.join(
-                self.allocator,
-                &[_][]const u8{ search_path, path_with_ext }
-            );
-            defer self.allocator.free(file_candidate);
-
-            log.debug("      Checking file: {s}\n", .{file_candidate});
-            if (std.fs.cwd().access(file_candidate, .{})) |_| {
-                const resolved = try std.fs.path.resolve(
-                    self.allocator,
-                    &[_][]const u8{file_candidate}
-                );
+            // Try file (probe all Koru extensions if import doesn't carry one)
+            log.debug("      Checking file in: {s}\n", .{search_path});
+            if (try resolveKoruFileIn(self.allocator, search_path, resolved_import_path)) |resolved| {
                 log.debug("      ✓ FOUND file: {s}\n", .{resolved});
                 return resolved;
-            } else |err| {
-                log.debug("      ✗ Not found: {}\n", .{err});
+            } else {
+                log.debug("      ✗ Not found\n", .{});
             }
         }
 
@@ -734,30 +711,13 @@ pub const ModuleResolver = struct {
                 log.debug("    ✗ Not a directory\n", .{});
             }
 
-            // Try file - add .kz extension only if not already present
-            const needs_ext = !std.mem.endsWith(u8, resolved_import_path, ".kz");
-            const path_with_ext = if (needs_ext)
-                try std.fmt.allocPrint(self.allocator, "{s}.kz", .{resolved_import_path})
-            else
-                try self.allocator.dupe(u8, resolved_import_path);
-            defer self.allocator.free(path_with_ext);
-
-            const file_candidate = try std.fs.path.join(
-                self.allocator,
-                &[_][]const u8{ stdlib, path_with_ext }
-            );
-            defer self.allocator.free(file_candidate);
-
-            log.debug("    Checking file: {s}\n", .{file_candidate});
-            if (std.fs.cwd().access(file_candidate, .{})) |_| {
-                const resolved = try std.fs.path.resolve(
-                    self.allocator,
-                    &[_][]const u8{file_candidate}
-                );
+            // Try file (probe all Koru extensions if import doesn't carry one)
+            log.debug("    Checking file in stdlib: {s}\n", .{stdlib});
+            if (try resolveKoruFileIn(self.allocator, stdlib, resolved_import_path)) |resolved| {
                 log.debug("    ✓ FOUND file: {s}\n", .{resolved});
                 return resolved;
-            } else |err| {
-                log.debug("    ✗ Not found: {}\n", .{err});
+            } else {
+                log.debug("    ✗ Not found\n", .{});
             }
         } else {
             log.debug("    (no stdlib path configured)\n", .{});

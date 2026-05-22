@@ -23,6 +23,10 @@
 
 # Keep source and expected files (at any depth)
 !**/*.kz
+!**/*.k
+!**/*.kjs
+!**/*.kc
+!**/*.kgpu
 !**/expected.txt
 !**/expected_output.txt
 !**/expected_error.txt

@@ -5,6 +5,7 @@ const errors = @import("errors");
 const type_registry = @import("type_registry");
 const expression_parser = @import("expression_parser");
 const ModuleResolver = @import("module_resolver").ModuleResolver;
+const file_types = @import("file_types");
 
 // Re-export ExpressionParser for runtime use (e.g., interpreter ~if)
 pub const ExpressionParser = expression_parser.ExpressionParser;
@@ -345,20 +346,18 @@ pub const Parser = struct {
         try context_stack.append(allocator, .top_level);
 
         // Derive module name from file_name
-        // Module name is always the filename without .kz extension
+        // Module name is the filename with its Koru extension stripped.
         // Examples:
         //   "input.kz" → "input"
-        //   "test_lib/graphics.kz" → "graphics"
+        //   "test_lib/graphics.kjs" → "graphics"
         //   "koru_std/profiler.kz" → "profiler"
         // This enables circular imports and consistent naming across the codebase
         const basename = std.fs.path.basename(file_name);
         const module_name = blk: {
-            // Extract filename without .kz extension
-            if (std.mem.endsWith(u8, basename, ".kz")) {
-                const name_without_ext = basename[0 .. basename.len - 3];
+            if (file_types.koruExtensionOf(basename)) |ext| {
+                const name_without_ext = basename[0 .. basename.len - ext.len];
                 break :blk try allocator.dupe(u8, name_without_ext);
             } else {
-                // No .kz extension, use basename as-is
                 break :blk try allocator.dupe(u8, basename);
             }
         };
@@ -7013,10 +7012,10 @@ pub const Parser = struct {
                 }
             }
 
-            // Strip .kz extension if present
+            // Strip Koru extension if present
             var result = try namespace.toOwnedSlice(self.allocator);
-            if (std.mem.endsWith(u8, result, ".kz")) {
-                const trimmed = result[0 .. result.len - 3];
+            if (file_types.koruExtensionOf(result)) |ext| {
+                const trimmed = result[0 .. result.len - ext.len];
                 const final = try self.allocator.dupe(u8, trimmed);
                 self.allocator.free(result);
                 break :blk final;
@@ -7027,8 +7026,8 @@ pub const Parser = struct {
             const last_slash = std.mem.lastIndexOf(u8, path, "/") orelse 0;
             const filename_start = if (last_slash > 0) last_slash + 1 else 0;
             const filename = path[filename_start..];
-            const base_name = if (std.mem.endsWith(u8, filename, ".kz"))
-                filename[0 .. filename.len - 3]
+            const base_name = if (file_types.koruExtensionOf(filename)) |ext|
+                filename[0 .. filename.len - ext.len]
             else
                 filename;
             break :blk try self.allocator.dupe(u8, base_name);
@@ -7076,10 +7075,10 @@ pub const Parser = struct {
             }
 
             for (files) |file_path| {
-                // Extract filename without .kz extension for namespace
+                // Extract filename without Koru extension for namespace
                 const basename = std.fs.path.basename(file_path);
-                const file_name = if (std.mem.endsWith(u8, basename, ".kz"))
-                    basename[0 .. basename.len - 3]
+                const file_name = if (file_types.koruExtensionOf(basename)) |ext|
+                    basename[0 .. basename.len - ext.len]
                 else
                     basename;
 

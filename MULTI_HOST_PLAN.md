@@ -116,76 +116,119 @@ Landed on `main` across commits `70905a38` (sweep), `6511e5af` (resolver), `5083
 3. **MUST_FAIL form-under-test is sacrosanct.** `tests/regression/000_CORE_LANGUAGE/020_EVENTS_FLOWS/020_012_reject_pub_proc` exists to verify `~pub proc` is rejected. The sweep mechanically tagged it `~pub proc greet|zig {`, then `expected.txt` was refreshed to match — the test kept passing but no longer exercised the form it claimed to. Restored. Captured in memory as `feedback_must_fail_sweep_exclusion.md`. Next sweep must skip MUST_FAIL files whose target line is the rejected form.
 4. **Sibling-repo sweep needed too.** `~/src/orisha/lib/` had bare procs the koru sweep couldn't reach. Always cross-check sibling repos when koru regression tests import them (e.g. `350_*` orisha router tests).
 
-### Phase 2: Multi-extension file discovery
+### Phase 2: Multi-extension file discovery — **LANDED 2026-05-22**
 
-**Scope:** teach the resolver and file-discovery layer about `.k`, `.kjs`, `.kc`, etc. The parser itself does not change.
+Landed on branch `phase-2-multi-extension`. Final suite state: **511/544 in-scope passing (93.9%)**, identical failure count to pre-Phase-2 baseline (22 pre-existing failures, none introduced; +4 new tests under `100_MODULE_SYSTEM/140_FILE_LAYOUT/`).
 
-Plan refined 2026-05-22 after verifying all referenced line numbers against current `main`. Open in a fresh session — Phase 1 is fully landed; this is the next coherent piece.
+**What shipped:**
 
-**Code changes:**
-
-- New `src/file_types.zig`: ~20-line module with the canonical extension list and two helpers.
+- New `src/file_types.zig` (~60 lines including 4 unit tests). Canonical extension list — longest-first ordering for greedy matching:
   ```zig
-  // Longest-first ordering so .kgpu matches before .k for greedy detection.
   pub const koru_extensions = [_][]const u8{ ".kgpu", ".kjs", ".kz", ".kc", ".k" };
   pub fn isKoruFile(name: []const u8) bool;
-  pub fn koruExtensionOf(name: []const u8) ?[]const u8;  // returns the matching ext slice or null
+  pub fn koruExtensionOf(name: []const u8) ?[]const u8;  // longest-first match
   ```
-  Hardcoded list — expand as new hosts are added. Avoid adding `config.zig` coupling; keep this as a pure module.
+  Hardcoded list — pure module, no `config.zig` coupling. Wired into `build.zig` with its own `file_extension_tests` target (the name `file_types_tests` was already taken by an unrelated File/EmbedFile AST test).
 
-- **`src/module_resolver.zig`** — new helper `resolveKoruFile(allocator, base_path) !?[]const u8` that consolidates the existing inline "needs_ext / allocPrint / access" dance:
-  - If `base_path` already has a Koru extension, `access()` it; return resolved path or null.
-  - Otherwise iterate `koru_extensions`, `access()` each candidate, return the first that exists.
-  - Caller decides how to handle null (set `result.file_path` or skip).
+- **`src/module_resolver.zig`** — two new helpers consolidate the previous "needs_ext / allocPrint / access" dance:
+  - `pub fn resolveKoruFile(allocator, base_path) !?[]u8` — probes Koru extensions on an absolute path.
+  - `pub fn resolveKoruFileIn(allocator, base, name) !?[]u8` — probes extensions for `<base>/<name>`.
 
-  Then swap the 8 callsites (all verified at these exact lines on `main` as of 2026-05-22):
+  All 8 callsites swapped (verified line numbers held). The line 601-606 absolute-path branch now does an `access()` it didn't before — old behavior was "blindly append `.kz` and return without checking" which masked broken imports as downstream file-open errors. Now returns `error.ModuleNotFound` cleanly.
 
-  | Line | Current shape | Notes |
-  |------|---------------|-------|
-  | 276  | `if (!endsWith(entry.name, ".kz")) continue;` | Directory enum filter; change to `if (!isKoruFile(entry.name)) continue;` |
-  | 369-384 | needs_ext + access + set file_path | Replace block with `resolveKoruFile` call |
-  | 429-434 | needs_ext + access (inside `checkBoth` closure) | Same swap |
-  | 561-... | needs_ext + access | Same swap |
-  | 601-606 | **No access check today** — just appends `.kz` and returns | Multi-extension forces adding an `access()` here. Adds one stat() per absolute-path import. Acceptable cost. |
-  | 633-657 | needs_ext + access | Same swap |
-  | 686-710 | needs_ext + access | Same swap |
-  | 737-... | needs_ext + access | Same swap |
+- **`src/parser.zig`** — 4 sites (plan undercounted by 2): the original 357 and 7018, plus the parallel block at 7030 (non-aliased import namespace) and 7081 (directory enumeration). All swap `endsWith(basename, ".kz")` → `koruExtensionOf(basename)` with `basename[0..basename.len - ext.len]`.
 
-- **`src/parser.zig`**:
-  - Line 357: replace `if (endsWith(basename, ".kz")) { name_without_ext = basename[0..len-3]; }` with `if (koruExtensionOf(basename)) |ext| { name_without_ext = basename[0..basename.len - ext.len]; }`.
-  - Line 7016: same swap inside the namespace-builder block.
+- **`src/main.zig`** — 6 sites (plan listed 5):
+  - Lines 945-950, 2806-2811 (was 938-940, 2799-2801): embedded raw Zig string literals emit a multi-line `endsWith` OR chain across all five Koru extensions. The generated backend binary must recognize Koru source files independently of the compiler.
+  - Line 3190: `koruExtensionOf` swap.
+  - Line 3245-3248 (the flagged wrinkle for parent_path) — strategy chosen: probe each extension at the caller via new `probeImportExtensions` helper.
+  - Line 3321 (`index_path` builder for auto-import) — same wrinkle, same strategy.
+  - Line 3405 (basename eql `"index.kz"` in submodule enumeration) — replaced with a stripped-basename equality check using `koruExtensionOf`.
+  - Line 3438: `koruExtensionOf` swap for `submod_name`.
+  - Line 3528 (loading `<dir>/index.kz` as the directory's source) — swapped to `resolveKoruFileIn(allocator, dir, "index")`.
 
-- **`src/main.zig`**:
-  - Lines 938, 940, 2799, 2801: replace `endsWith(args[1], ".kz")` (inside raw Zig string literals `\\`) with `isKoruFile(args[1])`. Note these are embedded in emitted Zig — the generated binary must also know about extensions.
-  - Line 3189-3190: `if (endsWith(path_to_convert, ".kz"))` → use `koruExtensionOf`.
-  - **Plan addition (not in original):** lines 3245-3248 build `parent_path` by appending `.kz` literally (e.g. `$std/io.kz` from `$std/io/file`). This needs to preserve the parent's actual extension. Strategy: try each extension at this site too, or first lookup the parent file's existing extension via filesystem. TBD during implementation.
+- **Generator updates** (Phase 2 also touches the metacircular build emission). 6 places emit `build_backend.zig`-shaped code that declares the koru `src/` modules; each gained a `file_types_module` declaration and an `addImport("file_types", file_types_module)` on both `module_resolver_module` and `parser_module`:
+  - `koru_std/build.zig`
+  - `koru_std/build_backend.zig`
+  - `koru_std/compiler.kz`
+  - `koru_std/parser.kz`
+  - `koru_std/interpreter.kz`
+  - `koru_std/backend.zig` (the embedded `\\`-prefixed string template)
 
-**Estimated diff:** 80-100 lines net (down from inline-block count since `resolveKoruFile` consolidates 7 sites). Mechanical aside from the lines 3245-3248 nuance. No semantic changes elsewhere — the parser remains extension-agnostic.
+  Missing this is what broke ~470 tests on the first build — the koruc compiler itself compiled fine, but every test's metacircular backend compilation failed with `no module named 'file_types' available within module 'parser'`. The 6-generator update brought the pass rate back to baseline + 4.
 
-**Tests** (new directory `tests/regression/100_FILE_LAYOUT/`):
+**Tests (`tests/regression/100_MODULE_SYSTEM/140_FILE_LAYOUT/`):**
 
-- `SUCCESS`: module directory with `foo.kz` + `bar.kjs` resolves both files.
-- `SUCCESS`: `~import "foo"` slurps all sibling `.k*` files when `foo/` is a directory.
-- `SUCCESS`: a project with only `.kz` files keeps working identically (back-compat).
-- (Add as discovered:) regression for the absolute-path stat() addition at line 601, and for the parent-path nuance at lines 3245-3248.
+The plan suggested top-level `100_FILE_LAYOUT/` but `100_` was already taken — placed under `100_MODULE_SYSTEM/140_FILE_LAYOUT/` to keep related discovery tests together.
 
-### Phase 3: Contract uniqueness rule
+- `140_001_kjs_extension_import` — `.kjs` helper resolves as a sibling import (the analog of `110_001_file_import_basic`).
+- `140_002_k_pure_contract` — `.k` file with only event declarations; COMPILE_ONLY (partial-program tenet).
+- `140_003_directory_mixed_extensions` — directory containing both `alpha.kz` and `beta.kjs`; both load, both events emit output.
+- `140_004_index_kjs_directory_source` — directory whose source file is `index.kjs` instead of `index.kz`; resolves correctly.
 
-**Scope:** semantic check that enforces "if a `.k` file declares an event, no sibling host-file may re-declare it."
+Back-compat is implicitly proven by the 507 pre-existing `.kz`-only tests continuing to pass through the new code paths.
 
-**Code changes:**
+**Decisions made during implementation:**
 
-- Shape checker (or new dedicated pass): walk the module's AST after all sibling files are slurped; check for duplicate event declarations across files; if a `.k` file declared the event, the duplicate in a host file is the violation.
-- Error message: `event 'compute' is declared in foo.k:N and re-declared in foo.kz:M. The .k file is the contract; remove the duplicate from foo.kz and keep only the proc body.`
+- **Probe order = match order.** Used the same longest-first ordering (`.kgpu, .kjs, .kz, .kc, .k`) for both extension recognition AND file-system probing. A separate probe order biased toward `.kz` would save 2 wasted stat() calls per legacy import, but adds dual-ordering complexity. The 2 stat() calls are negligible compared to actual file parsing; revisit only if profiling demands it.
+- **Absolute-path resolution now fails loudly.** Old `resolve()` blindly returned the path with `.kz` appended without checking; downstream file-open errors hid the bad import. New behavior returns `error.ModuleNotFound` at resolution time, matching how other paths fail.
+- **Probe-via-resolver helper lives in `main.zig`.** `probeImportExtensions` takes an alias-prefixed stem (`$std/io`) and tries each extension through `resolver.resolveBoth`. Distinct from `resolveKoruFile`/`resolveKoruFileIn` which operate on filesystem paths directly. Different layers, different helpers.
+- **Index-file probing extends to all sites.** `queueIndexImport` (3321), the submodule-enumeration skip (3405), and the directory-source loader (3528) all now know that `index.<ext>` may use any Koru extension, not just `.kz`. The `index` convention is now multi-extension-aware end-to-end.
 
-**Estimated diff:** 10-20 lines in the shape checker pass.
+**Followup lessons learned (read before any future addImport-style sweep):**
 
-**Tests:**
+1. **Generator sweep must accompany source sweep.** Anything that adds a new module to `src/` must also propagate the declaration through all 6 metacircular generators. The compiler itself building successfully says nothing about whether per-test backend compilation will succeed. Always run at least one regression test after a module addition before declaring the build clean.
+2. **Plan-quoted line tables undercount.** The plan listed 8 + 2 + 5 = 15 sites; reality was 8 + 4 + 6 = 18. `grep -nE '"\.kz"|endsWith.*\.kz'` over the three files immediately surfaced the extras. Always grep before trusting a line-number table from a prior session.
+3. **`index.kz` is a third-class identifier alongside `endsWith(".kz")`.** The literal string `"index.kz"` appears in basename equality checks and `allocPrint` calls; pure regex sweeps for `\.kz` miss them. Grep both `\.kz` and `index\.kz` patterns.
 
-- `MUST_FAIL`: `.k` + `.kz` both declare same event.
-- `SUCCESS`: `.k` declares event, `.kz` declares only `~proc` for that event.
+### Phase 3: Contract / implementation event location rule
+
+**Refined 2026-05-22** after a design conversation that narrowed the original "no events at all in host files" framing into a pub/private split. The narrower rule preserves subflow ergonomics while still making the public surface of a module a literal file you can read.
+
+**The rule (two statements, fire as a pair):**
+
+1. **Events in `.k` must be `~pub`.** Private events in `.k` are illegal. A private declaration in a contract file is dead syntax — no procs live in `.k` (those are implementation), so nothing inside `.k` can call a private event, and nothing outside can see it.
+2. **When `.k` exists, sibling implementation files (`.kz`, `.kjs`, `.kc`, `.kgpu`) cannot declare `~pub event`.** They can still declare non-public events — internal subflow scaffolding is preserved. Public events live in `.k` exclusively.
+
+**Both rules fire only when `.k` is present in the module.** No `.k`? Today's behavior holds: implementation files can have public events freely. The rule is opt-in per module, and migration cost is zero — existing single-file `.kz` projects keep working.
+
+**Orthogonal to variants — explicitly:** A single `.kz` containing `~proc foo|zig { ... }`, `~proc foo|gpu { ... }`, and `~proc foo|js { ... }` mixed inside is fine and will keep being fine. The rule is about *where public event declarations live*, not about which host languages a given file can mix. A `.kz` that's a companion to a `.k` can absolutely have variant-soup procs inside; what it can't have is `~pub event` declarations. The two axes (file-extension split vs in-file variant mixing) are independent organizational choices.
+
+**Why pub/private (vs the original "no events at all" framing):**
+
+- A bare "no events in host file" rule would force all helper events into the public `.k` contract OR force subflows to be inline-only. Both are bad: the contract gets polluted with internal scaffolding, or subflows lose composability.
+- The pub/private split lets `.k` stay clean (only public events) while `.kz` keeps its private events for internal subflow plumbing. Implementation expressivity is preserved; public surface is still a literal file you can read.
+
+**Precondition (must land before Phase 3):**
+
+The silent first-wins collision at `src/type_registry.zig:178-184` (`if (self.events.get(path)) |existing| { return; }`) needs to become a real error. Today, if two files in the same canonical namespace both register an event under the same path, the second is silently dropped. This masks the Phase 3 violation case (`.k` and `.kz` both declare `~pub event compute`) at the registry layer, so the Phase 3 check would only fire if it ran *before* registry population. Cleaner: registry hard-errors on unexpected duplicate registration; Phase 3's check fires earlier (during merge or shape-checking) and produces a domain-specific error before the registry sees the collision.
+
+This precondition is its own small commit, can ship independently, and fixes a real "silent fallback" antipattern regardless of whether Phase 3 ever lands.
+
+**Code changes (Phase 3 proper):**
+
+- New error code: probably `KORU111` (continuing the variant-mandatory `KORU110` family). `KORU200` is already taken by ambiguous-module.
+- Check location: shape_checker is the natural home — it runs after AST canonicalization and has access to all module items. Needs each `EventDecl` to carry its source file (probably already in `SourceLocation`; verify during implementation).
+- Two checks, both fired per merged module that contains a `.k` file:
+  1. Walk `.k` items, error on any `EventDecl` where `is_public == false`.
+  2. Walk implementation-file items, error on any `EventDecl` where `is_public == true`.
+
+**Estimated diff:** 30-50 lines in the shape checker pass + the `KORU111` definition + 2 test fixtures. The precondition (registry hardening) is another ~10 lines.
+
+**Tests** (extends `tests/regression/100_MODULE_SYSTEM/140_FILE_LAYOUT/`):
+
+- `MUST_FAIL`: `.k` file declares a private event (`~event foo`, no `~pub`) → `KORU111` "private event in contract file."
+- `MUST_FAIL`: `.k` declares `~pub event compute`, `.kz` also declares `~pub event compute` → `KORU111` "public event in implementation file."
+- `SUCCESS`: `.k` has `~pub event compute`, `.kz` has only `~proc compute|zig { ... }` and a private `~event _helper` for an internal subflow.
 - `SUCCESS`: `.k` declares event with NO implementation anywhere (partial-program tenet).
-- `SUCCESS`: `.kz` declares event + proc inline, no `.k` file in module → works as today.
+- `SUCCESS`: `.kz` declares `~pub event` + proc inline, no `.k` file in module → works as today (rule is opt-in).
+- `SUCCESS`: `.k` + `.kz` where the `.kz` mixes `~proc foo|zig`, `~proc foo|gpu`, `~proc foo|js` — the variant-mixing axis is orthogonal to the contract-split axis.
+
+**Open questions to resolve during implementation (don't pre-decide):**
+
+1. **Imports in `.k` for typed payloads.** An event like `~pub event create_user { role: Role }` references a user-defined type. If `Role` lives in another module, `.k` would need to import. The two-rule Phase 3 doesn't restrict imports, so this isn't blocked — but the natural extension is "contracts can import other contracts (other `.k` files)." Defer the decision; cross the bridge when a test demands it.
+2. **What else belongs in `.k`?** The design conversation deliberately narrowed scope to events. Whether `.k` should also be restricted to *only* events (no top-level Zig blocks, no annotations, no module-level constants) is a separate question. Address piecemeal as the need arises.
+3. **Inter-host implementation pairing.** If `.k` + `.kz` + `.kjs` all coexist, and `.kjs` only implements *some* of the events declared in `.k`, that's a partial-program state — still legal, only the uncalled events stay unresolvable per Phase 1's rule. Confirm during implementation that the resolution check handles this gracefully (it should already, since variant resolution is per-call-site).
 
 ### Phase 4: Migration tool
 
@@ -217,8 +260,9 @@ Phase-by-phase regression tests as outlined above. The existing variant test sui
 
 1. **Phase 1 first.** Smallest contained change; immediately validates the "variants as primary host axis" framing. Sweep is mechanical but large (~1500 procs); good first session because it's contained and reversible.
 2. **Phase 2 second.** Builds file-discovery infrastructure without requiring Phase 3's semantic rule. Can ship in isolation; multi-file modules with `.k` files become *possible* but not yet *enforced*.
-3. **Phase 3 once Phase 2 is in.** The duplicate-declaration check needs multi-file modules to exist first.
-4. **Phase 4 last.** Tooling benefits from Phases 1-3 being settled; the tool's output needs to compile correctly under the new rules.
+3. **Phase 3 precondition: registry-collision hygiene.** Turn the silent first-wins skip in `src/type_registry.zig:178-184` into a hard error on unexpected duplicate registration. Its own small commit, lands independently, fixes a real silent-fallback antipattern.
+4. **Phase 3 once the precondition is in.** The two-rule contract/implementation event location check fires during shape-checking. Needs Phase 2 (multi-file modules exist) and the precondition (registry doesn't mask the violation).
+5. **Phase 4 last.** Tooling benefits from Phases 1-3 being settled; the tool's output needs to compile correctly under the new rules.
 
 Each phase ships as its own commit (or PR-shaped unit). Don't bundle them. The regression suite proves each phase independently.
 

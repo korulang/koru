@@ -1,0 +1,11 @@
+// Sibling 2: same directory, .kjs extension. Should be enumerated and
+// loaded as `app.lib.beta` just like alpha.kz is loaded as `app.lib.alpha`.
+
+const std = @import("std");
+
+~pub event greet_beta {}
+| spoken []const u8
+
+~proc greet_beta|zig {
+    return .{ .spoken = "beta (kjs)" };
+}

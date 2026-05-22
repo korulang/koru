@@ -1,0 +1,11 @@
+// The directory's source file uses `.kjs`. Phase 2 must probe each Koru
+// extension at the index-load site so this is discovered.
+
+const std = @import("std");
+
+~pub event greet { name: []const u8 }
+| greeted []const u8
+
+~proc greet|zig {
+    return .{ .greeted = "hello from index.kjs" };
+}

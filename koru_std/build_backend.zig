@@ -91,6 +91,13 @@ const config_module = b.createModule(.{
 });
 config_module.addImport("log", log_module);
 
+// File types module - canonical Koru extension list + helpers
+const file_types_module = b.createModule(.{
+    .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/file_types.zig" },
+    .target = target,
+    .optimize = optimize,
+});
+
 // Module resolver - resolves import paths
 const module_resolver_module = b.createModule(.{
     .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/module_resolver.zig" },
@@ -99,6 +106,7 @@ const module_resolver_module = b.createModule(.{
 });
 module_resolver_module.addImport("config", config_module);
 module_resolver_module.addImport("log", log_module);
+module_resolver_module.addImport("file_types", file_types_module);
 
 // Parser module - source parsing
 const parser_module = b.createModule(.{
@@ -114,6 +122,7 @@ parser_module.addImport("type_registry", type_registry_module);
 parser_module.addImport("expression_parser", expression_parser_module);
 parser_module.addImport("union_collector", union_collector_module);
 parser_module.addImport("module_resolver", module_resolver_module);
+parser_module.addImport("file_types", file_types_module);
 
 // Phantom parser
 const phantom_parser_module = b.createModule(.{

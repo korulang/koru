@@ -37,6 +37,13 @@ pub fn build(b: *std.Build) void {
     });
     config_module.addImport("log", log_module);
 
+    // File types module: canonical Koru extension list + helpers
+    const file_types_module = b.createModule(.{
+        .root_source_file = b.path("src/file_types.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Module resolver for import path resolution
     const module_resolver_module = b.createModule(.{
         .root_source_file = b.path("src/module_resolver.zig"),
@@ -45,6 +52,7 @@ pub fn build(b: *std.Build) void {
     });
     module_resolver_module.addImport("config", config_module);
     module_resolver_module.addImport("log", log_module);
+    module_resolver_module.addImport("file_types", file_types_module);
 
     // AST depends on errors for SourceLocation
     ast_module.addImport("errors", errors_module);
@@ -77,6 +85,7 @@ pub fn build(b: *std.Build) void {
     parser_module.addImport("type_registry", type_registry_module);
     parser_module.addImport("module_resolver", module_resolver_module);
     parser_module.addImport("log", log_module);
+    parser_module.addImport("file_types", file_types_module);
 
     // Expression parser module
     const expression_parser_module = b.createModule(.{
@@ -463,6 +472,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("emit_package_files", emit_package_files_module);
     exe.root_module.addImport("config", config_module);
     exe.root_module.addImport("module_resolver", module_resolver_module);
+    exe.root_module.addImport("file_types", file_types_module);
     exe.root_module.addImport("annotation_parser", annotation_parser_module);
     // emitter module removed - using visitor_emitter
     exe.root_module.addImport("ast", ast_module);
@@ -912,6 +922,13 @@ pub fn build(b: *std.Build) void {
     file_types_tests.root_module.addImport("ast_serializer", ast_serializer_module);
     const run_file_types_tests = b.addRunArtifact(file_types_tests);
 
+    // Koru file extension recognition tests (file_types module)
+    const file_extension_tests = b.addTest(.{
+        .name = "file_extension_tests",
+        .root_module = file_types_module,
+    });
+    const run_file_extension_tests = b.addRunArtifact(file_extension_tests);
+
     // Where clause tests
     const where_clause_tests = b.addTest(.{
         .name = "where_clause_tests",
@@ -1194,6 +1211,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_coordinator_tests.step);
     test_step.dependOn(&run_transform_tests.step);
     test_step.dependOn(&run_file_types_tests.step);
+    test_step.dependOn(&run_file_extension_tests.step);
     test_step.dependOn(&run_where_clause_tests.step);
     test_step.dependOn(&run_expression_parser_tests.step);
     test_step.dependOn(&run_expression_purity_tests.step);
