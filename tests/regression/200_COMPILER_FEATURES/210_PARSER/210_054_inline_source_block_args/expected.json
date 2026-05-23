@@ -101,6 +101,9 @@
             "branches": [
                 {
                     "name": "transformed",
+                    "kind": "terminal",
+                    "resume": null,
+                    "is_optional": false,
                     "payload": {
                         "fields": [
                             {
@@ -232,6 +235,8 @@
             "continuations": [
                 {
                     "branch": "transformed",
+                    "kind": "terminal",
+                    "is_catchall": false,
                     "binding": null,
                     "binding_type": "branch_payload",
                     "condition": null,
@@ -273,6 +278,8 @@
             "continuations": [
                 {
                     "branch": "",
+                    "kind": "terminal",
+                    "is_catchall": false,
                     "binding": null,
                     "binding_type": "branch_payload",
                     "condition": null,
@@ -323,6 +330,8 @@
                     "continuations": [
                         {
                             "branch": "transformed",
+                            "kind": "terminal",
+                            "is_catchall": false,
                             "binding": null,
                             "binding_type": "branch_payload",
                             "condition": null,

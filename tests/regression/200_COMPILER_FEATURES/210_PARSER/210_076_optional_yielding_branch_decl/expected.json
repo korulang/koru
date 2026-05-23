@@ -122,7 +122,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_yielding_branch_decl/input.kz",
-                "line": 8,
+                "line": 10,
                 "col": 0
             }
         }

@@ -39,11 +39,18 @@ pub fn isKoruLine(line: []const u8) bool {
     return trimmed[0] == '~' or trimmed[0] == '|';
 }
 
-/// Check if this is a continuation line (starts with |)
+/// Check if this is a continuation line (starts with `|` terminal or `!` yielding)
 pub fn isContinuationLine(line: []const u8) bool {
     const trimmed = trim(line);
     if (trimmed.len == 0) return false;
-    return trimmed[0] == '|';
+    if (trimmed[0] == '|') return true;
+    // `!` continuation: `! name`, `! ?name`, or `!?` (catch-all). Reject `!=`
+    // and other operators by requiring whitespace or `?` after the `!`.
+    if (trimmed[0] == '!' and trimmed.len >= 2) {
+        const next = trimmed[1];
+        return next == ' ' or next == '\t' or next == '?';
+    }
+    return false;
 }
 
 /// Check if this is a comment-only line (starts with //)
@@ -456,7 +463,15 @@ pub fn isPipelineContinuation(line: []const u8) bool {
 /// Check if a line is a branch continuation (starts with | but not |>)
 pub fn isBranchContinuation(line: []const u8) bool {
     const trimmed = trim(line);
-    return std.mem.startsWith(u8, trimmed, "|") and !std.mem.startsWith(u8, trimmed, "|>");
+    if (std.mem.startsWith(u8, trimmed, "|") and !std.mem.startsWith(u8, trimmed, "|>")) return true;
+    // Yielding branches: `! name ...` or `! ?name ...`. The next char must be
+    // whitespace or `?` so we don't swallow Zig operators like `!=` that might
+    // appear in non-Koru contexts.
+    if (std.mem.startsWith(u8, trimmed, "!") and trimmed.len >= 2) {
+        const next = trimmed[1];
+        if (next == ' ' or next == '\t' or next == '?') return true;
+    }
+    return false;
 }
 
 /// Extract label from line (e.g., "@loop" from "... @loop")

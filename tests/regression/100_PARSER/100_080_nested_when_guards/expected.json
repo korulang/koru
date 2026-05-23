@@ -34,6 +34,9 @@
             "branches": [
                 {
                     "name": "ready",
+                    "kind": "terminal",
+                    "resume": null,
+                    "is_optional": false,
                     "payload": {
                         "fields": [
                             {
@@ -78,6 +81,9 @@
             "branches": [
                 {
                     "name": "key",
+                    "kind": "terminal",
+                    "resume": null,
+                    "is_optional": false,
                     "payload": {
                         "fields": [
                             {
@@ -159,6 +165,8 @@
             "continuations": [
                 {
                     "branch": "ready",
+                    "kind": "terminal",
+                    "is_catchall": false,
                     "binding": "t",
                     "binding_type": "branch_payload",
                     "condition": null,
@@ -178,6 +186,8 @@
                     "continuations": [
                         {
                             "branch": "key",
+                            "kind": "terminal",
+                            "is_catchall": false,
                             "binding": "k",
                             "binding_type": "branch_payload",
                             "condition": "(k.code == 'q')",
@@ -197,6 +207,8 @@
                         },
                         {
                             "branch": "key",
+                            "kind": "terminal",
+                            "is_catchall": false,
                             "binding": "k",
                             "binding_type": "branch_payload",
                             "condition": null,

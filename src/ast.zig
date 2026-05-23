@@ -759,16 +759,21 @@ pub const Field = struct {
     }
 };
 
+pub const BranchKind = enum { terminal, yielding };
+
 pub const Branch = struct {
     name: []const u8,
     payload: Shape,
     is_deferred: bool = false,  // Marks &-branches that return event refs
     is_optional: bool = false,  // Marks ?-branches that don't need to be handled
+    kind: BranchKind = .terminal,  // `|` = terminal (fires once, returns); `!` = yielding (fires 0..N during proc run)
+    resume_type: ?[]const u8 = null,  // Type after `->` on yielding branches; null = -> void
     annotations: []const []const u8 = &[_][]const u8{},  // Branch annotations like [mutable]
 
     pub fn deinit(self: *Branch, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
         self.payload.deinit(allocator);
+        if (self.resume_type) |rt| allocator.free(rt);
         for (self.annotations) |annotation| {
             allocator.free(annotation);
         }
@@ -889,7 +894,8 @@ pub const Continuation = struct {
     binding: ?[]const u8,
     binding_annotations: []const []const u8 = &[_][]const u8{}, // Annotations on binding (e.g., [mutable])
     binding_type: BindingType = .branch_payload,
-    is_catchall: bool = false,  // True for |? catch-all continuations
+    kind: BranchKind = .terminal,  // `|` = terminal handler, `!` = yielding handler
+    is_catchall: bool = false,  // True for |? or !? catch-all continuations
     catchall_metatype: ?[]const u8 = null,  // "Transition", "Profile", or "Audit" for |? Transition t
     condition: ?[]const u8, // When clause condition (e.g., "o.status == 200")
     condition_expr: ?*Expression = null, // Parsed expression tree for when clause

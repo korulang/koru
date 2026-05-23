@@ -1416,11 +1416,21 @@ pub const Parser = struct {
         }
 
         // Then check for continuation lines (multi-line branch syntax)
+        var seen_terminal_branch: bool = false;
         while (self.current < self.lines.len) {
             const next_line = self.lines[self.current];
             if (!lexer.isBranchContinuation(next_line)) break;
 
+            // Capture the branch's line BEFORE parseBranch advances self.current,
+            // so the KORU023 error points at the offending branch line.
+            const branch_line = self.current + 1;
             const branch = try self.parseBranch();
+
+            // Ordering rule: yielding `!` branches must precede terminal `|` branches.
+            if (branch.kind == .yielding and seen_terminal_branch) {
+                try errors.terminalBeforeYielding(&self.reporter, branch_line, 1, branch.name, .decl);
+            }
+            if (branch.kind == .terminal) seen_terminal_branch = true;
 
             // Check for duplicate branch names
             for (branches.items) |existing| {
@@ -1622,11 +1632,19 @@ pub const Parser = struct {
             branches.deinit(self.allocator);
         }
 
+        var seen_terminal_branch_v2: bool = false;
         while (self.current < self.lines.len) {
             const next_line = self.lines[self.current];
             if (!lexer.isBranchContinuation(next_line)) break;
 
+            const branch_line = self.current + 1;
             const branch = try self.parseBranch();
+
+            // Ordering rule: yielding `!` branches must precede terminal `|` branches.
+            if (branch.kind == .yielding and seen_terminal_branch_v2) {
+                try errors.terminalBeforeYielding(&self.reporter, branch_line, 1, branch.name, .decl);
+            }
+            if (branch.kind == .terminal) seen_terminal_branch_v2 = true;
 
             // Check for duplicate branch names
             for (branches.items) |existing| {
@@ -4295,6 +4313,10 @@ pub const Parser = struct {
         // If there's leading space, look for the first continuation to set the level
         var expected_indent: ?usize = null;
 
+        // Ordering rule (KORU023): yielding `!` handlers precede terminal `|` handlers
+        // at the dispatch site, mirroring the decl-side rule.
+        var seen_terminal_handler: bool = false;
+
         while (self.current < self.lines.len) {
             const line = self.lines[self.current];
 
@@ -4322,8 +4344,19 @@ pub const Parser = struct {
 
             // Parse the continuation (which will also parse its nested continuations)
             const location = self.getLineLocation(self.current, indent);
+            const handler_line = self.current + 1;
             self.current += 1; // Move past current line before parsing
             const cont = try self.parseContinuationWithNested(indent, location);
+
+            // Ordering rule check. Catch-all (`!?` / `|?`) handlers are exempt
+            // — they're symmetric ends for both sides.
+            if (!cont.is_catchall) {
+                if (cont.kind == .yielding and seen_terminal_handler) {
+                    try errors.terminalBeforeYielding(&self.reporter, handler_line, indent + 1, cont.branch, .dispatch);
+                }
+                if (cont.kind == .terminal) seen_terminal_handler = true;
+            }
+
             try continuations.append(self.allocator, cont);
         }
 
@@ -4335,7 +4368,9 @@ pub const Parser = struct {
         const line = self.lines[self.current - 1]; // We already incremented
         const trimmed = lexer.trim(line);
 
-        // Skip the | prefix
+        // Detect kind from prefix: `|` = terminal, `!` = yielding.
+        const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .yielding else .terminal;
+        // Skip the | or ! prefix
         const after_bar = lexer.trim(trimmed[1..]);
 
         var cont: ast.Continuation = undefined;
@@ -4363,6 +4398,7 @@ pub const Parser = struct {
 
         // Initialize continuations as empty, will be filled by caller if needed
         cont.continuations = &[_]ast.Continuation{};
+        cont.kind = branch_kind;
 
         return cont;
     }
@@ -4371,7 +4407,9 @@ pub const Parser = struct {
         const line = self.lines[self.current - 1]; // We already incremented in parseContinuations
         const trimmed = lexer.trim(line);
 
-        // Skip the | prefix
+        // Detect kind from prefix: `|` = terminal, `!` = yielding.
+        const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .yielding else .terminal;
+        // Skip the | or ! prefix
         const after_bar = lexer.trim(trimmed[1..]);
 
         var cont: ast.Continuation = undefined;
@@ -4412,6 +4450,7 @@ pub const Parser = struct {
             cont.continuations = multi_line_continuations;
         }
 
+        cont.kind = branch_kind;
         return cont;
     }
 
@@ -6218,7 +6257,9 @@ pub const Parser = struct {
         // We'll consume this line
         self.current += 1;
 
-        // Skip | prefix
+        // Detect branch kind from prefix: `|` = terminal, `!` = yielding.
+        // isBranchContinuation already validated the first char so we trust it here.
+        const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .yielding else .terminal;
         const after_bar = lexer.trim(trimmed[1..]);
 
         // Check for & prefix (deferred branch)
@@ -6240,6 +6281,30 @@ pub const Parser = struct {
         // This must happen before any brace/phantom/annotation parsing.
         if (std.mem.indexOf(u8, branch_start, "//")) |comment_idx| {
             branch_start = lexer.trim(branch_start[0..comment_idx]);
+        }
+
+        // Detect resume type: `-> ResumeT` suffix on yielding branches.
+        // Scan at bracket/brace depth 0 so we don't trip on `->` inside a struct
+        // payload `{ ... }` or a phantom-state `[...]`.
+        var resume_type: ?[]const u8 = null;
+        {
+            var depth: i32 = 0;
+            var idx: usize = 0;
+            while (idx + 1 < branch_start.len) : (idx += 1) {
+                const c = branch_start[idx];
+                if (c == '[' or c == '{' or c == '(') {
+                    depth += 1;
+                } else if (c == ']' or c == '}' or c == ')') {
+                    depth -= 1;
+                } else if (depth == 0 and c == '-' and branch_start[idx + 1] == '>') {
+                    const rt = lexer.trim(branch_start[idx + 2 ..]);
+                    if (rt.len > 0) {
+                        resume_type = try self.allocator.dupe(u8, rt);
+                    }
+                    branch_start = lexer.trim(branch_start[0..idx]);
+                    break;
+                }
+            }
         }
 
         // Check for struct shape { ... } vs identity type
@@ -6299,6 +6364,8 @@ pub const Parser = struct {
                     .payload = ast.Shape{ .fields = &.{} },
                     .is_deferred = is_deferred,
                     .is_optional = is_optional,
+                    .kind = branch_kind,
+                    .resume_type = resume_type,
                     .annotations = try annotations.toOwnedSlice(self.allocator),
                 };
             }
@@ -6315,6 +6382,8 @@ pub const Parser = struct {
                     },
                     .is_deferred = is_deferred,
                     .is_optional = is_optional,
+                    .kind = branch_kind,
+                    .resume_type = resume_type,
                     .annotations = try annotations.toOwnedSlice(self.allocator),
                 };
             }
@@ -6425,6 +6494,8 @@ pub const Parser = struct {
                 .payload = ast.Shape{ .fields = fields },
                 .is_deferred = is_deferred,
                 .is_optional = is_optional,
+                .kind = branch_kind,
+                .resume_type = resume_type,
                 .annotations = try annotations.toOwnedSlice(self.allocator),
             };
         }
@@ -6538,6 +6609,8 @@ pub const Parser = struct {
             .payload = payload,
             .is_deferred = is_deferred,
             .is_optional = is_optional,
+            .kind = branch_kind,
+            .resume_type = resume_type,
             .annotations = try annotations.toOwnedSlice(self.allocator),
         };
     }

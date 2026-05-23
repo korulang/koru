@@ -80,6 +80,9 @@
             "branches": [
                 {
                     "name": "success",
+                    "kind": "terminal",
+                    "resume": null,
+                    "is_optional": false,
                     "payload": {
                         "fields": [
                             {
@@ -97,6 +100,9 @@
                 },
                 {
                     "name": "failure",
+                    "kind": "terminal",
+                    "resume": null,
+                    "is_optional": false,
                     "payload": {
                         "fields": [
                             {

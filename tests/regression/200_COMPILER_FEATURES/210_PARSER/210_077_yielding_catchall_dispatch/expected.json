@@ -122,7 +122,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
-                "line": 8,
+                "line": 10,
                 "col": 0
             }
         },
@@ -150,7 +150,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
-                "line": 13,
+                "line": 12,
                 "col": 0
             }
         },
@@ -178,7 +178,7 @@
             ],
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
-                "line": 14,
+                "line": 13,
                 "col": 0
             }
         },
@@ -198,10 +198,11 @@
                 {
                     "branch": "token",
                     "kind": "yielding",
+                    "is_catchall": false,
                     "binding": "t",
                     "binding_type": "branch_payload",
                     "condition": null,
-                    "step": {
+                    "step":                     {
                         "type": "invocation",
                         "invocation": {
                             "event": ["consume_token"],
@@ -219,14 +220,14 @@
                     ]
                 },
                 {
-                    "branch": null,
+                    "branch": "?",
                     "kind": "yielding",
-                    "catchall": true,
+                    "is_catchall": true,
                     "binding": null,
-                    "binding_type": null,
+                    "binding_type": "branch_payload",
                     "condition": null,
-                    "step": {
-                        "type": "discard"
+                    "step":                     {
+                        "type": "terminal"
                     },
                     "continuations": [
 
@@ -235,10 +236,11 @@
                 {
                     "branch": "done",
                     "kind": "terminal",
+                    "is_catchall": false,
                     "binding": "n",
                     "binding_type": "branch_payload",
                     "condition": null,
-                    "step": {
+                    "step":                     {
                         "type": "invocation",
                         "invocation": {
                             "event": ["end_run"],
@@ -261,7 +263,7 @@
             "impl_of": null,
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
-                "line": 16,
+                "line": 14,
                 "col": 0
             }
         }

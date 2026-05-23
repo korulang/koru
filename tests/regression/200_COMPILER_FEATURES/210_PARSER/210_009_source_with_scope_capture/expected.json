@@ -106,6 +106,9 @@
             "branches": [
                 {
                     "name": "data",
+                    "kind": "terminal",
+                    "resume": null,
+                    "is_optional": false,
                     "payload": {
                         "fields": [
                             {
@@ -182,6 +185,9 @@
             "branches": [
                 {
                     "name": "rendered",
+                    "kind": "terminal",
+                    "resume": null,
+                    "is_optional": false,
                     "payload": {
                         "fields": [
                             {
@@ -264,6 +270,8 @@
             "continuations": [
                 {
                     "branch": "rendered",
+                    "kind": "terminal",
+                    "is_catchall": false,
                     "binding": "h",
                     "binding_type": "branch_payload",
                     "condition": null,

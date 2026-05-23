@@ -43,6 +43,9 @@
             "branches": [
                 {
                     "name": "result",
+                    "kind": "terminal",
+                    "resume": null,
+                    "is_optional": false,
                     "payload": {
                         "fields": [
                             {

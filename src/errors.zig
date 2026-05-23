@@ -11,7 +11,8 @@ pub const ErrorCode = enum(u16) {
     KORU020, // Duplicate branch in event
     KORU021, // Unknown branch in continuation
     KORU022, // Missing required branch
-    
+    KORU023, // Yielding `!` branches must precede terminal `|` branches
+
     // Shape errors
     KORU030, // Shape mismatch
     KORU031, // Payload type mismatch
@@ -426,6 +427,32 @@ pub fn duplicateBranch(reporter: *ErrorReporter, line: usize, column: usize, bra
         .{ branch, event },
         "rename or remove duplicate",
         .{},
+    );
+}
+
+pub fn terminalBeforeYielding(
+    reporter: *ErrorReporter,
+    line: usize,
+    column: usize,
+    branch_name: []const u8,
+    context: enum { decl, dispatch },
+) !void {
+    const context_label: []const u8 = switch (context) {
+        .decl => "branch",
+        .dispatch => "handler",
+    };
+    const context_plural: []const u8 = switch (context) {
+        .decl => "branches",
+        .dispatch => "handlers",
+    };
+    try reporter.addErrorWithHint(
+        .KORU023,
+        line,
+        column,
+        "yielding `!` {s} '{s}' appears after a terminal `|` {s}",
+        .{ context_label, branch_name, context_label },
+        "move `! {s}` above any `|` {s} — yielding branches always come first (source order = temporal order: effects during run, then how it ends)",
+        .{ branch_name, context_plural },
     );
 }
 

@@ -1,4 +1,4 @@
 error\[KORU023\]
-yielding.*handler.*before.*terminal
+yielding.*handler.*after.*terminal
 ! each
 input\.kz:21

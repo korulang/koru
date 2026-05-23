@@ -2015,6 +2015,19 @@ pub const AstSerializer = struct {
         try self.write(",\n");
 
         try self.writeIndent();
+        try self.write("\"kind\": ");
+        try self.writeString(switch (cont.kind) {
+            .yielding => "yielding",
+            .terminal => "terminal",
+        });
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write("\"is_catchall\": ");
+        try self.write(if (cont.is_catchall) "true" else "false");
+        try self.write(",\n");
+
+        try self.writeIndent();
         try self.write("\"binding\": ");
         if (cont.binding) |b| {
             try self.writeString(b);
@@ -2620,6 +2633,28 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write("\"name\": ");
         try self.writeString(branch.name);
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write("\"kind\": ");
+        try self.writeString(switch (branch.kind) {
+            .yielding => "yielding",
+            .terminal => "terminal",
+        });
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write("\"resume\": ");
+        if (branch.resume_type) |rt| {
+            try self.writeString(rt);
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write("\"is_optional\": ");
+        try self.write(if (branch.is_optional) "true" else "false");
         try self.write(",\n");
 
         try self.writeIndent();

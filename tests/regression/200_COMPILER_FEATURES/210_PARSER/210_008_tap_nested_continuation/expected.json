@@ -257,6 +257,8 @@
             "continuations": [
                 {
                     "branch": "Profile",
+                    "kind": "terminal",
+                    "is_catchall": false,
                     "binding": "p",
                     "binding_type": "branch_payload",
                     "condition": null,
