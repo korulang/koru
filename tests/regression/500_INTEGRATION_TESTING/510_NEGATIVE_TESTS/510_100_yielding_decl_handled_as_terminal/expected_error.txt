@@ -1,0 +1,3 @@
+KORU025
+branch 'each' is declared as yielding
+handler uses terminal

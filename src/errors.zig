@@ -13,6 +13,7 @@ pub const ErrorCode = enum(u16) {
     KORU022, // Missing required branch
     KORU023, // Yielding `!` branches must precede terminal `|` branches
     KORU024, // Redundant outer parens around `when` condition
+    KORU025, // Branch kind mismatch (e.g. `!` decl handled by `|` cont, or vice versa)
 
     // Shape errors
     KORU030, // Shape mismatch
@@ -429,6 +430,31 @@ pub fn duplicateBranch(reporter: *ErrorReporter, line: usize, column: usize, bra
         "rename or remove duplicate",
         .{},
     );
+}
+
+pub fn branchKindMismatch(
+    reporter: *ErrorReporter,
+    location: SourceLocation,
+    branch_name: []const u8,
+    decl_kind: enum { yielding, terminal },
+    cont_kind: enum { yielding, terminal },
+) !void {
+    const decl_glyph: []const u8 = if (decl_kind == .yielding) "!" else "|";
+    const cont_glyph: []const u8 = if (cont_kind == .yielding) "!" else "|";
+    const decl_label: []const u8 = if (decl_kind == .yielding) "yielding" else "terminal";
+    const cont_label: []const u8 = if (cont_kind == .yielding) "yielding" else "terminal";
+    const message = try std.fmt.allocPrint(reporter.allocator,
+        "branch '{s}' is declared as {s} `{s}` but the handler uses {s} `{s}`",
+        .{ branch_name, decl_label, decl_glyph, cont_label, cont_glyph });
+    const hint = try std.fmt.allocPrint(reporter.allocator,
+        "match the handler glyph to the declaration: write `{s} {s} ... |> ...` to handle this branch",
+        .{ decl_glyph, branch_name });
+    try reporter.errors.append(reporter.allocator, .{
+        .code = .KORU025,
+        .message = message,
+        .location = location,
+        .hint = hint,
+    });
 }
 
 pub fn redundantWhenParens(

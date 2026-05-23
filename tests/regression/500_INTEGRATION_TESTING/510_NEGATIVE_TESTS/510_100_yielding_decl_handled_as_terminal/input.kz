@@ -1,0 +1,15 @@
+// ============================================================================
+// Test 510_100: MUST_FAIL — yielding `!` decl branch handled by `|` cont.
+//
+// The event declares `each` as a YIELDING branch (`!`), but the consumer
+// dispatches with `| each` (terminal `|`). The shape checker rejects:
+// the kinds must match between decl and handler.
+// ============================================================================
+
+~pub event tokenize { source: []const u8 }
+! each []const u8
+| done usize
+
+~tokenize(source: "x")
+| each _ |> _
+| done _ |> _

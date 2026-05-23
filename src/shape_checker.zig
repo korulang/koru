@@ -805,6 +805,32 @@ pub const ShapeChecker = struct {
             }
         }
 
+        // Branch kind-mismatch check (KORU025): a `!` (yielding) decl branch
+        // must be handled by a `!` continuation, and a `|` (terminal) decl
+        // branch by a `|` continuation. Catch-alls are exempt — they match by
+        // kind elsewhere.
+        for (continuations) |cont| {
+            if (cont.is_catchall or cont.branch.len == 0) continue;
+            const is_metatype = std.mem.eql(u8, cont.branch, "Transition") or
+                std.mem.eql(u8, cont.branch, "Profile") or
+                std.mem.eql(u8, cont.branch, "Audit");
+            if (is_metatype) continue;
+            for (event_branches) |decl| {
+                if (!std.mem.eql(u8, decl.name, cont.branch)) continue;
+                if (decl.kind != cont.kind) {
+                    try errors.branchKindMismatch(
+                        self.reporter,
+                        cont.location,
+                        cont.branch,
+                        if (decl.kind == .yielding) .yielding else .terminal,
+                        if (cont.kind == .yielding) .yielding else .terminal,
+                    );
+                    has_errors = true;
+                }
+                break;
+            }
+        }
+
         // Validate using pure BranchChecker
         var result = try branch_checker.BranchChecker.validate(
             self.allocator,
