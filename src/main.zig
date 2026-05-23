@@ -1135,7 +1135,12 @@ const ComptimeBackendResult = struct {
 /// Generate backend_output_emitted.zig for comptime modules
 /// This generates handlers for events marked with [comptime] annotation
 /// These handlers are available during backend.zig compilation
-fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *ast.Program, type_registry: *TypeRegistry, lang: []const u8) !ComptimeBackendResult {
+fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *ast.Program, type_registry: *TypeRegistry) !ComptimeBackendResult {
+    // No --lang propagation here. This function produces backend_output_emitted.zig
+    // — the compiler's own handler code that runs inside backend.zig at Stage C.
+    // That code is always Zig because the compiler binary is Zig. The user's
+    // --lang choice governs only the final user-program emission (the
+    // .runtime_only emitter, in generateVisitorBackend below).
     // Note: emitter_helpers already imported at top-level
     const visitor_emitter_mod = @import("visitor_emitter");
     const tap_registry_module = @import("tap_registry");
@@ -1200,7 +1205,10 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
     // This will emit ONLY modules with [comptime] annotation
     var visitor_emitter = visitor_emitter_mod.VisitorEmitter.init(allocator, &code_emitter, ast_to_emit.items, &tap_registry, type_registry, .comptime_only // Emit only modules with [comptime] annotation
     );
-    visitor_emitter.lang = lang;
+    // .lang intentionally left at the struct default "zig". This emission
+    // produces backend_output_emitted.zig — the compiler's own handler code
+    // that runs inside backend.zig at Stage C. The compiler's handlers MUST
+    // be Zig regardless of the user's --lang choice.
 
     // Emit using visitor pattern!
     // The visitor will automatically filter to only [comptime] modules via shouldFilter
@@ -1208,7 +1216,7 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
 
     // Generate transform handlers into backend_output_emitted.zig
     // These need to be in the same file as evaluate_comptime so it can call them
-    const transform_count = try generateTransformHandlersToEmitter(&code_emitter, allocator, source_file, lang);
+    const transform_count = try generateTransformHandlersToEmitter(&code_emitter, allocator, source_file);
 
     // Extern wrappers — `pub export fn` shims that backend.zig calls via
     // `extern fn`. C-ABI flat extern struct because Zig 0.15 won't let extern fn
@@ -1871,7 +1879,14 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
 /// Generate transform handlers to CodeEmitter (for backend_output_emitted.zig)
 /// Same as generateTransformHandlers but writes to CodeEmitter instead of generic writer
 /// Returns the number of transform events found
-fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.Allocator, source_file: *ast.Program, default_lang: []const u8) !usize {
+fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.Allocator, source_file: *ast.Program) !usize {
+    // Transforms are [comptime] procs — they execute inside the koruc Stage C
+    // binary, which is always Zig. The variant dispatcher for a transform
+    // therefore treats `|zig` as the default (emitted as plain `handler`) and
+    // every other variant as an alternate (emitted as `handler__<variant>`),
+    // regardless of the user's --lang choice. --lang governs the final
+    // user-program emission only; comptime emission is structurally Zig.
+    const comptime_default_lang = "zig";
     // First pass: Collect all transform events (max 16 transform events per file)
     var transform_events: [16]TransformEvent = undefined;
     var transform_count: usize = 0;
@@ -1988,7 +2003,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
                 // Collect variant targets across the whole program (top-level event, so
                 // variants may live in any module that implements it).
-                const variant_targets_top = try collectVariantTargetsForEventPath(allocator, source_file.items, event_decl.path.segments, default_lang);
+                const variant_targets_top = try collectVariantTargetsForEventPath(allocator, source_file.items, event_decl.path.segments, comptime_default_lang);
 
                 transform_events[transform_count] = .{
                     .stub_name = stub_name,
@@ -2152,7 +2167,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
 
                         // Collect variant targets from the same module (variants live alongside the event).
-                        const variant_targets_mod = try collectVariantTargetsForEventPath(allocator, module.items, event_decl.path.segments, default_lang);
+                        const variant_targets_mod = try collectVariantTargetsForEventPath(allocator, module.items, event_decl.path.segments, comptime_default_lang);
 
                         transform_events[transform_count] = .{
                             .stub_name = stub_name,
@@ -6926,7 +6941,7 @@ pub fn main() !void {
             log.debug("DEBUG:   Module: {s} (has_comptime: {any})\n", .{ module.logical_name, module.annotations });
         }
     }
-    const comptime_result = try generateComptimeBackendEmitted(compile_allocator, &source_file, &user_registry, compiler_config.lang);
+    const comptime_result = try generateComptimeBackendEmitted(compile_allocator, &source_file, &user_registry);
     const comptime_backend_code = comptime_result.code;
     const has_transforms = comptime_result.transform_count > 0;
     // No defer needed - compile_arena handles cleanup automatically
