@@ -51,12 +51,18 @@ const CompilerConfig = struct {
     allocator: std.mem.Allocator,
     flags: std.ArrayList([]const u8),
     env_vars: std.StringHashMap([]const u8),
+    /// Default language target — selects which variant gets emitted when no
+    /// explicit ~[build]std.build:variants registration exists. Matches the
+    /// variant-tag namespace ("zig", "js", "gpu", ...) so `--lang=js` selects
+    /// the `~proc foo|js` variant. Set via `--lang=<name>` on the koruc CLI.
+    lang: []const u8 = "zig",
 
     pub fn init(allocator: std.mem.Allocator) !CompilerConfig {
         return .{
             .allocator = allocator,
             .flags = try std.ArrayList([]const u8).initCapacity(allocator, 0),
             .env_vars = std.StringHashMap([]const u8).init(allocator),
+            .lang = try allocator.dupe(u8, "zig"),
         };
     }
 
@@ -72,6 +78,16 @@ const CompilerConfig = struct {
             self.allocator.free(entry.value_ptr.*);
         }
         self.env_vars.deinit();
+
+        self.allocator.free(self.lang);
+    }
+
+    /// Replace the lang value with an owned copy of `new_lang`, freeing the
+    /// previous owned slice. Used by `--lang=<name>` CLI parsing.
+    pub fn setLang(self: *CompilerConfig, new_lang: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, new_lang);
+        self.allocator.free(self.lang);
+        self.lang = owned;
     }
 
     pub fn addFlag(self: *CompilerConfig, flag: []const u8) !void {
@@ -200,7 +216,8 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
     try writer.writeAll("// Compiler environment lives in compiler_env.zig — re-exported here so\n");
     try writer.writeAll("// `@import(\"root\").CompilerEnv` keeps working for existing consumers.\n");
     try writer.writeAll("pub const CompilerEnv = @import(\"compiler_env\").CompilerEnv;\n\n");
-    _ = config; // CompilerEnv generation moved to generateCompilerEnvCode
+    // `config` is now used below to pass the default lang to the visitor backend.
+    // (Most of CompilerConfig still lives in compiler_env.zig — only .lang is read here.)
 
     // NOTE: Transform handlers are now generated into backend_output_emitted.zig
     // See generateComptimeBackendEmitted() for the call to generateTransformHandlersToEmitter()
@@ -209,7 +226,7 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
     if (use_visitor) {
         // Use the new visitor pattern implementation
         try writer.writeAll("// Using Visitor Pattern Backend\n\n");
-        try generateVisitorBackend(writer, allocator, source_file);
+        try generateVisitorBackend(writer, allocator, source_file, config.lang);
     } else {
         // Use the old implementation
         try writer.writeAll("// Metacircular Code Generator\n\n");
@@ -1119,6 +1136,11 @@ const ComptimeBackendResult = struct {
 /// This generates handlers for events marked with [comptime] annotation
 /// These handlers are available during backend.zig compilation
 fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *ast.Program, type_registry: *TypeRegistry) !ComptimeBackendResult {
+    // No --lang propagation here. This function produces backend_output_emitted.zig
+    // — the compiler's own handler code that runs inside backend.zig at Stage C.
+    // That code is always Zig because the compiler binary is Zig. The user's
+    // --lang choice governs only the final user-program emission (the
+    // .runtime_only emitter, in generateVisitorBackend below).
     // Note: emitter_helpers already imported at top-level
     const visitor_emitter_mod = @import("visitor_emitter");
     const tap_registry_module = @import("tap_registry");
@@ -1183,6 +1205,10 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
     // This will emit ONLY modules with [comptime] annotation
     var visitor_emitter = visitor_emitter_mod.VisitorEmitter.init(allocator, &code_emitter, ast_to_emit.items, &tap_registry, type_registry, .comptime_only // Emit only modules with [comptime] annotation
     );
+    // .lang intentionally left at the struct default "zig". This emission
+    // produces backend_output_emitted.zig — the compiler's own handler code
+    // that runs inside backend.zig at Stage C. The compiler's handlers MUST
+    // be Zig regardless of the user's --lang choice.
 
     // Emit using visitor pattern!
     // The visitor will automatically filter to only [comptime] modules via shouldFilter
@@ -1355,11 +1381,15 @@ const TransformEvent = struct {
 };
 
 /// Walk items finding proc_decls whose path matches the given segments AND have a non-null,
-/// non-"zig" target. Used to collect variant procs for transform-event dispatch.
+/// non-default-lang target. Used to collect variant procs for transform-event dispatch.
+/// `default_lang` is the variant tag that is considered the default (typically "zig",
+/// configurable via `--lang=<name>`); procs tagged with it are excluded because they
+/// take the main dispatch path.
 fn collectVariantTargetsForEventPath(
     allocator: std.mem.Allocator,
     items: []const ast.Item,
     segments: []const []const u8,
+    default_lang: []const u8,
 ) ![]const []const u8 {
     var found = std.ArrayList([]const u8){};
     errdefer found.deinit(allocator);
@@ -1368,7 +1398,7 @@ fn collectVariantTargetsForEventPath(
         if (item == .proc_decl) {
             const proc = item.proc_decl;
             if (proc.target == null) continue;
-            if (std.mem.eql(u8, proc.target.?, "zig")) continue;
+            if (std.mem.eql(u8, proc.target.?, default_lang)) continue;
             if (proc.path.segments.len != segments.len) continue;
             var matches = true;
             for (proc.path.segments, 0..) |segment, i| {
@@ -1850,6 +1880,13 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
 /// Same as generateTransformHandlers but writes to CodeEmitter instead of generic writer
 /// Returns the number of transform events found
 fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.Allocator, source_file: *ast.Program) !usize {
+    // Transforms are [comptime] procs — they execute inside the koruc Stage C
+    // binary, which is always Zig. The variant dispatcher for a transform
+    // therefore treats `|zig` as the default (emitted as plain `handler`) and
+    // every other variant as an alternate (emitted as `handler__<variant>`),
+    // regardless of the user's --lang choice. --lang governs the final
+    // user-program emission only; comptime emission is structurally Zig.
+    const comptime_default_lang = "zig";
     // First pass: Collect all transform events (max 16 transform events per file)
     var transform_events: [16]TransformEvent = undefined;
     var transform_count: usize = 0;
@@ -1966,7 +2003,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
                 // Collect variant targets across the whole program (top-level event, so
                 // variants may live in any module that implements it).
-                const variant_targets_top = try collectVariantTargetsForEventPath(allocator, source_file.items, event_decl.path.segments);
+                const variant_targets_top = try collectVariantTargetsForEventPath(allocator, source_file.items, event_decl.path.segments, comptime_default_lang);
 
                 transform_events[transform_count] = .{
                     .stub_name = stub_name,
@@ -2130,7 +2167,7 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         const claims_descendants = annotation_parser.hasPart(event_decl.annotations, "claims_descendants");
 
                         // Collect variant targets from the same module (variants live alongside the event).
-                        const variant_targets_mod = try collectVariantTargetsForEventPath(allocator, module.items, event_decl.path.segments);
+                        const variant_targets_mod = try collectVariantTargetsForEventPath(allocator, module.items, event_decl.path.segments, comptime_default_lang);
 
                         transform_events[transform_count] = .{
                             .stub_name = stub_name,
@@ -2612,7 +2649,7 @@ fn joinPathSegmentsWithDots(allocator: std.mem.Allocator, segments: []const []co
 /// Match a pattern against a value using glob semantics
 /// Patterns can use * for wildcards (e.g., log.* matches log.info)
 /// Generate the visitor pattern backend
-fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_file: *ast.Program) !void {
+fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_file: *ast.Program, lang: []const u8) !void {
     _ = allocator;
     _ = source_file;
 
@@ -2734,6 +2771,16 @@ fn generateVisitorBackend(writer: anytype, allocator: std.mem.Allocator, source_
             \\            &type_registry,
             \\            .runtime_only  // KEY: Emit only runtime modules
             \\        );
+        );
+        // Inject the default-lang assignment — baked in at koruc invocation
+        // time from `--lang=<name>`. Stage C uses VisitorEmitter.lang to pick
+        // which `~proc foo|<lang>` variant to emit; default-field value is
+        // already "zig" so this only emits a real-difference line when the
+        // user picked something else.
+        if (!std.mem.eql(u8, lang, "zig")) {
+            try writer.print("        visitor_emitter.lang = \"{s}\";\n", .{lang});
+        }
+        try writer.writeAll(
             \\
             \\        // Emit using visitor pattern
             \\        visitor_emitter.emit(ast_to_emit) catch {
@@ -5926,6 +5973,13 @@ pub fn main() !void {
             install_packages = true;
         } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-V")) {
             try compiler_config.addFlag("verbose");
+        } else if (std.mem.startsWith(u8, arg, "--lang=")) {
+            // --lang=<name> selects the default variant for proc-body emission.
+            // The value must match a variant tag used in source (e.g. "zig", "js").
+            // Bodies tagged `|<lang>` are picked when no explicit build:variants
+            // registration exists for an event; events without a `|<lang>` variant
+            // surface as KORU110 at their call sites.
+            try compiler_config.setLang(arg["--lang=".len..]);
         } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--output")) {
             i += 1;
             if (i >= args.len) {
