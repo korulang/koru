@@ -1,0 +1,269 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "line": 4,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "tokenize",
+            "path": ["tokenize"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "source",
+                        "type": "[]const u8",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false,
+                        "phantom": null
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "token",
+                    "kind": "yielding",
+                    "resume": null,
+                    "is_optional": false,
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "__type_ref",
+                                "type": "[]const u8",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false,
+                                "phantom": null
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "warning",
+                    "kind": "yielding",
+                    "resume": null,
+                    "is_optional": true,
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "__type_ref",
+                                "type": "[]const u8",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false,
+                                "phantom": null
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "done",
+                    "kind": "terminal",
+                    "resume": null,
+                    "is_optional": false,
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "__type_ref",
+                                "type": "usize",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false,
+                                "phantom": null
+                            }
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "line": 8,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "consume_token",
+            "path": ["consume_token"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "t",
+                        "type": "[]const u8",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false,
+                        "phantom": null
+                    }
+                ]
+            },
+            "branches": [
+
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "line": 13,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "end_run",
+            "path": ["end_run"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "n",
+                        "type": "usize",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false,
+                        "phantom": null
+                    }
+                ]
+            },
+            "branches": [
+
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "line": 14,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["tokenize"],
+                "args": [
+                    {
+                        "name": "source",
+                        "value": "\"x\""
+                    }
+                ],
+                "variant": null
+            },
+            "continuations": [
+                {
+                    "branch": "token",
+                    "kind": "yielding",
+                    "binding": "t",
+                    "binding_type": "branch_payload",
+                    "condition": null,
+                    "step": {
+                        "type": "invocation",
+                        "invocation": {
+                            "event": ["consume_token"],
+                            "args": [
+                                {
+                                    "name": "t",
+                                    "value": "t"
+                                }
+                            ],
+                            "variant": null
+                        }
+                    },
+                    "continuations": [
+
+                    ]
+                },
+                {
+                    "branch": null,
+                    "kind": "yielding",
+                    "catchall": true,
+                    "binding": null,
+                    "binding_type": null,
+                    "condition": null,
+                    "step": {
+                        "type": "discard"
+                    },
+                    "continuations": [
+
+                    ]
+                },
+                {
+                    "branch": "done",
+                    "kind": "terminal",
+                    "binding": "n",
+                    "binding_type": "branch_payload",
+                    "condition": null,
+                    "step": {
+                        "type": "invocation",
+                        "invocation": {
+                            "event": ["end_run"],
+                            "args": [
+                                {
+                                    "name": "n",
+                                    "value": "n"
+                                }
+                            ],
+                            "variant": null
+                        }
+                    },
+                    "continuations": [
+
+                    ]
+                }
+            ],
+            "pre_label": null,
+            "post_label": null,
+            "impl_of": null,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "line": 16,
+                "col": 0
+            }
+        }
+    ]
+}

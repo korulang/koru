@@ -1,0 +1,12 @@
+// Test 210_075: consumer dispatch with `!` and `|` handlers.
+// `! each` handler runs 0..N times, `| done` handler runs exactly once.
+
+~pub event for { start: usize, end: usize }
+! each usize
+| done usize
+
+~pub event tick {}
+
+~for(start: 0, end: 3)
+! each _ |> tick()
+| done _ |> tick()

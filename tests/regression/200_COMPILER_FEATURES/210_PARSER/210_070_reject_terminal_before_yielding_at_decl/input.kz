@@ -1,0 +1,18 @@
+// ============================================================================
+// Test 210_070: MUST_FAIL — yielding branches must precede terminal branches
+//                          at the event declaration site.
+//
+// Per docs/EFFECT_BRANCHES.md: `!` (yielding) branches always come first in
+// source order at the declaration. The parser rejects any `|` (terminal)
+// branch that appears above a `!` branch in the same event decl.
+//
+// Reasoning (doc):
+//   Source order = temporal order. Effects during run, then how it ends.
+//   Reader knows where to look: top = operations, bottom = termination.
+//   Prevents accidentally pattern-matching a terminal and missing an
+//   effect-handler in between.
+// ============================================================================
+
+~pub event for { start: usize, end: usize }
+| done usize
+! each usize

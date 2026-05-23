@@ -1,0 +1,81 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_073_effect_branch_only_no_terminal/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_073_effect_branch_only_no_terminal/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_073_effect_branch_only_no_terminal/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "lines_of",
+            "path": ["lines_of"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "path",
+                        "type": "[]const u8",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false,
+                        "phantom": null
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "line",
+                    "kind": "yielding",
+                    "resume": null,
+                    "is_optional": false,
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "__type_ref",
+                                "type": "[]const u8",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false,
+                                "phantom": null
+                            }
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_073_effect_branch_only_no_terminal/input.kz",
+                "line": 7,
+                "col": 0
+            }
+        }
+    ]
+}

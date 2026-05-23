@@ -1,0 +1,4 @@
+error\[KORU023\]
+yielding.*branch.*before.*terminal
+! each
+input\.kz:18

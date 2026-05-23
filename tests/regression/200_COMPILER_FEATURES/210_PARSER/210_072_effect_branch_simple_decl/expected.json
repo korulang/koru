@@ -1,0 +1,111 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_072_effect_branch_simple_decl/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_072_effect_branch_simple_decl/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_072_effect_branch_simple_decl/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "for",
+            "path": ["for"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "start",
+                        "type": "usize",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false,
+                        "phantom": null
+                    },
+                    {
+                        "name": "end",
+                        "type": "usize",
+                        "is_source": false,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false,
+                        "phantom": null
+                    }
+                ]
+            },
+            "branches": [
+                {
+                    "name": "each",
+                    "kind": "yielding",
+                    "resume": null,
+                    "is_optional": false,
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "__type_ref",
+                                "type": "usize",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false,
+                                "phantom": null
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "done",
+                    "kind": "terminal",
+                    "resume": null,
+                    "is_optional": false,
+                    "payload": {
+                        "fields": [
+                            {
+                                "name": "__type_ref",
+                                "type": "usize",
+                                "is_source": false,
+                                "is_file": false,
+                                "is_embed_file": false,
+                                "is_expression": false,
+                                "is_invocation_meta": false,
+                                "phantom": null
+                            }
+                        ]
+                    }
+                }
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_072_effect_branch_simple_decl/input.kz",
+                "line": 7,
+                "col": 0
+            }
+        }
+    ]
+}

@@ -1,0 +1,21 @@
+// ============================================================================
+// Test 210_071: MUST_FAIL — yielding handlers must precede terminal handlers
+//                          at the consumer dispatch site.
+//
+// Per docs/EFFECT_BRANCHES.md the ordering rule applies at both event decl
+// AND dispatch. A consumer that lists `| done` above `! each` is rejected
+// by the parser.
+//
+// The well-formed shape (defended by 210_073) is:
+//   ~count_to_three = for(0..3)
+//   ! each _ |> std.io:println(text: "counting")
+//   | done |> result 3
+// ============================================================================
+
+~pub event for { start: usize, end: usize }
+! each usize
+| done usize
+
+~for(start: 0, end: 3)
+| done _ |> _
+! each _ |> _

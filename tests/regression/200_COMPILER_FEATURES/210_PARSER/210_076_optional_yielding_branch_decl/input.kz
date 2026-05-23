@@ -1,0 +1,8 @@
+// Test 210_076: optional yielding branch (`! ?warning`) at event decl.
+// Symmetric with `| ?name` — consumers may omit handlers without
+// exhaustiveness error; unhandled calls become no-ops.
+
+~pub event tokenize { source: []const u8 }
+! token []const u8
+! ?warning []const u8
+| done usize
