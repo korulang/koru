@@ -4848,6 +4848,38 @@ pub const Parser = struct {
                     return error.ParseError;
                 }
 
+                // Reject `when (X)` — outer parens enclosing the whole expression
+                // are redundant (`when` already delimits the condition). Inner
+                // parens for sub-expression grouping stay legal: detect by
+                // matching the opening `(` and checking it closes on the very
+                // last character of the trimmed condition.
+                if (condition_str[0] == '(') {
+                    var paren_depth: i32 = 0;
+                    var matched_at: ?usize = null;
+                    for (condition_str, 0..) |c, i| {
+                        if (c == '(') {
+                            paren_depth += 1;
+                        } else if (c == ')') {
+                            paren_depth -= 1;
+                            if (paren_depth == 0) {
+                                matched_at = i;
+                                break;
+                            }
+                        }
+                    }
+                    if (matched_at) |m| {
+                        if (m == condition_str.len - 1) {
+                            try errors.redundantWhenParens(
+                                &self.reporter,
+                                location.line,
+                                indent + 2,
+                                condition_str,
+                            );
+                            return error.ParseError;
+                        }
+                    }
+                }
+
                 condition = try self.allocator.dupe(u8, condition_str);
 
                 // Update rest to skip past the condition

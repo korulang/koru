@@ -12,6 +12,7 @@ pub const ErrorCode = enum(u16) {
     KORU021, // Unknown branch in continuation
     KORU022, // Missing required branch
     KORU023, // Yielding `!` branches must precede terminal `|` branches
+    KORU024, // Redundant outer parens around `when` condition
 
     // Shape errors
     KORU030, // Shape mismatch
@@ -427,6 +428,28 @@ pub fn duplicateBranch(reporter: *ErrorReporter, line: usize, column: usize, bra
         .{ branch, event },
         "rename or remove duplicate",
         .{},
+    );
+}
+
+pub fn redundantWhenParens(
+    reporter: *ErrorReporter,
+    line: usize,
+    column: usize,
+    condition: []const u8,
+) !void {
+    // Strip the outer parens for the hint preview.
+    const stripped = if (condition.len >= 2 and condition[0] == '(' and condition[condition.len - 1] == ')')
+        std.mem.trim(u8, condition[1 .. condition.len - 1], " \t")
+    else
+        condition;
+    try reporter.addErrorWithHint(
+        .KORU024,
+        line,
+        column,
+        "redundant outer parens around `when` condition '{s}'",
+        .{condition},
+        "`when` already delimits the expression — drop the outer parens. Write `when {s}` instead. Inner parens for sub-expression grouping (e.g. `when foo == (a + b)`) remain legal.",
+        .{stripped},
     );
 }
 

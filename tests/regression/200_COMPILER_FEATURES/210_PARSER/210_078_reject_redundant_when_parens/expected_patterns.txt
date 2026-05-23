@@ -1,0 +1,4 @@
+error\[KORU024\]
+redundant outer parens
+when (h > 10)
+input\.kz:15

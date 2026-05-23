@@ -12,5 +12,5 @@
 
 ~run()
 | ready t |> poll(t: t.t)
-    | key k when (k.code == 'q') |> cleanup()
+    | key k when k.code == 'q' |> cleanup()
     | key k |> handle_key(code: k.code)

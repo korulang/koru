@@ -190,7 +190,7 @@
                             "is_catchall": false,
                             "binding": "k",
                             "binding_type": "branch_payload",
-                            "condition": "(k.code == 'q')",
+                            "condition": "k.code == 'q'",
                             "step":                             {
                                 "type": "invocation",
                                 "invocation": {

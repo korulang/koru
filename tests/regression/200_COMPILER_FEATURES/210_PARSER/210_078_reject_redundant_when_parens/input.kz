@@ -1,0 +1,16 @@
+// ============================================================================
+// Test 210_078: MUST_FAIL — outer parens wrapping the whole `when` condition
+//                          are redundant and rejected.
+//
+// `when` already delimits the expression; the outer parens add no information
+// and visually echo C-family `if (cond)` syntax that Koru does not adopt.
+// Inner parens for sub-expression grouping (`when foo == (a + b)`) remain
+// legal — only whole-expression wrapping is rejected.
+// ============================================================================
+
+~event check { x: i32 }
+| high i32
+
+~check(x: 5)
+| high h when (h > 10) |> _
+| high _ |> _
