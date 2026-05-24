@@ -3020,52 +3020,6 @@ pub const VisitorEmitter = struct {
             }
         }
 
-        // Synthesize sibling-aliases for imported Koru modules
-        for (node.modules.items) |module| {
-            for (module.items) |*module_item| {
-                if (module_item.* == .import_decl) {
-                    const import = module_item.import_decl;
-                    
-                    const N = if (import.local_name) |name|
-                        name
-                    else blk: {
-                        if (std.mem.lastIndexOfScalar(u8, import.path, '/')) |last_slash| {
-                            break :blk import.path[last_slash + 1 ..];
-                        } else {
-                            break :blk import.path;
-                        }
-                    };
-
-                    var is_shadowed = false;
-                    for (node.modules.items) |m| {
-                        for (m.items) |*mi| {
-                            if (mi.* == .host_line) {
-                                if (self.hostLineDeclaresConst(mi.host_line.content, N)) {
-                                    is_shadowed = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (is_shadowed) break;
-                    }
-
-                    if (!is_shadowed) {
-                        const resolved_path = if (std.mem.startsWith(u8, import.path, "$"))
-                            import.path[1..]
-                        else
-                            import.path;
-                        
-                        try self.code_emitter.writeIndent();
-                        try self.code_emitter.write("pub const ");
-                        try self.code_emitter.write(N);
-                        try self.code_emitter.write(" = ");
-                        try emitter.writeModulePath(self.code_emitter, resolved_path, self.main_module_name);
-                        try self.code_emitter.write(";\n");
-                    }
-                }
-            }
-        }
-
         // Then emit other items (events, procs, etc)
         for (node.modules.items) |module| {
             // Track current module name and Zig prefix for variant registry lookups
@@ -3116,52 +3070,6 @@ pub const VisitorEmitter = struct {
         for (0..depth) |_| {
             try self.code_emitter.write("    ");
         }
-    }
-
-    fn hostLineDeclaresConst(self: *VisitorEmitter, content: []const u8, name: []const u8) bool {
-        _ = self;
-        var i: usize = 0;
-        while (i < content.len) {
-            // Find "const"
-            const const_idx = std.mem.indexOfPos(u8, content, i, "const") orelse break;
-            
-            // Ensure "const" is a whole word
-            const before_const_is_word = if (const_idx > 0) std.ascii.isAlphanumeric(content[const_idx - 1]) or content[const_idx - 1] == '_' else false;
-            const after_const_is_word = if (const_idx + 5 < content.len) std.ascii.isAlphanumeric(content[const_idx + 5]) or content[const_idx + 5] == '_' else false;
-            
-            if (before_const_is_word or after_const_is_word) {
-                i = const_idx + 5;
-                continue;
-            }
-            
-            // Skip whitespace after "const"
-            var idx = const_idx + 5;
-            while (idx < content.len and (content[idx] == ' ' or content[idx] == '\t' or content[idx] == '\n' or content[idx] == '\r')) {
-                idx += 1;
-            }
-            
-            // Check if it matches our name `N`
-            if (idx + name.len <= content.len and std.mem.eql(u8, content[idx .. idx + name.len], name)) {
-                const next_char_idx = idx + name.len;
-                const after_name_is_word = if (next_char_idx < content.len) std.ascii.isAlphanumeric(content[next_char_idx]) or content[next_char_idx] == '_' else false;
-                
-                if (!after_name_is_word) {
-                    // Skip whitespace after name
-                    var idx2 = next_char_idx;
-                    while (idx2 < content.len and (content[idx2] == ' ' or content[idx2] == '\t' or content[idx2] == '\n' or content[idx2] == '\r')) {
-                        idx2 += 1;
-                    }
-                    
-                    // Must be followed by '=' or ':'
-                    if (idx2 < content.len and (content[idx2] == '=' or content[idx2] == ':')) {
-                        return true;
-                    }
-                }
-            }
-            
-            i = const_idx + 5;
-        }
-        return false;
     }
 
 

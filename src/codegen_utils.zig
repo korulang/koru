@@ -380,7 +380,7 @@ pub const KORU_PREFIX: []const u8 = "koru_";
 /// receives the `koru_` prefix. When false, every segment is prefixed.
 /// All koru-module-path emission sites consult this — flip it to enable
 /// Phase 2 (prefix-every-segment) atomically.
-pub const KORU_PREFIX_TOP_ONLY: bool = false;
+pub const KORU_PREFIX_TOP_ONLY: bool = true;
 
 /// Returns the koru wrapper prefix for a given segment position.
 /// Phase 1: `"koru_"` for the first segment, `""` for the rest.
@@ -426,19 +426,18 @@ test "buildKoruModulePath dotted path" {
     const allocator = std.testing.allocator;
     const result = try buildKoruModulePath(allocator, "std.io");
     defer allocator.free(result);
-    // Phase 2: all segments prefixed
-    try std.testing.expectEqualStrings("koru_std.koru_io", result);
+    // Phase 1: first segment only
+    try std.testing.expectEqualStrings("koru_std.io", result);
 }
 
 test "buildKoruModulePath three segments" {
     const allocator = std.testing.allocator;
     const result = try buildKoruModulePath(allocator, "std.io.print");
     defer allocator.free(result);
-    // Phase 2: all segments prefixed
-    try std.testing.expectEqualStrings("koru_std.koru_io.koru_print", result);
+    try std.testing.expectEqualStrings("koru_std.io.print", result);
 }
 
-test "koruWrapperPrefix Phase 2" {
+test "koruWrapperPrefix Phase 1" {
     try std.testing.expectEqualStrings("koru_", koruWrapperPrefix(true));
-    try std.testing.expectEqualStrings("koru_", koruWrapperPrefix(false));
+    try std.testing.expectEqualStrings("", koruWrapperPrefix(false));
 }
