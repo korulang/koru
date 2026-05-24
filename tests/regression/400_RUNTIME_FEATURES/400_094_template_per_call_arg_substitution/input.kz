@@ -1,0 +1,18 @@
+// Test: per-call template with captured-argument substitution.
+// `~count_to(n: 3)` captures `3` as the Expression text for `n`. The
+// template interpolates `{{ n }}` into the Zig body. Each call site
+// substitutes ITS captured value, so this is the foundation of macro-
+// shaped events like `for`, `if`, etc.
+
+const std = @import("std");
+
+~pub event count_to { n: i32 }
+
+~proc count_to|template|zig {
+    var i: i32 = 0;
+    while (i < {{ n }}) : (i += 1) {
+        std.debug.print("{d}\n", .{i});
+    }
+}
+
+~count_to(n: 3)

@@ -1,4 +1,4 @@
-// Test: `|template|zig` actually performs Liquid interpolation. The body
+// Test: `|template(once)|zig` actually performs Liquid interpolation. The body
 // references `{{ proc_name }}` which the template processor substitutes
 // with the proc's path before stripping `template` and emitting Zig.
 //
@@ -11,7 +11,7 @@ const std = @import("std");
 
 ~pub event ping {}
 
-~proc ping|template|zig {
+~proc ping|template(once)|zig {
     std.debug.print("proc was: {{ proc_name }}\n", .{});
 }
 

@@ -1,4 +1,4 @@
-// Test: `|template|zig` proc variant — template pass renders body via
+// Test: `|template(once)|zig` proc variant — template pass renders body via
 // Liquid, then strips the `template` tag, leaving `|zig` for normal
 // emission. This test uses no template syntax in the body, so the
 // rendered output is identical to the input — proves the pipeline runs
@@ -10,7 +10,7 @@ const std = @import("std");
 
 ~pub event greet { who: []const u8 }
 
-~proc greet|template|zig {
+~proc greet|template(once)|zig {
     std.debug.print("Hello, ", .{});
     std.debug.print("{s}!\n", .{who});
 }

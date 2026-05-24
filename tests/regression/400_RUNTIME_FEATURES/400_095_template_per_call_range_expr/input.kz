@@ -1,0 +1,15 @@
+// Test: per-call template where the captured argument is a range
+// expression. `0..3` is captured as the Expression text for `r`. The
+// template interpolates it directly into a Zig `for` loop. This is the
+// canonical `for` migration shape — the receipt that per-call templates
+// can replace the [keyword|comptime|transform] for machinery.
+
+const std = @import("std");
+
+~pub event each_in { r: i32 }
+
+~proc each_in|template|zig {
+    for ({{ r }}) |item| std.debug.print("{d}\n", .{item});
+}
+
+~each_in(r: 0..3)

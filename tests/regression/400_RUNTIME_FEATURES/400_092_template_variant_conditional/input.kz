@@ -1,4 +1,4 @@
-// Test: `|template|zig` supports Liquid {% if %} blocks at template-time.
+// Test: `|template(once)|zig` supports Liquid {% if %} blocks at template-time.
 // The template renders WITHOUT the disabled-feature branch, so the runtime
 // program never sees that code.
 
@@ -6,7 +6,7 @@ const std = @import("std");
 
 ~pub event check {}
 
-~proc check|template|zig {
+~proc check|template(once)|zig {
     std.debug.print("running {{ proc_name }}\n", .{});
     {% if proc_name %}
     std.debug.print("template saw a proc_name\n", .{});

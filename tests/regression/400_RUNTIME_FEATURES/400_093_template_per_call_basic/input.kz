@@ -1,0 +1,18 @@
+// Test: per-call template — the simplest possible case.
+// Body has no template interpolation, no captured args. The point is to
+// prove the per-call mechanism fires AT the call site (not at proc-decl
+// time) and the rendered body lands as inline Zig there.
+//
+// Compared to template(once): per-call renders fresh for each invocation,
+// so two `~ping()` calls would each get an independent render. This first
+// test has just one call.
+
+const std = @import("std");
+
+~pub event ping {}
+
+~proc ping|template|zig {
+    std.debug.print("hello from per-call template\n", .{});
+}
+
+~ping()
