@@ -3,7 +3,7 @@
 ~import "$std/io"
 
 const std = @import("std");
-const HandlePool = @import("root").koru_std.interpreter.HandlePool;
+const HandlePool = @import("root").koru_std.koru_interpreter.HandlePool;
 
 // External pool (simulates bridge)
 var test_pool = HandlePool.init(std.heap.page_allocator);
