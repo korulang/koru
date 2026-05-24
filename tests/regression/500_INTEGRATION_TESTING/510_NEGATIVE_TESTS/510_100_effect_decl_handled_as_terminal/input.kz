@@ -1,5 +1,5 @@
 // ============================================================================
-// Test 510_100: MUST_FAIL — yielding `!` decl branch handled by `|` cont.
+// Test 510_100: MUST_FAIL — effect `!` decl branch handled by `|` cont.
 //
 // The event declares `each` as a YIELDING branch (`!`), but the consumer
 // dispatches with `| each` (terminal `|`). The shape checker rejects:

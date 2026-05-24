@@ -1,4 +1,4 @@
 error\[KORU023\]
-yielding.*branch.*after.*terminal
+effect.*branch.*after.*terminal
 ! each
 input\.kz:18

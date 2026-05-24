@@ -188,7 +188,7 @@ pub const EmissionContext = struct {
     // Comptime program return: use this binding instead of "_" for zero-continuation flows
     comptime_result_binding: ?[]const u8 = null,
     // Effect-branches phase 3b: if set, emitInvocation appends `, NAME` as 2nd handler arg.
-    // Set by emitFlow when the target event has yielding (`!`) branches and a Handlers
+    // Set by emitFlow when the target event has effect (`!`) branches and a Handlers
     // struct has been synthesized locally. Cleared after the invocation.
     pending_handlers_name: ?[]const u8 = null,
 };
@@ -3366,40 +3366,40 @@ pub fn emitFlow(
     }
 
     // Effect-branches phase 3b: partition continuations into terminal (`|`) and
-    // yielding (`!`). Yielding conts lower to fns inside a synthesized Handlers
+    // effect (`!`). Yielding conts lower to fns inside a synthesized Handlers
     // struct passed as the 2nd arg to .handler(); terminal conts continue to
     // drive the post-call switch/extract logic. See docs/EFFECT_BRANCHES.md.
-    var has_yielding_cont = false;
+    var has_effect_cont = false;
     for (flow.continuations) |cont| {
-        if (cont.kind == .yielding) {
-            has_yielding_cont = true;
+        if (cont.kind == .effect) {
+            has_effect_cont = true;
             break;
         }
     }
 
     var terminal_conts_buf: std.ArrayList(ast.Continuation) = .empty;
     defer terminal_conts_buf.deinit(ctx.allocator);
-    var yielding_conts_buf: std.ArrayList(ast.Continuation) = .empty;
-    defer yielding_conts_buf.deinit(ctx.allocator);
+    var effect_conts_buf: std.ArrayList(ast.Continuation) = .empty;
+    defer effect_conts_buf.deinit(ctx.allocator);
 
-    if (has_yielding_cont) {
+    if (has_effect_cont) {
         for (flow.continuations) |cont| {
-            if (cont.kind == .yielding) {
-                try yielding_conts_buf.append(ctx.allocator, cont);
+            if (cont.kind == .effect) {
+                try effect_conts_buf.append(ctx.allocator, cont);
             } else {
                 try terminal_conts_buf.append(ctx.allocator, cont);
             }
         }
     }
 
-    const conts: []const ast.Continuation = if (has_yielding_cont)
+    const conts: []const ast.Continuation = if (has_effect_cont)
         terminal_conts_buf.items
     else
         flow.continuations;
 
     var handlers_name_owned: ?[]const u8 = null;
     defer if (handlers_name_owned) |h| ctx.allocator.free(h);
-    if (has_yielding_cont) {
+    if (has_effect_cont) {
         const event_decl = if (ctx.ast_items) |items|
             findEventDeclByPath(items, &flow.invocation.path)
         else
@@ -3407,7 +3407,7 @@ pub fn emitFlow(
         if (event_decl) |ed| {
             const hname = try std.fmt.allocPrint(ctx.allocator, "Handlers_{d}", .{result_counter});
             handlers_name_owned = hname;
-            try emitHandlersStruct(emitter, ctx, hname, yielding_conts_buf.items, ed);
+            try emitHandlersStruct(emitter, ctx, hname, effect_conts_buf.items, ed);
             ctx.pending_handlers_name = hname;
         }
     }
@@ -3759,7 +3759,7 @@ fn emitHandlersStruct(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
     handlers_name: []const u8,
-    yielding_conts: []const ast.Continuation,
+    effect_conts: []const ast.Continuation,
     event_decl: *const ast.EventDecl,
 ) !void {
     try emitter.writeIndent();
@@ -3768,7 +3768,7 @@ fn emitHandlersStruct(
     try emitter.write(" = struct {\n");
     emitter.indent();
 
-    for (yielding_conts) |*cont| {
+    for (effect_conts) |*cont| {
         // Find the matching branch decl by name. shape_checker is responsible
         // for catching mismatches; if missing here we skip defensively.
         const branch_decl = blk: {
@@ -3790,15 +3790,15 @@ fn emitHandlersStruct(
         try emitter.write(": ");
 
         // Identity payload (single field named "__type_ref") — emit type directly.
-        // Struct payloads on yielding branches are not yet covered.
+        // Struct payloads on effect branches are not yet covered.
         if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
             try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
         } else if (branch.payload.fields.len == 0) {
             try emitter.write("void");
         } else {
-            // Struct-payload yielding branch: not implemented in phase 3b first cut.
+            // Struct-payload effect branch: not implemented in phase 3b first cut.
             // Emit a placeholder that will Zig-compile-error loudly so the gap is visible.
-            try emitter.write("@compileError(\"effect-branches: struct-payload yielding branches not yet emitted\")");
+            try emitter.write("@compileError(\"effect-branches: struct-payload effect branches not yet emitted\")");
         }
 
         try emitter.write(") ");
@@ -4104,7 +4104,7 @@ fn emitInvocation(
     try emitArgs(emitter, ctx, invocation.args, &invocation.path);
     try emitter.write(" }");
     // Effect-branches phase 3b: pass the synthesized Handlers struct as 2nd arg
-    // when the target event has yielding (`!`) branches.
+    // when the target event has effect (`!`) branches.
     if (ctx.pending_handlers_name) |hname| {
         try emitter.write(", ");
         try emitter.write(hname);
@@ -7856,12 +7856,12 @@ fn emitEventDeclForModule(
     try code_emitter.write("};\n");
 
     // Partition branches by kind: terminal `|` become Output union variants,
-    // yielding `!` become comptime handler-struct functions (effect operations).
+    // effect `!` become comptime handler-struct functions (effect operations).
     var terminal_count: usize = 0;
-    var has_yielding: bool = false;
+    var has_effect: bool = false;
     for (event.branches) |b| {
-        if (b.kind == .yielding) {
-            has_yielding = true;
+        if (b.kind == .effect) {
+            has_effect = true;
         } else {
             terminal_count += 1;
         }
@@ -7875,7 +7875,7 @@ fn emitEventDeclForModule(
         try code_emitter.write("pub const Output = union(enum) {\n");
         code_emitter.indent_level += 1;
         for (event.branches) |branch| {
-            if (branch.kind == .yielding) continue;
+            if (branch.kind == .effect) continue;
             try code_emitter.writeIndent();
             try writeBranchName(code_emitter, branch.name);
 
@@ -7905,7 +7905,7 @@ fn emitEventDeclForModule(
 
     // Handler function — takes `comptime __H: type` when the event yields.
     try code_emitter.writeIndent();
-    if (has_yielding) {
+    if (has_effect) {
         try code_emitter.write("pub fn handler(__koru_event_input: Input, comptime __H: type) Output {\n");
     } else {
         try code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
@@ -7924,9 +7924,9 @@ fn emitEventDeclForModule(
 
     // Yielding-branch aliases — `const X = __H.X;` so the body can call X(...)
     // directly without qualifying through __H. Zero runtime cost (comptime).
-    if (has_yielding) {
+    if (has_effect) {
         for (event.branches) |b| {
-            if (b.kind != .yielding) continue;
+            if (b.kind != .effect) continue;
             try code_emitter.writeIndent();
             try code_emitter.write("const ");
             try code_emitter.write(b.name);

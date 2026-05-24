@@ -52,7 +52,7 @@
             "branches": [
                 {
                     "name": "line",
-                    "kind": "yielding",
+                    "kind": "effect",
                     "resume": null,
                     "is_optional": false,
                     "payload": {

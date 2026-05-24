@@ -7,7 +7,7 @@
             "type": "import_decl",
             "path": "$std/compiler",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
                 "line": 2,
                 "col": 0
             }
@@ -16,7 +16,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
                 "line": 2,
                 "col": 0
             }
@@ -25,7 +25,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
                 "line": 3,
                 "col": 0
             }
@@ -34,7 +34,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
                 "line": 4,
                 "col": 0
             }
@@ -61,7 +61,7 @@
             "branches": [
                 {
                     "name": "token",
-                    "kind": "yielding",
+                    "kind": "effect",
                     "resume": null,
                     "is_optional": false,
                     "payload": {
@@ -81,7 +81,7 @@
                 },
                 {
                     "name": "warning",
-                    "kind": "yielding",
+                    "kind": "effect",
                     "resume": null,
                     "is_optional": true,
                     "payload": {
@@ -121,7 +121,7 @@
                 }
             ],
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
                 "line": 10,
                 "col": 0
             }
@@ -149,7 +149,7 @@
 
             ],
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
                 "line": 12,
                 "col": 0
             }
@@ -177,7 +177,7 @@
 
             ],
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
                 "line": 13,
                 "col": 0
             }
@@ -197,7 +197,7 @@
             "continuations": [
                 {
                     "branch": "token",
-                    "kind": "yielding",
+                    "kind": "effect",
                     "is_catchall": false,
                     "binding": "t",
                     "binding_type": "branch_payload",
@@ -221,7 +221,7 @@
                 },
                 {
                     "branch": "?",
-                    "kind": "yielding",
+                    "kind": "effect",
                     "is_catchall": true,
                     "binding": null,
                     "binding_type": "branch_payload",
@@ -262,7 +262,7 @@
             "post_label": null,
             "impl_of": null,
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_yielding_catchall_dispatch/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_077_effect_catchall_dispatch/input.kz",
                 "line": 14,
                 "col": 0
             }

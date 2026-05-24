@@ -1,6 +1,6 @@
 // Test: minimum effect-branch program — proc yields, consumer handles.
 //
-// `! pong []const u8` is a yielding branch; the proc body calls `pong(msg)`
+// `! pong []const u8` is a effect branch; the proc body calls `pong(msg)`
 // which transfers control to the consumer's `! pong reply |> ...` handler,
 // runs it, then returns. No terminal `|` branches — this is a void event
 // with one effect operation.

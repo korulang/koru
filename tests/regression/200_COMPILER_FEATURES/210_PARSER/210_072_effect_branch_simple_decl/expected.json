@@ -62,7 +62,7 @@
             "branches": [
                 {
                     "name": "each",
-                    "kind": "yielding",
+                    "kind": "effect",
                     "resume": null,
                     "is_optional": false,
                     "payload": {

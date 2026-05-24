@@ -1,0 +1,1 @@
+error[KORU025]: branch 'each' is declared as effect

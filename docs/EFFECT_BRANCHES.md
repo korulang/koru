@@ -24,14 +24,14 @@ Both encode "this is a stream" by hand. Neither composes with phantom-state obli
 | done usize
 ```
 
-- `!` branches: yielding (effect operations). May fire zero-or-more times during a single proc invocation.
+- `!` branches: effect operations. May fire zero-or-more times during a single proc invocation.
 - `|` branches: terminal (exactly one fires, the proc returns).
 - `!` branches always come first in source order at the declaration.
 - An event with only `!` branches and no `|` is fine — it's a void event with effect operations. The producer runs to its natural end and returns.
 
-### Optional yielding branches (`!?`)
+### Optional effect branches (`!?`)
 
-Symmetric with the existing `|?` mechanism for terminal branches. An event can declare a yielding branch as optional with a `?`-prefixed name; consumers may omit handlers for those branches without an exhaustiveness error, and an unhandled call from the producer becomes a no-op.
+Symmetric with the existing `|?` mechanism for terminal branches. An event can declare a effect branch as optional with a `?`-prefixed name; consumers may omit handlers for those branches without an exhaustiveness error, and an unhandled call from the producer becomes a no-op.
 
 ```
 ~pub event tokenize { source: []const u8 }
@@ -41,20 +41,20 @@ Symmetric with the existing `|?` mechanism for terminal branches. An event can d
 | done usize
 ```
 
-- `! ?warning []const u8`: optional yielding branch. Consumer is free to handle it or ignore it.
+- `! ?warning []const u8`: optional effect branch. Consumer is free to handle it or ignore it.
 - Catch-all dispatch via `!?`, mirroring `|?`:
 
 ```
 ~tokenize(source: src)
 ! token t |> emit(t)
-!? |> _                  // ignore all unhandled optional yielding branches
+!? |> _                  // ignore all unhandled optional effect branches
 | done _ |> _
 ```
 
 - `!? Metatype binding |> body` is also legal, again mirroring `|?` (e.g., filter all unhandled yields through a metatype binding).
-- Producer-side semantics: calling an unhandled optional yielding branch is a no-op (silently dropped). The handler simply isn't installed in the comptime struct, so the call lowers to nothing.
+- Producer-side semantics: calling an unhandled optional effect branch is a no-op (silently dropped). The handler simply isn't installed in the comptime struct, so the call lowers to nothing.
 
-Optional yielding branches are expected to be the bread-and-butter shape for pump-style events that emit multiple kinds of signals (tokens + warnings + debug traces, frames + metrics + log lines, etc.). Most consumers only care about a subset; making everything required would force `! everything _ |> _` boilerplate in every consumer.
+Optional effect branches are expected to be the bread-and-butter shape for pump-style events that emit multiple kinds of signals (tokens + warnings + debug traces, frames + metrics + log lines, etc.). Most consumers only care about a subset; making everything required would force `! everything _ |> _` boilerplate in every consumer.
 
 Convention (matching `|`): required `!` first, then optional `!?` next, then required `|`, then optional `|?`. Enforcement is convention-only at the parser layer; the `!`-before-`|` rule is the only hard ordering constraint.
 
@@ -73,7 +73,7 @@ Convention (matching `|`): required `!` first, then optional `!?` next, then req
 
 Default omitted resume is `-> void`.
 
-Optional yielding branches can also carry resume types: `! ?prompt []const u8 -> []const u8` is a yielding branch the consumer may skip; when handled, it resumes with the supplied value; when unhandled, the call is a no-op AND the producer-side resume is the default-of-resume-type (e.g., `""` for `[]const u8`, `0` for numeric, `void` for void). Whether default-of-type is acceptable here or whether unhandled optional with a non-void resume should be a compile error is an open question.
+Optional effect branches can also carry resume types: `! ?prompt []const u8 -> []const u8` is a effect branch the consumer may skip; when handled, it resumes with the supplied value; when unhandled, the call is a no-op AND the producer-side resume is the default-of-resume-type (e.g., `""` for `[]const u8`, `0` for numeric, `void` for void). Whether default-of-type is acceptable here or whether unhandled optional with a non-void resume should be a compile error is an open question.
 
 ### Glyph choice — why `!`
 
@@ -94,7 +94,7 @@ Optional yielding branches can also carry resume types: `! ?prompt []const u8 ->
 | done |> result 3
 ```
 
-Exhaustiveness on both: every required `!` branch must be handled, every required `|` branch must be handled. Optional `!?` and `|?` branches do not need explicit handlers — unhandled optional yields are no-ops (see optional yielding branches section above), unhandled optional terminals follow the existing `|?` rules. A `!?` or `|?` catch-all in the dispatch list absorbs any optional branches not explicitly named. Branches-are-equal exhaustiveness, layered. The handler body's tail value is the resume value (when the branch has a `->` resume type).
+Exhaustiveness on both: every required `!` branch must be handled, every required `|` branch must be handled. Optional `!?` and `|?` branches do not need explicit handlers — unhandled optional yields are no-ops (see optional effect branches section above), unhandled optional terminals follow the existing `|?` rules. A `!?` or `|?` catch-all in the dispatch list absorbs any optional branches not explicitly named. Branches-are-equal exhaustiveness, layered. The handler body's tail value is the resume value (when the branch has a `->` resume type).
 
 ### Proc impl (host language)
 

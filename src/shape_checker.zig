@@ -805,7 +805,7 @@ pub const ShapeChecker = struct {
             }
         }
 
-        // Branch kind-mismatch check (KORU025): a `!` (yielding) decl branch
+        // Branch kind-mismatch check (KORU025): a `!` (effect) decl branch
         // must be handled by a `!` continuation, and a `|` (terminal) decl
         // branch by a `|` continuation. Catch-alls are exempt — they match by
         // kind elsewhere.
@@ -822,8 +822,8 @@ pub const ShapeChecker = struct {
                         self.reporter,
                         cont.location,
                         cont.branch,
-                        if (decl.kind == .yielding) .yielding else .terminal,
-                        if (cont.kind == .yielding) .yielding else .terminal,
+                        if (decl.kind == .effect) .effect else .terminal,
+                        if (cont.kind == .effect) .effect else .terminal,
                     );
                     has_errors = true;
                 }

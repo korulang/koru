@@ -1,4 +1,4 @@
-// Test 210_074: yielding branch with explicit `->` resume type.
+// Test 210_074: effect branch with explicit `->` resume type.
 // `! ask T -> U`: yield a T, resume with a U.
 
 ~pub event prompt_user { question: []const u8 }

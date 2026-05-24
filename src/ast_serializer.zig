@@ -1044,11 +1044,11 @@ pub const AstSerializer = struct {
         try self.write(if (cont.is_catchall) "true" else "false");
         try self.write(",\n");
 
-        // Branch kind (terminal `|` or yielding `!`)
+        // Branch kind (terminal `|` or effect `!`)
         try self.writeIndent();
         try self.write(".kind = ");
         try self.write(switch (cont.kind) {
-            .yielding => ".yielding",
+            .effect => ".effect",
             .terminal => ".terminal",
         });
         try self.write(",\n");
@@ -1420,7 +1420,7 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write(".kind = ");
         try self.write(switch (branch.kind) {
-            .yielding => ".yielding",
+            .effect => ".effect",
             .terminal => ".terminal",
         });
         try self.write(",\n");
@@ -2045,7 +2045,7 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write("\"kind\": ");
         try self.writeString(switch (cont.kind) {
-            .yielding => "yielding",
+            .effect => "effect",
             .terminal => "terminal",
         });
         try self.write(",\n");
@@ -2666,7 +2666,7 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write("\"kind\": ");
         try self.writeString(switch (branch.kind) {
-            .yielding => "yielding",
+            .effect => "effect",
             .terminal => "terminal",
         });
         try self.write(",\n");

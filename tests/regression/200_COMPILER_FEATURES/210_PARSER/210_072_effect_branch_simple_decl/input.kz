@@ -1,5 +1,5 @@
 // Test 210_072: simple effect-branch event declaration.
-// `! each` (yielding) precedes `| done` (terminal) per ordering rule.
+// `! each` (effect) precedes `| done` (terminal) per ordering rule.
 
 ~pub event for { start: usize, end: usize }
 ! each usize

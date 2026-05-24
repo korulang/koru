@@ -1466,14 +1466,14 @@ pub const VisitorEmitter = struct {
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("};\n");
 
-        // Partition branches: terminal `|` → Output union variants, yielding
+        // Partition branches: terminal `|` → Output union variants, effect
         // `!` → comptime handler-struct fns (effect operations). See
         // docs/EFFECT_BRANCHES.md for the lowering.
         var terminal_count: usize = 0;
-        var has_yielding: bool = false;
+        var has_effect: bool = false;
         for (event.branches) |b| {
-            if (b.kind == .yielding) {
-                has_yielding = true;
+            if (b.kind == .effect) {
+                has_effect = true;
             } else {
                 terminal_count += 1;
             }
@@ -1488,7 +1488,7 @@ pub const VisitorEmitter = struct {
             self.code_emitter.indent_level += 1;
 
             for (event.branches) |branch| {
-                if (branch.kind == .yielding) continue;
+                if (branch.kind == .effect) continue;
                 try self.code_emitter.writeIndent();
                 try emitter.writeBranchName(self.code_emitter, branch.name);
                 try self.code_emitter.write(": ");
@@ -1879,10 +1879,10 @@ pub const VisitorEmitter = struct {
         }
 
         // Handler function — `comptime __H: type` when the event has any
-        // yielding `!` branches. Inside the body we'll alias each `H.NAME`
+        // effect `!` branches. Inside the body we'll alias each `H.NAME`
         // back to the bare identifier so the proc body reads naturally.
         try self.code_emitter.writeIndent();
-        if (has_yielding) {
+        if (has_effect) {
             try self.code_emitter.write("pub fn handler(__koru_event_input: Input, comptime __H: type) Output {\n");
         } else {
             try self.code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
@@ -1890,9 +1890,9 @@ pub const VisitorEmitter = struct {
         self.code_emitter.indent_level += 1;
 
         // Yielding-branch comptime aliases — must come before any user body code.
-        if (has_yielding) {
+        if (has_effect) {
             for (event.branches) |b| {
-                if (b.kind != .yielding) continue;
+                if (b.kind != .effect) continue;
                 try self.code_emitter.writeIndent();
                 try self.code_emitter.write("const ");
                 try self.code_emitter.write(b.name);

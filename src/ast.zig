@@ -759,15 +759,15 @@ pub const Field = struct {
     }
 };
 
-pub const BranchKind = enum { terminal, yielding };
+pub const BranchKind = enum { terminal, effect };
 
 pub const Branch = struct {
     name: []const u8,
     payload: Shape,
     is_deferred: bool = false,  // Marks &-branches that return event refs
     is_optional: bool = false,  // Marks ?-branches that don't need to be handled
-    kind: BranchKind = .terminal,  // `|` = terminal (fires once, returns); `!` = yielding (fires 0..N during proc run)
-    resume_type: ?[]const u8 = null,  // Type after `->` on yielding branches; null = -> void
+    kind: BranchKind = .terminal,  // `|` = terminal (fires once, returns); `!` = effect (fires 0..N during proc run)
+    resume_type: ?[]const u8 = null,  // Type after `->` on effect branches; null = -> void
     annotations: []const []const u8 = &[_][]const u8{},  // Branch annotations like [mutable]
 
     pub fn deinit(self: *Branch, allocator: std.mem.Allocator) void {
@@ -894,7 +894,7 @@ pub const Continuation = struct {
     binding: ?[]const u8,
     binding_annotations: []const []const u8 = &[_][]const u8{}, // Annotations on binding (e.g., [mutable])
     binding_type: BindingType = .branch_payload,
-    kind: BranchKind = .terminal,  // `|` = terminal handler, `!` = yielding handler
+    kind: BranchKind = .terminal,  // `|` = terminal handler, `!` = effect handler
     is_catchall: bool = false,  // True for |? or !? catch-all continuations
     catchall_metatype: ?[]const u8 = null,  // "Transition", "Profile", or "Audit" for |? Transition t
     condition: ?[]const u8, // When clause condition (e.g., "o.status == 200")

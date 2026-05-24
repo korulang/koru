@@ -1,4 +1,4 @@
-// Test 210_076: optional yielding branch (`! ?warning`) at event decl.
+// Test 210_076: optional effect branch (`! ?warning`) at event decl.
 // Symmetric with `| ?name` — consumers may omit handlers without
 // exhaustiveness error; unhandled calls become no-ops.
 

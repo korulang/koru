@@ -1426,9 +1426,9 @@ pub const Parser = struct {
             const branch_line = self.current + 1;
             const branch = try self.parseBranch();
 
-            // Ordering rule: yielding `!` branches must precede terminal `|` branches.
-            if (branch.kind == .yielding and seen_terminal_branch) {
-                try errors.terminalBeforeYielding(&self.reporter, branch_line, 1, branch.name, .decl);
+            // Ordering rule: effect `!` branches must precede terminal `|` branches.
+            if (branch.kind == .effect and seen_terminal_branch) {
+                try errors.terminalBeforeEffect(&self.reporter, branch_line, 1, branch.name, .decl);
             }
             if (branch.kind == .terminal) seen_terminal_branch = true;
 
@@ -1640,9 +1640,9 @@ pub const Parser = struct {
             const branch_line = self.current + 1;
             const branch = try self.parseBranch();
 
-            // Ordering rule: yielding `!` branches must precede terminal `|` branches.
-            if (branch.kind == .yielding and seen_terminal_branch_v2) {
-                try errors.terminalBeforeYielding(&self.reporter, branch_line, 1, branch.name, .decl);
+            // Ordering rule: effect `!` branches must precede terminal `|` branches.
+            if (branch.kind == .effect and seen_terminal_branch_v2) {
+                try errors.terminalBeforeEffect(&self.reporter, branch_line, 1, branch.name, .decl);
             }
             if (branch.kind == .terminal) seen_terminal_branch_v2 = true;
 
@@ -4313,7 +4313,7 @@ pub const Parser = struct {
         // If there's leading space, look for the first continuation to set the level
         var expected_indent: ?usize = null;
 
-        // Ordering rule (KORU023): yielding `!` handlers precede terminal `|` handlers
+        // Ordering rule (KORU023): effect `!` handlers precede terminal `|` handlers
         // at the dispatch site, mirroring the decl-side rule.
         var seen_terminal_handler: bool = false;
 
@@ -4351,8 +4351,8 @@ pub const Parser = struct {
             // Ordering rule check. Catch-all (`!?` / `|?`) handlers are exempt
             // — they're symmetric ends for both sides.
             if (!cont.is_catchall) {
-                if (cont.kind == .yielding and seen_terminal_handler) {
-                    try errors.terminalBeforeYielding(&self.reporter, handler_line, indent + 1, cont.branch, .dispatch);
+                if (cont.kind == .effect and seen_terminal_handler) {
+                    try errors.terminalBeforeEffect(&self.reporter, handler_line, indent + 1, cont.branch, .dispatch);
                 }
                 if (cont.kind == .terminal) seen_terminal_handler = true;
             }
@@ -4368,8 +4368,8 @@ pub const Parser = struct {
         const line = self.lines[self.current - 1]; // We already incremented
         const trimmed = lexer.trim(line);
 
-        // Detect kind from prefix: `|` = terminal, `!` = yielding.
-        const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .yielding else .terminal;
+        // Detect kind from prefix: `|` = terminal, `!` = effect.
+        const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .effect else .terminal;
         // Skip the | or ! prefix
         const after_bar = lexer.trim(trimmed[1..]);
 
@@ -4407,8 +4407,8 @@ pub const Parser = struct {
         const line = self.lines[self.current - 1]; // We already incremented in parseContinuations
         const trimmed = lexer.trim(line);
 
-        // Detect kind from prefix: `|` = terminal, `!` = yielding.
-        const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .yielding else .terminal;
+        // Detect kind from prefix: `|` = terminal, `!` = effect.
+        const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .effect else .terminal;
         // Skip the | or ! prefix
         const after_bar = lexer.trim(trimmed[1..]);
 
@@ -6289,9 +6289,9 @@ pub const Parser = struct {
         // We'll consume this line
         self.current += 1;
 
-        // Detect branch kind from prefix: `|` = terminal, `!` = yielding.
+        // Detect branch kind from prefix: `|` = terminal, `!` = effect.
         // isBranchContinuation already validated the first char so we trust it here.
-        const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .yielding else .terminal;
+        const branch_kind: ast.BranchKind = if (trimmed.len > 0 and trimmed[0] == '!') .effect else .terminal;
         const after_bar = lexer.trim(trimmed[1..]);
 
         // Check for & prefix (deferred branch)
@@ -6315,7 +6315,7 @@ pub const Parser = struct {
             branch_start = lexer.trim(branch_start[0..comment_idx]);
         }
 
-        // Detect resume type: `-> ResumeT` suffix on yielding branches.
+        // Detect resume type: `-> ResumeT` suffix on effect branches.
         // Scan at bracket/brace depth 0 so we don't trip on `->` inside a struct
         // payload `{ ... }` or a phantom-state `[...]`.
         var resume_type: ?[]const u8 = null;

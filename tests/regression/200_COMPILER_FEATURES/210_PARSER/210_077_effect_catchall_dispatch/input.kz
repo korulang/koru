@@ -1,5 +1,5 @@
 // Test 210_077: `!?` catch-all in consumer dispatch.
-// Symmetric with `|?` catch-all. Absorbs any optional yielding branches
+// Symmetric with `|?` catch-all. Absorbs any optional effect branches
 // not explicitly listed.
 
 ~pub event tokenize { source: []const u8 }

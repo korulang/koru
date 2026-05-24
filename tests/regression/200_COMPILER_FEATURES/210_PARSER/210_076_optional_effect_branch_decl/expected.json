@@ -7,7 +7,7 @@
             "type": "import_decl",
             "path": "$std/compiler",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_yielding_branch_decl/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_effect_branch_decl/input.kz",
                 "line": 2,
                 "col": 0
             }
@@ -16,7 +16,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_yielding_branch_decl/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_effect_branch_decl/input.kz",
                 "line": 2,
                 "col": 0
             }
@@ -25,7 +25,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_yielding_branch_decl/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_effect_branch_decl/input.kz",
                 "line": 3,
                 "col": 0
             }
@@ -34,7 +34,7 @@
             "type": "host_line",
             "module": "input",
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_yielding_branch_decl/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_effect_branch_decl/input.kz",
                 "line": 4,
                 "col": 0
             }
@@ -61,7 +61,7 @@
             "branches": [
                 {
                     "name": "token",
-                    "kind": "yielding",
+                    "kind": "effect",
                     "resume": null,
                     "is_optional": false,
                     "payload": {
@@ -81,7 +81,7 @@
                 },
                 {
                     "name": "warning",
-                    "kind": "yielding",
+                    "kind": "effect",
                     "resume": null,
                     "is_optional": true,
                     "payload": {
@@ -121,7 +121,7 @@
                 }
             ],
             "location": {
-                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_yielding_branch_decl/input.kz",
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_effect_branch_decl/input.kz",
                 "line": 10,
                 "col": 0
             }

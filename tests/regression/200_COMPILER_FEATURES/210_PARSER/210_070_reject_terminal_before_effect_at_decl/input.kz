@@ -1,8 +1,8 @@
 // ============================================================================
-// Test 210_070: MUST_FAIL — yielding branches must precede terminal branches
+// Test 210_070: MUST_FAIL — effect branches must precede terminal branches
 //                          at the event declaration site.
 //
-// Per docs/EFFECT_BRANCHES.md: `!` (yielding) branches always come first in
+// Per docs/EFFECT_BRANCHES.md: `!` (effect) branches always come first in
 // source order at the declaration. The parser rejects any `|` (terminal)
 // branch that appears above a `!` branch in the same event decl.
 //

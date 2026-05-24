@@ -39,7 +39,7 @@ pub fn isKoruLine(line: []const u8) bool {
     return trimmed[0] == '~' or trimmed[0] == '|';
 }
 
-/// Check if this is a continuation line (starts with `|` terminal or `!` yielding)
+/// Check if this is a continuation line (starts with `|` terminal or `!` effect)
 pub fn isContinuationLine(line: []const u8) bool {
     const trimmed = trim(line);
     if (trimmed.len == 0) return false;

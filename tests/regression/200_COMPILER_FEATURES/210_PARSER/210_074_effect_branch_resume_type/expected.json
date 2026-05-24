@@ -52,7 +52,7 @@
             "branches": [
                 {
                     "name": "ask",
-                    "kind": "yielding",
+                    "kind": "effect",
                     "resume": "[]const u8",
                     "is_optional": false,
                     "payload": {

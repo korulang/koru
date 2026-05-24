@@ -436,13 +436,13 @@ pub fn branchKindMismatch(
     reporter: *ErrorReporter,
     location: SourceLocation,
     branch_name: []const u8,
-    decl_kind: enum { yielding, terminal },
-    cont_kind: enum { yielding, terminal },
+    decl_kind: enum { effect, terminal },
+    cont_kind: enum { effect, terminal },
 ) !void {
-    const decl_glyph: []const u8 = if (decl_kind == .yielding) "!" else "|";
-    const cont_glyph: []const u8 = if (cont_kind == .yielding) "!" else "|";
-    const decl_label: []const u8 = if (decl_kind == .yielding) "yielding" else "terminal";
-    const cont_label: []const u8 = if (cont_kind == .yielding) "yielding" else "terminal";
+    const decl_glyph: []const u8 = if (decl_kind == .effect) "!" else "|";
+    const cont_glyph: []const u8 = if (cont_kind == .effect) "!" else "|";
+    const decl_label: []const u8 = if (decl_kind == .effect) "effect" else "terminal";
+    const cont_label: []const u8 = if (cont_kind == .effect) "effect" else "terminal";
     const message = try std.fmt.allocPrint(reporter.allocator,
         "branch '{s}' is declared as {s} `{s}` but the handler uses {s} `{s}`",
         .{ branch_name, decl_label, decl_glyph, cont_label, cont_glyph });
@@ -479,7 +479,7 @@ pub fn redundantWhenParens(
     );
 }
 
-pub fn terminalBeforeYielding(
+pub fn terminalBeforeEffect(
     reporter: *ErrorReporter,
     line: usize,
     column: usize,
@@ -498,9 +498,9 @@ pub fn terminalBeforeYielding(
         .KORU023,
         line,
         column,
-        "yielding `!` {s} '{s}' appears after a terminal `|` {s}",
+        "effect `!` {s} '{s}' appears after a terminal `|` {s}",
         .{ context_label, branch_name, context_label },
-        "move `! {s}` above any `|` {s} — yielding branches always come first (source order = temporal order: effects during run, then how it ends)",
+        "move `! {s}` above any `|` {s} — effect branches always come first (source order = temporal order: effects during run, then how it ends)",
         .{ branch_name, context_plural },
     );
 }
