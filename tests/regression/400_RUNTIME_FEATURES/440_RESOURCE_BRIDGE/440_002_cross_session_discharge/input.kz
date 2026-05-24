@@ -8,7 +8,7 @@
 ~import "$std/io"
 
 const std = @import("std");
-const HandlePool = @import("root").koru_std.interpreter.HandlePool;
+const HandlePool = @import("root").koru_std.koru_interpreter.HandlePool;
 
 // External pool - the bridge
 var bridge_pool = HandlePool.init(std.heap.page_allocator);
@@ -58,7 +58,7 @@ const SESSION_2 = "~close(handle: \"file_1\")\n| closed |> result {}";
     std.debug.print("Session 1 left {} handle(s) on bridge\n", .{handles_after_open});
 
     // Run session 2 to discharge the handle
-    const result = @import("root").koru_std.runtime.run_event.handler(.{
+    const result = @import("root").koru_std.koru_runtime.run_event.handler(.{
         .source = SESSION_2,
         .scope = "files",
         .budget = 100,

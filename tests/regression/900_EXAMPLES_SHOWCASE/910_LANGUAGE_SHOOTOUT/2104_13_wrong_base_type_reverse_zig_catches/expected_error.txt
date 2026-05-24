@@ -1,1 +1,1 @@
-expected type '*output_emitted.koru_app.db.Transaction', found '*output_emitted.koru_app.db.Connection'
+expected type '*output_emitted.koru_app.koru_db.Transaction', found '*output_emitted.koru_app.koru_db.Connection'
