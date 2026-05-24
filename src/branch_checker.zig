@@ -41,11 +41,18 @@ pub const BranchChecker = struct {
     /// - unknown_branches: handled branches that don't exist in declaration
     ///
     /// Rules:
-    /// - Required branches MUST be handled (or covered by catchall)
-    /// - Optional branches MAY be handled
+    /// - Required branches MUST be covered by an UNGUARDED handler, an
+    ///   engaging catchall, or a chain that ends in an unguarded fallback.
+    /// - Optional branches MAY be handled. `when`-only handlers on optional
+    ///   branches are fine because "no handler fires" is a legal trajectory
+    ///   under the optional contract.
     /// - Unknown branches are ERRORS
-    /// - Catchall (|?) covers all unhandled branches
-    /// - When guards don't affect coverage (branch is still handled)
+    /// - Catchall (|?) covers all unhandled REQUIRED branches.
+    /// - `when` guards NARROW a handler — they pick out a subset of fires.
+    ///   They do NOT satisfy required-coverage on their own: a `when`-only
+    ///   handler for a required branch leaves the false-guard case silently
+    ///   uncovered, which is a coverage hole that looks like coverage in
+    ///   source. See `docs/EFFECT_BRANCHES.md` "Exhaustiveness rules".
     pub fn validate(
         allocator: std.mem.Allocator,
         declared: []const DeclaredBranch,
@@ -65,22 +72,23 @@ pub const BranchChecker = struct {
             }
         }
 
-        // Check that all required branches are handled
+        // Check that all required branches are handled by at least one
+        // UNGUARDED handler (or by a catchall).
         for (declared) |decl| {
             if (decl.is_optional) continue; // Optional branches don't need handling
 
             if (has_catchall) continue; // Catchall covers everything
 
-            var found = false;
+            var found_unguarded = false;
             for (handled) |h| {
                 if (h.is_catchall) continue; // Catchall doesn't count as specific handler
-                if (std.mem.eql(u8, decl.name, h.name)) {
-                    found = true;
-                    break;
-                }
+                if (!std.mem.eql(u8, decl.name, h.name)) continue;
+                if (h.has_when_guard) continue; // Guards narrow; they don't cover
+                found_unguarded = true;
+                break;
             }
 
-            if (!found) {
+            if (!found_unguarded) {
                 try missing.append(allocator, decl.name);
             }
         }

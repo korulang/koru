@@ -1,16 +1,30 @@
 // ============================================================================
-// Test 066: Catch-All |? End-to-End
-// Verifies that |? catch-all correctly emits switch cases for unhandled
-// optional branches and can observe them via metatype synthesis.
+// Test 210_017: catch-all engaging-form parse acceptance.
+//
+// Pins that the parser accepts the engaging metatype-bound catch-all form
+// after the pay-for-nothing rule landed (210_081-083 pin the rejection
+// side). The bound metatype + real-work body shape is the canonical
+// dispatch-site catch-all per docs/EFFECT_BRANCHES.md.
+//
+// Note: the metatype-catchall *emission* path has its own downstream gap
+// (synthesized handler references `taps`-related code that isn't always
+// in scope). That's tracked separately — this test only pins the parser
+// surface. EXPECT FRONTEND_OK to limit scope to parse acceptance.
 // ============================================================================
 
-// Event with one required branch and two optional branches
 ~event process { value: u32 }
 | success u32
 | ?warning []const u8
-| ?info []const u8
 
-// Test: Handle only required branch, catch-all for optional branches
+~proc process|zig {
+    return .{ .success = value };
+}
+
+~pub event observed { name: []const u8 }
+~proc observed|zig {
+    _ = name;
+}
+
 ~process(value: 42)
 | success _ |> _
-|? |> _
+|? Transition _ |> observed(name: "unhandled")

@@ -1,6 +1,8 @@
 # Effect branches (`!`) — workdoc
 
-**Status**: Design phase.
+**Status**: In flight. Parser and emitter for the core shape have landed; ongoing
+work on `when`-guard preservation, sibling-handler merging, and the
+pay-for-nothing catch-all rule (see "Dispatch-site catch-all rules" below).
 
 ## Summary
 
@@ -42,21 +44,17 @@ Symmetric with the existing `|?` mechanism for terminal branches. An event can d
 ```
 
 - `! ?warning []const u8`: optional effect branch. Consumer is free to handle it or ignore it.
-- Catch-all dispatch via `!?`, mirroring `|?`:
+- **Omission is the no-op.** A consumer that doesn't write a `! warning` handler simply leaves the handler uninstalled in the comptime struct; the producer's call lowers to nothing. There is no `!? |> _` ceremony at the dispatch site — optional means optional.
+- **Convention** (matching `|`): required `!` first, then optional `!?` next, then required `|`, then optional `|?`. Enforcement is convention-only at the parser layer; the `!`-before-`|` rule is the only hard ordering constraint.
 
 ```
 ~tokenize(source: src)
 ! token t |> emit(t)
-!? |> _                  // ignore all unhandled optional effect branches
 | done _ |> _
+// no handler for ?warning — silently dropped if it fires
 ```
 
-- `!? Metatype binding |> body` is also legal, again mirroring `|?` (e.g., filter all unhandled yields through a metatype binding).
-- Producer-side semantics: calling an unhandled optional effect branch is a no-op (silently dropped). The handler simply isn't installed in the comptime struct, so the call lowers to nothing.
-
-Optional effect branches are expected to be the bread-and-butter shape for pump-style events that emit multiple kinds of signals (tokens + warnings + debug traces, frames + metrics + log lines, etc.). Most consumers only care about a subset; making everything required would force `! everything _ |> _` boilerplate in every consumer.
-
-Convention (matching `|`): required `!` first, then optional `!?` next, then required `|`, then optional `|?`. Enforcement is convention-only at the parser layer; the `!`-before-`|` rule is the only hard ordering constraint.
+Optional effect branches are expected to be the bread-and-butter shape for pump-style events that emit multiple kinds of signals (tokens + warnings + debug traces, frames + metrics + log lines, etc.). Most consumers only care about a subset; making everything required would force boilerplate in every consumer.
 
 ### Resume values
 
@@ -73,7 +71,7 @@ Convention (matching `|`): required `!` first, then optional `!?` next, then req
 
 Default omitted resume is `-> void`.
 
-Optional effect branches can also carry resume types: `! ?prompt []const u8 -> []const u8` is a effect branch the consumer may skip; when handled, it resumes with the supplied value; when unhandled, the call is a no-op AND the producer-side resume is the default-of-resume-type (e.g., `""` for `[]const u8`, `0` for numeric, `void` for void). Whether default-of-type is acceptable here or whether unhandled optional with a non-void resume should be a compile error is an open question.
+Optional effect branches can also carry resume types: `! ?prompt []const u8 -> []const u8` is an effect branch the consumer may skip; when handled, it resumes with the supplied value; when unhandled, the call is a no-op AND the producer-side resume is the default-of-resume-type (e.g., `""` for `[]const u8`, `0` for numeric, `void` for void). Whether default-of-type is acceptable here or whether unhandled optional with a non-void resume should be a compile error is an open question.
 
 ### Glyph choice — why `!`
 
@@ -94,7 +92,26 @@ Optional effect branches can also carry resume types: `! ?prompt []const u8 -> [
 | done |> result 3
 ```
 
-Exhaustiveness on both: every required `!` branch must be handled, every required `|` branch must be handled. Optional `!?` and `|?` branches do not need explicit handlers — unhandled optional yields are no-ops (see optional effect branches section above), unhandled optional terminals follow the existing `|?` rules. A `!?` or `|?` catch-all in the dispatch list absorbs any optional branches not explicitly named. Branches-are-equal exhaustiveness, layered. The handler body's tail value is the resume value (when the branch has a `->` resume type).
+Exhaustiveness rules:
+- Every **required** `!` and `|` branch must be covered by an **unguarded** handler, an engaging catch-all (see below), or a chain of guarded handlers ending in an unguarded fallback. A `when`-guarded handler **narrows** a branch's matches but does NOT satisfy coverage on its own — if the guard's false case has no handler, a fire of a required branch can silently produce no work, which is a coverage hole that looks like coverage in source.
+- **Optional** `!?` and `|?` branches need no consumer marker at all. Omitting a handler is the no-op; the handler isn't installed in the comptime struct and the producer's call lowers to nothing.
+
+Branches-are-equal exhaustiveness, layered. The handler body's tail value is the resume value (when the branch has a `->` resume type).
+
+### Dispatch-site catch-all rules
+
+A dispatch-site catch-all (`|?` or `!?`) **prevents** the comptime elision that makes optional branches free. With a catch-all installed, every unhandled branch routes into the catch-all handler at runtime. That's a real cost — code size, dispatch cycles, and (for metatype variants) struct construction per fire.
+
+So the rule is: **if you write a catch-all, you engage**. The body must do real work, optionally informed by a metatype binding:
+
+- `|? Transition t |> log(t)` — captures `Transition` reflection (which branch fired). ✓
+- `|? Profile p |> record(p)` — `Profile` is `Transition` + perf data. ✓
+- `|? Audit a |> store(a)` — `Audit` is `Profile` + serialized payload. Most expensive tier. ✓
+- `|? Transition _ |> emit_counter()` — binding may be `_` if the body does real work and the tier choice was deliberate. ✓
+- `|? |> _` — **REJECTED** at parse time. Pay-for-nothing: opts into routing cost, throws everything away. If you don't care, don't write the catch-all.
+- `|? Transition _ |> _` — **REJECTED** at parse time. Same shape with extra cost layered on.
+
+Same rules apply symmetrically to `!?`. The metatype tier is the consumer's opt-in to runtime cost in exchange for reflection — the language refuses to let consumers pay the cost without taking the value.
 
 ### Proc impl (host language)
 

@@ -1,0 +1,30 @@
+// Test: `when` guard on an `!` effect-branch handler at the dispatch site.
+//
+// The producer fires `! tick(i)` for i in 0..5. The consumer handles only
+// the even values via a `when` guard on the binding. This pins:
+//   1. The parser accepts `! name binding when cond |> body`.
+//   2. The guard is preserved through the comptime-struct synthesis — the
+//      lowered handler must contain the conditional, not the unguarded
+//      body. (Otherwise every i would print, not just the even ones.)
+//   3. Branches-are-equal: a `when`-guarded `!` handler is just a `!`
+//      handler with a condition, no special exhaustiveness rules apply.
+//
+// Expected output: even values only (0, 2, 4).
+
+~import "$std/io"
+
+~pub event ticker { n: usize }
+! tick usize
+
+~proc ticker|zig {
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        tick(i);
+    }
+}
+
+~ticker(n: 5)
+! tick i when i % 2 == 0 |> std.io:print.blk {
+    tick {{ i:d }}
+}
+! tick _ |> _

@@ -3790,33 +3790,99 @@ fn emitHandlersStruct(
     var handled = std.StringHashMap(void).init(ctx.allocator);
     defer handled.deinit();
 
+    // Group continuations by branch name. Two sibling handlers for the same
+    // `!` branch name (e.g., `! tick i when i > 0 |> a` + `! tick _ |> b`)
+    // must collapse into ONE synthesized fn whose body chains the guards:
+    // `if (g1) { body1; return; } if (g2) { body2; return; } unguarded_body`.
+    // Without this, the struct would have two `fn tick` declarations and Zig
+    // rejects with "duplicate struct member name".
+    //
+    // Source order is preserved within each group — first matching guard
+    // wins, and an unguarded handler (if present) is the fallback after
+    // all guards.
+    var group_order: std.ArrayList([]const u8) = .empty;
+    defer group_order.deinit(ctx.allocator);
+
+    var groups: std.StringArrayHashMap(std.ArrayList(*const ast.Continuation)) =
+        std.StringArrayHashMap(std.ArrayList(*const ast.Continuation)).init(ctx.allocator);
+    defer {
+        var it = groups.iterator();
+        while (it.next()) |entry| {
+            entry.value_ptr.deinit(ctx.allocator);
+        }
+        groups.deinit();
+    }
+
     for (effect_conts) |*cont| {
         // Skip catch-all `!?` conts — they don't match any specific decl branch.
-        // The catch-all body is handled by the no-op pass below (it just absorbs
-        // unhandled optionals; phase 3b first cut doesn't run catch-all bodies
-        // per-unhandled-optional, treats `!? |> _` as pure discard).
+        // (The catch-all body is currently not woven into per-branch dispatch;
+        // pay-for-nothing rejection in the parser will eliminate the bare-discard
+        // shape entirely, and metatype-bound forms are a separate work item.)
         if (cont.is_catchall) continue;
 
-        // Find the matching branch decl by name. shape_checker is responsible
-        // for catching mismatches; if missing here we skip defensively.
-        const branch_decl = blk: {
+        // Validate the branch exists in the event decl; defensively skip
+        // unknowns (shape_checker is responsible for surfacing those).
+        const exists = for (event_decl.branches) |*b| {
+            if (std.mem.eql(u8, b.name, cont.branch)) break true;
+        } else false;
+        if (!exists) continue;
+
+        const gop = try groups.getOrPut(cont.branch);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = .empty;
+            try group_order.append(ctx.allocator, cont.branch);
+        }
+        try gop.value_ptr.append(ctx.allocator, cont);
+    }
+
+    // Emit one fn per branch-name group.
+    for (group_order.items) |branch_name| {
+        const group = groups.get(branch_name).?;
+        if (group.items.len == 0) continue;
+
+        // Find the branch decl (we already validated existence above).
+        const branch: *const ast.Branch = blk: {
             for (event_decl.branches) |*b| {
-                if (std.mem.eql(u8, b.name, cont.branch)) break :blk b;
+                if (std.mem.eql(u8, b.name, branch_name)) break :blk b;
             }
-            break :blk null;
+            unreachable;
         };
-        if (branch_decl == null) continue;
-        const branch = branch_decl.?;
 
         try handled.put(branch.name, {});
 
-        const binding_name = if (cont.binding) |b| b else branch.name;
+        // Pick a parameter name. If all conts in the group share a binding
+        // (common case) and that binding isn't `_`, use it directly so the
+        // body code can reference it unchanged. Otherwise fall back to the
+        // branch name as a stable shared parameter, and conts whose binding
+        // differs will alias it.
+        const shared_param_name: []const u8 = blk: {
+            const first = group.items[0];
+            const first_binding = if (first.binding) |b| b else branch.name;
+
+            // Check if all conts share the same binding (and it's not `_`).
+            var all_same = !std.mem.eql(u8, first_binding, "_");
+            if (all_same) {
+                for (group.items[1..]) |cont| {
+                    const b = if (cont.binding) |bb| bb else branch.name;
+                    if (!std.mem.eql(u8, b, first_binding)) {
+                        all_same = false;
+                        break;
+                    }
+                }
+            }
+
+            // When bindings differ (or any cont uses `_`), fall back to a
+            // stable internal name. Don't use `branch.name` — that would
+            // shadow the fn name and Zig errors. Conts whose binding
+            // differs from this will alias it inside the body.
+            break :blk if (all_same) first_binding else "__koru_h_arg";
+        };
 
         try emitter.writeIndent();
         try emitter.write("fn ");
         try writeBranchName(emitter, branch.name);
         try emitter.write("(");
-        try writeBranchName(emitter, binding_name);
+        try writeBranchName(emitter, shared_param_name);
         try emitter.write(": ");
 
         // Identity payload (single field named "__type_ref") — emit type directly.
@@ -3846,63 +3912,114 @@ fn emitHandlersStruct(
         try emitter.write(" {\n");
         emitter.indent();
 
-        // Suppress unused-param warning unconditionally (matches proc-side convention).
+        // Suppress unused-param warning unconditionally on the shared param.
         try emitter.writeIndent();
         try emitter.write("_ = &");
-        try writeBranchName(emitter, binding_name);
+        try writeBranchName(emitter, shared_param_name);
         try emitter.write(";\n");
 
-        // If the branch declares a resume type AND the body's leaf is a
-        // bare Zig expression, emit `return EXPR;` so the synthesized fn
-        // returns the resume value. This is the `! ask q |> "Alice"` shape:
-        // anything at body position without trailing parens after the path
-        // IS the resume value, no marker needed (locked 2026-05-24, see
-        // memory project_effect_resume_value_syntax).
-        //
-        // Two shapes land here because of how the parser classifies bodies:
-        // - `.expression` Node: literal, struct literal, arithmetic.
-        // - `.branch_constructor` Node with empty payload: bare identifier
-        //   (parser default for backward compat with subflow rebroadcasts).
-        //   At resume context the branch_name is actually a Zig expression
-        //   (binding ref, e.g. `q`); we lift it back into the return slot.
-        // Composed expression for the `IDENT EXPR` parse case: BC's
-        // branch_name + " " + plain_value reconstructs `n * 2`, `n + 1`,
-        // `q.field` (with operator-led tail), etc.
-        var resume_expr_owned: ?[]const u8 = null;
-        defer if (resume_expr_owned) |s| ctx.allocator.free(s);
+        // Emit each cont in source order. Each cont gets its own block scope
+        // so binding aliases (e.g., `const i = __koru_h_arg`) are visible to
+        // the guard expression. Guarded conts wrap their body in
+        // `if (cond) { ... return; }`. The first unguarded cont is the
+        // fallback — its body runs unconditionally, and subsequent conts are
+        // unreachable and skipped.
+        for (group.items) |cont| {
+            const guarded = cont.condition != null;
 
-        const resume_expr: ?[]const u8 = blk: {
-            if (branch.resume_type == null) break :blk null;
-            if (cont.continuations.len != 0) break :blk null;
-            const node = cont.node orelse break :blk null;
-            switch (node) {
-                .expression => |code| break :blk code,
-                .branch_constructor => |bc| {
-                    if (bc.fields.len != 0) break :blk null;
-                    if (bc.plain_value) |pv| {
-                        // Reconstruct: branch_name + " " + plain_value
-                        resume_expr_owned = try std.fmt.allocPrint(
-                            ctx.allocator,
-                            "{s} {s}",
-                            .{ bc.branch_name, pv },
-                        );
-                        break :blk resume_expr_owned.?;
-                    }
-                    break :blk bc.branch_name;
-                },
-                else => break :blk null,
-            }
-        };
-
-        if (resume_expr) |expr| {
             try emitter.writeIndent();
-            try emitter.write("return ");
-            try emitter.write(expr);
-            try emitter.write(";\n");
-        } else {
-            // Emit the continuation body. Body context is independent (no prev_result).
-            var result_counter: usize = 0;
-            try emitContinuationBody(emitter, ctx, cont, &result_counter);
+            try emitter.write("{\n");
+            emitter.indent();
+
+            // If the cont's binding name differs from the shared param,
+            // alias it so both the guard expression AND the body can
+            // reference the binding by its declared name.
+            const cont_binding = if (cont.binding) |b| b else branch.name;
+            const need_alias = !std.mem.eql(u8, cont_binding, shared_param_name) and
+                !std.mem.eql(u8, cont_binding, "_");
+            if (need_alias) {
+                try emitter.writeIndent();
+                try emitter.write("const ");
+                try writeBranchName(emitter, cont_binding);
+                try emitter.write(" = ");
+                try writeBranchName(emitter, shared_param_name);
+                try emitter.write(";\n");
+                try emitter.writeIndent();
+                try emitter.write("_ = &");
+                try writeBranchName(emitter, cont_binding);
+                try emitter.write(";\n");
+            }
+
+            if (guarded) {
+                try emitter.writeIndent();
+                try emitter.write("if (");
+                try emitter.write(cont.condition.?);
+                try emitter.write(") {\n");
+                emitter.indent();
+            }
+
+            // Body emission: prefer the bare-expression resume-value form
+            // when the branch declares a resume type and the body is a
+            // single expression (see `project_effect_resume_value_syntax`).
+            var resume_expr_owned: ?[]const u8 = null;
+            defer if (resume_expr_owned) |s| ctx.allocator.free(s);
+
+            const resume_expr: ?[]const u8 = blk: {
+                if (branch.resume_type == null) break :blk null;
+                if (cont.continuations.len != 0) break :blk null;
+                const node = cont.node orelse break :blk null;
+                switch (node) {
+                    .expression => |code| break :blk code,
+                    .branch_constructor => |bc| {
+                        if (bc.fields.len != 0) break :blk null;
+                        if (bc.plain_value) |pv| {
+                            resume_expr_owned = try std.fmt.allocPrint(
+                                ctx.allocator,
+                                "{s} {s}",
+                                .{ bc.branch_name, pv },
+                            );
+                            break :blk resume_expr_owned.?;
+                        }
+                        break :blk bc.branch_name;
+                    },
+                    else => break :blk null,
+                }
+            };
+
+            if (resume_expr) |expr| {
+                try emitter.writeIndent();
+                try emitter.write("return ");
+                try emitter.write(expr);
+                try emitter.write(";\n");
+            } else {
+                var result_counter: usize = 0;
+                try emitContinuationBody(emitter, ctx, cont, &result_counter);
+
+                // For guarded void-return conts, emit an explicit `return;`
+                // so subsequent guards in the chain don't fire after a match.
+                // (Resume-typed conts already returned via the `return EXPR`
+                // path above.)
+                if (guarded and branch.resume_type == null) {
+                    try emitter.writeIndent();
+                    try emitter.write("return;\n");
+                }
+            }
+
+            if (guarded) {
+                // Close the `if (cond) {` block.
+                emitter.dedent();
+                try emitter.writeIndent();
+                try emitter.write("}\n");
+            }
+
+            // Close the per-cont scope block.
+            emitter.dedent();
+            try emitter.writeIndent();
+            try emitter.write("}\n");
+
+            // Unguarded cont = fallback. Anything after it is unreachable;
+            // stop emitting siblings for this branch.
+            if (!guarded) break;
         }
 
         emitter.dedent();

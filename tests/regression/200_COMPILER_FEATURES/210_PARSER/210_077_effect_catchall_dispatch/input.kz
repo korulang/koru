@@ -1,6 +1,10 @@
-// Test 210_077: `!?` catch-all in consumer dispatch.
-// Symmetric with `|?` catch-all. Absorbs any optional effect branches
-// not explicitly listed.
+// Test 210_077: `!?` catch-all in consumer dispatch (metatype-bound,
+// engaging form). Per the pay-for-nothing rule (see EFFECT_BRANCHES.md),
+// bare `!? |> _` is rejected — catch-all must engage. The optional
+// `?warning` branch is already silently ignorable without any marker
+// at the dispatch site; the metatype-bound catch-all here demonstrates
+// the reflective-observer shape, where the consumer pays the runtime
+// cost in exchange for tier-1 reflection on which branch fired.
 
 ~pub event tokenize { source: []const u8 }
 ! token []const u8
@@ -9,8 +13,9 @@
 
 ~pub event consume_token { t: []const u8 }
 ~pub event end_run { n: usize }
+~pub event log_unhandled { name: []const u8 }
 
 ~tokenize(source: "x")
 ! token t |> consume_token(t: t)
-!? |> _
+!? Transition _ |> log_unhandled(name: "warn")
 | done n |> end_run(n: n)

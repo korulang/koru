@@ -1,0 +1,37 @@
+// ============================================================================
+// Test 210_084: MUST_FAIL — required terminal branch covered only by a
+//                          `when`-guarded handler is incomplete coverage.
+//
+// `when` guards NARROW a handler — they pick out a subset of fires that
+// match the predicate. They do NOT satisfy the coverage obligation for
+// a required branch by themselves. If the guard's false case has no
+// handler, a fire of the required branch can silently produce no work,
+// which is a coverage hole that looks like coverage in source.
+//
+// Rule: a required branch with only `when`-guarded handlers is incomplete.
+// Rescue shapes:
+//   1. Add an unguarded sibling handler: `| ok x when x > 0 |> a`
+//                                         `| ok _ |> b`
+//   2. Add a metatype catch-all that engages: `|? Transition t |> log(t)`.
+//
+// Optionals do NOT have this requirement (see 210_086) because "no handler
+// for this fire" is a legal trajectory under the optional contract.
+//
+// Expected: validator rejects the flow because `| ok` is required but
+// only covered by a guarded handler.
+// ============================================================================
+
+~event compute { x: i32 }
+| ok i32
+| err []const u8
+
+~proc compute|zig {
+    if (x < 0) {
+        return .{ .err = "negative" };
+    }
+    return .{ .ok = x * 2 };
+}
+
+~compute(x: 5)
+| ok v when v > 0 |> _
+| err _ |> _

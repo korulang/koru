@@ -1,0 +1,26 @@
+// Test: runtime iteration using effect branches.
+//
+// `each_i32` takes a slice and yields each element via an effect branch.
+// This is the simplest "for over a slice" shape that doesn't require any
+// compile-time macro machinery — just effect branches + a Zig `for` in
+// the proc body. The proc itself is plain Zig; nothing special about it.
+//
+// If this works, it's evidence that the stdlib `for` could be reframed
+// as a regular effect-branch event (modulo the question of accepting
+// arbitrary iterables vs just slices).
+
+~import "$std/io"
+
+const std = @import("std");
+
+~pub event each_i32 { items: []const i32 }
+! item i32
+
+~proc each_i32|zig {
+    for (items) |it| item(it);
+}
+
+~each_i32(items: &[_]i32{ 10, 20, 30 })
+! item v |> std.io:print.blk {
+    saw {{ v:d }}
+}

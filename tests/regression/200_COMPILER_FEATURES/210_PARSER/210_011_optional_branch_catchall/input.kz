@@ -1,11 +1,17 @@
 // ============================================================================
-// Test 060: Optional Branch Catch-All |? Syntax
-// Tests that the parser accepts optional branch catch-all patterns:
-// 1. Simple |? discard: |? |> _
-// 2. With Transition meta: |? Transition t |> log(t)
-// 3. With Profile meta: |? Profile p |> log(p)
-// 4. Mix of explicit handling + catch-all
+// Test 210_011: Optional Branch Catch-All |? Syntax (engaging forms only)
+//
+// Per the pay-for-nothing rule (docs/EFFECT_BRANCHES.md), bare-discard
+// catch-alls (`|? |> _`, `|? Metatype _ |> _`) are parser-rejected:
+// they opt into runtime cost (disabling comptime elision, routing every
+// unhandled branch into a handler, building the metatype struct for
+// metatype variants) while gaining zero information.
+//
+// This test now pins ONLY the engaging shapes — body does real work,
+// optionally with metatype binding for tiered reflection.
 // ============================================================================
+
+const std = @import("std");
 
 // Event with required and optional branches
 ~event process { value: u32 }
@@ -13,28 +19,37 @@
 | ?warning []const u8   // Optional
 | ?debug []const u8 // Optional
 
-// Test 1: Simple |? discard
+~proc process|zig {
+    return .{ .success = value };
+}
+
+~pub event observe { name: []const u8 }
+~proc observe|zig {
+    _ = name;
+}
+
+// Test 1: |? with Transition metatype binding, body does work
 ~process(value: 10)
-| success |> _
-|? |> _
+| success _ |> _
+|? Transition _ |> observe(name: "t1")
 
-// Test 2: |? with Transition metatype binding (explicit discard)
+// Test 2: |? with Profile metatype binding, body does work
 ~process(value: 20)
-| success |> _
-|? Transition _ |> _
+| success _ |> _
+|? Profile _ |> observe(name: "p2")
 
-// Test 3: |? with Profile metatype binding (explicit discard)
+// Test 3: |? with Audit metatype binding, body does work
 ~process(value: 30)
-| success |> _
-|? Profile _ |> _
+| success _ |> _
+|? Audit _ |> observe(name: "a3")
 
-// Test 4: Mix explicit optional handling + catch-all
+// Test 4: Mix explicit optional handling + engaging catch-all for the rest
 ~process(value: 40)
-| success |> _
-| warning |> _  // Explicit handling of optional branch
-|? |> _           // Catches remaining optional branches (debug)
+| success _ |> _
+| warning _ |> _
+|? Transition _ |> observe(name: "t4")
 
-// Test 5: |? catches ALL unhandled optional branches
+// Test 5: Catch-all with `_` binding but body does real work
 ~process(value: 50)
-| success |> _
-|? Transition _ |> _  // Catches both warning and debug
+| success _ |> _
+|? Transition _ |> observe(name: "discard-bind-real-body")

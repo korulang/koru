@@ -1,11 +1,13 @@
-// Test: `!?` catch-all dispatch on a multi-kind event with optionals.
+// Test: optional `!` branches are silently no-op when omitted.
 //
 // Producer fires `a(1)`, `b(2)`, `c(3)`. Consumer explicitly handles
-// `! a`, uses `!?` catch-all to absorb the unhandled optional `! ?b`
-// and `! ?c`. Per the doc, the catch-all body fires per unhandled
-// optional yield — but with `!? |> _` (discard), the body is empty,
-// so only `! a` produces visible output. Proves `!?` parses, lowers,
-// and absorbs in runtime.
+// `! a`; the optional `! ?b` and `! ?c` are omitted entirely. Per the
+// doc, that's the no-op — the handlers aren't installed in the comptime
+// struct, so the producer's calls to b/c lower to nothing.
+//
+// (Original form used `!? |> _` as bare-discard catch-all; that's now
+// parser-rejected by the pay-for-nothing rule. The "absorbs unhandled
+// optionals" goal is achieved without any consumer marker.)
 
 ~import "$std/io"
 
@@ -24,4 +26,3 @@
 ! a v |> std.io:print.blk {
     a {{ v:d }}
 }
-!? |> _

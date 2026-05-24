@@ -1,0 +1,32 @@
+// ============================================================================
+// Test 210_083: MUST_FAIL — metatype catch-all with discard binding AND
+//                          discard body is still pay-for-nothing.
+//
+// `|? Transition _ |> _` asks the compiler to build the Transition
+// reflection struct on every unhandled branch, bind it to `_`, then do
+// nothing. Strictly worse than the no-catch-all default: synthesis cost
+// for the metatype struct PLUS routing cost PLUS zero information gain.
+//
+// The pay-for-nothing rule applies regardless of whether a metatype is
+// named. What matters is whether the body does real work. `|? Transition
+// t |> log(t)` is fine — the binding `t` is used, real work happens.
+// `|? Transition _ |> log("unhandled")` is also fine — binding is `_`
+// but the body emits work that uses the *fact* a branch fired. But
+// `|? Transition _ |> _` does neither.
+//
+// Expected: parser rejects `|? Transition _ |> _` with a message
+// pointing at the catch-all and explaining the no-engagement rule.
+// ============================================================================
+
+~event process { value: u32 }
+| success u32
+| ?warning []const u8
+| ?debug []const u8
+
+~proc process|zig {
+    return .{ .success = value * 2 };
+}
+
+~process(value: 10)
+| success _ |> _
+|? Transition _ |> _

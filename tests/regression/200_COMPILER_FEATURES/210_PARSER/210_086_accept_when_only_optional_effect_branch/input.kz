@@ -1,0 +1,42 @@
+// ============================================================================
+// Test 210_086: POSITIVE — optional effect branch covered only by a
+//                         `when`-guarded handler is FINE.
+//
+// Counterpart to 210_085. The required-branch coverage rule does NOT
+// apply to optional `!` branches: optional means "no handler is a legal
+// trajectory," so a `when`-guarded handler whose false case produces no
+// work is just exercising that contract.
+//
+// `! ?warning w when w.len > 0 |> ...` alone covers the only thing the
+// consumer cares about (non-empty warnings); empty-warning fires are
+// silently dropped, which is exactly what the `?` decl promised.
+//
+// Expected: compiles cleanly. (No runtime assertion needed — we're
+// pinning that the validator does NOT reject this shape.)
+// ============================================================================
+
+~import "$std/io"
+
+~pub event tokenize { source: []const u8 }
+! token []const u8
+! ?warning []const u8
+| done usize
+
+~proc tokenize|zig {
+    token("t1");
+    warning("");           // empty — guard will skip
+    token("t2");
+    warning("real");       // non-empty — guard will match
+    return .{ .done = 2 };
+}
+
+~tokenize(source: "x")
+! token t |> std.io:print.blk {
+    token {{ t:s }}
+}
+! warning w when w.len > 0 |> std.io:print.blk {
+    warn {{ w:s }}
+}
+| done n |> std.io:print.blk {
+    done {{ n:d }}
+}

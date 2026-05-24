@@ -1,0 +1,34 @@
+// Test: `when` guard on an `!` effect-branch handler with struct payload,
+// guarding on a field access. This is the canonical vaxis-shaped TUI
+// dispatch: handle only key events matching a specific character.
+//
+// The producer fires `! key { ch, code }` for several characters. The
+// consumer guards on `k.ch == 'q'` to dispatch only the quit key. A
+// catchall for other keys would be the next layer (`!? Transition t |>`)
+// but is out of scope for this test — here we pin that:
+//   1. `when` works on struct-payload bindings, not just identity.
+//   2. Field access in the guard (`k.ch`) parses and lowers correctly.
+//   3. Unmatched fires are silently dropped (no handler runs) — the
+//      consumer doesn't need to write a sibling handler for the false
+//      case of the guard.
+//
+// Expected output: only the 'q' key fires the handler.
+
+~import "$std/io"
+
+~pub event keystream { count: usize }
+! key { ch: u8, code: u8 }
+
+~proc keystream|zig {
+    const chars = [_]u8{ 'a', 'b', 'q', 'c' };
+    var i: usize = 0;
+    while (i < count and i < chars.len) : (i += 1) {
+        key(.{ .ch = chars[i], .code = chars[i] });
+    }
+}
+
+~keystream(count: 4)
+! key k when k.ch == 'q' |> std.io:print.blk {
+    quit pressed
+}
+! key _ |> _

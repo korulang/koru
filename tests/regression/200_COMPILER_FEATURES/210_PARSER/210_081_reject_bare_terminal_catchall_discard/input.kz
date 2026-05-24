@@ -1,0 +1,34 @@
+// ============================================================================
+// Test 210_081: MUST_FAIL — bare `|? |> _` catch-all is pay-for-nothing
+//                          and must be parser-rejected.
+//
+// Without a catch-all, unhandled branches compile-time-elide: the handler
+// simply isn't installed in the synthesized comptime struct, so the call
+// site lowers to nothing. Zero cost.
+//
+// With `|? |> _`, the consumer is asking the compiler to *stop eliding*
+// unhandled branches, route them into a handler, and then throw the result
+// away. That's pay-for-nothing — runtime cost for zero information gain,
+// strictly worse than the no-catch-all default.
+//
+// Rule: if you write a catch-all, you engage. Engagement means the body
+// does real work, optionally informed by a metatype binding
+// (`|? Transition t |> body`). Anything that lowers to "do nothing on
+// unhandled branches" must be expressed by *not writing a catch-all*.
+//
+// Expected: parser rejects `|? |> _` with a message pointing at the
+// catch-all line and explaining the no-engagement rule.
+// ============================================================================
+
+~event process { value: u32 }
+| success u32
+| ?warning []const u8
+| ?debug []const u8
+
+~proc process|zig {
+    return .{ .success = value * 2 };
+}
+
+~process(value: 10)
+| success _ |> _
+|? |> _

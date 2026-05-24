@@ -14,6 +14,7 @@ pub const ErrorCode = enum(u16) {
     KORU023, // Yielding `!` branches must precede terminal `|` branches
     KORU024, // Redundant outer parens around `when` condition
     KORU025, // Branch kind mismatch (e.g. `!` decl handled by `|` cont, or vice versa)
+    KORU026, // Pay-for-nothing catch-all (`|? |> _` or `|? Metatype _ |> _`)
 
     // Shape errors
     KORU030, // Shape mismatch

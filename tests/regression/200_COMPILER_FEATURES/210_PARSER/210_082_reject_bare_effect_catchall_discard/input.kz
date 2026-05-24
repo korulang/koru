@@ -1,0 +1,30 @@
+// ============================================================================
+// Test 210_082: MUST_FAIL — bare `!? |> _` effect catch-all is
+//                          pay-for-nothing and must be parser-rejected.
+//
+// Symmetric with 210_081 for effect branches. Without `!?`, unhandled
+// optional effect branches compile-time-elide (handler not installed in
+// comptime struct → call lowers to nothing). With `!? |> _`, the consumer
+// asks for unhandled effects to route into a no-op handler — runtime cost
+// for zero information.
+//
+// Engagement rule applies identically to `!?` and `|?`: catch-all requires
+// real work in the body, optionally informed by a metatype binding.
+//
+// Expected: parser rejects `!? |> _` with a message pointing at the
+// catch-all line and explaining the no-engagement rule.
+// ============================================================================
+
+~pub event tokenize { source: []const u8 }
+! token []const u8
+! ?warning []const u8
+! ?debug []const u8
+| done usize
+
+~pub event consume_token { t: []const u8 }
+~pub event end_run { n: usize }
+
+~tokenize(source: "x")
+! token t |> consume_token(t: t)
+!? |> _
+| done n |> end_run(n: n)

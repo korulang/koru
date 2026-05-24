@@ -1,0 +1,37 @@
+// Test: REQUIRED `!` branch with a `when`-guarded handler PLUS an
+// unguarded fallback sibling — the proper coverage shape.
+//
+// The producer fires `! tick(i)` for i in 0..4. The consumer has two
+// handlers for `! tick`: the guarded one matches i > 1, the unguarded
+// one catches the rest. This pins:
+//   1. Two sibling handlers for the same `!` branch name are legal.
+//   2. The guarded handler takes precedence when its predicate matches.
+//   3. The unguarded fallback covers the false-guard cases.
+//   4. Required-branch coverage is satisfied by guarded + unguarded
+//      together (the rescue shape from 210_085).
+//
+// Expected output:
+//   small 0       (unguarded fallback, i=0)
+//   small 1       (unguarded fallback, i=1)
+//   big 2         (guarded, i=2 > 1)
+//   big 3         (guarded, i=3 > 1)
+
+~import "$std/io"
+
+~pub event ticker { n: usize }
+! tick usize
+
+~proc ticker|zig {
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        tick(i);
+    }
+}
+
+~ticker(n: 4)
+! tick i when i > 1 |> std.io:print.blk {
+    big {{ i:d }}
+}
+! tick i |> std.io:print.blk {
+    small {{ i:d }}
+}

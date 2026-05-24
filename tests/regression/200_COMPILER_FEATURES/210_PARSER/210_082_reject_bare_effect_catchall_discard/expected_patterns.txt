@@ -1,0 +1,3 @@
+error\[KORU026\]
+pay-for-nothing catch-all
+!\? \|> _

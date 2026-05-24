@@ -4711,6 +4711,33 @@ pub const Parser = struct {
                 self.allocator.free(catch_all_branch);
             }
 
+            // Pay-for-nothing rule: catch-all at the dispatch site disables
+            // comptime elision and routes unhandled branches into a handler.
+            // That's a real runtime cost (struct construction for metatype
+            // variants, routing for bare). If the consumer doesn't engage
+            // — body is pure `_` discard — they paid the cost for zero
+            // information gain. Strictly worse than the no-catch-all default.
+            //
+            // Rule: catch-all body must do real work. `|? |> _` and
+            // `|? Metatype _ |> _` are rejected; `|? Metatype t |> body` and
+            // `|? Metatype _ |> work(...)` are accepted (the latter because
+            // the body does work even though the binding is discarded).
+            //
+            // See `docs/EFFECT_BRANCHES.md` "Dispatch-site catch-all rules".
+            if (std.mem.indexOf(u8, rest, "|>")) |idx| {
+                const after = std.mem.trim(u8, rest[idx + 2 ..], " \t");
+                if (std.mem.eql(u8, after, "_")) {
+                    try self.reporter.addError(
+                        .KORU026,
+                        self.current,
+                        indent + 2,
+                        "pay-for-nothing catch-all: body discards without engagement. Either remove the catch-all (unhandled optional branches are already no-ops) or use a metatype-bound form that does work (e.g., `|? Transition t |> log(t)`).",
+                        .{},
+                    );
+                    return error.ParseError;
+                }
+            }
+
             // Parse step if present
             var step: ?ast.Step = null;
 
