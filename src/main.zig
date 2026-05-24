@@ -118,6 +118,77 @@ fn printStderr(allocator: std.mem.Allocator, comptime fmt: []const u8, args: any
     try stderr.writeAll(msg);
 }
 
+/// Scan a captured stderr buffer for compiler-diagnostic lines (Zig's
+/// `path:line:col: error:` / `path:line:col: note:` format, plus Koru's
+/// own `error[KORUxxx]:` lines) and re-emit them in a clean summary block.
+///
+/// Zig's build-system output buries real diagnostics under multi-line
+/// build-command echoes ("the following command failed with N compilation
+/// errors:" followed by a 30-line zig invocation) and Build Summary
+/// noise. The raw output is preserved (we stream it through verbatim),
+/// but on failure this summary surfaces just the parts a human cares
+/// about so they don't have to fish.
+fn emitDiagnosticsSummary(allocator: std.mem.Allocator, captured: []const u8) !void {
+    // Count first; only emit the summary block if there's at least one
+    // line worth surfacing (otherwise we'd just add more noise).
+    var count: usize = 0;
+    var line_iter = std.mem.splitScalar(u8, captured, '\n');
+    while (line_iter.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (isDiagnosticLine(line)) count += 1;
+    }
+    if (count == 0) return;
+
+    try printStderr(allocator, "\n──── diagnostics ({d}) ────\n", .{count});
+
+    line_iter = std.mem.splitScalar(u8, captured, '\n');
+    while (line_iter.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (isDiagnosticLine(line)) {
+            try printStderr(allocator, "{s}\n", .{line});
+        }
+    }
+    try printStderr(allocator, "──────────────────────────\n", .{});
+}
+
+/// True for lines that look like compiler diagnostics worth surfacing
+/// in the post-failure summary. Currently:
+///   - `path:line:col: error: ...`
+///   - `path:line:col: note: ...`
+///   - `error[KORUxxx]: ...`
+fn isDiagnosticLine(line: []const u8) bool {
+    if (std.mem.startsWith(u8, line, "error[KORU")) return true;
+    // Match `<anything>:<digits>:<digits>: error:` or ...: note:
+    // Cheap heuristic: at least two colons before " error:"/" note:".
+    if (std.mem.indexOf(u8, line, ": error:")) |_| {
+        // Require a colon-digit-colon-digit-colon pattern before " error:".
+        return hasFileLineColPrefix(line);
+    }
+    if (std.mem.indexOf(u8, line, ": note:")) |_| {
+        return hasFileLineColPrefix(line);
+    }
+    return false;
+}
+
+fn hasFileLineColPrefix(line: []const u8) bool {
+    // Find the FIRST ":" preceded by a non-digit and followed by digits.
+    var i: usize = 0;
+    while (i < line.len) : (i += 1) {
+        if (line[i] != ':') continue;
+        // After this colon, expect: digits, ":", digits, ":"
+        var j = i + 1;
+        var saw_digit_a = false;
+        while (j < line.len and std.ascii.isDigit(line[j])) : (j += 1) saw_digit_a = true;
+        if (!saw_digit_a or j >= line.len or line[j] != ':') continue;
+        j += 1;
+        var saw_digit_b = false;
+        while (j < line.len and std.ascii.isDigit(line[j])) : (j += 1) saw_digit_b = true;
+        if (!saw_digit_b or j >= line.len or line[j] != ':') continue;
+        return true;
+    }
+    return false;
+}
+
 /// Generate compiler_env.zig — the per-user CompilerEnv struct, split out of
 /// backend.zig so backend.zig stays byte-identical across user programs.
 /// CompilerEnv carries the user's CLI flags + env vars and is the only
@@ -7098,7 +7169,14 @@ pub fn main() !void {
         if (zig_reqs.len > 0) {
             const zon_path = try std.fs.path.join(allocator, &[_][]const u8{ output_dir, "build.zig.zon" });
             defer allocator.free(zon_path);
-            const project_name = std.fs.path.basename(output_dir);
+            // When compiling in-place (output_dir == "." or empty), basename
+            // produces "." which Zig rejects as a package name. Fall back to
+            // the input file's basename (without .kz) in that case.
+            const dir_basename = std.fs.path.basename(output_dir);
+            const project_name = if (dir_basename.len == 0 or std.mem.eql(u8, dir_basename, "."))
+                std.fs.path.stem(std.fs.path.basename(input_file orelse "koru_app"))
+            else
+                dir_basename;
             try emit_package_files.emitBuildZigZon(allocator, zig_reqs, zon_path, project_name);
 
             // Zig 0.15 requires a valid .fingerprint in build.zig.zon.
@@ -7306,18 +7384,46 @@ pub fn main() !void {
 
         defer if (backend_path.ptr != backend_exe.ptr) allocator.free(backend_path);
 
-        // Run backend in the output directory
-        // Use ChildProcess directly to allow stdin inheritance for interactive features like --inter
+        // Run backend in the output directory.
+        // stderr is piped (not inherited) so we can re-emit a clean
+        // diagnostics summary on failure — Zig's build output buries
+        // `error:` / `note:` lines under multi-line build-command echoes
+        // and Build Summary noise, which makes real diagnostics hard to
+        // read. We still stream the raw stderr verbatim so live feedback
+        // is preserved; the summary appears at the end of the output.
         var child = std.process.Child.init(backend_args_list.items, allocator);
         child.cwd = output_dir_for_build;
         child.stdin_behavior = .Inherit; // Allow interactive stdin for --inter REPL
         child.stdout_behavior = .Inherit; // Stream output directly
-        child.stderr_behavior = .Inherit; // Stream errors directly
+        child.stderr_behavior = .Pipe;    // Capture for filtering on failure
 
         try child.spawn();
+
+        // Drain stderr while the child runs. Writes everything to our own
+        // stderr unchanged AND keeps a copy in memory for post-failure
+        // filtering. Buffer is capped — beyond the cap we keep streaming
+        // but stop accumulating to bound memory.
+        const stderr_handle = child.stderr orelse @panic("child stderr was not piped");
+        var stderr_buf = try std.ArrayList(u8).initCapacity(allocator, 8192);
+        defer stderr_buf.deinit(allocator);
+        const stderr_capture_cap: usize = 1024 * 1024; // 1 MiB
+        var read_buf: [4096]u8 = undefined;
+        while (true) {
+            const n = stderr_handle.read(&read_buf) catch break;
+            if (n == 0) break;
+            // Mirror to our stderr verbatim.
+            std.fs.File.stderr().writeAll(read_buf[0..n]) catch {};
+            if (stderr_buf.items.len < stderr_capture_cap) {
+                const room = stderr_capture_cap - stderr_buf.items.len;
+                const take = if (n < room) n else room;
+                stderr_buf.appendSlice(allocator, read_buf[0..take]) catch {};
+            }
+        }
+
         const term = try child.wait();
 
         if (term.Exited != 0) {
+            try emitDiagnosticsSummary(allocator, stderr_buf.items);
             try printStderr(allocator, "✗ Backend execution failed\n", .{});
             std.process.exit(1);
         }

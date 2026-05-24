@@ -3871,11 +3871,16 @@ fn emitHandlersStruct(
                 }
             }
 
-            // When bindings differ (or any cont uses `_`), fall back to a
-            // stable internal name. Don't use `branch.name` — that would
-            // shadow the fn name and Zig errors. Conts whose binding
-            // differs from this will alias it inside the body.
-            break :blk if (all_same) first_binding else "__koru_h_arg";
+            // When bindings differ (or any cont uses `_`), or when the
+            // shared binding equals the branch name (which would shadow the
+            // synthesized `fn <branch_name>` declaration in Zig), fall back
+            // to a stable internal name. Conts whose binding differs from
+            // this will alias it inside the body.
+            const candidate = if (all_same) first_binding else "__koru_h_arg";
+            break :blk if (std.mem.eql(u8, candidate, branch.name))
+                "__koru_h_arg"
+            else
+                candidate;
         };
 
         try emitter.writeIndent();
@@ -3931,13 +3936,16 @@ fn emitHandlersStruct(
             try emitter.write("{\n");
             emitter.indent();
 
-            // If the cont's binding name differs from the shared param,
-            // alias it so both the guard expression AND the body can
-            // reference the binding by its declared name.
-            const cont_binding = if (cont.binding) |b| b else branch.name;
-            const need_alias = !std.mem.eql(u8, cont_binding, shared_param_name) and
-                !std.mem.eql(u8, cont_binding, "_");
-            if (need_alias) {
+            // Alias the cont's binding to the shared param ONLY when the
+            // user wrote an actual binding name (not `_`, not omitted).
+            // Omitting the binding means "no name to reference"; aliasing
+            // to `branch.name` would shadow the synthesized fn declaration.
+            const has_named_binding = if (cont.binding) |b|
+                !std.mem.eql(u8, b, "_") and !std.mem.eql(u8, b, shared_param_name)
+            else
+                false;
+            const cont_binding: []const u8 = if (cont.binding) |b| b else branch.name;
+            if (has_named_binding) {
                 try emitter.writeIndent();
                 try emitter.write("const ");
                 try writeBranchName(emitter, cont_binding);
