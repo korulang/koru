@@ -5810,8 +5810,12 @@ pub const Parser = struct {
             const has_bracket = std.mem.indexOf(u8, before_brace, "[") != null and
                 std.mem.indexOf(u8, before_brace, "]") != null;
 
-            // Check for regular branch constructor pattern (no dot, no paren before brace)
-            const is_regular_bc = std.mem.indexOf(u8, before_brace, ".") == null and
+            // Branch constructor requires a NAMED branch before the brace —
+            // `name { ... }` or `.{ ... }`. Anonymous `{ ... }` is NOT a branch
+            // constructor; it's a Zig expression at body position (struct
+            // literal, block expression).
+            const is_regular_bc = before_brace.len > 0 and
+                std.mem.indexOf(u8, before_brace, ".") == null and
                 !std.mem.containsAtLeast(u8, before_brace, 1, "(") and
                 !has_bracket; // Not a Source block!
 
@@ -5822,43 +5826,70 @@ pub const Parser = struct {
             }
         }
 
-        // Check for braceless branch constructor: identifier OR identifier expression
-        // Pattern: no { no () no : means it could be a braceless branch constructor
-        // Examples: "ok" or "ok a.value" or "some_branch result"
-        const has_parens = std.mem.indexOf(u8, clean_content, "(") != null;
-        const has_colon = std.mem.indexOf(u8, clean_content, ":") != null;
+        // Invocation discrimination: an invocation always has `(args)` after
+        // the identifier path (or `{block}` for Source-block invocations).
+        // Locked 2026-05-24.
+        if (looksLikeInvocation(clean_content)) {
+            return ast.Step{ .invocation = try self.parseEventInvocation(clean_content) };
+        }
 
-        if (!has_parens and !has_colon) {
-            // Could be braceless branch constructor
-            // Extract the first token (potential branch name)
-            const first_space = std.mem.indexOfAny(u8, clean_content, &[_]u8{ ' ', '\t' });
-            const branch_name = if (first_space) |idx| lexer.trim(clean_content[0..idx]) else clean_content;
-
-            // Validate it's a valid identifier (not starting with special chars)
-            if (branch_name.len > 0 and isValidIdentifier(branch_name)) {
-                if (first_space) |idx| {
-                    // Has expression: "ok expr"
-                    const expr_part = lexer.trim(clean_content[idx..]);
-                    return ast.Step{ .branch_constructor = .{
-                        .branch_name = try self.allocator.dupe(u8, branch_name),
-                        .fields = &.{},
-                        .plain_value = try self.allocator.dupe(u8, expr_part),
-                        .has_expressions = true,
-                    } };
-                } else {
-                    // Just branch name: "ok"
-                    return ast.Step{ .branch_constructor = .{
-                        .branch_name = try self.allocator.dupe(u8, branch_name),
-                        .fields = &.{},
-                        .plain_value = null,
-                        .has_expressions = false,
-                    } };
-                }
+        // Braceless branch constructor: `IDENT` rebroadcast (`| ok |> ok`)
+        // or `IDENT VALUE` payload form (`| ctx c5 |> ctx c5`). The bare
+        // single-identifier case stays as BranchConstructor for backward
+        // compatibility with subflow rebroadcasts — emitters that want it
+        // as a Zig expression (effect-branch resume value) recognize that
+        // shape and route accordingly.
+        const trimmed_content = lexer.trim(clean_content);
+        const first_space = std.mem.indexOfAny(u8, trimmed_content, &[_]u8{ ' ', '\t' });
+        const candidate_name = if (first_space) |idx| lexer.trim(trimmed_content[0..idx]) else trimmed_content;
+        if (candidate_name.len > 0 and isValidIdentifier(candidate_name)) {
+            if (first_space) |idx| {
+                const expr_part = lexer.trim(trimmed_content[idx..]);
+                return ast.Step{ .branch_constructor = .{
+                    .branch_name = try self.allocator.dupe(u8, candidate_name),
+                    .fields = &.{},
+                    .plain_value = if (expr_part.len > 0) try self.allocator.dupe(u8, expr_part) else null,
+                    .has_expressions = expr_part.len > 0,
+                } };
+            } else {
+                return ast.Step{ .branch_constructor = .{
+                    .branch_name = try self.allocator.dupe(u8, candidate_name),
+                    .fields = &.{},
+                    .plain_value = null,
+                    .has_expressions = false,
+                } };
             }
         }
 
-        // Otherwise it's an invocation - always an event now
-        return ast.Step{ .invocation = try self.parseEventInvocation(clean_content) };
+        // Anything else at body position is a Zig expression node: string
+        // literal, numeric literal, anonymous struct literal, arithmetic
+        // expression, etc.
+        return ast.Step{ .expression = try self.allocator.dupe(u8, clean_content) };
+    }
+
+    /// Returns true iff `content` starts with an identifier path followed
+    /// by `(` (function-style invocation) or `{` (Source-block invocation).
+    /// Used to discriminate invocation-shaped steps from expression steps
+    /// at body position.
+    fn looksLikeInvocation(content: []const u8) bool {
+        var i: usize = 0;
+        // Skip leading whitespace
+        while (i < content.len and (content[i] == ' ' or content[i] == '\t')) : (i += 1) {}
+        if (i >= content.len) return false;
+        // First char must start an identifier path (letter or underscore)
+        if (!(std.ascii.isAlphabetic(content[i]) or content[i] == '_')) return false;
+        // Consume identifier path: IDENT(.IDENT)*(:IDENT(.IDENT)*)?
+        // Also accept `[` `]` for Source-block type hints inside the path.
+        while (i < content.len) : (i += 1) {
+            const c = content[i];
+            if (std.ascii.isAlphanumeric(c) or c == '_' or c == '.' or c == ':' or c == '[' or c == ']') continue;
+            break;
+        }
+        // After the path, skip whitespace
+        while (i < content.len and (content[i] == ' ' or content[i] == '\t')) : (i += 1) {}
+        if (i >= content.len) return false;
+        // Invocation if next char is `(` (function-style) or `{` (Source-block).
+        return content[i] == '(' or content[i] == '{';
     }
 
     fn splitFieldsRespectingBraces(self: *Parser, fields_str: []const u8) ![][]const u8 {

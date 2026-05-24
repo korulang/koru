@@ -1,0 +1,39 @@
+// Test: effect-bearing event invoked from inside a void chain.
+//
+// `setup()` is a plain void event. `emitter(...)` is a multi-fire pump
+// that yields `! item usize` per element. The dispatch chains them:
+//
+//   ~setup() |> emitter(n: 3)
+//   ! item i |> ...
+//
+// The outer flow's first invocation (`setup`) carries no effect branches,
+// but the SECOND step in the void chain (`emitter`) does. The synthesized
+// Handlers struct + comptime handler arg must be installed for the
+// chained invocation, not the top-level one.
+//
+// Without the fix, `pending_handlers_name` is only set for the outer
+// `setup()` call (which has no effect branches), so the chained
+// `emitter(...)` call is emitted without its Handlers — producing a
+// signature mismatch and a backend compile error.
+
+~import "$std/io"
+
+~pub event setup { }
+
+~proc setup|zig {
+}
+
+~pub event emitter { n: usize }
+! item usize
+
+~proc emitter|zig {
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        item(i);
+    }
+}
+
+~setup() |> emitter(n: 3)
+! item v |> std.io:print.blk {
+    item {{ v:d }}
+}

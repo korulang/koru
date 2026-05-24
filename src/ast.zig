@@ -978,6 +978,15 @@ pub const Node = union(enum) {
     },
     inline_code: []const u8,  // Verbatim Zig code to emit (from transforms like ~if, ~for) - LEGACY
 
+    /// Zig expression as a body-position node.
+    /// Produced by the parser when content at body position is an expression
+    /// rather than an invocation or branch_constructor (invocations always
+    /// have parens; bare identifiers, literals, and arithmetic are expressions).
+    /// Lowered by the emitter according to context:
+    /// - leaf of an effect-branch handler body with `! ask T -> U` resume type →
+    ///   `return EXPR;` so the comptime fn returns the resume value.
+    expression: []const u8,
+
     // ==========================================================================
     // NEW: Control flow nodes with proper AST bodies
     // These replace inline_code for ~if, ~for, ~each etc.
@@ -1072,6 +1081,7 @@ pub const Node = union(enum) {
                 allocator.free(mb.branch);
             },
             .inline_code => |code| allocator.free(code),
+            .expression => |code| allocator.free(code),
             .foreach => |*fe| {
                 allocator.free(fe.iterable);
                 if (fe.element_type) |et| allocator.free(et);
@@ -1567,7 +1577,8 @@ pub const ASTNode = union(enum) {
                     },
                     // Leaf step types
                     .label_apply, .label_with_invocation, .label_jump,
-                    .terminal, .deref, .branch_constructor, .metatype_binding, .inline_code => {
+                    .terminal, .deref, .branch_constructor, .metatype_binding, .inline_code,
+                    .expression => {
                         break :blk try allocator.alloc(ASTNode, 0);
                     },
                     // Foreach, conditional, capture, switch_result have bodies handled via continuation traversal

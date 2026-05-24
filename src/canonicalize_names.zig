@@ -167,10 +167,10 @@ fn canonicalizeStep(ctx: *Context, step: *ast.Step) CanonicalizeError!void {
                 }
             }
         },
-        .label_apply, .label_jump, .terminal, .metatype_binding, .inline_code => {
+        .label_apply, .label_jump, .terminal, .metatype_binding, .inline_code, .expression => {
             // No paths to canonicalize
             // metatype_binding contains canonical event names as strings, not DottedPaths
-            // inline_code is raw Zig code, no Koru paths
+            // inline_code and expression are raw Zig source, no Koru paths
         },
         .foreach => |*fe| {
             // Recursively canonicalize all branches

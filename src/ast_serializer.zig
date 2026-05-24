@@ -1231,6 +1231,11 @@ pub const AstSerializer = struct {
                 try self.writeString(code);
                 try self.write(" }");
             },
+            .expression => |code| {
+                try self.write(".{ .expression = ");
+                try self.writeString(code);
+                try self.write(" }");
+            },
             .foreach => |fe| {
                 try self.write(".{ .foreach = .{ .iterable = ");
                 try self.writeString(fe.iterable);
@@ -2258,6 +2263,13 @@ pub const AstSerializer = struct {
                 try self.write(",\n");
                 try self.writeIndent();
                 try self.write("\"code\": ");
+                try self.writeString(code);
+            },
+            .expression => |code| {
+                try self.writeString("expression");
+                try self.write(",\n");
+                try self.writeIndent();
+                try self.write("\"expression\": ");
                 try self.writeString(code);
             },
             .foreach => |*fe| {

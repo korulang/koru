@@ -1,0 +1,42 @@
+// Test: labeled-loop re-invocation around an effect-bearing event.
+//
+// `ramp(start: x)` is a pump: it emits `! step i` for two iterations,
+// then signals `| restart (start+2)` or `| done` based on whether to
+// continue. The consumer re-invokes the producer with NEW args via
+// `@loop(start: n)` — this is the labeled-loop re-entry shape.
+//
+// The producer's INTERNAL loop is invisible to the consumer (effect
+// branches handle that). The consumer's EXTERNAL loop is the labeled
+// re-invocation. Both layers compose: each call to the producer fires
+// its effects, then the consumer either restarts or completes.
+//
+// This proves that pre_label handler injection (the wiring that was
+// landed but never exercised) survives an end-to-end run when the
+// labeled event has BOTH effect branches AND a re-entering terminal.
+
+~import "$std/io"
+
+~pub event ramp { start: usize }
+! step usize
+| restart usize
+| done usize
+
+~proc ramp|zig {
+    var i: usize = start;
+    while (i < start + 2) : (i += 1) {
+        step(i);
+    }
+    if (start < 4) {
+        return .{ .restart = start + 2 };
+    }
+    return .{ .done = i };
+}
+
+~#loop ramp(start: 0)
+! step v |> std.io:print.blk {
+    step {{ v:d }}
+}
+| restart n |> @loop(start: n)
+| done total |> std.io:print.blk {
+    done {{ total:d }}
+}

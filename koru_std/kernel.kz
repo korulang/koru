@@ -263,6 +263,7 @@ const std = @import("std");
                             .metatype_binding => return self.fail(info.continuation, "metatype_binding"),
                             .assignment => return self.fail(info.continuation, "assignment"),
                             .inline_code => return .continue_walk,
+                            .expression => return .continue_walk,
                             .terminal => return .continue_walk,
                             .invocation => unreachable,
                         },

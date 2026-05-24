@@ -1,0 +1,22 @@
+// Test: effect-branch handler uses the binding itself as the resume value.
+//
+// `! transform q |> q` — the handler echoes its input. The bare identifier
+// `q` at body position IS the resume value (after the parser fix that
+// recognizes invocations always have parens, locked 2026-05-24).
+
+~import "$std/io"
+
+~pub event transform { payload: i32 }
+! squarify i32 -> i32
+| done i32
+
+~proc transform|zig {
+    const squared = squarify(payload * payload);
+    return .{ .done = squared };
+}
+
+~transform(payload: 7)
+! squarify n |> n
+| done result |> std.io:print.blk {
+    result is {{ result:d }}
+}

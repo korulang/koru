@@ -1556,6 +1556,9 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
         .inline_code => |code| {
             return .{ .inline_code = try allocator.dupe(u8, code) };
         },
+        .expression => |code| {
+            return .{ .expression = try allocator.dupe(u8, code) };
+        },
         .foreach => |fe| {
             // Clone foreach - uses uniform NamedBranch structure
             return .{ .foreach = .{

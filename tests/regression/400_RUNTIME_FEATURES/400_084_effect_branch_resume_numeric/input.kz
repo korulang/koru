@@ -1,0 +1,21 @@
+// Test: effect-branch handler resumes with a numeric literal.
+//
+// `! query _ |> 42` — bare numeric literal IS the resume value. Same
+// shape as string literal in 400_082, just confirms primitives flow.
+
+~import "$std/io"
+
+~pub event query { question: []const u8 }
+! ask []const u8 -> i32
+| done i32
+
+~proc query|zig {
+    const answer = ask(question);
+    return .{ .done = answer };
+}
+
+~query(question: "The Answer?")
+! ask _ |> 42
+| done a |> std.io:print.blk {
+    The Answer is {{ a:d }}
+}

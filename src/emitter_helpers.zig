@@ -153,6 +153,11 @@ pub fn shouldFilter(item_annotations: []const []const u8, module_annotations: []
 pub const LabelContext = struct {
     handler_invocation: *const ast.Invocation,
     result_var: []const u8,
+    // Effect-branches phase 3b: the Handlers struct synthesized for the
+    // labeled invocation, if the target event declares `!` branches. Used
+    // by `@label(...)` re-entry emission to pass the comptime 2nd arg so
+    // the call still matches the proc's handler signature.
+    handlers_name: ?[]const u8 = null,
 };
 
 pub const EmissionContext = struct {
@@ -3478,6 +3483,7 @@ pub fn emitFlow(
                 try label_map.put(label, .{
                     .handler_invocation = &flow.invocation,
                     .result_var = result_copy,
+                    .handlers_name = ctx.pending_handlers_name,
                 });
             }
 
@@ -3770,7 +3776,7 @@ fn emitHandlersStruct(
     handlers_name: []const u8,
     effect_conts: []const ast.Continuation,
     event_decl: *const ast.EventDecl,
-) !void {
+) anyerror!void {
     try emitter.writeIndent();
     try emitter.write("const ");
     try emitter.write(handlers_name);
@@ -3846,9 +3852,44 @@ fn emitHandlersStruct(
         try writeBranchName(emitter, binding_name);
         try emitter.write(";\n");
 
-        // Emit the continuation body. Body context is independent (no prev_result).
-        var result_counter: usize = 0;
-        try emitContinuationBody(emitter, ctx, cont, &result_counter);
+        // If the branch declares a resume type AND the body's leaf is a
+        // bare Zig expression, emit `return EXPR;` so the synthesized fn
+        // returns the resume value. This is the `! ask q |> "Alice"` shape:
+        // anything at body position without trailing parens after the path
+        // IS the resume value, no marker needed (locked 2026-05-24, see
+        // memory project_effect_resume_value_syntax).
+        //
+        // Two shapes land here because of how the parser classifies bodies:
+        // - `.expression` Node: literal, struct literal, arithmetic.
+        // - `.branch_constructor` Node with empty payload: bare identifier
+        //   (parser default for backward compat with subflow rebroadcasts).
+        //   At resume context the branch_name is actually a Zig expression
+        //   (binding ref, e.g. `q`); we lift it back into the return slot.
+        const resume_expr: ?[]const u8 = blk: {
+            if (branch.resume_type == null) break :blk null;
+            if (cont.continuations.len != 0) break :blk null;
+            const node = cont.node orelse break :blk null;
+            switch (node) {
+                .expression => |code| break :blk code,
+                .branch_constructor => |bc| {
+                    if (bc.plain_value != null) break :blk null;
+                    if (bc.fields.len != 0) break :blk null;
+                    break :blk bc.branch_name;
+                },
+                else => break :blk null,
+            }
+        };
+
+        if (resume_expr) |expr| {
+            try emitter.writeIndent();
+            try emitter.write("return ");
+            try emitter.write(expr);
+            try emitter.write(";\n");
+        } else {
+            // Emit the continuation body. Body context is independent (no prev_result).
+            var result_counter: usize = 0;
+            try emitContinuationBody(emitter, ctx, cont, &result_counter);
+        }
 
         emitter.dedent();
         try emitter.writeIndent();
@@ -5956,6 +5997,9 @@ pub fn emitContinuationBody(
             try label_map.put(lwi.label, .{
                 .handler_invocation = &lwi.invocation,
                 .result_var = result_copy,
+                // Nested labeled-loop on effect-bearing event isn't wired
+                // here yet — separate from the top-level pre_label case.
+                .handlers_name = null,
             });
         }
 
@@ -6179,20 +6223,103 @@ pub fn emitContinuationBody(
         else
             false;
 
-        if (cont.node) |*step| {
-            try emitPipelineStep(emitter, ctx, cont, step, 0, result_counter);
+        // Effect branches phase 3b — chained invocation path.
+        // When the step is an invocation targeting an event that declares `!`
+        // branches, mirror emitFlow's top-level dance: partition this
+        // continuation's children into effect (folded into Handlers struct)
+        // and terminal (post-call switch arms), synthesize the Handlers
+        // struct, and install pending_handlers_name so emitInvocation appends
+        // the comptime 2nd arg. Restore after the invocation so downstream
+        // emissions don't inherit this Handlers ref.
+        const prev_pending_handlers = ctx.pending_handlers_name;
+        var nested_handlers_name_owned: ?[]const u8 = null;
+        defer if (nested_handlers_name_owned) |h| ctx.allocator.free(h);
 
-            // label_jump and label_apply emit 'continue :label;' which is terminal.
-            // No code should follow — return immediately to avoid unreachable dead code.
-            if (step.* == .label_jump or step.* == .label_apply) return;
+        var nested_terminal_buf: std.ArrayList(ast.Continuation) = .empty;
+        defer nested_terminal_buf.deinit(ctx.allocator);
+        var nested_effect_buf: std.ArrayList(ast.Continuation) = .empty;
+        defer nested_effect_buf.deinit(ctx.allocator);
+
+        var nested_event_has_effect = false;
+        if (cont.node) |maybe_step| {
+            if (maybe_step == .invocation) {
+                const event_decl_nested = if (ctx.ast_items) |items|
+                    findEventDeclByPath(items, &maybe_step.invocation.path)
+                else
+                    null;
+                if (event_decl_nested) |ed| {
+                    for (ed.branches) |b| {
+                        if (b.kind == .effect) {
+                            nested_event_has_effect = true;
+                            break;
+                        }
+                    }
+                    if (nested_event_has_effect) {
+                        for (cont.continuations) |c| {
+                            if (c.kind == .effect) {
+                                try nested_effect_buf.append(ctx.allocator, c);
+                            } else {
+                                try nested_terminal_buf.append(ctx.allocator, c);
+                            }
+                        }
+                        const hname = try std.fmt.allocPrint(ctx.allocator, "Handlers_{d}", .{result_counter.*});
+                        nested_handlers_name_owned = hname;
+                        try emitHandlersStruct(emitter, ctx, hname, nested_effect_buf.items, ed);
+                        ctx.pending_handlers_name = hname;
+                    }
+                }
+            }
+        }
+
+        const effective_continuations: []const ast.Continuation = if (nested_event_has_effect)
+            nested_terminal_buf.items
+        else
+            cont.continuations;
+
+        if (cont.node) |*step| {
+            if (nested_event_has_effect) {
+                // Inline the pipeline-step emission so needs_result is computed
+                // from terminal-only continuations (cont.continuations still
+                // contains the effect conts that are now folded into Handlers).
+                const needs_result = effective_continuations.len > 0;
+                const current_result = if (needs_result)
+                    try std.fmt.allocPrint(ctx.allocator, "{s}{}", .{ ctx.result_prefix, result_counter.* })
+                else
+                    "_";
+                defer if (needs_result) ctx.allocator.free(current_result);
+
+                try emitStep(emitter, ctx, step, current_result);
+
+                if (needs_result and !std.mem.eql(u8, current_result, "_")) {
+                    try emitter.writeIndent();
+                    try emitter.write("_ = &");
+                    try emitter.write(current_result);
+                    try emitter.write(";\n");
+                }
+                if (needs_result) {
+                    result_counter.* += 1;
+                }
+            } else {
+                try emitPipelineStep(emitter, ctx, cont, step, 0, result_counter);
+
+                // label_jump and label_apply emit 'continue :label;' which is terminal.
+                // No code should follow — return immediately to avoid unreachable dead code.
+                if (step.* == .label_jump or step.* == .label_apply) return;
+            }
+        }
+
+        // Pop the Handlers scope before processing nested continuations so
+        // chained terminal-arm emissions don't accidentally pick up our hname.
+        if (nested_event_has_effect) {
+            ctx.pending_handlers_name = prev_pending_handlers;
         }
 
         // Emit nested continuations
-        if (cont.continuations.len > 0) {
+        if (effective_continuations.len > 0) {
             if (is_void_step) {
                 // Void step (like assignment) - emit continuations directly as void chain
                 // Each continuation should be emitted without needing a result to switch on
-                for (cont.continuations) |*nested_cont| {
+                for (effective_continuations) |*nested_cont| {
                     try emitContinuationBody(emitter, ctx, nested_cont, result_counter);
                 }
             } else {
@@ -6229,10 +6356,10 @@ pub fn emitContinuationBody(
                         ctx.current_source_event = saved_source;
                     }
 
-                    try emitContinuationList(emitter, ctx, cont.continuations, last_result, result_counter, false);
+                    try emitContinuationList(emitter, ctx, effective_continuations, last_result, result_counter, false);
                 } else {
                     // No invocation in step, keep current source
-                    try emitContinuationList(emitter, ctx, cont.continuations, last_result, result_counter, false);
+                    try emitContinuationList(emitter, ctx, effective_continuations, last_result, result_counter, false);
                 }
             }
         }
@@ -6487,6 +6614,7 @@ fn emitStep(
                     target_ctx = .{
                         .handler_invocation = ctx.label_handler_invocation.?,
                         .result_var = ctx.label_result_var.?,
+                        .handlers_name = null,
                     };
                 }
             }
@@ -6514,7 +6642,13 @@ fn emitStep(
                     try emitter.write("_");
                     try emitter.write(arg.name);
                 }
-                try emitter.write(" });\n");
+                try emitter.write(" }");
+                // Effect-branches phase 3b: re-entry preserves Handlers arg.
+                if (tctx.handlers_name) |hname| {
+                    try emitter.write(", ");
+                    try emitter.write(hname);
+                }
+                try emitter.write(");\n");
             }
 
             // ALWAYS emit continue :label
@@ -6548,6 +6682,7 @@ fn emitStep(
                     target_ctx = .{
                         .handler_invocation = ctx.label_handler_invocation.?,
                         .result_var = ctx.label_result_var.?,
+                        .handlers_name = null,
                     };
                 }
             }
@@ -6574,7 +6709,15 @@ fn emitStep(
                     try emitter.write("_");
                     try emitter.write(arg.name);
                 }
-                try emitter.write(" });\n");
+                try emitter.write(" }");
+                // Effect-branches phase 3b: if the labeled target carries a
+                // synthesized Handlers struct (event declares `!` branches),
+                // the re-entry call must pass the same comptime 2nd arg.
+                if (tctx.handlers_name) |hname| {
+                    try emitter.write(", ");
+                    try emitter.write(hname);
+                }
+                try emitter.write(");\n");
             }
 
             // ALWAYS emit continue :label (works for same-level and cross-level jumps)
@@ -6588,6 +6731,17 @@ fn emitStep(
             try emitter.writeIndent();
             try emitter.write(code);
             try emitter.write("\n");
+        },
+        .expression => |code| {
+            // A Zig expression at body position. In a generic context we
+            // discard the value to keep emission well-formed. The
+            // effect-branch-handler context overrides this in
+            // emitHandlersStruct, where the expression becomes the
+            // `return EXPR;` of the synthesized resume fn.
+            try emitter.writeIndent();
+            try emitter.write("_ = ");
+            try emitter.write(code);
+            try emitter.write(";\n");
         },
         .foreach => |fe| {
             // Emit for loop with proper AST body
@@ -7177,6 +7331,7 @@ fn emitStepWithBindingSubstitution(
                     target_ctx = .{
                         .handler_invocation = ctx.label_handler_invocation.?,
                         .result_var = ctx.label_result_var.?,
+                        .handlers_name = null,
                     };
                 }
             }
@@ -7205,7 +7360,13 @@ fn emitStepWithBindingSubstitution(
                     defer ctx.allocator.free(state_var);
                     try emitValueWithBindingSubstitution(emitter, state_var, substitution);
                 }
-                try emitter.write(" });\n");
+                try emitter.write(" }");
+                // Effect-branches phase 3b: re-entry preserves Handlers arg.
+                if (tctx.handlers_name) |hname| {
+                    try emitter.write(", ");
+                    try emitter.write(hname);
+                }
+                try emitter.write(");\n");
             }
 
             // ALWAYS emit continue :label

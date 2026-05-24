@@ -1,0 +1,29 @@
+// Test: effect-branch handler returns a resume value via bare-expression body.
+//
+// Producer declares `! ask []const u8 -> []const u8` (yield a question,
+// resume with a reply) and uses the reply. Consumer's handler body is
+// `! ask _ |> "Alice"` — the bare string literal IS the resume value.
+//
+// No `result` keyword, no `*` marker, no `;` terminator. Lars's destiny
+// syntax (locked 2026-05-24): invocations always have parens, so anything
+// at body position without trailing parens after the path is a Zig
+// expression — terse and unambiguous.
+
+~import "$std/io"
+
+const std = @import("std");
+
+~pub event prompt_user { question: []const u8 }
+! ask []const u8 -> []const u8
+| done []const u8
+
+~proc prompt_user|zig {
+    const reply = ask(question);
+    return .{ .done = reply };
+}
+
+~prompt_user(question: "What's your name?")
+! ask _ |> "Alice"
+| done r |> std.io:print.blk {
+    reply was: {{ r:s }}
+}

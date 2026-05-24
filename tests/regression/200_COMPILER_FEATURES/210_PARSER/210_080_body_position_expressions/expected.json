@@ -1,0 +1,227 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 4,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 5,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 6,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 7,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 8,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 9,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 10,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 11,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 12,
+                "col": 0
+            }
+        },
+        {
+            "type": "parse_error",
+            "code": "PARSE003",
+            "message": "event declaration missing input shape",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 13,
+                "col": 1
+            },
+            "raw_text": "~pub event sample\n! one []const u8 -> []const u8\n! two []const u8 -> usize\n! three []const u8 -> []const u8\n! four []const u8 -> i32\n| done\n\n"
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["sample"],
+                "args": [
+
+                ],
+                "variant": null
+            },
+            "continuations": [
+                {
+                    "branch": "one",
+                    "kind": "effect",
+                    "is_catchall": false,
+                    "binding": "_",
+                    "binding_type": "branch_payload",
+                    "condition": null,
+                    "step":                     {
+                        "type": "expression",
+                        "expression": "\"Alice\""
+                    },
+                    "continuations": [
+
+                    ]
+                },
+                {
+                    "branch": "two",
+                    "kind": "effect",
+                    "is_catchall": false,
+                    "binding": "_",
+                    "binding_type": "branch_payload",
+                    "condition": null,
+                    "step":                     {
+                        "type": "expression",
+                        "expression": "42"
+                    },
+                    "continuations": [
+
+                    ]
+                },
+                {
+                    "branch": "three",
+                    "kind": "effect",
+                    "is_catchall": false,
+                    "binding": "q",
+                    "binding_type": "branch_payload",
+                    "condition": null,
+                    "step":                     {
+                        "type": "branch_constructor",
+                        "branch_constructor": {
+                            "branch_name": "q",
+                            "fields": [
+
+                            ],
+                            "plain_value": null,
+                            "has_expressions": false
+                        }
+                    },
+                    "continuations": [
+
+                    ]
+                },
+                {
+                    "branch": "four",
+                    "kind": "effect",
+                    "is_catchall": false,
+                    "binding": "_",
+                    "binding_type": "branch_payload",
+                    "condition": null,
+                    "step":                     {
+                        "type": "expression",
+                        "expression": "1 + 2"
+                    },
+                    "continuations": [
+
+                    ]
+                },
+                {
+                    "branch": "done",
+                    "kind": "terminal",
+                    "is_catchall": false,
+                    "binding": null,
+                    "binding_type": "branch_payload",
+                    "condition": null,
+                    "step":                     {
+                        "type": "terminal"
+                    },
+                    "continuations": [
+
+                    ]
+                }
+            ],
+            "pre_label": null,
+            "post_label": null,
+            "impl_of": null,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_080_body_position_expressions/input.kz",
+                "line": 21,
+                "col": 0
+            }
+        }
+    ]
+}

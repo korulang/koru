@@ -1,0 +1,25 @@
+// Test 210_080: body-position content without trailing `(...)` or `{...}`
+// parses as an `.expression` Node, not as an invocation or branch_constructor.
+//
+// Lars's rule (locked 2026-05-24): invocations always have parens (or a
+// Source-block `{`). Anything else at body position is a Zig expression.
+//
+// Shapes exercised here:
+//  - string literal:      "Alice"
+//  - integer literal:     42
+//  - bare identifier:     reply
+//  - arithmetic:          1 + 2
+
+~pub event sample
+! one []const u8 -> []const u8
+! two []const u8 -> usize
+! three []const u8 -> []const u8
+! four []const u8 -> i32
+| done
+
+~sample()
+! one _ |> "Alice"
+! two _ |> 42
+! three q |> q
+! four _ |> 1 + 2
+| done |> _
