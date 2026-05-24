@@ -118,10 +118,9 @@ fn buildEventPath(
             // Same module as main - use main_module.
             try buf.appendSlice(allocator, "main_module.");
         } else {
-            // Different module - use koru_ prefix and preserve dots
-            // e.g., "std.io" becomes "koru_std.io."
-            try buf.appendSlice(allocator, "koru_");
-            try buf.appendSlice(allocator, mq);
+            const prefix = try codegen_utils.buildKoruModulePath(allocator, mq);
+            defer allocator.free(prefix);
+            try buf.appendSlice(allocator, prefix);
             try buf.append(allocator, '.');
         }
     } else {

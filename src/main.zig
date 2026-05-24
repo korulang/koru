@@ -1668,32 +1668,15 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
                         const match_name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
 
                         // Build module path: "std.control" -> "koru_std.control"
-                        var module_path_buf: [256]u8 = undefined;
-                        var module_path_len: usize = 0;
+                        const module_path = try codegen_utils.buildKoruModulePath(allocator, module.logical_name);
 
-                        // Also extract just the module name part for stub naming
-                        var module_name: []const u8 = undefined;
-
-                        // Convert "std.control" to "koru_std.control" by replacing first "std" with "koru_std"
-                        if (std.mem.startsWith(u8, module.logical_name, "std.")) {
-                            @memcpy(module_path_buf[0..9], "koru_std.");
-                            const rest = module.logical_name[4..]; // Skip "std."
-                            @memcpy(module_path_buf[9 .. 9 + rest.len], rest);
-                            module_path_len = 9 + rest.len;
-                            module_name = rest;
-                        } else if (std.mem.eql(u8, module.logical_name, "std")) {
-                            @memcpy(module_path_buf[0..8], "koru_std");
-                            module_path_len = 8;
-                            module_name = "";
-                        } else {
-                            // Non-std modules get "koru_" prefix too
-                            @memcpy(module_path_buf[0..5], "koru_");
-                            @memcpy(module_path_buf[5 .. 5 + module.logical_name.len], module.logical_name);
-                            module_path_len = 5 + module.logical_name.len;
-                            module_name = module.logical_name;
-                        }
-
-                        const module_path = try allocator.dupe(u8, module_path_buf[0..module_path_len]);
+                        // Stub-naming suffix: "std.X" -> "X", "std" -> "", "other" -> "other"
+                        const module_name: []const u8 = if (std.mem.startsWith(u8, module.logical_name, "std."))
+                            module.logical_name[4..]
+                        else if (std.mem.eql(u8, module.logical_name, "std"))
+                            ""
+                        else
+                            module.logical_name;
 
                         // Build unique stub name: module_name + "_" + event_name
                         // e.g., "control_if" or "compiler_requirements_requires"
@@ -2146,31 +2129,15 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
                         const match_name = try joinPathSegmentsWithDots(allocator, event_decl.path.segments);
 
                         // Build module path: "std.control" -> "koru_std.control"
-                        var module_path_buf: [256]u8 = undefined;
-                        var module_path_len: usize = 0;
+                        const module_path = try codegen_utils.buildKoruModulePath(allocator, module.logical_name);
 
-                        // Also extract just the module name part (e.g., "control" from "std.control")
-                        var module_name: []const u8 = undefined;
-
-                        if (std.mem.startsWith(u8, module.logical_name, "std.")) {
-                            @memcpy(module_path_buf[0..9], "koru_std.");
-                            const rest = module.logical_name[4..];
-                            @memcpy(module_path_buf[9 .. 9 + rest.len], rest);
-                            module_path_len = 9 + rest.len;
-                            module_name = rest; // e.g., "control" or "compiler_requirements"
-                        } else if (std.mem.eql(u8, module.logical_name, "std")) {
-                            @memcpy(module_path_buf[0..8], "koru_std");
-                            module_path_len = 8;
-                            module_name = "";
-                        } else {
-                            // Non-std modules get "koru_" prefix too
-                            @memcpy(module_path_buf[0..5], "koru_");
-                            @memcpy(module_path_buf[5 .. 5 + module.logical_name.len], module.logical_name);
-                            module_path_len = 5 + module.logical_name.len;
-                            module_name = module.logical_name;
-                        }
-
-                        const module_path = try allocator.dupe(u8, module_path_buf[0..module_path_len]);
+                        // Stub-naming suffix: "std.X" -> "X", "std" -> "", "other" -> "other"
+                        const module_name: []const u8 = if (std.mem.startsWith(u8, module.logical_name, "std."))
+                            module.logical_name[4..]
+                        else if (std.mem.eql(u8, module.logical_name, "std"))
+                            ""
+                        else
+                            module.logical_name;
 
                         // Build unique stub name: module_name + "_" + event_name
                         // e.g., "control_if" or "compiler_requirements_requires"

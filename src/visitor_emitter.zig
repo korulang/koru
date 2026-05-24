@@ -2987,10 +2987,9 @@ pub const VisitorEmitter = struct {
             try self.writeIndent(depth - 1);
         }
         try self.code_emitter.write("pub const ");
-        // Only prefix top-level modules (depth==1, siblings to main_module)
-        if (depth == 1) {
-            try self.code_emitter.write("koru_");
-        }
+        // Phase-controlled wrapper prefix (see codegen_utils.koruWrapperPrefix).
+        // Phase 1: only depth==1 (top-level sibling to main_module) gets "koru_".
+        try self.code_emitter.write(codegen_utils.koruWrapperPrefix(depth == 1));
         // Escape module names that aren't valid Zig identifiers (e.g., @koru, test-pkg)
         if (codegen_utils.needsEscaping(node.name)) {
             try self.code_emitter.write("@\"");
@@ -3026,13 +3025,8 @@ pub const VisitorEmitter = struct {
             const prev_module_prefix = self.current_module_prefix;
             self.current_module_name = module.logical_name;
             // Build Zig path prefix: "orisha" → "koru_orisha", "std.build" → "koru_std.build"
-            const prefix = blk: {
-                var buf: std.ArrayList(u8) = .empty;
-                buf.appendSlice(self.allocator, "koru_") catch break :blk @as(?[]const u8, null);
-                // Replace dots in logical_name with dots in Zig path
-                buf.appendSlice(self.allocator, module.logical_name) catch break :blk @as(?[]const u8, null);
-                break :blk buf.toOwnedSlice(self.allocator) catch null;
-            };
+            // Centralized via codegen_utils so Phase 2 (prefix-every-segment) flips here too.
+            const prefix: ?[]const u8 = codegen_utils.buildKoruModulePath(self.allocator, module.logical_name) catch null;
             self.current_module_prefix = prefix;
             defer {
                 self.current_module_name = prev_module_name;

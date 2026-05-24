@@ -492,11 +492,8 @@ pub fn writeModulePath(emitter: *CodeEmitter, module_path: []const u8, main_modu
         var first = true;
         var splitter = std.mem.splitScalar(u8, module_path, '/');
         while (splitter.next()) |segment| {
-            if (!first) {
-                try emitter.write(".");
-            } else {
-                try emitter.write("koru_");
-            }
+            if (!first) try emitter.write(".");
+            try emitter.write(codegen_utils.koruWrapperPrefix(first));
             // Escape segments that need it (e.g., @koru -> @"@koru", test-pkg -> @"test-pkg")
             try writeEscapedSegment(emitter, segment);
             first = false;
@@ -508,12 +505,8 @@ pub fn writeModulePath(emitter: *CodeEmitter, module_path: []const u8, main_modu
     var splitter = std.mem.splitScalar(u8, module_path, '.');
     var first = true;
     while (splitter.next()) |segment| {
-        if (!first) {
-            try emitter.write(".");
-        } else {
-            // Only prefix the FIRST segment (top-level sibling module)
-            try emitter.write("koru_");
-        }
+        if (!first) try emitter.write(".");
+        try emitter.write(codegen_utils.koruWrapperPrefix(first));
         // Escape segments that need it (e.g., @koru -> @"@koru", test-pkg -> @"test-pkg")
         try writeEscapedSegment(emitter, segment);
         first = false;

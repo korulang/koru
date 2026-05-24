@@ -359,3 +359,85 @@ test "koruStructToZig nested struct" {
     defer allocator.free(result);
     try std.testing.expectEqualStrings(".{ .outer = .{ .inner = 1 } }", result);
 }
+
+// ============================================================================
+// KORU MODULE-WRAPPER PREFIX
+// ============================================================================
+// All Zig code we emit for a Koru module is wrapped in `pub const koru_<name>
+// = struct { ... }`. The "koru_" prefix exists so that user-imported Zig
+// identifiers (e.g. `const vaxis = @import("vaxis");`) don't collide with the
+// wrapper name.
+//
+// Phase 1 (current): only the TOP segment of a dotted path is prefixed, so
+// "std.io" emits as "koru_std.io" — the nested wrapper for `io` is bare.
+// Phase 2 (planned): every segment is prefixed, so "std.io" becomes
+// "koru_std.koru_io". Flipping `KORU_PREFIX_TOP_ONLY` from true to false is
+// the single switch that performs that flip across every producer site.
+
+pub const KORU_PREFIX: []const u8 = "koru_";
+
+/// When true, only the first (top-level) segment of a dotted module path
+/// receives the `koru_` prefix. When false, every segment is prefixed.
+/// All koru-module-path emission sites consult this — flip it to enable
+/// Phase 2 (prefix-every-segment) atomically.
+pub const KORU_PREFIX_TOP_ONLY: bool = true;
+
+/// Returns the koru wrapper prefix for a given segment position.
+/// Phase 1: `"koru_"` for the first segment, `""` for the rest.
+/// Phase 2: `"koru_"` for every segment.
+pub fn koruWrapperPrefix(is_first_segment: bool) []const u8 {
+    if (KORU_PREFIX_TOP_ONLY) {
+        return if (is_first_segment) KORU_PREFIX else "";
+    } else {
+        return KORU_PREFIX;
+    }
+}
+
+/// Build a Zig-emitter module path from a Koru logical module name.
+/// "std.io" -> "koru_std.io" (Phase 1) / "koru_std.koru_io" (Phase 2).
+/// Caller owns the returned slice.
+/// Does NOT escape segments — callers that need Zig-identifier escaping
+/// (e.g. writeModulePath in emitter_helpers) should iterate segments
+/// themselves and apply the prefix via koruWrapperPrefix.
+pub fn buildKoruModulePath(allocator: std.mem.Allocator, logical_name: []const u8) ![]u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(allocator);
+    var splitter = std.mem.splitScalar(u8, logical_name, '.');
+    var is_first = true;
+    while (splitter.next()) |segment| {
+        if (!is_first) {
+            try buf.append(allocator, '.');
+        }
+        try buf.appendSlice(allocator, koruWrapperPrefix(is_first));
+        try buf.appendSlice(allocator, segment);
+        is_first = false;
+    }
+    return buf.toOwnedSlice(allocator);
+}
+
+test "buildKoruModulePath single segment" {
+    const allocator = std.testing.allocator;
+    const result = try buildKoruModulePath(allocator, "logger");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("koru_logger", result);
+}
+
+test "buildKoruModulePath dotted path" {
+    const allocator = std.testing.allocator;
+    const result = try buildKoruModulePath(allocator, "std.io");
+    defer allocator.free(result);
+    // Phase 1: first segment only
+    try std.testing.expectEqualStrings("koru_std.io", result);
+}
+
+test "buildKoruModulePath three segments" {
+    const allocator = std.testing.allocator;
+    const result = try buildKoruModulePath(allocator, "std.io.print");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("koru_std.io.print", result);
+}
+
+test "koruWrapperPrefix Phase 1" {
+    try std.testing.expectEqualStrings("koru_", koruWrapperPrefix(true));
+    try std.testing.expectEqualStrings("", koruWrapperPrefix(false));
+}
