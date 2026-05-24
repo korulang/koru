@@ -187,6 +187,10 @@ pub const EmissionContext = struct {
     current_flow_location: ?errors.SourceLocation = null, // Location of the flow invocation
     // Comptime program return: use this binding instead of "_" for zero-continuation flows
     comptime_result_binding: ?[]const u8 = null,
+    // Effect-branches phase 3b: if set, emitInvocation appends `, NAME` as 2nd handler arg.
+    // Set by emitFlow when the target event has yielding (`!`) branches and a Handlers
+    // struct has been synthesized locally. Cleared after the invocation.
+    pending_handlers_name: ?[]const u8 = null,
 };
 
 /// CodeEmitter - manages buffer and formatting
@@ -3361,11 +3365,59 @@ pub fn emitFlow(
         // (see below where we actually emit the loop)
     }
 
+    // Effect-branches phase 3b: partition continuations into terminal (`|`) and
+    // yielding (`!`). Yielding conts lower to fns inside a synthesized Handlers
+    // struct passed as the 2nd arg to .handler(); terminal conts continue to
+    // drive the post-call switch/extract logic. See docs/EFFECT_BRANCHES.md.
+    var has_yielding_cont = false;
+    for (flow.continuations) |cont| {
+        if (cont.kind == .yielding) {
+            has_yielding_cont = true;
+            break;
+        }
+    }
+
+    var terminal_conts_buf: std.ArrayList(ast.Continuation) = .empty;
+    defer terminal_conts_buf.deinit(ctx.allocator);
+    var yielding_conts_buf: std.ArrayList(ast.Continuation) = .empty;
+    defer yielding_conts_buf.deinit(ctx.allocator);
+
+    if (has_yielding_cont) {
+        for (flow.continuations) |cont| {
+            if (cont.kind == .yielding) {
+                try yielding_conts_buf.append(ctx.allocator, cont);
+            } else {
+                try terminal_conts_buf.append(ctx.allocator, cont);
+            }
+        }
+    }
+
+    const conts: []const ast.Continuation = if (has_yielding_cont)
+        terminal_conts_buf.items
+    else
+        flow.continuations;
+
+    var handlers_name_owned: ?[]const u8 = null;
+    defer if (handlers_name_owned) |h| ctx.allocator.free(h);
+    if (has_yielding_cont) {
+        const event_decl = if (ctx.ast_items) |items|
+            findEventDeclByPath(items, &flow.invocation.path)
+        else
+            null;
+        if (event_decl) |ed| {
+            const hname = try std.fmt.allocPrint(ctx.allocator, "Handlers_{d}", .{result_counter});
+            handlers_name_owned = hname;
+            try emitHandlersStruct(emitter, ctx, hname, yielding_conts_buf.items, ed);
+            ctx.pending_handlers_name = hname;
+        }
+    }
+    defer ctx.pending_handlers_name = null;
+
     // If there are no continuations, discard the result
-    if (flow.continuations.len > 0) {
+    if (conts.len > 0) {
         // Check if this is a void event (empty branch) - if so, discard result
-        const is_void_event = flow.continuations.len == 1 and
-            std.mem.eql(u8, flow.continuations[0].branch, "");
+        const is_void_event = conts.len == 1 and
+            std.mem.eql(u8, conts[0].branch, "");
 
         const first_result = if (is_void_event)
             "_" // Discard void result
@@ -3377,7 +3429,7 @@ pub fn emitFlow(
         // If we have a pre_label, emit first invocation BEFORE the while loop
         if (flow.pre_label) |label| {
             // Analyze which branches loop back to this label
-            const looping_branches = try findLoopingBranches(label, flow.continuations, ctx.allocator);
+            const looping_branches = try findLoopingBranches(label, conts, ctx.allocator);
             defer ctx.allocator.free(looping_branches);
 
             // Emit FIRST invocation before the loop (to get initial result)
@@ -3402,7 +3454,13 @@ pub fn emitFlow(
                 try emitter.write("_");
                 try emitter.write(arg.name);
             }
-            try emitter.write(" });\n");
+            try emitter.write(" }");
+            // Effect-branches phase 3b: pass synthesized Handlers struct as 2nd arg.
+            if (ctx.pending_handlers_name) |hname| {
+                try emitter.write(", ");
+                try emitter.write(hname);
+            }
+            try emitter.write(");\n");
 
             // Register this label in the context map (for cross-level jumps)
             if (ctx.label_contexts) |label_map| {
@@ -3460,7 +3518,7 @@ pub fn emitFlow(
 
         // If we have a pre_label, we need to split continuations into looping and non-looping
         if (flow.pre_label) |label| {
-            const looping_branches = try findLoopingBranches(label, flow.continuations, ctx.allocator);
+            const looping_branches = try findLoopingBranches(label, conts, ctx.allocator);
             defer ctx.allocator.free(looping_branches);
 
             // If NO branches loop, the label is unused - just emit all continuations normally
@@ -3470,14 +3528,14 @@ pub fn emitFlow(
                 ctx.label_result_var = null;
 
                 // Emit all continuations as a regular switch (no loop)
-                try emitContinuationList(emitter, ctx, flow.continuations, first_result, &result_counter, false);
+                try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false);
             } else {
                 // ONLY emit looping branches inside the while loop
                 // Build list of looping continuations
                 var looping_conts = try std.ArrayList(ast.Continuation).initCapacity(ctx.allocator, looping_branches.len);
                 defer looping_conts.deinit(ctx.allocator);
 
-                for (flow.continuations) |cont| {
+                for (conts) |cont| {
                     // Check if this continuation is in the looping branches list
                     for (looping_branches) |loop_branch| {
                         if (std.mem.eql(u8, cont.branch, loop_branch)) {
@@ -3503,12 +3561,12 @@ pub fn emitFlow(
                 try emitter.write("}\n");
 
                 // NOW emit switch for NON-LOOPING branches (after the while)
-                if (looping_branches.len < flow.continuations.len) {
+                if (looping_branches.len < conts.len) {
                     // Build list of non-looping continuations
-                    var non_looping_conts = try std.ArrayList(ast.Continuation).initCapacity(ctx.allocator, flow.continuations.len - looping_branches.len);
+                    var non_looping_conts = try std.ArrayList(ast.Continuation).initCapacity(ctx.allocator, conts.len - looping_branches.len);
                     defer non_looping_conts.deinit(ctx.allocator);
 
-                    for (flow.continuations) |cont| {
+                    for (conts) |cont| {
                         // Check if this continuation is NOT in the looping branches list
                         var is_looping = false;
                         for (looping_branches) |loop_branch| {
@@ -3534,7 +3592,7 @@ pub fn emitFlow(
             }
         } else {
             // No pre_label - emit all continuations normally
-            try emitContinuationList(emitter, ctx, flow.continuations, first_result, &result_counter, false);
+            try emitContinuationList(emitter, ctx, conts, first_result, &result_counter, false);
         }
     } else {
         // Zero continuations — use comptime_result_binding if set (for program return)
@@ -3687,6 +3745,89 @@ fn branchHasPayloadFieldsSearchAll(
         }
     }
     return true; // Conservative: assume has fields if not found
+}
+
+/// Effect-branches phase 3b: synthesize the local Handlers struct that carries
+/// the consumer's `!` branch bodies as static fns. See docs/EFFECT_BRANCHES.md.
+///
+/// Emits:
+///   const HANDLERS = struct {
+///       fn BRANCH(BINDING: PAYLOAD) RESUME { <cont body> }
+///       ...
+///   };
+fn emitHandlersStruct(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    handlers_name: []const u8,
+    yielding_conts: []const ast.Continuation,
+    event_decl: *const ast.EventDecl,
+) !void {
+    try emitter.writeIndent();
+    try emitter.write("const ");
+    try emitter.write(handlers_name);
+    try emitter.write(" = struct {\n");
+    emitter.indent();
+
+    for (yielding_conts) |*cont| {
+        // Find the matching branch decl by name. shape_checker is responsible
+        // for catching mismatches; if missing here we skip defensively.
+        const branch_decl = blk: {
+            for (event_decl.branches) |*b| {
+                if (std.mem.eql(u8, b.name, cont.branch)) break :blk b;
+            }
+            break :blk null;
+        };
+        if (branch_decl == null) continue;
+        const branch = branch_decl.?;
+
+        const binding_name = if (cont.binding) |b| b else branch.name;
+
+        try emitter.writeIndent();
+        try emitter.write("fn ");
+        try writeBranchName(emitter, branch.name);
+        try emitter.write("(");
+        try writeBranchName(emitter, binding_name);
+        try emitter.write(": ");
+
+        // Identity payload (single field named "__type_ref") — emit type directly.
+        // Struct payloads on yielding branches are not yet covered.
+        if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
+            try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
+        } else if (branch.payload.fields.len == 0) {
+            try emitter.write("void");
+        } else {
+            // Struct-payload yielding branch: not implemented in phase 3b first cut.
+            // Emit a placeholder that will Zig-compile-error loudly so the gap is visible.
+            try emitter.write("@compileError(\"effect-branches: struct-payload yielding branches not yet emitted\")");
+        }
+
+        try emitter.write(") ");
+        if (branch.resume_type) |rt| {
+            try emitter.write(rt);
+        } else {
+            try emitter.write("void");
+        }
+        try emitter.write(" {\n");
+        emitter.indent();
+
+        // Suppress unused-param warning unconditionally (matches proc-side convention).
+        try emitter.writeIndent();
+        try emitter.write("_ = &");
+        try writeBranchName(emitter, binding_name);
+        try emitter.write(";\n");
+
+        // Emit the continuation body. Body context is independent (no prev_result).
+        var result_counter: usize = 0;
+        try emitContinuationBody(emitter, ctx, cont, &result_counter);
+
+        emitter.dedent();
+        try emitter.writeIndent();
+        try emitter.write("}\n");
+    }
+
+    emitter.dedent();
+    try emitter.writeIndent();
+    try emitter.write("};\n");
 }
 
 /// Emit an invocation (const result = event.handler(...))
@@ -3961,7 +4102,14 @@ fn emitInvocation(
     try writeHandlerName(emitter, ctx.allocator, effective_variant);
     try emitter.write("(.{ ");
     try emitArgs(emitter, ctx, invocation.args, &invocation.path);
-    try emitter.write(" });");
+    try emitter.write(" }");
+    // Effect-branches phase 3b: pass the synthesized Handlers struct as 2nd arg
+    // when the target event has yielding (`!`) branches.
+    if (ctx.pending_handlers_name) |hname| {
+        try emitter.write(", ");
+        try emitter.write(hname);
+    }
+    try emitter.write(");");
     try writeVariantComment(emitter, effective_variant);
     try emitter.write("\n");
 }
