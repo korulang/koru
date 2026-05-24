@@ -368,11 +368,10 @@ test "koruStructToZig nested struct" {
 // identifiers (e.g. `const vaxis = @import("vaxis");`) don't collide with the
 // wrapper name.
 //
-// Phase 1 (current): only the TOP segment of a dotted path is prefixed, so
+// Phase 1: only the TOP segment of a dotted path is prefixed, so
 // "std.io" emits as "koru_std.io" — the nested wrapper for `io` is bare.
-// Phase 2 (planned): every segment is prefixed, so "std.io" becomes
-// "koru_std.koru_io". Flipping `KORU_PREFIX_TOP_ONLY` from true to false is
-// the single switch that performs that flip across every producer site.
+// Phase 2 (current): every segment is prefixed, so "std.io" becomes
+// "koru_std.koru_io".
 
 pub const KORU_PREFIX: []const u8 = "koru_";
 
@@ -380,7 +379,7 @@ pub const KORU_PREFIX: []const u8 = "koru_";
 /// receives the `koru_` prefix. When false, every segment is prefixed.
 /// All koru-module-path emission sites consult this — flip it to enable
 /// Phase 2 (prefix-every-segment) atomically.
-pub const KORU_PREFIX_TOP_ONLY: bool = true;
+pub const KORU_PREFIX_TOP_ONLY: bool = false;
 
 /// Returns the koru wrapper prefix for a given segment position.
 /// Phase 1: `"koru_"` for the first segment, `""` for the rest.
@@ -426,18 +425,18 @@ test "buildKoruModulePath dotted path" {
     const allocator = std.testing.allocator;
     const result = try buildKoruModulePath(allocator, "std.io");
     defer allocator.free(result);
-    // Phase 1: first segment only
-    try std.testing.expectEqualStrings("koru_std.io", result);
+    // Phase 2: every segment prefixed
+    try std.testing.expectEqualStrings("koru_std.koru_io", result);
 }
 
 test "buildKoruModulePath three segments" {
     const allocator = std.testing.allocator;
     const result = try buildKoruModulePath(allocator, "std.io.print");
     defer allocator.free(result);
-    try std.testing.expectEqualStrings("koru_std.io.print", result);
+    try std.testing.expectEqualStrings("koru_std.koru_io.koru_print", result);
 }
 
-test "koruWrapperPrefix Phase 1" {
+test "koruWrapperPrefix Phase 2" {
     try std.testing.expectEqualStrings("koru_", koruWrapperPrefix(true));
-    try std.testing.expectEqualStrings("", koruWrapperPrefix(false));
+    try std.testing.expectEqualStrings("koru_", koruWrapperPrefix(false));
 }
