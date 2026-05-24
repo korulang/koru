@@ -1,3 +1,1 @@
-KORU025
-branch 'done' is declared as terminal
-handler uses yielding
+error[KORU025]: branch 'done' is declared as terminal

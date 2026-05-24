@@ -1,0 +1,20 @@
+// Test: minimum effect-branch program — proc yields, consumer handles.
+//
+// `! pong []const u8` is a yielding branch; the proc body calls `pong(msg)`
+// which transfers control to the consumer's `! pong reply |> ...` handler,
+// runs it, then returns. No terminal `|` branches — this is a void event
+// with one effect operation.
+
+~import "$std/io"
+
+const std = @import("std");
+
+~pub event ping { msg: []const u8 }
+! pong []const u8
+
+~proc ping|zig {
+    pong(msg);
+}
+
+~ping(msg: "hello effect branches")
+! pong reply |> std.io:print.ln(text: reply)

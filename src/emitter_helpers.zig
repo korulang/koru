@@ -7707,20 +7707,32 @@ fn emitEventDeclForModule(
     try code_emitter.writeIndent();
     try code_emitter.write("};\n");
 
-    // Output union
+    // Partition branches by kind: terminal `|` become Output union variants,
+    // yielding `!` become comptime handler-struct functions (effect operations).
+    var terminal_count: usize = 0;
+    var has_yielding: bool = false;
+    for (event.branches) |b| {
+        if (b.kind == .yielding) {
+            has_yielding = true;
+        } else {
+            terminal_count += 1;
+        }
+    }
+
+    // Output union — terminal branches only
     try code_emitter.writeIndent();
-    if (event.branches.len == 0) {
+    if (terminal_count == 0) {
         try code_emitter.write("pub const Output = void;\n");
     } else {
         try code_emitter.write("pub const Output = union(enum) {\n");
         code_emitter.indent_level += 1;
         for (event.branches) |branch| {
+            if (branch.kind == .yielding) continue;
             try code_emitter.writeIndent();
             try writeBranchName(code_emitter, branch.name);
 
             if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
                 try code_emitter.write(": ");
-                // For emitter_helpers, we ignore is_source and just use the type string
                 try writeFieldType(code_emitter, branch.payload.fields[0], ctx.main_module_name);
                 try code_emitter.write(",\n");
             } else {
@@ -7743,9 +7755,13 @@ fn emitEventDeclForModule(
         try code_emitter.write("};\n");
     }
 
-    // Handler function
+    // Handler function — takes `comptime __H: type` when the event yields.
     try code_emitter.writeIndent();
-    try code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
+    if (has_yielding) {
+        try code_emitter.write("pub fn handler(__koru_event_input: Input, comptime __H: type) Output {\n");
+    } else {
+        try code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
+    }
     code_emitter.indent_level += 1;
 
     // Emit input field bindings
@@ -7756,6 +7772,24 @@ fn emitEventDeclForModule(
         try code_emitter.write(" = __koru_event_input.");
         try code_emitter.write(field.name);
         try code_emitter.write(";\n");
+    }
+
+    // Yielding-branch aliases — `const X = __H.X;` so the body can call X(...)
+    // directly without qualifying through __H. Zero runtime cost (comptime).
+    if (has_yielding) {
+        for (event.branches) |b| {
+            if (b.kind != .yielding) continue;
+            try code_emitter.writeIndent();
+            try code_emitter.write("const ");
+            try code_emitter.write(b.name);
+            try code_emitter.write(" = __H.");
+            try code_emitter.write(b.name);
+            try code_emitter.write(";\n");
+            try code_emitter.writeIndent();
+            try code_emitter.write("_ = &");
+            try code_emitter.write(b.name);
+            try code_emitter.write(";\n");
+        }
     }
 
     // Suppress unused variable warnings

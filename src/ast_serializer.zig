@@ -1044,6 +1044,15 @@ pub const AstSerializer = struct {
         try self.write(if (cont.is_catchall) "true" else "false");
         try self.write(",\n");
 
+        // Branch kind (terminal `|` or yielding `!`)
+        try self.writeIndent();
+        try self.write(".kind = ");
+        try self.write(switch (cont.kind) {
+            .yielding => ".yielding",
+            .terminal => ".terminal",
+        });
+        try self.write(",\n");
+
         // Catch-all metatype
         try self.writeIndent();
         try self.write(".catchall_metatype = ");
@@ -1406,6 +1415,25 @@ pub const AstSerializer = struct {
         try self.writeIndent();
         try self.write(".is_optional = ");
         try self.write(if (branch.is_optional) "true" else "false");
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write(".kind = ");
+        try self.write(switch (branch.kind) {
+            .yielding => ".yielding",
+            .terminal => ".terminal",
+        });
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write(".resume_type = ");
+        if (branch.resume_type) |rt| {
+            try self.write("\"");
+            try self.write(rt);
+            try self.write("\"");
+        } else {
+            try self.write("null");
+        }
         try self.write(",\n");
 
         try self.writeIndent();

@@ -1466,15 +1466,29 @@ pub const VisitorEmitter = struct {
         try self.code_emitter.writeIndent();
         try self.code_emitter.write("};\n");
 
-        // Output type - void for events with no branches
+        // Partition branches: terminal `|` → Output union variants, yielding
+        // `!` → comptime handler-struct fns (effect operations). See
+        // docs/EFFECT_BRANCHES.md for the lowering.
+        var terminal_count: usize = 0;
+        var has_yielding: bool = false;
+        for (event.branches) |b| {
+            if (b.kind == .yielding) {
+                has_yielding = true;
+            } else {
+                terminal_count += 1;
+            }
+        }
+
+        // Output type — terminal branches only
         try self.code_emitter.writeIndent();
-        if (event.branches.len == 0) {
+        if (terminal_count == 0) {
             try self.code_emitter.write("pub const Output = void;\n");
         } else {
             try self.code_emitter.write("pub const Output = union(enum) {\n");
             self.code_emitter.indent_level += 1;
 
             for (event.branches) |branch| {
+                if (branch.kind == .yielding) continue;
                 try self.code_emitter.writeIndent();
                 try emitter.writeBranchName(self.code_emitter, branch.name);
                 try self.code_emitter.write(": ");
@@ -1864,10 +1878,33 @@ pub const VisitorEmitter = struct {
             }
         }
 
-        // Handler function
+        // Handler function — `comptime __H: type` when the event has any
+        // yielding `!` branches. Inside the body we'll alias each `H.NAME`
+        // back to the bare identifier so the proc body reads naturally.
         try self.code_emitter.writeIndent();
-        try self.code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
+        if (has_yielding) {
+            try self.code_emitter.write("pub fn handler(__koru_event_input: Input, comptime __H: type) Output {\n");
+        } else {
+            try self.code_emitter.write("pub fn handler(__koru_event_input: Input) Output {\n");
+        }
         self.code_emitter.indent_level += 1;
+
+        // Yielding-branch comptime aliases — must come before any user body code.
+        if (has_yielding) {
+            for (event.branches) |b| {
+                if (b.kind != .yielding) continue;
+                try self.code_emitter.writeIndent();
+                try self.code_emitter.write("const ");
+                try self.code_emitter.write(b.name);
+                try self.code_emitter.write(" = __H.");
+                try self.code_emitter.write(b.name);
+                try self.code_emitter.write(";\n");
+                try self.code_emitter.writeIndent();
+                try self.code_emitter.write("_ = &");
+                try self.code_emitter.write(b.name);
+                try self.code_emitter.write(";\n");
+            }
+        }
 
         // Find implementation
         var found_impl = false;
