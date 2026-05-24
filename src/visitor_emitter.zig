@@ -1863,7 +1863,9 @@ pub const VisitorEmitter = struct {
                                     const indent_str = indent_buf[0..indent_pos];
 
                                     const source_event_name = try emitter.buildCanonicalEventName(&flow.invocation.path, self.allocator, self.main_module_name);
-                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, "koru_std.compiler");
+                                    const compiler_module_name = try codegen_utils.buildKoruModulePath(self.allocator, "std.compiler");
+                                    defer self.allocator.free(compiler_module_name);
+                                    try emitter.emitSubflowContinuations(self.code_emitter, flow.continuations, 0, indent_str, items_to_search, self.tap_registry, self.type_registry, self.main_module_name, source_event_name, compiler_module_name);
 
                                     self.code_emitter.indent_level -= 1;
                                     try self.code_emitter.writeIndent();
