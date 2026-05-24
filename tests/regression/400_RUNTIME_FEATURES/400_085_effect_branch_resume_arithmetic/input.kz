@@ -1,0 +1,20 @@
+// Test: effect-branch handler resumes with an arithmetic expression
+// using the binding. `n * 2` should evaluate the Zig expression and
+// send the result back as the resume value.
+
+~import "$std/io"
+
+~pub event request { payload: i32 }
+! double i32 -> i32
+| done i32
+
+~proc request|zig {
+    const result = double(payload);
+    return .{ .done = result };
+}
+
+~request(payload: 21)
+! double n |> n * 2
+| done r |> std.io:print.blk {
+    result is {{ r:d }}
+}

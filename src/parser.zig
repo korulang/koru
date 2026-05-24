@@ -7322,7 +7322,7 @@ test "parser produces AST from simple event" {
 
     const source =
         \\~event compute { x: i32 }
-        \\| done { result: i32 }
+        \\| done i32
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);

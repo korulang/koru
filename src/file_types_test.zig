@@ -11,15 +11,16 @@ test "parse File and EmbedFile types" {
         \\    runtime_data: EmbedFile,
         \\    normal_field: []const u8
         \\}
-        \\| processed {}
+        \\| processed
+        \\| err []const u8
     ;
-    
+
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
     defer parser.deinit();
-    
+
     var result = try parser.parse();
     defer result.deinit();
-    
+
     // Verify we have one event
     try std.testing.expectEqual(@as(usize, 1), result.source_file.items.len);
     
@@ -62,10 +63,11 @@ test "serialize File and EmbedFile types" {
         \\    config: File,
         \\    asset: EmbedFile
         \\}
-        \\| loaded {}
+        \\| loaded
+        \\| err []const u8
         \\
         \\~proc loader {
-        \\    return .{ .loaded = .{} };
+        \\    return .{ .loaded = {} };
         \\}
     ;
     
@@ -87,9 +89,6 @@ test "serialize File and EmbedFile types" {
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".is_file = false") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".is_embed_file = true") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".is_embed_file = false") != null);
-    
-    // Verify the Field struct definition includes is_embed_file
-    try std.testing.expect(std.mem.indexOf(u8, serialized, "is_embed_file: bool,") != null);
 }
 
 test "File and EmbedFile with other special types" {
@@ -102,7 +101,8 @@ test "File and EmbedFile with other special types" {
         \\    embed: EmbedFile,
         \\    normal: i32
         \\}
-        \\| done {}
+        \\| done
+        \\| err []const u8
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);

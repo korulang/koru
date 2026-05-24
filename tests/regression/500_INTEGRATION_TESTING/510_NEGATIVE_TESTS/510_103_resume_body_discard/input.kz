@@ -1,0 +1,18 @@
+// ============================================================================
+// Test 510_103: MUST_FAIL — handler body is `_` discard but the branch
+// declares a resume type. The handler fn must produce a value of the
+// resume type; a discard produces nothing.
+// ============================================================================
+
+~pub event prompt_user { question: []const u8 }
+! ask []const u8 -> []const u8
+| done []const u8
+
+~proc prompt_user|zig {
+    const reply = ask(question);
+    return .{ .done = reply };
+}
+
+~prompt_user(question: "?")
+! ask _ |> _
+| done _ |> _

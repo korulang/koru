@@ -342,14 +342,12 @@ pub const FlowChecker = struct {
                     const value = if (field.expression_str) |expr| expr else field.type;
                     if (containsIdentifier(value, binding)) return true;
                 }
-                // Bare-identifier branch constructor (no payload, no fields)
-                // may actually be a Zig binding reference at body position
-                // (e.g. effect-branch resume value `! ask q |> q`). The
-                // parser produces BC here for backward compat with subflow
-                // rebroadcasts; either interpretation counts as binding use.
-                if (bc.plain_value == null and bc.fields.len == 0 and
-                    std.mem.eql(u8, bc.branch_name, binding))
-                {
+                // The parser produces a BranchConstructor for `IDENT [EXPR]`
+                // shapes at body position (backward compat with subflow
+                // rebroadcasts). When branch_name matches the binding, the
+                // identifier is ALSO a valid Zig binding-ref reading
+                // (effect-branch resume context). Count as use either way.
+                if (bc.fields.len == 0 and std.mem.eql(u8, bc.branch_name, binding)) {
                     return true;
                 }
             },

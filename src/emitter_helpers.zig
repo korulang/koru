@@ -3865,6 +3865,12 @@ fn emitHandlersStruct(
         //   (parser default for backward compat with subflow rebroadcasts).
         //   At resume context the branch_name is actually a Zig expression
         //   (binding ref, e.g. `q`); we lift it back into the return slot.
+        // Composed expression for the `IDENT EXPR` parse case: BC's
+        // branch_name + " " + plain_value reconstructs `n * 2`, `n + 1`,
+        // `q.field` (with operator-led tail), etc.
+        var resume_expr_owned: ?[]const u8 = null;
+        defer if (resume_expr_owned) |s| ctx.allocator.free(s);
+
         const resume_expr: ?[]const u8 = blk: {
             if (branch.resume_type == null) break :blk null;
             if (cont.continuations.len != 0) break :blk null;
@@ -3872,8 +3878,16 @@ fn emitHandlersStruct(
             switch (node) {
                 .expression => |code| break :blk code,
                 .branch_constructor => |bc| {
-                    if (bc.plain_value != null) break :blk null;
                     if (bc.fields.len != 0) break :blk null;
+                    if (bc.plain_value) |pv| {
+                        // Reconstruct: branch_name + " " + plain_value
+                        resume_expr_owned = try std.fmt.allocPrint(
+                            ctx.allocator,
+                            "{s} {s}",
+                            .{ bc.branch_name, pv },
+                        );
+                        break :blk resume_expr_owned.?;
+                    }
                     break :blk bc.branch_name;
                 },
                 else => break :blk null,

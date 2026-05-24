@@ -2920,13 +2920,14 @@ test "serialize simple Koru program" {
         \\const std = @import("std");
         \\
         \\~event hello {}
-        \\| done {}
+        \\| done
+        \\| err []const u8
         \\
         \\const x = 42;
         \\
         \\~proc hello {
         \\    log.debug("Hello!\n", .{});
-        \\    return .{ .done = .{} };
+        \\    return .{ .done = {} };
         \\}
     ;
 
@@ -2946,10 +2947,10 @@ test "serialize simple Koru program" {
 
     // Verify the output contains expected elements
     try std.testing.expect(std.mem.indexOf(u8, serialized, "PROGRAM_AST") != null);
-    try std.testing.expect(std.mem.indexOf(u8, serialized, ".host_line = \"const std = @import(\\\"std\\\");\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, serialized, ".host_line = .{ .content = \"const std = @import(\\\"std\\\");\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".event_decl = EventDecl{") != null);
     try std.testing.expect(std.mem.indexOf(u8, serialized, ".proc_decl = ProcDecl{") != null);
-    try std.testing.expect(std.mem.indexOf(u8, serialized, ".host_line = \"const x = 42;\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, serialized, ".host_line = .{ .content = \"const x = 42;\"") != null);
 
     // Print a sample for visual inspection
     log.debug("\n=== Sample of serialized AST ===\n", .{});
@@ -3028,11 +3029,11 @@ test "serialize complete mixed program" {
         \\    log.debug("Utility function\n", .{});
         \\}
         \\
-        \\~import math = "lib/math.kz"
+        \\~import "$std/math"
         \\
         \\~event process { input: []const u8 }
-        \\| success { output: []const u8 }
-        \\| failure { error: []const u8 }
+        \\| success []const u8
+        \\| failure []const u8
         \\
         \\const config = struct {
         \\    debug: bool = true,
@@ -3042,7 +3043,7 @@ test "serialize complete mixed program" {
         \\    if (config.debug) {
         \\        log.debug("Processing: {s}\n", .{e.input});
         \\    }
-        \\    return .{ .success = .{ .output = e.input } };
+        \\    return .{ .success = e.input };
         \\}
         \\
         \\// Entry point flow
