@@ -392,6 +392,17 @@ pub const CompilerContext = struct {
     tap_transformer_module.addImport("tap_registry", tap_registry_module);
     tap_transformer_module.addImport("emitter_helpers", emitter_helpers_module);
 
+    // Template processor - renders proc bodies tagged `|template|...`
+    // through Liquid, then strips the `template` tag from the variant chain.
+    const template_processor_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/template_processor.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    template_processor_module.addImport("ast", ast_module);
+    template_processor_module.addImport("liquid", liquid_module);
+    template_processor_module.addImport("log", log_module);
+
     // Purity helpers
     const purity_helpers_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/compiler_passes/purity_helpers.zig" },
@@ -478,6 +489,7 @@ pub const CompilerContext = struct {
     backend_output_module.addImport("ast_serializer", ast_serializer_module);
     backend_output_module.addImport("runtime_registry", runtime_registry_module);
     backend_output_module.addImport("tap_transformer", tap_transformer_module);
+    backend_output_module.addImport("template_processor", template_processor_module);
     backend_output_module.addImport("expression_parser", expression_parser_module);
     backend_output_module.addImport("errors", errors_module);
     backend_output_module.addImport("continuation_codegen", continuation_codegen_module);
@@ -500,6 +512,7 @@ pub const CompilerContext = struct {
     exe.root_module.addImport("tap_registry", tap_registry_module);
     exe.root_module.addImport("runtime_registry", runtime_registry_module);
     exe.root_module.addImport("tap_transformer", tap_transformer_module);
+    exe.root_module.addImport("template_processor", template_processor_module);
     exe.root_module.addImport("visitor_emitter", visitor_emitter_module);
     exe.root_module.addImport("parser", parser_module);
     exe.root_module.addImport("expression_parser", expression_parser_module);
@@ -681,13 +694,32 @@ pub const CompilerContext = struct {
     std.debug.print("=== AST DUMP: {s} ===\n{s}\n", .{flag, json_output});
 }
 
+// Template processor: walks AST, renders any proc whose variant chain
+// starts with `template|...` through Liquid, then strips the `template`
+// tag so downstream emission sees a plain host-language proc. See
+// memory project_proc_variant_pipeline / docs/EFFECT_BRANCHES for the
+// `host[:processor]` story this implements.
+~pub event process_template_procs { ctx: CompilerContext }
+| ctx CompilerContext
+
+~proc process_template_procs|zig {
+    const tp = @import("template_processor");
+    tp.processTemplateProcs(ctx.ast, ctx.allocator) catch unreachable;
+
+    var updated_ctx = ctx;
+    updated_ctx.passes_completed += 1;
+    updated_ctx.current_pass = "process_template_procs";
+    return .{ .ctx = updated_ctx };
+}
+
 // Frontend segment: Early AST processing (abstract, can be overridden)
 ~[comptime|abstract] pub event frontend { ctx: CompilerContext }
 | ctx CompilerContext
 
 ~frontend = process_ccp_commands(ctx)
-| ctx c1 |> evaluate_comptime(ctx: c1)
-  | ctx c2 |> ctx c2
+| ctx c1 |> process_template_procs(ctx: c1)
+  | ctx c2 |> evaluate_comptime(ctx: c2)
+    | ctx c3 |> ctx c3
 
 // Analysis segment: Validation passes (abstract, can be overridden)
 ~[comptime|abstract] pub event analysis { ctx: CompilerContext }

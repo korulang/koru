@@ -7455,7 +7455,7 @@ test "parser handles import statement" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~import math = "std/math.kz"
+        \\~import "$std/array"
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -7470,8 +7470,8 @@ test "parser handles import statement" {
     try std.testing.expect(item == .import_decl);
 
     const import = item.import_decl;
-    try std.testing.expectEqualStrings(import.path, "std/math.kz");
-    try std.testing.expectEqualStrings(import.local_name.?, "math");
+    try std.testing.expectEqualStrings(import.path, "$std/array");
+    try std.testing.expectEqualStrings(import.local_name.?, "std.array");
 }
 
 test "parser handles empty file" {

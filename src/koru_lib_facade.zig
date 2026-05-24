@@ -31,6 +31,7 @@ pub const runtime_registry = @import("runtime_registry");
 pub const shape_checker = @import("shape_checker");
 pub const tap_registry = @import("tap_registry");
 pub const tap_transformer = @import("tap_transformer");
+pub const template_processor = @import("template_processor");
 pub const transform_pass_runner = @import("transform_pass_runner");
 pub const type_registry = @import("type_registry");
 pub const visitor_emitter = @import("visitor_emitter");

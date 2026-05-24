@@ -8,8 +8,8 @@ test "parse immediate return syntax" {
     
     const source =
         \\~event test.mock { input: i32 }
-        \\| success { value: i32 }
-        \\| failure {}
+        \\| success { value: i32, label: []const u8 }
+        \\| failure
         \\
         \\// Immediate return - just return success
         \\~test.mock = success { value: 42 }

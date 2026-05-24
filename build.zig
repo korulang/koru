@@ -589,6 +589,18 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("liquid", liquid_module);
 
+    // Template processor: walks AST, renders `|template|...` proc bodies
+    // through Liquid, strips the `template` tag from the variant chain.
+    const template_processor_module = b.createModule(.{
+        .root_source_file = b.path("src/template_processor.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    template_processor_module.addImport("ast", ast_module);
+    template_processor_module.addImport("liquid", liquid_module);
+    template_processor_module.addImport("log", log_module);
+    exe.root_module.addImport("template_processor", template_processor_module);
+
     // Transform Pass Runner module - generic AST walker for transforms
     const transform_pass_runner_module = b.createModule(.{
         .root_source_file = b.path("src/transform_pass_runner.zig"),
@@ -1343,6 +1355,7 @@ pub fn build(b: *std.Build) void {
     koru_srclib_facade_module.addImport("shape_checker", shape_checker_module);
     koru_srclib_facade_module.addImport("tap_registry", tap_registry_module);
     koru_srclib_facade_module.addImport("tap_transformer", tap_transformer_module);
+    koru_srclib_facade_module.addImport("template_processor", template_processor_module);
     koru_srclib_facade_module.addImport("transform_pass_runner", transform_pass_runner_module);
     koru_srclib_facade_module.addImport("type_registry", type_registry_module);
     koru_srclib_facade_module.addImport("visitor_emitter", visitor_emitter_module);
