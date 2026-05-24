@@ -15,8 +15,8 @@
 const std = @import("std");
 
 // Re-export interpreter types
-pub const HandlePool = @import("root").koru_std.interpreter.HandlePool;
-pub const Handle = @import("root").koru_std.interpreter.Handle;
+pub const HandlePool = @import("root").koru_std.koru_interpreter.HandlePool;
+pub const Handle = @import("root").koru_std.koru_interpreter.Handle;
 
 // Bridge: persistent session state
 pub const Bridge = struct {
@@ -118,7 +118,7 @@ pub const Bridge = struct {
 | fail []const u8
 
 ~proc test_run|zig {
-    const rt = @import("root").koru_std.runtime;
+    const rt = @import("root").koru_std.koru_runtime;
 
     // Create bridge instance
     const allocator = std.heap.page_allocator;

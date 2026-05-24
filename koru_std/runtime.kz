@@ -739,11 +739,11 @@ const koru_parser = @import("koru_parser");
         code.appendSlice(allocator, I ++ "pub const Path = dispatcher_ast.DottedPath;\n") catch unreachable;
         code.appendSlice(allocator, I ++ "pub const Arg = dispatcher_ast.Arg;\n") catch unreachable;
         code.appendSlice(allocator, I ++ "pub const Invocation = dispatcher_ast.Invocation;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "pub const DispatchResult = koru_std.runtime.DispatchResult;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "const ScopeEvent = koru_std.runtime.ScopeEvent;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "const ScopeDescriptor = koru_std.runtime.ScopeDescriptor;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "const FieldValue = koru_std.runtime.FieldValue;\n") catch unreachable;
-        code.appendSlice(allocator, I ++ "const NamedField = koru_std.runtime.NamedField;\n\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "pub const DispatchResult = koru_std.koru_runtime.DispatchResult;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const ScopeEvent = koru_std.koru_runtime.ScopeEvent;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const ScopeDescriptor = koru_std.koru_runtime.ScopeDescriptor;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const FieldValue = koru_std.koru_runtime.FieldValue;\n") catch unreachable;
+        code.appendSlice(allocator, I ++ "const NamedField = koru_std.koru_runtime.NamedField;\n\n") catch unreachable;
 
         // Helper function - strips quotes from string values
         code.appendSlice(allocator, I ++ "fn getArg(args: []const dispatcher_ast.Arg, n: []const u8) ?[]const u8 {\n") catch unreachable;
@@ -797,7 +797,7 @@ const koru_parser = @import("koru_parser");
 
         code.appendSlice(allocator, I ++ "fn ") catch unreachable;
         code.appendSlice(allocator, event.dispatch_name) catch unreachable;
-        code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.runtime.DispatchResult) !void {\n") catch unreachable;
+        code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.koru_runtime.DispatchResult) !void {\n") catch unreachable;
 
         if (is_control_flow) {
             code.appendSlice(allocator, I ++ "    _ = inv; // Control flow - interpreter handles this\n") catch unreachable;
@@ -914,7 +914,7 @@ const koru_parser = @import("koru_parser");
         code.appendSlice(allocator, "}") catch unreachable;
 
         // Emit creates_specs array (full specs with field names)
-        code.appendSlice(allocator, ", .creates_specs = &[_]koru_std.runtime.CreateSpec{") catch unreachable;
+        code.appendSlice(allocator, ", .creates_specs = &[_]koru_std.koru_runtime.CreateSpec{") catch unreachable;
         for (event.creates_specs, 0..) |spec, i| {
             if (i > 0) code.appendSlice(allocator, ", ") catch unreachable;
             code.appendSlice(allocator, ".{ .obligation_module = \"") catch unreachable;
@@ -930,7 +930,7 @@ const koru_parser = @import("koru_parser");
         code.appendSlice(allocator, "}") catch unreachable;
 
         // Emit discharges_specs array (full specs with arg names)
-        code.appendSlice(allocator, ", .discharges_specs = &[_]koru_std.runtime.DischargeSpec{") catch unreachable;
+        code.appendSlice(allocator, ", .discharges_specs = &[_]koru_std.koru_runtime.DischargeSpec{") catch unreachable;
         for (event.discharges_specs, 0..) |spec, i| {
             if (i > 0) code.appendSlice(allocator, ", ") catch unreachable;
             code.appendSlice(allocator, ".{ .obligation_module = \"") catch unreachable;
@@ -944,12 +944,12 @@ const koru_parser = @import("koru_parser");
         code.appendSlice(allocator, "}") catch unreachable;
 
         // Emit branches array (for shape validation)
-        code.appendSlice(allocator, ", .branches = &[_]koru_std.runtime.BranchSpec{") catch unreachable;
+        code.appendSlice(allocator, ", .branches = &[_]koru_std.koru_runtime.BranchSpec{") catch unreachable;
         for (event.branches, 0..) |branch, bi| {
             if (bi > 0) code.appendSlice(allocator, ", ") catch unreachable;
             code.appendSlice(allocator, ".{ .name = \"") catch unreachable;
             code.appendSlice(allocator, branch.name) catch unreachable;
-            code.appendSlice(allocator, "\", .fields = &[_]koru_std.runtime.BranchField{") catch unreachable;
+            code.appendSlice(allocator, "\", .fields = &[_]koru_std.koru_runtime.BranchField{") catch unreachable;
             for (branch.fields, 0..) |field, fi| {
                 if (fi > 0) code.appendSlice(allocator, ", ") catch unreachable;
                 code.appendSlice(allocator, ".{ .name = \"") catch unreachable;
@@ -1024,37 +1024,37 @@ const koru_parser = @import("koru_parser");
     // Generate creates_spec lookup - returns full specs for handle creation
     code.appendSlice(allocator, I ++ "pub fn get_creates_spec_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
-    code.appendSlice(allocator, "(event_name: []const u8) []const koru_std.runtime.CreateSpec {\n") catch unreachable;
+    code.appendSlice(allocator, "(event_name: []const u8) []const koru_std.koru_runtime.CreateSpec {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.creates_specs;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    return &[_]koru_std.runtime.CreateSpec{};\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return &[_]koru_std.koru_runtime.CreateSpec{};\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
     // Generate discharges_spec lookup - returns full specs for discharge
     code.appendSlice(allocator, I ++ "pub fn get_discharges_spec_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
-    code.appendSlice(allocator, "(event_name: []const u8) []const koru_std.runtime.DischargeSpec {\n") catch unreachable;
+    code.appendSlice(allocator, "(event_name: []const u8) []const koru_std.koru_runtime.DischargeSpec {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.discharges_specs;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    return &[_]koru_std.runtime.DischargeSpec{};\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return &[_]koru_std.koru_runtime.DischargeSpec{};\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
     // Generate branches lookup - returns branch specs for shape validation
     code.appendSlice(allocator, I ++ "pub fn get_event_branches_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
-    code.appendSlice(allocator, "(event_name: []const u8) []const koru_std.runtime.BranchSpec {\n") catch unreachable;
+    code.appendSlice(allocator, "(event_name: []const u8) []const koru_std.koru_runtime.BranchSpec {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    inline for (scope_events_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
     code.appendSlice(allocator, ") |ev| {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "        if (dispatcher_std.mem.eql(u8, event_name, ev.name)) return ev.branches;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    }\n") catch unreachable;
-    code.appendSlice(allocator, I ++ "    return &[_]koru_std.runtime.BranchSpec{};\n") catch unreachable;
+    code.appendSlice(allocator, I ++ "    return &[_]koru_std.koru_runtime.BranchSpec{};\n") catch unreachable;
     code.appendSlice(allocator, I ++ "}\n\n") catch unreachable;
 
     code.appendSlice(allocator, I ++ "pub const ") catch unreachable;
@@ -1067,7 +1067,7 @@ const koru_parser = @import("koru_parser");
 
     code.appendSlice(allocator, I ++ "pub fn dispatch_") catch unreachable;
     code.appendSlice(allocator, scope_ident) catch unreachable;
-    code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.runtime.DispatchResult) !void {\n") catch unreachable;
+    code.appendSlice(allocator, "(inv: *const dispatcher_ast.Invocation, out: *koru_std.koru_runtime.DispatchResult) !void {\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    var name_buf: [256]u8 = undefined;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    var name_len: usize = 0;\n") catch unreachable;
     code.appendSlice(allocator, I ++ "    if (inv.path.module_qualifier) |mq| {\n") catch unreachable;
@@ -1119,19 +1119,19 @@ const koru_parser = @import("koru_parser");
 // ============================================================================
 
 // Use interpreter's types to ensure compatibility
-// At runtime, koru_std.interpreter is available via root import
-pub const DispatchResult = @import("root").koru_std.interpreter.DispatchResult;
-pub const DispatchFn = @import("root").koru_std.interpreter.DispatchFn;
-pub const CostFn = @import("root").koru_std.interpreter.CostFn;
-pub const ObligationsArrayFn = @import("root").koru_std.interpreter.ObligationsArrayFn;
-pub const DischargeEventFn = @import("root").koru_std.interpreter.DischargeEventFn;
-pub const FieldValue = @import("root").koru_std.interpreter.FieldValue;
-pub const NamedField = @import("root").koru_std.interpreter.NamedField;
+// At runtime, koru_std.koru_interpreter is available via root import
+pub const DispatchResult = @import("root").koru_std.koru_interpreter.DispatchResult;
+pub const DispatchFn = @import("root").koru_std.koru_interpreter.DispatchFn;
+pub const CostFn = @import("root").koru_std.koru_interpreter.CostFn;
+pub const ObligationsArrayFn = @import("root").koru_std.koru_interpreter.ObligationsArrayFn;
+pub const DischargeEventFn = @import("root").koru_std.koru_interpreter.DischargeEventFn;
+pub const FieldValue = @import("root").koru_std.koru_interpreter.FieldValue;
+pub const NamedField = @import("root").koru_std.koru_interpreter.NamedField;
 // Import spec types from interpreter
-pub const CreateSpec = @import("root").koru_std.interpreter.CreateSpec;
-pub const DischargeSpec = @import("root").koru_std.interpreter.DischargeSpec;
-pub const CreatesSpecFn = @import("root").koru_std.interpreter.CreatesSpecFn;
-pub const DischargesSpecFn = @import("root").koru_std.interpreter.DischargesSpecFn;
+pub const CreateSpec = @import("root").koru_std.koru_interpreter.CreateSpec;
+pub const DischargeSpec = @import("root").koru_std.koru_interpreter.DischargeSpec;
+pub const CreatesSpecFn = @import("root").koru_std.koru_interpreter.CreatesSpecFn;
+pub const DischargesSpecFn = @import("root").koru_std.koru_interpreter.DischargesSpecFn;
 
 // Branch field metadata for shape validation
 pub const BranchField = struct {
@@ -1322,10 +1322,10 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     ast: koru_parser.ParseResult,
     scope: []const u8,
     budget: ?u64,
-    handle_pool: ?*@import("root").koru_std.interpreter.HandlePool,
+    handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool,
     auto_discharge: bool = true
 }
-| result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
+| result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
 | validation_error []const u8
 | event_denied []const u8
@@ -1333,7 +1333,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 | scope_not_found []const u8
 
 ~proc eval|zig {
-    const interpreter_mod = @import("root").koru_std.interpreter;
+    const interpreter_mod = @import("root").koru_std.koru_interpreter;
 
     var flow_to_run: ?*const ast_mod.Flow = null;
     for (ast.source_file.items) |*item| {
@@ -1402,12 +1402,12 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     source: []const u8,
     scope: []const u8,
     budget: ?u64 = null,
-    handle_pool: ?*@import("root").koru_std.interpreter.HandlePool = null,
+    handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool = null,
     fail_fast: bool = true,
     auto_discharge: bool = true,
     shape: ?[]const u8 = null
 }
-| result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
+| result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
 | parse_error { message: []const u8, line: u32, column: u32 }
 | validation_error []const u8
@@ -1417,7 +1417,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 | scope_not_found []const u8
 
 ~proc run|zig {
-    const interpreter_mod = @import("root").koru_std.interpreter;
+    const interpreter_mod = @import("root").koru_std.koru_interpreter;
 
     const scope_result = get_scope_event.handler(.{ .name = scope });
     switch (scope_result) {
@@ -1523,12 +1523,12 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
     source: []const u8,
     scope: []const u8,
     budget: ?u64 = null,
-    handle_pool: ?*@import("root").koru_std.interpreter.HandlePool = null,
+    handle_pool: ?*@import("root").koru_std.koru_interpreter.HandlePool = null,
     fail_fast: bool = true,
     auto_discharge: bool = true,
     shape: ?[]const u8 = null
 }
-| result { value: @import("root").koru_std.interpreter.Value, used: u64, handles: u32 }
+| result { value: @import("root").koru_std.koru_interpreter.Value, used: u64, handles: u32 }
 | exhausted { used: u64, last_event: []const u8, handles: u32 }
 | parse_error { message: []const u8, line: u32, column: u32 }
 | validation_error []const u8
@@ -1538,7 +1538,7 @@ fn lookupEventBranches(scope_name: []const u8, event_name: []const u8) []const B
 | scope_not_found []const u8
 
 ~proc run_cached|zig {
-    const interpreter_mod = @import("root").koru_std.interpreter;
+    const interpreter_mod = @import("root").koru_std.koru_interpreter;
 
     const scope_result = get_scope_event.handler(.{ .name = scope });
     switch (scope_result) {

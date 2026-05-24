@@ -458,10 +458,10 @@ pub fn matchesFlags(annotations: []const []const u8) bool {
 // - Returns updated ctx with passes_completed incremented
 
 ~[comptime]pub event collect {
-    ctx: compiler_types.CompilerContext,
+    ctx: koru_compiler_types.CompilerContext,
     output_path: []const u8
 }
-| collected compiler_types.CompilerContext
+| collected koru_compiler_types.CompilerContext
 
 ~proc collect|zig {
     // Extract nested fields from ctx (auto-destructuring only works for top-level event params)

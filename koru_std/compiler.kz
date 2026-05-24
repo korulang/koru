@@ -971,7 +971,7 @@ const processTestFlow = struct {
         // Validate mock shapes via testing module
         if (source_ptr) |src| {
             const backend_output = @import("backend_output_emitted.zig");
-            const validation_result = backend_output.koru_std.testing.validate_mocks_event.handler(.{
+            const validation_result = backend_output.koru_std.koru_testing.validate_mocks_event.handler(.{
                 .program = program,
                 .mocks = mocks.items,
                 .source = src,
