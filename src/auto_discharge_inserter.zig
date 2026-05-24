@@ -2668,6 +2668,11 @@ pub const AutoDischargeInserter = struct {
         defer missing_optional.deinit(self.allocator);
 
         for (event_decl.branches) |branch| {
+            // Effect (`!`) branches are NOT switch arms — they lower to fns in
+            // the consumer's Handlers struct. The emitter synthesizes no-op
+            // fns for unhandled optional effect branches; switch padding here
+            // would emit `.warn => |_| {}` on a union that has no `.warn`.
+            if (branch.kind == .effect) continue;
             if (branch.is_optional and !handled.contains(branch.name)) {
                 try missing_optional.append(self.allocator, branch.name);
             }

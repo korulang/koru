@@ -1,0 +1,25 @@
+// Test: single-fire effect-branch + terminal in the same program.
+//
+// Producer fires `ready(value)` exactly once, then returns `| done value`.
+// Consumer dispatches the single effect call AND the terminal cleanly.
+// Fills the "single-fire with terminal" cell of the coverage grid that
+// 400_072 (multi-fire with terminal) doesn't cover.
+
+~import "$std/io"
+
+~pub event init { value: usize }
+! ready usize
+| done usize
+
+~proc init|zig {
+    ready(value);
+    return .{ .done = value };
+}
+
+~init(value: 42)
+! ready v |> std.io:print.blk {
+    ready {{ v:d }}
+}
+| done v |> std.io:print.blk {
+    done {{ v:d }}
+}

@@ -1,0 +1,23 @@
+// Test: effect branch with struct payload (multi-field).
+//
+// Producer fires `token(.{ .kind = N, .lexeme = "..." })` with a struct
+// payload. Consumer's `! token t |> ...` binds `t` and accesses `t.kind`
+// and `t.lexeme`. Proves the Handlers struct fn signature emits an anon
+// struct param for multi-field payloads, replacing the `@compileError`
+// placeholder from Phase 3b first cut.
+
+~import "$std/io"
+
+~pub event tokenize { source: []const u8 }
+! token { kind: u32, lexeme: []const u8 }
+
+~proc tokenize|zig {
+    _ = source;
+    token(.{ .kind = 1, .lexeme = "first" });
+    token(.{ .kind = 2, .lexeme = "second" });
+}
+
+~tokenize(source: "x")
+! token t |> std.io:print.blk {
+    token kind={{ t.kind:d }} lex={{ t.lexeme:s }}
+}

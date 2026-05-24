@@ -1,0 +1,27 @@
+// Test: optional effect branch (`! ?warn`) unhandled by consumer → no-op.
+//
+// Producer fires `warn("ignored")` three times during the loop. Consumer
+// does NOT handle `! warn` (no catch-all either). Per the doc spec,
+// unhandled optional yielding branches are no-ops — the handler simply
+// isn't installed in the comptime struct (or is installed as no-op),
+// and the call lowers to nothing. Only the terminal `done` body should
+// produce visible output.
+
+~import "$std/io"
+
+~pub event maybe { count: usize }
+! ?warn []const u8
+| done usize
+
+~proc maybe|zig {
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        warn("ignored");
+    }
+    return .{ .done = count };
+}
+
+~maybe(count: 3)
+| done c |> std.io:print.blk {
+    done {{ c:d }}
+}

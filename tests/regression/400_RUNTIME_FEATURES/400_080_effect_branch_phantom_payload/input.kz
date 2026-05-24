@@ -1,0 +1,33 @@
+// Test: effect branch with phantom-stated payload (smoke test).
+//
+// Producer yields `frame(f)` where `f: *Frame[ready]` — a pointer carrying
+// a phantom state annotation. Consumer handles each frame and reads its
+// id. The phantom state `[ready]` is currently decorative at the Koru
+// level (Phase 4 hasn't extended the phantom checker to track obligations
+// through effect branches). This test verifies the SURFACE works — that
+// `!` payloads can carry phantom annotations and the lowering preserves
+// the pointer type cleanly.
+
+~import "$std/io"
+
+const std = @import("std");
+
+const Frame = struct { id: i32 };
+
+~pub event frames { n: usize }
+! frame *Frame[ready]
+
+~proc frames|zig {
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const f = std.heap.page_allocator.create(Frame) catch unreachable;
+        f.* = Frame{ .id = @intCast(i) };
+        frame(f);
+        std.heap.page_allocator.destroy(f);
+    }
+}
+
+~frames(n: 3)
+! frame f |> std.io:print.blk {
+    frame id={{ f.id:d }}
+}

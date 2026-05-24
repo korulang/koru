@@ -3369,11 +3369,24 @@ pub fn emitFlow(
     // effect (`!`). Yielding conts lower to fns inside a synthesized Handlers
     // struct passed as the 2nd arg to .handler(); terminal conts continue to
     // drive the post-call switch/extract logic. See docs/EFFECT_BRANCHES.md.
-    var has_effect_cont = false;
-    for (flow.continuations) |cont| {
-        if (cont.kind == .effect) {
-            has_effect_cont = true;
-            break;
+    //
+    // The driver is "event has effect-branch decls," NOT "consumer has effect
+    // conts" — because the proc-side handler signature carries the comptime
+    // arg whenever the event declares ANY effect branch, even when every one
+    // is OPTIONAL and the consumer omits all of them. In that case Handlers
+    // is still synthesized; the no-op pass in emitHandlersStruct fills it.
+    const event_decl_for_partition = if (ctx.ast_items) |items|
+        findEventDeclByPath(items, &flow.invocation.path)
+    else
+        null;
+
+    var event_has_effect_branch = false;
+    if (event_decl_for_partition) |ed| {
+        for (ed.branches) |b| {
+            if (b.kind == .effect) {
+                event_has_effect_branch = true;
+                break;
+            }
         }
     }
 
@@ -3382,7 +3395,7 @@ pub fn emitFlow(
     var effect_conts_buf: std.ArrayList(ast.Continuation) = .empty;
     defer effect_conts_buf.deinit(ctx.allocator);
 
-    if (has_effect_cont) {
+    if (event_has_effect_branch) {
         for (flow.continuations) |cont| {
             if (cont.kind == .effect) {
                 try effect_conts_buf.append(ctx.allocator, cont);
@@ -3392,19 +3405,15 @@ pub fn emitFlow(
         }
     }
 
-    const conts: []const ast.Continuation = if (has_effect_cont)
+    const conts: []const ast.Continuation = if (event_has_effect_branch)
         terminal_conts_buf.items
     else
         flow.continuations;
 
     var handlers_name_owned: ?[]const u8 = null;
     defer if (handlers_name_owned) |h| ctx.allocator.free(h);
-    if (has_effect_cont) {
-        const event_decl = if (ctx.ast_items) |items|
-            findEventDeclByPath(items, &flow.invocation.path)
-        else
-            null;
-        if (event_decl) |ed| {
+    if (event_has_effect_branch) {
+        if (event_decl_for_partition) |ed| {
             const hname = try std.fmt.allocPrint(ctx.allocator, "Handlers_{d}", .{result_counter});
             handlers_name_owned = hname;
             try emitHandlersStruct(emitter, ctx, hname, effect_conts_buf.items, ed);
@@ -3768,7 +3777,20 @@ fn emitHandlersStruct(
     try emitter.write(" = struct {\n");
     emitter.indent();
 
+    // Track which effect branches the consumer explicitly handled (by name)
+    // so we can synthesize no-op fns for unhandled OPTIONAL effect branches.
+    // The proc body references `__H.NAME` for every declared effect branch;
+    // without a no-op fallback for unhandled optionals, Zig errors at compile.
+    var handled = std.StringHashMap(void).init(ctx.allocator);
+    defer handled.deinit();
+
     for (effect_conts) |*cont| {
+        // Skip catch-all `!?` conts — they don't match any specific decl branch.
+        // The catch-all body is handled by the no-op pass below (it just absorbs
+        // unhandled optionals; phase 3b first cut doesn't run catch-all bodies
+        // per-unhandled-optional, treats `!? |> _` as pure discard).
+        if (cont.is_catchall) continue;
+
         // Find the matching branch decl by name. shape_checker is responsible
         // for catching mismatches; if missing here we skip defensively.
         const branch_decl = blk: {
@@ -3780,6 +3802,8 @@ fn emitHandlersStruct(
         if (branch_decl == null) continue;
         const branch = branch_decl.?;
 
+        try handled.put(branch.name, {});
+
         const binding_name = if (cont.binding) |b| b else branch.name;
 
         try emitter.writeIndent();
@@ -3790,15 +3814,21 @@ fn emitHandlersStruct(
         try emitter.write(": ");
 
         // Identity payload (single field named "__type_ref") — emit type directly.
-        // Struct payloads on effect branches are not yet covered.
+        // Multi-field struct payload — emit anon struct literal type.
+        // Zero-field payload — void.
         if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
             try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
         } else if (branch.payload.fields.len == 0) {
             try emitter.write("void");
         } else {
-            // Struct-payload effect branch: not implemented in phase 3b first cut.
-            // Emit a placeholder that will Zig-compile-error loudly so the gap is visible.
-            try emitter.write("@compileError(\"effect-branches: struct-payload effect branches not yet emitted\")");
+            try emitter.write("struct { ");
+            for (branch.payload.fields, 0..) |field, fi| {
+                if (fi > 0) try emitter.write(", ");
+                try writeBranchName(emitter, field.name);
+                try emitter.write(": ");
+                try writeFieldType(emitter, field, ctx.main_module_name);
+            }
+            try emitter.write(" }");
         }
 
         try emitter.write(") ");
@@ -3823,6 +3853,43 @@ fn emitHandlersStruct(
         emitter.dedent();
         try emitter.writeIndent();
         try emitter.write("}\n");
+    }
+
+    // Synthesize no-op fns for unhandled OPTIONAL effect branches. The proc
+    // body references `__H.NAME` unconditionally for every declared effect
+    // branch; optional ones the consumer omits lower to no-op calls per the
+    // doc spec ("handler simply isn't installed in the comptime struct, call
+    // lowers to nothing" — we install a no-op so the comptime alias resolves).
+    for (event_decl.branches) |branch| {
+        if (branch.kind != .effect) continue;
+        if (!branch.is_optional) continue;
+        if (handled.contains(branch.name)) continue;
+
+        try emitter.writeIndent();
+        try emitter.write("fn ");
+        try writeBranchName(emitter, branch.name);
+        try emitter.write("(_: ");
+        if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
+            try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
+        } else if (branch.payload.fields.len == 0) {
+            try emitter.write("void");
+        } else {
+            try emitter.write("struct { ");
+            for (branch.payload.fields, 0..) |field, fi| {
+                if (fi > 0) try emitter.write(", ");
+                try writeBranchName(emitter, field.name);
+                try emitter.write(": ");
+                try writeFieldType(emitter, field, ctx.main_module_name);
+            }
+            try emitter.write(" }");
+        }
+        try emitter.write(") ");
+        if (branch.resume_type) |rt| {
+            try emitter.write(rt);
+        } else {
+            try emitter.write("void");
+        }
+        try emitter.write(" {}\n");
     }
 
     emitter.dedent();

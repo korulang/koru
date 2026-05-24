@@ -1,0 +1,2 @@
+token kind=1 lex=first
+token kind=2 lex=second

@@ -1,0 +1,27 @@
+// Test: `!?` catch-all dispatch on a multi-kind event with optionals.
+//
+// Producer fires `a(1)`, `b(2)`, `c(3)`. Consumer explicitly handles
+// `! a`, uses `!?` catch-all to absorb the unhandled optional `! ?b`
+// and `! ?c`. Per the doc, the catch-all body fires per unhandled
+// optional yield — but with `!? |> _` (discard), the body is empty,
+// so only `! a` produces visible output. Proves `!?` parses, lowers,
+// and absorbs in runtime.
+
+~import "$std/io"
+
+~pub event multi {}
+! a usize
+! ?b usize
+! ?c usize
+
+~proc multi|zig {
+    a(1);
+    b(2);
+    c(3);
+}
+
+~multi()
+! a v |> std.io:print.blk {
+    a {{ v:d }}
+}
+!? |> _

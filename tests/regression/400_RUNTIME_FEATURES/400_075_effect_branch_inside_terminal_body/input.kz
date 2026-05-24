@@ -1,0 +1,30 @@
+// Test: effect branch fired from inside the terminal-return code.
+//
+// Producer fires `progress(i)` from within the loop, then fires
+// `progress(end)` ONE MORE TIME just before returning the terminal.
+// Proves an effect call right next to the `return .{ .done = ... };`
+// works — they're just Zig statements in the proc body, but it's worth
+// verifying since the doc lists this as an open question (#3).
+
+~import "$std/io"
+
+~pub event work { steps: usize }
+! progress usize
+| done usize
+
+~proc work|zig {
+    var i: usize = 0;
+    while (i < steps) : (i += 1) {
+        progress(i);
+    }
+    progress(steps); // final emission RIGHT BEFORE the terminal return
+    return .{ .done = steps };
+}
+
+~work(steps: 2)
+! progress p |> std.io:print.blk {
+    progress {{ p:d }}
+}
+| done total |> std.io:print.blk {
+    done {{ total:d }}
+}
