@@ -124,11 +124,12 @@ test "vertical POC - parse, generate, and verify" {
         \\const std = @import("std");
         \\
         \\~event greet { name: []const u8 }
-        \\| done {}
+        \\| done
+        \\| err []const u8
         \\
         \\~proc greet {
         \\    std.debug.print("Hello, {s}!\n", .{e.name});
-        \\    return .{ .done = .{} };
+        \\    return .{ .done = {} };
         \\}
         \\
         \\// Top-level flow
@@ -198,20 +199,20 @@ test "vertical POC - complex example" {
         \\const std = @import("std");
         \\
         \\~event calculate { x: i32, y: i32 }
-        \\| result { value: i32 }
-        \\| error { msg: []const u8 }
+        \\| result i32
+        \\| err []const u8
         \\
         \\~proc calculate {
         \\    if (e.y == 0) {
-        \\        return .{ .error = .{ .msg = "Division by zero" } };
+        \\        return .{ .err = "Division by zero" };
         \\    }
         \\    const result = e.x / e.y;
-        \\    return .{ .result = .{ .value = result } };
+        \\    return .{ .result = result };
         \\}
         \\
         \\~calculate(x: 10, y: 2)
         \\| result r |> _
-        \\| error err |> _
+        \\| err e |> _
     ;
     
     var parser = try Parser.init(allocator, source, "complex.kz", &[_][]const u8{}, null);
@@ -224,7 +225,7 @@ test "vertical POC - complex example" {
     defer allocator.free(generated);
     
     // Verify complex features
-    try std.testing.expect(std.mem.indexOf(u8, generated, "error: struct") != null);
+    try std.testing.expect(std.mem.indexOf(u8, generated, "err: struct") != null);
     try std.testing.expect(std.mem.indexOf(u8, generated, "result: struct") != null);
     try std.testing.expect(std.mem.indexOf(u8, generated, "if (e.y == 0)") != null);
     

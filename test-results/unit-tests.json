@@ -1,27 +1,20 @@
 {
-  "timestamp": "2026-05-24T05:30:45.482Z",
+  "timestamp": "2026-05-24T12:29:53.110Z",
   "summary": {
-    "passed": 198,
-    "failed": 44,
+    "passed": 192,
+    "failed": 20,
     "compileErrors": 0,
-    "total": 242,
-    "suiteCount": 21,
+    "total": 212,
+    "suiteCount": 17,
     "status": "failure"
   },
   "suites": [
     {
       "name": "ast_serializer_tests",
-      "passed": 2,
-      "failed": 2,
+      "passed": 4,
+      "failed": 0,
       "total": 4,
-      "status": "failure"
-    },
-    {
-      "name": "bootstrap_constraint_tests",
-      "passed": 0,
-      "failed": 6,
-      "total": 6,
-      "status": "failure"
+      "status": "success"
     },
     {
       "name": "compiler_passes_tests",
@@ -39,10 +32,10 @@
     },
     {
       "name": "file_types_tests",
-      "passed": 1,
-      "failed": 2,
+      "passed": 3,
+      "failed": 0,
       "total": 3,
-      "status": "failure"
+      "status": "success"
     },
     {
       "name": "full_pipeline_tests",
@@ -53,17 +46,10 @@
     },
     {
       "name": "immediate_return_tests",
-      "passed": 2,
-      "failed": 1,
+      "passed": 3,
+      "failed": 0,
       "total": 3,
-      "status": "failure"
-    },
-    {
-      "name": "inline_flow_tests",
-      "passed": 2,
-      "failed": 2,
-      "total": 4,
-      "status": "failure"
+      "status": "success"
     },
     {
       "name": "integration_tests",
@@ -74,10 +60,10 @@
     },
     {
       "name": "parser_tests",
-      "passed": 17,
-      "failed": 2,
+      "passed": 19,
+      "failed": 0,
       "total": 19,
-      "status": "failure"
+      "status": "success"
     },
     {
       "name": "purity_analyzer_tests",
@@ -123,10 +109,10 @@
     },
     {
       "name": "vertical_poc_tests",
-      "passed": 0,
-      "failed": 2,
+      "passed": 2,
+      "failed": 0,
       "total": 2,
-      "status": "failure"
+      "status": "success"
     },
     {
       "name": "visitor_emitter_tests",
@@ -136,24 +122,10 @@
       "status": "failure"
     },
     {
-      "name": "visitor_enhanced_tests",
-      "passed": 0,
-      "failed": 3,
-      "total": 3,
-      "status": "failure"
-    },
-    {
       "name": "where_clause_integration_tests",
       "passed": 1,
-      "failed": 2,
+      "failed": 1,
       "total": 3,
-      "status": "failure"
-    },
-    {
-      "name": "where_clause_tests",
-      "passed": 0,
-      "failed": 5,
-      "total": 5,
       "status": "failure"
     }
   ]
