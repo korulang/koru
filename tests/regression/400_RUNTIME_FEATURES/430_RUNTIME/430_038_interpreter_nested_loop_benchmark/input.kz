@@ -58,7 +58,7 @@ pub fn main() void {
 
     const start = std.time.nanoTimestamp();
 
-    const result = koru_std.interpreter.run_event.handler(.{
+    const result = koru_std.koru_interpreter.run_event.handler(.{
         .source = BENCH_FLOW,
         .dispatcher = &dispatch_bench,
         .cost_fn = null,

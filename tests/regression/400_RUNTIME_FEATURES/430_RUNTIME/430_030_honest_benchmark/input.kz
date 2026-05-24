@@ -57,7 +57,7 @@ pub fn main() void {
     var i: u64 = 0;
     while (i < ITERATIONS) : (i += 1) {
         // Parse and execute add
-        _ = koru_std.interpreter.run_event.handler(.{
+        _ = koru_std.koru_interpreter.run_event.handler(.{
             .source = ADD_SOURCE,
             .dispatcher = &dispatch_math,
             .cost_fn = null,
@@ -69,7 +69,7 @@ pub fn main() void {
         });
 
         // Parse and execute multiply
-        _ = koru_std.interpreter.run_event.handler(.{
+        _ = koru_std.koru_interpreter.run_event.handler(.{
             .source = MUL_SOURCE,
             .dispatcher = &dispatch_math,
             .cost_fn = null,
@@ -81,7 +81,7 @@ pub fn main() void {
         });
 
         // Parse and execute subtract
-        _ = koru_std.interpreter.run_event.handler(.{
+        _ = koru_std.koru_interpreter.run_event.handler(.{
             .source = SUB_SOURCE,
             .dispatcher = &dispatch_math,
             .cost_fn = null,
