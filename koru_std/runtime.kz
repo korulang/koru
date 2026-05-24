@@ -151,6 +151,9 @@ const koru_parser = @import("koru_parser");
         }
 
         fn buildModulePath(alloc: std.mem.Allocator, module_path: []const u8, main_module_name: []const u8) []const u8 {
+            // SHADOW of codegen_utils.buildKoruModulePath — kept in sync manually
+            // because this lives in stdlib Koru source (not src/) and can't import
+            // codegen_utils directly. Centralization candidate; see TODO.
             if (std.mem.eql(u8, module_path, main_module_name) or std.mem.eql(u8, module_path, "main")) {
                 return alloc.dupe(u8, "main_module") catch "main_module";
             }
@@ -160,11 +163,8 @@ const koru_parser = @import("koru_parser");
                 else std.mem.splitScalar(u8, module_path, '.');
             var first = true;
             while (splitter.next()) |segment| {
-                if (!first) {
-                    out.append(alloc, '.') catch continue;
-                } else {
-                    out.appendSlice(alloc, "koru_") catch continue;
-                }
+                if (!first) out.append(alloc, '.') catch continue;
+                out.appendSlice(alloc, "koru_") catch continue;
                 out.appendSlice(alloc, segment) catch continue;
                 first = false;
             }
