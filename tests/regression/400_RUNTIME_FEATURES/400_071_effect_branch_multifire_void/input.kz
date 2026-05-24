@@ -1,0 +1,23 @@
+// Test: multi-fire effect-branch pump, void event (no terminal).
+//
+// The producer loops and calls `tick(i)` three times. Consumer handles
+// each `! tick` by printing. No `|` terminal — when the loop falls off,
+// the proc returns implicit void. This is the "fire-and-forget pump"
+// shape — single yielding kind, multi-fire, no completion signal.
+
+~import "$std/io"
+
+~pub event ticker { n: usize }
+! tick usize
+
+~proc ticker|zig {
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        tick(i);
+    }
+}
+
+~ticker(n: 3)
+! tick i |> std.io:print.blk {
+    tick {{ i:d }}
+}

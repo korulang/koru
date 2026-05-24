@@ -1,0 +1,33 @@
+// Test: multiple distinct effect branches in a single event.
+//
+// The `tokenize` event yields TWO kinds: `! token` for each token found,
+// `! warning` for each warning. The producer fires them in interleaved
+// order. Consumer dispatches both kinds; each one lowers to a separate
+// `fn` inside the synthesized Handlers struct. Proves the Handlers struct
+// composes multiple handler-fns and that each call site routes to the
+// right one. This is the pump-shape Lars mentioned for vaxis/Orisha:
+// one event source emitting multiple kinds of signals, one consumer
+// dispatching cleanly with type-safe exhaustiveness.
+
+~import "$std/io"
+
+~pub event tokenize { source: []const u8 }
+! token []const u8
+! warning []const u8
+
+~proc tokenize|zig {
+    _ = source;
+    token("first");
+    warning("watch out");
+    token("second");
+    token("third");
+    warning("almost done");
+}
+
+~tokenize(source: "ignored")
+! token t |> std.io:print.blk {
+    token: {{ t:s }}
+}
+! warning w |> std.io:print.blk {
+    warning: {{ w:s }}
+}
