@@ -1293,6 +1293,9 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
     // `extern fn`. C-ABI flat extern struct because Zig 0.15 won't let extern fn
     // carry Zig-native unions/slices. The wrapper rehydrates slices internally
     // before invoking the real Zig-native handler.
+    const std_compiler_path = try codegen_utils.buildKoruModulePath(allocator, "std.compiler");
+    defer allocator.free(std_compiler_path);
+
     try code_emitter.write(
         \\
         \\// ============================================================
@@ -1312,7 +1315,11 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
         \\    program_ast: *const __koru_ast.Program,
         \\    allocator: *const __koru_std.mem.Allocator,
         \\) __KoruCoordinateResult {
-        \\    const result = koru_std.compiler.coordinate_event.handler(.{
+        \\    const result = 
+    );
+    try code_emitter.write(std_compiler_path);
+    try code_emitter.write(
+        \\.coordinate_event.handler(.{
         \\        .program_ast = program_ast,
         \\        .allocator = allocator.*,
         \\    });
@@ -1358,9 +1365,11 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
     for (cmd_result.commands[0..cmd_result.count]) |cmd| {
         var buf: [1024]u8 = undefined;
         if (cmd.module_path) |mod_path| {
+            const full_path = try codegen_utils.buildKoruModulePath(allocator, mod_path);
+            defer allocator.free(full_path);
             const line = try std.fmt.bufPrint(&buf,
                 \\    if (__koru_std.mem.eql(u8, name_typed.*, "{s}")) {{
-                \\        _ = koru_{s}.{s}_event.handler(.{{
+                \\        _ = {s}.{s}_event.handler(.{{
                 \\            .program = program,
                 \\            .allocator = allocator.*,
                 \\            .argv = argv_typed.*,
@@ -1368,7 +1377,7 @@ fn generateComptimeBackendEmitted(allocator: std.mem.Allocator, source_file: *as
                 \\        return;
                 \\    }}
                 \\
-            , .{ cmd.name, mod_path, cmd.handler_name });
+            , .{ cmd.name, full_path, cmd.handler_name });
             try code_emitter.write(line);
         } else {
             const line = try std.fmt.bufPrint(&buf,
@@ -1874,9 +1883,16 @@ fn generateTransformHandlers(writer: anytype, allocator: std.mem.Allocator, sour
     // Third pass: Generate dispatcher function
     if (transform_count > 0) {
         try writer.writeAll("// Transform Dispatcher - orchestrates all transform calls\n");
-        try writer.writeAll("pub fn process_all_transforms(ast: *const Program, allocator: __koru_std.mem.Allocator) !*Program {\n");
-        try writer.writeAll("    // Import joinPath helper from backend\n");
-        try writer.writeAll("    const joinPath = @import(\"backend_output_emitted\").koru_std.compiler.joinPath;\n");
+        const std_compiler_path = try codegen_utils.buildKoruModulePath(allocator, "std.compiler");
+        defer allocator.free(std_compiler_path);
+        var buf: [512]u8 = undefined;
+        const line = try std.fmt.bufPrint(&buf,
+            \\pub fn process_all_transforms(ast: *const Program, allocator: __koru_std.mem.Allocator) !*Program {{
+            \\    // Import joinPath helper from backend
+            \\    const joinPath = @import("backend_output_emitted").{s}.joinPath;
+            \\
+        , .{std_compiler_path});
+        try writer.writeAll(line);
         try writer.writeAll("    \n");
         try writer.writeAll("    // Track current AST state (transforms may return modified AST)\n");
         try writer.writeAll("    var current_ast = ast;\n");
