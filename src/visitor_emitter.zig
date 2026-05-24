@@ -2990,7 +2990,6 @@ pub const VisitorEmitter = struct {
         }
         try self.code_emitter.write("pub const ");
         // Phase-controlled wrapper prefix (see codegen_utils.koruWrapperPrefix).
-        // Phase 1: only depth==1 (top-level sibling to main_module) gets "koru_".
         try self.code_emitter.write(codegen_utils.koruWrapperPrefix(depth == 1));
         // Escape module names that aren't valid Zig identifiers (e.g., @koru, test-pkg)
         if (codegen_utils.needsEscaping(node.name)) {
@@ -3019,6 +3018,11 @@ pub const VisitorEmitter = struct {
                 }
             }
         }
+
+        // (Sibling-reference resolution is provided by child-aliases emitted
+        // inside the parent wrapper below — Zig's name lookup bubbles up
+        // from a struct's body to the containing struct's scope, so we don't
+        // need per-module import mirrors here.)
 
         // Then emit other items (events, procs, etc)
         for (node.modules.items) |module| {
@@ -3052,6 +3056,47 @@ pub const VisitorEmitter = struct {
             try self.emitModuleNode(child, depth + 1, module_annotations);
         }
 
+        // Emit bare-name aliases for each direct child sub-namespace inside
+        // this wrapper, so external references that traverse via the prefixed
+        // parent (e.g. `backend_output.koru_std.testing`) still resolve under
+        // Phase 2 wrapper renaming. Skipped when a host-line in this node
+        // already declares the same identifier.
+        if (node.children.items.len > 0) {
+            var declared_in_parent = try std.ArrayList([]const u8).initCapacity(self.allocator, 0);
+            defer declared_in_parent.deinit(self.allocator);
+            for (node.modules.items) |module| {
+                for (module.items) |module_item| {
+                    if (module_item == .host_line) {
+                        if (extractDeclaredName(module_item.host_line.content)) |name| {
+                            try declared_in_parent.append(self.allocator, name);
+                        }
+                    }
+                }
+            }
+
+            for (node.children.items) |child| {
+                if (nameIsShadowed(child.name, declared_in_parent.items)) continue;
+                try self.code_emitter.writeIndent();
+                try self.code_emitter.write("pub const ");
+                if (codegen_utils.needsEscaping(child.name)) {
+                    try self.code_emitter.write("@\"");
+                    try self.code_emitter.write(child.name);
+                    try self.code_emitter.write("\"");
+                } else {
+                    try self.code_emitter.write(child.name);
+                }
+                try self.code_emitter.write(" = koru_");
+                if (codegen_utils.needsEscaping(child.name)) {
+                    try self.code_emitter.write("@\"");
+                    try self.code_emitter.write(child.name);
+                    try self.code_emitter.write("\"");
+                } else {
+                    try self.code_emitter.write(child.name);
+                }
+                try self.code_emitter.write(";\n");
+            }
+        }
+
         // Note: Tap functions are emitted at main_module level, not inside modules
         // (even if defined in a module file, they're universal observers)
 
@@ -3071,7 +3116,6 @@ pub const VisitorEmitter = struct {
             try self.code_emitter.write("    ");
         }
     }
-
 
     fn findEventDeclInItems(
         self: *VisitorEmitter,
