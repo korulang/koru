@@ -3876,29 +3876,34 @@ fn emitHandlersStruct(
                 candidate;
         };
 
+        // Void-payload effects (zero-field branch) emit a no-arg handler so the
+        // producer-side `name()` call matches. A `void` param would require the
+        // call site to pass `{}` and bloats the signature for no information.
+        const is_void_payload = branch.payload.fields.len == 0;
+
         try emitter.writeIndent();
         try emitter.write("fn ");
         try writeBranchName(emitter, branch.name);
         try emitter.write("(");
-        try writeBranchName(emitter, shared_param_name);
-        try emitter.write(": ");
 
-        // Identity payload (single field named "__type_ref") — emit type directly.
-        // Multi-field struct payload — emit anon struct literal type.
-        // Zero-field payload — void.
-        if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
-            try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
-        } else if (branch.payload.fields.len == 0) {
-            try emitter.write("void");
-        } else {
-            try emitter.write("struct { ");
-            for (branch.payload.fields, 0..) |field, fi| {
-                if (fi > 0) try emitter.write(", ");
-                try writeBranchName(emitter, field.name);
-                try emitter.write(": ");
-                try writeFieldType(emitter, field, ctx.main_module_name);
+        if (!is_void_payload) {
+            try writeBranchName(emitter, shared_param_name);
+            try emitter.write(": ");
+
+            // Identity payload (single field named "__type_ref") — emit type directly.
+            // Multi-field struct payload — emit anon struct literal type.
+            if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
+                try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
+            } else {
+                try emitter.write("struct { ");
+                for (branch.payload.fields, 0..) |field, fi| {
+                    if (fi > 0) try emitter.write(", ");
+                    try writeBranchName(emitter, field.name);
+                    try emitter.write(": ");
+                    try writeFieldType(emitter, field, ctx.main_module_name);
+                }
+                try emitter.write(" }");
             }
-            try emitter.write(" }");
         }
 
         try emitter.write(") ");
@@ -3911,10 +3916,12 @@ fn emitHandlersStruct(
         emitter.indent();
 
         // Suppress unused-param warning unconditionally on the shared param.
-        try emitter.writeIndent();
-        try emitter.write("_ = &");
-        try writeBranchName(emitter, shared_param_name);
-        try emitter.write(";\n");
+        if (!is_void_payload) {
+            try emitter.writeIndent();
+            try emitter.write("_ = &");
+            try writeBranchName(emitter, shared_param_name);
+            try emitter.write(";\n");
+        }
 
         // Emit each cont in source order. Each cont gets its own block scope
         // so binding aliases (e.g., `const i = __koru_h_arg`) are visible to
@@ -4038,23 +4045,28 @@ fn emitHandlersStruct(
         if (!branch.is_optional) continue;
         if (handled.contains(branch.name)) continue;
 
+        // Void-payload effects emit a no-arg no-op so the producer's `name()`
+        // call resolves; a `void` param would require `name({})` at the producer.
+        const is_void_payload = branch.payload.fields.len == 0;
+
         try emitter.writeIndent();
         try emitter.write("fn ");
         try writeBranchName(emitter, branch.name);
-        try emitter.write("(_: ");
-        if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
-            try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
-        } else if (branch.payload.fields.len == 0) {
-            try emitter.write("void");
-        } else {
-            try emitter.write("struct { ");
-            for (branch.payload.fields, 0..) |field, fi| {
-                if (fi > 0) try emitter.write(", ");
-                try writeBranchName(emitter, field.name);
-                try emitter.write(": ");
-                try writeFieldType(emitter, field, ctx.main_module_name);
+        try emitter.write("(");
+        if (!is_void_payload) {
+            try emitter.write("_: ");
+            if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
+                try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
+            } else {
+                try emitter.write("struct { ");
+                for (branch.payload.fields, 0..) |field, fi| {
+                    if (fi > 0) try emitter.write(", ");
+                    try writeBranchName(emitter, field.name);
+                    try emitter.write(": ");
+                    try writeFieldType(emitter, field, ctx.main_module_name);
+                }
+                try emitter.write(" }");
             }
-            try emitter.write(" }");
         }
         try emitter.write(") ");
         if (branch.resume_type) |rt| {

@@ -1,0 +1,25 @@
+// Test: void-payload effect branch — `! pong` declared with no payload type,
+// producer calls `pong()` with no args, consumer handles with `! pong |>` (no
+// binding). Mirrors the vaxis `! ready` shape — an effect that fires for the
+// fact of firing, with no information to carry.
+//
+// A terminal `| result i32` is included because a single void-payload effect
+// with no terminal is rejected by PARSE003 (a single no-payload branch is
+// redundant — you could just call the proc directly).
+
+~import "$std/io"
+
+~pub event ping {}
+! pong
+| result i32
+
+~proc ping|zig {
+    pong();
+    return .{ .result = 1 };
+}
+
+~ping()
+! pong |> std.io:print.ln("pong")
+| result n |> std.io:print.blk {
+    result {{ n:d }}
+}

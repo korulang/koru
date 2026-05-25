@@ -1,0 +1,23 @@
+// Negative test: consumer must handle every non-optional terminal of an
+// event. The `?` modifier on a terminal (`| ?done`) marks it as optional
+// — consumer may omit; the compiler synthesizes a no-op switch arm. Without
+// the `?`, the terminal is required, and omitting the handler must error.
+//
+// The event below declares `| done` (required) and `| err []const u8`
+// (required). The consumer's flow handles `| err` but NOT `| done`. The
+// compiler must reject this — silent auto-synthesis of the missing arm
+// would mean `?` carries no meaning and the language has no way to
+// distinguish "optional terminal" from "you forgot a handler".
+
+~import "$std/io"
+
+~pub event run {}
+| done
+| err []const u8
+
+~proc run|zig {
+    return .{ .done = .{} };
+}
+
+~run()
+| err msg |> std.io:print.ln(msg)
