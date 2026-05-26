@@ -537,6 +537,12 @@ pub const Flow = struct {
     // When set, this flow implements the named event.
     impl_of: ?DottedPath = null,
 
+    // When set, this flow is the |variant arm of impl_of (e.g. ~greet|en = ... → "en").
+    // Symmetric with proc-side variants but lives here because subflow declarations
+    // produce Flow nodes, not Invocation nodes. Invocation.variant is for the OTHER
+    // direction (call-site selection).
+    impl_variant: ?[]const u8 = null,
+
     // True if the source syntax had a colon (cross-module override: ~mod:event = ...).
     // MUST be stored at parse time, before canonicalize_names adds module qualifiers
     // to all paths (which would make impl_of.module_qualifier non-null for locals too).
@@ -583,6 +589,7 @@ pub const Flow = struct {
             var mutable_io = io.*;
             mutable_io.deinit(allocator);
         }
+        if (self.impl_variant) |v| allocator.free(v);
         if (self.module.len > 0) allocator.free(self.module);
     }
 };

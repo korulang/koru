@@ -788,6 +788,7 @@ fn cloneFlowWithContinuations(
         .module = try allocator.dupe(u8, flow.module),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
         .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .impl_variant = if (flow.impl_variant) |v| try allocator.dupe(u8, v) else null,
         .is_impl = flow.is_impl,
     };
 }
@@ -1282,6 +1283,7 @@ fn cloneFlow(allocator: std.mem.Allocator, flow: *const ast.Flow) CloneError!ast
         .module = try allocator.dupe(u8, flow.module),
         .annotations = try cloneStringSlice(allocator, flow.annotations),
         .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .impl_variant = if (flow.impl_variant) |v| try allocator.dupe(u8, v) else null,
         .is_impl = flow.is_impl,
     };
 }
@@ -1700,6 +1702,7 @@ pub fn replacePipelineStep(
         .location = flow.location,
         .module = try allocator.dupe(u8, flow.module),
         .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .impl_variant = if (flow.impl_variant) |v| try allocator.dupe(u8, v) else null,
         .is_impl = flow.is_impl,
     };
 }
@@ -1782,6 +1785,7 @@ pub fn filterNestedContinuations(
         .location = flow.location,
         .module = try allocator.dupe(u8, flow.module),
         .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .impl_variant = if (flow.impl_variant) |v| try allocator.dupe(u8, v) else null,
         .is_impl = flow.is_impl,
     };
 }
@@ -1905,6 +1909,7 @@ pub fn replacePipelineStepAtPath(
         .location = flow.location,
         .module = try allocator.dupe(u8, flow.module),
         .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .impl_variant = if (flow.impl_variant) |v| try allocator.dupe(u8, v) else null,
         .is_impl = flow.is_impl,
     };
 }
@@ -2004,6 +2009,7 @@ pub fn filterNestedContinuationsAtPath(
         .location = flow.location,
         .module = try allocator.dupe(u8, flow.module),
         .impl_of = if (flow.impl_of) |io| try cloneDottedPath(allocator, &io) else null,
+        .impl_variant = if (flow.impl_variant) |v| try allocator.dupe(u8, v) else null,
         .is_impl = flow.is_impl,
     };
 }

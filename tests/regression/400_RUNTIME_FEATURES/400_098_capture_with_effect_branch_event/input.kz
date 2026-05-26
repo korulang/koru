@@ -1,0 +1,33 @@
+// Test: `~capture` integrates with effect-branch events.
+//
+// Surfaced 2026-05-25 designing the effect-branches throughput benchmark.
+// The user-facing intent: producer fires `! v` for each yielded value;
+// consumer wraps the iteration in `~capture` to accumulate. Mirrors the
+// canonical `~for` + capture pattern from how-capture-works (the blog),
+// but with a user-defined effect-branch event in the iteration slot.
+//
+// Current behavior (the bug): the transform that lowers `~capture` to
+// inline Zig calls the inner event's handler without passing the
+// consumer's comptime handler struct (`__H`). Effect-branch events have
+// signature `handler(Input, comptime __H: type)`, so the call fails with
+// Zig's `expected 2 argument(s), found 1`.
+//
+// Expected (when fixed): proc yields 0, 1, 2 via `! v`. Capture
+// accumulates them into `total`. Output is `total = 3`.
+
+~import "$std/io"
+
+const std = @import("std");
+
+~pub event yields { n: u64 }
+! v u64
+
+~proc yields|zig {
+    for (0..n) |i| v(i);
+}
+
+~capture(expr: { total: @as(u64, 0) })
+| as c |>
+    yields(n: 3)
+    ! v x |> captured { total: c.total + x }
+| captured final |> std.io:print.ln("total = {{ final.total:d }}")

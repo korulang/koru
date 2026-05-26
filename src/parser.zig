@@ -3656,7 +3656,21 @@ pub const Parser = struct {
             return error.InvalidSyntax;
         };
 
-        const event_path_str = lexer.trim(after_tilde[0..eq_idx]);
+        const raw_event_path_str = lexer.trim(after_tilde[0..eq_idx]);
+
+        // Split off optional |variant suffix (e.g. ~greet|en = ...). Variant is
+        // a property of this subflow declaration — symmetric with proc-side
+        // |variant tags, lives on Flow.impl_variant on the AST side.
+        const variant_pipe_idx = lexer.findTopLevelVariantPipe(raw_event_path_str);
+        const event_path_str = if (variant_pipe_idx) |i|
+            lexer.trim(raw_event_path_str[0..i])
+        else
+            raw_event_path_str;
+        const impl_variant: ?[]const u8 = if (variant_pipe_idx) |i|
+            try self.allocator.dupe(u8, lexer.trim(raw_event_path_str[i + 1 ..]))
+        else
+            null;
+
         const event_path = try lexer.parseQualifiedPath(self.allocator, event_path_str, ast);
 
         // The flow body follows the = sign
@@ -3828,6 +3842,7 @@ pub const Parser = struct {
                 .invocation = invocation,
                 .continuations = continuations,
                 .impl_of = event_path,
+                .impl_variant = impl_variant,
                 .is_impl = event_path.module_qualifier != null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
@@ -3973,6 +3988,7 @@ pub const Parser = struct {
                 .invocation = invocation,
                 .continuations = continuations,
                 .impl_of = event_path,
+                .impl_variant = impl_variant,
                 .is_impl = event_path.module_qualifier != null,
                 .location = self.getCurrentLocation(),
                 .module = try self.allocator.dupe(u8, self.module_name),
@@ -3992,6 +4008,7 @@ pub const Parser = struct {
             .invocation = invocation,
             .continuations = continuations,
             .impl_of = event_path,
+            .impl_variant = impl_variant,
             .is_impl = event_path.module_qualifier != null,
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),

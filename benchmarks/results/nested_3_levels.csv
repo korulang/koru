@@ -1,0 +1,10 @@
+workload,language,n,wall_ms,output_hash,output,note
+nested_3_levels,koru,100,27.913,bc7789d06f05,"counter = 1000000",
+nested_3_levels,rust,100,25.562,bc7789d06f05,"counter = 1000000",
+nested_3_levels,csharp,100,125.663,bc7789d06f05,"counter = 1000000",
+nested_3_levels,koru,300,33.802,96970a27abc3,"counter = 27000000",
+nested_3_levels,rust,300,25.098,96970a27abc3,"counter = 27000000",
+nested_3_levels,csharp,300,365.395,96970a27abc3,"counter = 27000000",
+nested_3_levels,koru,1000,338.741,56e746bc7df3,"counter = 1000000000",
+nested_3_levels,rust,1000,25.776,56e746bc7df3,"counter = 1000000000",
+nested_3_levels,csharp,1000,4668.139,56e746bc7df3,"counter = 1000000000",

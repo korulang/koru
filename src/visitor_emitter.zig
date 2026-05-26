@@ -2417,6 +2417,11 @@ pub const VisitorEmitter = struct {
                 .flow => |flow| {
                     // Flow-based implementation (only match flows with impl_of set)
                     if (flow.impl_of) |impl_path| {
+                        // Variant arms are emitted as separate handler__<mangled>
+                        // functions further down. The main handler only uses the
+                        // unvariant arm (the default).
+                        if (flow.impl_variant != null) continue;
+
                         log.debug("    Checking impl flow: ", .{});
                         for (impl_path.segments) |seg| {
                             log.debug("{s}.", .{seg});
@@ -2934,6 +2939,106 @@ pub const VisitorEmitter = struct {
                         self.code_emitter.indent_level -= 1;
                         try self.code_emitter.writeIndent();
                         try self.code_emitter.write("}\n");
+                    }
+                },
+                else => {},
+            }
+        }
+
+        // Emit variant handlers for every subflow with impl_variant set.
+        // Mirrors the proc-variant emission above but for Koru-transparent bodies.
+        // Each `~event|variant = body` declaration produces a handler__<mangled>
+        // function on the event struct; call sites dispatch via writeHandlerName.
+        for (items_to_search) |impl_item| {
+            switch (impl_item) {
+                .flow => |flow| {
+                    if (flow.impl_variant) |variant| {
+                        if (flow.impl_of) |impl_path| {
+                            if (impl_path.segments.len != event.path.segments.len) continue;
+                            var matches = true;
+                            for (impl_path.segments, 0..) |seg, j| {
+                                if (!eql(u8, seg, event.path.segments[j])) {
+                                    matches = false;
+                                    break;
+                                }
+                            }
+                            if (!matches) continue;
+
+                            try self.code_emitter.writeIndent();
+                            try self.code_emitter.write("pub fn ");
+                            try emitter.writeHandlerName(self.code_emitter, self.allocator, variant);
+                            try self.code_emitter.write("(__koru_event_input: Input) Output {\n");
+                            self.code_emitter.indent_level += 1;
+
+                            if (flow.location.line > 0) {
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write("// >>> SUBFLOW: ");
+                                try self.code_emitter.write(flow.location.file);
+                                try self.code_emitter.write(":");
+                                var loc_buf: [32]u8 = undefined;
+                                const loc_str = try std.fmt.bufPrint(&loc_buf, "{}", .{flow.location.line});
+                                try self.code_emitter.write(loc_str);
+                                try self.code_emitter.write("  |");
+                                try self.code_emitter.write(variant);
+                                try self.code_emitter.write("\n");
+                            }
+
+                            // Implicit input bindings (mirrors the main handler)
+                            for (event.input.fields) |field| {
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write("const ");
+                                try self.code_emitter.write(field.name);
+                                try self.code_emitter.write(" = __koru_event_input.");
+                                try self.code_emitter.write(field.name);
+                                try self.code_emitter.write(";\n");
+                            }
+                            for (event.input.fields) |field| {
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write("_ = &");
+                                try self.code_emitter.write(field.name);
+                                try self.code_emitter.write(";\n");
+                            }
+                            try self.code_emitter.writeIndent();
+                            try self.code_emitter.write("_ = &__koru_event_input;\n");
+
+                            // Body emission. Currently supports only the simple
+                            // single-invocation shape (no continuations, preamble,
+                            // or inline_body). Extending this to full flow shapes
+                            // requires factoring out the main handler's body-emission
+                            // path into a shared helper. Pinning that gap as a TODO.
+                            if (flow.continuations.len == 0 and flow.preamble_code == null and flow.inline_body == null) {
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write("_ = ");
+                                if (flow.invocation.path.module_qualifier) |mq| {
+                                    try emitter.writeModulePath(self.code_emitter, mq, self.main_module_name);
+                                    try self.code_emitter.write(".");
+                                }
+                                for (flow.invocation.path.segments, 0..) |seg, idx| {
+                                    if (idx > 0) try self.code_emitter.write("_");
+                                    try self.code_emitter.write(seg);
+                                }
+                                try self.code_emitter.write("_event.handler(.{");
+                                var value_ctx = emitter.EmissionContext{
+                                    .allocator = self.allocator,
+                                    .main_module_name = self.main_module_name,
+                                };
+                                for (flow.invocation.args, 0..) |arg, k| {
+                                    if (k > 0) try self.code_emitter.write(", ");
+                                    try self.code_emitter.write(" .");
+                                    try self.code_emitter.write(arg.name);
+                                    try self.code_emitter.write(" = ");
+                                    try emitter.emitValue(self.code_emitter, &value_ctx, arg.value);
+                                }
+                                try self.code_emitter.write(" });\n");
+                            } else {
+                                try self.code_emitter.writeIndent();
+                                try self.code_emitter.write("@compileError(\"variant subflow body has continuations/preamble/inline_body — emission path not yet implemented\");\n");
+                            }
+
+                            self.code_emitter.indent_level -= 1;
+                            try self.code_emitter.writeIndent();
+                            try self.code_emitter.write("}\n");
+                        }
                     }
                 },
                 else => {},

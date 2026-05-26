@@ -188,6 +188,7 @@ tests/benchmarks/**/actual.txt
 # ============================================================================
 
 .env
+.env.*
 .claude/
 package.json
 zig-out/

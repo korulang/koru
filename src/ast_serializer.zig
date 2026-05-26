@@ -642,6 +642,16 @@ pub const AstSerializer = struct {
         }
         try self.write(",\n");
 
+        // impl_variant (null unless this flow is the |variant arm of impl_of)
+        try self.writeIndent();
+        try self.write(".impl_variant = ");
+        if (flow.impl_variant) |v| {
+            try self.writeString(v);
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+
         // is_impl (true for cross-module overrides, set at parse time)
         try self.writeIndent();
         try self.write(".is_impl = ");

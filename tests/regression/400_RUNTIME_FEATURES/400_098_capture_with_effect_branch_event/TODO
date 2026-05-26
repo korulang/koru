@@ -1,0 +1,16 @@
+~capture composing with effect-branch events — parked pending captured-shape redesign
+
+Bug is mechanical: capture lowering at src/emitter_helpers.zig:7081 doesn't
+partition effect-vs-terminal continuations or synthesize the Handlers struct.
+Generated Zig calls `yields_event.handler(.{ .n = 3 })` (1 arg) where the
+handler signature expects 2 args (`Input, comptime __H: type`).
+
+Park reason: `captured { ... }` shape is under redesign. It LOOKS like a
+branch-constructor but lowers as plain state assignment to the capture var
+(confirmed in 320_028_capture_multi: `c.sum = c.sum + val` etc.). That
+ambiguity becomes acute as ~for migrates to effect-branches — mid-stream
+`captured { ... }` is indistinguishable from a normal branch-constructor
+terminating its subflow. Likely shape: `captured() { ... }` as a Source
+block (userland-interpreted payload, not an AST-walked struct-literal).
+
+Un-park when the captured-shape question lands.
