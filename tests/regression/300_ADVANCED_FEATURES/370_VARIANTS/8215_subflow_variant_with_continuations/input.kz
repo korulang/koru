@@ -1,0 +1,57 @@
+// Test 8215: Subflow variant with continuations.
+//
+// Shape: `~event|variant = invocation(args) | branch binding |> result_constructor`
+// Combines the variant-arm declaration (new, established by 8213/8214) with
+// the subflow-with-continuations shape from 302_subflow_flow (grounded passing test).
+//
+// Currently expected to trip the @compileError marker in visitor_emitter.zig
+// because the variant emission loop only handles continuations.len == 0.
+
+~import "$std/io"
+~import "$std/build"
+
+const std = @import("std");
+
+~event greet { value: i32 }
+| final i32
+
+// Two helper events with proc bodies, copied from 302_subflow_flow.
+~event double { value: i32 }
+| result i32
+
+~proc double|zig {
+    return .{ .result = value * 2 };
+}
+
+~event identity { value: i32 }
+| result i32
+
+~proc identity|zig {
+    return .{ .result = value };
+}
+
+// Default unvariant arm — passes value through.
+~greet = identity(value: value)
+| result r |> final r
+
+// Variant arm — doubles. Same shape as the default arm but |two-tagged.
+~greet|two = double(value: value)
+| result r |> final r
+
+// Register the |two variant.
+~std.build:variants {
+    "input:greet": "two"
+}
+| configured _ |> _
+| skipped _ |> _
+| invalid_event _ |> _
+
+~event print_result { value: i32 }
+
+~proc print_result|zig {
+    std.debug.print("{}\n", .{value});
+}
+
+// Expected: greet(value: 21) picks |two variant → double(21) → 42 → print 42.
+~greet(value: 21)
+| final f |> print_result(value: f)
