@@ -304,7 +304,7 @@ pub const PhantomSemanticChecker = struct {
                         .KORU033,
                         location.line,
                         location.column,
-                        "Cannot issue obligation '[{s}]' on input parameter (event: {s}). Use '[!{s}]' to consume an existing obligation, or remove the '!' suffix.",
+                        "Cannot issue obligation '<{s}>' on input parameter (event: {s}). Use '<!{s}>' to consume an existing obligation, or remove the '!' suffix.",
                         .{ phantom_str, event_name, concrete.name },
                     );
                     return false;
@@ -317,7 +317,7 @@ pub const PhantomSemanticChecker = struct {
                         .KORU033,
                         location.line,
                         location.column,
-                        "Cannot consume obligation '[{s}]' on output parameter (event: {s}). Use '[{s}!]' to issue a new obligation, or remove the '!' prefix.",
+                        "Cannot consume obligation '<{s}>' on output parameter (event: {s}). Use '<{s}!>' to issue a new obligation, or remove the '!' prefix.",
                         .{ phantom_str, event_name, concrete.name },
                     );
                     return false;
@@ -1515,7 +1515,7 @@ pub const PhantomSemanticChecker = struct {
                                 .KORU030,
                                 location.line,
                                 location.column,
-                                "Resource '{s}' [{s}] was not discharged. No event accepts [!{s}].",
+                                "Resource '{s}' <{s}> was not discharged. No event accepts <!{s}>.",
                                 .{ display_name, display_state, state_without_bang },
                             );
                         } else if (disposal_events.items.len == 1) {
@@ -1523,7 +1523,7 @@ pub const PhantomSemanticChecker = struct {
                                 .KORU030,
                                 location.line,
                                 location.column,
-                                "Resource '{s}' [{s}] was not discharged. Call: {s}",
+                                "Resource '{s}' <{s}> was not discharged. Call: {s}",
                                 .{ display_name, display_state, disposal_events.items[0] },
                             );
                         } else {
@@ -1538,7 +1538,7 @@ pub const PhantomSemanticChecker = struct {
                                 .KORU030,
                                 location.line,
                                 location.column,
-                                "Resource '{s}' [{s}] was not discharged. Call one of: {s}",
+                                "Resource '{s}' <{s}> was not discharged. Call one of: {s}",
                                 .{ display_name, display_state, fbs.getWritten() },
                             );
                         }
@@ -2204,7 +2204,7 @@ pub const PhantomSemanticChecker = struct {
                             .KORU030,
                             location.line,
                             location.column,
-                            "Phantom state mismatch: argument '{s}' has no tracked phantom state, but event requires '[!{s}]' (consumption). Did you mean to pass a value with state '{s}'?",
+                            "Phantom state mismatch: argument '{s}' has no tracked phantom state, but event requires '<!{s}>' (consumption). Did you mean to pass a value with state '{s}'?",
                             .{ arg.name, concrete.name, canonical_expected },
                         );
                     } else {
@@ -2213,7 +2213,7 @@ pub const PhantomSemanticChecker = struct {
                             .KORU030,
                             location.line,
                             location.column,
-                            "Phantom state mismatch: argument '{s}' has no tracked phantom state, but event requires '[{s}]'. The value must be in state '{s}'.",
+                            "Phantom state mismatch: argument '{s}' has no tracked phantom state, but event requires '<{s}>'. The value must be in state '{s}'.",
                             .{ arg.name, expected_phantom.?, canonical_expected },
                         );
                     }
@@ -2231,7 +2231,7 @@ pub const PhantomSemanticChecker = struct {
                         .KORU030,
                         location.line,
                         location.column,
-                        "Phantom state mismatch: argument '{s}' has no tracked phantom state, but event requires one of '[{s}]'.",
+                        "Phantom state mismatch: argument '{s}' has no tracked phantom state, but event requires one of '<{s}>'.",
                         .{ arg.name, expected_phantom.? },
                     );
                     return false;
@@ -2255,7 +2255,7 @@ pub const PhantomSemanticChecker = struct {
                     .KORU030,
                     location.line,
                     location.column,
-                    "Type mismatch: expected '{s}[{s}]' but got '{s}[{s}]' for argument '{s}'",
+                    "Type mismatch: expected '{s}<{s}>' but got '{s}<{s}>' for argument '{s}'",
                     .{ expected_base_type, expected_phantom.?, provided_base_type, provided_phantom, arg.name },
                 );
                 return false;

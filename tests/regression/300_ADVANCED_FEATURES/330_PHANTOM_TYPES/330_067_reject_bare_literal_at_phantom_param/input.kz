@@ -1,0 +1,29 @@
+// Test (negative): a bare literal `22.5` at a call site MUST be rejected
+// when the parameter requires a phantom annotation (`f32<celsius>`).
+//
+// Completes the triangle for literal-suffix phantom annotation:
+//   - 210_087  parser accepts `22.5<celsius>` syntax
+//   - 330_066  literal-suffix works end-to-end (parse + check + emit + run)
+//   - 330_067  bare literal WITHOUT the suffix is rejected (this test)
+//
+// Without this rejection test, the literal-suffix feature could be (mis)
+// implemented as optional — silently accepting bare literals at
+// phantom-required positions, defeating the whole safety story.
+//
+// Currently this rejection fires because the phantom checker tracks no
+// state for a bare literal value. Once literal-suffix lands, this test
+// continues to pin that the suffix is REQUIRED at this boundary, not
+// optional.
+//
+// Sibling: 330_064 covers the same rejection for values produced by an
+// event whose payload is a bare-typed `f32` (no phantom). This test covers
+// the literal-at-call-site variant.
+
+~event to_fahrenheit { c: f32<celsius> }
+| result f32<fahrenheit>
+
+~to_fahrenheit = result c * 9.0 / 5.0 + 32.0
+
+// ERROR: `22.5` is bare — no phantom state. f32 can't satisfy f32<celsius>.
+~to_fahrenheit(c: 22.5)
+| result _ |> _

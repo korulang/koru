@@ -1227,6 +1227,10 @@ EOF
                 echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                 FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
                 LEAKED_TESTS=$((LEAKED_TESTS + 1))
+            elif [ -f "$test_dir/MUST_FAIL" ]; then
+                echo -e "${RED}❌ MUST_FAIL test passed unexpectedly — expected failure didn't fire${NC}"
+                echo "must-fail-passed" > "$test_dir/FAILURE"
+                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-fail-passed)"
             else
                 echo -e "${GREEN}✅ PASS (ran successfully)${NC}"
                 mark_test_passed "$test_dir"
@@ -1258,6 +1262,10 @@ EOF
                         echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                    elif [ -f "$test_dir/MUST_FAIL" ]; then
+                        echo -e "${RED}❌ MUST_FAIL test passed unexpectedly — expected failure didn't fire${NC}"
+                        echo "must-fail-passed" > "$test_dir/FAILURE"
+                        FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-fail-passed)"
                     else
                         echo -e "${GREEN}✅ PASS (post-validated)${NC}"
                         mark_test_passed "$test_dir"
@@ -1304,6 +1312,10 @@ EOF
                     echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                     FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
                     LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                elif [ -f "$test_dir/MUST_FAIL" ]; then
+                    echo -e "${RED}❌ MUST_FAIL test passed unexpectedly — expected failure didn't fire${NC}"
+                    echo "must-fail-passed" > "$test_dir/FAILURE"
+                    FAILED_TESTS="$FAILED_TESTS $TEST_NAME(must-fail-passed)"
                 else
                     echo -e "${GREEN}✅ PASS (compile only)${NC}"
                     mark_test_passed "$test_dir"
