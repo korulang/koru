@@ -10,7 +10,7 @@ const Handle = struct {
 // Risky operation - might succeed OR might leak a handle
 ~pub event risky {}
 | success u32
-| ?leaked *Handle[owned!]  // Optional with obligation!
+| ?leaked *Handle<owned!>  // Optional with obligation!
 
 ~proc risky|zig {
     // Always succeeds in this test, but the event DECLARES

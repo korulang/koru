@@ -123,16 +123,22 @@ fn replaceIdentifier(allocator: std.mem.Allocator, text: []const u8, old_name: [
 }
 
 /// Strip phantom type annotations from a type string
-/// e.g., "*Resource[state!]" -> "*Resource", "[]const u8" -> "[]const u8"
+/// e.g., "*Resource<state!>" -> "*Resource", "[]const u8" -> "[]const u8"
 fn stripPhantom(type_str: []const u8) []const u8 {
-    // Find '[' that starts phantom annotation
-    for (type_str, 0..) |c, i| {
-        if (c == '[') {
-            // Check if this is a phantom annotation (not a slice type)
-            // Slice types: []const u8, [N]T - have ] immediately or digits
-            // Phantom types: *T[state], T[state!] - have identifiers
-            if (i > 0 and type_str[i - 1] != ']') {
-                return type_str[0..i];
+    if (type_str.len > 0 and type_str[type_str.len - 1] == '>') {
+        var angle_depth: i32 = 0;
+        var i = type_str.len - 1;
+        while (i > 0) : (i -= 1) {
+            if (type_str[i] == '>') {
+                angle_depth += 1;
+            } else if (type_str[i] == '<') {
+                angle_depth -= 1;
+                if (angle_depth == 0) {
+                    if (i > 0) {
+                        return type_str[0..i];
+                    }
+                    break;
+                }
             }
         }
     }

@@ -9,14 +9,14 @@ const std = @import("std");
 
 // Open creates an obligation
 ~pub event open { path: []const u8 }
-| opened []const u8[opened!]
+| opened []const u8<opened!>
 
 ~proc open|zig {
     return .{ .opened = "file_1" };
 }
 
 // Close discharges the obligation
-~pub event close { handle: []const u8[!opened] }
+~pub event close { handle: []const u8<!opened> }
 
 ~proc close|zig {
 }

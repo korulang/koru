@@ -172,7 +172,7 @@
                 "fields": [
                     {
                         "name": "source",
-                        "type": "Source[HTML]",
+                        "type": "Source<HTML>",
                         "is_source": true,
                         "is_file": false,
                         "is_embed_file": false,

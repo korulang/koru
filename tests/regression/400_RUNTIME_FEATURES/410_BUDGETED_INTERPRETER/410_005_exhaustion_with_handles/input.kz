@@ -7,20 +7,20 @@
 const std = @import("std");
 
 ~pub event open { path: []const u8 }
-| opened []const u8[opened!]
+| opened []const u8<opened!>
 
 ~proc open|zig {
     std.debug.print("opened {s}\n", .{path});
     return .{ .opened = "file_1" };
 }
 
-~pub event close { handle: []const u8[!opened] }
+~pub event close { handle: []const u8<!opened> }
 
 ~proc close|zig {
     std.debug.print("auto-closing file\n", .{});
 }
 
-~pub event expensive_read { handle: []const u8[opened] }
+~pub event expensive_read { handle: []const u8<opened> }
 | read []const u8
 
 ~proc expensive_read|zig {

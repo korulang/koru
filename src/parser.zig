@@ -2827,13 +2827,13 @@ pub const Parser = struct {
         //   event_name [type]"path" - file source syntax
         const trimmed_after = lexer.trim(remaining);
 
-        // Check if it ends with { or ]{  - that's the marker for implicit flow/source syntax
+        // Check if it ends with { or <Type>{ - that's the marker for implicit flow/source syntax
         const has_implicit_flow_brace = std.mem.endsWith(u8, trimmed_after, "{");
 
-        // Check if it ends with " and contains ]" - that's the marker for file source syntax
-        // e.g., ~print [text]"hello.md"
+        // Check if it ends with " and contains >" - that's the marker for file source syntax
+        // e.g., ~print <text>"hello.md"
         const has_implicit_file_source = std.mem.endsWith(u8, trimmed_after, "\"") and
-            std.mem.indexOf(u8, trimmed_after, "]\"") != null;
+            std.mem.indexOf(u8, trimmed_after, ">\"") != null;
 
         var invocation: ast.Invocation = undefined;
         var uses_implicit_flow = false;
@@ -2844,24 +2844,24 @@ pub const Parser = struct {
         var continuations: []ast.Continuation = undefined;
 
         if (has_implicit_file_source) {
-            // Parse file source syntax: ~event [type]"path"
-            // Extract: invocation before [, phantom type in [...], file path in "..."
+            // Parse file source syntax: ~event <type>"path"
+            // Extract: invocation before <, scope type in <...>, file path in "..."
 
-            // Find the last ]" to locate where the path starts
-            const quote_start = std.mem.lastIndexOf(u8, trimmed_after, "]\"") orelse unreachable;
-            const path_start = quote_start + 2; // Skip ]"
+            // Find the last >" to locate where the path starts
+            const quote_start = std.mem.lastIndexOf(u8, trimmed_after, ">\"") orelse unreachable;
+            const path_start = quote_start + 2; // Skip >"
             const path_end = trimmed_after.len - 1; // Exclude trailing "
             const file_path = trimmed_after[path_start..path_end];
 
-            // Find the [ to extract phantom type
-            const bracket_start = std.mem.lastIndexOf(u8, trimmed_after[0 .. quote_start + 1], "[") orelse {
-                try self.reporter.addError(.PARSE001, self.current, 0, "File source syntax requires phantom type: ~event [type]\"path\"", .{});
+            // Find the < to extract scope type
+            const angle_start = std.mem.lastIndexOf(u8, trimmed_after[0 .. quote_start + 1], "<") orelse {
+                try self.reporter.addError(.PARSE001, self.current, 0, "File source syntax requires scope type: ~event <type>\"path\"", .{});
                 return error.ParseError;
             };
-            const phantom_type = trimmed_after[bracket_start + 1 .. quote_start];
+            const phantom_type = trimmed_after[angle_start + 1 .. quote_start];
 
-            // Extract invocation string (before the [)
-            const invocation_str = lexer.trim(trimmed_after[0..bracket_start]);
+            // Extract invocation string (before the <)
+            const invocation_str = lexer.trim(trimmed_after[0..angle_start]);
             invocation = try self.parseEventInvocation(invocation_str);
             errdefer invocation.deinit(self.allocator);
 
@@ -3319,21 +3319,20 @@ pub const Parser = struct {
         else
             clean;
 
-        // Check for Source block syntax: eventName [Type]{ ... }
-        // Look for ]{ pattern to distinguish from array types like [100]f64
-        const source_block_marker = std.mem.indexOf(u8, invocation_part, "]{");
+        // Check for Source block syntax: eventName <Type>{ ... }
+        const source_block_marker = std.mem.indexOf(u8, invocation_part, ">{");
         log_debug("[DEBUG] parseEventInvocation: source_block_marker={?d} invocation_part='{s}'\n", .{ source_block_marker, invocation_part });
 
         if (source_block_marker) |marker_idx| {
-            // Find the opening [ by searching backwards from ]{
-            const bracket_idx = std.mem.lastIndexOf(u8, invocation_part[0 .. marker_idx + 1], "[");
+            // Find the opening < by searching backwards from >{
+            const angle_idx = std.mem.lastIndexOf(u8, invocation_part[0 .. marker_idx + 1], "<");
 
-            if (bracket_idx) |b_idx| {
+            if (angle_idx) |a_idx| {
                 // This is a Source block invocation!
-                const before_bracket = lexer.trim(invocation_part[0..b_idx]);
+                const before_angle = lexer.trim(invocation_part[0..a_idx]);
 
-                // Extract phantom type from [Type] (we know ] is at marker_idx)
-                const phantom_type = lexer.trim(invocation_part[b_idx + 1 .. marker_idx]);
+                // Extract scope type from <Type> (we know > is at marker_idx)
+                const phantom_type = lexer.trim(invocation_part[a_idx + 1 .. marker_idx]);
 
                 // Extract block content from { ... } (marker_idx + 1 points to { position + 1)
                 const brace_start = marker_idx + 1; // Position of {
@@ -3351,18 +3350,18 @@ pub const Parser = struct {
 
                 const source_text = lexer.trim(invocation_part[brace_start + 1 .. close_brace_idx.?]);
 
-                // Check if before_bracket has args: event(args)
+                // Check if before_angle has args: event(args)
                 // If so, parse path and args separately
                 var parsed_path: ast.DottedPath = undefined;
                 var existing_args: []const ast.Arg = &[_]ast.Arg{};
 
-                if (std.mem.indexOf(u8, before_bracket, "(")) |paren_idx| {
+                if (std.mem.indexOf(u8, before_angle, "(")) |paren_idx| {
                     // Has args - extract path and parse args
-                    const event_name = lexer.trim(before_bracket[0..paren_idx]);
+                    const event_name = lexer.trim(before_angle[0..paren_idx]);
                     parsed_path = try lexer.parseQualifiedPath(self.allocator, event_name, ast);
 
                     // Parse arguments from (...)
-                    const args_str = lexer.trim(before_bracket[paren_idx..]);
+                    const args_str = lexer.trim(before_angle[paren_idx..]);
                     var args_list = try std.ArrayList(ast.Arg).initCapacity(self.allocator, 4);
                     defer args_list.deinit(self.allocator);
 
@@ -3386,7 +3385,7 @@ pub const Parser = struct {
                     existing_args = try args_list.toOwnedSlice(self.allocator);
                 } else {
                     // No args - just parse the path
-                    parsed_path = try lexer.parseQualifiedPath(self.allocator, before_bracket, ast);
+                    parsed_path = try lexer.parseQualifiedPath(self.allocator, before_angle, ast);
                 }
 
                 // Build path string for registry lookup
@@ -5906,10 +5905,10 @@ pub const Parser = struct {
             // Check for .{ pattern (immediate branch constructor)
             const is_immediate_bc = std.mem.eql(u8, before_brace, ".");
 
-            // Check if this is a Source block invocation: eventName [Type]{
-            // Look for [ ] pattern before the {
-            const has_bracket = std.mem.indexOf(u8, before_brace, "[") != null and
-                std.mem.indexOf(u8, before_brace, "]") != null;
+            // Check if this is a Source block invocation: eventName <Type>{
+            // Look for < > pattern before the {
+            const has_angle_brackets = std.mem.indexOf(u8, before_brace, "<") != null and
+                std.mem.indexOf(u8, before_brace, ">") != null;
 
             // Branch constructor requires a NAMED branch before the brace —
             // `name { ... }` or `.{ ... }`. Anonymous `{ ... }` is NOT a branch
@@ -5918,7 +5917,7 @@ pub const Parser = struct {
             const is_regular_bc = before_brace.len > 0 and
                 std.mem.indexOf(u8, before_brace, ".") == null and
                 !std.mem.containsAtLeast(u8, before_brace, 1, "(") and
-                !has_bracket; // Not a Source block!
+                !has_angle_brackets; // Not a Source block!
 
             if (is_immediate_bc or is_regular_bc) {
                 // It's a branch constructor!
@@ -6456,9 +6455,9 @@ pub const Parser = struct {
             var idx: usize = 0;
             while (idx + 1 < branch_start.len) : (idx += 1) {
                 const c = branch_start[idx];
-                if (c == '[' or c == '{' or c == '(') {
+                if (c == '[' or c == '{' or c == '(' or c == '<') {
                     depth += 1;
-                } else if (c == ']' or c == '}' or c == ')') {
+                } else if (c == ']' or c == '}' or c == ')' or c == '>') {
                     depth -= 1;
                 } else if (depth == 0 and c == '-' and branch_start[idx + 1] == '>') {
                     const rt = lexer.trim(branch_start[idx + 2 ..]);
@@ -6896,7 +6895,7 @@ pub const Parser = struct {
             var field_type = lexer.trim(trimmed_field[colon_idx + 1 ..]);
 
             // Check for special types: Source, File, EmbedFile, Expression, and InvocationMeta
-            // Source can have phantom type: Source[HTML], Source[SQL], etc.
+            // Source can have scope type: Source<HTML>, Source<SQL>, etc.
             // Expression captures Zig expressions verbatim as strings
             // InvocationMeta provides call site metadata for comptime introspection
             var is_source = false;
@@ -6904,10 +6903,10 @@ pub const Parser = struct {
             var is_embed_file = false;
             var is_expression = false;
             var is_invocation_meta = false;
-            if (std.mem.eql(u8, field_type, "Source") or std.mem.startsWith(u8, field_type, "Source[")) {
+            if (std.mem.eql(u8, field_type, "Source") or std.mem.startsWith(u8, field_type, "Source<")) {
                 is_source = true;
-            } else if (std.mem.eql(u8, field_type, "Expression") or std.mem.startsWith(u8, field_type, "Expression[") or
-                std.mem.eql(u8, field_type, "?Expression") or std.mem.startsWith(u8, field_type, "?Expression["))
+            } else if (std.mem.eql(u8, field_type, "Expression") or std.mem.startsWith(u8, field_type, "Expression<") or
+                std.mem.eql(u8, field_type, "?Expression") or std.mem.startsWith(u8, field_type, "?Expression<"))
             {
                 is_expression = true;
             } else if (std.mem.eql(u8, field_type, "File")) {

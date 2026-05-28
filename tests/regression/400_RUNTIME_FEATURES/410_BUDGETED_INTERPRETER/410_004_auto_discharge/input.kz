@@ -7,13 +7,13 @@
 const std = @import("std");
 
 ~pub event open { path: []const u8 }
-| opened []const u8[opened!]
+| opened []const u8<opened!>
 
 ~proc open|zig {
     return .{ .opened = "file_1" };
 }
 
-~pub event close { handle: []const u8[!opened] }
+~pub event close { handle: []const u8<!opened> }
 
 ~proc close|zig {
     std.debug.print("close() was called by auto-discharge\n", .{});
