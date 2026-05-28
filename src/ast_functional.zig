@@ -1364,7 +1364,9 @@ fn cloneShape(allocator: std.mem.Allocator, shape: *const ast.Shape) !ast.Shape 
         fields[i] = try cloneField(allocator, field);
     }
 
-    return .{ .fields = fields };
+    // Preserve `is_wildcard` (bare `*` payload) across clones — otherwise a
+    // pipeline transform silently resets it and codegen loses the `anytype` handler.
+    return .{ .fields = fields, .is_wildcard = shape.is_wildcard };
 }
 
 fn cloneField(allocator: std.mem.Allocator, field: *const ast.Field) !ast.Field {

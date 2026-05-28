@@ -1,0 +1,23 @@
+// WIP EXPERIMENT (Lars's method): express `for` as a |template|zig proc whose
+// loop body comes from an effect `! each` handler. Observe HOW it fails — does
+// the template have any way to reach the `! each` handler body?
+~import "$std/io"
+
+~pub event loop { r: i32 }
+! each i32
+| done usize
+
+~proc loop|template|zig {
+    for ({{ r }}) |item| {
+        each(item);
+    }
+    return .{ .done = 0 };
+}
+
+~loop(r: 0..3)
+! each v |> std.io:print.blk {
+    v {{ v:d }}
+}
+| done total |> std.io:print.blk {
+    done {{ total:d }}
+}

@@ -48,8 +48,7 @@ const CodeEmitter = struct {
     
     pub fn writeIndent(self: *CodeEmitter) !void {
         const spaces = self.indent_level * self.indent_size;
-        var i: u32 = 0;
-        while (i < spaces) : (i += 1) {
+        for (0..spaces) |_| {
             try self.write(" ");
         }
     }

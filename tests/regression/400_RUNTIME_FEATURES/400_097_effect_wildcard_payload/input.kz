@@ -1,0 +1,23 @@
+// `! each *` — wildcard payload: shape-checker skips it, codegen must emit
+// `fn each(item: anytype)` so Zig infers the element type. This is the
+// correctness primitive that lets one generic iterator serve any element type.
+~import "$std/io"
+
+~pub event walk { items: []const i32 }
+! each *
+| done usize
+
+~proc walk|zig {
+    for (items) |item| {
+        each(item);
+    }
+    return .{ .done = items.len };
+}
+
+~walk(items: &[_]i32{ 5, 6, 7 })
+! each v |> std.io:print.blk {
+    v {{ v:d }}
+}
+| done n |> std.io:print.blk {
+    count {{ n:d }}
+}

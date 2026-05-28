@@ -3895,7 +3895,9 @@ fn emitHandlersStruct(
         // Void-payload effects (zero-field branch) emit a no-arg handler so the
         // producer-side `name()` call matches. A `void` param would require the
         // call site to pass `{}` and bloats the signature for no information.
-        const is_void_payload = branch.payload.fields.len == 0;
+        // A wildcard payload (`! each *`) has zero fields but IS bindable — it
+        // takes an `anytype` param so Zig infers the element type at the call.
+        const is_void_payload = branch.payload.fields.len == 0 and !branch.payload.is_wildcard;
 
         try emitter.writeIndent();
         try emitter.write("fn ");
@@ -3906,9 +3908,14 @@ fn emitHandlersStruct(
             try writeBranchName(emitter, shared_param_name);
             try emitter.write(": ");
 
+            // Wildcard payload `! each *` — defer the element type to Zig's
+            // type inference: emit `anytype` (valid in parameter position).
+            if (branch.payload.is_wildcard) {
+                try emitter.write("anytype");
+            }
             // Identity payload (single field named "__type_ref") — emit type directly.
             // Multi-field struct payload — emit anon struct literal type.
-            if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
+            else if (branch.payload.fields.len == 1 and std.mem.eql(u8, branch.payload.fields[0].name, "__type_ref")) {
                 try writeFieldType(emitter, branch.payload.fields[0], ctx.main_module_name);
             } else {
                 try emitter.write("struct { ");

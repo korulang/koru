@@ -14,11 +14,10 @@
 | done usize
 
 ~proc count_up|zig {
-    var i = start;
-    while (i < end) : (i += 1) {
+    for (start..end) |i| {
         each(i);
     }
-    return .{ .done = i };
+    return .{ .done = end };
 }
 
 ~count_up(start: 0, end: 3)

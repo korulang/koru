@@ -1479,7 +1479,11 @@ pub const AstSerializer = struct {
         }
         self.dedent();
         try self.writeIndent();
-        try self.write("} }");
+        // `.is_wildcard` (bare `*` payload) must survive serialization — otherwise
+        // it round-trips back to false and codegen loses the `anytype` handler.
+        try self.write("}, .is_wildcard = ");
+        try self.write(if (shape.is_wildcard) "true" else "false");
+        try self.write(" }");
     }
 
     fn serializeField(self: *AstSerializer, field: *const ast.Field) !void {

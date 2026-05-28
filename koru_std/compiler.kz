@@ -1432,8 +1432,7 @@ const joinPathAlloc = struct {
 
         // Calculate total length needed
         var total_len: usize = path[0].len;
-        var i: usize = 1;
-        while (i < path.len) : (i += 1) {
+        for (1..path.len) |i| {
             total_len += 1 + path[i].len; // dot + segment
         }
 
@@ -1443,8 +1442,7 @@ const joinPathAlloc = struct {
         @memcpy(result[pos..pos + path[0].len], path[0]);
         pos += path[0].len;
 
-        i = 1;
-        while (i < path.len) : (i += 1) {
+        for (1..path.len) |i| {
             result[pos] = '.';
             pos += 1;
             @memcpy(result[pos..pos + path[i].len], path[i]);
@@ -1583,8 +1581,7 @@ const joinPathAlloc = struct {
             // std.debug.print("    Flow invokes: {s}\n", .{inv_path});
 
             // Check if this invocation is to a comptime event
-            var i: usize = 0;
-            while (i < comptime_count) : (i += 1) {
+            for (0..comptime_count) |i| {
                 if (std.mem.eql(u8, inv_path, comptime_events[i])) {
                     // Found a comptime event invocation!
                     // std.debug.print("  ✓ Found comptime invocation: {s}\n", .{inv_path});

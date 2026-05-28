@@ -278,7 +278,8 @@ fn cloneShape(allocator: std.mem.Allocator, shape: ast.Shape) !ast.Shape {
             .type = try allocator.dupe(u8, field.type),
         };
     }
-    return .{ .fields = fields };
+    // Preserve `is_wildcard` (bare `*` payload) across clones.
+    return .{ .fields = fields, .is_wildcard = shape.is_wildcard };
 }
 
 fn cloneBranch(allocator: std.mem.Allocator, branch: ast.Branch) !ast.Branch {

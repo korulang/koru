@@ -1,0 +1,8 @@
+// PIN: phantom state in a type position must use ANGLE brackets `<state>`.
+// The square-bracket form `[state!]` must be a hard parse error — NOT silently
+// swallowed into the type string with phantom=null (which gives zero obligation
+// checking and false safety). See AST: `*Resource[active!]` → type stays
+// "*Resource[active!]", phantom=null; `*Resource<active!>` → type "*Resource",
+// phantom="active!".
+~event use_sq { r: *Resource[active!] }
+~proc use_sq|zig { _ = r; }

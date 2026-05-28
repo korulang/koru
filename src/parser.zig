@@ -6467,6 +6467,68 @@ pub const Parser = struct {
         return self.parseShape(shape_content.items);
     }
 
+    /// Phantom state in a type position must use ANGLE brackets: `Type<state>`.
+    /// The square-bracket form `Type[state]` is otherwise silently swallowed
+    /// into the type string (phantom stays null → no obligation checking, false
+    /// safety; AST shows `*Resource[active!]` keeps the brackets in `type` and
+    /// reports `phantom: null`). Reject it loudly with a fix hint. No-op unless
+    /// `s` ends with a phantom-shaped `[...]`.
+    fn rejectSquareBracketPhantom(self: *Parser, s: []const u8) !void {
+        if (s.len == 0 or s[s.len - 1] != ']') return;
+        var depth: i32 = 0;
+        var j: usize = s.len - 1;
+        var open: ?usize = null;
+        while (true) : (j -= 1) {
+            if (s[j] == ']') {
+                depth += 1;
+            } else if (s[j] == '[') {
+                depth -= 1;
+                if (depth == 0) {
+                    open = j;
+                    break;
+                }
+            }
+            if (j == 0) break;
+        }
+        const at = open orelse return;
+        if (at == 0) return; // leading `[..]` = slice/array prefix, not phantom
+        const content = s[at + 1 .. s.len - 1];
+        if (content.len == 0) return;
+        // Phantom-shaped content carries a state name (letter) or obligation
+        // marker `!`, distinguishing it from a numeric array size like `[3]`.
+        var looks_phantom = false;
+        for (content) |c| {
+            if (std.ascii.isAlphabetic(c) or c == '!') {
+                looks_phantom = true;
+                break;
+            }
+        }
+        if (!looks_phantom) return;
+        // `self.current` has usually drifted past the declaration by the time a
+        // shape is parsed, so locate the source line that actually contains the
+        // offending `[state]` rather than blaming wherever the cursor landed.
+        const bracket_expr = s[at..]; // e.g. "[active!]"
+        var report_line: usize = self.current + 1;
+        var report_col: usize = 1;
+        for (self.lines, 0..) |line_text, idx| {
+            if (std.mem.indexOf(u8, line_text, bracket_expr)) |col| {
+                report_line = idx + 1;
+                report_col = col + 1;
+                break;
+            }
+        }
+        try self.reporter.addErrorWithHint(
+            .KORU033,
+            report_line,
+            report_col,
+            "invalid phantom-state syntax",
+            .{},
+            "phantom state uses angle brackets — write `{s}<{s}>`",
+            .{ s[0..at], content },
+        );
+        return error.ParseError;
+    }
+
     fn parseBranch(self: *Parser) !ast.Branch {
         const line = self.lines[self.current];
         const trimmed = lexer.trim(line);
@@ -6644,6 +6706,9 @@ pub const Parser = struct {
                     }
                 }
             }
+
+            // Reject the square-bracket phantom form `Type[state]` (must be `Type<state>`).
+            try self.rejectSquareBracketPhantom(type_str);
 
             // Parse cross-module type reference: module.path:TypeName
             // Handle type prefixes like ?*, *, [], []const that come before the module path
@@ -7012,6 +7077,9 @@ pub const Parser = struct {
                         }
                     }
                 }
+
+                // Reject the square-bracket phantom form `Type[state]` (must be `Type<state>`).
+                try self.rejectSquareBracketPhantom(field_type);
             }
 
             // Check for cross-module type reference: module.path:TypeName
