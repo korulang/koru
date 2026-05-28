@@ -1,0 +1,26 @@
+// ============================================================================
+// Test 210_089: MUST_FAIL — explicit label `v: p.q.v` at a call site is
+//                          forbidden because the path puns to `v`.
+//
+// Punning takes the last segment of a dot-separated identifier path as the
+// parameter name. `p.q.v` puns to `v`, so the explicit label `v:` is
+// redundant. Canonical form: `echo(p.q.v)`.
+// ============================================================================
+
+~import "$std/io"
+
+~event echo { v: i32 }
+| out i32
+
+~echo = out v
+
+~event get_box { }
+| got { v: i32 }
+
+~proc get_box|zig {
+    return .{ .got = .{ .v = 7 } };
+}
+
+~get_box()
+| got box |> echo(v: box.v)
+    | out r |> std.io:print.ln("{{ r:d }}")

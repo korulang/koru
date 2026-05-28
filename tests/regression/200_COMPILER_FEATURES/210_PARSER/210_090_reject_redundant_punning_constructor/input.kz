@@ -1,0 +1,19 @@
+// ============================================================================
+// Test 210_090: MUST_FAIL — explicit field label `x: x` in a branch
+//                          constructor is forbidden because punning would
+//                          produce the same field name.
+//
+// Both `{ x: x }` and `{ x: p.x }` are rejected. The canonical forms are
+// `{ x }` and `{ p.x }` respectively — the last segment names the field.
+// ============================================================================
+
+~import "$std/io"
+
+~event make_point { x: i32, y: i32 }
+| point { x: i32, y: i32 }
+
+// Explicit labels `x: x, y: y` are redundant — punning produces the same names.
+~make_point = point { x: x, y: y }
+
+~make_point(x: 10, y: 20)
+| point p |> std.io:print.ln("x={{ p.x:d }}")

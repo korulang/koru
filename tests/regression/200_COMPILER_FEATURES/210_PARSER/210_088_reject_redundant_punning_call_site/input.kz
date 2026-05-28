@@ -1,0 +1,22 @@
+// ============================================================================
+// Test 210_088: MUST_FAIL — explicit label `v: v` at a call site is forbidden
+//                          because punning would produce the same name.
+//
+// The bare identifier `v`, when passed positionally, puns to `v: v` (the last
+// segment of the path names the parameter). Writing the explicit label adds
+// no information and is rejected at parse time. The canonical form is
+// `echo(v)`.
+//
+// Same mechanism, same rule applies to deeper paths: `echo(v: p.q.v)` is
+// rejected because `p.q.v` also puns to `v` — see 210_089.
+// ============================================================================
+
+~import "$std/io"
+
+~event echo { v: i32 }
+| out i32
+
+~echo = out v
+
+~echo(v: v)
+| out r |> std.io:print.ln("{{ r:d }}")

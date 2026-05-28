@@ -106,4 +106,4 @@ const std = @import("std");
 //
 // Self-governing: Only fires when --ccp flag is set AND this module is imported
 ~tap(* -> *)
-| Profile t |> emit_transition(source: t.source, branch: t.branch, destination: t.destination, timestamp_ns: t.timestamp_ns)
+| Profile t |> emit_transition(t.source, t.branch, t.destination, t.timestamp_ns)

@@ -60,6 +60,7 @@ pub const ErrorCode = enum(u16) {
     PARSE002, // Invalid indentation
     PARSE003, // Malformed construct
     PARSE004, // Unbalanced braces
+    PARSE005, // Redundant explicit label where punning would produce the same name
     
     // Type inference errors
     TYPE001, // Branch not found in expected union

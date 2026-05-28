@@ -205,7 +205,16 @@ pub fn extractBracesContent(line: []const u8) ?[]const u8 {
 }
 
 /// Parse arguments in the form (arg1:val1, arg2:val2)
-pub const ArgPair = struct { name: []const u8, value: []const u8 };
+pub const ArgPair = struct {
+    name: []const u8,
+    value: []const u8,
+    /// True when the user wrote an explicit `name: value` colon at the call site.
+    /// False when the argument was punned (`v` shorthand for `v: v`, or
+    /// `p.x` shorthand for `x: p.x`). Used by the parser to reject redundant
+    /// explicit labels — if punning would yield the same name, the explicit
+    /// form is forbidden.
+    had_explicit_label: bool = false,
+};
 
 /// Find the end of a brace-delimited block, handling nested braces
 pub fn findMatchingBrace(text: []const u8, start: usize) ?usize {
@@ -435,7 +444,7 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
                     }
                     
                     const value = try allocator.dupe(u8, value_str);
-                    try args.append(allocator, .{ .name = name, .value = value });
+                    try args.append(allocator, .{ .name = name, .value = value, .had_explicit_label = true });
                 } else {
                     // Shorthand form: extract field name from dotted expression
                     // e.g., r.data.source -> name: "source", value: "r.data.source"
@@ -480,6 +489,42 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
     }
 
     return args.toOwnedSlice(allocator);
+}
+
+/// True when the value, if punned, would produce the same name — meaning the
+/// explicit `name: value` label is redundant. Only fires when an explicit
+/// label was actually written (no false positives on already-punned args).
+///
+/// A value is "punnable" when it's a bare identifier path: dot-separated
+/// identifiers with no operators, parens, brackets, quotes, spaces, or `..`.
+/// The punned name is the segment after the last `.`, or the whole string if
+/// there's no dot. `v: v` → punned name `v` matches → redundant. `v: p.x` →
+/// punned name `x` ≠ `v` → not redundant. `v: 5` → not punnable → not
+/// redundant (must keep the label).
+pub fn isRedundantExplicitLabel(arg: ArgPair) bool {
+    if (!arg.had_explicit_label) return false;
+    if (arg.value.len == 0) return false;
+
+    // Reject anything that isn't a pure dotted-identifier path.
+    for (arg.value) |c| {
+        switch (c) {
+            'a'...'z', 'A'...'Z', '0'...'9', '_', '.' => {},
+            else => return false,
+        }
+    }
+    // Reject `..` (range op) — `0..n` would slip past the per-char check.
+    if (std.mem.indexOf(u8, arg.value, "..") != null) return false;
+    // Reject leading or trailing dot (`.foo` is Zig enum literal; `foo.` is malformed).
+    if (arg.value[0] == '.' or arg.value[arg.value.len - 1] == '.') return false;
+    // Reject leading digit (numeric literals like `0x10`, `42`).
+    if (arg.value[0] >= '0' and arg.value[0] <= '9') return false;
+
+    const punned_name = if (std.mem.lastIndexOfScalar(u8, arg.value, '.')) |dot_idx|
+        arg.value[dot_idx + 1 ..]
+    else
+        arg.value;
+
+    return std.mem.eql(u8, punned_name, arg.name);
 }
 
 /// Check if a line is a pipeline continuation (starts with |>)

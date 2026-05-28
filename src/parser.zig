@@ -447,6 +447,27 @@ pub const Parser = struct {
         }
     }
 
+    /// Rejects `name: value` at a call site when the value, if punned, would
+    /// produce the same name — e.g. `echo(v: v)` or `echo(v: p.x.v)`. The
+    /// punned forms (`echo(v)`, `echo(p.x.v)`) are canonical; the explicit
+    /// label adds nothing and is forbidden.
+    fn checkRedundantPunning(self: *Parser, parsed_args: []const lexer.ArgPair, line: usize) !void {
+        for (parsed_args) |arg| {
+            if (lexer.isRedundantExplicitLabel(arg)) {
+                try self.reporter.addErrorWithHint(
+                    .PARSE005,
+                    line,
+                    1,
+                    "redundant explicit label '{s}:' — the value '{s}' already puns to '{s}'",
+                    .{ arg.name, arg.value, arg.name },
+                    "drop the label: write '{s}' instead of '{s}: {s}'",
+                    .{ arg.value, arg.name, arg.value },
+                );
+                return error.ParseError;
+            }
+        }
+    }
+
     pub fn parse(self: *Parser) !ParseResult {
         // Parse all items in the source file
         // Starting parse
@@ -3556,6 +3577,8 @@ pub const Parser = struct {
                 const parsed_args = try lexer.parseArgs(self.allocator, args_str);
                 defer self.allocator.free(parsed_args);
 
+                try self.checkRedundantPunning(parsed_args, self.current);
+
                 // Transfer ownership of the strings to the AST
                 for (parsed_args) |arg| {
                     // Reject Zig-style struct syntax in parameter values: name: .{ .field = value }
@@ -4622,6 +4645,8 @@ pub const Parser = struct {
             const args_str = trimmed[p .. p + args_end + 1];
             const parsed_args = try lexer.parseArgs(self.allocator, args_str);
             defer self.allocator.free(parsed_args);
+
+            try self.checkRedundantPunning(parsed_args, self.current);
 
             // Transfer ownership of the strings to the AST
             var args_list = try std.ArrayList(ast.Arg).initCapacity(self.allocator, parsed_args.len);
@@ -5861,6 +5886,8 @@ pub const Parser = struct {
                 const parsed_args = try lexer.parseArgs(self.allocator, args_str);
                 defer self.allocator.free(parsed_args);
 
+                try self.checkRedundantPunning(parsed_args, self.current);
+
                 // Transfer ownership to AST
                 var arg_list = try std.ArrayList(ast.Arg).initCapacity(self.allocator, parsed_args.len);
                 defer arg_list.deinit(self.allocator);
@@ -6238,6 +6265,30 @@ pub const Parser = struct {
                     lexer.trim(trimmed[idx + 1 ..])
                 else
                     trimmed; // The whole expression becomes the value
+
+                // Reject redundant explicit labels: `{ x: x }` and `{ x: p.x }`
+                // both pun to `{ x }` / `{ p.x }`. Only fires when the user
+                // wrote an explicit separator and punning would produce the
+                // same field name — purely syntactic, no false positives.
+                if (sep_idx != null) {
+                    const punning_arg = lexer.ArgPair{
+                        .name = field_name,
+                        .value = field_value,
+                        .had_explicit_label = true,
+                    };
+                    if (lexer.isRedundantExplicitLabel(punning_arg)) {
+                        try self.reporter.addErrorWithHint(
+                            .PARSE005,
+                            self.current + 1,
+                            1,
+                            "redundant explicit label '{s}:' — the value '{s}' already puns to '{s}'",
+                            .{ field_name, field_value, field_name },
+                            "drop the label: write '{s}' instead of '{s}: {s}'",
+                            .{ field_value, field_name, field_value },
+                        );
+                        return error.ParseError;
+                    }
+                }
 
                 // Structural validation: reject function calls in branch constructors.
                 // Branch constructors must be pure — no side effects, no function calls.

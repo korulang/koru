@@ -1,0 +1,62 @@
+STATUS: PARSER WORK PENDING / FEATURE UNCERTAIN
+
+This test exercises **compiler annotation syntax on type positions** —
+specifically `source: Source[text]` on event declarations, and (originally)
+the `[type]"path"` source-block annotation on the call site.
+
+## Architectural context
+
+Compiler annotations are a DIFFERENT system from phantom types:
+
+- **Phantom types** (now `<>`) — value-level, runtime-flowing, semantic-check-
+  triggering. Labels flow with values, trigger discharge events, propagate
+  through arithmetic. E.g. `*File<opened!>`, `f32<celsius>`.
+- **Compiler annotations** (kept on `[]`) — declaration-level metadata for
+  the compiler/transforms. NOT runtime-flowing. NOT phantom-checker-relevant.
+  E.g. `[!]` event-default marker, `[T:u32;N:1024]` generic params,
+  `[comptime|transform]` event modifiers, `Source[text]` source-shape hint.
+
+See `docs/COMPILER_ANNOTATIONS.md` for the catalog of current annotation uses.
+
+## Why this test is currently failing
+
+The phantom syntax cutover (`[label]` → `<label>` for phantom types,
+2026-05-29) removed the only parser path that was extracting `[...]` content
+from type strings — that path was doing double duty for both phantoms and
+compiler annotations, conflating the two in storage. Removing it for the
+phantom cutover ALSO removed the only mechanism stripping annotations from
+type strings before Zig emission.
+
+Result: `Source[text]` now flows through to Zig as `Source[text]`, which
+Zig reads as array indexing into the type `Source` and rejects with
+"use of undeclared identifier 'text'".
+
+## Why we're not removing the test yet
+
+Removing it would leave residue in the parser (the source-block syntax
+extraction at `src/parser.zig:2842-2861` is still there) without a test
+exercising it, AND commits us to dropping a feature we might want later.
+
+Compiler annotations on type positions are used rarely today (10+ stdlib
+events use bare `Source`, only this one experiments with `Source[text]`),
+but the annotation system as a whole is real and useful — the language
+just hasn't decided whether to expand or prune that surface.
+
+## The open decision
+
+Two real paths forward, neither urgent:
+
+1. **Build annotation-extraction properly** — add `[]` extraction to the
+   parser, routing to a new AST field (`annotation` separate from `phantom`).
+   Downstream consumers (transform passes that want shape hints) read from
+   the new field. ~30-100 LOC parser work. Test goes green.
+
+2. **Drop the compiler-annotation-on-type-position feature entirely** —
+   remove `src/parser.zig:2842-2861` (source-block syntax), remove this
+   test, accept that bare `Source` is the only supported shape and that
+   `Source[text]` was an experiment that didn't earn its keep.
+
+Lars's current read (2026-05-29): on the fence. The annotation system has
+many legitimate uses (`[!]`, generics, comptime modifiers), but
+annotations on TYPE positions specifically are rare. Wants to defer the
+call rather than commit either way.

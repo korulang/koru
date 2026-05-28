@@ -1,0 +1,4 @@
+error\[PARSE005\]
+redundant explicit label 'x:'
+puns to 'x'
+drop the label

@@ -1,0 +1,41 @@
+// ============================================================================
+// Test 210_091: MUST_RUN — explicit `name: value` form is REQUIRED (and must
+//                         be accepted) when the value cannot pun to the same
+//                         name. Guard against false positives in PARSE005.
+//
+// Cases covered (none should trigger PARSE005):
+//   - Literal value:        echo(v: 5)
+//   - Bare-name mismatch:   echo(v: other)        // last segment != 'v'
+//   - Path mismatch:        echo(v: box.other)    // last segment 'other' != 'v'
+//   - Expression value:     echo(v: 1 + 2)        // has operator at depth 0
+//
+// If any of these are rejected, PARSE005 has started over-firing and the rule
+// has lost calibration. The negative twins live in 210_088/089/090.
+// ============================================================================
+
+~import "$std/io"
+
+~event echo { v: i32 }
+| out i32
+
+~echo = out v
+
+~event get_box { }
+| got { v: i32, other: i32 }
+
+~proc get_box|zig {
+    return .{ .got = .{ .v = 7, .other = 11 } };
+}
+
+// Literal value — cannot pun, label required.
+~echo(v: 5)
+| out r1 |> std.io:print.ln("literal: {{ r1:d }}")
+
+// Expression value — cannot pun, label required.
+~echo(v: 1 + 2)
+| out r2 |> std.io:print.ln("expr: {{ r2:d }}")
+
+// Path mismatch — `box.other` puns to 'other', not 'v', so label required.
+~get_box()
+| got box |> echo(v: box.other)
+    | out r3 |> std.io:print.ln("path mismatch: {{ r3:d }}")

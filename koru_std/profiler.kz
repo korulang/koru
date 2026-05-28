@@ -218,4 +218,4 @@ var profiler_finished: bool = false;  // Prevents write_event from creating new 
 // NOTE: Universal tap runs LAST so it wraps all other tap-inserted calls (like write_footer)
 // TODO: [opaque] prevents infinite recursion (profiler won't observe itself)
 ~[opaque]tap(* -> *)
-| Profile p |> write_event(source: p.source, timestamp_ns: p.timestamp_ns)
+| Profile p |> write_event(p.source, p.timestamp_ns)
