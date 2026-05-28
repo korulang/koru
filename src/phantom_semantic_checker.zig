@@ -905,6 +905,17 @@ pub const PhantomSemanticChecker = struct {
 
         log.debug("[PHANTOM-FLOW]   Found event '{s}', validating continuations\n", .{qualified_name});
 
+        // Validate root invocation args (e.g. bare literals at phantom-required params).
+        // Continuation validation only covers args on nested steps, not the flow head.
+        var root_context = BindingContext.init(self.allocator);
+        defer root_context.deinit();
+        for (flow.invocation.args) |arg| {
+            const arg_valid = try self.validateArgument(arg, event_info.decl, module_name, &root_context, flow.location);
+            if (!arg_valid) {
+                has_errors = true;
+            }
+        }
+
         // For each continuation, validate phantom state flows
         // Pass both: current_module (where flow is defined, for name resolution)
         // and module_name (where event is defined, for phantom qualification)

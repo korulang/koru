@@ -1093,6 +1093,18 @@ const walkFlowForPurity = struct {
             return;
         }
 
+        // Subflow/composed events: walk the implementation body instead of
+        // flagging the outer event.
+        if (emitter_helpers.findImplByPath(all_items, &flow_to_walk.invocation.path)) |found_impl| {
+            switch (found_impl) {
+                .immediate_impl => return,
+                .flow => |impl_flow| {
+                    call(impl_flow, mocks, impure_list, all_items, allocator);
+                    return;
+                },
+            }
+        }
+
         // No mock - check if event/proc is pure
         if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.invocation.path)) |proc| {
             if (!proc.is_pure) {

@@ -523,13 +523,10 @@ const validateMocks = struct {
 
     std_import.debug.print("[TEST] Found {d} transformed flows\n", .{transformed_flows.items.len});
 
-    // SKIP purity walk for now - just emit
-    // TODO: Re-enable after we verify emission works
-    std_import.debug.print("[TEST] SKIPPING purity walk for debugging\n", .{});
-    const impure_events = std_import.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
-    // for (transformed_flows.items) |t_flow| {
-    //     walkFlowForPurity(t_flow, &mock_paths, &impure_events, transformed_program.items, allocator);
-    // }
+    var impure_events = std_import.ArrayList([]const u8).initCapacity(allocator, 8) catch unreachable;
+    for (transformed_flows.items) |t_flow| {
+        walkFlowForPurity(t_flow, &mock_paths, &impure_events, transformed_program.items, allocator);
+    }
     std_import.debug.print("[TEST] Purity walk complete, {d} impure events\n", .{impure_events.items.len});
 
     // Error on impure events without mocks
@@ -624,6 +621,19 @@ const walkFlowForPurity = struct {
         const inv_path = path_buf.items;
 
         if (mocks.get(inv_path)) |_| return;
+
+        // Subflow/composed events: walk the implementation body instead of
+        // flagging the outer event. Tests call process_payment etc.; purity
+        // lives in the leaf proc calls inside the impl.
+        if (emitter_helpers.findImplByPath(all_items, &flow_to_walk.invocation.path)) |found_impl| {
+            switch (found_impl) {
+                .immediate_impl => return,
+                .flow => |impl_flow| {
+                    call(impl_flow, mocks, impure_list, all_items, allocator);
+                    return;
+                },
+            }
+        }
 
         if (emitter_helpers.findProcDeclByPath(all_items, &flow_to_walk.invocation.path)) |proc| {
             if (!proc.is_pure) {
