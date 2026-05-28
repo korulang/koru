@@ -660,7 +660,7 @@ pub const AutoDischargeInserter = struct {
                                                 .KORU030,
                                                 flow.location.line,
                                                 flow.location.column,
-                                                "Resource '{s}' <{s}> was not disposed. Call: {s}",
+                                                "Resource '{s}' <{s}> was not discharged. Call: {s}",
                                                 .{ display_name, display_state, fbs.getWritten() },
                                             );
                                         } else {
@@ -668,7 +668,7 @@ pub const AutoDischargeInserter = struct {
                                                 .KORU030,
                                                 flow.location.line,
                                                 flow.location.column,
-                                                "Resource '{s}' <{s}> was not disposed. Call one of: {s}",
+                                                "Resource '{s}' <{s}> was not discharged. Call one of: {s}",
                                                 .{ display_name, display_state, fbs.getWritten() },
                                             );
                                         }
@@ -677,12 +677,12 @@ pub const AutoDischargeInserter = struct {
                                             .KORU030,
                                             flow.location.line,
                                             flow.location.column,
-                                            "Resource '{s}' with phantom state <{s}> was not disposed at scope exit.",
+                                            "Resource '{s}' with phantom state <{s}> was not discharged at scope exit.",
                                             .{ display_name, display_state },
                                         );
                                     }
                                 } else {
-                                    // Build list of disposal options
+                                    // Build list of discharge options
                                     var options_buf: [512]u8 = undefined;
                                     var fbs = std.io.fixedBufferStream(&options_buf);
                                     for (disposals, 0..) |d, i| {
@@ -698,7 +698,7 @@ pub const AutoDischargeInserter = struct {
                                         .KORU030,
                                         flow.location.line,
                                         flow.location.column,
-                                        "Resource '{s}' <{s}> has multiple disposal options: {s}. Discharge explicitly.",
+                                        "Resource '{s}' <{s}> has multiple discharge options: {s}. Discharge explicitly.",
                                         .{ display_name, display_state, fbs.getWritten() },
                                     );
                                 }
@@ -1048,7 +1048,7 @@ pub const AutoDischargeInserter = struct {
                                                 .KORU030,
                                                 flow.location.line,
                                                 flow.location.column,
-                                                "Resource '{s}' <{s}> was not disposed. Call: {s}",
+                                                "Resource '{s}' <{s}> was not discharged. Call: {s}",
                                                 .{ display_name, display_state, fbs.getWritten() },
                                             );
                                         } else {
@@ -1056,7 +1056,7 @@ pub const AutoDischargeInserter = struct {
                                                 .KORU030,
                                                 flow.location.line,
                                                 flow.location.column,
-                                                "Resource '{s}' <{s}> was not disposed. Call one of: {s}",
+                                                "Resource '{s}' <{s}> was not discharged. Call one of: {s}",
                                                 .{ display_name, display_state, fbs.getWritten() },
                                             );
                                         }
@@ -1065,7 +1065,7 @@ pub const AutoDischargeInserter = struct {
                                             .KORU030,
                                             flow.location.line,
                                             flow.location.column,
-                                            "Resource '{s}' with phantom state <{s}> was not disposed at scope exit.",
+                                            "Resource '{s}' with phantom state <{s}> was not discharged at scope exit.",
                                             .{ display_name, display_state },
                                         );
                                     }
@@ -1084,7 +1084,7 @@ pub const AutoDischargeInserter = struct {
                                         .KORU030,
                                         flow.location.line,
                                         flow.location.column,
-                                        "Resource '{s}' <{s}> has multiple disposal options: {s}. Discharge explicitly.",
+                                        "Resource '{s}' <{s}> has multiple discharge options: {s}. Discharge explicitly.",
                                         .{ display_name, display_state, fbs.getWritten() },
                                     );
                                 }
@@ -1409,7 +1409,7 @@ pub const AutoDischargeInserter = struct {
                                     .KORU030,
                                     flow.location.line,
                                     flow.location.column,
-                                    "Resource '{s}' <{s}> was not disposed. Call: {s}",
+                                    "Resource '{s}' <{s}> was not discharged. Call: {s}",
                                     .{ display_name, display_state, fbs.getWritten() },
                                 );
                             } else {
@@ -1417,7 +1417,7 @@ pub const AutoDischargeInserter = struct {
                                     .KORU030,
                                     flow.location.line,
                                     flow.location.column,
-                                    "Resource '{s}' <{s}> was not disposed. Call one of: {s}",
+                                    "Resource '{s}' <{s}> was not discharged. Call one of: {s}",
                                     .{ display_name, display_state, fbs.getWritten() },
                                 );
                             }
@@ -1426,7 +1426,7 @@ pub const AutoDischargeInserter = struct {
                                 .KORU030,
                                 flow.location.line,
                                 flow.location.column,
-                                "Resource '{s}' with phantom state <{s}> was not disposed.",
+                                "Resource '{s}' with phantom state <{s}> was not discharged.",
                                 .{ display_name, display_state },
                             );
                         }
@@ -1445,7 +1445,7 @@ pub const AutoDischargeInserter = struct {
                             .KORU030,
                             flow.location.line,
                             flow.location.column,
-                            "Resource '{s}' <{s}> has multiple disposal options: {s}. Discharge explicitly.",
+                            "Resource '{s}' <{s}> has multiple discharge options: {s}. Discharge explicitly.",
                             .{ display_name, display_state, fbs.getWritten() },
                         );
                     }
@@ -1454,7 +1454,7 @@ pub const AutoDischargeInserter = struct {
 
                 // Emit warning about auto-discharge insertion (only in warn mode)
                 if (self.warn_mode) {
-                    std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
+                    std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' to discharge '{s}' (state: {s})\n", .{
                         disposal.qualified_name,
                         binding_path,
                         info.phantom_state,
@@ -1544,7 +1544,7 @@ pub const AutoDischargeInserter = struct {
                                                 .KORU032,
                                                 flow.location.line,
                                                 flow.location.column,
-                                                "Cannot dispose outer-scope resource '{s}' inside @scope boundary. Handle outside the scope or escape via branch constructor.",
+                                                "Cannot discharge outer-scope resource '{s}' inside @scope boundary. Handle outside the scope or escape via branch constructor.",
                                                 .{arg.value},
                                             );
                                             return error.ValidationFailed;
@@ -1616,7 +1616,7 @@ pub const AutoDischargeInserter = struct {
                                 .KORU030,
                                 flow.location.line,
                                 flow.location.column,
-                                "Resource '{s}' <{s}> was not disposed. Call: {s}",
+                                "Resource '{s}' <{s}> was not discharged. Call: {s}",
                                 .{ display_name, display_state, fbs.getWritten() },
                             );
                         } else {
@@ -1624,17 +1624,23 @@ pub const AutoDischargeInserter = struct {
                                 .KORU030,
                                 flow.location.line,
                                 flow.location.column,
-                                "Resource '{s}' <{s}> was not disposed. Call one of: {s}",
+                                "Resource '{s}' <{s}> was not discharged. Call one of: {s}",
                                 .{ display_name, display_state, fbs.getWritten() },
                             );
                         }
                     } else {
+                        // Strip trailing `!` from the state literal for the consumer-form suggestion:
+                        // the obligation is on `<unsanitized!>`; the discharger accepts `<!unsanitized>`.
+                        const state_without_bang = if (std.mem.endsWith(u8, display_state, "!"))
+                            display_state[0 .. display_state.len - 1]
+                        else
+                            display_state;
                         try self.reporter.addError(
                             .KORU030,
                             flow.location.line,
                             flow.location.column,
-                            "Resource '{s}' with phantom state <{s}> was not disposed. No event accepts <!{s}>.",
-                            .{ display_name, display_state, display_state },
+                            "Resource '{s}' with phantom state <{s}> was not discharged. No event accepts <!{s}>.",
+                            .{ display_name, display_state, state_without_bang },
                         );
                     }
                 } else {
@@ -1652,7 +1658,7 @@ pub const AutoDischargeInserter = struct {
                         .KORU030,
                         flow.location.line,
                         flow.location.column,
-                        "Resource '{s}' <{s}> has multiple disposal options: {s}. Discharge explicitly.",
+                        "Resource '{s}' <{s}> has multiple discharge options: {s}. Discharge explicitly.",
                         .{ display_name, display_state, fbs.getWritten() },
                     );
                 }
@@ -1661,7 +1667,7 @@ pub const AutoDischargeInserter = struct {
 
             // Emit warning about auto-discharge insertion (only in warn mode)
             if (self.warn_mode) {
-                std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' to dispose '{s}' (state: {s})\n", .{
+                std.debug.print("warning[AUTO-DISCHARGE]: Inserting '{s}' to discharge '{s}' (state: {s})\n", .{
                     disposal.qualified_name,
                     binding_path,
                     info.phantom_state,

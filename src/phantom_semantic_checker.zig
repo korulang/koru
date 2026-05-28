@@ -689,7 +689,7 @@ pub const PhantomSemanticChecker = struct {
         fn markDisposed(self: *BindingContext, name: []const u8) !void {
             const disposed_key = try self.allocator.dupe(u8, name);
             try self.disposed_bindings.put(disposed_key, {});
-            log.debug("[CLEANUP] Marked '{s}' as disposed (poisoned)\n", .{name});
+            log.debug("[CLEANUP] Marked '{s}' as discharged (poisoned)\n", .{name});
         }
 
         /// Check if a binding has been disposed
@@ -2138,7 +2138,7 @@ pub const PhantomSemanticChecker = struct {
                 .KORU030,
                 location.line,
                 location.column,
-                "Use-after-disposal: binding '{s}' was already disposed and cannot be used",
+                "Use-after-discharge: binding '{s}' was already discharged and cannot be used",
                 .{arg.value},
             );
             return false;
