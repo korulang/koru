@@ -52,7 +52,7 @@ const std = @import("std");
 
 const FLOW_SOURCE =
     \\~compute(a: "42", b: "17", op: "add")
-    \\| result r |> print_result(value: r.value)
+    \\| result r |> print_result(r.value)
     \\| error e |> print_result(value: e.message)
 ;
 

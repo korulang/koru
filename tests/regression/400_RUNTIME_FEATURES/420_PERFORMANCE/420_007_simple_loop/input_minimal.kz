@@ -23,4 +23,4 @@ const std = @import("std");
 
 // Loop: count and print each iteration
 ~#loop count(i: 0)
-| next n |> print(i: n.i) |> @loop(i: n.i)
+| next n |> print(n.i) |> @loop(n.i)

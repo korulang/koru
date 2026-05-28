@@ -23,7 +23,7 @@ test "transitive purity analysis" {
         \\
         \\// Syntactically pure proc that calls IMPURE event  
         \\~proc should_not_be_transitively_pure {
-        \\    ~side_effect(data: e.data)
+        \\    ~side_effect(e.data)
         \\    | done |> complete {}
         \\}
         \\

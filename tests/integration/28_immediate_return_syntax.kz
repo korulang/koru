@@ -17,8 +17,8 @@ const std = @import("std");
 | success { name: []const u8, email: []const u8 }
 | failure
 
-~user.fetchComplex = db.lookup(id: id)
-| success s |> found { name: s.name, email: s.email }
+~user.fetchComplex = db.lookup(id)
+| success s |> found { s.name, s.email }
 | failure |> not_found {}
 
 // IMMEDIATE RETURN SYNTAX - Just return a branch directly!

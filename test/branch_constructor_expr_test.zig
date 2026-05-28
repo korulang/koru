@@ -11,7 +11,7 @@ test "parse branch constructor with expressions in proc" {
         \\    const result = ~http.get(url)
         \\    | ok o |> success { 
         \\        data: o.body,
-        \\        status: o.status,
+        \\        o.status,
         \\        length: o.body.len
         \\    }
         \\    | error e |> failure { 

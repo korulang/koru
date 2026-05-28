@@ -24,7 +24,7 @@
 
 // Test nested continuations
 ~file.read (path:"input.txt")
-| success s |> file.print (contents: s.contents)
+| success s |> file.print (s.contents)
   | success |> proc.exit (errno:0) |> _
   | failure e |> proc.exit (errno:e.errno) |> _
 | failure f |> proc.exit (errno:f.errno) |> _

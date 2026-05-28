@@ -29,6 +29,6 @@ const std = @import("std");
 // Captures source event, branch, destination, and runtime timestamp
 // NOTE: Profile uses string-based fields (no enum conversion needed)
 ~tap(* -> *)
-| Profile p |> profiler(source: p.source, branch: p.branch, destination: p.destination, timestamp_ns: p.timestamp_ns)
+| Profile p |> profiler(p.source, p.branch, p.destination, p.timestamp_ns)
 
 ~hello() |> goodbye()

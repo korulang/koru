@@ -82,16 +82,16 @@ var sum9: u64 = 0;
 
 // 10 CONDITIONAL TAPS with `when` clauses
 // These compile to direct branch checks, not callback dispatch!
-~count -> * | next v when v.value % 100 < 10 |> accumulate0(value: v.value)
-~count -> * | next v when v.value % 100 >= 10 and v.value % 100 < 20 |> accumulate1(value: v.value)
-~count -> * | next v when v.value % 100 >= 20 and v.value % 100 < 30 |> accumulate2(value: v.value)
-~count -> * | next v when v.value % 100 >= 30 and v.value % 100 < 40 |> accumulate3(value: v.value)
-~count -> * | next v when v.value % 100 >= 40 and v.value % 100 < 50 |> accumulate4(value: v.value)
-~count -> * | next v when v.value % 100 >= 50 and v.value % 100 < 60 |> accumulate5(value: v.value)
-~count -> * | next v when v.value % 100 >= 60 and v.value % 100 < 70 |> accumulate6(value: v.value)
-~count -> * | next v when v.value % 100 >= 70 and v.value % 100 < 80 |> accumulate7(value: v.value)
-~count -> * | next v when v.value % 100 >= 80 and v.value % 100 < 90 |> accumulate8(value: v.value)
-~count -> * | next v when v.value % 100 >= 90 |> accumulate9(value: v.value)
+~count -> * | next v when v.value % 100 < 10 |> accumulate0(v.value)
+~count -> * | next v when v.value % 100 >= 10 and v.value % 100 < 20 |> accumulate1(v.value)
+~count -> * | next v when v.value % 100 >= 20 and v.value % 100 < 30 |> accumulate2(v.value)
+~count -> * | next v when v.value % 100 >= 30 and v.value % 100 < 40 |> accumulate3(v.value)
+~count -> * | next v when v.value % 100 >= 40 and v.value % 100 < 50 |> accumulate4(v.value)
+~count -> * | next v when v.value % 100 >= 50 and v.value % 100 < 60 |> accumulate5(v.value)
+~count -> * | next v when v.value % 100 >= 60 and v.value % 100 < 70 |> accumulate6(v.value)
+~count -> * | next v when v.value % 100 >= 70 and v.value % 100 < 80 |> accumulate7(v.value)
+~count -> * | next v when v.value % 100 >= 80 and v.value % 100 < 90 |> accumulate8(v.value)
+~count -> * | next v when v.value % 100 >= 90 |> accumulate9(v.value)
 
 ~count -> * | done |> validate()
 

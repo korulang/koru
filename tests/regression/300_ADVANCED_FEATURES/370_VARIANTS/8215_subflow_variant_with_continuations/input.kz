@@ -31,11 +31,11 @@ const std = @import("std");
 }
 
 // Default unvariant arm — passes value through.
-~greet = identity(value: value)
+~greet = identity(value)
 | result r |> final r
 
 // Variant arm — doubles. Same shape as the default arm but |two-tagged.
-~greet|two = double(value: value)
+~greet|two = double(value)
 | result r |> final r
 
 // Register the |two variant.

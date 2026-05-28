@@ -126,7 +126,7 @@ test "end-to-end with deferred events" {
         \\| denied |> log.error (msg: "access denied")
         \\| selected s
         \\  | *s
-        \\    | authenticated a |> session.create (token: a.token)
+        \\    | authenticated a |> session.create (a.token)
         \\    | needs_2fa |> send.otp
     ;
     

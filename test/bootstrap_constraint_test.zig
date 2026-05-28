@@ -15,7 +15,7 @@ test "bootstrap library rejects inline flows in procs" {
         \\    const data = prepare();
         \\    
         \\    // This inline flow should be rejected in bootstrap
-        \\    const result = ~validate(data: data)
+        \\    const result = ~validate(data)
         \\    | valid v |> success { v }
         \\    | invalid |> error {}
         \\    
@@ -48,7 +48,7 @@ test "normal files allow inline flows in any proc" {
         \\    const data = prepare();
         \\    
         \\    // This is fine in normal files
-        \\    const result = ~validate(data: data)
+        \\    const result = ~validate(data)
         \\    | valid v |> success { v }
         \\    | invalid |> error {}
         \\    
@@ -85,9 +85,9 @@ test "user compiler extensions can use inline flows" {
         \\    const ast = e.ast;
         \\    
         \\    // User extensions CAN use all Koru features
-        \\    const analyzed = ~analyze(ast: ast)
+        \\    const analyzed = ~analyze(ast)
         \\    | analyzed a |> continue { ast: a }
-        \\    | failed |> original { ast: ast }
+        \\    | failed |> original { ast }
         \\    
         \\    // Can even have multiple inline flows
         \\    const optimized = ~optimize(ast: analyzed)

@@ -19,4 +19,4 @@ const std = @import("std");
 ~capture(expr: { arr: [3]i32{ 0, 0, 0 } })
 | as acc |> for(0..3)
     | each i |> captured { arr[i]: acc.arr[i] + @as(i32, @intCast(i)) * 10 }
-| captured result |> print_sum(arr: result.arr)
+| captured result |> print_sum(result.arr)

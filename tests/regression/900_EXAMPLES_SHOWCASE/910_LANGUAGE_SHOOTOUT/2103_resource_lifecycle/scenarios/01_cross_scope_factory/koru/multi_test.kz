@@ -31,7 +31,7 @@ const File = struct { handle: i32 };
 ~event create { path: []const u8 }
 | created *File<opened!>
 
-~create = open(path: path)
+~create = open(path)
 | opened f |> created { resource: f.file }
 
 // Main flow: create -> use -> use -> use -> cleanup

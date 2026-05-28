@@ -21,7 +21,7 @@
 const TEST_SOURCE = "~greet(name: \"World\")";
 
 ~std.runtime:get_scope(name: "test")
-| scope s |> std.interpreter:run(source: TEST_SOURCE, dispatcher: s.dispatcher)
+| scope s |> std.interpreter:run(source: TEST_SOURCE, s.dispatcher)
     | result _ |> std.io:print.ln("SUCCESS")
     | exhausted _ |> std.io:print.ln("EXHAUSTED")
     | parse_error _ |> std.io:print.ln("PARSE ERROR")

@@ -35,7 +35,7 @@
 
 // Test: Parent binding 'auth' accessible in nested continuations
 ~user.login(username: "admin")
-| authenticated auth |> data.fetch(user_id: auth.user_id, session: auth.session)
-  | success s |> audit.log(user_id: auth.user_id, action: "data_access", details: s.data) |> _
-  | unauthorized |> audit.log(user_id: auth.user_id, action: "unauthorized_attempt", details: auth.session) |> _
+| authenticated auth |> data.fetch(auth.user_id, auth.session)
+  | success s |> audit.log(auth.user_id, action: "data_access", details: s.data) |> _
+  | unauthorized |> audit.log(auth.user_id, action: "unauthorized_attempt", details: auth.session) |> _
 | failed |> _

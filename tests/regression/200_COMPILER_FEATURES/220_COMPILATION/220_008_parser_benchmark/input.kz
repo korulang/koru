@@ -40,12 +40,12 @@ const SAMPLE =
     \\
     \\// Main authentication flow
     \\~authenticate(username: "admin", password: "secret")
-    \\| authenticated a |> get_user(user_id: a.user_id)
-    \\    | found u |> check_permission(user_id: a.user_id, resource: "/api/data", action: "read")
-    \\        | allowed |> log_access(user_id: a.user_id, resource: "/api/data", action: "read", allowed: true)
-    \\            | logged |> respond_ok(token: a.token)
-    \\        | denied d |> log_access(user_id: a.user_id, resource: "/api/data", action: "read", allowed: false)
-    \\            | logged |> respond_forbidden(reason: d.reason)
+    \\| authenticated a |> get_user(a.user_id)
+    \\    | found u |> check_permission(a.user_id, resource: "/api/data", action: "read")
+    \\        | allowed |> log_access(a.user_id, resource: "/api/data", action: "read", allowed: true)
+    \\            | logged |> respond_ok(a.token)
+    \\        | denied d |> log_access(a.user_id, resource: "/api/data", action: "read", allowed: false)
+    \\            | logged |> respond_forbidden(d.reason)
     \\    | not_found |> respond_error(code: 404, message: "User not found")
     \\| invalid_credentials i |> respond_error(code: 401, message: i.reason)
     \\| account_locked l |> respond_error(code: 423, message: "Account locked")

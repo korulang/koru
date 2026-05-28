@@ -31,14 +31,14 @@ const std = @import("std");
 
 // Custom compiler coordinator that includes GLSL pass
 ~compiler.coordinate =
-    compiler.passes.evaluate_comptime(ast: ast)
-    | evaluated ev |> compiler.check.structure(ast: ev.ast)
-    | valid v |> compiler.passes.compile_glsl(ast: v.ast)
-    | transformed t |> compiler.check.phantom.semantic(ast: t.ast)
-    | valid v2 |> compiler.emit.zig(ast: v2.ast)
+    compiler.passes.evaluate_comptime(ast)
+    | evaluated ev |> compiler.check.structure(ev.ast)
+    | valid v |> compiler.passes.compile_glsl(v.ast)
+    | transformed t |> compiler.check.phantom.semantic(t.ast)
+    | valid v2 |> compiler.emit.zig(v2.ast)
     | emitted em |> coordinated {
-        ast: v2.ast,
-        code: em.code,
+        v2.ast,
+        em.code,
         metrics: "GPU test compiled!"
     }
 

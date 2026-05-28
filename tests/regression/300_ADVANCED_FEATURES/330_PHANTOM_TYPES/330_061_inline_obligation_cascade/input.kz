@@ -73,7 +73,7 @@ const Transaction = struct { conn_handle: i32 };
 | ok c |> begin(conn: c)
     | ok t |> exec(tx: t, sql: "INSERT INTO x VALUES (1)")
         | ok r |> commit(tx: r)
-            | ok conn |> close(conn: conn)
+            | ok conn |> close(conn)
                 | ok |> _
                 | err _ |> _
             | err _ |> _

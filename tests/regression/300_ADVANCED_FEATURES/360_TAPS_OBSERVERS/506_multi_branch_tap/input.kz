@@ -39,9 +39,9 @@ const std = @import("std");
 
 // Multi-branch tap: two handlers for success, one for error
 ~tap(process -> *)
-| success s |> log_success(result: s.result)
-| success s |> audit_success(result: s.result)
-| error e |> log_error(msg: e.msg)
+| success s |> log_success(s.result)
+| success s |> audit_success(s.result)
+| error e |> log_error(e.msg)
 
 // Test with positive value (should trigger BOTH success handlers)
 ~process(value: 5)

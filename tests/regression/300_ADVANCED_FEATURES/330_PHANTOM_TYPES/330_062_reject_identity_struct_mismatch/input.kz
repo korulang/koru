@@ -50,8 +50,8 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 ~connect(host: "localhost")
-| ok c1 |> begin(conn: c1.conn)
-  | ok c2 |> commit(tx: c2.tx)
-    | err msg |> report_err(stage: "commit", msg: msg)
-  | err msg |> report_err(stage: "begin", msg: msg)
-| err msg |> report_err(stage: "connect", msg: msg)
+| ok c1 |> begin(c1.conn)
+  | ok c2 |> commit(c2.tx)
+    | err msg |> report_err(stage: "commit", msg)
+  | err msg |> report_err(stage: "begin", msg)
+| err msg |> report_err(stage: "connect", msg)

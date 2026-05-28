@@ -35,7 +35,7 @@ var sum1: u64 = 0;
 ~proc start|zig { return .{ .ready = .{} }; }
 
 // 1 TAP - fused at compile time
-~count -> * | next v |> accumulate1(value: v.value)
+~count -> * | next v |> accumulate1(v.value)
 
 ~count -> * | done |> validate()
 

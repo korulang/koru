@@ -10,7 +10,7 @@ test "parse when clause in continuation" {
         \\| ok o when o.status == 200 |> success { data: o.body }
         \\| ok o when o.status >= 500 |> retry { after: 5 }
         \\| ok o when o.status >= 400 |> client_error { code: o.status }
-        \\| ok o |> error { status: o.status }
+        \\| ok o |> error { o.status }
         \\| err e |> network_error { msg: e.message }
     ;
     
@@ -76,11 +76,11 @@ test "where clause in proc context" {
 
     const source =
         \\~proc handle_response {
-        \\    ~http.get(url: e.url)
+        \\    ~http.get(e.url)
         \\    | ok o when o.status == 200 |> success { data: o.body }
         \\    | ok o when o.status >= 500 |> retry { after: backoff() }
         \\    | ok o when o.status >= 400 |> client_error { code: o.status }
-        \\    | ok o |> error { status: o.status }
+        \\    | ok o |> error { o.status }
         \\    | err e |> network_error { msg: e.message }
         \\}
     ;
@@ -115,10 +115,10 @@ test "complex when clause expressions" {
     
     const source =
         \\~validate(input: e.data)
-        \\| result r when r.score > 90 && r.valid |> excellent { score: r.score }
-        \\| result r when r.score > 70 && r.score <= 90 |> good { score: r.score }
-        \\| result r when r.score > 50 |> pass { score: r.score }
-        \\| result r |> fail { score: r.score, reason: "too low" }
+        \\| result r when r.score > 90 && r.valid |> excellent { r.score }
+        \\| result r when r.score > 70 && r.score <= 90 |> good { r.score }
+        \\| result r when r.score > 50 |> pass { r.score }
+        \\| result r |> fail { r.score, reason: "too low" }
         \\| error e |> invalid { reason: e.message }
     ;
     

@@ -10,4 +10,4 @@ const std = @import("std");
 ~proc close_file|zig {
 }
 ~open_file()
-| opened o |> close_file(file: o.file)
+| opened o |> close_file(o.file)

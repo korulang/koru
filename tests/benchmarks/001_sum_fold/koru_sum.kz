@@ -38,4 +38,4 @@ const N: i64 = 100_000_000;
 }
 
 ~timed_capture_sum()
-| done r |> print_result(sum: r.sum, time_ms: r.time_ms)
+| done r |> print_result(r.sum, r.time_ms)

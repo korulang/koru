@@ -76,7 +76,7 @@ const MyRing = Ring(u32, 1024);
 // EVENT TAP: Watch ring.dequeue and process each value
 // This is the "consumer" - it observes dequeue events and acts on them
 ~tap(ring.dequeue -> *)
-| value v |> process(data: v.data)
+| value v |> process(v.data)
 
 // Producer: Fill the ring with values
 ~event produce { ring: *Ring(u32, 1024), count: u32 }

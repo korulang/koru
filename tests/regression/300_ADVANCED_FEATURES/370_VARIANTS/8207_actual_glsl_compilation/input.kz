@@ -98,7 +98,7 @@ const std = @import("std");
 
     // COMPILE IT! This will actually run glslangValidator!
     const compile_result = ~gpu_shader(glsl_code: glsl)
-    | compiled c |> result { success: c.success, spv_path: c.spv_path }
+    | compiled c |> result { c.success, c.spv_path }
     | failed e |> result { success: false, spv_path: e };
 
     return compile_result;
@@ -128,4 +128,4 @@ const std = @import("std");
 
 // Actually run the test!
 ~test_shader_compilation()
-| result r |> validate_compilation(success: r.success, spv_path: r.spv_path)
+| result r |> validate_compilation(r.success, r.spv_path)

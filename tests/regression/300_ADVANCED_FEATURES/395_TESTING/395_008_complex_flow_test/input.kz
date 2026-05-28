@@ -42,8 +42,8 @@
 | insufficient_funds
 
 ~process_payment = db.get_user(id: user_id)
-| found u |> validate.amount(amount: amount, balance: u.balance)
-    | valid |> payment.charge(user_id: u.id, amount: amount)
+| found u |> validate.amount(amount, u.balance)
+    | valid |> payment.charge(user_id: u.id, amount)
         | success tx |> success tx
         | failed _ |> insufficient_funds
     | insufficient |> insufficient_funds

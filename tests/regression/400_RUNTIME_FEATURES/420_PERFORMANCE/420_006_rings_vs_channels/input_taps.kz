@@ -62,7 +62,7 @@ var sum: u64 = 0;
 // ============================================================================
 
 // TAP: Observe count, accumulate on "next"
-~count -> * | next v |> accumulate(value: v.value)
+~count -> * | next v |> accumulate(v.value)
 
 // TAP: Observe count completion, validate
 ~count -> * | done |> validate()

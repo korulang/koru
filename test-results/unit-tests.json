@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-05-28T05:08:41.498Z",
+  "timestamp": "2026-05-28T05:48:37.653Z",
   "summary": {
-    "passed": 201,
+    "passed": 200,
     "failed": 0,
-    "skipped": 11,
-    "leaked": 1,
+    "skipped": 12,
+    "leaked": 0,
     "compileErrors": 0,
     "total": 212,
-    "suiteCount": 30,
-    "status": "failure"
+    "suiteCount": 32,
+    "status": "success"
   },
   "suites": [
     {
@@ -113,6 +113,14 @@
       "failed": 0,
       "skipped": 0,
       "total": 19,
+      "status": "success"
+    },
+    {
+      "name": "full_pipeline_tests",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 1,
+      "total": 2,
       "status": "success"
     },
     {
@@ -249,6 +257,14 @@
       "failed": 0,
       "skipped": 1,
       "total": 3,
+      "status": "success"
+    },
+    {
+      "name": "where_clause_tests",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 1,
+      "total": 5,
       "status": "success"
     }
   ]

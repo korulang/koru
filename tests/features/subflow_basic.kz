@@ -13,11 +13,11 @@ const std = @import("std");
 ~event proc.exit { errno: u8 }
 
 // Define a subflow that wraps file reading with error handling
-~read_and_print (path) = file.read (path: path)
-| success s |> file.print (contents: s.contents)
+~read_and_print (path) = file.read (path)
+| success s |> file.print (s.contents)
   | success |> proc.exit (errno: 0) |> _
   | failure |> proc.exit (errno: 1) |> _
-| failure f |> proc.exit (errno: f.errno) |> _
+| failure f |> proc.exit (f.errno) |> _
 
 // Use the subflow
 ~read_and_print ("input.txt")

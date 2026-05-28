@@ -16,6 +16,6 @@
 ~pub event log_unhandled { name: []const u8 }
 
 ~tokenize(source: "x")
-! token t |> consume_token(t: t)
+! token t |> consume_token(t)
 !? Transition _ |> log_unhandled(name: "warn")
-| done n |> end_run(n: n)
+| done n |> end_run(n)

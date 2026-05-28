@@ -16,4 +16,4 @@
 
 // Use it
 ~greet(name: "world")
-| greeted g |> io.println(message: g.message)
+| greeted g |> io.println(g.message)

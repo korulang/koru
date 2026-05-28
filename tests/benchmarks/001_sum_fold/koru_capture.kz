@@ -16,4 +16,4 @@ const N: usize = 100_000_000;  // 100M
 ~capture(init: { sum: @as(i64, 0) })
 | as acc |> for(0..N)
     | each i |> captured { sum: acc.sum + @as(i64, @intCast(i)) + 1 }
-| done result |> print_result(sum: result.sum)
+| done result |> print_result(result.sum)

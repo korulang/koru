@@ -25,6 +25,6 @@
 ~pub event end_run { n: usize }
 
 ~tokenize(source: "x")
-! token t |> consume_token(t: t)
+! token t |> consume_token(t)
 !? |> _
-| done n |> end_run(n: n)
+| done n |> end_run(n)

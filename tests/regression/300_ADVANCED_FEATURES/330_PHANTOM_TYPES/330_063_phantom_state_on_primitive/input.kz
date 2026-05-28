@@ -22,5 +22,5 @@
 ~to_fahrenheit = result c * 9.0 / 5.0 + 32.0
 
 ~read_temp(sensor_id: 1)
-| reading c |> to_fahrenheit(c: c)
+| reading c |> to_fahrenheit(c)
     | result f |> std.io:print.ln("{{ f:f }} F")

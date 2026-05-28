@@ -11,6 +11,6 @@
 ~event handle_key { code: u8 }
 
 ~run()
-| ready t |> poll(t: t.t)
+| ready t |> poll(t.t)
     | key k when k.code == 'q' |> cleanup()
-    | key k |> handle_key(code: k.code)
+    | key k |> handle_key(k.code)

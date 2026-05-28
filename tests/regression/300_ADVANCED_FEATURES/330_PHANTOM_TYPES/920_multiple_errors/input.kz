@@ -22,8 +22,8 @@ pub const File = struct {
     return .{ .done = .{} };
 }
 ~open_file(path: "test1.txt")
-| opened o |> close_file(file: o.file)
+| opened o |> close_file(o.file)
 ~open_file(path: "test2.txt")
-| opened o |> close_file(file: o.file)
+| opened o |> close_file(o.file)
 ~open_file(path: "test3.txt")
-| opened o |> close_file(file: o.file)
+| opened o |> close_file(o.file)

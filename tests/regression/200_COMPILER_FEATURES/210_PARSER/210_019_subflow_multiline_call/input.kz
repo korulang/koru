@@ -49,7 +49,7 @@ const std = @import("std");
 
 ~test_multiline_call = step_a(x: 10)
 | done a |> step_b(
-    a: a,
+    a,
     b: 20,
     c: 30
 )

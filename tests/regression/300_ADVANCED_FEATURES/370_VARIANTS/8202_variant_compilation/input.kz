@@ -141,7 +141,7 @@ const std = @import("std");
 // For this test, we just delegate to default:
 
 ~compiler.coordinate =
-    compiler.coordinate.default(ast: ast)
+    compiler.coordinate.default(ast)
     | coordinated c |> c
 
 // ================================================================

@@ -59,6 +59,6 @@ const entities = [_]Entity{
 }
 
 ~for(&entities)
-| each e |> process_entity(e: e)
+| each e |> process_entity(e)
     | entity _ |> noop()
 | done |> print_done()

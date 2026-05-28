@@ -13,10 +13,10 @@ const std = @import("std");
 ~std.compiler:coordinate =
     std.compiler:coordinate.default(program_ast, allocator)
     | coordinated c |> coordinated {
-        ast: c.ast,
-        code: c.code,
+        c.ast,
+        c.code,
         metrics: std.fmt.allocPrint(allocator, "done in {d}ms", .{}) catch "error"
     }
-    | error e |> error { message: e.message }
+    | error e |> error { e.message }
 
 ~std.io:print.ln("should not compile")

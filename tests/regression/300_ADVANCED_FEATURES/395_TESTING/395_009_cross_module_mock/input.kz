@@ -21,7 +21,7 @@
 | ok usize
 | failed []const u8
 
-~process_config = std.fs:read_lines(path: path)
+~process_config = std.fs:read_lines(path)
 | lines l |> ok l.len
 | failed msg |> failed msg
 

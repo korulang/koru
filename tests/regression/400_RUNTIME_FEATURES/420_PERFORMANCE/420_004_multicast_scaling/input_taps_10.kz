@@ -72,16 +72,16 @@ var sum10: u64 = 0;
 ~proc start|zig { return .{ .ready = .{} }; }
 
 // 10 TAPS - ALL fused at compile time
-~count -> * | next v |> accumulate1(value: v.value)
-~count -> * | next v |> accumulate2(value: v.value)
-~count -> * | next v |> accumulate3(value: v.value)
-~count -> * | next v |> accumulate4(value: v.value)
-~count -> * | next v |> accumulate5(value: v.value)
-~count -> * | next v |> accumulate6(value: v.value)
-~count -> * | next v |> accumulate7(value: v.value)
-~count -> * | next v |> accumulate8(value: v.value)
-~count -> * | next v |> accumulate9(value: v.value)
-~count -> * | next v |> accumulate10(value: v.value)
+~count -> * | next v |> accumulate1(v.value)
+~count -> * | next v |> accumulate2(v.value)
+~count -> * | next v |> accumulate3(v.value)
+~count -> * | next v |> accumulate4(v.value)
+~count -> * | next v |> accumulate5(v.value)
+~count -> * | next v |> accumulate6(v.value)
+~count -> * | next v |> accumulate7(v.value)
+~count -> * | next v |> accumulate8(v.value)
+~count -> * | next v |> accumulate9(v.value)
+~count -> * | next v |> accumulate10(v.value)
 
 ~count -> * | done |> validate()
 

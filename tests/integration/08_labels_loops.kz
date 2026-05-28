@@ -17,4 +17,4 @@
 // The 'done' branch uses _ to explicitly terminate the flow
 ~counter.tick (value: 0) #loop
 | done |> _
-| continue c |> counter.tick (value: c.value) @loop
+| continue c |> counter.tick (c.value) @loop

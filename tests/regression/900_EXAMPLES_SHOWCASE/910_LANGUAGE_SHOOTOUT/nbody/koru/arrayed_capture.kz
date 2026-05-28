@@ -133,6 +133,6 @@ const ZERO_DV = [5][3]f64{
                                     | result f |> captured { dv[i][0]: acc.dv[i][0] - f.fx*f.mj, dv[i][1]: acc.dv[i][1] - f.fy*f.mj, dv[i][2]: acc.dv[i][2] - f.fz*f.mj, dv[j][0]: acc.dv[j][0] + f.fx*f.mi, dv[j][1]: acc.dv[j][1] + f.fy*f.mi, dv[j][2]: acc.dv[j][2] + f.fz*f.mi }
                                 |> _
                             |> _
-                        | captured deltas |> apply(bodies: b[0..], dt: DT, dv: deltas.dv)
+                        | captured deltas |> apply(bodies: b[0..], dt: DT, deltas.dv)
                     |> energy(bodies: b[0..])
                         | e e2 |> print_e(e: e2)

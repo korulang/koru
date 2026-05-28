@@ -39,13 +39,13 @@ var tap_count: u64 = 0;
 }
 
 // Taps: Observe every 5th iteration (5 tap points)
-~count -> * | next n where n.i % 200_000 == 0 |> tap_point(i: n.i) | done |> _
-~count -> * | next n where n.i % 200_001 == 0 |> tap_point(i: n.i) | done |> _
-~count -> * | next n where n.i % 200_002 == 0 |> tap_point(i: n.i) | done |> _
-~count -> * | next n where n.i % 200_003 == 0 |> tap_point(i: n.i) | done |> _
-~count -> * | next n where n.i % 200_004 == 0 |> tap_point(i: n.i) | done |> _
+~count -> * | next n where n.i % 200_000 == 0 |> tap_point(n.i) | done |> _
+~count -> * | next n where n.i % 200_001 == 0 |> tap_point(n.i) | done |> _
+~count -> * | next n where n.i % 200_002 == 0 |> tap_point(n.i) | done |> _
+~count -> * | next n where n.i % 200_003 == 0 |> tap_point(n.i) | done |> _
+~count -> * | next n where n.i % 200_004 == 0 |> tap_point(n.i) | done |> _
 
 // Main loop
 ~#loop count(i: 0)
-| next n |> @loop(i: n.i)
+| next n |> @loop(n.i)
 |> print_result() | done |> _

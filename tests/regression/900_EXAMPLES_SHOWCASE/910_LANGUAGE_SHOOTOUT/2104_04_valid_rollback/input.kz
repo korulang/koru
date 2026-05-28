@@ -16,7 +16,7 @@
             // Decided to rollback instead of commit
             app.db:rollback(tx: r)
             | ok conn |>
-                app.db:close(conn: conn)
+                app.db:close(conn)
                 | ok |> _
                 | err _ |> _
             | err _ |> _

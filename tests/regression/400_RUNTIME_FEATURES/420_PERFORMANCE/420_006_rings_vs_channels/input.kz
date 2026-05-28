@@ -168,12 +168,12 @@ const MESSAGES: u64 = 10_000_000;
 | continue { sum: u64, received: u64 }
 | done u64
 
-~consume_loop = dequeue(ring: ring)
+~consume_loop = dequeue(ring)
 | some msg |> check_if_done(sum: sum + msg.value, received: received + 1)
-    | continue s |> continue { sum: s.sum, received: s.received }
-    | done s |> done { sum: s.sum }
-| none |> yield_then_continue(sum: sum, received: received)
-    | continue s |> continue { sum: s.sum, received: s.received }
+    | continue s |> continue { s.sum, s.received }
+    | done s |> done { s.sum }
+| none |> yield_then_continue(sum, received)
+    | continue s |> continue { s.sum, s.received }
 
 ~event check_if_done { sum: u64, received: u64 }
 | continue { sum: u64, received: u64 }

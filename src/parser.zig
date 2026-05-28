@@ -6279,7 +6279,7 @@ pub const Parser = struct {
                     if (lexer.isRedundantExplicitLabel(punning_arg)) {
                         try self.reporter.addErrorWithHint(
                             .PARSE005,
-                            self.current + 1,
+                            self.current,
                             1,
                             "redundant explicit label '{s}:' — the value '{s}' already puns to '{s}'",
                             .{ field_name, field_value, field_name },

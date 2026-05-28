@@ -242,8 +242,8 @@ test "void event with branch constructor in inline flow should fail" {
         \\}
         \\
         \\~proc test_event|zig {
-        \\    ~helper(input: e.input)
-        \\    | ok o |> result { value: o.value }
+        \\    ~helper(e.input)
+        \\    | ok o |> result { o.value }
         \\}
     ;
 

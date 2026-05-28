@@ -47,4 +47,4 @@ fn getN() usize {
         min_val: if (@as(i64, @intCast(i)) < s.min_val) @as(i64, @intCast(i)) else s.min_val,
         max_val: if (@as(i64, @intCast(i)) > s.max_val) @as(i64, @intCast(i)) else s.max_val
       }
-| done stats |> print_stats(sum: stats.sum, sum_sq: stats.sum_sq, count: stats.count, min_val: stats.min_val, max_val: stats.max_val)
+| done stats |> print_stats(stats.sum, stats.sum_sq, stats.count, stats.min_val, stats.max_val)

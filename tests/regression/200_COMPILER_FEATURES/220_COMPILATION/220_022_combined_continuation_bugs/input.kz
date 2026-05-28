@@ -69,7 +69,7 @@ const allocator = std.heap.c_allocator;
 | ready *Resource<active!>  // "resource" not "r"
 
 // BUG #3: f.r -> resource field name mismatch
-~make_resource = create(id: id)
+~make_resource = create(id)
 | created f |> ready f
 
 // ============================================================

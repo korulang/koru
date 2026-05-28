@@ -23,7 +23,7 @@ const std = @import("std");
 | result i32
 
 // Subflow 1: double calls add_five and passes through the result
-~double = add_five(value: value)
+~double = add_five(value)
 | result r |> result r
 
 // Event that will call the subflow

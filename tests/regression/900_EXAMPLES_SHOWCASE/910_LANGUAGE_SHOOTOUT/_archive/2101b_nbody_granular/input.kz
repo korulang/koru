@@ -133,8 +133,8 @@ const Body = struct {
     | created j |> create_saturn()
         | created sat |> create_uranus()
             | created u |> create_neptune()
-                | created n |> assemble_solar_system(sun: s.sun, jupiter: j.jupiter, saturn: sat.saturn, uranus: u.uranus, neptune: n.neptune)
-                    | assembled a |> initialized { bodies: a.bodies }
+                | created n |> assemble_solar_system(s.sun, j.jupiter, sat.saturn, u.uranus, n.neptune)
+                    | assembled a |> initialized { a.bodies }
 
 // ============================================================================
 // MOMENTUM OFFSET - Granular decomposition
@@ -192,7 +192,7 @@ const Body = struct {
 | computed cx |> calculate_momentum_y(cx.bodies)
     | computed cy |> calculate_momentum_z(cy.bodies)
         | computed cz |> apply_sun_offset(cz.bodies, cx.px, cy.py, cz.pz)
-            | adjusted a |> adjusted { bodies: a.bodies }
+            | adjusted a |> adjusted { a.bodies }
 
 // ============================================================================
 // ENERGY CALCULATION - Ultra granular
@@ -238,10 +238,10 @@ const Body = struct {
 ~event calculate_total_energy { bodies: [5]Body }
 | result { energy: f64, bodies: [5]Body }
 
-~calculate_total_energy = sum_kinetic_energies(bodies: bodies)
-| computed ke |> sum_potential_energies(bodies: ke.bodies)
-    | computed pe |> combine_energies(ke: ke.total_ke, pe: pe.total_pe, bodies: pe.bodies)
-        | computed c |> result { energy: c.total, bodies: c.bodies }
+~calculate_total_energy = sum_kinetic_energies(bodies)
+| computed ke |> sum_potential_energies(ke.bodies)
+    | computed pe |> combine_energies(ke: ke.total_ke, pe: pe.total_pe, pe.bodies)
+        | computed c |> result { energy: c.total, c.bodies }
 
 // ============================================================================
 // GRAVITATIONAL INTERACTIONS - Maximum granularity
@@ -306,7 +306,7 @@ const Body = struct {
 | computed dv |> calculate_distance_scalar(dv.dx, dv.dy, dv.dz)
     | computed ds |> calculate_gravitational_magnitude(ds.distance, dt)
         | computed gm |> update_body_pair_velocities(dv.b1, dv.b2, ds.dx, ds.dy, ds.dz, gm.mag)
-            | updated u |> updated { b1: u.b1, b2: u.b2 }
+            | updated u |> updated { u.b1, u.b2 }
 
 ~event calculate_all_interactions { bodies: [5]Body, dt: f64 }
 | updated { bodies: [5]Body, dt: f64 }
@@ -398,13 +398,13 @@ const Body = struct {
 
 ~parse_args()
 | parsed p |> initialize_system()
-    | initialized init |> offset_momentum(bodies: init.bodies)
-        | adjusted adj |> calculate_total_energy(bodies: adj.bodies)
-            | result r1 |> print_energy(energy: r1.energy, bodies: r1.bodies)
-                | done start |> #sim_loop simulation_step(bodies: start.bodies, i: 0, n: p.n)
-                    | continue cont |> calculate_all_interactions(bodies: cont.bodies, dt: 0.01)
-                        | updated upd |> update_all_positions(bodies: upd.bodies, dt: upd.dt)
-                            | advanced adv |> @sim_loop(bodies: adv.bodies, i: cont.i + 1, n: cont.n)
-                    | done final |> calculate_total_energy(bodies: final.bodies)
-                        | result r2 |> print_energy(energy: r2.energy, bodies: r2.bodies)
+    | initialized init |> offset_momentum(init.bodies)
+        | adjusted adj |> calculate_total_energy(adj.bodies)
+            | result r1 |> print_energy(r1.energy, r1.bodies)
+                | done start |> #sim_loop simulation_step(start.bodies, i: 0, p.n)
+                    | continue cont |> calculate_all_interactions(cont.bodies, dt: 0.01)
+                        | updated upd |> update_all_positions(upd.bodies, upd.dt)
+                            | advanced adv |> @sim_loop(adv.bodies, i: cont.i + 1, cont.n)
+                    | done final |> calculate_total_energy(final.bodies)
+                        | result r2 |> print_energy(r2.energy, r2.bodies)
                             |> _

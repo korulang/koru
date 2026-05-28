@@ -25,7 +25,7 @@ const std = @import("std");
 // Test using the subflow
 ~transform_impl (42)
 | success s |> log.info (msg: s.status)
-| error e |> log.error (code: e.code, message: e.message)
+| error e |> log.error (e.code, e.message)
 
 // Logging events
 ~event log.info { msg: []const u8 }

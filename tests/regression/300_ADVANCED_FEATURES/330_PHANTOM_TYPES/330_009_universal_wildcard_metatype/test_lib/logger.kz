@@ -12,4 +12,4 @@ const std = @import("std");
 // VALID: Universal wildcard (*:*) + metatype (Profile)
 // Profile metatype works on ANY event and ANY branch
 ~tap(*:* -> *)
-| Profile p |> log(source: p.source, branch: p.branch)
+| Profile p |> log(p.source, p.branch)

@@ -13,7 +13,7 @@
 | valid x |> data.transform (input: x.result)
   | done d |> data.validate (value: d.output)  // Returns to outer shape
   | error e |> invalid (reason: e.msg)          // Custom branch return
-| invalid i |> invalid (reason: i.reason)       // Pass through
+| invalid i |> invalid (i.reason)       // Pass through
 
 // Now use the subflow - it should require valid/invalid continuations
 ~validate_and_double (42)

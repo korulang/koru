@@ -10,7 +10,7 @@
 | result { x: i32, y: i32 }
 
 // Explicit field names (always works)
-~data = result { x: x, y: y }
+~data = result { x, y }
 
 // Test it
 ~data(x: 10, y: 20)

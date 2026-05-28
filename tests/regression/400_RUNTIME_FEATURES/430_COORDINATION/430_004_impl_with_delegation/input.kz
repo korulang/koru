@@ -17,8 +17,8 @@
 
 // Override: EXPLICITLY calls process.default, then passes through
 // Note: process.default - not process! No magic, no confusion.
-~process = process.default(name: name) | result r |> result { message: r.message }
+~process = process.default(name) | result r |> result { r.message }
 
 // Test it
 ~process(name: "delegation works!")
-| result r |> io.println(message: r.message)
+| result r |> io.println(r.message)

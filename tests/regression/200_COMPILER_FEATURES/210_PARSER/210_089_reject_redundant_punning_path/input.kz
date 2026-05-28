@@ -15,10 +15,10 @@
 ~echo = out v
 
 ~event get_box { }
-| got { v: i32 }
+| got { v: i32, other: i32 }
 
 ~proc get_box|zig {
-    return .{ .got = .{ .v = 7 } };
+    return .{ .got = .{ .v = 7, .other = 11 } };
 }
 
 ~get_box()

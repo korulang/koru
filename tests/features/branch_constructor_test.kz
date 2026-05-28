@@ -6,13 +6,13 @@
 
 // Test simple branch constructor (field mapping only)
 ~process.data (value: 42)
-| success s |> success { result: s.result }
-| error e |> error { msg: e.msg }
+| success s |> success { s.result }
+| error e |> error { e.msg }
 
 // Test branch constructor in subflow (field mapping only)
 ~map_result (v) = process.data (value: v)
-| success s |> success { result: s.result }
-| error e |> error { msg: e.msg }
+| success s |> success { s.result }
+| error e |> error { e.msg }
 
 // Use the subflow
 ~map_result (100)

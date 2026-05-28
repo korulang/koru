@@ -30,10 +30,10 @@ const File = struct { handle: i32 };
 ~event create { path: []const u8 }
 | created *File<opened!>
 
-~create = open(path: path)
-| opened f |> created { file: f.file }
+~create = open(path)
+| opened f |> created { f.file }
 
 ~create(path: "test.txt")
-| created r |> use(file: r.file) |> use(file: r.file) |> use(file: r.file) |> close(file: r.file)
+| created r |> use(r.file) |> use(r.file) |> use(r.file) |> close(r.file)
 
 pub fn main() void {}

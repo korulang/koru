@@ -11,6 +11,6 @@ const std = @import("std");
 | done i32
 
 ~quadruple =
-    app.base:double(x: x)
+    app.base:double(x)
     | doubled d1 |> app.base:double(x: d1)
         | doubled d2 |> done d2

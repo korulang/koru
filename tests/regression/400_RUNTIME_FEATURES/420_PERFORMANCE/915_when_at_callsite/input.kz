@@ -6,7 +6,7 @@
 const std = @import("std");
 
 ~event produce { value: u32 }
-|> log(result: d.result)
+|> log(d.result)
     |> _
 
 ~produce(value: 10)

@@ -25,7 +25,7 @@
 
 ~std.compiler:analysis = std.compiler:analysis.default(ctx)
 | ctx c |> std.compiler:ast_dump(ctx: c, flag: "post-analysis") |> ctx c
-| failed f |> failed { ctx: f.ctx, message: f.message }
+| failed f |> failed { f.ctx, f.message }
 
 // ============================================================================
 // THE PROGRAM

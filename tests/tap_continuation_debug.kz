@@ -15,5 +15,5 @@
 // Tap with nested continuation
 // Question: Is "done" in tap.continuations[1] or tap.continuations[0].nested[0]?
 ~* -> *
-| value v |> log(data: v.data)
+| value v |> log(v.data)
     | done |> _
