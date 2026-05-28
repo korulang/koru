@@ -41,7 +41,7 @@ test "transform context initialization" {
         .items = try items.toOwnedSlice(allocator),
         .allocator = allocator,
     };
-    defer allocator.free(source_file.items);
+    defer source_file.deinit();
     
     // Create transform context
     var ctx = try transform.TransformContext.init(allocator, &source_file);
@@ -103,7 +103,7 @@ test "visitor pattern - collecting visitor" {
     var items = try std.ArrayList(ast.Item).initCapacity(allocator, 0);
     defer items.deinit(allocator);
     
-    try items.append(allocator, .{ .host_line = .{ .content = "const std = @import(\"std\");"  }});
+    try items.append(allocator, .{ .host_line = .{ .content = try allocator.dupe(u8, "const std = @import(\"std\");") }});
     var event1_segments = try allocator.alloc([]const u8, 1);
     event1_segments[0] = try allocator.dupe(u8, "event1");
     
@@ -159,7 +159,7 @@ test "visitor pattern - collecting visitor" {
         .items = try items.toOwnedSlice(allocator),
         .allocator = allocator,
     };
-    defer allocator.free(source_file.items);
+    defer source_file.deinit();
     
     // Create and run collecting visitor
     var collector = try visitor.CollectingVisitor.init(allocator);
@@ -232,7 +232,11 @@ test "inline small events - detection" {
         .items = try items.toOwnedSlice(allocator),
         .allocator = allocator,
     };
-    defer allocator.free(source_file.items);
+    defer {
+        var flow_item = source_file.items[2];
+        flow_item.deinit(allocator);
+        allocator.free(source_file.items);
+    }
     
     // Run inline transformation
     const inlined_count = try inline_transform.transformAST(allocator, &source_file);
@@ -247,13 +251,13 @@ test "transform context - parent tracking" {
     var items = try std.ArrayList(ast.Item).initCapacity(allocator, 0);
     defer items.deinit(allocator);
     
-    try items.append(allocator, .{ .host_line = .{ .content = "test"  }});
+    try items.append(allocator, .{ .host_line = .{ .content = try allocator.dupe(u8, "test") }});
     
     var source_file = ast.SourceFile{
         .items = try items.toOwnedSlice(allocator),
         .allocator = allocator,
     };
-    defer allocator.free(source_file.items);
+    defer source_file.deinit();
     
     var ctx = try transform.TransformContext.init(allocator, &source_file);
     defer ctx.deinit();
@@ -274,13 +278,13 @@ test "transform context - mark transformed" {
     var items = try std.ArrayList(ast.Item).initCapacity(allocator, 0);
     defer items.deinit(allocator);
     
-    try items.append(allocator, .{ .host_line = .{ .content = "test"  }});
+    try items.append(allocator, .{ .host_line = .{ .content = try allocator.dupe(u8, "test") }});
     
     var source_file = ast.SourceFile{
         .items = try items.toOwnedSlice(allocator),
         .allocator = allocator,
     };
-    defer allocator.free(source_file.items);
+    defer source_file.deinit();
     
     var ctx = try transform.TransformContext.init(allocator, &source_file);
     defer ctx.deinit();

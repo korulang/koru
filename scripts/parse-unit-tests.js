@@ -2,7 +2,7 @@
 /**
  * Koru Unit Test Parser
  *
- * Parses `zig build test` output and extracts per-suite pass/fail counts.
+ * Parses `zig build test --summary all` output and extracts per-suite pass/fail/skip counts.
  * Saves results to test-results/unit-tests.json for inclusion in status reports.
  */
 
@@ -15,67 +15,108 @@ const __dirname = dirname(__filename);
 
 const RESULTS_DIR = join(__dirname, '../test-results');
 
+function parseBuildSummary(content) {
+	const summaryLine = content.match(/Build Summary:[^\n]*/);
+	if (!summaryLine) {
+		return null;
+	}
+
+	const line = summaryLine[0];
+	const testsMatch = line.match(/(\d+)\/(\d+) tests passed/);
+	if (!testsMatch) {
+		return null;
+	}
+
+	const passed = parseInt(testsMatch[1], 10);
+	const total = parseInt(testsMatch[2], 10);
+	const afterTests = line.split('tests passed')[1] ?? '';
+
+	const failedMatch = afterTests.match(/;\s*(\d+) failed/);
+	const skippedMatch = afterTests.match(/;\s*(\d+) skipped/);
+	const leakedMatch = afterTests.match(/;\s*(\d+) leaked/);
+
+	const skipped = skippedMatch ? parseInt(skippedMatch[1], 10) : 0;
+	const leaked = leakedMatch ? parseInt(leakedMatch[1], 10) : 0;
+	const failed = failedMatch
+		? parseInt(failedMatch[1], 10)
+		: Math.max(0, total - passed - skipped);
+
+	return { passed, failed, skipped, leaked, total };
+}
+
 async function parseUnitTests(logPath) {
 	const content = await readFile(logPath, 'utf-8');
 
-	// Use a Map to deduplicate suites by name
 	const suiteMap = new Map();
 	let totalPassed = 0;
 	let totalFailed = 0;
+	let totalSkipped = 0;
+	let totalLeaked = 0;
 	let totalCompileErrors = 0;
+	let totalTests = 0;
 
-	// Parse the Build Summary section at the end
-	// Example: "Build Summary: 22/77 steps succeeded; 29 failed; 91/112 tests passed; 21 failed; 8 leaked"
-	const summaryMatch = content.match(
-		/Build Summary:.*?(\d+)\/(\d+) tests passed(?:; (\d+) failed)?/
-	);
-
-	if (summaryMatch) {
-		totalPassed = parseInt(summaryMatch[1], 10);
-		const totalTests = parseInt(summaryMatch[2], 10);
-		totalFailed = summaryMatch[3] ? parseInt(summaryMatch[3], 10) : totalTests - totalPassed;
+	const summary = parseBuildSummary(content);
+	if (summary) {
+		totalPassed = summary.passed;
+		totalFailed = summary.failed;
+		totalSkipped = summary.skipped;
+		totalLeaked = summary.leaked;
+		totalTests = summary.total;
 	}
 
-	// Parse individual test suite results
-	// Example: "+- run test flow_parser_tests 3/19 passed, 16 failed"
-	// Example: "+- run test lexer_tests 3/4 passed, 1 failed"
-	// Example: "+- run test phantom_checker_integration_tests 2/3 passed, 1 failed"
-	const suitePattern = /\+- run test (\S+)\s+(\d+)\/(\d+) passed(?:, (\d+) failed)?/g;
+	// --summary all format: "+- run test visitor_emitter_tests 9 passed 2 skipped"
+	const summaryAllPattern = /\+- run test (\S+) (\d+) passed(?: (\d+) skipped)?/g;
 	let match;
-
-	while ((match = suitePattern.exec(content)) !== null) {
+	while ((match = summaryAllPattern.exec(content)) !== null) {
 		const name = match[1];
 		const passed = parseInt(match[2], 10);
-		const total = parseInt(match[3], 10);
-		const failed = match[4] ? parseInt(match[4], 10) : total - passed;
+		const skipped = match[3] ? parseInt(match[3], 10) : 0;
+		const total = passed + skipped;
 
-		// Only keep the first occurrence (or update if this has more info)
 		if (!suiteMap.has(name)) {
 			suiteMap.set(name, {
 				name,
 				passed,
-				failed,
+				failed: 0,
+				skipped,
 				total,
-				status: failed > 0 ? 'failure' : 'success'
+				status: 'success'
 			});
 		}
 	}
 
-	// Parse compile failures (transitive failures)
-	// Example: "+- run test tap_collector_tests transitive failure"
-	// Example: "|  +- compile test tap_collector_tests Debug native 3 errors"
-	const compileFailPattern = /\+- compile test (\S+) Debug native (\d+) errors?/g;
+	// Legacy fraction format: "+- run test flow_parser_tests 3/19 passed, 16 failed"
+	const legacySuitePattern = /\+- run test (\S+)\s+(\d+)\/(\d+) passed(?:, (\d+) failed)?/g;
+	while ((match = legacySuitePattern.exec(content)) !== null) {
+		const name = match[1];
+		if (suiteMap.has(name)) continue;
 
+		const passed = parseInt(match[2], 10);
+		const total = parseInt(match[3], 10);
+		const failed = match[4] ? parseInt(match[4], 10) : total - passed;
+
+		suiteMap.set(name, {
+			name,
+			passed,
+			failed,
+			skipped: Math.max(0, total - passed - failed),
+			total,
+			status: failed > 0 ? 'failure' : 'success'
+		});
+	}
+
+	// Compile failures: "+- compile test tap_collector_tests Debug native 3 errors"
+	const compileFailPattern = /\+- compile test (\S+) Debug native (\d+) errors?/g;
 	while ((match = compileFailPattern.exec(content)) !== null) {
 		const name = match[1];
 		const errorCount = parseInt(match[2], 10);
 
-		// Only add if we don't already have this suite
 		if (!suiteMap.has(name)) {
 			suiteMap.set(name, {
 				name,
 				passed: 0,
 				failed: 0,
+				skipped: 0,
 				total: 0,
 				compileErrors: errorCount,
 				status: 'compile_error'
@@ -84,37 +125,47 @@ async function parseUnitTests(logPath) {
 		}
 	}
 
-	// Convert map to sorted array
 	const suites = Array.from(suiteMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+	if (!summary && suites.length > 0) {
+		for (const suite of suites) {
+			totalPassed += suite.passed;
+			totalFailed += suite.failed;
+			totalSkipped += suite.skipped;
+		}
+		totalTests = totalPassed + totalFailed + totalSkipped;
+	}
 
 	const result = {
 		timestamp: new Date().toISOString(),
 		summary: {
 			passed: totalPassed,
 			failed: totalFailed,
+			skipped: totalSkipped,
+			leaked: totalLeaked,
 			compileErrors: totalCompileErrors,
-			total: totalPassed + totalFailed,
+			total: totalTests || totalPassed + totalFailed + totalSkipped,
 			suiteCount: suites.length,
-			status: totalFailed > 0 || totalCompileErrors > 0 ? 'failure' : 'success'
+			status:
+				totalFailed > 0 || totalCompileErrors > 0 || totalLeaked > 0 ? 'failure' : 'success'
 		},
 		suites
 	};
 
-	// Ensure results directory exists
 	await mkdir(RESULTS_DIR, { recursive: true });
 
-	// Write results
 	const outputPath = join(RESULTS_DIR, 'unit-tests.json');
 	await writeFile(outputPath, JSON.stringify(result, null, 2));
 
+	const skipPart = totalSkipped > 0 ? `, ${totalSkipped} skipped` : '';
+	const leakPart = totalLeaked > 0 ? `, ${totalLeaked} leaked` : '';
 	console.log(
-		`✓ Unit test results: ${totalPassed} passed, ${totalFailed} failed, ${totalCompileErrors} compile errors`
+		`✓ Unit test results: ${totalPassed} passed, ${totalFailed} failed${skipPart}${leakPart}, ${totalCompileErrors} compile errors`
 	);
 
 	return result;
 }
 
-// Main
 const logPath = process.argv[2];
 if (!logPath) {
 	console.error('Usage: parse-unit-tests.js <log-file>');

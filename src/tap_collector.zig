@@ -168,6 +168,7 @@ pub const TapCollector = struct {
                 // Wildcard source for output tap doesn't make sense
                 // Output taps observe the OUTPUT of source going TO destination
                 // So we need a specific source
+                self.allocator.free(dest_path);
                 log.debug("Warning: Output tap with wildcard source is unusual\n", .{});
             }
             return;
@@ -181,6 +182,7 @@ pub const TapCollector = struct {
                 try self.addTapToEvent(&self.output_taps, src_path, tap);
             } else {
                 // Input tap with wildcard destination doesn't make sense
+                self.allocator.free(src_path);
                 log.debug("Warning: Input tap with wildcard destination is unusual\n", .{});
             }
             return;
@@ -207,8 +209,9 @@ pub const TapCollector = struct {
         tap: *const ast.EventTap,
     ) !void {
         const result = try map.getOrPut(event_path);
-        if (!result.found_existing) {
-            result.key_ptr.* = try self.allocator.dupe(u8, event_path);
+        if (result.found_existing) {
+            self.allocator.free(event_path);
+        } else {
             result.value_ptr.* = try TapList.initCapacity(self.allocator, 1);
         }
         try result.value_ptr.append(self.allocator, tap);

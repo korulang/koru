@@ -286,7 +286,10 @@ async function saveSnapshot() {
 		console.log(`  Failed: ${failedTests}, TODO: ${todoTests}, Skipped: ${skippedTests}, Broken: ${brokenTests}`);
 		if (unitTests) {
 			const us = unitTests.summary;
-			console.log(`  Unit tests: ${us.passed}/${us.total} passed, ${us.compileErrors} compile errors`);
+			const skipPart = us.skipped > 0 ? `, ${us.skipped} skipped` : '';
+			console.log(
+				`  Unit tests: ${us.passed}/${us.total} passed${skipPart}, ${us.compileErrors} compile errors`
+			);
 		}
 		if (loc) {
 			const parts = Object.entries(loc)

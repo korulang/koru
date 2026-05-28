@@ -683,7 +683,7 @@ pub const ImportDecl = struct {
     pub fn deinit(self: *ImportDecl, allocator: std.mem.Allocator) void {
         allocator.free(self.path);
         if (self.local_name) |n| allocator.free(n);
-        allocator.free(self.module);
+        if (self.module.len > 0) allocator.free(self.module);
     }
 };
 

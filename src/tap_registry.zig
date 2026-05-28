@@ -70,8 +70,14 @@ pub const TapRegistry = struct {
     }
 
     pub fn deinit(self: *TapRegistry) void {
-        // TapEntry fields point to AST data (owned by parser)
-        // Only clean up our data structures
+        for (self.entries.items) |entry| {
+            if (!std.mem.eql(u8, entry.source_pattern, "*")) {
+                self.allocator.free(entry.source_pattern);
+            }
+            if (entry.destination_pattern) |dest| {
+                self.allocator.free(dest);
+            }
+        }
         self.entries.deinit(self.allocator);
         self.referenced_events.deinit();
         self.referenced_branches.deinit();

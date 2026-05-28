@@ -110,7 +110,13 @@ pub const EmitMode = enum {
 /// Check if an item should be filtered out based on emit mode and annotations
 /// Duplicated from visitor_emitter.zig to avoid circular dependency
 pub fn shouldFilter(item_annotations: []const []const u8, module_annotations: []const []const u8, module_path: []const u8, mode: EmitMode) bool {
-    _ = module_path; // No longer needed for compiler_bootstrap special case
+    // Compiler infrastructure is never emitted into user output
+    if (purity_helpers.hasAnnotation(item_annotations, "compiler")) {
+        return true;
+    }
+    if (std.mem.eql(u8, module_path, "compiler_bootstrap")) {
+        return true;
+    }
 
     // Phase annotation semantics:
     // - Module-level [comptime] makes ALL items in the module comptime by default
@@ -1626,6 +1632,16 @@ fn isIdentifierChar(c: u8) bool {
         (c >= 'A' and c <= 'Z') or
         (c >= '0' and c <= '9') or
         c == '_';
+}
+
+fn isSimpleIdentifier(s: []const u8) bool {
+    if (s.len == 0) return false;
+    const c0 = s[0];
+    if (!((c0 >= 'a' and c0 <= 'z') or (c0 >= 'A' and c0 <= 'Z') or c0 == '_')) return false;
+    for (s[1..]) |c| {
+        if (!isIdentifierChar(c)) return false;
+    }
+    return true;
 }
 
 // Branch group for when-clause emission
@@ -4150,7 +4166,8 @@ fn emitInvocation(
             // e.g., for ~double(n: 5) with ~double = result { n * 2 }
             // we need: const n = 5;
             // Skip if:
-            //   - arg.name == arg.value AND it's not a positional arg (already in scope, would shadow)
+            //   - pass-through: param name equals a simple identifier value already in scope
+            //     (echo(v: v), echo(v)) — rebinding inside the blk shadows continuation bindings
             //   - arg.name is not referenced in the immediate expression (avoid shadowing outer scope)
             for (invocation.args, 0..) |arg, arg_idx| {
                 // Resolve actual parameter name for positional args
@@ -4166,6 +4183,12 @@ fn emitInvocation(
                     // No event decl or out of bounds - skip this arg (can't resolve)
                     continue;
                 } else arg.name;
+
+                // Pass-through from an outer binding — use the in-scope name directly.
+                const trimmed_value = std.mem.trim(u8, arg.value, " \t");
+                if (isSimpleIdentifier(trimmed_value) and std.mem.eql(u8, param_name, trimmed_value)) {
+                    continue;
+                }
 
                 // Check if this parameter is actually used in the immediate expression
                 // If not, skip it to avoid shadowing outer scope variables

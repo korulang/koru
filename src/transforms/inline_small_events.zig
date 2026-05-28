@@ -94,6 +94,7 @@ pub const InlineSmallEventsTransform = struct {
                 },
                 .proc_decl => |*proc| {
                     const path_str = try localPathToString(self.allocator, proc.path.segments);
+                    defer self.allocator.free(path_str);
                     const path_copy = try self.allocator.dupe(u8, path_str);
                     const body_copy = try self.allocator.dupe(u8, proc.body);
                     
@@ -109,6 +110,7 @@ pub const InlineSmallEventsTransform = struct {
         for (flow_indices.items) |flow_index| {
             const flow = &self.context.current_ast.items[flow_index].flow;
             const path_str = try localPathToString(self.allocator, flow.invocation.path.segments);
+            defer self.allocator.free(path_str);
             
             if (proc_map.get(path_str)) |proc_data| {
                 std.debug.print("DEBUG: Retrieved proc {s} with body len={}\n", .{path_str, proc_data.body.len});

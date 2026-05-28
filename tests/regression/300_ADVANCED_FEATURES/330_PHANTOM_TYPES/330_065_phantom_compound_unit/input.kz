@@ -1,0 +1,30 @@
+// Test: compound phantom labels carry the result of dimensional arithmetic.
+//
+// `i32[meter]` divided by `i32[second]` returns `i32[meter/second]`. The
+// phantom checker doesn't derive that relationship — the author declares it
+// in the converter event's signature. The `/` in the label is just opaque
+// characters; what makes it meaningful is that a producer event has it as
+// an output and that producer's input/output declarations match physical
+// units.
+
+~import "$std/io"
+
+~event read_distance { trip_id: u8 }
+| traveled i32[meter]
+
+~read_distance = traveled 100
+
+~event read_time { trip_id: u8 }
+| elapsed i32[second]
+
+~read_time = elapsed 4
+
+~event compute_velocity { d: i32[meter], t: i32[second] }
+| result i32[meter/second]
+
+~compute_velocity = result d / t
+
+~read_distance(trip_id: 1)
+| traveled m |> read_time(trip_id: 1)
+    | elapsed s |> compute_velocity(d: m, t: s)
+        | result v |> std.io:print.ln("{{ v:d }} m/s")

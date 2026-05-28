@@ -174,6 +174,7 @@ pub const PurityChecker = struct {
 
                     // Check if all called events are transitively pure
                     const proc_name = try self.pathToString(proc.path);
+                    defer self.allocator.free(proc_name);
                     if (self.call_graph.get(proc_name)) |call_info| {
                         var all_calls_pure = true;
 
@@ -281,6 +282,7 @@ pub const PurityChecker = struct {
             switch (item.*) {
                 .proc_decl => |*proc| {
                     const proc_name = try self.pathToString(proc.path);
+                    defer self.allocator.free(proc_name);
 
                     if (std.mem.eql(u8, proc_name, event_name)) {
                         found_any_proc.* = true;

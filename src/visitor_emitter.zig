@@ -948,6 +948,12 @@ pub const VisitorEmitter = struct {
     fn visitItem(self: *VisitorEmitter, item: *const ast.Item, module_annotations: []const []const u8, items_to_search: []const ast.Item) !void {
         switch (item.*) {
             .event_decl => |*event| {
+                // Compiler infrastructure and phase annotations apply to all events,
+                // including those with comptime parameters (ProgramAST, Source, etc.)
+                if (shouldFilter(event.annotations, module_annotations, event.module, self.emit_mode)) {
+                    return;
+                }
+
                 // Check if this event has comptime parameters (Source/Expression/Program)
                 // Events with these parameters are implicitly comptime, regardless of annotations
                 var has_comptime_params = false;
@@ -960,19 +966,9 @@ pub const VisitorEmitter = struct {
                     }
                 }
 
-                // Events with comptime params are implicitly comptime regardless of annotations
-                // Filter based on emit mode
-                if (!has_comptime_params) {
-                    // Normal filtering based on annotations
-                    if (shouldFilter(event.annotations, module_annotations, event.module, self.emit_mode)) {
-                        return;
-                    }
-                } else {
-                    // Event has comptime params - treat as implicitly comptime
-                    // In runtime_only mode, skip it; in comptime_only mode, emit it
-                    if (self.emit_mode == .runtime_only) {
-                        return;
-                    }
+                // Events with comptime params are implicitly comptime
+                if (has_comptime_params and self.emit_mode == .runtime_only) {
+                    return;
                 }
 
                 try self.emitEventDecl(event, items_to_search);

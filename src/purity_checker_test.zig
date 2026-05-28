@@ -42,10 +42,10 @@ test "proc with pure annotation is marked pure" {
 
     const source =
         \\~event add { x: i32 }
-        \\| done { result: i32 }
+        \\| done i32
         \\
         \\~[pure]proc add {
-        \\    return .{ .done = .{ .result = x * 2 } };
+        \\    return .{ .done = x * 2 };
         \\}
     ;
 
@@ -95,11 +95,11 @@ test "pure proc calling no events is transitively pure" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~event double { x: i32 }
-        \\| done { result: i32 }
+        \\~event compute { x: i32 }
+        \\| result i32
         \\
-        \\~[pure]proc double {
-        \\    return .{ .done = .{ .result = x * 2 } };
+        \\~[pure]proc compute {
+        \\    return .{ .result = x * 2 };
         \\}
     ;
 
@@ -114,8 +114,8 @@ test "pure proc calling no events is transitively pure" {
     defer checker.deinit();
     try checker.check(&parse_result.source_file);
 
-    const proc = findProc(&parse_result.source_file, "double") orelse return error.ProcNotFound;
-    const event = findEvent(&parse_result.source_file, "double") orelse return error.EventNotFound;
+    const proc = findProc(&parse_result.source_file, "compute") orelse return error.ProcNotFound;
+    const event = findEvent(&parse_result.source_file, "compute") orelse return error.EventNotFound;
 
     // Proc should be marked transitively pure (calls nothing)
     try std.testing.expect(proc.is_pure == true);

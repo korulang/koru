@@ -254,6 +254,9 @@ pub const Parser = struct {
     // Parse mode: false = lenient (continue past errors), true = fail-fast (stop at first error)
     fail_fast: bool,
 
+    // Set true when parse() succeeds and registry ownership moves to ParseResult
+    registry_transferred: bool,
+
     // Compiler flags for conditional compilation (e.g., ~[profile]import)
     compiler_flags: []const []const u8,
 
@@ -375,6 +378,7 @@ pub const Parser = struct {
             .module_name = module_name,
             .inline_flow_counter = 0, // Global counter across all procs
             .fail_fast = false, // Default to lenient mode (continue past errors)
+            .registry_transferred = false,
             .compiler_flags = compiler_flags, // Flags for conditional imports
             .resolver = resolver, // Module resolver for import paths
         };
@@ -388,7 +392,9 @@ pub const Parser = struct {
 
         // Free subflow names
         // Clean shutdown
-        // Note: registry ownership is transferred to ParseResult, so we don't deinit it here
+        if (!self.registry_transferred) {
+            self.registry.deinit();
+        }
     }
 
     /// Create an error node for lenient parsing mode
@@ -767,6 +773,7 @@ pub const Parser = struct {
             }
         }
 
+        self.registry_transferred = true;
         return ParseResult{
             .source_file = ast.Program{
                 .items = try items.toOwnedSlice(self.allocator),
@@ -1199,7 +1206,8 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
-        const path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
+        var path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
+        errdefer path.deinit(self.allocator);
         log_debug("PARSER parseEventDeclWithAnnotations: Just parsed event path: module={s} segments=", .{if (path.module_qualifier) |m| m else "null"});
         for (path.segments) |s| log_debug("{s}.", .{s});
         log_debug("\n", .{});
@@ -1208,7 +1216,8 @@ pub const Parser = struct {
             trimmed_after_event[idx..]
         else
             "";
-        const input = try self.parseEventInputShape(shape_source, event_line_index);
+        var input = try self.parseEventInputShape(shape_source, event_line_index);
+        errdefer input.deinit(self.allocator);
 
         // Parse branches (both same-line and continuation lines)
         var branches = try std.ArrayList(ast.Branch).initCapacity(self.allocator, 8);
@@ -1615,13 +1624,15 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
-        const path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
+        var path = try lexer.parseQualifiedPath(self.allocator, parsed_path_str, ast);
+        errdefer path.deinit(self.allocator);
 
         const shape_source = if (brace_idx_opt) |idx|
             trimmed_path_start[idx..]
         else
             "";
-        const input = try self.parseEventInputShape(shape_source, event_line_index);
+        var input = try self.parseEventInputShape(shape_source, event_line_index);
+        errdefer input.deinit(self.allocator);
 
         // Parse branches (continuation lines starting with |)
         var branches = try std.ArrayList(ast.Branch).initCapacity(self.allocator, 8);
@@ -1790,13 +1801,16 @@ pub const Parser = struct {
             }
         }
 
-        const path = try lexer.parseQualifiedPath(self.allocator, path_for_parsing, ast);
+        var path = try lexer.parseQualifiedPath(self.allocator, path_for_parsing, ast);
+        errdefer path.deinit(self.allocator);
 
         // Proc bodies are always host language in braces
         // Capture the body's start line BEFORE extractProcBody advances self.current,
         // so inline-flow rejection can point at the right source location.
         const body_start_line = self.current;
+        var raw_body_owned = true;
         const raw_body = try self.extractProcBody(after_proc[delimiter_idx..]);
+        errdefer if (raw_body_owned) self.allocator.free(raw_body);
 
         // Check if this proc has the [raw] annotation - if so, skip inline flow extraction
         var has_raw_annotation = false;
@@ -1808,10 +1822,15 @@ pub const Parser = struct {
         }
 
         // Extract inline flows and get modified body (unless [raw] annotation is present)
-        const extraction_result = if (has_raw_annotation)
-            FlowExtractionResult{ .flows = &.{}, .modified_body = raw_body }
-        else
-            try self.extractInlineFlows(raw_body, path, body_start_line);
+        const extraction_result = if (has_raw_annotation) blk: {
+            raw_body_owned = false;
+            break :blk FlowExtractionResult{ .flows = &.{}, .modified_body = raw_body };
+        } else blk: {
+            const result = try self.extractInlineFlows(raw_body, path, body_start_line);
+            self.allocator.free(raw_body);
+            raw_body_owned = false;
+            break :blk result;
+        };
 
         // Copy annotations
         var annotations_copy = try self.allocator.alloc([]const u8, annotations.len);
@@ -1918,13 +1937,16 @@ pub const Parser = struct {
             }
         }
 
-        const path = try lexer.parseQualifiedPath(self.allocator, path_for_parsing, ast);
+        var path = try lexer.parseQualifiedPath(self.allocator, path_for_parsing, ast);
+        errdefer path.deinit(self.allocator);
 
         // Extract the body (balanced braces).
         // Capture the body's start line BEFORE extractProcBody advances self.current,
         // so inline-flow rejection can point at the right source location.
         const body_start_line = self.current;
+        var raw_body_owned = true;
         const raw_body = try self.extractProcBody(path_start[brace_idx..]);
+        errdefer if (raw_body_owned) self.allocator.free(raw_body);
 
         // Check if this proc has the [raw] annotation - if so, skip inline flow extraction
         var has_raw_annotation = false;
@@ -1936,10 +1958,15 @@ pub const Parser = struct {
         }
 
         // Extract inline flows and get modified body (unless [raw] annotation is present)
-        const extraction_result = if (has_raw_annotation)
-            FlowExtractionResult{ .flows = &.{}, .modified_body = raw_body }
-        else
-            try self.extractInlineFlows(raw_body, path, body_start_line);
+        const extraction_result = if (has_raw_annotation) blk: {
+            raw_body_owned = false;
+            break :blk FlowExtractionResult{ .flows = &.{}, .modified_body = raw_body };
+        } else blk: {
+            const result = try self.extractInlineFlows(raw_body, path, body_start_line);
+            self.allocator.free(raw_body);
+            raw_body_owned = false;
+            break :blk result;
+        };
 
         // Debug output for flow extraction
         const path_debug = try self.pathToString(path);
@@ -2836,6 +2863,7 @@ pub const Parser = struct {
             // Extract invocation string (before the [)
             const invocation_str = lexer.trim(trimmed_after[0..bracket_start]);
             invocation = try self.parseEventInvocation(invocation_str);
+            errdefer invocation.deinit(self.allocator);
 
             // Read the file content
             const file_content = self.readSourceFile(file_path) catch |err| {
@@ -2892,6 +2920,7 @@ pub const Parser = struct {
                 defer self.allocator.free(tail_with_brace);
 
                 invocation = try self.parseEventInvocation(head_str);
+                errdefer invocation.deinit(self.allocator);
 
                 const tail_cont = try self.parsePipelineContinuationBase(
                     tail_with_brace,
@@ -2904,6 +2933,7 @@ pub const Parser = struct {
                 continuations = try cont_list.toOwnedSlice(self.allocator);
             } else {
                 invocation = try self.parseEventInvocation(invocation_str);
+                errdefer invocation.deinit(self.allocator);
 
                 // Look up the event to determine if it expects Source
                 const path_str = try self.pathToString(invocation.path);
@@ -2926,6 +2956,7 @@ pub const Parser = struct {
                         uses_implicit_source = true;
                         const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), null, false);
                         implicit_source_text = result.source;
+                        errdefer self.allocator.free(implicit_source_text.?);
                         implicit_source_phantom_type = result.phantom_type;
                         continuations = result.continuations;
                     } else {
@@ -2940,6 +2971,7 @@ pub const Parser = struct {
                     uses_implicit_source = true;
                     const result = try self.parseImplicitSourceBlock(lexer.getIndent(line), null, false);
                     implicit_source_text = result.source;
+                    errdefer self.allocator.free(implicit_source_text.?);
                     implicit_source_phantom_type = result.phantom_type;
                     continuations = result.continuations;
                 }
@@ -2949,6 +2981,7 @@ pub const Parser = struct {
             // Note: invocations ending with { are always caught by has_implicit_flow_brace
             // above, so parseEventInvocation is the only path here.
             invocation = try self.parseEventInvocation(remaining);
+            errdefer invocation.deinit(self.allocator);
 
             // Check for invalid inline branch continuations: ~event() | branch |> _
             // Branch continuations must be on a new line - only void chaining (|>) is allowed inline
@@ -3072,6 +3105,7 @@ pub const Parser = struct {
                 // Add source parameter with default name "source"
                 final_invocation = try self.createImplicitSourceInvocationDefault(invocation, implicit_source_text.?, implicit_source_phantom_type);
             }
+            self.allocator.free(implicit_source_text.?);
         } else if (self.registry.getEventType(path_str)) |event_type| {
             if (event_type.is_implicit_flow) {
                 // Regular syntax - continuations become flow parameter
@@ -3083,6 +3117,17 @@ pub const Parser = struct {
         var flow_annotations = try self.allocator.alloc([]const u8, annotations.len);
         for (annotations, 0..) |ann, i| {
             flow_annotations[i] = try self.allocator.dupe(u8, ann);
+        }
+
+        // createImplicit* shallow-copies args into a new slice; drop the orphaned local slice
+        // (and any variant not carried over) without freeing shared arg payloads.
+        if (final_invocation.args.ptr != invocation.args.ptr and invocation.args.len > 0) {
+            self.allocator.free(@constCast(invocation.args));
+        }
+        if (invocation.variant) |v| {
+            if (final_invocation.variant == null or !std.mem.eql(u8, final_invocation.variant.?, v)) {
+                self.allocator.free(v);
+            }
         }
 
         return ast.Flow{
@@ -3423,7 +3468,8 @@ pub const Parser = struct {
             // Parse the base invocation (before the brace) via the normal path so that
             // expr-remapping, expression_value capture, and all other arg processing
             // happens correctly. before_brace has no { so this won't recurse.
-            const base_invocation = try self.parseEventInvocation(before_brace);
+            var base_invocation = try self.parseEventInvocation(before_brace);
+            errdefer base_invocation.deinit(self.allocator);
 
             // Build path string for registry lookup
             const path_str = try self.pathToString(base_invocation.path);
@@ -3432,8 +3478,11 @@ pub const Parser = struct {
             // Look up event type
             if (self.registry.getEventType(path_str)) |event_type| {
                 // Create invocation with implicit Source parameter (no phantom type)
-                return try self.createImplicitSourceInvocation(base_invocation, source_text, null, // No phantom type for bare source blocks
-                    event_type);
+                const result = try self.createImplicitSourceInvocation(base_invocation, source_text, null, event_type);
+                if (base_invocation.args.len > 0) {
+                    self.allocator.free(@constCast(base_invocation.args));
+                }
+                return result;
             } else {
                 // Event not found in registry - create source arg manually
                 var args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, base_invocation.args.len + 1);
@@ -3452,9 +3501,13 @@ pub const Parser = struct {
                     .value = try self.allocator.dupe(u8, source_text),
                     .source_value = source_obj,
                 });
+                if (base_invocation.args.len > 0) {
+                    self.allocator.free(@constCast(base_invocation.args));
+                }
                 return ast.Invocation{
                     .path = base_invocation.path,
                     .args = try args.toOwnedSlice(self.allocator),
+                    .variant = base_invocation.variant,
                 };
             }
         }
@@ -3481,8 +3534,10 @@ pub const Parser = struct {
                 variant = try self.allocator.dupe(u8, variant_str);
             }
         }
+        errdefer if (variant) |v| self.allocator.free(v);
 
-        const parsed_path = try lexer.parseQualifiedPath(self.allocator, path_str, ast);
+        var parsed_path = try lexer.parseQualifiedPath(self.allocator, path_str, ast);
+        errdefer parsed_path.deinit(self.allocator);
 
         // Parse arguments if present
         var args = try std.ArrayList(ast.Arg).initCapacity(self.allocator, 8);
@@ -4796,6 +4851,7 @@ pub const Parser = struct {
         }
 
         const owned_branch = try self.allocator.dupe(u8, branch_name);
+        errdefer self.allocator.free(owned_branch);
 
         // Check for binding (with optional annotations like r[mutable])
         var binding: ?[]const u8 = null;
@@ -5450,6 +5506,7 @@ pub const Parser = struct {
                 } else {
                     final_invocation = try self.createImplicitSourceInvocationDefault(temp_invocation, result.source, result.phantom_type);
                 }
+                self.allocator.free(result.source);
 
                 // Create the step and continuation
                 const step = ast.Step{ .invocation = final_invocation };
@@ -6575,23 +6632,23 @@ pub const Parser = struct {
             if (module_colon_idx) |colon_idx| {
                 // Extract module path before the colon
                 module_path = try self.allocator.dupe(u8, type_str[0..colon_idx]);
-                // Everything after colon is the type name, with prefix restored
                 const base_type = type_str[colon_idx + 1 ..];
                 if (type_prefix.len > 0) {
                     actual_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, base_type });
                 } else {
-                    actual_type = base_type;
+                    actual_type = try self.allocator.dupe(u8, base_type);
                 }
             } else if (type_prefix.len > 0) {
-                // No colon but had a prefix - restore it
                 actual_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, type_str });
+            } else {
+                actual_type = try self.allocator.dupe(u8, type_str);
             }
 
             // Create identity field with __type_ref convention
             var fields = try self.allocator.alloc(ast.Field, 1);
             fields[0] = ast.Field{
                 .name = try self.allocator.dupe(u8, "__type_ref"),
-                .type = try self.allocator.dupe(u8, actual_type),
+                .type = actual_type,
                 .module_path = module_path,
                 .phantom = phantom,
             };
@@ -6624,7 +6681,8 @@ pub const Parser = struct {
 
         // Parse the payload shape (might be multi-line)
         // Note: parseBranchPayloadShape will advance self.current if multi-line
-        const payload = try self.parseBranchPayloadShape(branch_start);
+        var payload = try self.parseBranchPayloadShape(branch_start);
+        errdefer payload.deinit(self.allocator);
 
         // Validate: braces must contain 2+ fields (no empty braces, no single-field braces)
         // Empty braces {} are meaningless - use void events or identity syntax instead
@@ -6945,7 +7003,6 @@ pub const Parser = struct {
             // Check for cross-module type reference: module.path:TypeName
             // Handle type prefixes like ?*, *, [], []const that come before the module path
             var module_path: ?[]const u8 = null;
-            var actual_type = field_type;
             var type_prefix: []const u8 = "";
 
             // Strip type prefix before looking for module colon
@@ -6967,25 +7024,26 @@ pub const Parser = struct {
                 return error.ParseError;
             }
 
-            // Parse cross-module type reference
-            if (std.mem.indexOfScalar(u8, field_type, ':')) |module_colon_idx| {
-                // Extract module path before the colon (now without prefix)
-                module_path = try self.allocator.dupe(u8, field_type[0..module_colon_idx]);
-                // Everything after colon is the type name, with prefix restored
-                const base_type = field_type[module_colon_idx + 1 ..];
-                if (type_prefix.len > 0) {
-                    actual_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, base_type });
-                } else {
-                    actual_type = base_type;
+            // Parse cross-module type reference and build owned type string
+            const owned_type: []const u8 = blk: {
+                if (std.mem.indexOfScalar(u8, field_type, ':')) |module_colon_idx| {
+                    module_path = try self.allocator.dupe(u8, field_type[0..module_colon_idx]);
+                    const base_type = field_type[module_colon_idx + 1 ..];
+                    if (type_prefix.len > 0) {
+                        break :blk try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, base_type });
+                    } else {
+                        break :blk try self.allocator.dupe(u8, base_type);
+                    }
                 }
-            } else if (type_prefix.len > 0) {
-                // No colon but had a prefix - restore it
-                actual_type = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, field_type });
-            }
+                if (type_prefix.len > 0) {
+                    break :blk try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ type_prefix, field_type });
+                }
+                break :blk try self.allocator.dupe(u8, field_type);
+            };
 
             const field = ast.Field{
                 .name = try self.allocator.dupe(u8, field_name),
-                .type = try self.allocator.dupe(u8, actual_type),
+                .type = owned_type,
                 .module_path = module_path,
                 .phantom = phantom,
                 .is_source = is_source,
@@ -7220,7 +7278,7 @@ pub const Parser = struct {
 
         return ast.ImportDecl{
             .path = try self.allocator.dupe(u8, path),
-            .local_name = try self.allocator.dupe(u8, final_name),
+            .local_name = final_name,
             .location = self.getCurrentLocation(),
             .module = try self.allocator.dupe(u8, self.module_name),
         };
@@ -7537,7 +7595,7 @@ test "parser handles Source in event field" {
 
     const source =
         \\~event macro { code: Source }
-        \\| done { result: Source }
+        \\| done Source
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -7558,8 +7616,8 @@ test "parser validates branch names" {
     {
         const source =
             \\~event test {}
-            \\| valid_branch { data: i32 }
-            \\| another_one { msg: []const u8 }
+            \\| valid_branch i32
+            \\| another_one []const u8
         ;
 
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -7569,37 +7627,22 @@ test "parser validates branch names" {
         defer parse_result.deinit();
 
         try std.testing.expect(parse_result.source_file.items.len == 1);
+        try std.testing.expect(parse_result.source_file.items[0] == .event_decl);
         const event = parse_result.source_file.items[0].event_decl;
         try std.testing.expect(event.branches.len == 2);
         try std.testing.expectEqualStrings(event.branches[0].name, "valid_branch");
         try std.testing.expectEqualStrings(event.branches[1].name, "another_one");
     }
 
-    // Invalid branch name with spaces
-    {
-        const source =
-            \\~event test {}
-            \\| this is invalid { data: i32 }
-        ;
-
-        var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
-        defer parser.deinit();
-
-        const result = parser.parse();
-
-        // Should fail due to invalid branch name
-        try std.testing.expectError(error.ParseError, result);
-        try std.testing.expect(parser.reporter.hasErrors());
-    }
-
     // Invalid branch name starting with number
     {
         const source =
             \\~event test {}
-            \\| 123invalid { data: i32 }
+            \\| 123invalid i32
         ;
 
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+        parser.fail_fast = true;
         defer parser.deinit();
 
         const result = parser.parse();
@@ -7617,7 +7660,7 @@ test "parser validates branch constructors" {
     {
         const source =
             \\~event test {}
-            \\| ok { msg: []const u8 }
+            \\| ok []const u8
             \\
             \\~test() 
             \\| ok |> ok { msg: "success" }
@@ -7636,13 +7679,14 @@ test "parser validates branch constructors" {
     {
         const source =
             \\~event test {}
-            \\| ok { msg: []const u8 }
+            \\| ok []const u8
             \\
             \\~test() 
             \\| ok |> invalid name { msg: "fail" }
         ;
 
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+        parser.fail_fast = true;
         defer parser.deinit();
 
         const result = parser.parse();
@@ -7657,9 +7701,9 @@ test "parser handles shorthand notation in branch constructors" {
 
     const source =
         \\~event test {}
-        \\| ok { data: i32 }
+        \\| ok { id: i32, value: i32 }
         \\
-        \\~test = ok { r.user.id }
+        \\~test = ok { r.user.id, 0 }
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -7672,10 +7716,14 @@ test "parser handles shorthand notation in branch constructors" {
     const ii = parse_result.source_file.items[1].immediate_impl;
     const bc = ii.value;
     try std.testing.expectEqualStrings(bc.branch_name, "ok");
-    try std.testing.expect(bc.fields.len == 1);
+    try std.testing.expect(bc.fields.len == 2);
     // In shorthand, r.user.id becomes field name "id" with value "r.user.id"
     try std.testing.expectEqualStrings(bc.fields[0].name, "id");
-    try std.testing.expectEqualStrings(bc.fields[0].type, "r.user.id"); // temporarily stored as type
+    try std.testing.expect(bc.fields[0].expression_str != null);
+    try std.testing.expectEqualStrings(bc.fields[0].expression_str.?, "r.user.id");
+    try std.testing.expectEqualStrings(bc.fields[1].name, "0");
+    try std.testing.expect(bc.fields[1].expression_str != null);
+    try std.testing.expectEqualStrings(bc.fields[1].expression_str.?, "0");
 }
 
 test "parser rejects old tap syntax" {
@@ -7691,6 +7739,7 @@ test "parser rejects old tap syntax" {
         ;
 
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+        parser.fail_fast = true;
         defer parser.deinit();
 
         // Should fail with ParseError
@@ -7705,6 +7754,7 @@ test "parser rejects old tap syntax" {
         ;
 
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+        parser.fail_fast = true;
         defer parser.deinit();
 
         const result = parser.parse();
@@ -7718,6 +7768,7 @@ test "parser rejects old tap syntax" {
         ;
 
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+        parser.fail_fast = true;
         defer parser.deinit();
 
         const result = parser.parse();
@@ -7730,7 +7781,7 @@ test "parser handles when clause with space" {
 
     const source =
         \\~poll()
-        \\| key k when (k.code == 'q') |> quit()
+        \\| key k when k.code == 'q' |> quit()
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -7754,15 +7805,15 @@ test "parser handles when clause with space" {
 
     // THIS IS THE KEY CHECK: condition should be populated
     try std.testing.expect(cont.condition != null);
-    try std.testing.expectEqualStrings("(k.code == 'q')", cont.condition.?);
+    try std.testing.expectEqualStrings("k.code == 'q'", cont.condition.?);
 }
 
-test "parser handles when clause without parens" {
+test "parser handles when clause with parens for grouping" {
     const allocator = std.testing.allocator;
 
     const source =
         \\~poll()
-        \\| key k when k.code == 'q' |> quit()
+        \\| key k when k.code == ('q') |> quit()
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -7775,7 +7826,7 @@ test "parser handles when clause without parens" {
     const cont = flow.continuations[0];
 
     try std.testing.expect(cont.condition != null);
-    try std.testing.expectEqualStrings("k.code == 'q'", cont.condition.?);
+    try std.testing.expectEqualStrings("k.code == ('q')", cont.condition.?);
 }
 
 test "parser handles sibling continuations with when guards" {
@@ -7784,7 +7835,7 @@ test "parser handles sibling continuations with when guards" {
     // This is the pattern that caused "2 else cases ambiguous" error
     const source =
         \\~poll()
-        \\| key k when (k.code == 'q') |> quit()
+        \\| key k when k.code == 'q' |> quit()
         \\| key k |> handle_key(k)
     ;
 
@@ -7804,7 +7855,7 @@ test "parser handles sibling continuations with when guards" {
     try std.testing.expectEqualStrings("key", cont1.branch);
     try std.testing.expectEqualStrings("k", cont1.binding.?);
     try std.testing.expect(cont1.condition != null); // HAS when guard
-    try std.testing.expectEqualStrings("(k.code == 'q')", cont1.condition.?);
+    try std.testing.expectEqualStrings("k.code == 'q'", cont1.condition.?);
 
     // Second continuation: else case (no when guard)
     const cont2 = flow.continuations[1];
@@ -7820,7 +7871,7 @@ test "parser handles NESTED continuations with when guards" {
     const source =
         \\~run()
         \\| ready t |> poll()
-        \\    | key k when (k.code == 'q') |> cleanup()
+        \\    | key k when k.code == 'q' |> cleanup()
         \\        | done |> _
         \\    | key k |> handle_key(k)
         \\        | done |> _
@@ -7861,6 +7912,7 @@ test "parser rejects single empty branch as redundant" {
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
+    parser.fail_fast = true;
     defer parser.deinit();
 
     const result = parser.parse();

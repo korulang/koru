@@ -23,6 +23,10 @@ pub const ShapeChecker = struct {
     
     // Type inference engine
     type_engine: type_inference.TypeInference,
+
+    /// Main module name from the program being checked (e.g. "test" for test.kz).
+    /// Used to resolve unqualified event/proc references.
+    main_module_name: []const u8 = "",
     
     pub fn init(allocator: std.mem.Allocator, reporter: *errors.ErrorReporter) !ShapeChecker {
         return ShapeChecker{
@@ -159,6 +163,7 @@ pub const ShapeChecker = struct {
     
     /// Check an entire source file for shape consistency
     pub fn checkSourceFile(self: *ShapeChecker, source_file: *const ast.Program) !void {
+        self.main_module_name = source_file.main_module_name;
         // First pass: collect all events, procs, labels, subflows
         for (source_file.items) |*item| {  // Changed to pointer iteration!
             switch (item.*) {
@@ -347,6 +352,31 @@ pub const ShapeChecker = struct {
         return try buf.toOwnedSlice(self.allocator);
     }
 
+    /// Look up a registered event by path, trying module qualification and globs.
+    fn lookupEventInfo(self: *ShapeChecker, path: ast.DottedPath) !?EventInfo {
+        const event_name = try self.pathToString(path);
+        defer self.allocator.free(event_name);
+
+        if (self.events.get(event_name)) |info| return info;
+
+        if (path.module_qualifier == null and self.main_module_name.len > 0) {
+            var qualified_name_buf = try std.ArrayList(u8).initCapacity(self.allocator, 64);
+            defer qualified_name_buf.deinit(self.allocator);
+
+            try qualified_name_buf.appendSlice(self.allocator, self.main_module_name);
+            try qualified_name_buf.append(self.allocator, ':');
+            try qualified_name_buf.appendSlice(self.allocator, event_name);
+
+            const qualified_name = try qualified_name_buf.toOwnedSlice(self.allocator);
+            defer self.allocator.free(qualified_name);
+
+            if (self.events.get(qualified_name)) |info| return info;
+        }
+
+        if (self.findGlobMatch(event_name)) |info| return info;
+        return null;
+    }
+
     /// Find a glob pattern event that matches the given event name
     /// Used when exact event lookup fails to find matching templates like log.*
     fn findGlobMatch(self: *ShapeChecker, event_name: []const u8) ?EventInfo {
@@ -438,7 +468,7 @@ pub const ShapeChecker = struct {
         return try buf.toOwnedSlice(self.allocator);
     }
     
-    fn validateFlow(self: *ShapeChecker, flow: *const ast.Flow, location: errors.SourceLocation, source_file: *const ast.Program) !void {
+    fn validateFlow(self: *ShapeChecker, flow: *const ast.Flow, location: errors.SourceLocation, _: *const ast.Program) !void {
         // Skip flows that have been transformed by [transform] events.
         // Transformed flows have valid structure by construction - the transform
         // replaced the comptime event structure with a runtime node structure.
@@ -496,31 +526,7 @@ pub const ShapeChecker = struct {
         const event_name = try self.pathToString(flow.invocation.path);
         defer self.allocator.free(event_name);  // Free temp string after lookup
 
-        // Try to get the event. If it doesn't exist with unqualified name,
-        // and the path has no module qualifier, try with main module qualification
-        var event_info = self.events.get(event_name);
-
-        if (event_info == null and flow.invocation.path.module_qualifier == null) {
-            // No explicit module qualifier - try with main module name
-            var qualified_name_buf = try std.ArrayList(u8).initCapacity(self.allocator, 64);
-            defer qualified_name_buf.deinit(self.allocator);
-
-            try qualified_name_buf.appendSlice(self.allocator, source_file.main_module_name);
-            try qualified_name_buf.append(self.allocator, ':');
-            try qualified_name_buf.appendSlice(self.allocator, event_name);
-
-            const qualified_name = try qualified_name_buf.toOwnedSlice(self.allocator);
-            defer self.allocator.free(qualified_name);
-
-            event_info = self.events.get(qualified_name);
-        }
-
-        // If exact match failed, try glob pattern matching
-        if (event_info == null) {
-            event_info = self.findGlobMatch(event_name);
-        }
-
-        const final_event_info = event_info orelse {
+        const final_event_info = try self.lookupEventInfo(flow.invocation.path) orelse {
             log.debug("ERROR: Unknown event '{s}'\n", .{event_name});
             // Check if it's a subflow implementation
             if (self.impl_flows.get(event_name)) |impl_flow_info| {
@@ -559,7 +565,7 @@ pub const ShapeChecker = struct {
             );
             return error.UnknownEvent;
         };
-        
+
         // Check branch coverage (with terminal marker awareness)
         const covered = try self.checkBranchCoverageWithTerminals(
             event_name,
@@ -616,7 +622,7 @@ pub const ShapeChecker = struct {
                                       (std.mem.eql(u8, source.segments[0], "start") or
                                        std.mem.eql(u8, source.segments[0], "end")));
 
-                if (!is_meta_event and self.events.get(source_path) == null) {
+                if (!is_meta_event and (try self.lookupEventInfo(source)) == null) {
                     log.debug("ERROR: Unknown source event '{s}' in tap\n", .{source_path});
                     try self.reporter.addErrorAtLocation(.KORU040, location, "unknown source event '{s}' in tap", .{source_path});
                     // Continue checking for more errors
@@ -654,7 +660,7 @@ pub const ShapeChecker = struct {
                 const dest_path = try self.pathToString(dest);
                 defer self.allocator.free(dest_path);
 
-                if (self.events.get(dest_path) == null) {
+                if ((try self.lookupEventInfo(dest)) == null) {
                     log.debug("ERROR: Unknown destination event '{s}' in tap\n", .{dest_path});
                     try self.reporter.addErrorAtLocation(.KORU040, location, "unknown destination event '{s}' in tap", .{dest_path});
                     // Continue checking for more errors
@@ -674,12 +680,8 @@ pub const ShapeChecker = struct {
             const path_str = try self.pathToString(event_path);
             defer self.allocator.free(path_str);
 
-            if (self.events.get(path_str)) |event_info| {
-                // Tap continuations are like flow continuations - they handle branches
-                // from INVOKED events in the pipeline, NOT from the source event being tapped.
-                // The pipeline steps themselves will be validated by checkBranchCoverageWithTerminals
-                // when the tap is processed. No need to validate branch names here.
-                _ = event_info; // Keep for future pipeline validation if needed
+            if ((try self.lookupEventInfo(event_path))) |event_info| {
+                _ = event_info;
             }
         } else if (!tap.is_input_tap) {
             // Wildcard output tap - we can't validate branches without knowing the event
@@ -1165,10 +1167,24 @@ pub const ShapeChecker = struct {
         };
         defer self.allocator.free(path);  // Free temp string after lookup
 
-        _ = self.events.get(path) orelse {
-            // Proc without matching event
-            return error.ProcWithoutEvent;
-        };
+        if (self.events.get(path) != null) return;
+
+        if (module_qualifier == null and self.main_module_name.len > 0 and proc.path.module_qualifier == null) {
+            var qualified_name_buf = try std.ArrayList(u8).initCapacity(self.allocator, 64);
+            defer qualified_name_buf.deinit(self.allocator);
+
+            try qualified_name_buf.appendSlice(self.allocator, self.main_module_name);
+            try qualified_name_buf.append(self.allocator, ':');
+            try qualified_name_buf.appendSlice(self.allocator, path);
+
+            const qualified_name = try qualified_name_buf.toOwnedSlice(self.allocator);
+            defer self.allocator.free(qualified_name);
+
+            if (self.events.get(qualified_name) != null) return;
+        }
+
+        // Proc without matching event
+        return error.ProcWithoutEvent;
     }
 
     fn validateInlineFlow(self: *ShapeChecker, flow: *const ast.Flow, proc_event: ?EventInfo) !void {

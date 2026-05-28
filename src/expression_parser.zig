@@ -569,6 +569,15 @@ pub const ExpressionParser = struct {
             }
         }
 
+        if (self.matchKeywordBoundary("and")) {
+            self.pos += 3;
+            return .and_op;
+        }
+        if (self.matchKeywordBoundary("or")) {
+            self.pos += 2;
+            return .or_op;
+        }
+
         // Single-character operators
         const op = switch (self.peek()) {
             '+' => Operator.add,
@@ -602,6 +611,9 @@ pub const ExpressionParser = struct {
             if (std.mem.eql(u8, two_char, "<=") or std.mem.eql(u8, two_char, ">=")) return .comparison;
             if (std.mem.eql(u8, two_char, "++")) return .concat;
         }
+
+        if (self.matchKeywordBoundary("or")) return .logical_or;
+        if (self.matchKeywordBoundary("and")) return .logical_and;
 
         // Single-character operators
         return switch (self.peek()) {

@@ -564,6 +564,41 @@ fi
 echo ""
 
 # ════════════════════════════════════════
+# UNIT TESTS - Run first for fast feedback
+# ════════════════════════════════════════
+UNIT_TESTS_PASSED=true
+UNIT_TEST_OUTPUT=""
+if [ "$RUN_UNIT_TESTS" = true ]; then
+    echo "════════════════════════════════════════"
+    echo "    UNIT TESTS (zig build test --summary all)"
+    echo "════════════════════════════════════════"
+    echo ""
+
+    UNIT_TEST_LOG="${TMPDIR:-/tmp}/koru-unit-test.log"
+    if zig build test --summary all 2>&1 | tee "$UNIT_TEST_LOG"; then
+        echo ""
+        echo -e "${GREEN}✅ All unit tests passed${NC}"
+        echo ""
+    else
+        echo ""
+        echo -e "${RED}❌ Unit tests FAILED${NC}"
+        echo ""
+        UNIT_TESTS_PASSED=false
+    fi
+    UNIT_TEST_OUTPUT=$(cat "$UNIT_TEST_LOG")
+
+    # Parse unit test results and save to JSON
+    if command -v node >/dev/null 2>&1; then
+        node scripts/parse-unit-tests.js "$UNIT_TEST_LOG" 2>/dev/null || true
+    fi
+
+    echo "════════════════════════════════════════"
+    echo "    REGRESSION TESTS"
+    echo "════════════════════════════════════════"
+    echo ""
+fi
+
+# ════════════════════════════════════════
 # PARALLEL MODE - Fast execution with helper script
 # ════════════════════════════════════════
 if [ "$PARALLEL_JOBS" -gt 1 ]; then
@@ -725,6 +760,14 @@ PY
     echo "$SUMMARY_LINE"
     echo "════════════════════════════════════════"
 
+    if [ "$RUN_UNIT_TESTS" = true ]; then
+        if [ "$UNIT_TESTS_PASSED" = true ]; then
+            echo -e "${GREEN}✅ Unit tests: PASSED${NC}"
+        else
+            echo -e "${RED}❌ Unit tests: FAILED${NC}"
+        fi
+    fi
+
     # Save snapshot after full run (not for filtered runs)
     if [ ${#TEST_FILTERS[@]} -eq 0 ] && [ "$SMOKE_MODE" = false ]; then
         if command -v node >/dev/null 2>&1; then
@@ -770,43 +813,13 @@ PY
         exit 1
     fi
 
+    if [ "$RUN_UNIT_TESTS" = true ] && [ "$UNIT_TESTS_PASSED" = false ]; then
+        echo -e "${YELLOW}⚠️  Regression tests passed, but UNIT TESTS FAILED${NC}"
+        exit 1
+    fi
+
     echo -e "${GREEN}✅ ALL TESTS PASSED!${NC}"
     exit 0
-fi
-
-# ════════════════════════════════════════
-# UNIT TESTS - Run first for fast feedback
-# ════════════════════════════════════════
-UNIT_TESTS_PASSED=true
-UNIT_TEST_OUTPUT=""
-if [ "$RUN_UNIT_TESTS" = true ]; then
-    echo "════════════════════════════════════════"
-    echo "    UNIT TESTS (zig build test)"
-    echo "════════════════════════════════════════"
-    echo ""
-
-    UNIT_TEST_LOG="${TMPDIR:-/tmp}/koru-unit-test.log"
-    if zig build test 2>&1 | tee "$UNIT_TEST_LOG"; then
-        echo ""
-        echo -e "${GREEN}✅ All unit tests passed${NC}"
-        echo ""
-    else
-        echo ""
-        echo -e "${RED}❌ Unit tests FAILED${NC}"
-        echo ""
-        UNIT_TESTS_PASSED=false
-    fi
-    UNIT_TEST_OUTPUT=$(cat "$UNIT_TEST_LOG")
-
-    # Parse unit test results and save to JSON
-    if command -v node >/dev/null 2>&1; then
-        node scripts/parse-unit-tests.js "$UNIT_TEST_LOG" 2>/dev/null || true
-    fi
-
-    echo "════════════════════════════════════════"
-    echo "    REGRESSION TESTS"
-    echo "════════════════════════════════════════"
-    echo ""
 fi
 
 # Find all test directories recursively

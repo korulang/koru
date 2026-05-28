@@ -1,0 +1,30 @@
+// BUG: Emitter generates `const X = X;` when a continuation binding name
+// matches the called event's parameter name, causing Zig to reject:
+//   "local constant 'v' shadows local constant from outer scope"
+//
+// MINIMAL REPRO: `| out v |> echo(v: v)` — koru-side, the continuation
+// binding `v` and the param `v` are in different scopes and the source
+// is well-formed. The bug is purely in the Zig emission: both lower to
+// the literal Zig identifier `v`, producing `const v = v;`.
+//
+// The punned/positional form `echo(v)` ALSO triggers the same bug — the
+// emitter collapses both surface forms to the same broken Zig. That's
+// extra-bad: punning is the syntax that *should* lower without the
+// redundant rebind, and doesn't.
+//
+// ONLY WORKAROUND: rename the binding to something different from the
+// param name, e.g. `| out r |> echo(v: r)`.
+//
+// EXPECTED: this test should print `5`. Currently it fails at backend
+// compile with a Zig shadowing error.
+
+~import "$std/io"
+
+~event echo { v: i32 }
+| out i32
+
+~echo = out v
+
+~echo(v: 5)
+| out v |> echo(v: v)
+    | out r |> std.io:print.ln("{{ r:d }}")

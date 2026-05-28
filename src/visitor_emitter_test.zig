@@ -85,9 +85,9 @@ test "visitor emits only user code, not compiler infrastructure" {
     // Should contain user event
     try testing.expect(std.mem.indexOf(u8, output, "hello_event") != null);
 
-    // Should NOT contain compiler event
-    try testing.expect(std.mem.indexOf(u8, output, "compiler") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "emit") == null or std.mem.indexOf(u8, output, "emitted") != null); // "emitted" is OK (branch name in user events)
+    // Should NOT contain compiler event struct (word "compiler" may appear in tap comments)
+    try testing.expect(std.mem.indexOf(u8, output, "compiler_emit_zig_event") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "emit_zig_event") == null);
 }
 
 test "visitor filters out host_lines from compiler_bootstrap module" {

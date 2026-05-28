@@ -111,10 +111,11 @@ pub const CompilationContext = struct {
     pub fn optimizeIteratively(self: *CompilationContext) !void {
         var prev_metrics = self.metrics;
         
-        while (self.iteration < self.config.max_iterations) : (self.iteration += 1) {
+        while (self.iteration < self.config.max_iterations) {
             // Run optimization pass
             const changed = try self.runOptimizationPass();
-            
+            self.iteration += 1;
+
             // Update metrics
             self.metrics = CompilationMetrics.compute(self.ast);
             
@@ -268,7 +269,8 @@ pub const CompilationMetrics = struct {
         return self.ast_nodes == other.ast_nodes and
                self.event_count == other.event_count and
                self.flow_count == other.flow_count and
-               self.branch_count == other.branch_count;
+               self.branch_count == other.branch_count and
+               self.estimated_cycles == other.estimated_cycles;
     }
     
     pub fn improved(self: CompilationMetrics, other: CompilationMetrics) bool {

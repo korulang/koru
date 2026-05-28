@@ -44,6 +44,9 @@
 # Node.js (tooling only - not runtime dependency)
 !package.json
 
+# Corpus curation (generator config; .md is allowed by *.md whitelist)
+!koru-by-example.json
+
 # Git files
 !.gitignore
 !.gitattributes
