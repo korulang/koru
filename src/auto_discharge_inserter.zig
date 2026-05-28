@@ -477,16 +477,7 @@ pub const AutoDischargeInserter = struct {
                     const event_name = try self.pathToString(event_decl.path);
                     defer self.allocator.free(event_name);
 
-                    // Validate: [!] annotation requires auto-dischargeable event (0 or 1 branches)
-                    if (eventHasDefaultAnnotation(event_decl) and event_decl.branches.len > 1) {
-                        try self.reporter.addError(
-                            .KORU083,
-                            event_decl.location.line,
-                            event_decl.location.column,
-                            "[!] annotation requires single-outcome event - events with multiple branches require manual handling",
-                            .{},
-                        );
-                    }
+                    try self.validateDefaultDischargeEvent(event_decl);
 
                     const qualified_name = try std.fmt.allocPrint(
                         self.allocator,
@@ -507,16 +498,7 @@ pub const AutoDischargeInserter = struct {
                             const event_name = try self.pathToString(event_decl.path);
                             defer self.allocator.free(event_name);
 
-                            // Validate: [!] annotation requires void event (no branches)
-                            if (eventHasDefaultAnnotation(event_decl) and event_decl.branches.len > 0) {
-                                try self.reporter.addError(
-                                    .KORU083,
-                                    event_decl.location.line,
-                                    event_decl.location.column,
-                                    "[!] annotation requires void event (no branches) - branched events cannot be auto-discharged",
-                                    .{},
-                                );
-                            }
+                            try self.validateDefaultDischargeEvent(event_decl);
 
                             const qualified_name = try std.fmt.allocPrint(
                                 self.allocator,
@@ -1724,6 +1706,19 @@ pub const AutoDischargeInserter = struct {
             if (std.mem.eql(u8, ann, "!")) return true;
         }
         return false;
+    }
+
+    /// Default auto-discharge targets must be void — inserted at scope exit with no branch dispatch.
+    fn validateDefaultDischargeEvent(self: *AutoDischargeInserter, event_decl: *const ast.EventDecl) !void {
+        if (eventHasDefaultAnnotation(event_decl) and event_decl.branches.len > 0) {
+            try self.reporter.addError(
+                .KORU083,
+                event_decl.location.line,
+                event_decl.location.column,
+                "[!] annotation requires void event (no branches) - branched events cannot be auto-discharged",
+                .{},
+            );
+        }
     }
 
     /// Select the disposal to use from a list of candidates

@@ -35,7 +35,7 @@ const Transaction = struct { conn_handle: i32 };
     return .{ .ok = .{ .tx = .{ .conn_handle = conn.handle } } };
 }
 
-~[!]pub event commit { tx: Transaction<!active> }
+~pub event commit { tx: Transaction<!active> }
 | err []const u8
 
 ~proc commit|zig {
