@@ -1144,6 +1144,11 @@ pub const Arg = struct {
     source_value: ?*const Source = null,  // For Source arguments - holds text + location + scope (const in PROGRAM_AST)
     expression_value: ?*const CapturedExpression = null,  // For Expression arguments - holds text + location + scope
     parsed_expression: ?*const Expression = null,  // Value parsed through expression parser (when parseable)
+    /// Author-asserted phantom label on a literal or parenthesized expression
+    /// (e.g. `22.5<celsius>`, `"alice"<username>`, `(box.v)<celsius>`).
+    /// The suffix is stripped from `value`; the label name lives here. The
+    /// phantom checker trusts the assertion — author asserts, checker matches.
+    phantom_type: ?[]const u8 = null,
 
     pub fn deinit(self: *Arg, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -1163,6 +1168,7 @@ pub const Arg = struct {
             var mutable_parsed = @constCast(parsed);
             mutable_parsed.deinit(allocator);
         }
+        if (self.phantom_type) |pt| allocator.free(pt);
     }
 };
 

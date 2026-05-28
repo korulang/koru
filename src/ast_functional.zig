@@ -1446,6 +1446,7 @@ fn cloneArg(allocator: std.mem.Allocator, arg: *const ast.Arg) CloneError!ast.Ar
         .source_value = arg.source_value,
         .expression_value = arg.expression_value,
         .parsed_expression = arg.parsed_expression,
+        .phantom_type = if (arg.phantom_type) |pt| try allocator.dupe(u8, pt) else null,
     };
 }
 

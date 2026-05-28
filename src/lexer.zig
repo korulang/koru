@@ -214,6 +214,10 @@ pub const ArgPair = struct {
     /// explicit labels — if punning would yield the same name, the explicit
     /// form is forbidden.
     had_explicit_label: bool = false,
+    /// Author-asserted phantom label captured from a `<label>` suffix on a
+    /// literal or parenthesized expression. Null when no suffix was present.
+    /// The suffix has been stripped from `value`.
+    phantom_type: ?[]const u8 = null,
 };
 
 /// Find the end of a brace-delimited block, handling nested braces
@@ -343,6 +347,83 @@ pub fn indexOfAtDepthZero(text: []const u8, needle: u8) ?usize {
     return null;
 }
 
+const PhantomSuffix = struct { value: []const u8, phantom: ?[]const u8 };
+
+/// Extract a trailing `<label>` phantom suffix from an arg-value string.
+///
+/// Recognised only when the preceding token is a literal or parenthesized
+/// expression (`22.5<celsius>`, `"alice"<username>`, `(box.v)<celsius>`).
+/// Path/binding suffixes are intentionally not supported here — bindings
+/// will carry phantom state natively once the binding-phantom-tracking
+/// project lands. Until then, users wrap non-literal values in parens.
+///
+/// Returns the stripped value + label, or the original value + null if no
+/// valid suffix was found.
+pub fn extractPhantomSuffix(value_str: []const u8) PhantomSuffix {
+    const trimmed = trim(value_str);
+    if (trimmed.len < 3 or trimmed[trimmed.len - 1] != '>') {
+        return .{ .value = trimmed, .phantom = null };
+    }
+
+    // Walk back over label-name chars until we hit `<` or non-label-char.
+    var i: usize = trimmed.len - 1; // points at `>`
+    while (i > 0) {
+        const c = trimmed[i - 1];
+        if (std.ascii.isAlphanumeric(c) or c == '_') {
+            i -= 1;
+        } else {
+            break;
+        }
+    }
+    // `i` now indexes the first label-name char (or 0). The char before must be `<`.
+    if (i == 0 or trimmed[i - 1] != '<') return .{ .value = trimmed, .phantom = null };
+
+    const label = trimmed[i .. trimmed.len - 1];
+    if (label.len == 0) return .{ .value = trimmed, .phantom = null };
+    // First char must be a valid label-start (letter or underscore — digits not allowed).
+    if (!(std.ascii.isAlphabetic(label[0]) or label[0] == '_')) {
+        return .{ .value = trimmed, .phantom = null };
+    }
+
+    const before = trim(trimmed[0 .. i - 1]); // strip the `<` too
+    if (!isLabelAttachableToken(before)) return .{ .value = trimmed, .phantom = null };
+
+    return .{ .value = before, .phantom = label };
+}
+
+/// True when `s` is a token that can carry a phantom-label suffix:
+/// numeric literal, string literal, or parenthesized expression.
+fn isLabelAttachableToken(s: []const u8) bool {
+    if (s.len == 0) return false;
+    if (s.len >= 2 and s[0] == '"' and s[s.len - 1] == '"') return true;
+    if (s.len >= 2 and s[0] == '(' and s[s.len - 1] == ')') return true;
+    return isNumericLiteral(s);
+}
+
+/// Decimal numeric literal: optional sign, digits + underscores, optional
+/// decimal part, optional scientific exponent. No hex, no leading dot, no
+/// char literals for first cut.
+fn isNumericLiteral(s: []const u8) bool {
+    if (s.len == 0) return false;
+    var i: usize = 0;
+    if (s[0] == '+' or s[0] == '-') i = 1;
+    if (i >= s.len or !std.ascii.isDigit(s[i])) return false;
+    i += 1;
+    while (i < s.len and (std.ascii.isDigit(s[i]) or s[i] == '_')) : (i += 1) {}
+    if (i < s.len and s[i] == '.') {
+        i += 1;
+        if (i >= s.len or !std.ascii.isDigit(s[i])) return false;
+        while (i < s.len and (std.ascii.isDigit(s[i]) or s[i] == '_')) : (i += 1) {}
+    }
+    if (i < s.len and (s[i] == 'e' or s[i] == 'E')) {
+        i += 1;
+        if (i < s.len and (s[i] == '+' or s[i] == '-')) i += 1;
+        if (i >= s.len or !std.ascii.isDigit(s[i])) return false;
+        while (i < s.len and std.ascii.isDigit(s[i])) : (i += 1) {}
+    }
+    return i == s.len;
+}
+
 pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair {
     var args = try std.ArrayList(ArgPair).initCapacity(allocator, 4);
     errdefer {
@@ -436,15 +517,17 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
                     // Explicit form: name: value
                     const name = try allocator.dupe(u8, trim(arg_slice[0..idx]));
                     const value_str = trim(arg_slice[idx + 1..]);
-                    
+
                     // Check if the value is a brace block (for Source)
                     if (std.mem.startsWith(u8, value_str, "{") and std.mem.endsWith(u8, value_str, "}")) {
                         // Include the braces in the value for now
                         // The parser will handle extracting the content
                     }
-                    
-                    const value = try allocator.dupe(u8, value_str);
-                    try args.append(allocator, .{ .name = name, .value = value, .had_explicit_label = true });
+
+                    const suffix = extractPhantomSuffix(value_str);
+                    const value = try allocator.dupe(u8, suffix.value);
+                    const phantom = if (suffix.phantom) |p| try allocator.dupe(u8, p) else null;
+                    try args.append(allocator, .{ .name = name, .value = value, .had_explicit_label = true, .phantom_type = phantom });
                 } else {
                     // Shorthand form: extract field name from dotted expression
                     // e.g., r.data.source -> name: "source", value: "r.data.source"
@@ -478,8 +561,10 @@ pub fn parseArgs(allocator: std.mem.Allocator, args_str: []const u8) ![]ArgPair 
                             break :blk try allocator.dupe(u8, arg_slice);
                         }
                     } else try allocator.dupe(u8, arg_slice);
-                    const value = try allocator.dupe(u8, arg_slice);
-                    try args.append(allocator, .{ .name = name, .value = value });
+                    const suffix = extractPhantomSuffix(arg_slice);
+                    const value = try allocator.dupe(u8, suffix.value);
+                    const phantom = if (suffix.phantom) |p| try allocator.dupe(u8, p) else null;
+                    try args.append(allocator, .{ .name = name, .value = value, .phantom_type = phantom });
                 }
             }
             arg_start = i + 1;

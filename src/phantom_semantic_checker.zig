@@ -2108,6 +2108,29 @@ pub const PhantomSemanticChecker = struct {
         log.debug("[PHANTOM-FLOW] Checking arg '{s}' with value '{s}'\n", .{ arg.name, arg.value });
         log.debug("[PHANTOM-FLOW]   Expected type: '{s}[{s}]'\n", .{ expected_base_type, expected_phantom.? });
 
+        // Author-asserted phantom label on a literal or parenthesized expression
+        // (e.g. `c: 22.5<celsius>`). Trust the assertion — check that the asserted
+        // label is compatible with what the event requires. No binding lookup.
+        if (arg.phantom_type) |asserted| {
+            const canonical_expected = try self.canonicalizePhantomState(expected_phantom.?, module_for_canon);
+            defer self.allocator.free(canonical_expected);
+            const canonical_asserted = try self.canonicalizePhantomState(asserted, module_for_canon);
+            defer self.allocator.free(canonical_asserted);
+
+            const compatible = try phantom_parser.areCompatible(self.allocator, canonical_expected, canonical_asserted);
+            if (!compatible) {
+                try self.reporter.addError(
+                    .KORU030,
+                    location.line,
+                    location.column,
+                    "Phantom state mismatch: argument '{s}' asserts '<{s}>' but event requires '<{s}>'.",
+                    .{ arg.name, canonical_asserted, canonical_expected },
+                );
+                return false;
+            }
+            return true;
+        }
+
         // Check if the binding has been disposed
         if (context.isDisposed(arg.value)) {
             log.debug("[CLEANUP] ❌ USE AFTER DISPOSAL DETECTED!\n", .{});
