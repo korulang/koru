@@ -1,7 +1,7 @@
 // TEST: Pass a Connection where Transaction is expected (reverse direction)
 //
-// commit() expects: *Transaction[!active]
-// We're passing: *Connection[active!]
+// commit() expects: *Transaction<!active>
+// We're passing: *Connection<active!>
 //
 // Both have [active] state, but base types differ!
 

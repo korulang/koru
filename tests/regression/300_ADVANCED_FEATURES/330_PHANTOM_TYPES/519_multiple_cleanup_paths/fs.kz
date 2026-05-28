@@ -2,7 +2,7 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 ~pub event open { path: []const u8 }
-| opened *File[opened!]
+| opened *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening file: {s}\n", .{path});
@@ -12,13 +12,13 @@ const File = struct { handle: i32 };
     return .{ .opened = f };
 }
 
-~pub event close { file: *File[!opened] }  // Disposal option 1
+~pub event close { file: *File<!opened> }  // Disposal option 1
 
 ~proc close|zig {
     std.debug.print("Closing file (quick)\n", .{});
 }
 
-~pub event flush_close { file: *File[!opened] }  // Disposal option 2
+~pub event flush_close { file: *File<!opened> }  // Disposal option 2
 
 ~proc flush_close|zig {
     std.debug.print("Flushing and closing file\n", .{});

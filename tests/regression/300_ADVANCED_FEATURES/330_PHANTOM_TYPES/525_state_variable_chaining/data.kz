@@ -2,7 +2,7 @@ const std = @import("std");
 const Data = struct { value: i32 };
 
 ~pub event alloc {}
-| allocated *Data[owned]
+| allocated *Data<owned>
 
 ~proc alloc|zig {
     const allocator = std.heap.page_allocator;
@@ -11,30 +11,30 @@ const Data = struct { value: i32 };
     return .{ .allocated = ptr };
 }
 
-~pub event borrow { other: *Data[owned] }
-| borrowed *Data[borrowed]
+~pub event borrow { other: *Data<owned> }
+| borrowed *Data<borrowed>
 
 ~proc borrow|zig {
     return .{ .borrowed = other };
 }
 
 // Chain of events that all preserve the same state variable M
-~pub event validate { d: *Data[M'_] }
-| validated *Data[M'_]  // Preserves M
+~pub event validate { d: *Data<M'_> }
+| validated *Data<M'_>  // Preserves M
 
 ~proc validate|zig {
     return .{ .validated = d };
 }
 
-~pub event process { d: *Data[M'_] }
-| processed *Data[M'_]  // Preserves M
+~pub event process { d: *Data<M'_> }
+| processed *Data<M'_>  // Preserves M
 
 ~proc process|zig {
     return .{ .processed = d };
 }
 
-~pub event finalize { d: *Data[M'_] }
-| done *Data[M'_]  // Preserves M
+~pub event finalize { d: *Data<M'_> }
+| done *Data<M'_>  // Preserves M
 
 ~proc finalize|zig {
     return .{ .done = d };

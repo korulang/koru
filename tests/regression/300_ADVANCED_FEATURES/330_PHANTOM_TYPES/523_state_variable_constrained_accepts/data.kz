@@ -2,7 +2,7 @@ const std = @import("std");
 const Data = struct { value: i32 };
 
 ~pub event alloc {}
-| allocated *Data[owned]
+| allocated *Data<owned>
 
 ~proc alloc|zig {
     const allocator = std.heap.page_allocator;
@@ -11,8 +11,8 @@ const Data = struct { value: i32 };
     return .{ .allocated = d };
 }
 
-~pub event borrow { other: *Data[owned] }
-| borrowed *Data[borrowed]
+~pub event borrow { other: *Data<owned> }
+| borrowed *Data<borrowed>
 
 ~proc borrow|zig {
     return .{ .borrowed = other };
@@ -20,8 +20,8 @@ const Data = struct { value: i32 };
 
 // Generic processor constrained to owned OR borrowed
 // Will NOT accept other states like "gc" or "static"
-~pub event process { d: *Data[M'owned|borrowed] }
-| done *Data[M'owned|borrowed]  // Preserves whichever state was passed
+~pub event process { d: *Data<M'owned|borrowed> }
+| done *Data<M'owned|borrowed>  // Preserves whichever state was passed
 
 ~proc process|zig {
     return .{ .done = d };

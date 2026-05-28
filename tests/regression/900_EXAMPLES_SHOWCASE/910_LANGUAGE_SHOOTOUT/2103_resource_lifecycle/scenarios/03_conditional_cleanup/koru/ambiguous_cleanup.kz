@@ -11,7 +11,7 @@ const std = @import("std");
 const File = struct { handle: i32, dirty: bool };
 
 ~event open { path: []const u8 }
-| opened *File[opened!]
+| opened *File<opened!>
 
 ~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
@@ -19,21 +19,21 @@ const File = struct { handle: i32, dirty: bool };
     return .{ .opened = f };
 }
 
-~event write { file: *File[opened], data: []const u8 }
+~event write { file: *File<opened>, data: []const u8 }
 
 ~proc write|zig {
     file.dirty = true;
 }
 
 // Two different ways to close - user must choose!
-~event close { file: *File[!opened] }
+~event close { file: *File<!opened> }
 
 ~proc close|zig {
     std.debug.print("Close (no flush)\n", .{});
     std.heap.page_allocator.destroy(file);
 }
 
-~event flush_close { file: *File[!opened] }
+~event flush_close { file: *File<!opened> }
 
 ~proc flush_close|zig {
     std.debug.print("Flush and close\n", .{});

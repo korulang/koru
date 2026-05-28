@@ -1,19 +1,23 @@
-// Test: phantom state on primitive types — units-of-measure shape.
+// Test: phantom state on primitive types — units-of-measure shape (F# syntax).
 //
-// `f32[celsius]` and `f32[fahrenheit]` are distinct phantom-labelled primitives.
-// A converter event declares the transition at its boundary: in `[celsius]`,
-// out `[fahrenheit]`. The phantom checker enforces both ends. (No `!` —
+// `f32<celsius>` and `f32<fahrenheit>` are distinct phantom-labelled primitives.
+// A converter event declares the transition at its boundary: in `<celsius>`,
+// out `<fahrenheit>`. The phantom checker enforces both ends. (No `!` —
 // primitives have no cleanup obligation; these are pure labels.)
+//
+// This is the first test migrated to the F#-style `<...>` phantom syntax.
+// Other phantom tests still use the legacy `[...]` form (parser accepts both
+// during transition).
 
 ~import "$std/io"
 
 ~event read_temp { sensor_id: u8 }
-| reading f32[celsius]
+| reading f32<celsius>
 
 ~read_temp = reading 22.5
 
-~event to_fahrenheit { c: f32[celsius] }
-| result f32[fahrenheit]
+~event to_fahrenheit { c: f32<celsius> }
+| result f32<fahrenheit>
 
 ~to_fahrenheit = result c * 9.0 / 5.0 + 32.0
 

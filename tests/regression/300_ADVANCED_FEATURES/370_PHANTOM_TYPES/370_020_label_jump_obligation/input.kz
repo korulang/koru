@@ -15,7 +15,7 @@ const std = @import("std");
 const Resource = struct { id: i32 };
 
 ~event create {}
-| created *Resource[open!]
+| created *Resource<open!>
 
 ~proc create|zig {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
@@ -23,9 +23,9 @@ const Resource = struct { id: i32 };
     return .{ .created = r };
 }
 
-~event use { res: *Resource[open] }
-| ok *Resource[open]
-| failed *Resource[open]
+~event use { res: *Resource<open> }
+| ok *Resource<open>
+| failed *Resource<open>
 
 ~proc use|zig {
     // Simulate sometimes failing
@@ -35,7 +35,7 @@ const Resource = struct { id: i32 };
     return .{ .failed = res };
 }
 
-~event close { res: *Resource[!open] }
+~event close { res: *Resource<!open> }
 
 ~proc close|zig {
     std.heap.page_allocator.destroy(res);

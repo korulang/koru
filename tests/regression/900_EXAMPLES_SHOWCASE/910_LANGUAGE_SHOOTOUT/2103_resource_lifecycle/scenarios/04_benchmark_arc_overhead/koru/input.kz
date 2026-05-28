@@ -22,7 +22,7 @@ const allocator = std.heap.c_allocator;
 var grand_total: u64 = 0;
 
 ~event create { id: usize }
-| created *Resource[active!]
+| created *Resource<active!>
 
 ~proc create|zig {
     const r = allocator.create(Resource) catch unreachable;
@@ -30,7 +30,7 @@ var grand_total: u64 = 0;
     return .{ .created = r };
 }
 
-~event work { r: *Resource[active] }
+~event work { r: *Resource<active> }
 
 ~proc work|zig {
     // Real work: sum the data array (same as Rust)
@@ -42,7 +42,7 @@ var grand_total: u64 = 0;
     std.mem.doNotOptimizeAway(sum);
 }
 
-~event destroy { r: *Resource[!active] }
+~event destroy { r: *Resource<!active> }
 
 ~proc destroy|zig {
     allocator.destroy(r);

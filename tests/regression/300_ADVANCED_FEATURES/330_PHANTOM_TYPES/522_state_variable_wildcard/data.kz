@@ -2,7 +2,7 @@ const std = @import("std");
 const Data = struct { value: i32 };
 
 ~pub event alloc {}
-| allocated *Data[owned]
+| allocated *Data<owned>
 
 ~proc alloc|zig {
     const allocator = std.heap.page_allocator;
@@ -11,16 +11,16 @@ const Data = struct { value: i32 };
     return .{ .allocated = d };
 }
 
-~pub event borrow { other: *Data[owned] }
-| borrowed *Data[borrowed]
+~pub event borrow { other: *Data<owned> }
+| borrowed *Data<borrowed>
 
 ~proc borrow|zig {
     return .{ .borrowed = other };
 }
 
 // Generic processor that accepts data in ANY state and preserves it
-~pub event process { d: *Data[M'_] }
-| done *Data[M'_]  // Wildcard: accepts any state, preserves it
+~pub event process { d: *Data<M'_> }
+| done *Data<M'_>  // Wildcard: accepts any state, preserves it
 
 ~proc process|zig {
     // Process the data without changing its state

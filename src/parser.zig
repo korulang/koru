@@ -6561,43 +6561,31 @@ pub const Parser = struct {
             // phantom type or binding annotation in the continuation.
             var type_str = type_and_annotation;
 
-            // Handle phantom types like u64[\d+] - extract and strip from type_str
-            // Use same logic as parseFields for consistency
+            // Phantom labels: Type<tag>. Angle brackets have no Zig
+            // type-position meaning, so any `<...>` at type end is
+            // unambiguously phantom.
             var phantom: ?[]const u8 = null;
-            if (type_str.len > 0 and type_str[type_str.len - 1] == ']') {
-                // Type ends with ], might have a phantom tag
-                var bracket_depth: i32 = 0;
+            if (type_str.len > 0 and type_str[type_str.len - 1] == '>') {
+                var angle_depth: i32 = 0;
                 var j: usize = type_str.len - 1;
                 const end_pos = j;
                 var start_pos: ?usize = null;
                 while (j > 0) : (j -= 1) {
-                    if (type_str[j] == ']') {
-                        bracket_depth += 1;
-                    } else if (type_str[j] == '[') {
-                        bracket_depth -= 1;
-                        if (bracket_depth == 0) {
+                    if (type_str[j] == '>') {
+                        angle_depth += 1;
+                    } else if (type_str[j] == '<') {
+                        angle_depth -= 1;
+                        if (angle_depth == 0) {
                             start_pos = j;
                             break;
                         }
                     }
                 }
-
                 if (start_pos) |start| {
                     if (start > 0) {
-                        const bracket_content = type_str[start + 1 .. end_pos];
-                        // Check if it's a number (array dimension) vs phantom tag
-                        const is_number = blk: {
-                            if (bracket_content.len == 0) break :blk true; // empty []
-                            for (bracket_content) |c| {
-                                if (!std.ascii.isDigit(c) and c != '_') break :blk false;
-                            }
-                            break :blk true;
-                        };
-
-                        if (!is_number and bracket_content.len > 0) {
-                            // This is a phantom tag/state!
-                            phantom = try self.allocator.dupe(u8, bracket_content);
-                            // Remove phantom from type for Zig emission
+                        const angle_content = type_str[start + 1 .. end_pos];
+                        if (angle_content.len > 0) {
+                            phantom = try self.allocator.dupe(u8, angle_content);
                             type_str = type_str[0..start];
                         }
                     }
@@ -6940,59 +6928,32 @@ pub const Parser = struct {
                 return error.ParseError;
             }
 
-            // Check for phantom tags/states: Type[tag] or *Type[state]
-            // Opaque capture - analyzers decide interpretation!
+            // Phantom labels: Type<tag>. Angle brackets have no Zig
+            // type-position meaning, so any `<...>` at type end is
+            // unambiguously phantom. Opaque capture — analyzers interpret.
             var phantom: ?[]const u8 = null;
             if (!is_source and !is_file and !is_embed_file and !is_expression) {
-                // Find the LAST matching bracket pair which might be a phantom tag
-                // We need to match brackets properly, respecting nesting
-                var last_phantom_start: ?usize = null;
-                var last_phantom_end: ?usize = null;
-
-                // Scan from the end backwards to find the last complete bracket pair
-                if (field_type.len > 0 and field_type[field_type.len - 1] == ']') {
-                    // Type ends with ], might have a phantom tag
-                    var bracket_depth: i32 = 0;
+                if (field_type.len > 0 and field_type[field_type.len - 1] == '>') {
+                    var angle_depth: i32 = 0;
                     var i = field_type.len - 1;
                     const end_pos = i;
-
-                    // Find matching [ for this ]
+                    var start_pos: ?usize = null;
                     while (i > 0) : (i -= 1) {
-                        if (field_type[i] == ']') {
-                            bracket_depth += 1;
-                        } else if (field_type[i] == '[') {
-                            bracket_depth -= 1;
-                            if (bracket_depth == 0) {
-                                // Found the matching opening bracket
-                                last_phantom_start = i;
-                                last_phantom_end = end_pos;
+                        if (field_type[i] == '>') {
+                            angle_depth += 1;
+                        } else if (field_type[i] == '<') {
+                            angle_depth -= 1;
+                            if (angle_depth == 0) {
+                                start_pos = i;
                                 break;
                             }
                         }
                     }
-                }
-
-                // Check if we found a phantom tag
-                if (last_phantom_start) |start| {
-                    if (last_phantom_end) |end| {
-                        // Ensure this isn't at position 0 (would be array type like []u8)
+                    if (start_pos) |start| {
                         if (start > 0) {
-                            const bracket_content = field_type[start + 1 .. end];
-
-                            // Check if this looks like a tag (not a number or empty)
-                            const is_number = blk: {
-                                for (bracket_content) |c| {
-                                    if (c < '0' or c > '9') break :blk false;
-                                }
-                                break :blk bracket_content.len > 0;
-                            };
-
-                            if (!is_number and bracket_content.len > 0) {
-                                // This is a phantom tag/state!
-                                // Just capture the raw string - analyzers interpret
-                                phantom = try self.allocator.dupe(u8, bracket_content);
-
-                                // Remove tag from type for Zig emission
+                            const angle_content = field_type[start + 1 .. end_pos];
+                            if (angle_content.len > 0) {
+                                phantom = try self.allocator.dupe(u8, angle_content);
                                 field_type = field_type[0..start];
                             }
                         }

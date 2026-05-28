@@ -3,8 +3,8 @@
 // CRITICAL: Both types have IDENTICAL struct layout (just i32 handle)
 // AND both have the SAME phantom state name [active!]
 //
-// close() expects: *Connection[!active]
-// We're passing: *Transaction[active!]
+// close() expects: *Connection<!active>
+// We're passing: *Transaction<active!>
 //
 // If Koru's phantom checker only looks at state names,
 // this will COMPILE AND RUN - which is WRONG!

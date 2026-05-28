@@ -9,8 +9,8 @@
 // - Module-qualified types correctly
 // - All the nuances of its own type system
 //
-// close() expects: *Connection[!active]
-// We're passing: *Transaction[active!]
+// close() expects: *Connection<!active>
+// We're passing: *Transaction<active!>
 //
 // Koru phantom checker passes (both have [active] state)
 // Zig type checker fails (Transaction != Connection)

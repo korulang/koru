@@ -9,7 +9,7 @@ const std = @import("std");
 // The Expression captures a condition, the Source captures template content
 ~[comptime|transform]event conditional.render {
     expr: Expression,
-    source: Source[HTML],
+    source: Source<HTML>,
     invocation: *const Invocation,
     program: *const Program,
     allocator: std.mem.Allocator

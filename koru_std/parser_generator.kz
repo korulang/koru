@@ -23,7 +23,7 @@ const std = @import("std");
 
 // Parser transform: generates .parse event and proc from token schema
 //
-// Input: ~[transform(parser)]event token {} | branch1 { field: Type[regex] } | ...
+// Input: ~[transform(parser)]event token {} | branch1 { field: Type<regex> } | ...
 // Output: Adds token.parse event + proc with regex matching
 ~[comptime]pub event parser {
     event_decl: *const EventDecl,

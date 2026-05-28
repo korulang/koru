@@ -8,7 +8,7 @@ const Data = struct { content: []const u8 };
 
 // Open a file - returns opened! state
 ~pub event open { path: []const u8 }
-| opened *File[opened!]
+| opened *File<opened!>
 
 ~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
@@ -17,8 +17,8 @@ const Data = struct { content: []const u8 };
 }
 
 // Read - returns data! state (nested obligation)
-~pub event read { file: *File[opened!] }
-| data { file: *File[opened!], content: *Data[data!] }
+~pub event read { file: *File<opened!> }
+| data { file: *File<opened!>, content: *Data<data!> }
 
 ~proc read|zig {
     const d = std.heap.page_allocator.create(Data) catch unreachable;
@@ -27,14 +27,14 @@ const Data = struct { content: []const u8 };
 }
 
 // Close file - consumes opened!
-~pub event close { file: *File[!opened] }
+~pub event close { file: *File<!opened> }
 
 ~proc close|zig {
     std.heap.page_allocator.destroy(file);
 }
 
 // Free data - consumes data!
-~pub event free { content: *Data[!data] }
+~pub event free { content: *Data<!data> }
 
 ~proc free|zig {
     std.heap.page_allocator.destroy(content);

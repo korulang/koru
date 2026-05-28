@@ -36,12 +36,12 @@ test "validateArgument accepts correct base type with matching phantom state" {
     const arena_alloc = arena.allocator();
     const test_alloc = std.testing.allocator;
 
-    // Valid usage: pass *Connection[active!] to close() which expects *Connection[!active]
+    // Valid usage: pass *Connection<active!> to close() which expects *Connection<!active>
     const source =
         \\~event connect { }
-        \\| ok { conn: *Connection[active!] }
+        \\| ok { conn: *Connection<active!> }
         \\
-        \\~event close { conn: *Connection[!active] }
+        \\~event close { conn: *Connection<!active> }
         \\
         \\~connect()
         \\| ok c |>
@@ -77,20 +77,20 @@ test "identity branch capture preserves phantom state literal" {
 
     // Units-of-measure phantom typing — pure state matching, no obligations.
     //
-    // `read_sensor` returns `f32[celsius]` via an identity-declared branch
-    // (`| temperature f32[celsius]`). The identity capture `| temperature t |>`
+    // `read_sensor` returns `f32<celsius>` via an identity-declared branch
+    // (`| temperature f32<celsius>`). The identity capture `| temperature t |>`
     // binds the whole payload to `t`. That `t` must carry the phantom state
     // literal `celsius` so that `log_reading(value: t)` — which requires
-    // `f32[celsius]` — type-checks.
+    // `f32<celsius>` — type-checks.
     //
     // No `!` anywhere: there is nothing to discharge. Temperatures don't get
     // cleaned up. This exercises the state-literal tracking path in isolation
     // from the obligation machinery.
     const source =
         \\~event read_sensor { }
-        \\| temperature f32[celsius]
+        \\| temperature f32<celsius>
         \\
-        \\~event log_reading { value: f32[celsius] }
+        \\~event log_reading { value: f32<celsius> }
         \\
         \\~read_sensor()
         \\| temperature t |> log_reading(value: t)
@@ -135,8 +135,8 @@ test "identity branch capture preserves phantom state literal" {
         reporter.printErrors(stderr_writer) catch {};
     };
 
-    // Identity capture `t` must carry the [celsius] state from the branch so
-    // that `log_reading(value: t)` matches its `f32[celsius]` parameter.
+    // Identity capture `t` must carry the <celsius> state from the branch so
+    // that `log_reading(value: t)` matches its `f32<celsius>` parameter.
     //
     // Currently expected to FAIL on master with KORU030 "no tracked phantom
     // state" — that is the bug this test pins.
@@ -156,22 +156,22 @@ test "obligations track phantom states through multi-step flow" {
     const test_alloc = std.testing.allocator;
 
     // Two different types with same phantom state name
-    // Both have [active!] obligations but they are DIFFERENT obligations
+    // Both have <active!> obligations but they are DIFFERENT obligations
     const source =
         \\~event connect { }
-        \\| ok { conn: *Connection[active!] }
+        \\| ok { conn: *Connection<active!> }
         \\
-        \\~event begin { conn: *Connection[!active] }
-        \\| ok { tx: *Transaction[active!] }
+        \\~event begin { conn: *Connection<!active> }
+        \\| ok { tx: *Transaction<active!> }
         \\
-        \\~event commit { tx: *Transaction[!active] }
+        \\~event commit { tx: *Transaction<!active> }
         \\
         \\~connect()
         \\| ok c |>
         \\    begin(conn: c.conn)
         \\    | ok t |>
-        \\        // Only commit() is called - discharges *Transaction[active!]
-        \\        // But *Connection[active!] was already consumed by begin()
+        \\        // Only commit() is called - discharges *Transaction<active!>
+        \\        // But *Connection<active!> was already consumed by begin()
         \\        commit(tx: t.tx)
         \\        |> _
     ;

@@ -13,8 +13,8 @@ const errors = @import("errors");
 //   1. The phantom state name (e.g., "active")
 //   2. The base type (e.g., "*Connection" vs "*Transaction")
 //
-// A *Connection[active!] obligation can ONLY be discharged by an event
-// that accepts *Connection[!active], NOT by one that accepts *Transaction[!active].
+// A *Connection<active!> obligation can ONLY be discharged by an event
+// that accepts *Connection<!active>, NOT by one that accepts *Transaction<!active>.
 // =============================================================================
 
 test "findDisposalEvents filters by base type - same phantom state, different types" {
@@ -30,14 +30,14 @@ test "findDisposalEvents filters by base type - same phantom state, different ty
     // All events are in module "test" (from filename)
     const source =
         \\~event connect { }
-        \\| ok: *Connection[active!]
+        \\| ok: *Connection<active!>
         \\
-        \\~event close[!] { conn: *Connection[!active] }
+        \\~event close[!] { conn: *Connection<!active> }
         \\
         \\~event begin { }
-        \\| ok: *Transaction[active!]
+        \\| ok: *Transaction<active!>
         \\
-        \\~event commit[!] { tx: *Transaction[!active] }
+        \\~event commit[!] { tx: *Transaction<!active> }
     ;
 
     const empty_flags: []const []const u8 = &.{};
@@ -56,7 +56,7 @@ test "findDisposalEvents filters by base type - same phantom state, different ty
     // Build event map from parsed AST
     try inserter.buildEventMap(&parse_result.source_file);
 
-    // Test 1: *Connection[active!] should find ONLY close(), not commit()
+    // Test 1: *Connection<active!> should find ONLY close(), not commit()
     // The phantom state is "test:active" (module:state)
     {
         const disposals = try inserter.findDisposalEvents("test:active!", "*Connection");
@@ -72,7 +72,7 @@ test "findDisposalEvents filters by base type - same phantom state, different ty
         try std.testing.expectEqualStrings("test:close[!]", disposals[0].qualified_name);
     }
 
-    // Test 2: *Transaction[active!] should find ONLY commit(), not close()
+    // Test 2: *Transaction<active!> should find ONLY commit(), not close()
     {
         const disposals = try inserter.findDisposalEvents("test:active!", "*Transaction");
         defer {
@@ -112,11 +112,11 @@ test "findDisposalEvents handles multiple disposal options for same type" {
     // One type with multiple ways to discharge the same state
     const source =
         \\~event open { path: []const u8 }
-        \\| ok: *File[open!]
+        \\| ok: *File<open!>
         \\
-        \\~event close[!] { file: *File[!open] }
+        \\~event close[!] { file: *File<!open> }
         \\
-        \\~event close_and_delete[!] { file: *File[!open] }
+        \\~event close_and_delete[!] { file: *File<!open> }
     ;
 
     const empty_flags: []const []const u8 = &.{};
@@ -134,7 +134,7 @@ test "findDisposalEvents handles multiple disposal options for same type" {
 
     try inserter.buildEventMap(&parse_result.source_file);
 
-    // Should find BOTH close and close_and_delete for *File[open!]
+    // Should find BOTH close and close_and_delete for *File<open!>
     const disposals = try inserter.findDisposalEvents("test:open!", "*File");
     defer {
         for (disposals) |d| {
@@ -167,14 +167,14 @@ test "findDisposalEvents with different types same phantom state" {
     // This is the CRITICAL test - verifies that base type filtering works
     const source =
         \\~event connect { }
-        \\| ok: *DbConn[connected!]
+        \\| ok: *DbConn<connected!>
         \\
-        \\~event disconnect[!] { conn: *DbConn[!connected] }
+        \\~event disconnect[!] { conn: *DbConn<!connected> }
         \\
         \\~event acquire { }
-        \\| ok: *PoolConn[connected!]
+        \\| ok: *PoolConn<connected!>
         \\
-        \\~event release[!] { conn: *PoolConn[!connected] }
+        \\~event release[!] { conn: *PoolConn<!connected> }
     ;
 
     const empty_flags: []const []const u8 = &.{};

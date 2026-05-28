@@ -2,17 +2,17 @@
 const std = @import("std");
 const File = struct { handle: i32 };
 ~event open { path: []const u8 }
-| opened *File[opened!]
+| opened *File<opened!>
 ~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
     f.* = File{ .handle = 42 };
     return .{ .opened = f };
 }
-~event close { file: *File[!opened] }
+~event close { file: *File<!opened> }
 ~proc close|zig {
     std.heap.page_allocator.destroy(file);
 }
-~event flush_close { file: *File[!opened] }
+~event flush_close { file: *File<!opened> }
 ~proc flush_close|zig {
     std.heap.page_allocator.destroy(file);
 }

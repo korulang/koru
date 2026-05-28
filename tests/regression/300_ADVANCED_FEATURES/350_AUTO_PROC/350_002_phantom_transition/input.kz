@@ -9,7 +9,7 @@ const Resource = struct { value: i32 };
 
 // Create resource - has a proc (does real work)
 ~pub event create { value: i32 }
-| created *Resource[state_a!]
+| created *Resource<state_a!>
 
 ~proc create|zig {
     const r = std.heap.page_allocator.create(Resource) catch unreachable;
@@ -20,11 +20,11 @@ const Resource = struct { value: i32 };
 // Transition from state_a to state_b - NO PROC NEEDED
 // Input and output have same shape (r: *Resource), just different phantom
 // Compiler should synthesize: return .{ .transitioned = r };
-~pub event transition { r: *Resource[!state_a] }
-| transitioned *Resource[state_b!]
+~pub event transition { r: *Resource<!state_a> }
+| transitioned *Resource<state_b!>
 
 // Cleanup state_b - has a proc (does real work)
-~pub event cleanup { r: *Resource[!state_b] }
+~pub event cleanup { r: *Resource<!state_b> }
 
 ~proc cleanup|zig {
     std.debug.print("cleaned up resource with value {d}\n", .{r.value});

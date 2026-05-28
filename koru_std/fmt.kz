@@ -25,7 +25,7 @@ pub const FormattedText = struct {
 // FMT.DEALLOC - Discharge the [allocated!] obligation
 // ============================================================================
 
-~pub event fmt.dealloc { formatted: *FormattedText[!allocated] }
+~pub event fmt.dealloc { formatted: *FormattedText<!allocated> }
 
 ~proc fmt.dealloc|zig {
     formatted.allocator.free(formatted.text);
@@ -53,7 +53,7 @@ pub const FormattedText = struct {
     program: *const Program,
     allocator: std.mem.Allocator
 }
-| formatted *FormattedText[allocated!]
+| formatted *FormattedText<allocated!>
 
 ~[norun]pub event fmt.blk.impl {
     text: []const u8,

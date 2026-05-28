@@ -126,9 +126,18 @@ lines.push(
 lines.push('');
 
 if (disclaimer) {
-  // Emit as a blockquote callout so it's visually distinct from body prose.
-  for (const line of disclaimer.split('\n')) {
-    lines.push(`> **Note:** ${line}`);
+  // Emit as a multi-paragraph blockquote callout. Only the first line gets
+  // the **Note:** label; blank lines become `>` so paragraph breaks render.
+  const ds = disclaimer.split('\n');
+  for (let i = 0; i < ds.length; i++) {
+    const line = ds[i];
+    if (line === '') {
+      lines.push('>');
+    } else if (i === 0) {
+      lines.push(`> **Note:** ${line}`);
+    } else {
+      lines.push(`> ${line}`);
+    }
   }
   lines.push('');
 }

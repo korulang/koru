@@ -25,7 +25,7 @@ const std = @import("std");
 // Event that takes Source[HTML] parameter for template rendering
 // [comptime|transform] annotation marks this as compile-time transformation
 // Transform events receive: source (user args), invocation (for type resolution), program (AST), allocator (memory)
-~[comptime|transform]event renderHTML { source: Source[HTML], invocation: *const Invocation, program: *const Program, allocator: std.mem.Allocator }
+~[comptime|transform]event renderHTML { source: Source<HTML>, invocation: *const Invocation, program: *const Program, allocator: std.mem.Allocator }
 | transformed *const Program
 | failed []const u8
 

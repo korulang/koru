@@ -18,7 +18,7 @@ const Transaction = struct { conn_handle: i32 };
 
 // connect: creates connection with [connected!] obligation
 ~pub event connect { host: []const u8 }
-| ok *Connection[connected!]
+| ok *Connection<connected!>
 | err []const u8
 
 ~proc connect|zig {
@@ -28,8 +28,8 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // begin: consumes [!connected] OR [!active], produces Transaction[started!]
-~pub event begin { conn: *Connection[!connected|!active] }
-| ok *Transaction[started!]
+~pub event begin { conn: *Connection<!connected|!active> }
+| ok *Transaction<started!>
 | err []const u8
 
 ~proc begin|zig {
@@ -39,8 +39,8 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // exec: consumes [!started] OR [!active], produces Transaction[active!]
-~pub event exec { tx: *Transaction[!started|!active], sql: []const u8 }
-| ok *Transaction[active!]
+~pub event exec { tx: *Transaction<!started|!active>, sql: []const u8 }
+| ok *Transaction<active!>
 | err []const u8
 
 ~proc exec|zig {
@@ -49,8 +49,8 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // commit: consumes [!active], returns Connection[active!]
-~pub event commit { tx: *Transaction[!active] }
-| ok *Connection[active!]
+~pub event commit { tx: *Transaction<!active> }
+| ok *Connection<active!>
 | err []const u8
 
 ~proc commit|zig {
@@ -62,8 +62,8 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // rollback: consumes [!active], returns Connection[active!]
-~pub event rollback { tx: *Transaction[!active] }
-| ok *Connection[active!]
+~pub event rollback { tx: *Transaction<!active> }
+| ok *Connection<active!>
 | err []const u8
 
 ~proc rollback|zig {
@@ -75,7 +75,7 @@ const Transaction = struct { conn_handle: i32 };
 }
 
 // close: ONLY accepts [!active] - forces meaningful use before close
-~pub event close { conn: *Connection[!active] }
+~pub event close { conn: *Connection<!active> }
 | err []const u8
 
 ~proc close|zig {

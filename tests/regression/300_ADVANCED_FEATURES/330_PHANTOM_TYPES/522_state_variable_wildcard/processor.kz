@@ -2,8 +2,8 @@
 
 const Data = struct { value: i32 };
 
-~pub event process { d: *Data[M'_] }
-| done *Data[M'_]  // Wildcard: accepts any state, preserves it
+~pub event process { d: *Data<M'_> }
+| done *Data<M'_>  // Wildcard: accepts any state, preserves it
 
 ~proc process|zig {
     // Process the data without changing its state

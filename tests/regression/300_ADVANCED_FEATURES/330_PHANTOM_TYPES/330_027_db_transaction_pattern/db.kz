@@ -18,7 +18,7 @@ const Transaction = struct {
 
 // Connect to database - creates connected! obligation
 ~pub event connect { url: []const u8 }
-| connected *Connection[connected!]
+| connected *Connection<connected!>
 
 ~proc connect|zig {
     std.debug.print("Connecting to: {s}\n", .{url});
@@ -31,8 +31,8 @@ const Transaction = struct {
 // Start a query/transaction - creates transaction! obligation
 // The connection must be in [connected] state (required, but not consumed)
 // The connected! obligation is tracked separately and discharged by disconnect()
-~pub event query { conn: *Connection[connected], sql: []const u8 }
-| started *Transaction[transaction!]
+~pub event query { conn: *Connection<connected>, sql: []const u8 }
+| started *Transaction<transaction!>
 
 ~proc query|zig {
     std.debug.print("Query: {s}\n", .{sql});
@@ -43,21 +43,21 @@ const Transaction = struct {
 }
 
 // Commit - CONSUMES transaction! obligation
-~pub event commit { tx: *Transaction[!transaction] }
+~pub event commit { tx: *Transaction<!transaction> }
 
 ~proc commit|zig {
     std.debug.print("Committing transaction\n", .{});
 }
 
 // Rollback - CONSUMES transaction! obligation (alternative to commit)
-~pub event rollback { tx: *Transaction[!transaction] }
+~pub event rollback { tx: *Transaction<!transaction> }
 
 ~proc rollback|zig {
     std.debug.print("Rolling back transaction\n", .{});
 }
 
 // Disconnect - CONSUMES connected! obligation
-~pub event disconnect { conn: *Connection[!connected] }
+~pub event disconnect { conn: *Connection<!connected> }
 
 ~proc disconnect|zig {
     std.debug.print("Disconnecting\n", .{});

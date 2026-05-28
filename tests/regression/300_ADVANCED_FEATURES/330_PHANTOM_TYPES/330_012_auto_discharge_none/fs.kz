@@ -7,7 +7,7 @@ const File = struct { handle: i32 };
 
 // Open a file - returns opened! state (requires cleanup)
 ~pub event open { path: []const u8 }
-| opened *File[opened!]
+| opened *File<opened!>
 
 ~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;

@@ -23,7 +23,7 @@ const QueryResult = struct { rows: i32 };
 
 // connect: creates connection with obligation to use it
 ~pub event connect { host: []const u8 }
-| ok Connection[open!]
+| ok Connection<open!>
 | err []const u8
 
 ~proc connect|zig {
@@ -31,8 +31,8 @@ const QueryResult = struct { rows: i32 };
 }
 
 // begin: consumes connection obligation, creates transaction obligation
-~pub event begin { conn: Connection[!open] }
-| ok Transaction[active!]
+~pub event begin { conn: Connection<!open> }
+| ok Transaction<active!>
 | err []const u8
 
 ~proc begin|zig {
@@ -40,9 +40,9 @@ const QueryResult = struct { rows: i32 };
 }
 
 // execute: uses transaction WITHOUT consuming it (can call multiple times)
-~pub event execute { tx: Transaction[active], sql: []const u8 }
-| ok { tx: Transaction[active], result: QueryResult }
-| err { tx: Transaction[active], msg: []const u8 }
+~pub event execute { tx: Transaction<active>, sql: []const u8 }
+| ok { tx: Transaction<active>, result: QueryResult }
+| err { tx: Transaction<active>, msg: []const u8 }
 
 ~proc execute|zig {
     std.debug.print("Executing: {s}\n", .{sql});
@@ -50,7 +50,7 @@ const QueryResult = struct { rows: i32 };
 }
 
 // commit: consumes transaction obligation - this is a MEANINGFUL END
-~[!]pub event commit { tx: Transaction[!active] }
+~[!]pub event commit { tx: Transaction<!active> }
 | err []const u8
 
 ~proc commit|zig {
@@ -59,7 +59,7 @@ const QueryResult = struct { rows: i32 };
 }
 
 // rollback: consumes transaction obligation - this is also a MEANINGFUL END
-~[!]pub event rollback { tx: Transaction[!active] }
+~[!]pub event rollback { tx: Transaction<!active> }
 | err []const u8
 
 ~proc rollback|zig {

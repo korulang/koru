@@ -5,7 +5,7 @@
 // This is NOT phantom type syntax (which appears on TYPE references).
 // This is generic parameter syntax (which appears on EVENT names).
 //
-// Phantom:  *Entity[position+velocity]  ← on type
+// Phantom:  *Entity<position+velocity>  ← on type
 // Generic:  ring.new[T:u32;N:1024]      ← on event name
 //
 // Semicolon separates params to avoid ambiguity with nested types:

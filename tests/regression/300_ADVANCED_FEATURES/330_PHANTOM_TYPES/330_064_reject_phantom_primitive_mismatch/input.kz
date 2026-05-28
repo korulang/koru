@@ -10,8 +10,8 @@
 
 ~read_raw = reading 22.5
 
-~event to_fahrenheit { c: f32[celsius] }   // requires [celsius]
-| result f32[fahrenheit]
+~event to_fahrenheit { c: f32<celsius> }   // requires [celsius]
+| result f32<fahrenheit>
 
 ~to_fahrenheit = result c * 9.0 / 5.0 + 32.0
 

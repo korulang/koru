@@ -1,8 +1,10 @@
 # Koru in a Page
 
-> Generated 2026-05-28T00:10:17.347Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
+> Generated 2026-05-28T02:31:14.175Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
 
 > **Note:** This tutorial is prose synthesis on top of the test suite. It may contain errors or drift. The compiler's actual behavior — verified by tests in `tests/regression/` and source in `src/` — is the source of truth. When you find this document saying one thing and the compiler doing another, the conflict itself is the finding: flag it, don't paper over it.
+>
+> **Koru is greenfield.** There are no legacy users, no deprecated forms to support, no migration windows that constitute a contract. When the language changes, the change lands and tests/docs get rewritten in the same motion. If the parser temporarily accepts an older form while migration is in progress, that's internal scaffolding — not a feature. Write code in the current canonical form. Don't hedge for legacy.
 
 Koru is an event-continuation language. It lives on top of a host language — the implementation here targets Zig, so this file (`.kz`, for *Koru Zig*) is the Koru-Zig variant. A `.kz` file is a valid Zig file: lines starting with `~` switch the parser into Koru mode for that construct, everything else stays plain Zig. Pure Zig works as-is — you can write a `.kz` file that's nothing but `pub fn main()` and it compiles. Add Koru where it earns its keep: events with named outcome branches, flows that dispatch on those branches, subflows that compose them. The language is small. Read this top to bottom and you can write it.
 
@@ -57,29 +59,30 @@ A `when` clause narrows a handler to a subset of fires that match a predicate �
 
 ### Phantom states are compile-time type labels
 
-Attach a state label to a type: `*File[opened]`. The label is opaque to the language; meaning comes from a *semantic checker pass*. The default checker treats labels as resource-lifecycle states and tracks them through event signatures — but the mechanism is pluggable, and custom checkers can interpret labels however they want.
+Attach a state label to a type: `*File<opened>`. The label is opaque to the language; meaning comes from a *semantic checker pass*. The default checker treats labels as resource-lifecycle states and tracks them through event signatures — but the mechanism is pluggable, and custom checkers can interpret labels however they want.
 
 Simplest case: a phantom label as a *unit of measure*, attached to a primitive type. No obligation involved; the compiler just refuses to let you cross units.
 
 ```koru
 ~event read_temp { sensor_id: u8 }
-| reading f32[celsius]
+| reading f32<celsius>
 
-~event display { temp: f32[celsius] }
+~event to_fahrenheit { c: f32<celsius> }
+| result f32<fahrenheit>
 ```
 
-`display` won't accept a bare `f32` or an `f32[fahrenheit]` — only `f32[celsius]`.
+`to_fahrenheit` won't accept a bare `f32` or an `f32<fahrenheit>` — only `f32<celsius>`. The conversion event declares the unit transition at its boundary.
 
-For resource lifecycle, layer *obligations* on top: `[state!]` on a return *produces* a cleanup obligation; `[!state]` on a parameter *discharges* one. The compiler refuses to let an obligated resource fall off the end of a flow without being passed to a `[!state]` parameter somewhere.
+For resource lifecycle, layer *obligations* on top: `<state!>` on a return *produces* a cleanup obligation; `<!state>` on a parameter *discharges* one. The compiler refuses to let an obligated resource fall off the end of a flow without being passed to a `<!state>` parameter somewhere.
 
 ```koru
 ~event open { path: []const u8 }
-| opened *File[opened!]              // [opened!] produces a cleanup obligation
+| opened *File<opened!>              // <opened!> produces a cleanup obligation
 
-~event close { file: *File[!opened] }   // [!opened] discharges it
+~event close { file: *File<!opened> }   // <!opened> discharges it
 ```
 
-`open` hands back a file with an obligation the compiler tracks until something accepts it via `[!opened]` — `close` is that something. Try to drop the file (`| opened f |> _`) and the compiler stops you.
+`open` hands back a file with an obligation the compiler tracks until something accepts it via `<!opened>` — `close` is that something. Try to drop the file (`| opened f |> _`) and the compiler stops you.
 
 The compiler does NOT verify that the disposal proc actually cleans up — that's the library author's promise. Usage correctness is checked; library correctness is verified by tests.
 

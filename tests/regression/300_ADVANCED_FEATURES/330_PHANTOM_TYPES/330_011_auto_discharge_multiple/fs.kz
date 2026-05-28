@@ -7,7 +7,7 @@ const File = struct { handle: i32 };
 
 // Open a file - returns opened! state (requires cleanup)
 ~pub event open { path: []const u8 }
-| opened *File[opened!]
+| opened *File<opened!>
 
 ~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
@@ -16,14 +16,14 @@ const File = struct { handle: i32 };
 }
 
 // Close - saves any changes before closing
-~pub event close { file: *File[!opened] }
+~pub event close { file: *File<!opened> }
 
 ~proc close|zig {
     std.debug.print("Closing file (saving changes)\n", .{});
 }
 
 // Abandon - discards any changes
-~pub event abandon { file: *File[!opened] }
+~pub event abandon { file: *File<!opened> }
 
 ~proc abandon|zig {
     std.debug.print("Abandoning file (discarding changes)\n", .{});

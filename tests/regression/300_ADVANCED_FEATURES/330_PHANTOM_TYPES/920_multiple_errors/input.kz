@@ -2,10 +2,10 @@ pub const File = struct {
     handle: usize,
 };
 ~event open_file { path: []const u8 }
-| opened *File[open]
-~event close_file { file: *File[closed] }
-~event read_file { file: *File[open] }
-~event write_file { file: *File[open] }
+| opened *File<open>
+~event close_file { file: *File<closed> }
+~event read_file { file: *File<open> }
+~event write_file { file: *File<open> }
 ~proc open_file|zig {
     const f = File{ .handle = 42 };
     return .{ .opened = &f };

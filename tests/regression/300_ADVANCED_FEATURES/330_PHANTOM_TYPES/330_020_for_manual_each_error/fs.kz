@@ -10,7 +10,7 @@ const File = struct {
 
 // Open a file - returns opened! state (requires cleanup)
 ~pub event open { path: []const u8 }
-| opened *File[opened!]
+| opened *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening file: {s}\n", .{path});
@@ -21,7 +21,7 @@ const File = struct {
 }
 
 // Close a file - CONSUMES opened! state (disposes the resource)
-~pub event close { file: *File[!opened] }
+~pub event close { file: *File<!opened> }
 
 ~proc close|zig {
     std.debug.print("Closing file\n", .{});

@@ -50,7 +50,7 @@ const allocator = std.heap.c_allocator;
 // ============================================================
 
 ~event create { id: usize }
-| created *Resource[active!]
+| created *Resource<active!>
 
 ~proc create|zig {
     const r = allocator.create(Resource) catch unreachable;
@@ -58,7 +58,7 @@ const allocator = std.heap.c_allocator;
     return .{ .created = r };
 }
 
-~event destroy { r: *Resource[!active] }
+~event destroy { r: *Resource<!active> }
 
 ~proc destroy|zig {
     allocator.destroy(r);
@@ -66,7 +66,7 @@ const allocator = std.heap.c_allocator;
 
 // Factory with DIFFERENT field name than create
 ~event make_resource { id: usize }
-| ready *Resource[active!]  // "resource" not "r"
+| ready *Resource<active!>  // "resource" not "r"
 
 // BUG #3: f.r -> resource field name mismatch
 ~make_resource = create(id: id)

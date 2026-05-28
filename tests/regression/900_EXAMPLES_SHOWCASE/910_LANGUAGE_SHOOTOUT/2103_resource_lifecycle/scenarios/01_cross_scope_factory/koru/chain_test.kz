@@ -5,7 +5,7 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 ~event open { path: []const u8 }
-| opened *File[opened!]
+| opened *File<opened!>
 
 ~proc open|zig {
     std.debug.print("Opening\n", .{});
@@ -14,13 +14,13 @@ const File = struct { handle: i32 };
     return .{ .opened = f };
 }
 
-~event use { file: *File[opened] }
+~event use { file: *File<opened> }
 
 ~proc use|zig {
     std.debug.print("Using\n", .{});
 }
 
-~event close { file: *File[!opened] }
+~event close { file: *File<!opened> }
 
 ~proc close|zig {
     std.debug.print("Closing\n", .{});
@@ -29,7 +29,7 @@ const File = struct { handle: i32 };
 
 // Factory that escapes obligation
 ~event create { path: []const u8 }
-| created *File[opened!]
+| created *File<opened!>
 
 ~create = open(path: path)
 | opened f |> created { resource: f.file }

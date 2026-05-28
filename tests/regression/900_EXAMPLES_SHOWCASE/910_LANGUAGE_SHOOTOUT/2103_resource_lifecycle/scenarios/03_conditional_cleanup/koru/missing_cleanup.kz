@@ -12,7 +12,7 @@ const std = @import("std");
 const File = struct { handle: i32 };
 
 ~event open { path: []const u8 }
-| opened *File[opened!]
+| opened *File<opened!>
 
 ~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
@@ -20,12 +20,12 @@ const File = struct { handle: i32 };
     return .{ .opened = f };
 }
 
-~event write { file: *File[opened], data: []const u8 }
+~event write { file: *File<opened>, data: []const u8 }
 
 ~proc write|zig {
 }
 
-~event close { file: *File[!opened] }
+~event close { file: *File<!opened> }
 
 ~proc close|zig {
     std.heap.page_allocator.destroy(file);

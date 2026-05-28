@@ -17,7 +17,7 @@
 }
 
 // Event that takes Source parameter for HTML rendering
-~event renderHTML { source: Source[HTML] }
+~event renderHTML { source: Source<HTML> }
 | rendered []const u8
 
 // Comptime proc that receives Source with captured scope

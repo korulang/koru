@@ -10,7 +10,7 @@ const Conn = struct { handle: i32 };
 
 // Connect to database - returns connected! obligation
 ~pub event connect { conninfo: []const u8 }
-| ok *Conn[connected!]
+| ok *Conn<connected!>
 | err []const u8
 
 ~proc connect|zig {
@@ -20,7 +20,7 @@ const Conn = struct { handle: i32 };
 }
 
 // Disconnect - consumes connected obligation (void return)
-~pub event disconnect { conn: *Conn[!connected] }
+~pub event disconnect { conn: *Conn<!connected> }
 
 ~proc disconnect|zig {
     std.heap.page_allocator.destroy(conn);

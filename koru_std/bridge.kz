@@ -70,7 +70,7 @@ pub const Bridge = struct {
 // ============================================================================
 
 ~pub event create { id: []const u8 }
-| session *Bridge[session!]
+| session *Bridge<session!>
 
 ~proc create|zig {
     const allocator = std.heap.page_allocator;
@@ -94,7 +94,7 @@ pub const Bridge = struct {
 // CLOSE - End a bridge session, discharge all handles
 // ============================================================================
 
-~pub event close { br: *Bridge[!session] }
+~pub event close { br: *Bridge<!session> }
 | closed u32
 
 ~proc close|zig {

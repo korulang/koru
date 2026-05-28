@@ -33,7 +33,7 @@ pub const JsonValue = union(enum) {
 // ============================================================================
 
 ~pub event object.new { allocator: ?std.mem.Allocator }
-| ok *JsonObject[building!]
+| ok *JsonObject<building!>
 
 ~proc object.new|zig {
     const alloc = allocator orelse std.heap.page_allocator;
@@ -112,7 +112,7 @@ pub const JsonValue = union(enum) {
 // ============================================================================
 
 ~pub event array.new { allocator: ?std.mem.Allocator }
-| ok *JsonObject[building!]  // Reuse JsonObject for simplicity
+| ok *JsonObject<building!>  // Reuse JsonObject for simplicity
 
 ~proc array.new|zig {
     const alloc = allocator orelse std.heap.page_allocator;
@@ -132,8 +132,8 @@ pub const JsonValue = union(enum) {
     return .{ .ok = obj };
 }
 
-~pub event array.push { arr: *JsonObject[building!], value: JsonValue }
-| ok *JsonObject[building!]
+~pub event array.push { arr: *JsonObject<building!>, value: JsonValue }
+| ok *JsonObject<building!>
 
 ~proc array.push|zig {
     const writer = arr.buffer.writer();
@@ -169,7 +169,7 @@ pub const JsonValue = union(enum) {
     return .{ .ok = arr };
 }
 
-~pub event array.finish { arr: *JsonObject[!building] }
+~pub event array.finish { arr: *JsonObject<!building> }
 | json []const u8
 
 ~proc array.finish|zig {

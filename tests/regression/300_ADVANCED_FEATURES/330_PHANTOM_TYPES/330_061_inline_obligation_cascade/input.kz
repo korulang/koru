@@ -18,7 +18,7 @@ const Connection = struct { handle: i32 };
 const Transaction = struct { conn_handle: i32 };
 
 ~pub event connect { host: []const u8 }
-| ok *Connection[connected!]
+| ok *Connection<connected!>
 | err []const u8
 
 ~proc connect|zig {
@@ -28,8 +28,8 @@ const Transaction = struct { conn_handle: i32 };
     return .{ .ok = c };
 }
 
-~pub event begin { conn: *Connection[!connected|!active] }
-| ok *Transaction[started!]
+~pub event begin { conn: *Connection<!connected|!active> }
+| ok *Transaction<started!>
 | err []const u8
 
 ~proc begin|zig {
@@ -38,8 +38,8 @@ const Transaction = struct { conn_handle: i32 };
     return .{ .ok = tx };
 }
 
-~pub event exec { tx: *Transaction[!started|!active], sql: []const u8 }
-| ok *Transaction[active!]
+~pub event exec { tx: *Transaction<!started|!active>, sql: []const u8 }
+| ok *Transaction<active!>
 | err []const u8
 
 ~proc exec|zig {
@@ -47,8 +47,8 @@ const Transaction = struct { conn_handle: i32 };
     return .{ .ok = tx };
 }
 
-~pub event commit { tx: *Transaction[!active] }
-| ok *Connection[active!]
+~pub event commit { tx: *Transaction<!active> }
+| ok *Connection<active!>
 | err []const u8
 
 ~proc commit|zig {
@@ -59,7 +59,7 @@ const Transaction = struct { conn_handle: i32 };
     return .{ .ok = c };
 }
 
-~pub event close { conn: *Connection[!active] }
+~pub event close { conn: *Connection<!active> }
 | ok
 | err []const u8
 

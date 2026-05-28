@@ -7,7 +7,7 @@ const File = struct { handle: i32 };
 
 // Open a file - returns opened! state
 ~pub event open { path: []const u8 }
-| opened *File[opened!]
+| opened *File<opened!>
 
 ~proc open|zig {
     const f = std.heap.page_allocator.create(File) catch unreachable;
@@ -16,15 +16,15 @@ const File = struct { handle: i32 };
 }
 
 // Lock - transition opened! -> locked!
-~pub event lock { file: *File[!opened] }
-| locked *File[locked!]
+~pub event lock { file: *File<!opened> }
+| locked *File<locked!>
 
 ~proc lock|zig {
     return .{ .locked = file };
 }
 
 // Write - requires locked state (doesn't consume)
-~pub event write { file: *File[locked], data: []const u8 }
+~pub event write { file: *File<locked>, data: []const u8 }
 | err []const u8
 
 ~proc write|zig {
@@ -32,7 +32,7 @@ const File = struct { handle: i32 };
 }
 
 // Unlock - consumes locked! (Option 1 for disposing locked!)
-~pub event unlock { file: *File[!locked] }
+~pub event unlock { file: *File<!locked> }
 
 ~proc unlock|zig {
     std.debug.print("Unlocking\n", .{});
@@ -40,7 +40,7 @@ const File = struct { handle: i32 };
 }
 
 // Force close - also consumes locked! (Option 2 for disposing locked!)
-~pub event force_close { file: *File[!locked] }
+~pub event force_close { file: *File<!locked> }
 
 ~proc force_close|zig {
     std.debug.print("Force closing\n", .{});

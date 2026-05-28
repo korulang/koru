@@ -1,6 +1,6 @@
 // Test: effect branch with phantom-stated payload (smoke test).
 //
-// Producer yields `frame(f)` where `f: *Frame[ready]` — a pointer carrying
+// Producer yields `frame(f)` where `f: *Frame<ready>` — a pointer carrying
 // a phantom state annotation. Consumer handles each frame and reads its
 // id. The phantom state `[ready]` is currently decorative at the Koru
 // level (Phase 4 hasn't extended the phantom checker to track obligations

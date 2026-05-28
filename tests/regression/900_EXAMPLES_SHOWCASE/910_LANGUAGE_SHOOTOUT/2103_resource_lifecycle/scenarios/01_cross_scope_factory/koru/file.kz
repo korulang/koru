@@ -15,7 +15,7 @@ pub const File = struct {
 
 // Open a file - returns with cleanup obligation
 ~pub event open { path: []const u8 }
-| opened *File[opened!]
+| opened *File<opened!>
 | error []const u8
 
 ~proc open|zig {
@@ -30,7 +30,7 @@ pub const File = struct {
 }
 
 // Close a file - consumes the cleanup obligation
-~pub event close { file: *File[!opened] }
+~pub event close { file: *File<!opened> }
 
 ~proc close|zig {
     file.handle.close();
@@ -38,7 +38,7 @@ pub const File = struct {
 }
 
 // Write to a file - requires open state but doesn't consume obligation
-~pub event write { file: *File[opened], data: []const u8 }
+~pub event write { file: *File<opened>, data: []const u8 }
 | written usize
 | error []const u8
 

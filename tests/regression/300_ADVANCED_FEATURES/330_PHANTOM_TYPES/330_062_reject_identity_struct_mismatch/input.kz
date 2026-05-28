@@ -1,6 +1,6 @@
 // NEGATIVE TEST: Identity branch decl + struct-shape proc return.
 //
-// `connect` declares `| ok Connection[open!]` — an identity branch whose
+// `connect` declares `| ok Connection<open!>` — an identity branch whose
 // payload IS a Connection. But its proc returns `.{ .ok = .{ .conn = ... } }`
 // — a struct shape. The two don't match.
 //
@@ -19,7 +19,7 @@ const Connection = struct { handle: i32 };
 const Transaction = struct { conn_handle: i32 };
 
 ~pub event connect { host: []const u8 }
-| ok Connection[open!]
+| ok Connection<open!>
 | err []const u8
 
 ~proc connect|zig {
@@ -27,15 +27,15 @@ const Transaction = struct { conn_handle: i32 };
     return .{ .ok = .{ .conn = .{ .handle = 1 } } };
 }
 
-~pub event begin { conn: Connection[!open] }
-| ok Transaction[active!]
+~pub event begin { conn: Connection<!open> }
+| ok Transaction<active!>
 | err []const u8
 
 ~proc begin|zig {
     return .{ .ok = .{ .tx = .{ .conn_handle = conn.handle } } };
 }
 
-~[!]pub event commit { tx: Transaction[!active] }
+~[!]pub event commit { tx: Transaction<!active> }
 | err []const u8
 
 ~proc commit|zig {

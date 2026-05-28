@@ -1,5 +1,5 @@
 const Connection = struct { id: i32 };
-~pub event use_connection { conn: *Connection[connected!] }
+~pub event use_connection { conn: *Connection<connected!> }
 ~proc use_connection|zig {
 }
 pub fn main() void {}

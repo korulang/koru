@@ -29,7 +29,7 @@ pub const String = struct {
 
 // Create with explicit allocator
 ~pub event new { allocator: std.mem.Allocator, text: []const u8 }
-| ok *String[view!]
+| ok *String<view!>
 | err []const u8
 
 ~proc new|zig {
@@ -48,7 +48,7 @@ pub const String = struct {
 
 // Create with page allocator (simple, for demos)
 ~pub event from_page { text: []const u8 }
-| ok *String[view!]
+| ok *String<view!>
 | err []const u8
 
 ~proc from_page|zig {
@@ -71,16 +71,16 @@ pub const String = struct {
 // ============================================
 
 // Take ownership - view becomes instance
-~pub event take { s: *String[!view] }
-| instance *String[instance!]
+~pub event take { s: *String<!view> }
+| instance *String<instance!>
 
 ~proc take|zig {
     return .{ .instance = s };
 }
 
 // Release ownership - instance becomes view
-~pub event release { s: *String[!instance] }
-| view *String[view!]
+~pub event release { s: *String<!instance> }
+| view *String<view!>
 
 ~proc release|zig {
     return .{ .view = s };
@@ -91,7 +91,7 @@ pub const String = struct {
 // ============================================
 
 // Free - works on either view or instance
-~pub event free { s: *String[!view|instance] }
+~pub event free { s: *String<!view|instance> }
 
 ~proc free|zig {
     s.allocator.free(s.data);
@@ -102,14 +102,14 @@ pub const String = struct {
 // Read operations - work on view or instance
 // ============================================
 
-~pub event read { s: *String[view|instance] }
+~pub event read { s: *String<view|instance> }
 | slice []const u8
 
 ~proc read|zig {
     return .{ .slice = s.data };
 }
 
-~pub event len { s: *String[view|instance] }
+~pub event len { s: *String<view|instance> }
 | len usize
 
 ~proc len|zig {
@@ -120,7 +120,7 @@ pub const String = struct {
 // Write operations - require instance
 // ============================================
 
-~pub event append { s: *String[instance], text: []const u8 }
+~pub event append { s: *String<instance>, text: []const u8 }
 | ok
 | err []const u8
 
@@ -134,7 +134,7 @@ pub const String = struct {
     return .ok;
 }
 
-~pub event clear { s: *String[instance] }
+~pub event clear { s: *String<instance> }
 
 ~proc clear|zig {
     s.data.len = 0;

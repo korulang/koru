@@ -12,7 +12,7 @@ pub const Resource = struct {
 };
 
 ~pub event create_resource { name: []const u8 }
-| created *Resource[allocated!]
+| created *Resource<allocated!>
 
 ~proc create_resource|zig {
     const alloc = std.heap.page_allocator;
@@ -22,7 +22,7 @@ pub const Resource = struct {
     return .{ .created = res };
 }
 
-~pub event destroy_resource { res: *Resource[!allocated] }
+~pub event destroy_resource { res: *Resource<!allocated> }
 
 ~proc destroy_resource|zig {
     res.allocator.free(res.data);

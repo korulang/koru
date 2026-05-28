@@ -7,7 +7,7 @@ const File = struct {
 
 // Loads a mipmap, returns with mipmap:open phantom state
 ~pub event load { path: []const u8 }
-| loaded *File[open]
+| loaded *File<open>
 
 ~proc load|zig {
     const allocator = std.heap.page_allocator;

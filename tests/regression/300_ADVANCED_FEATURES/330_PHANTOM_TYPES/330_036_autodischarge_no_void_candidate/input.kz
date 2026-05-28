@@ -2,13 +2,13 @@ pub const Handle = struct {
     id: i32,
 };
 ~event open {}
-| ok *Handle[open!]
+| ok *Handle<open!>
 ~proc open|zig {
     const h = std.heap.page_allocator.create(Handle) catch unreachable;
     h.* = .{ .id = 42 };
     return .{ .ok = h };
 }
-~event close { h: *Handle[!open] }
+~event close { h: *Handle<!open> }
 | error []const u8
 ~proc close|zig {
     std.heap.page_allocator.destroy(h);
