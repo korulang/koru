@@ -98,6 +98,40 @@ fn maybeRenderPerCall(
         }
     }
 
+    // Expose the invoking flow's continuations as `continuations["<branch>"]` →
+    // an array of handler sub-contexts, each carrying { link, binding, guard,
+    // kind }. This is the AST surface templates program against:
+    //   {% for h in continuations["each"] %} ... {{ h.link }}(...) ... {% endfor %}
+    //   {% if continuations["done"] %} ... {% else %} {% comp error %} ... {% endif %}
+    // Presence doubles as truthiness — a present branch is a non-empty array
+    // (truthy), an absent one is simply missing (falsy). `link` is the branch
+    // name, which the emitter aliases into scope (`const each = Handlers_N.each;`)
+    // so the template can emit a bare `each(...)` call.
+    {
+        var by_branch = std.StringHashMap(std.ArrayList(*liquid.Context)).init(allocator);
+        for (flow.continuations) |cont| {
+            if (cont.branch.len == 0) continue; // skip void-chain continuations
+            const sub = try allocator.create(liquid.Context);
+            sub.* = liquid.Context.init(allocator);
+            try sub.put("link", .{ .string = cont.branch });
+            try sub.put("binding", .{ .string = cont.binding orelse "" });
+            try sub.put("guard", .{ .string = cont.condition orelse "" });
+            try sub.put("kind", .{ .string = if (cont.kind == .effect) "effect" else "terminal" });
+
+            const gop = try by_branch.getOrPut(cont.branch);
+            if (!gop.found_existing) gop.value_ptr.* = .empty;
+            try gop.value_ptr.append(allocator, sub);
+        }
+
+        var it = by_branch.iterator();
+        while (it.next()) |entry| {
+            const arr = try allocator.alloc(*liquid.Context, entry.value_ptr.items.len);
+            @memcpy(arr, entry.value_ptr.items);
+            const key = try std.fmt.allocPrint(allocator, "continuations[\"{s}\"]", .{entry.key_ptr.*});
+            try ctx.put(key, .{ .array = arr });
+        }
+    }
+
     const rendered = try liquid.render(allocator, proc.body, &ctx);
 
     // Prepend the `inline_stmt` marker so the emitter knows the rendered

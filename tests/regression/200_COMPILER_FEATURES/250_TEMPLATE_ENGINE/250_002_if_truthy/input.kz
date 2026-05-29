@@ -1,0 +1,15 @@
+// Template engine: `{% if %}` control block in a |template| body.
+// `flag` is a provided arg; non-empty captured text -> truthy -> guarded block
+// emits. Anchors the cluster.
+~import "$std/io"
+
+~pub event maybe { flag: usize }
+
+~proc maybe|template|zig {
+    @import("std").debug.print("always\n", .{});
+    {% if flag %}
+    @import("std").debug.print("flag-set\n", .{});
+    {% endif %}
+}
+
+~maybe(flag: 1)

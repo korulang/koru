@@ -34,10 +34,20 @@ pub const Value = union(enum) {
     }
 };
 
-/// Template context - maps variable names to values
+/// Template context - maps variable names to values.
+///
+/// `{% for h in ... %}` binds each item context under a name (`scope_name`)
+/// with a `parent` fallback, so the loop body can reference item fields as
+/// `{{ h.link }}` while outer vars (`{{ n }}`) still resolve through the parent.
 pub const Context = struct {
     allocator: Allocator,
     data: std.StringHashMap(Value),
+    /// Outer scope to fall back to when a key isn't found locally (loop bodies).
+    parent: ?*const Context = null,
+    /// Loop-item binding name (e.g. "h"); `scope_name.field` resolves into `scope`.
+    scope_name: ?[]const u8 = null,
+    /// The item context bound to `scope_name`.
+    scope: ?*const Context = null,
 
     pub fn init(allocator: Allocator) Context {
         return .{
@@ -55,7 +65,25 @@ pub const Context = struct {
     }
 
     pub fn get(self: *const Context, key: []const u8) ?Value {
-        return self.data.get(key);
+        // Scoped dotted access: `<scope_name>.field` → look `field` up in `scope`.
+        if (self.scope_name) |sn| {
+            if (self.scope) |sc| {
+                if (key.len > sn.len + 1 and
+                    std.mem.startsWith(u8, key, sn) and
+                    key[sn.len] == '.')
+                {
+                    return sc.get(key[sn.len + 1 ..]);
+                }
+            }
+        }
+        if (self.data.get(key)) |v| return v;
+        // Bare access into the bound loop scope (back-compat: `{% for c in xs %}`
+        // bodies may reference item fields unprefixed as `{{ name }}`).
+        if (self.scope) |sc| {
+            if (sc.get(key)) |v| return v;
+        }
+        if (self.parent) |p| return p.get(key);
+        return null;
     }
 };
 
@@ -117,17 +145,35 @@ pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype) !voi
                 if (std.mem.indexOfPos(u8, template, tag.start + 2, "%}")) |end| {
                     const tag_content = std.mem.trim(u8, template[tag.start + 2 .. end], " \t");
 
+                    // `{% comp error %}MESSAGE{% endcomp %}` — a template-author
+                    // diagnostic. Reaching it during render means the template's
+                    // contract was violated (e.g. a required branch is absent);
+                    // surface the author's message and fail the compile rather
+                    // than letting a cryptic host-language error through later.
+                    if (std.mem.eql(u8, tag_content, "comp error")) {
+                        const msg_start = end + 2;
+                        const ec = findEndTag(template, msg_start, "endcomp") orelse return error.UnmatchedCompError;
+                        const msg = std.mem.trim(u8, template[msg_start..ec.start], " \t\r\n");
+                        std.debug.panic("comp error: {s}", .{msg});
+                    }
+
                     // Parse the tag
                     if (std.mem.startsWith(u8, tag_content, "if ")) {
                         const key = std.mem.trim(u8, tag_content[3..], " \t");
                         const block_end = findEndTag(template, end + 2, "endif") orelse return error.UnmatchedIf;
                         const inner = template[end + 2 .. block_end.start];
 
-                        // Render if truthy
-                        if (ctx.get(key)) |value| {
-                            if (value.truthy()) {
-                                try renderTo(inner, ctx, writer);
-                            }
+                        // Split on a depth-0 `{% else %}`, if present.
+                        const then_part, const else_part = if (findElseTag(inner)) |e|
+                            .{ inner[0..e.start], inner[e.end..] }
+                        else
+                            .{ inner, inner[inner.len..] };
+
+                        const cond = if (ctx.get(key)) |value| value.truthy() else false;
+                        if (cond) {
+                            try renderTo(then_part, ctx, writer);
+                        } else {
+                            try renderTo(else_part, ctx, writer);
                         }
 
                         pos = block_end.end;
@@ -155,17 +201,23 @@ pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype) !voi
                         const in_pos = std.mem.indexOf(u8, rest, " in ") orelse return error.InvalidForSyntax;
                         const item_name = std.mem.trim(u8, rest[0..in_pos], " \t");
                         const array_name = std.mem.trim(u8, rest[in_pos + 4 ..], " \t");
-                        _ = item_name; // Used for nested context in full implementation
 
                         const block_end = findEndTag(template, end + 2, "endfor") orelse return error.UnmatchedFor;
                         const inner = template[end + 2 .. block_end.start];
 
-                        // Iterate over array
+                        // Iterate over array. Each item is bound under `item_name`
+                        // (so the body references fields as `{{ item_name.field }}`)
+                        // with the enclosing ctx as parent (so outer vars resolve).
                         if (ctx.get(array_name)) |value| {
                             switch (value) {
                                 .array => |items| {
                                     for (items) |item_ctx| {
-                                        try renderTo(inner, item_ctx, writer);
+                                        var loop_ctx = Context.init(ctx.allocator);
+                                        defer loop_ctx.deinit();
+                                        loop_ctx.parent = ctx;
+                                        loop_ctx.scope_name = item_name;
+                                        loop_ctx.scope = item_ctx;
+                                        try renderTo(inner, &loop_ctx, writer);
                                     }
                                 },
                                 else => {},
@@ -194,6 +246,35 @@ const BlockEnd = struct {
     end: usize,    // After %}
 };
 
+/// Find a depth-0 `{% else %}` inside an if-block's inner text. Nested
+/// if/for/unless/comp blocks increment depth so we only match the else that
+/// belongs to THIS if. Returns null if there's no else at this level.
+fn findElseTag(template: []const u8) ?BlockEnd {
+    var pos: usize = 0;
+    var depth: usize = 0;
+    while (std.mem.indexOfPos(u8, template, pos, "{%")) |tag_start| {
+        const tag_end = std.mem.indexOfPos(u8, template, tag_start + 2, "%}") orelse break;
+        const tc = std.mem.trim(u8, template[tag_start + 2 .. tag_end], " \t");
+        if (std.mem.startsWith(u8, tc, "if ") or
+            std.mem.startsWith(u8, tc, "for ") or
+            std.mem.startsWith(u8, tc, "unless ") or
+            std.mem.startsWith(u8, tc, "comp error"))
+        {
+            depth += 1;
+        } else if (std.mem.eql(u8, tc, "endif") or
+            std.mem.eql(u8, tc, "endfor") or
+            std.mem.eql(u8, tc, "endunless") or
+            std.mem.eql(u8, tc, "endcomp"))
+        {
+            if (depth > 0) depth -= 1;
+        } else if (depth == 0 and std.mem.eql(u8, tc, "else")) {
+            return .{ .start = tag_start, .end = tag_end + 2 };
+        }
+        pos = tag_end + 2;
+    }
+    return null;
+}
+
 fn findEndTag(template: []const u8, start_pos: usize, end_tag: []const u8) ?BlockEnd {
     var pos = start_pos;
     var depth: usize = 1;
@@ -205,6 +286,8 @@ fn findEndTag(template: []const u8, start_pos: usize, end_tag: []const u8) ?Bloc
         "unless "
     else if (std.mem.eql(u8, end_tag, "endfor"))
         "for "
+    else if (std.mem.eql(u8, end_tag, "endcomp"))
+        "comp error"
     else
         return null;
 

@@ -1,0 +1,26 @@
+// Template engine NORTH STAR: a |template| proc reaches the INVOKING flow's
+// effect-branch continuations via `continuations["each"]`, loops them with
+// `{% for %}`, converts each `when` guard to an `if`, and calls each handler
+// by its link. This is `for` minus the keyword — once green, the `~for`
+// keyword is a thin template over this, and ForeachNode can die.
+//
+// Bodies are generated outside (as handler fns); the template holds only a
+// link (`{{ h.link }}`) and emits guarded calls. No body splicing, no mixing
+// of generated code into the host template — the emit-only boundary holds.
+~import "$std/io"
+
+~pub event probe { n: usize }
+! each usize
+| done
+
+~proc probe|template|zig {
+    for (0..{{ n }}) |__i| {
+        {% for h in continuations["each"] %}
+        {% if h.guard %}if ({{ h.guard }}) {% endif %}{{ h.link }}(__i);
+        {% endfor %}
+    }
+}
+
+~probe(n: 3)
+! each i |> std.io:print.ln("each {{ i:d }}")
+| done |> std.io:print.ln("done")

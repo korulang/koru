@@ -1,0 +1,12 @@
+// Template engine: `{{ arg }}` substitution in a |template| proc body.
+// Baseline — confirms per-call templates route through the Liquid engine and
+// interpolate invocation args. Anchors the cluster.
+~import "$std/io"
+
+~pub event show { n: usize }
+
+~proc show|template|zig {
+    @import("std").debug.print("n={{ n }}\n", .{});
+}
+
+~show(n: 42)

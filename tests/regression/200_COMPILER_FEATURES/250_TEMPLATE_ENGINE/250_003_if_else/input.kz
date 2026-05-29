@@ -1,0 +1,17 @@
+// Template engine: `{% if %}/{% else %}` — an absent variable takes the else
+// branch. Pins `{% else %}` support (liquid has if/endif; else is the piece to
+// verify is wired). The metaprogramming story leans on else for the
+// "branch present? lower it : comp error" shape.
+~import "$std/io"
+
+~pub event pick { }
+
+~proc pick|template|zig {
+    {% if missing %}
+    @import("std").debug.print("has-missing\n", .{});
+    {% else %}
+    @import("std").debug.print("no-missing\n", .{});
+    {% endif %}
+}
+
+~pick()

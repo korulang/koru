@@ -1,0 +1,21 @@
+// Template engine: `{% comp error %}` — a template makes a branch REQUIRED by
+// referencing it. The consumer omits `| done`, so `continuations["done"]` is
+// absent and the template raises a fantastic, author-defined diagnostic
+// instead of letting a cryptic host-language error through. The template body
+// IS the contract: by checking for `done`, the template declares it required.
+~import "$std/io"
+
+~pub event probe2 { n: usize }
+! each usize
+
+~proc probe2|template|zig {
+    {% if continuations["done"] %}{% else %}{% comp error %}probe2 requires a `done` branch{% endcomp %}{% endif %}
+    for (0..{{ n }}) |__i| {
+        {% for h in continuations["each"] %}
+        {{ h.link }}(__i);
+        {% endfor %}
+    }
+}
+
+~probe2(n: 3)
+! each i |> std.io:print.ln("each {{ i:d }}")
