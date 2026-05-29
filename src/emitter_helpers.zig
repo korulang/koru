@@ -3225,6 +3225,91 @@ pub fn emitFlow(
         };
 
         if (inline_is_statement or only_void_continuations) {
+            // Effect-branch template pump: when the invoked event declares `!`
+            // effect branches, the template body (inline_code) references the
+            // effect symbols by name — e.g. a `|template|zig` `for` loop body
+            // that calls `each(item)`. Unlike a plain `|zig` proc (whose body
+            // lives inside the event handler, where `const each = __H.each`
+            // aliases resolve), a template body is substituted directly into
+            // this flow function, so the effect symbols are undeclared here.
+            //
+            // Bridge them: (1) synthesize the Handlers_0 struct from the effect
+            // continuations, (2) alias every declared effect branch to a local
+            // `const NAME = Handlers_0.NAME;` so the template body's calls
+            // resolve, and (3) emit ONLY terminal continuations as loose
+            // bodies afterward — the effect bodies now live inside Handlers_0,
+            // not as orphaned statements. See docs/EFFECT_BRANCHES.md and
+            // 400_071 (the plain-`|zig` analogue) for the target shape.
+            const inline_event_decl = if (ctx.ast_items) |items|
+                findEventDeclByPath(items, &flow.invocation.path)
+            else
+                null;
+
+            var inline_has_effect = false;
+            if (inline_event_decl) |ed| {
+                for (ed.branches) |b| {
+                    if (b.kind == .effect) {
+                        inline_has_effect = true;
+                        break;
+                    }
+                }
+            }
+
+            if (inline_has_effect) {
+                const ed = inline_event_decl.?;
+
+                // Partition continuations into effect (`!`) and terminal (`|`).
+                var inline_effect_conts: std.ArrayList(ast.Continuation) = .empty;
+                defer inline_effect_conts.deinit(ctx.allocator);
+                var inline_terminal_conts: std.ArrayList(ast.Continuation) = .empty;
+                defer inline_terminal_conts.deinit(ctx.allocator);
+                for (flow.continuations) |cont| {
+                    if (cont.kind == .effect) {
+                        try inline_effect_conts.append(ctx.allocator, cont);
+                    } else {
+                        try inline_terminal_conts.append(ctx.allocator, cont);
+                    }
+                }
+
+                // (1) Synthesize the Handlers struct from effect continuations.
+                const hname = "Handlers_0";
+                try emitHandlersStruct(emitter, ctx, hname, inline_effect_conts.items, ed);
+
+                // (2) Alias every declared effect branch into local scope so the
+                //     template body's bare `NAME(...)` calls resolve. Mirrors the
+                //     handler-side aliasing (`const NAME = __H.NAME;`).
+                for (ed.branches) |b| {
+                    if (b.kind != .effect) continue;
+                    try emitter.writeIndent();
+                    try emitter.write("const ");
+                    try writeBranchName(emitter, b.name);
+                    try emitter.write(" = ");
+                    try emitter.write(hname);
+                    try emitter.write(".");
+                    try writeBranchName(emitter, b.name);
+                    try emitter.write(";\n");
+                    try emitter.writeIndent();
+                    try emitter.write("_ = &");
+                    try writeBranchName(emitter, b.name);
+                    try emitter.write(";\n");
+                }
+
+                // Emit the template body (the producer pump).
+                try emitter.writeIndent();
+                try emitter.write(inline_code);
+                if (!inline_is_statement) {
+                    try emitter.write(";");
+                }
+                try emitter.write("\n");
+
+                // (3) Emit terminal continuations only — effect bodies are in Handlers_0.
+                var result_counter: usize = 0;
+                for (inline_terminal_conts.items) |*cont| {
+                    try emitContinuationBody(emitter, ctx, cont, &result_counter);
+                }
+                return;
+            }
+
             try emitter.writeIndent();
             try emitter.write(inline_code);
             if (!inline_is_statement) {
