@@ -4,7 +4,7 @@ const should_loop = true;
 ~app.fs:open(path: "test.txt")
 | opened f |> std.control:if(should_loop)
     | then |> std.control:for(0..3)
-        | each _ |> _
+        ! each _ |> _
         | done |> app.fs:close(file: f)
     | else |> app.fs:close(file: f)  // Still need to close if no loop
 pub fn main() void {}

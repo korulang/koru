@@ -221,9 +221,12 @@ pub const FlowChecker = struct {
         // Bindings starting with _ are explicit discards or synthetic bindings from auto-discharge
         if (cont.binding) |binding| {
             if (!std.mem.startsWith(u8, binding, "_")) {
-                // In frontend mode, skip check if node is a [transform] invocation
-                // (transforms consume bindings in ways not visible until after transform runs)
-                const skip_check = self.mode == .frontend and self.isTransformInvocation(cont);
+                // In frontend mode, skip the check when the binding's usage isn't
+                // visible yet: the node is a [transform] (consumes bindings during
+                // its rewrite) OR a [scope] construct (a binding may be suspended
+                // across the scope and discharged by auto_discharge later, e.g.
+                // `| opened f |> ~for(...) … | done` closes `f` after the loop).
+                const skip_check = self.mode == .frontend and self.isDeferredBindingInvocation(cont);
 
                 if (!skip_check and !self.isBindingUsed(cont, binding)) {
                     // ERROR: Unused binding
@@ -263,16 +266,20 @@ pub const FlowChecker = struct {
         }
     }
 
-    /// Check if a continuation's node is an invocation of a [transform] event
-    fn isTransformInvocation(self: *FlowChecker, cont: *const ast.Continuation) bool {
+    /// Check if a continuation's node is an invocation whose binding usage isn't
+    /// determinable at frontend time — a `[transform]` (binding consumed during
+    /// rewrite) or a `[scope]` construct (binding may be suspended across the
+    /// scope and discharged by auto_discharge in a later pass). In both cases a
+    /// frontend "unused binding" verdict would be premature.
+    fn isDeferredBindingInvocation(self: *FlowChecker, cont: *const ast.Continuation) bool {
         const node = cont.node orelse return false;
         if (node != .invocation) return false;
 
         const inv = node.invocation;
 
-        // Look up the event declaration to check for [transform] annotation
         if (self.findEventDecl(&inv.path)) |event_decl| {
-            return annotation_parser.hasPart(event_decl.annotations, "transform");
+            return annotation_parser.hasPart(event_decl.annotations, "transform") or
+                annotation_parser.hasPart(event_decl.annotations, "scope");
         }
 
         return false;

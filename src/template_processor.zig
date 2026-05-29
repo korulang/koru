@@ -23,6 +23,7 @@ const ast = @import("ast");
 const liquid = @import("liquid");
 const log = @import("log");
 const errors = @import("errors");
+const annotation_parser = @import("annotation_parser");
 
 const TEMPLATE_TAG = "template";
 const ONCE_MODE = "once";
@@ -189,11 +190,47 @@ fn maybeRenderPerCall(
         }
     }
 
+    // If the invoked construct is `scope`-annotated (e.g. `~for`), stamp
+    // `@scope` on its effect continuations so the obligation checker treats each
+    // handler body as a per-iteration scope boundary (auto-discharge per loop).
+    try tagEffectScopeIfAnnotated(all_items, &flow.invocation.path, @constCast(flow.continuations), allocator);
+
     // Nested template invocations (e.g. `~for` inside a pipeline continuation)
     // get the same per-call rendering, depth-first. The inline_body lands on
     // the continuation's invocation node; emitContinuationBody honors it via the
     // shared emitInlineBodyNode — the SAME path as a top-level flow.
     try renderNestedTemplates(all_items, @constCast(flow.continuations), allocator);
+}
+
+/// If the event invoked at `path` carries the `scope` compiler-annotation
+/// (`~[…|scope]`), stamp `@scope` onto each of its EFFECT continuations'
+/// `binding_annotations`. The obligation checker (`auto_discharge_inserter`)
+/// reads `@scope` on a continuation and treats that handler body as a scope
+/// boundary — per-iteration resource discharge, outer resources suspended.
+/// This is how a template construct declares "my body is a scope" without any
+/// dedicated node: a declarative annotation propagated to the AST.
+fn tagEffectScopeIfAnnotated(
+    all_items: []ast.Item,
+    path: *const ast.DottedPath,
+    continuations: []ast.Continuation,
+    allocator: std.mem.Allocator,
+) !void {
+    const event = findEventDeclByLastSegment(all_items, path) orelse return;
+    if (!annotation_parser.hasPart(event.annotations, "scope")) return;
+
+    for (continuations) |*cont| {
+        if (cont.kind != .effect) continue;
+        // Idempotent — don't double-tag.
+        for (cont.binding_annotations) |ann| {
+            if (std.mem.eql(u8, ann, "@scope")) break;
+        } else {
+            const old = cont.binding_annotations;
+            const new_anns = try allocator.alloc([]const u8, old.len + 1);
+            @memcpy(new_anns[0..old.len], old);
+            new_anns[old.len] = "@scope";
+            cont.binding_annotations = new_anns;
+        }
+    }
 }
 
 /// Walk continuations depth-first, rendering any `for`/template invocation found
@@ -206,13 +243,17 @@ fn renderNestedTemplates(
 ) !void {
     for (continuations) |*cont| {
         if (cont.node) |*node| {
-            if (node.* == .invocation and node.invocation.inline_body == null) {
-                if (try renderTemplateInvocation(all_items, &node.invocation, cont.continuations, .{ .file = "generated", .line = 0, .column = 0 }, allocator)) |rendered| {
-                    node.invocation.inline_body = rendered;
-                    log.debug("[TEMPLATE/per-call] rendered nested '{s}'\n", .{
-                        if (node.invocation.path.segments.len > 0) node.invocation.path.segments[0] else "<?>",
-                    });
+            if (node.* == .invocation) {
+                if (node.invocation.inline_body == null) {
+                    if (try renderTemplateInvocation(all_items, &node.invocation, cont.continuations, .{ .file = "generated", .line = 0, .column = 0 }, allocator)) |rendered| {
+                        node.invocation.inline_body = rendered;
+                        log.debug("[TEMPLATE/per-call] rendered nested '{s}'\n", .{
+                            if (node.invocation.path.segments.len > 0) node.invocation.path.segments[0] else "<?>",
+                        });
+                    }
                 }
+                // Same `@scope` stamping for nested scope-annotated constructs.
+                try tagEffectScopeIfAnnotated(all_items, &node.invocation.path, @constCast(cont.continuations), allocator);
             }
         }
         try renderNestedTemplates(all_items, @constCast(cont.continuations), allocator);

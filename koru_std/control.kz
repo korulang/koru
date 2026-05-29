@@ -341,9 +341,9 @@ const std = @import("std");
 //   and emits a guarded call. No body splicing, no ForeachNode.
 // - Zero-overhead: comptime-known handlers inline into the loop.
 
-~[keyword]pub event for { iterable: []const u8 }
+~[keyword|scope]pub event for { iterable: []const u8 }
 ! each *
-| done
+| ?done
 
 ~proc for|template|zig {
     for ({{ iterable }}) |__koru_item| {
