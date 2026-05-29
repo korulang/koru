@@ -85,35 +85,35 @@ fn processPerCallInvocations(
     }
 }
 
-fn maybeRenderPerCall(
+/// Render a bare `|template|` proc for one invocation, returning the rendered
+/// inline_body (with the inline_stmt marker), or null if the invocation doesn't
+/// resolve to a per-call template proc. Shared by top-level flows and nested
+/// continuations so inline-template lowering works at every depth.
+fn renderTemplateInvocation(
     all_items: []ast.Item,
-    flow: *ast.Flow,
+    invocation: *const ast.Invocation,
+    continuations: []const ast.Continuation,
+    location: errors.SourceLocation,
     allocator: std.mem.Allocator,
-) !void {
-    if (flow.inline_body != null) return; // Already has inline_body, skip.
-
-    const proc = findMatchingProc(all_items, &flow.invocation.path) orelse return;
-    const target = proc.target orelse return;
+) !?[]const u8 {
+    const proc = findMatchingProc(all_items, &invocation.path) orelse return null;
+    const target = proc.target orelse return null;
     const first_sep = firstTagEnd(target);
     const parts = parseTag(target[0..first_sep]);
 
-    if (!std.mem.eql(u8, parts.name, TEMPLATE_TAG)) return;
-    if (parts.args.len != 0) return; // Skip `template(once)` etc.; only bare `template` is per-call.
+    if (!std.mem.eql(u8, parts.name, TEMPLATE_TAG)) return null;
+    if (parts.args.len != 0) return null; // Skip `template(once)` etc.; only bare `template` is per-call.
 
     // Build context from invocation args. Named args (`name: value`) key on the
-    // arg name; positional args (e.g. `~for(&items)`) bind to the event's field
-    // at that position, so `~for(&items)` reaches `{{ iterable }}`.
+    // arg name; positional args (`~for(&items)`, which parse with name == value)
+    // bind to the event's field at that position so `{{ iterable }}` resolves.
     var ctx = liquid.Context.init(allocator);
     defer ctx.deinit();
 
-    const event_decl = findEventDeclByLastSegment(all_items, &flow.invocation.path);
+    const event_decl = findEventDeclByLastSegment(all_items, &invocation.path);
 
-    for (flow.invocation.args, 0..) |arg, i| {
+    for (invocation.args, 0..) |arg, i| {
         const text = if (arg.expression_value) |expr_val| expr_val.text else arg.value;
-        // A positional arg (`~for(&items)`) parses with name == value (the bare
-        // expression). Bind it to the event's field at that position so the
-        // template can reference it by field name (`{{ iterable }}`). A named
-        // arg (`n: 42`) keys on its name directly.
         const is_positional = std.mem.eql(u8, arg.name, arg.value);
         const key = if (!is_positional)
             arg.name
@@ -123,18 +123,13 @@ fn maybeRenderPerCall(
         }
     }
 
-    // Expose the invoking flow's continuations as `continuations["<branch>"]` →
-    // an array of handler sub-contexts, each carrying { link, binding, guard,
-    // kind }. This is the AST surface templates program against:
-    //   {% for h in continuations["each"] %} ... {{ h.link }}(...) ... {% endfor %}
-    //   {% if continuations["done"] %} ... {% else %} {% comp error %} ... {% endif %}
-    // Presence doubles as truthiness — a present branch is a non-empty array
-    // (truthy), an absent one is simply missing (falsy). `link` is the branch
-    // name, which the emitter aliases into scope (`const each = Handlers_N.each;`)
-    // so the template can emit a bare `each(...)` call.
+    // Expose the invoking continuations as `continuations["<branch>"]` → an
+    // array of handler sub-contexts { link, binding, guard, kind }. Presence
+    // doubles as truthiness. See the template-engine cluster (250_*) for the
+    // surface templates program against.
     {
         var by_branch = std.StringHashMap(std.ArrayList(*liquid.Context)).init(allocator);
-        for (flow.continuations) |cont| {
+        for (continuations, 0..) |cont, idx| {
             if (cont.branch.len == 0) continue; // skip void-chain continuations
             const sub = try allocator.create(liquid.Context);
             sub.* = liquid.Context.init(allocator);
@@ -142,6 +137,13 @@ fn maybeRenderPerCall(
             try sub.put("binding", .{ .string = cont.binding orelse "" });
             try sub.put("guard", .{ .string = cont.condition orelse "" });
             try sub.put("kind", .{ .string = if (cont.kind == .effect) "effect" else "terminal" });
+            // `inlined_link` is a marker the emitter resolves to the handler's
+            // body spliced INLINE (in the enclosing scope), vs `link` which is a
+            // call to the isolated Handlers fn. `<idx>` is this continuation's
+            // position in the node's continuation list — the same slice the
+            // emitter resolves against, so it round-trips deterministically.
+            const marker = try std.fmt.allocPrint(allocator, "__koru_inline_{d}", .{idx});
+            try sub.put("inlined_link", .{ .string = marker });
 
             const gop = try by_branch.getOrPut(cont.branch);
             if (!gop.found_existing) gop.value_ptr.* = .empty;
@@ -160,32 +162,61 @@ fn maybeRenderPerCall(
     var comp_err: ?[]const u8 = null;
     const rendered = liquid.renderCollectCompError(allocator, proc.body, &ctx, &comp_err) catch |err| {
         if (err == error.CompError) {
-            // Point at the invocation the template was rendered for — that's
-            // the source the contract (e.g. a missing branch) is about.
-            emitCompErrorAndExit(flow.location, comp_err orelse "template comp error");
+            emitCompErrorAndExit(location, comp_err orelse "template comp error");
         }
         return err;
     };
 
-    // Prepend the `inline_stmt` marker so the emitter knows the rendered
-    // body is statement-shaped (no trailing `;` needed). Matches the
-    // convention used by `print.blk` / other statement-producing transforms.
+    // Prepend the `inline_stmt` marker so the emitter knows the rendered body is
+    // statement-shaped (no trailing `;`). NOTE: we do NOT blank `proc.body` —
+    // the emitter stubs `|template|` handlers (`unreachable`), and blanking
+    // would corrupt rendering for any *second* invocation of the same template.
     const inline_marker = "//@koru:inline_stmt\n";
-    const with_marker = try std.fmt.allocPrint(allocator, "{s}{s}", .{ inline_marker, rendered });
-    flow.inline_body = with_marker;
+    return try std.fmt.allocPrint(allocator, "{s}{s}", .{ inline_marker, rendered });
+}
 
-    // The proc's handler will still be emitted by the normal emit pass,
-    // but no one calls it (every invocation is inlined). Blank the body
-    // so the dead handler is valid Zig — the un-rendered template text
-    // contains `{{ }}` tokens that aren't Zig. The blanked body is a
-    // no-op return; for non-void events this is still a problem, but
-    // per-call templates are expected to be void-shaped (they're macros
-    // emitting statements, not value-producing functions).
-    proc.body = "";
+fn maybeRenderPerCall(
+    all_items: []ast.Item,
+    flow: *ast.Flow,
+    allocator: std.mem.Allocator,
+) !void {
+    if (flow.inline_body == null) {
+        if (try renderTemplateInvocation(all_items, &flow.invocation, flow.continuations, flow.location, allocator)) |rendered| {
+            flow.inline_body = rendered;
+            log.debug("[TEMPLATE/per-call] rendered '{s}' at top-level call site\n", .{
+                if (flow.invocation.path.segments.len > 0) flow.invocation.path.segments[0] else "<?>",
+            });
+        }
+    }
 
-    log.debug("[TEMPLATE/per-call] rendered '{s}' at call site\n", .{
-        if (flow.invocation.path.segments.len > 0) flow.invocation.path.segments[0] else "<?>",
-    });
+    // Nested template invocations (e.g. `~for` inside a pipeline continuation)
+    // get the same per-call rendering, depth-first. The inline_body lands on
+    // the continuation's invocation node; emitContinuationBody honors it via the
+    // shared emitInlineBodyNode — the SAME path as a top-level flow.
+    try renderNestedTemplates(all_items, @constCast(flow.continuations), allocator);
+}
+
+/// Walk continuations depth-first, rendering any `for`/template invocation found
+/// as a continuation's node. This is what makes nested `~for` (`| result r |>
+/// for(0..r) ! each … | done …`) lower the same as a top-level `~for`.
+fn renderNestedTemplates(
+    all_items: []ast.Item,
+    continuations: []ast.Continuation,
+    allocator: std.mem.Allocator,
+) !void {
+    for (continuations) |*cont| {
+        if (cont.node) |*node| {
+            if (node.* == .invocation and node.invocation.inline_body == null) {
+                if (try renderTemplateInvocation(all_items, &node.invocation, cont.continuations, .{ .file = "generated", .line = 0, .column = 0 }, allocator)) |rendered| {
+                    node.invocation.inline_body = rendered;
+                    log.debug("[TEMPLATE/per-call] rendered nested '{s}'\n", .{
+                        if (node.invocation.path.segments.len > 0) node.invocation.path.segments[0] else "<?>",
+                    });
+                }
+            }
+        }
+        try renderNestedTemplates(all_items, @constCast(cont.continuations), allocator);
+    }
 }
 
 /// Find the event declaration whose path's last segment matches the

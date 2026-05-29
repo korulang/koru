@@ -34,5 +34,5 @@ const std = @import("std");
 // The critical pattern: ~for in pipeline with outer scope reference
 ~get_params()
 | result p |> for(0..p.count)
-    | each i |> process_item(value: p.items[i])
+    ! each i |> process_item(value: p.items[i])
     | done |> std.io:println(text: "All items processed")

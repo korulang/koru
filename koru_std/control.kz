@@ -346,9 +346,8 @@ const std = @import("std");
 | done
 
 ~proc for|template|zig {
-    for ({{ iterable }}) |__item| {
-        {% for h in continuations["each"] %}
-        {% if h.guard %}if ({{ h.guard }}) {% endif %}{{ h.link }}(__item);
+    for ({{ iterable }}) |__koru_item| {
+        {% for h in continuations["each"] %}{{ h.inlined_link }}(__koru_item);
         {% endfor %}
     }
 }

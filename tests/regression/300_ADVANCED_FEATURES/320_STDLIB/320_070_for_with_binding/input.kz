@@ -42,6 +42,6 @@ var sum: i32 = 0;
 // Main flow: the binding 'arr' must be captured in the switch arm
 ~get_items()
 | items arr |> for(arr)
-    | each x |> add_item(value: x)
+    ! each x |> add_item(value: x)
     | done |> show_sum()
 | failed _ |> _

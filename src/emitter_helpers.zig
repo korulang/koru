@@ -3163,6 +3163,309 @@ pub fn buildCanonicalEventName(path: *const ast.DottedPath, allocator: std.mem.A
 }
 
 /// Emit a flow (invocation with continuations)
+/// The rendered form of `{{ h.inlined_link }}` is `__koru_inline_<idx>(arg)`,
+/// where `<idx>` is the continuation's position in the node's continuation list.
+const INLINE_SPLICE_PREFIX = "__koru_inline_";
+
+/// Write `inline_code` verbatim, resolving each `__koru_inline_<idx>(arg)` splice
+/// marker (from `{{ h.inlined_link }}(arg)`) into the lowered handler body,
+/// spliced IN-SCOPE: `{ const <binding> = <arg>; [if (<guard>)] { <body> } }`.
+/// `continuations[idx]` is the handler. Sequential dispatch — markers resolve in
+/// source order, no `return` between them, so every guard-passing handler runs.
+fn emitInlineCodeResolvingSplices(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    inline_code: []const u8,
+    continuations: []const ast.Continuation,
+) anyerror!void {
+    var pos: usize = 0;
+    while (std.mem.indexOfPos(u8, inline_code, pos, INLINE_SPLICE_PREFIX)) |m| {
+        try emitter.write(inline_code[pos..m]);
+
+        // Parse `<idx>` after the prefix.
+        var i = m + INLINE_SPLICE_PREFIX.len;
+        var idx: usize = 0;
+        var saw_digit = false;
+        while (i < inline_code.len and inline_code[i] >= '0' and inline_code[i] <= '9') : (i += 1) {
+            idx = idx * 10 + (inline_code[i] - '0');
+            saw_digit = true;
+        }
+
+        // Read the `(arg)` immediately following (balanced parens).
+        var arg: []const u8 = "";
+        if (saw_digit and i < inline_code.len and inline_code[i] == '(') {
+            const arg_start = i + 1;
+            var depth: usize = 1;
+            var j = arg_start;
+            while (j < inline_code.len and depth > 0) : (j += 1) {
+                if (inline_code[j] == '(') {
+                    depth += 1;
+                } else if (inline_code[j] == ')') {
+                    depth -= 1;
+                }
+            }
+            arg = std.mem.trim(u8, inline_code[arg_start .. j - 1], " \t");
+            i = j; // past the closing ')'
+            // The marker resolves to a block statement (`{ … }`), so swallow a
+            // trailing `;` the template wrote in call-statement shape
+            // (`{{ h.inlined_link }}(arg);`) — otherwise `{ … };` is a dangling
+            // empty statement Zig rejects.
+            if (i < inline_code.len and inline_code[i] == ';') i += 1;
+        }
+
+        if (saw_digit and idx < continuations.len) {
+            const cont = &continuations[idx];
+            const binding = cont.binding orelse "_";
+            try emitter.write("{ ");
+            if (std.mem.eql(u8, binding, "_")) {
+                try emitter.write("_ = ");
+                try emitter.write(arg);
+                try emitter.write("; ");
+            } else {
+                try emitter.write("const ");
+                try writeBranchName(emitter, binding);
+                try emitter.write(" = ");
+                try emitter.write(arg);
+                try emitter.write("; _ = &");
+                try writeBranchName(emitter, binding);
+                try emitter.write("; ");
+            }
+            const guarded = cont.condition != null;
+            if (guarded) {
+                try emitter.write("if (");
+                try emitter.write(cont.condition.?);
+                try emitter.write(") { ");
+            }
+            var c: usize = 0;
+            try emitContinuationBody(emitter, ctx, cont, &c);
+            if (guarded) try emitter.write(" }");
+            try emitter.write(" }");
+        } else {
+            // Unresolvable marker — emit verbatim so it fails loudly at Zig
+            // compile rather than silently miscompiling.
+            try emitter.write(inline_code[m..i]);
+        }
+        pos = i;
+    }
+    try emitter.write(inline_code[pos..]);
+}
+
+/// Emit a node whose template transform produced `inline_body` (zero-overhead
+/// control flow: `~if`, `~for`, …). Shared by `emitFlow` (top-level) and
+/// `emitContinuationBody` (nested), so the inline-template lowering works
+/// identically at every depth — there is no "only top-level" path. Covers:
+///   - statement / void-continuation inline emission (incl. the `! each`
+///     effect-branch Handlers bridge), and
+///   - the `[expand]` `switch (__expand_result)` form.
+/// `continuations` are the node's branch continuations; `path` is the invoked
+/// event's path (for effect-branch lookup).
+fn emitInlineBodyNode(
+    emitter: *CodeEmitter,
+    ctx: *EmissionContext,
+    inline_code_raw: []const u8,
+    continuations: []const ast.Continuation,
+    path: *const ast.DottedPath,
+) anyerror!void {
+    const inline_stmt_marker = "//@koru:inline_stmt\n";
+    var inline_code = inline_code_raw;
+    var is_inline_stmt = false;
+    if (std.mem.indexOf(u8, inline_code, inline_stmt_marker)) |marker_idx| {
+        is_inline_stmt = true;
+        inline_code = inline_code[marker_idx + inline_stmt_marker.len ..];
+    }
+
+    const trimmed_inline = std.mem.trimRight(u8, inline_code, " \t\r\n");
+    // Check if inline code is already a statement (ends with ;) or is comment-only (no ; needed)
+    const is_comment_only = blk: {
+        const trimmed_left = std.mem.trimLeft(u8, trimmed_inline, " \t");
+        break :blk trimmed_left.len == 0 or
+            (trimmed_left.len >= 2 and std.mem.eql(u8, trimmed_left[0..2], "//"));
+    };
+    const inline_is_statement = is_comment_only or is_inline_stmt or
+        (trimmed_inline.len > 0 and trimmed_inline[trimmed_inline.len - 1] == ';');
+    const only_void_continuations = blk: {
+        if (continuations.len == 0) break :blk true;
+        for (continuations) |cont| {
+            if (cont.branch.len != 0) break :blk false;
+        }
+        break :blk true;
+    };
+
+    if (inline_is_statement or only_void_continuations) {
+        // Effect-branch template pump: when the invoked event declares `!`
+        // effect branches, the template body (inline_code) references the
+        // effect symbols by name — e.g. a `|template|zig` `for` loop body
+        // that calls `each(item)`. Unlike a plain `|zig` proc (whose body
+        // lives inside the event handler, where `const each = __H.each`
+        // aliases resolve), a template body is substituted directly into
+        // this function, so the effect symbols are undeclared here.
+        //
+        // Bridge them: (1) synthesize the Handlers_0 struct from the effect
+        // continuations, (2) alias every declared effect branch to a local
+        // `const NAME = Handlers_0.NAME;` so the template body's calls
+        // resolve, and (3) emit ONLY terminal continuations as loose
+        // bodies afterward — the effect bodies now live inside Handlers_0,
+        // not as orphaned statements. See docs/EFFECT_BRANCHES.md and
+        // 400_071 (the plain-`|zig` analogue) for the target shape.
+        const inline_event_decl = if (ctx.ast_items) |items|
+            findEventDeclByPath(items, path)
+        else
+            null;
+
+        var inline_has_effect = false;
+        if (inline_event_decl) |ed| {
+            for (ed.branches) |b| {
+                if (b.kind == .effect) {
+                    inline_has_effect = true;
+                    break;
+                }
+            }
+        }
+
+        if (inline_has_effect) {
+            const ed = inline_event_decl.?;
+
+            // Partition continuations into effect (`!`) and terminal (`|`).
+            var inline_effect_conts: std.ArrayList(ast.Continuation) = .empty;
+            defer inline_effect_conts.deinit(ctx.allocator);
+            var inline_terminal_conts: std.ArrayList(ast.Continuation) = .empty;
+            defer inline_terminal_conts.deinit(ctx.allocator);
+            for (continuations) |cont| {
+                if (cont.kind == .effect) {
+                    try inline_effect_conts.append(ctx.allocator, cont);
+                } else {
+                    try inline_terminal_conts.append(ctx.allocator, cont);
+                }
+            }
+
+            // SPLICE path: a template can request a handler body be inlined
+            // IN-SCOPE (rather than called through an isolated Handlers fn) via
+            // the `{{ h.inlined_link }}(arg)` symbol, which renders to a
+            // `__koru_inline_<idx>(arg)` marker. This is how `~for` keeps the
+            // loop body in the enclosing scope — so it can reference outer
+            // bindings (`! each i |> process(value: p.items[i])`, `p` from an
+            // outer `| result p`). A Handlers-struct fn can't close over those
+            // locals; a spliced body can. No special-casing — any template, any
+            // branch, any placement; the symbol drives it.
+            if (std.mem.indexOf(u8, inline_code, INLINE_SPLICE_PREFIX) != null) {
+                try emitter.writeIndent();
+                try emitInlineCodeResolvingSplices(emitter, ctx, inline_code, continuations);
+                try emitter.write("\n");
+
+                // Terminal continuations (`| done`) run once after the loop.
+                var result_counter: usize = 0;
+                for (inline_terminal_conts.items) |*cont| {
+                    try emitContinuationBody(emitter, ctx, cont, &result_counter);
+                }
+                return;
+            }
+
+            // (1) Synthesize the Handlers struct from effect continuations.
+            const hname = "Handlers_0";
+            try emitHandlersStruct(emitter, ctx, hname, inline_effect_conts.items, ed);
+
+            // (2) Alias every declared effect branch into local scope so the
+            //     template body's bare `NAME(...)` calls resolve. Mirrors the
+            //     handler-side aliasing (`const NAME = __H.NAME;`).
+            for (ed.branches) |b| {
+                if (b.kind != .effect) continue;
+                try emitter.writeIndent();
+                try emitter.write("const ");
+                try writeBranchName(emitter, b.name);
+                try emitter.write(" = ");
+                try emitter.write(hname);
+                try emitter.write(".");
+                try writeBranchName(emitter, b.name);
+                try emitter.write(";\n");
+                try emitter.writeIndent();
+                try emitter.write("_ = &");
+                try writeBranchName(emitter, b.name);
+                try emitter.write(";\n");
+            }
+
+            // Emit the template body (the producer pump).
+            try emitter.writeIndent();
+            try emitter.write(inline_code);
+            if (!inline_is_statement) {
+                try emitter.write(";");
+            }
+            try emitter.write("\n");
+
+            // (3) Emit terminal continuations only — effect bodies are in Handlers_0.
+            var result_counter: usize = 0;
+            for (inline_terminal_conts.items) |*cont| {
+                try emitContinuationBody(emitter, ctx, cont, &result_counter);
+            }
+            return;
+        }
+
+        try emitter.writeIndent();
+        try emitter.write(inline_code);
+        if (!inline_is_statement) {
+            try emitter.write(";");
+        }
+        try emitter.write("\n");
+
+        var result_counter: usize = 0;
+        for (continuations) |*cont| {
+            try emitContinuationBody(emitter, ctx, cont, &result_counter);
+        }
+        return;
+    }
+
+    // Flow also has continuations - generate a switch statement. Used by
+    // [expand] events with branches: template provides the expression,
+    // continuations provide the switch arms.
+    if (continuations.len > 0) {
+        // Emit: const __expand_result = <inline_code>;
+        try emitter.writeIndent();
+        try emitter.write("const __expand_result = ");
+        try emitter.write(inline_code);
+        try emitter.write(";\n");
+
+        // Emit: switch (__expand_result) { ... }
+        try emitter.writeIndent();
+        try emitter.write("switch (__expand_result) {\n");
+        emitter.indent();
+
+        // Emit each continuation as a switch arm
+        var step_idx: usize = 0;
+        for (continuations) |*cont| {
+            try emitter.writeIndent();
+            try emitter.write(".");
+            try writeBranchName(emitter, cont.branch);
+            try emitter.write(" => ");
+
+            if (cont.binding) |binding| {
+                // Check if binding starts with "_" (discard pattern)
+                // If so, use |_| to avoid unused variable warnings
+                if (binding.len > 0 and binding[0] == '_') {
+                    try emitter.write("|_| ");
+                } else {
+                    try emitter.write("|");
+                    try emitter.write(binding);
+                    try emitter.write("| ");
+                }
+            }
+
+            try emitter.write("{\n");
+            emitter.indent();
+
+            // Emit the continuation body
+            try emitContinuationBody(emitter, ctx, cont, &step_idx);
+
+            emitter.dedent();
+            try emitter.writeIndent();
+            try emitter.write("},\n");
+        }
+
+        emitter.dedent();
+        try emitter.writeIndent();
+        try emitter.write("}\n");
+        return;
+    }
+}
+
 pub fn emitFlow(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
@@ -3196,185 +3499,12 @@ pub fn emitFlow(
         return; // Done - don't emit the invocation
     }
 
-    // Zero-overhead control flow: if inline_body is set, emit it directly
-    // This enables ~if, ~for to emit literal Zig control flow instead of handler calls
+    // Zero-overhead control flow: if a template transform set inline_body, emit
+    // it (and any continuations) via the shared node emitter — the same path a
+    // nested inline node takes, so this works at every depth, not just top-level.
     if (flow.inline_body) |inline_code_raw| {
-        const inline_stmt_marker = "//@koru:inline_stmt\n";
-        var inline_code = inline_code_raw;
-        var is_inline_stmt = false;
-        if (std.mem.indexOf(u8, inline_code, inline_stmt_marker)) |marker_idx| {
-            is_inline_stmt = true;
-            inline_code = inline_code[marker_idx + inline_stmt_marker.len ..];
-        }
-
-        const trimmed_inline = std.mem.trimRight(u8, inline_code, " \t\r\n");
-        // Check if inline code is already a statement (ends with ;) or is comment-only (no ; needed)
-        const is_comment_only = blk: {
-            const trimmed_left = std.mem.trimLeft(u8, trimmed_inline, " \t");
-            break :blk trimmed_left.len == 0 or
-                (trimmed_left.len >= 2 and std.mem.eql(u8, trimmed_left[0..2], "//"));
-        };
-        const inline_is_statement = is_comment_only or is_inline_stmt or
-            (trimmed_inline.len > 0 and trimmed_inline[trimmed_inline.len - 1] == ';');
-        const only_void_continuations = blk: {
-            if (flow.continuations.len == 0) break :blk true;
-            for (flow.continuations) |cont| {
-                if (cont.branch.len != 0) break :blk false;
-            }
-            break :blk true;
-        };
-
-        if (inline_is_statement or only_void_continuations) {
-            // Effect-branch template pump: when the invoked event declares `!`
-            // effect branches, the template body (inline_code) references the
-            // effect symbols by name — e.g. a `|template|zig` `for` loop body
-            // that calls `each(item)`. Unlike a plain `|zig` proc (whose body
-            // lives inside the event handler, where `const each = __H.each`
-            // aliases resolve), a template body is substituted directly into
-            // this flow function, so the effect symbols are undeclared here.
-            //
-            // Bridge them: (1) synthesize the Handlers_0 struct from the effect
-            // continuations, (2) alias every declared effect branch to a local
-            // `const NAME = Handlers_0.NAME;` so the template body's calls
-            // resolve, and (3) emit ONLY terminal continuations as loose
-            // bodies afterward — the effect bodies now live inside Handlers_0,
-            // not as orphaned statements. See docs/EFFECT_BRANCHES.md and
-            // 400_071 (the plain-`|zig` analogue) for the target shape.
-            const inline_event_decl = if (ctx.ast_items) |items|
-                findEventDeclByPath(items, &flow.invocation.path)
-            else
-                null;
-
-            var inline_has_effect = false;
-            if (inline_event_decl) |ed| {
-                for (ed.branches) |b| {
-                    if (b.kind == .effect) {
-                        inline_has_effect = true;
-                        break;
-                    }
-                }
-            }
-
-            if (inline_has_effect) {
-                const ed = inline_event_decl.?;
-
-                // Partition continuations into effect (`!`) and terminal (`|`).
-                var inline_effect_conts: std.ArrayList(ast.Continuation) = .empty;
-                defer inline_effect_conts.deinit(ctx.allocator);
-                var inline_terminal_conts: std.ArrayList(ast.Continuation) = .empty;
-                defer inline_terminal_conts.deinit(ctx.allocator);
-                for (flow.continuations) |cont| {
-                    if (cont.kind == .effect) {
-                        try inline_effect_conts.append(ctx.allocator, cont);
-                    } else {
-                        try inline_terminal_conts.append(ctx.allocator, cont);
-                    }
-                }
-
-                // (1) Synthesize the Handlers struct from effect continuations.
-                const hname = "Handlers_0";
-                try emitHandlersStruct(emitter, ctx, hname, inline_effect_conts.items, ed);
-
-                // (2) Alias every declared effect branch into local scope so the
-                //     template body's bare `NAME(...)` calls resolve. Mirrors the
-                //     handler-side aliasing (`const NAME = __H.NAME;`).
-                for (ed.branches) |b| {
-                    if (b.kind != .effect) continue;
-                    try emitter.writeIndent();
-                    try emitter.write("const ");
-                    try writeBranchName(emitter, b.name);
-                    try emitter.write(" = ");
-                    try emitter.write(hname);
-                    try emitter.write(".");
-                    try writeBranchName(emitter, b.name);
-                    try emitter.write(";\n");
-                    try emitter.writeIndent();
-                    try emitter.write("_ = &");
-                    try writeBranchName(emitter, b.name);
-                    try emitter.write(";\n");
-                }
-
-                // Emit the template body (the producer pump).
-                try emitter.writeIndent();
-                try emitter.write(inline_code);
-                if (!inline_is_statement) {
-                    try emitter.write(";");
-                }
-                try emitter.write("\n");
-
-                // (3) Emit terminal continuations only — effect bodies are in Handlers_0.
-                var result_counter: usize = 0;
-                for (inline_terminal_conts.items) |*cont| {
-                    try emitContinuationBody(emitter, ctx, cont, &result_counter);
-                }
-                return;
-            }
-
-            try emitter.writeIndent();
-            try emitter.write(inline_code);
-            if (!inline_is_statement) {
-                try emitter.write(";");
-            }
-            try emitter.write("\n");
-
-            var result_counter: usize = 0;
-            for (flow.continuations) |*cont| {
-                try emitContinuationBody(emitter, ctx, cont, &result_counter);
-            }
-            return;
-        }
-
-        // Check if flow also has continuations - if so, generate switch statement
-        // This is used by [expand] events with branches: template provides the expression,
-        // continuations provide the switch arms
-        if (flow.continuations.len > 0) {
-            // Emit: const __expand_result = <inline_code>;
-            try emitter.writeIndent();
-            try emitter.write("const __expand_result = ");
-            try emitter.write(inline_code);
-            try emitter.write(";\n");
-
-            // Emit: switch (__expand_result) { ... }
-            try emitter.writeIndent();
-            try emitter.write("switch (__expand_result) {\n");
-            emitter.indent();
-
-            // Emit each continuation as a switch arm
-            var step_idx: usize = 0;
-            for (flow.continuations) |*cont| {
-                try emitter.writeIndent();
-                try emitter.write(".");
-                try writeBranchName(emitter, cont.branch);
-                try emitter.write(" => ");
-
-                if (cont.binding) |binding| {
-                    // Check if binding starts with "_" (discard pattern)
-                    // If so, use |_| to avoid unused variable warnings
-                    if (binding.len > 0 and binding[0] == '_') {
-                        try emitter.write("|_| ");
-                    } else {
-                        try emitter.write("|");
-                        try emitter.write(binding);
-                        try emitter.write("| ");
-                    }
-                }
-
-                try emitter.write("{\n");
-                emitter.indent();
-
-                // Emit the continuation body
-                try emitContinuationBody(emitter, ctx, cont, &step_idx);
-
-                emitter.dedent();
-                try emitter.writeIndent();
-                try emitter.write("},\n");
-            }
-
-            emitter.dedent();
-            try emitter.writeIndent();
-            try emitter.write("}\n");
-            return;
-        }
+        try emitInlineBodyNode(emitter, ctx, inline_code_raw, flow.continuations, &flow.invocation.path);
+        return;
     }
 
     var result_counter: usize = 0;
@@ -6156,6 +6286,22 @@ pub fn emitContinuationBody(
     cont: *const ast.Continuation,
     result_counter: *usize,
 ) !void {
+    // Zero-overhead control flow at depth: if a template transform set
+    // inline_body on this continuation's invocation node (e.g. a nested `~for`
+    // in a pipeline — `| result r |> for(0..r) ! each … | done …`), emit it via
+    // the shared node emitter — the SAME path top-level flows take. The
+    // continuation's children are the node's branch continuations. This is the
+    // de-duplication that makes inline templates work at every depth, not just
+    // top-level: one helper, both call sites.
+    if (cont.node) |node| {
+        if (node == .invocation) {
+            if (node.invocation.inline_body) |inline_code_raw| {
+                try emitInlineBodyNode(emitter, ctx, inline_code_raw, cont.continuations, &cont.node.?.invocation.path);
+                return;
+            }
+        }
+    }
+
     // Check if step is label_with_invocation
     const has_label_with_inv = if (cont.node) |step| step == .label_with_invocation else false;
 

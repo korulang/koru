@@ -26,5 +26,5 @@ const std = @import("std");
 ~step1()
 ~step2()
 ~for(0..3)
-| each |> std.io:println(text: "iteration")
+! each _ |> std.io:println(text: "iteration")
 | done |> std.io:println(text: "done")
