@@ -1,0 +1,6 @@
+using 0
+freed 0
+using 1
+freed 1
+using 2
+freed 2

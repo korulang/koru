@@ -1,0 +1,39 @@
+// PIN (auto-discharge ↔ effect-emitter boundary bug): when the auto-discharge
+// inserter splices a disposal INTO an effect-branch (`!`) handler, the emitter
+// mis-lowers the handler as a terminal switch arm instead of a `fn NAME`
+// handler-struct member — yielding `Handlers_0 has no member named 'make'`.
+//
+// The handler `! make r |> use(r)` leaves `r`'s `active!` obligation live, so
+// auto-discharge must insert `destroy(r)`. The INSERTED form breaks; the
+// EXPLICIT form (`! make r |> use(r) |> destroy(r)`) compiles + runs fine —
+// proving the bug is in the insertion→emission path, not multi-statement bodies
+// and not auto-discharge detection (which fires correctly). Expected output is
+// identical to the explicit-discharge version.
+~import "$std/build"
+~std.build:requires { exe.linkLibC(); }
+const std = @import("std");
+const Resource = struct { id: usize };
+const allocator = std.heap.c_allocator;
+
+~event destroy { r: *Resource<!active> }
+~proc destroy|zig { std.debug.print("freed {}\n", .{r.id}); allocator.destroy(r); }
+
+~event use { r: *Resource<active> }
+~proc use|zig { std.debug.print("using {}\n", .{r.id}); }
+
+~pub event gen { n: usize }
+! make *Resource<active!>
+| done usize
+~proc gen|zig {
+    for (0..n) |i| {
+        const r = allocator.create(Resource) catch unreachable;
+        r.* = Resource{ .id = i };
+        make(r);
+    }
+    return .{ .done = n };
+}
+
+~gen(n: 3)
+! make r |> use(r)
+| done _ |> _
+pub fn main() void {}

@@ -1462,6 +1462,9 @@ pub const Parser = struct {
             }
             if (branch.kind == .terminal) seen_terminal_branch = true;
 
+            // Reject incoherent obligation markers on effect-branch signatures.
+            try self.validateEffectBranchObligation(branch, branch_line);
+
             // Check for duplicate branch names
             for (branches.items) |existing| {
                 if (std.mem.eql(u8, existing.name, branch.name)) {
@@ -1677,6 +1680,9 @@ pub const Parser = struct {
                 try errors.terminalBeforeEffect(&self.reporter, branch_line, 1, branch.name, .decl);
             }
             if (branch.kind == .terminal) seen_terminal_branch_v2 = true;
+
+            // Reject incoherent obligation markers on effect-branch signatures.
+            try self.validateEffectBranchObligation(branch, branch_line);
 
             // Check for duplicate branch names
             for (branches.items) |existing| {
@@ -6527,6 +6533,74 @@ pub const Parser = struct {
             .{ s[0..at], content },
         );
         return error.ParseError;
+    }
+
+    /// Effect branches fire 0-to-N times, so obligation markers on their
+    /// signature are read from the effect-branch's own scope (see the obligation
+    /// model). Two marker directions are incoherent at 0-to-N firing and are
+    /// rejected here, at the signature level — never by inspecting a proc body:
+    ///
+    ///   - payload `<!state>` (discharge): promises to discharge a received
+    ///     obligation exactly once via a branch that may fire zero or many
+    ///     times. Forbidden. (Issue `<state!>` IS fine: the proc creates one
+    ///     obligation per firing and hands it in — see 400_105.)
+    ///   - resume `<state!>` (issue): hands the proc a fresh obligation that
+    ///     escapes the firing un-discharged. Forbidden. (Discharge `<!state>`
+    ///     IS fine: cleaned up in-scope, handed back — see 400_106.)
+    ///
+    /// Marker direction is purely positional: leading `!` = discharge,
+    /// trailing `!` = issue (the convention in phantom_parser + auto_discharge).
+    fn validateEffectBranchObligation(self: *Parser, branch: ast.Branch, branch_line: usize) !void {
+        if (branch.kind != .effect) return;
+
+        // Payload (proc → handler): a discharge marker is the forbidden
+        // "discharge an outer obligation 0-to-N times" promise.
+        for (branch.payload.fields) |field| {
+            if (field.phantom) |raw| {
+                const ph = lexer.trim(raw);
+                if (ph.len > 0 and ph[0] == '!') {
+                    const col = self.columnOfInLine(branch_line, ph);
+                    try self.reporter.addErrorWithHint(
+                        .KORU027,
+                        branch_line,
+                        col,
+                        "effect branch payload cannot discharge an obligation",
+                        .{},
+                        "a `!` effect branch fires 0-to-N times, so `<{s}>` (discharge) is incoherent — drop the leading `!` for plain state matching, or issue one obligation per firing with `<{s}!>`",
+                        .{ ph, ph[1..] },
+                    );
+                    return error.ParseError;
+                }
+            }
+        }
+
+        // Resume (handler → proc): an issue marker is the forbidden
+        // "hand back a fresh obligation that escapes the firing" promise.
+        if (branch.resume_phantom) |raw| {
+            const rp = lexer.trim(raw);
+            if (rp.len > 0 and rp[rp.len - 1] == '!') {
+                const col = self.columnOfInLine(branch_line, rp);
+                try self.reporter.addErrorWithHint(
+                    .KORU027,
+                    branch_line,
+                    col,
+                    "effect branch resume type cannot issue an obligation",
+                    .{},
+                    "a `!` effect branch fires 0-to-N times, so resuming `<{s}>` (issue) would let the obligation escape un-discharged — drop the trailing `!`, or discharge in-scope with `<!{s}>`",
+                    .{ rp, rp[0 .. rp.len - 1] },
+                );
+                return error.ParseError;
+            }
+        }
+    }
+
+    /// Locate the 1-based column of `needle` on the given 1-based source line,
+    /// for caret placement. Falls back to column 1 if not found.
+    fn columnOfInLine(self: *Parser, line_1based: usize, needle: []const u8) usize {
+        if (line_1based == 0 or line_1based > self.lines.len) return 1;
+        const line_text = self.lines[line_1based - 1];
+        if (std.mem.indexOf(u8, line_text, needle)) |idx| return idx + 1;
+        return 1;
     }
 
     fn parseBranch(self: *Parser) !ast.Branch {

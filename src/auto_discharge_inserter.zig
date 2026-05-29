@@ -1928,6 +1928,7 @@ pub const AutoDischargeInserter = struct {
                     .indent = original.indent,
                     .continuations = child_conts,
                     .location = original.location,
+                    .kind = original.kind, // preserve effect-handler classification
                 };
             } else {
                 // Disposal event with branches - nest terminal as child
@@ -1957,6 +1958,7 @@ pub const AutoDischargeInserter = struct {
                     .indent = original.indent,
                     .continuations = after_disposal_cont,
                     .location = original.location,
+                    .kind = original.kind, // preserve effect-handler classification
                 };
             }
         } else {
@@ -2020,6 +2022,11 @@ pub const AutoDischargeInserter = struct {
                 .indent = original.indent,
                 .continuations = new_continuations,
                 .location = original.location,
+                // Preserve effect-ness: this continuation REPLACES the original
+                // handler, so the emitter must still classify `! NAME` as an
+                // effect-handler member (not a terminal switch arm). Dropping
+                // .kind defaulted it to .terminal → "Handlers_0 has no member".
+                .kind = original.kind,
             };
         }
     }

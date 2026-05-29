@@ -15,6 +15,7 @@ pub const ErrorCode = enum(u16) {
     KORU024, // Redundant outer parens around `when` condition
     KORU025, // Branch kind mismatch (e.g. `!` decl handled by `|` cont, or vice versa)
     KORU026, // Pay-for-nothing catch-all (`|? |> _` or `|? Metatype _ |> _`)
+    KORU027, // Incoherent obligation marker on an effect branch (0-to-N firing): payload discharge or resume issue
 
     // Shape errors
     KORU030, // Shape mismatch

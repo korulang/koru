@@ -1,0 +1,22 @@
+// REQUIREMENT (effect-branch obligations, resume-issue FORBIDDEN — the mirror
+// of 400_104): a `!` branch fires 0-to-N times. A resume type that ISSUES an
+// obligation (`-> *R<state!>`) would hand the proc a fresh obligation per
+// firing that escapes the firing un-discharged — incoherent. Must be rejected
+// at the SIGNATURE level (NOT by inspecting any body). Symmetric to payload
+// rules: resume-DISCHARGE (`-> *R<!state>`, 400_106) IS coherent (cleaned up
+// in-scope, handed back); only resume-ISSUE is forbidden.
+const std = @import("std");
+const Resource = struct { id: usize };
+var global_r = Resource{ .id = 99 };
+
+~pub event borrow { n: usize }
+! lend usize -> *Resource<active!>
+| done usize
+~proc borrow|zig {
+    for (0..n) |i| {
+        const r = lend(i);
+        std.debug.print("got {}\n", .{r.id});
+    }
+    return .{ .done = n };
+}
+pub fn main() void {}
