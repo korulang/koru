@@ -87,18 +87,34 @@ pub const Context = struct {
     }
 };
 
-/// Render a template with the given context
+/// Render a template with the given context.
 pub fn render(allocator: Allocator, template: []const u8, ctx: *const Context) ![]u8 {
+    return renderCollectCompError(allocator, template, ctx, null);
+}
+
+/// Like `render`, but if a `{% comp error %}` is reached during rendering, the
+/// author's message is written to `comp_error_out` (a slice into `template`,
+/// valid as long as the template buffer lives) and `error.CompError` is
+/// returned — letting the caller, which knows the invocation's source
+/// location, emit a proper Koru diagnostic instead of liquid panicking blind.
+pub fn renderCollectCompError(
+    allocator: Allocator,
+    template: []const u8,
+    ctx: *const Context,
+    comp_error_out: ?*?[]const u8,
+) ![]u8 {
     var output = try std.ArrayList(u8).initCapacity(allocator, template.len);
     errdefer output.deinit(allocator);
 
-    try renderTo(template, ctx, output.writer(allocator));
+    try renderTo(template, ctx, output.writer(allocator), comp_error_out);
 
     return try output.toOwnedSlice(allocator);
 }
 
-/// Render a template directly to a writer
-pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype) !void {
+/// Render a template directly to a writer. `comp_error` is an optional sink for
+/// a `{% comp error %}` message; when null, reaching one panics (no caller is
+/// positioned to render a located diagnostic).
+pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype, comp_error: ?*?[]const u8) !void {
     var pos: usize = 0;
 
     while (pos < template.len) {
@@ -154,6 +170,12 @@ pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype) !voi
                         const msg_start = end + 2;
                         const ec = findEndTag(template, msg_start, "endcomp") orelse return error.UnmatchedCompError;
                         const msg = std.mem.trim(u8, template[msg_start..ec.start], " \t\r\n");
+                        // Hand the message back to a caller that can locate it,
+                        // or panic if nobody's collecting (no source context).
+                        if (comp_error) |sink| {
+                            sink.* = msg;
+                            return error.CompError;
+                        }
                         std.debug.panic("comp error: {s}", .{msg});
                     }
 
@@ -171,9 +193,9 @@ pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype) !voi
 
                         const cond = if (ctx.get(key)) |value| value.truthy() else false;
                         if (cond) {
-                            try renderTo(then_part, ctx, writer);
+                            try renderTo(then_part, ctx, writer, comp_error);
                         } else {
-                            try renderTo(else_part, ctx, writer);
+                            try renderTo(else_part, ctx, writer, comp_error);
                         }
 
                         pos = block_end.end;
@@ -188,7 +210,7 @@ pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype) !voi
                         // Render if falsy or missing
                         const should_render = if (ctx.get(key)) |value| !value.truthy() else true;
                         if (should_render) {
-                            try renderTo(inner, ctx, writer);
+                            try renderTo(inner, ctx, writer, comp_error);
                         }
 
                         pos = block_end.end;
@@ -217,7 +239,7 @@ pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype) !voi
                                         loop_ctx.parent = ctx;
                                         loop_ctx.scope_name = item_name;
                                         loop_ctx.scope = item_ctx;
-                                        try renderTo(inner, &loop_ctx, writer);
+                                        try renderTo(inner, &loop_ctx, writer, comp_error);
                                     }
                                 },
                                 else => {},

@@ -2749,8 +2749,19 @@ pub const VisitorEmitter = struct {
             try self.code_emitter.writeIndent();
             try self.code_emitter.write("_ = &__koru_event_input;\n");
 
-            if (event.branches.len > 0) {
-                const first_branch = event.branches[0];
+            // Effect branches (`!`) lower into the synthesized Handlers struct,
+            // NOT Output — so the synthesized default return must use the first
+            // TERMINAL branch. For an effect-only event, Output is void (handled
+            // by the else). For a template-proc event (e.g. `~for`) this bare
+            // handler is never actually called — invocations inline at the call
+            // site — but it must still type-check against Output.
+            const synth_terminal: ?ast.Branch = blk: {
+                for (event.branches) |b| {
+                    if (b.kind != .effect) break :blk b;
+                }
+                break :blk null;
+            };
+            if (synth_terminal) |first_branch| {
 
                 // Check for identity type (single __type_ref field)
                 const is_identity = first_branch.payload.fields.len == 1 and
@@ -2917,25 +2928,39 @@ pub const VisitorEmitter = struct {
                         try self.code_emitter.writeIndent();
                         try self.code_emitter.write("_ = &__koru_event_input;\n");
 
-                        // Rewrite _ = field to _ = &field (see main handler comment)
-                        var variant_proc_body: []const u8 = proc.body;
-                        for (event.input.fields) |field| {
-                            const discard_old = try std.fmt.allocPrint(self.allocator, "_ = {s}", .{field.name});
-                            const discard_new = try std.fmt.allocPrint(self.allocator, "_ = &{s}", .{field.name});
-                            variant_proc_body = try replaceIdentifier(self.allocator, variant_proc_body, discard_old, discard_new);
-                        }
+                        // `|template|` procs are rendered per-invocation and inlined
+                        // at call sites (Stage C `template_processor`); this decl-site
+                        // handler is never called. Its body is template text (`{% %}`,
+                        // `{{ }}`), not valid host code — and when this proc lives in
+                        // the stdlib/compiler, no Stage-C pass blanks it before Stage-A
+                        // emission. Emit an `unreachable` stub instead of the raw template.
+                        const is_template_variant = eql(u8, target, "template") or
+                            std.mem.startsWith(u8, target, "template|") or
+                            std.mem.startsWith(u8, target, "template(");
+                        if (is_template_variant) {
+                            try self.code_emitter.writeIndent();
+                            try self.code_emitter.write("unreachable; // |template| proc — inlined at call sites\n");
+                        } else {
+                            // Rewrite _ = field to _ = &field (see main handler comment)
+                            var variant_proc_body: []const u8 = proc.body;
+                            for (event.input.fields) |field| {
+                                const discard_old = try std.fmt.allocPrint(self.allocator, "_ = {s}", .{field.name});
+                                const discard_new = try std.fmt.allocPrint(self.allocator, "_ = &{s}", .{field.name});
+                                variant_proc_body = try replaceIdentifier(self.allocator, variant_proc_body, discard_old, discard_new);
+                            }
 
-                        // Emit proc body
-                        var indent_buf: [64]u8 = undefined;
-                        var indent_pos: usize = 0;
-                        var k: usize = 0;
-                        while (k < self.code_emitter.indent_level) : (k += 1) {
-                            @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
-                            indent_pos += 4;
+                            // Emit proc body
+                            var indent_buf: [64]u8 = undefined;
+                            var indent_pos: usize = 0;
+                            var k: usize = 0;
+                            while (k < self.code_emitter.indent_level) : (k += 1) {
+                                @memcpy(indent_buf[indent_pos..indent_pos + 4], "    ");
+                                indent_pos += 4;
+                            }
+                            const indent_str = indent_buf[0..indent_pos];
+                            try self.code_emitter.emitReindentedText(variant_proc_body, indent_str);
+                            try self.code_emitter.write("\n");
                         }
-                        const indent_str = indent_buf[0..indent_pos];
-                        try self.code_emitter.emitReindentedText(variant_proc_body, indent_str);
-                        try self.code_emitter.write("\n");
 
                         // Close variant handler
                         self.code_emitter.indent_level -= 1;

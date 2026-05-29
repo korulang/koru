@@ -22,9 +22,26 @@ const std = @import("std");
 const ast = @import("ast");
 const liquid = @import("liquid");
 const log = @import("log");
+const errors = @import("errors");
 
 const TEMPLATE_TAG = "template";
 const ONCE_MODE = "once";
+
+/// A `{% comp error %}` reached during template rendering is a template-author
+/// contract violation (e.g. a required branch the consumer didn't provide).
+/// Surface it as a located Koru diagnostic (KORU120) pointing at the source
+/// the template was rendered for, then fail the compile cleanly — never let
+/// the host language's downstream error be the one the user sees.
+fn emitCompErrorAndExit(location: errors.SourceLocation, message: []const u8) noreturn {
+    std.debug.print("error[{s}]: {s}\n  --> {s}:{d}:{d}\n", .{
+        @tagName(errors.ErrorCode.KORU120),
+        message,
+        location.file,
+        location.line,
+        location.column,
+    });
+    std.process.exit(1);
+}
 
 /// Walk the AST and process every proc whose variant chain begins with
 /// `template(once)|...`. Mutates ProcDecl.body and ProcDecl.target in place.
@@ -83,18 +100,26 @@ fn maybeRenderPerCall(
     if (!std.mem.eql(u8, parts.name, TEMPLATE_TAG)) return;
     if (parts.args.len != 0) return; // Skip `template(once)` etc.; only bare `template` is per-call.
 
-    // Build context from invocation args. Each captured Expression text is
-    // exposed as `{{ argname.text }}` (mirrors `[expand]` arg handling).
-    // For first cut, also expose the captured text directly as `{{ argname }}`.
+    // Build context from invocation args. Named args (`name: value`) key on the
+    // arg name; positional args (e.g. `~for(&items)`) bind to the event's field
+    // at that position, so `~for(&items)` reaches `{{ iterable }}`.
     var ctx = liquid.Context.init(allocator);
     defer ctx.deinit();
 
-    for (flow.invocation.args) |arg| {
-        if (arg.expression_value) |expr_val| {
-            try ctx.put(arg.name, .{ .string = expr_val.text });
-        } else {
-            // Fallback: arg has no captured Expression — use the raw value.
-            try ctx.put(arg.name, .{ .string = arg.value });
+    const event_decl = findEventDeclByLastSegment(all_items, &flow.invocation.path);
+
+    for (flow.invocation.args, 0..) |arg, i| {
+        const text = if (arg.expression_value) |expr_val| expr_val.text else arg.value;
+        // A positional arg (`~for(&items)`) parses with name == value (the bare
+        // expression). Bind it to the event's field at that position so the
+        // template can reference it by field name (`{{ iterable }}`). A named
+        // arg (`n: 42`) keys on its name directly.
+        const is_positional = std.mem.eql(u8, arg.name, arg.value);
+        const key = if (!is_positional)
+            arg.name
+        else if (event_decl) |ed| (if (i < ed.input.fields.len) ed.input.fields[i].name else arg.name) else arg.name;
+        if (key.len > 0) {
+            try ctx.put(key, .{ .string = text });
         }
     }
 
@@ -132,7 +157,15 @@ fn maybeRenderPerCall(
         }
     }
 
-    const rendered = try liquid.render(allocator, proc.body, &ctx);
+    var comp_err: ?[]const u8 = null;
+    const rendered = liquid.renderCollectCompError(allocator, proc.body, &ctx, &comp_err) catch |err| {
+        if (err == error.CompError) {
+            // Point at the invocation the template was rendered for — that's
+            // the source the contract (e.g. a missing branch) is about.
+            emitCompErrorAndExit(flow.location, comp_err orelse "template comp error");
+        }
+        return err;
+    };
 
     // Prepend the `inline_stmt` marker so the emitter knows the rendered
     // body is statement-shaped (no trailing `;` needed). Matches the
@@ -153,6 +186,27 @@ fn maybeRenderPerCall(
     log.debug("[TEMPLATE/per-call] rendered '{s}' at call site\n", .{
         if (flow.invocation.path.segments.len > 0) flow.invocation.path.segments[0] else "<?>",
     });
+}
+
+/// Find the event declaration whose path's last segment matches the
+/// invocation's last segment (top-level + nested modules). Used to bind
+/// positional invocation args to the event's field names.
+fn findEventDeclByLastSegment(items: []ast.Item, path: *const ast.DottedPath) ?*const ast.EventDecl {
+    if (path.segments.len == 0) return null;
+    const target = path.segments[path.segments.len - 1];
+    for (items) |*item| {
+        switch (item.*) {
+            .event_decl => |*ed| {
+                if (ed.path.segments.len == 0) continue;
+                if (std.mem.eql(u8, ed.path.segments[ed.path.segments.len - 1], target)) return ed;
+            },
+            .module_decl => |*md| {
+                if (findEventDeclByLastSegment(@constCast(md.items), path)) |found| return found;
+            },
+            else => {},
+        }
+    }
+    return null;
 }
 
 /// Resolve a flow's invocation path to its target ProcDecl. Searches the
@@ -257,7 +311,13 @@ fn processProc(pd: *ast.ProcDecl, allocator: std.mem.Allocator) !void {
     // Leak — context only outlives the render call.
     try ctx.put("proc_name", .{ .string = proc_name });
 
-    const rendered = try liquid.render(allocator, pd.body, &ctx);
+    var comp_err: ?[]const u8 = null;
+    const rendered = liquid.renderCollectCompError(allocator, pd.body, &ctx, &comp_err) catch |err| {
+        if (err == error.CompError) {
+            emitCompErrorAndExit(pd.location, comp_err orelse "template comp error");
+        }
+        return err;
+    };
 
     // Replace body with rendered output. NOTE: do NOT free the old slice —
     // the backend's AST lives in program_ast.zig as a static const value

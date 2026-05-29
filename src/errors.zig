@@ -76,6 +76,9 @@ pub const ErrorCode = enum(u16) {
     // Variant errors
     KORU110, // Event call site has only bare ~proc declarations (no variant tag)
     KORU111, // Contract/implementation file split violated (public events live in .k only)
+
+    // Template / metaprogramming errors
+    KORU120, // Template-asserted contract violation (`{% comp error %}` reached)
 };
 
 pub const SourceLocation = struct {
