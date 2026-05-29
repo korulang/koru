@@ -1,0 +1,3 @@
+freeing 0
+freeing 1
+freeing 2

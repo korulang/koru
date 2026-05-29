@@ -287,6 +287,9 @@ fn cloneBranch(allocator: std.mem.Allocator, branch: ast.Branch) !ast.Branch {
         .name = try allocator.dupe(u8, branch.name),
         .payload = try cloneShape(allocator, branch.payload),
         .is_deferred = branch.is_deferred,
+        // Preserve resume type + its phantom/obligation across clones (lossy before).
+        .resume_type = if (branch.resume_type) |rt| try allocator.dupe(u8, rt) else null,
+        .resume_phantom = if (branch.resume_phantom) |rp| try allocator.dupe(u8, rp) else null,
     };
 }
 

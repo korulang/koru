@@ -63,6 +63,7 @@
                     "name": "token",
                     "kind": "effect",
                     "resume": null,
+                    "resume_phantom": null,
                     "is_optional": false,
                     "payload": {
                         "fields": [
@@ -83,6 +84,7 @@
                     "name": "warning",
                     "kind": "effect",
                     "resume": null,
+                    "resume_phantom": null,
                     "is_optional": true,
                     "payload": {
                         "fields": [
@@ -103,6 +105,7 @@
                     "name": "done",
                     "kind": "terminal",
                     "resume": null,
+                    "resume_phantom": null,
                     "is_optional": false,
                     "payload": {
                         "fields": [

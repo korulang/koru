@@ -54,6 +54,7 @@
                     "name": "ask",
                     "kind": "effect",
                     "resume": "[]const u8",
+                    "resume_phantom": null,
                     "is_optional": false,
                     "payload": {
                         "fields": [
@@ -74,6 +75,7 @@
                     "name": "done",
                     "kind": "terminal",
                     "resume": null,
+                    "resume_phantom": null,
                     "is_optional": false,
                     "payload": {
                         "fields": [

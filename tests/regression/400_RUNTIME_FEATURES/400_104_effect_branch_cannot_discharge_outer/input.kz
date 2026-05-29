@@ -1,0 +1,19 @@
+// REQUIREMENT (effect-branch obligations, FORBIDDEN — hard invariant):
+// A `!` branch fires 0-to-N times. Declaring that it DISCHARGES an obligation
+// (`<!state>` on its payload) is incoherent — that promises "discharge exactly
+// once" via a branch that may fire zero or many times. Must be rejected at the
+// signature level (NOT a body check). If accepted, the invariant is unenforced.
+~import "$std/build"
+~std.build:requires { exe.linkLibC(); }
+const std = @import("std");
+const Resource = struct { id: usize };
+
+// An effect branch whose payload claims to DISCHARGE an outer obligation.
+~pub event drain { items: []const *Resource }
+! each *Resource<!active>
+| done usize
+~proc drain|zig {
+    for (items) |it| { each(it); }
+    return .{ .done = items.len };
+}
+pub fn main() void {}

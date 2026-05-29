@@ -1458,6 +1458,18 @@ pub const AstSerializer = struct {
         try self.write(",\n");
 
         try self.writeIndent();
+        // Must survive serialization — same lesson as is_wildcard.
+        try self.write(".resume_phantom = ");
+        if (branch.resume_phantom) |rp| {
+            try self.write("\"");
+            try self.write(rp);
+            try self.write("\"");
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+
+        try self.writeIndent();
         try self.write(".annotations = &.{");
         for (branch.annotations, 0..) |ann, i| {
             if (i > 0) try self.write(", ");
@@ -2707,6 +2719,15 @@ pub const AstSerializer = struct {
         try self.write("\"resume\": ");
         if (branch.resume_type) |rt| {
             try self.writeString(rt);
+        } else {
+            try self.write("null");
+        }
+        try self.write(",\n");
+
+        try self.writeIndent();
+        try self.write("\"resume_phantom\": ");
+        if (branch.resume_phantom) |rp| {
+            try self.writeString(rp);
         } else {
             try self.write("null");
         }

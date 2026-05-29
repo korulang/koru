@@ -36,6 +36,7 @@
                     "name": "ready",
                     "kind": "terminal",
                     "resume": null,
+                    "resume_phantom": null,
                     "is_optional": false,
                     "payload": {
                         "fields": [
@@ -83,6 +84,7 @@
                     "name": "key",
                     "kind": "terminal",
                     "resume": null,
+                    "resume_phantom": null,
                     "is_optional": false,
                     "payload": {
                         "fields": [

@@ -1,0 +1,20 @@
+DEFERRED: literate / compiler annotations on TYPE positions (same bucket as 210_039)
+
+This aspirational test embeds regex patterns in `[]` on branch types
+(`| number u64[\d+]`, `| string []const u8["[^"]*"]`, …) as a "literate
+annotations" experiment. It is NOT phantom state.
+
+Why it's TODO now (2026-05-29): its previous "green" was accidental — the
+`token` event is declared but never emitted (`main` is empty), so the bogus
+`[regex]` type strings were silently swallowed and never reached Zig. The
+KORU033 reject (phantom `[state]` → must be `<state>`) now catches `u64[\d+]`
+at parse with a (nonsensical-here) "write u64<\d+>" hint.
+
+This is the SAME deferred decision as 210_039 (`Source[text]`): whether
+compiler annotations on type positions live (build proper `[]`-annotation
+extraction → a separate AST field) or die (drop the surface, bare types only).
+Lars is on the fence; deferring the call. When that decision lands, both
+210_039 and this resolve together.
+
+Not a real regression — the test never exercised working behavior, only that
+the parser tolerated aspirational syntax.

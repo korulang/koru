@@ -1,0 +1,30 @@
+// REQUIREMENT (effect-branch obligations, payload-IN transfer — the symmetry):
+// The proc ISSUES a per-firing obligation and transfers it INTO the handler via
+// the `! make` payload (`*Resource<active!>`). The handler RECEIVES the live
+// obligation and must discharge it within the firing (no resume to carry it
+// out). Producer allocates, consumer consumes — per firing, balanced.
+~import "$std/build"
+~std.build:requires { exe.linkLibC(); }
+const std = @import("std");
+const Resource = struct { id: usize };
+const allocator = std.heap.c_allocator;
+
+~event destroy { r: *Resource<!active> }
+~proc destroy|zig { std.debug.print("freed {}\n", .{r.id}); allocator.destroy(r); }
+
+~pub event gen { n: usize }
+! make *Resource<active!>
+| done usize
+~proc gen|zig {
+    for (0..n) |i| {
+        const r = allocator.create(Resource) catch unreachable;
+        r.* = Resource{ .id = i };
+        make(r);
+    }
+    return .{ .done = n };
+}
+
+~gen(n: 3)
+! make r |> destroy(r)
+| done _ |> _
+pub fn main() void {}

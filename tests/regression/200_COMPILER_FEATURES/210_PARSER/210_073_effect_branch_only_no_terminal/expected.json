@@ -54,6 +54,7 @@
                     "name": "line",
                     "kind": "effect",
                     "resume": null,
+                    "resume_phantom": null,
                     "is_optional": false,
                     "payload": {
                         "fields": [

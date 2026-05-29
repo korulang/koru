@@ -103,6 +103,7 @@
                     "name": "transformed",
                     "kind": "terminal",
                     "resume": null,
+                    "resume_phantom": null,
                     "is_optional": false,
                     "payload": {
                         "fields": [

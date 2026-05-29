@@ -1,0 +1,22 @@
+// Does resume-out (`-> *R<!state>`) emit CORRECT Zig even before the phantom
+// checker honors the obligation? The `<!active>` must be stripped from the
+// emitted resume type (emit `*Resource`, NOT `*Resource<!active>`).
+const std = @import("std");
+const Resource = struct { id: usize };
+var global_r = Resource{ .id = 99 };
+
+~pub event borrow { n: usize }
+! lend usize -> *Resource<!active>
+| done usize
+~proc borrow|zig {
+    for (0..n) |i| {
+        const r = lend(i);
+        std.debug.print("got {}\n", .{r.id});
+    }
+    return .{ .done = n };
+}
+
+~borrow(n: 3)
+! lend _ |> &global_r
+| done _ |> _
+pub fn main() void {}

@@ -6566,6 +6566,7 @@ pub const Parser = struct {
         // Scan at bracket/brace depth 0 so we don't trip on `->` inside a struct
         // payload `{ ... }` or a phantom-state `[...]`.
         var resume_type: ?[]const u8 = null;
+        var resume_phantom: ?[]const u8 = null;
         {
             var depth: i32 = 0;
             var idx: usize = 0;
@@ -6576,7 +6577,36 @@ pub const Parser = struct {
                 } else if (c == ']' or c == '}' or c == ')' or c == '>') {
                     depth -= 1;
                 } else if (depth == 0 and c == '-' and branch_start[idx + 1] == '>') {
-                    const rt = lexer.trim(branch_start[idx + 2 ..]);
+                    var rt = lexer.trim(branch_start[idx + 2 ..]);
+                    // Phantom-capture the resume type, same as a branch payload:
+                    // `-> *R<!state>` → resume_type `*R`, resume_phantom `!state`.
+                    // (Read from the effect-branch scope: `<!state>` discharges here.)
+                    if (rt.len > 0 and rt[rt.len - 1] == '>') {
+                        var angle_depth: i32 = 0;
+                        var j: usize = rt.len - 1;
+                        const end_pos = j;
+                        var start_pos: ?usize = null;
+                        while (j > 0) : (j -= 1) {
+                            if (rt[j] == '>') {
+                                angle_depth += 1;
+                            } else if (rt[j] == '<') {
+                                angle_depth -= 1;
+                                if (angle_depth == 0) {
+                                    start_pos = j;
+                                    break;
+                                }
+                            }
+                        }
+                        if (start_pos) |start| {
+                            if (start > 0) {
+                                const content = rt[start + 1 .. end_pos];
+                                if (content.len > 0) {
+                                    resume_phantom = try self.allocator.dupe(u8, content);
+                                    rt = lexer.trim(rt[0..start]);
+                                }
+                            }
+                        }
+                    }
                     if (rt.len > 0) {
                         resume_type = try self.allocator.dupe(u8, rt);
                     }
@@ -6645,6 +6675,7 @@ pub const Parser = struct {
                     .is_optional = is_optional,
                     .kind = branch_kind,
                     .resume_type = resume_type,
+                    .resume_phantom = resume_phantom,
                     .annotations = try annotations.toOwnedSlice(self.allocator),
                 };
             }
@@ -6663,6 +6694,7 @@ pub const Parser = struct {
                     .is_optional = is_optional,
                     .kind = branch_kind,
                     .resume_type = resume_type,
+                    .resume_phantom = resume_phantom,
                     .annotations = try annotations.toOwnedSlice(self.allocator),
                 };
             }
@@ -6766,6 +6798,7 @@ pub const Parser = struct {
                 .is_optional = is_optional,
                 .kind = branch_kind,
                 .resume_type = resume_type,
+                .resume_phantom = resume_phantom,
                 .annotations = try annotations.toOwnedSlice(self.allocator),
             };
         }
@@ -6882,6 +6915,7 @@ pub const Parser = struct {
             .is_optional = is_optional,
             .kind = branch_kind,
             .resume_type = resume_type,
+            .resume_phantom = resume_phantom,
             .annotations = try annotations.toOwnedSlice(self.allocator),
         };
     }

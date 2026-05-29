@@ -82,6 +82,7 @@
                     "name": "success",
                     "kind": "terminal",
                     "resume": null,
+                    "resume_phantom": null,
                     "is_optional": false,
                     "payload": {
                         "fields": [
@@ -102,6 +103,7 @@
                     "name": "failure",
                     "kind": "terminal",
                     "resume": null,
+                    "resume_phantom": null,
                     "is_optional": false,
                     "payload": {
                         "fields": [

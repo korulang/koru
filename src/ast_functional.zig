@@ -1400,6 +1400,7 @@ fn cloneBranch(allocator: std.mem.Allocator, branch: *const ast.Branch) !ast.Bra
         .is_optional = branch.is_optional,
         .kind = branch.kind,
         .resume_type = if (branch.resume_type) |rt| try allocator.dupe(u8, rt) else null,
+        .resume_phantom = if (branch.resume_phantom) |rp| try allocator.dupe(u8, rp) else null,
         .annotations = cloned_annotations,
     };
 }

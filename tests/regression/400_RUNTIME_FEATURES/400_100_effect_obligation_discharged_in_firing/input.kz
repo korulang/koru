@@ -1,0 +1,40 @@
+// REQUIREMENT (effect-branch obligations, simple/in-firing case — the `for` model):
+// An effect `! each` generator yields per element. The consumer's handler may
+// create an obligation AND discharge it within that same firing. Because the
+// `! each` signature carries NO `<state!>` resume, an obligation born in the
+// handler cannot escape — it MUST be settled in-firing. Here it is (create →
+// destroy), so this is balanced and should run.
+~import "$std/build"
+~std.build:requires { exe.linkLibC(); }
+const std = @import("std");
+const Resource = struct { id: usize };
+const allocator = std.heap.c_allocator;
+
+~event create { id: usize }
+| created *Resource<active!>
+~proc create|zig {
+    const r = allocator.create(Resource) catch unreachable;
+    r.* = Resource{ .id = id };
+    return .{ .created = r };
+}
+
+~event destroy { r: *Resource<!active> }
+~proc destroy|zig {
+    std.debug.print("freeing {}\n", .{r.id});
+    allocator.destroy(r);
+}
+
+~pub event gen { n: usize }
+! each usize
+| done usize
+~proc gen|zig {
+    for (0..n) |i| { each(i); }
+    return .{ .done = n };
+}
+
+~gen(n: 3)
+! each i |>
+    create(id: i)
+    | created r |> destroy(r)
+| done _ |> _
+pub fn main() void {}
