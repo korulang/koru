@@ -3,6 +3,33 @@
 A guide for agents working on Koru. Interim documentation — the test suite is
 the evolving ground truth.
 
+## Greenfield: there are ZERO users. Breaking things IS the job.
+
+Koru has no users. None. There is no production, no shipped contract, no one
+downstream to disrupt. This is not a caveat — it is the central operating fact,
+and it inverts instincts imported from production work:
+
+- **Backward compatibility is technical debt here, not a virtue.** Maintaining
+  an old form "so nothing breaks" when nothing depends on it is pure debt: a
+  second way to do something, a lie that compiles, a rule the language has
+  outgrown still being honored. Delete it.
+- **When the language moves, the old form must FAIL — loudly, at compile time.**
+  A green test for a form the language has abandoned is not coverage; it is the
+  old behavior silently surviving. Breaking it is how we learn the new rule is
+  actually enforced. **If a flip like this does NOT break the old tests,
+  something is wrong** — the enforcement didn't land.
+- **Never reach for synonyms, "keep both," deprecation paths, feature flags, or
+  staged rollouts.** Those are production tools for protecting users. There are
+  no users. Change the language, fix the tests, move forward.
+- **A window with no working `for` (or whatever) is fine** if the coherent
+  replacement isn't built yet. Incoherent-but-working is worse than
+  broken-but-honest. Flip first; build the replacement next.
+
+Do not make Lars repeat this. When a change would tighten or replace a language
+form, the default is: enforce it now, let the old tests go red, and treat the
+red as the to-do list for migration. The expensive thing is a failure that
+teaches nothing — not failure itself.
+
 ## You are working on a compiler
 
 Koru is a compiler. Shortcuts cascade. When you hit a problem, stop and ask —

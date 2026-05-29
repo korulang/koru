@@ -362,6 +362,33 @@ const std = @import("std");
         }
     }
 
+    // A loop body fires 0-to-N times — that is the DEFINITION of an effect
+    // branch (`! each`), not a terminal (`| each`, which fires exactly once).
+    // The old terminal-`each` ForeachNode form is a cardinality lie that only
+    // survived because this comptime transform consumed `| each` before the
+    // effect/terminal machinery could check it. That bypass is closed: reject
+    // a terminal `each` here. (The `! each`-based `for` replacement is still
+    // being built — 400_101 — so for now BOTH forms fail. That is correct in a
+    // zero-user greenfield: broken-but-honest beats incoherent-but-compiling.)
+    // Deep scan: a nested `~for` (`| opened f |> for | each`) puts `each` below
+    // the top level, so a flat scan over flow.continuations would let it slip
+    // through. Walk the whole continuation subtree. (This deliberately mirrors
+    // what the eventual `! each` declaration + KORU025 kind-check will do
+    // uniformly — the panic is interim scaffolding, not the final mechanism.)
+    {
+        var scan_stack: std.ArrayList(*const ast.Continuation) = .empty;
+        defer scan_stack.deinit(allocator);
+        for (flow.continuations) |*c| scan_stack.append(allocator, c) catch unreachable;
+        var si: usize = 0;
+        while (si < scan_stack.items.len) : (si += 1) {
+            const c = scan_stack.items[si];
+            if (std.mem.eql(u8, c.branch, "each") and c.kind != .effect) {
+                @panic("for: loop body must be `! each` (effect — fires 0-to-N), not `| each` (terminal — fires once). The terminal-each ForeachNode form has been removed.");
+            }
+            for (c.continuations) |*nested| scan_stack.append(allocator, nested) catch unreachable;
+        }
+    }
+
     // findContainingItem returns the parent flow — only pointer comparison is valid.
     const is_pointer_top = (invocation == &flow.invocation);
     const is_top_level_for = is_pointer_top;
