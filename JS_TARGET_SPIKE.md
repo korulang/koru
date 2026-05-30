@@ -52,6 +52,22 @@ the thesis below is demonstrated on **real emitter output** (not hand-modeled JS
   emitter to walk imported-module host lines, and (b) the Zig emitter to route via the same
   `hostLangOfFile` (with the `"generated"`/synthesized-line carve-out). Both are on the shared
   main path → joint design call.
+- **CONTRACT-FILE SPLIT — the stem is the compilation unit (2026-05-30).** `koruc pump`,
+  `koruc pump.k`, and `koruc pump.kz` all compile the WHOLE `pump` module: the entry now merges
+  its same-stem sibling facets (`.k` contract + `.kz` + `.kjs`) into one AST, the way imports
+  already did. Two pieces in `main.zig`: (1) bare-stem inputs resolve against the canonical
+  extensions (explicit existing paths used verbatim); (2) `mergeEntryCompanions` folds the
+  sibling facets' items into the parsed entry (the entry-side mirror of `loadFileWithCompanions`).
+  Single-file programs are untouched (no siblings → no-op). VERIFIED: `koruc --lang=js pump` and
+  `koruc --lang=js pump.k` both emit clean JS (no Zig host-line leak) → `node` prints `sum = 45`;
+  `koruc pump` (Zig) prints `sum = 45` (was a silent no-op before — the entry never merged its
+  siblings). Pinned by `tests/regression/.../140_009_entry_merges_companions` (Zig target; events
+  in `input.k`, flow+procs in `input.kz`, was red, now green). This is the clean "use the contract
+  file" model: facets of one module, named by stem.
+  REMAINING SPIKE GAPS (not blockers): JS emitter still lacks module-qualified event resolution
+  (so the *import*-based split — `app.contract:pump` — hits `UnresolvedEvent`; the stem-merge model
+  sidesteps it). And `koruc`'s child-process handling panics on `term.Exited` when a Stage-C
+  backend dies via signal, masking the real error (`main.zig:7425`).
 - **Phase 2 — benchmark: DONE on real emitted JS (2026-05-30).** Module state works (host-line
   routing above). Two receipts, Claude-verified:
   - chain.kjs (depth-3 nested, n³): koru-static ~8× faster than Node EventEmitter, ~1.5× off flat.

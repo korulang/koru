@@ -1,0 +1,10 @@
+// Zig implementation facet + the driving flow. Events are declared in the
+// input.k companion; the flow references them UNQUALIFIED because the merge
+// puts every facet in one module.
+const std = @import("std");
+
+~proc compute|zig { return .{ .done = x + 100 }; }
+~proc show|zig { std.debug.print("{d}\n", .{v}); }
+
+~compute(x: 42)
+| done r |> show(v: r)

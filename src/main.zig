@@ -3791,6 +3791,66 @@ fn loadFileWithCompanions(
     };
 }
 
+/// Parse the entry's Koru companion facets (siblings sharing the stem, with a
+/// different Koru extension) and fold their items + module annotations into the
+/// already-parsed `primary` program. Returns the union; `primary`'s registry,
+/// `main_module_name`, and allocator are preserved.
+///
+/// This is the entry-side mirror of `loadFileWithCompanions` (which serves
+/// imports). The difference: the entry's `primary` was already parsed with
+/// compiler-import injection and the import resolver wired in; the impl facets
+/// only contribute procs + host lines, which are opaque to import resolution,
+/// so they're parsed plainly (empty flags, null resolver). An empty companion
+/// set returns `primary` untouched, so single-file programs pay nothing.
+fn mergeEntryCompanions(
+    allocator: std.mem.Allocator,
+    parse_allocator: std.mem.Allocator,
+    primary_path: []const u8,
+    primary: ast.Program,
+) !ast.Program {
+    const companions = try module_resolver_mod.findCompanionFiles(allocator, primary_path);
+    defer {
+        for (companions) |c| allocator.free(c);
+        allocator.free(companions);
+    }
+    if (companions.len == 0) return primary;
+
+    log.debug("  Entry companion merge: {} sibling(s) for {s}\n", .{ companions.len, primary_path });
+
+    var merged_items = std.ArrayList(ast.Item){ .items = &.{}, .capacity = 0 };
+    try merged_items.appendSlice(parse_allocator, primary.items);
+    var merged_annotations = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
+    try merged_annotations.appendSlice(parse_allocator, primary.module_annotations);
+
+    for (companions) |companion_path| {
+        log.debug("    Companion: {s}\n", .{companion_path});
+        const file = try std.fs.cwd().openFile(companion_path, .{});
+        defer file.close();
+        const path_owned = try parse_allocator.dupe(u8, companion_path);
+        const source = try file.readToEndAlloc(parse_allocator, 1024 * 1024);
+        var parser = try Parser.init(parse_allocator, source, path_owned, &[_][]const u8{}, null);
+        parser.fail_fast = false;
+        defer parser.deinit();
+        const parsed = try parser.parse();
+        if (parser.reporter.hasErrors() or parsed.source_file.hasParseErrors()) {
+            const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+            try parser.reporter.printErrors(stderr_writer);
+            if (!parser.reporter.hasErrors()) try printAstParseErrors(&parsed.source_file, stderr_writer);
+            std.process.exit(1);
+        }
+        try merged_items.appendSlice(parse_allocator, parsed.source_file.items);
+        try merged_annotations.appendSlice(parse_allocator, parsed.source_file.module_annotations);
+    }
+
+    return ast.Program{
+        .items = try merged_items.toOwnedSlice(parse_allocator),
+        .module_annotations = try merged_annotations.toOwnedSlice(parse_allocator),
+        .main_module_name = primary.main_module_name,
+        .allocator = parse_allocator,
+        .type_registry = primary.type_registry,
+    };
+}
+
 // Split usage into header and footer for dynamic command insertion
 const usage_header =
     \\koruc - The Koru Compiler
@@ -6136,7 +6196,20 @@ pub fn main() !void {
         return;
     }
 
-    const input = input_file.?;
+    // Resolve the input. A user may name a concrete facet (`pump.kz`) or the
+    // bare STEM (`pump`) — the stem is the real unit of compilation, since
+    // `.k`/`.kz`/`.kjs` are facets of one module (merged below). An existing
+    // explicit path is used verbatim (preserves the relative path the user
+    // passed); a bare stem is probed against the canonical extensions.
+    const input = blk: {
+        const raw = input_file.?;
+        if (file_types.isKoruFile(raw)) break :blk raw;
+        for (file_types.koru_extensions) |ext| {
+            const cand = try std.fmt.allocPrint(parse_allocator, "{s}{s}", .{ raw, ext });
+            if (std.fs.cwd().access(cand, .{})) |_| break :blk cand else |_| {}
+        }
+        break :blk raw; // no facet on disk; openFile below errors clearly
+    };
 
     // Default output file: input.kz -> backend.zig (in same directory)
     // We use "backend.zig" because build.zig expects this name
@@ -6255,6 +6328,17 @@ pub fn main() !void {
     var source_file = parse_result.source_file;
     var user_registry = parse_result.registry;
     defer user_registry.deinit();
+
+    // Fold in the entry's companion facets (same stem, sibling Koru files):
+    // `koruc pump.kz` (or `koruc pump`) compiles the WHOLE `pump` module, not
+    // just the one file. The contract (`.k`), the Zig impl (`.kz`), and the JS
+    // impl (`.kjs`) merge into one AST so events, procs, and the flow resolve
+    // against each other regardless of which facet declared them. Single-file
+    // programs (no siblings) are untouched — the merge is a no-op. This is the
+    // entry-side mirror of `loadFileWithCompanions` (used for imports).
+    if (!ast_json_mode) {
+        source_file = try mergeEntryCompanions(allocator, parse_allocator, input, source_file);
+    }
 
     // If --ast-json mode, output AST as JSON (even if there are parse errors)
     // This is crucial for IDE tooling - parse_error nodes in AST show where errors occurred
