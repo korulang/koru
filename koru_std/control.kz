@@ -12,314 +12,31 @@
 
 const std = @import("std");
 
-// Transform: generates ConditionalNode for if/else (zero overhead)
-~[keyword|comptime|transform]pub event if {
-    expr: Expression,
-    invocation: *const Invocation,  // The specific invocation being transformed
-    item: *const Item,
-    program: *const Program,
-    allocator: std.mem.Allocator
-}
-| transformed *const Program
+// IF - Conditional as a template over the continuation-return mechanism.
+//
+// Syntax: ~if(cond)
+//         | then |> ...      // optional: runs when cond is true
+//         | else |> ...      // optional: runs when cond is false
+//
+// ARCHITECTURE:
+// - ~if is a |template|zig proc, NOT a dedicated AST node (no ConditionalNode).
+//   The body is a literal Zig if/else. `then` / `else` are TERMINAL
+//   continuations, CONTINUED by the template via `{{ continuations["X"].continue }}`
+//   — the same producer→consumer dispatch every branched event uses. Where
+//   `for` CALLS effects during the loop, `if` CONTINUES to one of its terminals in
+//   the matching arm. Same machine; `if`'s "during" half is just empty.
+// - Zero-overhead: the consumer's `then` / `else` body is spliced into the
+//   matching arm in the enclosing scope. An omitted optional branch mints no
+//   marker, so its arm renders empty.
+~[keyword]pub event if { cond: []const u8 }
+| ?then
+| ?else
 
-~proc if|zig {
-    const ast = @import("ast");
-    const ast_functional = @import("ast_functional");
-
-    const flow = if (item.* == .flow)
-        &item.flow
-    else
-        return .{ .transformed = program };
-
-    // Check if already transformed (inline_body is set)
-    if (flow.inline_body != null) {
-        return .{ .transformed = program };
-    }
-
-    const is_pointer_top = (invocation == &flow.invocation);
-    // findContainingItem returns the parent flow — only pointer comparison is valid.
-    const is_top_level_if = is_pointer_top;
-
-    // Find | then |> and | else |> continuations
-    var then_cont: ?*const ast.Continuation = null;
-    var else_cont: ?*const ast.Continuation = null;
-
-    if (is_top_level_if) {
-        for (flow.continuations) |*cont| {
-            if (std.mem.eql(u8, cont.branch, "then")) {
-                then_cont = cont;
-            } else if (std.mem.eql(u8, cont.branch, "else")) {
-                else_cont = cont;
-            }
-        }
-    }
-
-    // If we don't have both branches for top-level, fall back to no-op
-    // (could happen with malformed input)
-    if (is_top_level_if and then_cont == null) {
-        return .{ .transformed = program };
-    }
-
-    if (is_top_level_if) {
-        // =====================================================================
-        // TOP-LEVEL CASE: Create ConditionalNode with NamedBranch array
-        // Same approach as nested case - the node IS the runtime representation.
-        // preamble_code triggers "skip invocation, process continuations" mode.
-        // =====================================================================
-
-        // Build ConditionalNode with uniform NamedBranch structure
-        const branch_count: usize = if (else_cont != null) 2 else 1;
-        const branches = allocator.alloc(ast.NamedBranch, branch_count) catch unreachable;
-
-        // Then branch - wrap full continuation in array for NamedBranch.body
-        const then_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
-        then_body[0] = then_cont.?.*;
-        branches[0] = .{
-            .name = "then",
-            .body = then_body,
-            .binding = then_cont.?.binding,
-        };
-
-        // Else branch if present - wrap full continuation
-        if (else_cont) |ec| {
-            const else_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
-            else_body[0] = ec.*;
-            branches[1] = .{
-                .name = "else",
-                .body = else_body,
-                .binding = ec.binding,
-            };
-        }
-
-        if (!is_pointer_top) {
-            const conditional_node = ast.Node{ .conditional = .{
-                .condition = expr,
-                .condition_expr = null,
-                .branches = branches,
-            }};
-
-            const empty_conts = allocator.alloc(ast.Continuation, 0) catch unreachable;
-            const maybe_new_program = ast_functional.replaceInvocationNodeAndContinuationsRecursive(
-                allocator,
-                program,
-                invocation,
-                conditional_node,
-                empty_conts,
-            ) catch unreachable;
-            if (maybe_new_program) |new_program| {
-                const result = allocator.create(ast.Program) catch unreachable;
-                result.* = new_program;
-                return .{ .transformed = result };
-            }
-            return .{ .transformed = program };
-        }
-
-        const conditional_node = ast.Node{ .conditional = .{
-            .condition = expr,
-            .condition_expr = null,
-            .branches = branches,
-        }};
-
-        // Create void-chain continuation containing the ConditionalNode
-        const void_continuation = allocator.alloc(ast.Continuation, 1) catch unreachable;
-        void_continuation[0] = ast.Continuation{
-            .branch = "",  // void chain
-            .binding = null,
-            .condition = null,
-            .node = conditional_node,
-            .indent = 0,
-            .continuations = &[_]ast.Continuation{},
-        };
-
-        // Create new invocation with @pass_ran annotation (keep original path)
-        const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
-        for (flow.invocation.annotations, 0..) |ann, i| {
-            new_inv_annotations[i] = ann;
-        }
-        new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
-
-        const new_invocation = ast.Invocation{
-            .path = flow.invocation.path,  // Keep original path
-            .args = flow.invocation.args,
-            .annotations = new_inv_annotations,
-            .inserted_by_tap = flow.invocation.inserted_by_tap,
-            .from_opaque_tap = flow.invocation.from_opaque_tap,
-        };
-
-        // Create new flow with preamble_code (triggers skip-invocation mode)
-        const transformed_flow = ast.Flow{
-            .invocation = new_invocation,
-            .continuations = void_continuation,
-            .annotations = flow.annotations,
-            .pre_label = flow.pre_label,
-            .post_label = flow.post_label,
-            .super_shape = flow.super_shape,
-            .inline_body = null,
-            .preamble_code = allocator.dupe(u8, "// ~if transformed") catch unreachable,
-            .is_pure = flow.is_pure,
-            .is_transitively_pure = flow.is_transitively_pure,
-            .impl_of = flow.impl_of,
-            .location = flow.location,
-            .module = flow.module,
-        };
-
-        const new_item = ast.Item{ .flow = transformed_flow };
-
-        // Use replaceFlowRecursive to handle flows inside module_decls
-        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-        if (maybe_new_program) |new_program| {
-            const result = allocator.create(ast.Program) catch unreachable;
-            result.* = new_program;
-            return .{ .transformed = result };
-        } else {
-            std.debug.print("ERROR: ~if transform failed - flow not found in program\n", .{});
-            @panic("if transform: flow not found");
-        }
+~proc if|template|zig {
+    if ({{ cond }}) {
+        {{ continuations["then"].continue }}
     } else {
-        // =====================================================================
-        // PIPELINE CASE: ~if inside a continuation pipeline (DEEPLY NESTED!)
-        // Example: | done |> step2() | done |> if(cond) | then |> ... | else |> ...
-        // =====================================================================
-
-        // Helper to recursively search for THIS SPECIFIC invocation in continuation tree
-        // Uses pointer comparison to find the exact invocation being transformed
-        const SearchResult = struct {
-            path: []const usize,
-            step_idx: usize,
-            then_cont: *const ast.Continuation,
-            else_cont: ?*const ast.Continuation,
-        };
-
-        const findInvocationRecursive = struct {
-            fn search(
-                alloc: std.mem.Allocator,
-                continuations: []const ast.Continuation,
-                current_path: []const usize,
-                target_inv: *const ast.Invocation,  // The specific invocation to find
-            ) ?SearchResult {
-                for (continuations, 0..) |*cont, cont_idx| {
-                    // Build path to this continuation
-                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
-                    @memcpy(path[0..current_path.len], current_path);
-                    path[current_path.len] = cont_idx;
-
-                    // Check this continuation's node for our specific invocation
-                    if (cont.node) |*step| {
-                        if (step.* == .invocation) {
-                            // CRITICAL: Compare pointers to find the EXACT invocation
-                            if (&step.invocation == target_inv) {
-                                // Found it! Now get | then |> and | else |> from continuations
-                                var found_then: ?*const ast.Continuation = null;
-                                var found_else: ?*const ast.Continuation = null;
-
-                                for (cont.continuations) |*nested| {
-                                    if (std.mem.eql(u8, nested.branch, "then")) {
-                                        found_then = nested;
-                                    } else if (std.mem.eql(u8, nested.branch, "else")) {
-                                        found_else = nested;
-                                    }
-                                }
-
-                                if (found_then) |tc| {
-                                    return SearchResult{
-                                        .path = path,
-                                        .step_idx = 0,  // Only one step now
-                                        .then_cont = tc,
-                                        .else_cont = found_else,
-                                    };
-                                }
-                            }
-                        }
-                    }
-
-                    // Not in this continuation's step - recurse into continuations
-                    if (search(alloc, cont.continuations, path, target_inv)) |result| {
-                        return result;
-                    }
-
-                    // Free path if not used
-                    alloc.free(path);
-                }
-                return null;
-            }
-        }.search;
-
-        // Search recursively for THIS SPECIFIC invocation
-        const empty_path = &[_]usize{};
-        const search_result = findInvocationRecursive(allocator, flow.continuations, empty_path, invocation) orelse {
-            // Can't find the if structure, return unchanged
-            std.debug.print("[IF TRANSFORM] WARNING: Could not find specific invocation in nested continuations\n", .{});
-            return .{ .transformed = program };
-        };
-
-        then_cont = search_result.then_cont;
-        else_cont = search_result.else_cont;
-
-        // Build ConditionalNode with uniform NamedBranch structure
-        // Create then branch
-        const then_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
-        then_body[0] = then_cont.?.*;
-
-        // Count branches needed (then + optional else)
-        const branch_count: usize = if (else_cont != null) 2 else 1;
-        const branches = allocator.alloc(ast.NamedBranch, branch_count) catch unreachable;
-
-        branches[0] = .{
-            .name = "then",
-            .body = then_body,
-            .binding = null,
-        };
-
-        if (else_cont) |ec| {
-            const else_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
-            else_body[0] = ec.*;
-            branches[1] = .{
-                .name = "else",
-                .body = else_body,
-                .binding = null,
-            };
-        }
-
-        const new_node = ast.Node{ .conditional = .{
-            .condition = expr,
-            .condition_expr = null,
-            .branches = branches,
-        }};
-
-        var modified_flow = ast_functional.replacePipelineStepAtPath(
-            allocator,
-            flow,
-            search_result.path,
-            search_result.step_idx,
-            new_node,
-        ) catch unreachable;
-
-        // Filter out | then |> and | else |> from nested (they're now inside the conditional node)
-        const keepNotIfBranch = struct {
-            fn check(branch: []const u8) bool {
-                return !std.mem.eql(u8, branch, "then") and !std.mem.eql(u8, branch, "else");
-            }
-        }.check;
-
-        modified_flow = ast_functional.filterNestedContinuationsAtPath(
-            allocator,
-            &modified_flow,
-            search_result.path,
-            &keepNotIfBranch,
-        ) catch unreachable;
-
-        const new_item = ast.Item{ .flow = modified_flow };
-
-        // Replace in program using replaceFlowRecursive (handles items inside module_decls)
-        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-        if (maybe_new_program) |new_program| {
-            const result = allocator.create(ast.Program) catch unreachable;
-            result.* = new_program;
-            return .{ .transformed = result };
-        } else {
-            std.debug.print("ERROR: ~if transform (pipeline case) failed - flow not found in program\n", .{});
-            @panic("if transform: flow not found");
-        }
+        {{ continuations["else"].continue }}
     }
 }
 
@@ -333,23 +50,26 @@ const std = @import("std");
 //
 // ARCHITECTURE:
 // - ~for is a |template|zig proc, NOT a dedicated AST node. The body is a
-//   literal Zig `for`; each `! each` handler is called inside it (guarded by
-//   its `when`, if any). An optional `| done` body is appended after the loop
-//   by the emitter's terminal-continuation path.
+//   literal Zig `for`; each `! each` effect handler is called inside it
+//   (guarded by its `when`, if any). The optional `| done` terminal is RETURNED
+//   via `{{ continuations["done"].continue }}` — the producer→consumer dispatch,
+//   not an emitter append. Effects are called during; continuations returned.
 // - The `! each` handlers lower to a synthesized Handlers struct + in-scope
 //   alias (emitter inline-body bridge); the template references each by link
-//   and emits a guarded call. No body splicing, no ForeachNode.
+//   and emits a guarded call. No ForeachNode. Mirrors `if` above (pure
+//   continuation-return); `for` and `if` are one mechanism.
 // - Zero-overhead: comptime-known handlers inline into the loop.
 
-~[keyword|scope]pub event for { iterable: []const u8 }
+~[keyword]pub event for { iterable: []const u8 }
 ! each *
 | ?done
 
 ~proc for|template|zig {
     for ({{ iterable }}) |__koru_item| {
-        {% for h in continuations["each"] %}{{ h.inlined_link }}(__koru_item);
+        {% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item);
         {% endfor %}
     }
+    {{ continuations["done"].continue }}
 }
 
 // ============================================================================

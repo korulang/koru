@@ -1,0 +1,30 @@
+// Template engine NORTH STAR (continuation half): a |template| proc CONTINUES to
+// a terminal continuation — the symmetric counterpart to *calling* effects.
+//
+// Effects fire DURING and are called inline (`effects["each"]` → loop body).
+// Continuations are the OUTCOME and are CONTINUED: `{{ continuations["done"].continue }}`
+// hands off to the consumer's `| done |>` body — the same producer→consumer
+// cycle (continuation-passing) every branched event uses. This is `for`'s
+// `done`, and the exact mechanism `if` uses to continue to `then` / `else`.
+//
+// NOTE: `.continue` names the concept and keeps the whole construct inside the
+// `{{ }}` render — the emitter resolves the tag (the Zig lowering happens to be
+// a `return`, but that backend detail never leaks into the surface). It never
+// parses host code out of the opaque proc body; the emit-only boundary holds.
+~import "$std/io"
+
+~pub event probe3 { n: usize }
+! each usize
+| done
+
+~proc probe3|template|zig {
+    for (0..{{ n }}) |__i| {
+        {% for h in effects["each"] %}{{ h.link }}(__i);
+        {% endfor %}
+    }
+    {{ continuations["done"].continue }}
+}
+
+~probe3(n: 3)
+! each i |> std.io:print.ln("each {{ i:d }}")
+| done |> std.io:print.ln("done")

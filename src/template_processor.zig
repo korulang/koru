@@ -23,7 +23,6 @@ const ast = @import("ast");
 const liquid = @import("liquid");
 const log = @import("log");
 const errors = @import("errors");
-const annotation_parser = @import("annotation_parser");
 
 const TEMPLATE_TAG = "template";
 const ONCE_MODE = "once";
@@ -124,12 +123,18 @@ fn renderTemplateInvocation(
         }
     }
 
-    // Expose the invoking continuations as `continuations["<branch>"]` → an
-    // array of handler sub-contexts { link, binding, guard, kind }. Presence
-    // doubles as truthiness. See the template-engine cluster (250_*) for the
-    // surface templates program against.
+    // Expose the invoking handlers to the template, SPLIT BY KIND. Effect
+    // handlers (`! each`, fire 0-to-N during) land under `effects["<branch>"]`;
+    // terminal handlers (`| done`, fire once after) under
+    // `continuations["<branch>"]`. The pair is complete — there is no third
+    // branch-kind — so this exhausts the surface. Each entry is a sub-context
+    // { link, binding, guard, kind, inlined_link }; presence doubles as
+    // truthiness. See the template-engine cluster (250_*) for what templates
+    // program against. This is a pure SEMANTIC split — the AST keeps one
+    // `Continuation` type carrying `kind`; only the template-facing names differ.
     {
-        var by_branch = std.StringHashMap(std.ArrayList(*liquid.Context)).init(allocator);
+        var by_effect = std.StringHashMap(std.ArrayList(*liquid.Context)).init(allocator);
+        var by_terminal = std.StringHashMap(std.ArrayList(*liquid.Context)).init(allocator);
         for (continuations, 0..) |cont, idx| {
             if (cont.branch.len == 0) continue; // skip void-chain continuations
             const sub = try allocator.create(liquid.Context);
@@ -145,18 +150,66 @@ fn renderTemplateInvocation(
             // emitter resolves against, so it round-trips deterministically.
             const marker = try std.fmt.allocPrint(allocator, "__koru_inline_{d}", .{idx});
             try sub.put("inlined_link", .{ .string = marker });
+            // `inlined_link[scope]` splices the body identically AND declares the
+            // handler an obligation boundary: the `scoped_` infix is a signal the
+            // template_processor scans for post-render to stamp `@scope` on this
+            // continuation. Scope is thus a property of the SPLICE SITE the
+            // template author chooses, not of the event declaration. Stored under
+            // the literal key — liquid's dotted access is exact-match, so
+            // `{{ h.inlined_link[scope] }}` resolves here with no parser change.
+            const scoped_marker = try std.fmt.allocPrint(allocator, "__koru_inline_scoped_{d}", .{idx});
+            try sub.put("inlined_link[scope]", .{ .string = scoped_marker });
+            // `continue`: a continuation is CONTINUED (continuation-passing —
+            // the producer hands off to the consumer's handler), not called. For
+            // terminal handlers, expose a `__koru_continue_<idx>` marker the
+            // emitter resolves to the consumer's terminal body at the hand-off
+            // point. Effects never get this — they fire during and are called.
+            // This is the continuation half of the effect/continuation symmetry
+            // (`effects[..]` → call; `continuations[..]` → continue). NB: `.continue`
+            // names the concept; the Zig lowering happens to be `return`, but that
+            // is a backend detail this surface deliberately does not leak.
+            if (cont.kind != .effect) {
+                const cont_marker = try std.fmt.allocPrint(allocator, "__koru_continue_{d}", .{idx});
+                try sub.put("continue", .{ .string = cont_marker });
+            }
 
-            const gop = try by_branch.getOrPut(cont.branch);
+            const target_map = if (cont.kind == .effect) &by_effect else &by_terminal;
+            const gop = try target_map.getOrPut(cont.branch);
             if (!gop.found_existing) gop.value_ptr.* = .empty;
             try gop.value_ptr.append(allocator, sub);
         }
 
-        var it = by_branch.iterator();
-        while (it.next()) |entry| {
-            const arr = try allocator.alloc(*liquid.Context, entry.value_ptr.items.len);
-            @memcpy(arr, entry.value_ptr.items);
-            const key = try std.fmt.allocPrint(allocator, "continuations[\"{s}\"]", .{entry.key_ptr.*});
-            try ctx.put(key, .{ .array = arr });
+        const Putter = struct {
+            fn flush(c: *liquid.Context, map: *std.StringHashMap(std.ArrayList(*liquid.Context)), comptime prefix: []const u8, a: std.mem.Allocator) !void {
+                var it = map.iterator();
+                while (it.next()) |entry| {
+                    const arr = try a.alloc(*liquid.Context, entry.value_ptr.items.len);
+                    @memcpy(arr, entry.value_ptr.items);
+                    const key = try std.fmt.allocPrint(a, prefix ++ "[\"{s}\"]", .{entry.key_ptr.*});
+                    try c.put(key, .{ .array = arr });
+                }
+            }
+        };
+        try Putter.flush(&ctx, &by_effect, "effects", allocator);
+        try Putter.flush(&ctx, &by_terminal, "continuations", allocator);
+
+        // Direct `continuations["<branch>"].continue` keys, so a template writes
+        // `{{ continuations["done"].continue }}` WITHOUT iterating — a continuation
+        // is continued once, not called N times. Stored under the literal dotted
+        // key (liquid's access is exact-match, no parser change). Concatenates
+        // markers if a branch carries multiple handlers (when-guards).
+        {
+            var it = by_terminal.iterator();
+            while (it.next()) |entry| {
+                var buf: std.ArrayList(u8) = .empty;
+                for (entry.value_ptr.items) |sub| {
+                    if (sub.get("continue")) |v| {
+                        if (v == .string) try buf.appendSlice(allocator, v.string);
+                    }
+                }
+                const key = try std.fmt.allocPrint(allocator, "continuations[\"{s}\"].continue", .{entry.key_ptr.*});
+                try ctx.put(key, .{ .string = try buf.toOwnedSlice(allocator) });
+            }
         }
     }
 
@@ -190,10 +243,12 @@ fn maybeRenderPerCall(
         }
     }
 
-    // If the invoked construct is `scope`-annotated (e.g. `~for`), stamp
-    // `@scope` on its effect continuations so the obligation checker treats each
-    // handler body as a per-iteration scope boundary (auto-discharge per loop).
-    try tagEffectScopeIfAnnotated(all_items, &flow.invocation.path, @constCast(flow.continuations), allocator);
+    // If the rendered body spliced any handler with `[scope]`, stamp `@scope` on
+    // the matching continuations so the obligation checker treats each handler
+    // body as a per-iteration scope boundary (auto-discharge per loop).
+    if (flow.inline_body) |body| {
+        try tagScopeFromRenderedBody(body, @constCast(flow.continuations), allocator);
+    }
 
     // Nested template invocations (e.g. `~for` inside a pipeline continuation)
     // get the same per-call rendering, depth-first. The inline_body lands on
@@ -202,35 +257,49 @@ fn maybeRenderPerCall(
     try renderNestedTemplates(all_items, @constCast(flow.continuations), allocator);
 }
 
-/// If the event invoked at `path` carries the `scope` compiler-annotation
-/// (`~[…|scope]`), stamp `@scope` onto each of its EFFECT continuations'
+/// Scope is declared at the SPLICE SITE, not the event. When a template splices
+/// a handler with `{{ h.inlined_link[scope] }}`, that renders a
+/// `__koru_inline_scoped_<idx>` marker into the body. After rendering, scan the
+/// body for those markers and stamp `@scope` onto the matching continuations'
 /// `binding_annotations`. The obligation checker (`auto_discharge_inserter`)
 /// reads `@scope` on a continuation and treats that handler body as a scope
-/// boundary — per-iteration resource discharge, outer resources suspended.
-/// This is how a template construct declares "my body is a scope" without any
-/// dedicated node: a declarative annotation propagated to the AST.
-fn tagEffectScopeIfAnnotated(
-    all_items: []ast.Item,
-    path: *const ast.DottedPath,
+/// boundary — per-iteration resource discharge, outer resources suspended. This
+/// is how a template construct declares "this spliced body is a scope" without a
+/// dedicated node and without baking scope into the event declaration: the
+/// template author picks `inlined_link[scope]` exactly where the boundary is.
+const SCOPED_SPLICE_MARKER = "__koru_inline_scoped_";
+
+fn tagScopeFromRenderedBody(
+    rendered: []const u8,
     continuations: []ast.Continuation,
     allocator: std.mem.Allocator,
 ) !void {
-    const event = findEventDeclByLastSegment(all_items, path) orelse return;
-    if (!annotation_parser.hasPart(event.annotations, "scope")) return;
-
-    for (continuations) |*cont| {
-        if (cont.kind != .effect) continue;
-        // Idempotent — don't double-tag.
-        for (cont.binding_annotations) |ann| {
-            if (std.mem.eql(u8, ann, "@scope")) break;
-        } else {
-            const old = cont.binding_annotations;
-            const new_anns = try allocator.alloc([]const u8, old.len + 1);
-            @memcpy(new_anns[0..old.len], old);
-            new_anns[old.len] = "@scope";
-            cont.binding_annotations = new_anns;
+    var pos: usize = 0;
+    while (std.mem.indexOfPos(u8, rendered, pos, SCOPED_SPLICE_MARKER)) |m| {
+        var i = m + SCOPED_SPLICE_MARKER.len;
+        var idx: usize = 0;
+        var saw_digit = false;
+        while (i < rendered.len and rendered[i] >= '0' and rendered[i] <= '9') : (i += 1) {
+            idx = idx * 10 + (rendered[i] - '0');
+            saw_digit = true;
         }
+        if (saw_digit and idx < continuations.len) {
+            try stampScope(&continuations[idx], allocator);
+        }
+        pos = i;
     }
+}
+
+/// Idempotently add `@scope` to a continuation's `binding_annotations`.
+fn stampScope(cont: *ast.Continuation, allocator: std.mem.Allocator) !void {
+    for (cont.binding_annotations) |ann| {
+        if (std.mem.eql(u8, ann, "@scope")) return;
+    }
+    const old = cont.binding_annotations;
+    const new_anns = try allocator.alloc([]const u8, old.len + 1);
+    @memcpy(new_anns[0..old.len], old);
+    new_anns[old.len] = "@scope";
+    cont.binding_annotations = new_anns;
 }
 
 /// Walk continuations depth-first, rendering any `for`/template invocation found
@@ -252,8 +321,10 @@ fn renderNestedTemplates(
                         });
                     }
                 }
-                // Same `@scope` stamping for nested scope-annotated constructs.
-                try tagEffectScopeIfAnnotated(all_items, &node.invocation.path, @constCast(cont.continuations), allocator);
+                // Same splice-driven `@scope` stamping for nested constructs.
+                if (node.invocation.inline_body) |body| {
+                    try tagScopeFromRenderedBody(body, @constCast(cont.continuations), allocator);
+                }
             }
         }
         try renderNestedTemplates(all_items, @constCast(cont.continuations), allocator);

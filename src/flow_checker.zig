@@ -268,9 +268,10 @@ pub const FlowChecker = struct {
 
     /// Check if a continuation's node is an invocation whose binding usage isn't
     /// determinable at frontend time — a `[transform]` (binding consumed during
-    /// rewrite) or a `[scope]` construct (binding may be suspended across the
-    /// scope and discharged by auto_discharge in a later pass). In both cases a
-    /// frontend "unused binding" verdict would be premature.
+    /// rewrite) or a `|template|` proc (the binding's only use is spliced in by
+    /// the template at render-time, in a later pass, so it's invisible here;
+    /// scope-suspended bindings discharged by auto_discharge are this case too).
+    /// In both, a frontend "unused binding" verdict would be premature.
     fn isDeferredBindingInvocation(self: *FlowChecker, cont: *const ast.Continuation) bool {
         const node = cont.node orelse return false;
         if (node != .invocation) return false;
@@ -278,11 +279,51 @@ pub const FlowChecker = struct {
         const inv = node.invocation;
 
         if (self.findEventDecl(&inv.path)) |event_decl| {
-            return annotation_parser.hasPart(event_decl.annotations, "transform") or
-                annotation_parser.hasPart(event_decl.annotations, "scope");
+            if (annotation_parser.hasPart(event_decl.annotations, "transform")) return true;
         }
 
-        return false;
+        return self.invocationResolvesToTemplateProc(&inv.path);
+    }
+
+    /// True if `path` resolves to a proc whose variant chain begins with
+    /// `template` (`|template|zig`, `|template(once)|js`, …). The proc body is a
+    /// template rendered in a later pass, so any binding it consumes is not yet
+    /// visible to the frontend unused-binding check. Matches on the path's last
+    /// segment — sufficient for the single-module programs this guards.
+    fn invocationResolvesToTemplateProc(self: *FlowChecker, path: *const ast.DottedPath) bool {
+        const items = self.ast_items orelse return false;
+        if (path.segments.len == 0) return false;
+        const target_name = path.segments[path.segments.len - 1];
+
+        const isTemplateTarget = struct {
+            fn check(target: ?[]const u8) bool {
+                const t = target orelse return false;
+                if (!std.mem.startsWith(u8, t, "template")) return false;
+                // Must be the whole first tag: `template` then `|`, `(`, or end.
+                return t.len == "template".len or t["template".len] == '|' or t["template".len] == '(';
+            }
+        }.check;
+
+        const matchProc = struct {
+            fn check(proc_items: []const ast.Item, name: []const u8, isTmpl: anytype) bool {
+                for (proc_items) |*item| {
+                    switch (item.*) {
+                        .proc_decl => |*pd| {
+                            if (pd.path.segments.len == 0) continue;
+                            const pd_name = pd.path.segments[pd.path.segments.len - 1];
+                            if (std.mem.eql(u8, pd_name, name) and isTmpl(pd.target)) return true;
+                        },
+                        .module_decl => |*md| {
+                            if (check(md.items, name, isTmpl)) return true;
+                        },
+                        else => {},
+                    }
+                }
+                return false;
+            }
+        }.check;
+
+        return matchProc(items, target_name, isTemplateTarget);
     }
 
     /// Check if a flow's top-level invocation is a transform event (like ~tap)

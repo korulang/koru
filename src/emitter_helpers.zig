@@ -3166,12 +3166,23 @@ pub fn buildCanonicalEventName(path: *const ast.DottedPath, allocator: std.mem.A
 /// The rendered form of `{{ h.inlined_link }}` is `__koru_inline_<idx>(arg)`,
 /// where `<idx>` is the continuation's position in the node's continuation list.
 const INLINE_SPLICE_PREFIX = "__koru_inline_";
+const INLINE_CONTINUE_PREFIX = "__koru_continue_";
 
-/// Write `inline_code` verbatim, resolving each `__koru_inline_<idx>(arg)` splice
-/// marker (from `{{ h.inlined_link }}(arg)`) into the lowered handler body,
-/// spliced IN-SCOPE: `{ const <binding> = <arg>; [if (<guard>)] { <body> } }`.
-/// `continuations[idx]` is the handler. Sequential dispatch — markers resolve in
-/// source order, no `return` between them, so every guard-passing handler runs.
+/// Write `inline_code` verbatim, resolving two kinds of template marker into the
+/// invoking flow's continuation bodies — the effect/continuation symmetry, lowered:
+///
+///   - `__koru_inline_<idx>(arg)` (from `{{ h.inlined_link }}(arg)`) — an EFFECT
+///     CALL: splice the handler body IN-SCOPE with the arg bound to its binding,
+///     `{ const <binding> = <arg>; [if (<guard>)] { <body> } }`. Fires during.
+///   - `__koru_continue_<idx>` (from `{{ continuations["X"].continue }}`) — a
+///     CONTINUATION hand-off (continuation-passing): inlined, that collapses to
+///     running the consumer's `| X |>` body at the hand-off point,
+///     `{ [if (<guard>)] { <body> } }`. No arg — a no-payload terminal. Fires once.
+///     (The Zig lowering of this is a `return`, but the surface name is `.continue`.)
+///
+/// Both index the same `continuations` slice the markers were minted against, so
+/// they round-trip deterministically. An omitted optional terminal never minted a
+/// marker, so its absence simply emits nothing. Markers resolve in source order.
 fn emitInlineCodeResolvingSplices(
     emitter: *CodeEmitter,
     ctx: *EmissionContext,
@@ -3179,11 +3190,67 @@ fn emitInlineCodeResolvingSplices(
     continuations: []const ast.Continuation,
 ) anyerror!void {
     var pos: usize = 0;
-    while (std.mem.indexOfPos(u8, inline_code, pos, INLINE_SPLICE_PREFIX)) |m| {
+    while (true) {
+        // Find the earliest remaining marker of either kind.
+        const splice_at = std.mem.indexOfPos(u8, inline_code, pos, INLINE_SPLICE_PREFIX);
+        const continue_at = std.mem.indexOfPos(u8, inline_code, pos, INLINE_CONTINUE_PREFIX);
+        var m: usize = undefined;
+        var is_continue: bool = undefined;
+        if (splice_at) |s| {
+            if (continue_at) |r| {
+                is_continue = r < s;
+                m = if (is_continue) r else s;
+            } else {
+                is_continue = false;
+                m = s;
+            }
+        } else if (continue_at) |r| {
+            is_continue = true;
+            m = r;
+        } else {
+            break; // no more markers
+        }
+
         try emitter.write(inline_code[pos..m]);
 
-        // Parse `<idx>` after the prefix.
+        if (is_continue) {
+            // CONTINUATION hand-off — run the terminal body once, here.
+            var i = m + INLINE_CONTINUE_PREFIX.len;
+            var idx: usize = 0;
+            var saw_digit = false;
+            while (i < inline_code.len and inline_code[i] >= '0' and inline_code[i] <= '9') : (i += 1) {
+                idx = idx * 10 + (inline_code[i] - '0');
+                saw_digit = true;
+            }
+            if (saw_digit and idx < continuations.len) {
+                const cont = &continuations[idx];
+                try emitter.write("{ ");
+                const guarded = cont.condition != null;
+                if (guarded) {
+                    try emitter.write("if (");
+                    try emitter.write(cont.condition.?);
+                    try emitter.write(") { ");
+                }
+                var c: usize = 0;
+                try emitContinuationBody(emitter, ctx, cont, &c);
+                if (guarded) try emitter.write(" }");
+                try emitter.write(" }");
+            } else {
+                try emitter.write(inline_code[m..i]); // unresolvable; loud
+            }
+            pos = i;
+            continue;
+        }
+
+        // EFFECT CALL — splice the handler body in-scope with the arg bound.
+        // Parse `<idx>` after the prefix. An optional `scoped_` infix
+        // (`__koru_inline_scoped_<idx>`, from `{{ h.inlined_link[scope] }}`)
+        // carries no emission meaning here — scope is consumed by auto_discharge
+        // via the `@scope` annotation already stamped on the continuation — so
+        // splice the body identically; just skip past the infix to the digits.
         var i = m + INLINE_SPLICE_PREFIX.len;
+        const SCOPED_INFIX = "scoped_";
+        if (std.mem.startsWith(u8, inline_code[i..], SCOPED_INFIX)) i += SCOPED_INFIX.len;
         var idx: usize = 0;
         var saw_digit = false;
         while (i < inline_code.len and inline_code[i] >= '0' and inline_code[i] <= '9') : (i += 1) {
@@ -3352,11 +3419,12 @@ fn emitInlineBodyNode(
                 try emitInlineCodeResolvingSplices(emitter, ctx, inline_code, continuations);
                 try emitter.write("\n");
 
-                // Terminal continuations (`| done`) run once after the loop.
-                var result_counter: usize = 0;
-                for (inline_terminal_conts.items) |*cont| {
-                    try emitContinuationBody(emitter, ctx, cont, &result_counter);
-                }
+                // Terminal continuations are NOT appended here. A template hands
+                // off to its terminal via `{{ continuations["X"].continue }}`, which
+                // the resolver above lowers into the consumer dispatch. An
+                // effect-bearing template with no `.continue` simply emits no
+                // terminal body (e.g. a `for` with no `| done`).
+                _ = &inline_terminal_conts;
                 return;
             }
 
@@ -3383,24 +3451,31 @@ fn emitInlineBodyNode(
                 try emitter.write(";\n");
             }
 
-            // Emit the template body (the producer pump).
+            // Emit the template body (the producer pump). Route through the
+            // marker resolver so any `__koru_continue_<idx>` from the template's
+            // `{{ continuations["X"].continue }}` lowers to the consumer's terminal
+            // body. (Effect calls here go through the aliased Handlers fns above,
+            // not `__koru_inline_` splices, so only continue-markers resolve.)
             try emitter.writeIndent();
-            try emitter.write(inline_code);
+            try emitInlineCodeResolvingSplices(emitter, ctx, inline_code, continuations);
             if (!inline_is_statement) {
                 try emitter.write(";");
             }
             try emitter.write("\n");
 
-            // (3) Emit terminal continuations only — effect bodies are in Handlers_0.
-            var result_counter: usize = 0;
-            for (inline_terminal_conts.items) |*cont| {
-                try emitContinuationBody(emitter, ctx, cont, &result_counter);
-            }
+            // Terminal continuations are not appended — the template hands off to
+            // them via the resolved `__koru_continue_<idx>` markers above.
+            _ = &inline_terminal_conts;
             return;
         }
 
+        // No-effect inline template (e.g. `~if`): route through the marker
+        // resolver so the template's `{{ continuations["X"].return }}` markers
+        // (`__koru_return_<idx>`) lower into the matching arm. Only VOID-chain
+        // continuations are appended after (the flow continues); terminal
+        // (named) continuations are RETURNED by the template, not appended.
         try emitter.writeIndent();
-        try emitter.write(inline_code);
+        try emitInlineCodeResolvingSplices(emitter, ctx, inline_code, continuations);
         if (!inline_is_statement) {
             try emitter.write(";");
         }
@@ -3408,6 +3483,7 @@ fn emitInlineBodyNode(
 
         var result_counter: usize = 0;
         for (continuations) |*cont| {
+            if (cont.branch.len != 0) continue; // terminal — returned, not appended
             try emitContinuationBody(emitter, ctx, cont, &result_counter);
         }
         return;

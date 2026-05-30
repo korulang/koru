@@ -11,7 +11,7 @@
 ~proc probe2|template|zig {
     {% if continuations["done"] %}{% else %}{% comp error %}probe2 requires a `done` branch{% endcomp %}{% endif %}
     for (0..{{ n }}) |__i| {
-        {% for h in continuations["each"] %}
+        {% for h in effects["each"] %}
         {{ h.link }}(__i);
         {% endfor %}
     }
