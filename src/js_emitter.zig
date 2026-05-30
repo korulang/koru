@@ -47,7 +47,7 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
     var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(allocator);
 
-    var em = Emitter{ .allocator = allocator, .buf = &buf, .items = program.items };
+    var em = Emitter{ .allocator = allocator, .buf = &buf, .items = program.items, .main_module_name = program.main_module_name };
 
     // Phase 0: emit host lines whose host language is JS, verbatim, at the TOP
     // of the output (before main_module). This carries module-level JS state
@@ -75,8 +75,19 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
     // Phase 1: emit each event decl (matched to its |js proc) as an object member.
     for (program.items) |*item| {
         if (item.* == .event_decl) {
-            try em.emitEventDecl(&item.event_decl);
+            try em.emitEventDecl(&item.event_decl, program.items);
         }
+    }
+
+    // Phase 1b: emit event decls living in IMPORTED MODULES (e.g. `std.io`,
+    // a `$app/contract` companion). A module's event is emitted iff it has a
+    // `|js` proc in that same module — which naturally filters out compiler /
+    // stdlib infrastructure modules (their procs are `|zig`/`[comptime]`, never
+    // `|js`). The proc is resolved within the module's own scope so a same-named
+    // proc in a sibling module can't be picked up by mistake.
+    for (program.items) |*item| {
+        if (item.* != .module_decl) continue;
+        try em.emitModuleEventDecls(&item.module_decl);
     }
 
     // Phase 2: emit each top-level flow as a flowN() method.
@@ -112,6 +123,9 @@ const Emitter = struct {
     allocator: std.mem.Allocator,
     buf: *std.ArrayList(u8),
     items: []const ast.Item,
+    /// The program's main module name. Used by the module-aware path matcher to
+    /// resolve a qualified call (`std.io:println`) that targets the main module.
+    main_module_name: []const u8 = "",
     /// Monotonic counter for unique `Handlers_<id>` / `result_<id>` names so
     /// nested dispatch frames never collide.
     id_counter: usize = 0,
@@ -130,31 +144,58 @@ const Emitter = struct {
         try self.buf.print(self.allocator, fmt, args);
     }
 
-    /// Find the |js proc whose path matches `event_path` (segment-equal).
-    /// Mirrors the Zig emitter's proc-selection (visitor_emitter.zig:2204+) but
-    /// keys on target == "js" instead of the configured default lang.
-    fn findJsProc(self: *Emitter, event_path: *const ast.DottedPath) ?*const ast.ProcDecl {
-        for (self.items) |*item| {
+    /// Find the |js proc for `event_path` WITHIN a given item scope (segment-
+    /// equal). Scope matters: a module's event resolves to the proc in that same
+    /// module, never a same-named proc in a sibling module. Mirrors the Zig
+    /// emitter's proc-selection but keys on target == "js".
+    fn findJsProcIn(self: *Emitter, scope: []const ast.Item, event_path: *const ast.DottedPath) ?*const ast.ProcDecl {
+        _ = self;
+        for (scope) |*item| {
             if (item.* != .proc_decl) continue;
             const proc = &item.proc_decl;
-            if (!pathsEqual(&proc.path, event_path)) continue;
+            if (proc.path.segments.len != event_path.segments.len) continue;
+            var match = true;
+            for (proc.path.segments, event_path.segments) |sa, sb| {
+                if (!std.mem.eql(u8, sa, sb)) {
+                    match = false;
+                    break;
+                }
+            }
+            if (!match) continue;
             const target = proc.target orelse continue;
             if (std.mem.eql(u8, target, JS_TARGET)) return proc;
         }
         return null;
     }
 
+    /// Resolve an invocation path to its event decl, descending into imported
+    /// modules. A flow's call site is often module-qualified (`std.io:println`)
+    /// while the declaration inside the module is unqualified — the match is
+    /// reconciled by `pathsEqualWithModule` against the module's logical_name.
+    /// Mirrors visitor_emitter.zig:findEventDeclInItemsWithModule.
     fn findEventDecl(self: *Emitter, path: *const ast.DottedPath) ?*const ast.EventDecl {
-        for (self.items) |*item| {
-            if (item.* != .event_decl) continue;
-            if (pathsEqual(&item.event_decl.path, path)) return &item.event_decl;
+        return self.findEventDeclIn(self.items, path, null);
+    }
+    fn findEventDeclIn(self: *Emitter, scope: []const ast.Item, path: *const ast.DottedPath, current_module: ?[]const u8) ?*const ast.EventDecl {
+        for (scope) |*item| {
+            switch (item.*) {
+                .event_decl => |*e| {
+                    if (pathsEqualWithModule(&e.path, path, current_module, self.main_module_name)) return e;
+                },
+                .module_decl => |*m| {
+                    if (self.findEventDeclIn(m.items, path, m.logical_name)) |found| return found;
+                },
+                else => {},
+            }
         }
         return null;
     }
 
     /// Emit one event decl as `<name>_event: { handler(input, H?) { ... } }`.
-    fn emitEventDecl(self: *Emitter, event: *const ast.EventDecl) JsEmitError!void {
-        const proc = self.findJsProc(&event.path) orelse {
+    /// `scope` is the item list to resolve the `|js` proc within (the program
+    /// for top-level events, the module's items for a module event).
+    fn emitEventDecl(self: *Emitter, event: *const ast.EventDecl, scope: []const ast.Item) JsEmitError!void {
+        const proc = self.findJsProcIn(scope, &event.path) orelse {
             // An event with no |js proc body is incoherent for the JS target.
             log.debug("[js_emitter] event '{s}' has no |js proc body\n", .{event.path.segments[event.path.segments.len - 1]});
             return JsEmitError.NoJsProcBody;
@@ -190,6 +231,24 @@ const Emitter = struct {
         // Splice the |js proc body verbatim (opaque host code), re-indented.
         try self.emitReindented(proc.body, "      ");
         try self.write("\n    },\n  },\n");
+    }
+
+    /// Emit the JS-implemented events of an imported module. An event is emitted
+    /// only if it has a `|js` proc in this module's own scope; events with only
+    /// `|zig`/`[comptime]` variants (the compiler/stdlib infrastructure) are
+    /// silently skipped — they have no JS implementation, so they're simply
+    /// absent on this target. Recurses into nested modules.
+    fn emitModuleEventDecls(self: *Emitter, module: *const ast.ModuleDecl) JsEmitError!void {
+        for (module.items) |*item| {
+            switch (item.*) {
+                .event_decl => |*event| {
+                    if (self.findJsProcIn(module.items, &event.path) == null) continue;
+                    try self.emitEventDecl(event, module.items);
+                },
+                .module_decl => |*nested| try self.emitModuleEventDecls(nested),
+                else => {},
+            }
+        }
     }
 
     /// Emit a top-level flow as `flowN()`. The dispatch body is produced by the
@@ -325,7 +384,7 @@ const Emitter = struct {
         continuations: []const ast.Continuation,
         indent: []const u8,
     ) JsEmitError!void {
-        const proc = self.findJsProc(&event.path) orelse {
+        const proc = self.findJsProcIn(self.items, &event.path) orelse {
             log.debug("[js_emitter] void producer '{s}' has no |js proc body\n", .{event.path.segments[event.path.segments.len - 1]});
             return JsEmitError.NoJsProcBody;
         };
@@ -658,6 +717,51 @@ fn isIdentChar(c: u8) bool {
 fn pathsEqual(a: *const ast.DottedPath, b: *const ast.DottedPath) bool {
     if (a.segments.len != b.segments.len) return false;
     for (a.segments, b.segments) |sa, sb| {
+        if (!std.mem.eql(u8, sa, sb)) return false;
+    }
+    return true;
+}
+
+/// `long` ends with `short` on a `.`/`:` boundary — so `std.io` matches `io`.
+/// Mirrors visitor_emitter.zig:qualifierSuffixMatch.
+fn qualifierSuffixMatch(long: []const u8, short: []const u8) bool {
+    if (long.len <= short.len) return false;
+    if (!std.mem.endsWith(u8, long, short)) return false;
+    const sep = long[long.len - short.len - 1];
+    return sep == '.' or sep == ':';
+}
+
+/// Two module qualifiers refer to the same module if equal, or one is a dotted
+/// suffix of the other (`std.io` ≡ `io`). Mirrors visitor_emitter.zig.
+fn moduleQualifiersMatch(a: []const u8, b: []const u8) bool {
+    if (std.mem.eql(u8, a, b)) return true;
+    return qualifierSuffixMatch(a, b) or qualifierSuffixMatch(b, a);
+}
+
+/// Module-aware path equality. `decl_path` is a declaration's path (usually
+/// unqualified, sitting inside the module named `current_module`); `inv_path`
+/// is a call site's path (often module-qualified). When exactly one side is
+/// qualified, the qualifier must match the effective module context
+/// (`current_module`, or `main_module` at top level). Mirrors
+/// visitor_emitter.zig:pathsEqualWithModule.
+fn pathsEqualWithModule(
+    decl_path: *const ast.DottedPath,
+    inv_path: *const ast.DottedPath,
+    current_module: ?[]const u8,
+    main_module: []const u8,
+) bool {
+    const a_mod = decl_path.module_qualifier;
+    const b_mod = inv_path.module_qualifier;
+    if (a_mod != null and b_mod != null) {
+        if (!moduleQualifiersMatch(a_mod.?, b_mod.?)) return false;
+    } else if ((a_mod != null) != (b_mod != null)) {
+        const qual = if (a_mod != null) a_mod.? else b_mod.?;
+        const effective = current_module orelse main_module;
+        if (effective.len == 0) return false;
+        if (!moduleQualifiersMatch(effective, qual)) return false;
+    }
+    if (decl_path.segments.len != inv_path.segments.len) return false;
+    for (decl_path.segments, inv_path.segments) |sa, sb| {
         if (!std.mem.eql(u8, sa, sb)) return false;
     }
     return true;

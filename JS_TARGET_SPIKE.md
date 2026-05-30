@@ -76,10 +76,27 @@ the thesis below is demonstrated on **real emitter output** (not hand-modeled JS
   only (MUST_FAIL / EXPECT-error tests stay Zig-only — JS skips Stage D, so per-stage error
   semantics need separate design). 140_009 is the first cross-target test; negative case verified
   (corrupting only the `.kjs` facet → `js-mismatch` failure).
-  REMAINING SPIKE GAPS (not blockers): JS emitter still lacks module-qualified event resolution
-  (so the *import*-based split — `app.contract:pump` — hits `UnresolvedEvent`; the stem-merge model
-  sidesteps it). And `koruc`'s child-process handling panics on `term.Exited` when a Stage-C
-  backend dies via signal, masking the real error (`main.zig:7425`).
+- **MODULE-QUALIFIED RESOLUTION + IMPORTED MODULES — idiomatic stdlib hello-world on JS (2026-05-30).**
+  The JS emitter now descends into imported `module_decl`s and resolves module-qualified calls
+  (`std.io:println`). Ported from visitor_emitter.zig: `pathsEqualWithModule` /
+  `moduleQualifiersMatch` / `qualifierSuffixMatch` (so a `std.io` qualifier matches a module whose
+  logical_name is `io`), a recursive `findEventDeclIn`, and `emitModuleEventDecls` which emits a
+  module's events IFF they have a `|js` proc — that filter naturally excludes the compiler/stdlib
+  infrastructure modules (their procs are `|zig`/`[comptime]`, never `|js`). Proc lookup is scoped
+  to the event's own module (`findJsProcIn`) so same-named procs across modules don't cross-match.
+  Added `print|js`/`println|js` to `koru_std/io.kz` (`process.stdout.write` / `console.log` —
+  additive, the Zig target ignores `|js` variants). RESULT: `~import "$std/io"` +
+  `~std.io:println(text: "Hello, world!")` emits clean JS → node prints `Hello, world!`, and the
+  Zig target prints the same. Pinned as a CROSS-TARGET parity test:
+  `tests/regression/600_STDLIB/630_IO/630_001_io_println_cross_target` (`LANGUAGES: zig js`) — the
+  first stdlib parity test. Dead-strip keeps the JS output minimal (only the used `println`
+  emitted, not `print`). The earlier import-based contract split (`app.contract:pump`) now works
+  too — same resolution.
+  REMAINING SPIKE GAP (not a blocker): `koruc`'s child-process handling panics on `term.Exited`
+  when a Stage-C backend dies via signal, masking the real error (`main.zig:7425`). NOTE: emitter
+  still does NOT walk module host_lines, and the void-effect inline-splice proc lookup is
+  top-level-only — both fine for current programs (stdlib uses console.log inline; void chains are
+  single-file), revisit when a module needs host lines or a module-level void producer appears.
 - **Phase 2 — benchmark: DONE on real emitted JS (2026-05-30).** Module state works (host-line
   routing above). Two receipts, Claude-verified:
   - chain.kjs (depth-3 nested, n³): koru-static ~8× faster than Node EventEmitter, ~1.5× off flat.

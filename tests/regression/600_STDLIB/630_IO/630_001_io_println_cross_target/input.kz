@@ -1,0 +1,8 @@
+// Cross-target stdlib parity: the idiomatic hello-world through std.io must
+// produce identical output whether emitted to Zig or JS. `println` resolves
+// across the module boundary (std.io is imported, module-qualified), and the
+// JS target uses println's |js variant (console.log) while Zig uses |zig
+// (std.debug.print). Same source, same output, two backends.
+~import "$std/io"
+
+~std.io:println(text: "Hello, world!")
