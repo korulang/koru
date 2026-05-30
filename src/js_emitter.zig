@@ -208,11 +208,27 @@ const Emitter = struct {
         };
 
         var event_has_effect = false;
+        var all_effects_void = true;
         for (event.branches) |b| {
             if (b.kind == .effect) {
                 event_has_effect = true;
-                break;
+                if (b.resume_type != null) all_effects_void = false;
             }
+        }
+
+        // VOID-EFFECT FAST PATH: when the invoked event is a producer whose
+        // effect branches are ALL void (no `-> T` resume value), do NOT build a
+        // `Handlers_<id>` closure tower. Instead splice the producer's |js body
+        // inline, textually replacing each `<op>(<arg>)` effect call with the
+        // recursively-emitted handler body in a block:
+        //   `{ const <binding> = <arg>; <handler sub-flow> }`
+        // This collapses an arbitrarily deep void chain into straight-line
+        // nested blocks (no closures) so V8 keeps it on the fast path at any
+        // depth. Resume-value effects keep the closure form below — splicing a
+        // statement block where an expression value is expected would break them.
+        if (event_has_effect and all_effects_void) {
+            try self.emitInlineVoidProducer(event, inv, continuations, indent);
+            return;
         }
 
         // Only allocate an id (and thus a result binding) when a terminal
@@ -270,6 +286,187 @@ const Emitter = struct {
         for (continuations) |*cont| {
             if (cont.kind != .terminal) continue;
             try self.emitTerminalContinuation(cont, result_name, indent);
+        }
+    }
+
+    /// VOID-EFFECT INLINE SPLICE. The invoked `event` is a producer whose effect
+    /// branches are all void. Emit its `|js` proc body inline, with each effect
+    /// call `<op>(<arg>)` textually replaced by the spliced handler body:
+    ///   `{ const <binding> = <arg>; <recursively-emitted handler sub-flow> }`.
+    ///
+    /// `inv` supplies the producer's input fields (bound as `const f = <val>;`
+    /// locals, exactly as the closure path does inside the handler). The effect
+    /// op name is the event's effect-branch name (`branch.name`, e.g. "item"/"v").
+    /// The handler sub-flow is the matching effect continuation's body — itself
+    /// an invocation-with-continuations, so we recurse into
+    /// `emitInvocationWithContinuations`, which takes THIS same void path again
+    /// for the next void producer, or the closure/direct path at a plain event.
+    ///
+    /// Mirrors emitter_helpers.zig:3186 `emitInlineCodeResolvingSplices` (the Zig
+    /// emitter's in-scope handler splice) — same `{ const <binding> = <arg>; { <body> } }`
+    /// shape, which is valid JS too.
+    fn emitInlineVoidProducer(
+        self: *Emitter,
+        event: *const ast.EventDecl,
+        inv: *const ast.Invocation,
+        continuations: []const ast.Continuation,
+        indent: []const u8,
+    ) JsEmitError!void {
+        const proc = self.findJsProc(&event.path) orelse {
+            log.debug("[js_emitter] void producer '{s}' has no |js proc body\n", .{event.path.segments[event.path.segments.len - 1]});
+            return JsEmitError.NoJsProcBody;
+        };
+
+        // Evaluate each arg into a uniquely-named temp in the ENCLOSING scope,
+        // BEFORE opening the producer block. This is what makes a bare-identifier
+        // arg (`outer(n)` → field `n`, value `n`) correct: `const __arg_K = n;`
+        // reads the outer `n`, and the in-block `const n = __arg_K;` binds the
+        // field without a TDZ self-reference (`const n = n;` would throw). It
+        // also matches the closure path, where the arg object was evaluated in
+        // the caller scope before the handler bound `input.n`.
+        const ArgTemp = struct { field: []const u8, temp: []const u8 };
+        var temps = std.ArrayList(ArgTemp).empty;
+        defer {
+            for (temps.items) |t| self.allocator.free(t.temp);
+            temps.deinit(self.allocator);
+        }
+        for (event.input.fields) |field| {
+            const arg_val = argValueByName(inv.args, field.name) orelse {
+                log.debug("[js_emitter] void producer '{s}' missing arg for field '{s}'\n", .{ event.path.segments[event.path.segments.len - 1], field.name });
+                return JsEmitError.UnsupportedConstruct;
+            };
+            const tid = self.nextId();
+            const temp = try std.fmt.allocPrint(self.allocator, "__arg_{d}", .{tid});
+            try temps.append(self.allocator, .{ .field = field.name, .temp = temp });
+            try self.writeFmt("{s}const {s} = {s};\n", .{ indent, temp, arg_val });
+        }
+
+        // Open a block so the producer's input-field locals don't leak into the
+        // enclosing scope (`const m = <temp>;` etc.).
+        try self.writeFmt("{s}{{\n", .{indent});
+        const inner = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+        defer self.allocator.free(inner);
+
+        for (temps.items) |t| {
+            try self.writeFmt("{s}const {s} = {s};\n", .{ inner, t.field, t.temp });
+        }
+
+        // Splice the proc body, replacing each `<op>(<arg>)` effect call with the
+        // recursively-emitted handler body. We iterate the body once, handling
+        // ALL of the producer's void effect ops (pump.kz-shaped producers have a
+        // single effect op, but the loop generalizes cleanly).
+        try self.emitProcBodyWithSplicedEffectCalls(proc.body, event, continuations, inner);
+
+        try self.writeFmt("{s}}}\n", .{indent});
+    }
+
+    /// Scan `body` (opaque |js host code) for each effect op call `<op>(<arg>)`
+    /// and replace it (plus a trailing `;`) with the spliced handler block. Text
+    /// outside the matched calls is emitted verbatim (re-indented per line).
+    ///
+    /// The op names come from `event`'s effect branches; for each we find the
+    /// matching effect continuation in `continuations` (by `cont.branch == op`)
+    /// to source the handler binding + body. Balanced-paren arg parse mirrors
+    /// emitter_helpers.zig:3271-3291.
+    fn emitProcBodyWithSplicedEffectCalls(
+        self: *Emitter,
+        body: []const u8,
+        event: *const ast.EventDecl,
+        continuations: []const ast.Continuation,
+        indent: []const u8,
+    ) JsEmitError!void {
+        const trimmed = std.mem.trim(u8, body, " \t\r\n");
+
+        var pos: usize = 0;
+        while (pos < trimmed.len) {
+            // Find the earliest effect-op call at-or-after `pos`. We search for
+            // each op name followed (after optional spaces) by `(`, taking the
+            // leftmost match. Op names are assumed to appear only as the effect
+            // call in these controlled procs (fine for the spike).
+            var best_call_start: ?usize = null;
+            var best_op_branch: ?*const ast.Continuation = null;
+            var best_arg: []const u8 = "";
+            var best_after: usize = 0;
+
+            for (event.branches) |*b| {
+                if (b.kind != .effect) continue;
+                const found = findOpCall(trimmed, pos, b.name) orelse continue;
+                if (best_call_start == null or found.call_start < best_call_start.?) {
+                    const cont = continuationForBranch(continuations, b.name) orelse {
+                        log.debug("[js_emitter] void effect op '{s}' has no matching continuation\n", .{b.name});
+                        return JsEmitError.UnsupportedConstruct;
+                    };
+                    best_call_start = found.call_start;
+                    best_after = found.after;
+                    best_arg = found.arg;
+                    best_op_branch = cont;
+                }
+            }
+
+            const call_start = best_call_start orelse {
+                // No more effect calls — emit the remaining body verbatim.
+                try self.emitReindentedSlice(trimmed[pos..], indent);
+                break;
+            };
+
+            // Emit body text before the call verbatim (re-indented).
+            try self.emitReindentedSlice(trimmed[pos..call_start], indent);
+
+            // Splice the handler body in-scope:
+            //   { const <binding> = <arg>; <handler sub-flow> }
+            const cont = best_op_branch.?;
+            try self.write("\n");
+            try self.writeFmt("{s}{{\n", .{indent});
+            const block_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+            defer self.allocator.free(block_indent);
+
+            const binding = cont.binding orelse "_";
+            if (std.mem.eql(u8, binding, "_")) {
+                // Throwaway binding — give it a unique name so nested splices at
+                // the same depth never collide (`_auto_<id>`), matching the
+                // closure path's `_auto_N` naming.
+                const tid = self.nextId();
+                try self.writeFmt("{s}const _auto_{d} = {s};\n", .{ block_indent, tid, best_arg });
+            } else {
+                try self.writeFmt("{s}const {s} = {s};\n", .{ block_indent, binding, best_arg });
+            }
+
+            // Recurse: emit the handler's sub-flow. The continuation's node is
+            // the next invocation; its own continuations drive the next level.
+            const node = cont.node orelse {
+                log.debug("[js_emitter] void effect handler '{s}' has no body\n", .{cont.branch});
+                return JsEmitError.UnsupportedConstruct;
+            };
+            switch (node) {
+                .invocation => |*sub_inv| {
+                    try self.emitInvocationWithContinuations(sub_inv, cont.continuations, block_indent);
+                },
+                .terminal => {}, // `_` — nothing further.
+                else => {
+                    log.debug("[js_emitter] void effect handler body is not an invocation\n", .{});
+                    return JsEmitError.UnsupportedConstruct;
+                },
+            }
+
+            try self.writeFmt("{s}}}\n", .{indent});
+            pos = best_after;
+        }
+    }
+
+    /// Re-indent a slice of opaque body text to `indent`, one line at a time.
+    /// Unlike `emitReindented`, this does NOT trim the whole slice (callers pass
+    /// pre-trimmed fragments) and writes a trailing newline structure suitable
+    /// for splicing mid-body. Blank lines are skipped.
+    fn emitReindentedSlice(self: *Emitter, text: []const u8, indent: []const u8) JsEmitError!void {
+        var it = std.mem.splitScalar(u8, text, '\n');
+        var first = true;
+        while (it.next()) |line| {
+            const line_trimmed = std.mem.trim(u8, line, " \t\r");
+            if (line_trimmed.len == 0) continue;
+            if (!first) try self.write("\n");
+            first = false;
+            try self.write(indent);
+            try self.write(line_trimmed);
         }
     }
 
@@ -375,6 +572,75 @@ const Emitter = struct {
         }
     }
 };
+
+/// Look up an invocation arg's value string by field name.
+fn argValueByName(args: []const ast.Arg, name: []const u8) ?[]const u8 {
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg.name, name)) return arg.value;
+    }
+    return null;
+}
+
+/// Find the effect continuation whose branch name matches `op`.
+fn continuationForBranch(continuations: []const ast.Continuation, op: []const u8) ?*const ast.Continuation {
+    for (continuations) |*cont| {
+        if (cont.kind == .effect and std.mem.eql(u8, cont.branch, op)) return cont;
+    }
+    return null;
+}
+
+const OpCallMatch = struct {
+    call_start: usize, // index of the op name's first char
+    after: usize, // index just past the call (and a swallowed trailing `;`)
+    arg: []const u8, // the balanced-paren arg, trimmed
+};
+
+/// Find the first occurrence at-or-after `from` of `<op>(<balanced arg>)` in
+/// `body`, where the `op` is an identifier-boundary match (so `vee` doesn't
+/// match op `v`). Returns the span and the trimmed arg, swallowing a trailing
+/// `;`. Mirrors the balanced-paren parse in emitter_helpers.zig:3273-3291.
+fn findOpCall(body: []const u8, from: usize, op: []const u8) ?OpCallMatch {
+    var search: usize = from;
+    while (std.mem.indexOfPos(u8, body, search, op)) |idx| {
+        const end = idx + op.len;
+        // Identifier-boundary check: the char before and after the op must not
+        // be part of an identifier, so `v` doesn't match inside `valve`.
+        const before_ok = idx == 0 or !isIdentChar(body[idx - 1]);
+        if (!before_ok) {
+            search = idx + 1;
+            continue;
+        }
+        // Skip optional whitespace between the op name and `(`.
+        var p = end;
+        while (p < body.len and (body[p] == ' ' or body[p] == '\t')) : (p += 1) {}
+        if (p >= body.len or body[p] != '(') {
+            search = idx + 1;
+            continue;
+        }
+        // Balanced-paren arg parse.
+        const arg_start = p + 1;
+        var depth: usize = 1;
+        var j = arg_start;
+        while (j < body.len and depth > 0) : (j += 1) {
+            if (body[j] == '(') {
+                depth += 1;
+            } else if (body[j] == ')') {
+                depth -= 1;
+            }
+        }
+        const arg = std.mem.trim(u8, body[arg_start .. j - 1], " \t");
+        var after = j; // past the closing ')'
+        // Swallow a trailing `;` — the splice is a block statement.
+        if (after < body.len and body[after] == ';') after += 1;
+        return .{ .call_start = idx, .after = after, .arg = arg };
+    }
+    return null;
+}
+
+fn isIdentChar(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
+        (c >= '0' and c <= '9') or c == '_';
+}
 
 fn pathsEqual(a: *const ast.DottedPath, b: *const ast.DottedPath) bool {
     if (a.segments.len != b.segments.len) return false;
