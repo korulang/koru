@@ -1,0 +1,39 @@
+let keys = 0;
+let resizes = 0;
+let focus = 0;
+let quits = 0;
+let width_sum = 0;
+let focus_xor = 0;
+
+~proc run|js {
+    for (let i = 0; i < n; i++) {
+        const m = i % 64;
+        if (m === 63) {
+            resize(80 + (i & 31));
+        } else if (m === 31) {
+            focus_in(i);
+        } else {
+            const c = (i % 97 === 0) ? 113 : 97 + (i % 26);
+            key(c);
+        }
+    }
+}
+
+~proc onKey|js {
+    keys = keys + 1;
+    if (ch === 113) { quits = quits + 1; }
+}
+
+~proc onResize|js {
+    resizes = resizes + 1;
+    width_sum = width_sum + width;
+}
+
+~proc onFocus|js {
+    focus = focus + 1;
+    focus_xor = focus_xor ^ id;
+}
+
+~proc report|js {
+    console.log("k=" + keys + " r=" + resizes + " f=" + focus + " q=" + quits + " ws=" + width_sum + " fx=" + focus_xor);
+}

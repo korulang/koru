@@ -1,0 +1,11 @@
+let count = 0;
+
+~proc run|js {
+    for (let i = 0; i < n; i++) {
+        const c = 42;
+        key(c);
+    }
+}
+
+~proc onKey|js { count = count + 1; }
+~proc report|js { console.log("count=" + count); }

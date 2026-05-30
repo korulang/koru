@@ -1,0 +1,42 @@
+const std = @import("std");
+
+var keys: u64 = 0;
+var resizes: u64 = 0;
+var focus: u64 = 0;
+var quits: u64 = 0;
+var width_sum: u64 = 0;
+var focus_xor: u64 = 0;
+
+~proc run|zig {
+    var i: u64 = 0;
+    while (i < n) : (i += 1) {
+        const m: u64 = i % 64;
+        if (m == 63) {
+            resize(80 + (i & 31));
+        } else if (m == 31) {
+            focus_in(i);
+        } else {
+            const c: u64 = if (i % 97 == 0) 113 else 97 + (i % 26);
+            key(c);
+        }
+    }
+}
+
+~proc onKey|zig {
+    keys = keys + 1;
+    if (ch == 113) { quits = quits + 1; }
+}
+
+~proc onResize|zig {
+    resizes = resizes + 1;
+    width_sum = width_sum + width;
+}
+
+~proc onFocus|zig {
+    focus = focus + 1;
+    focus_xor = focus_xor ^ id;
+}
+
+~proc report|zig {
+    std.debug.print("k={d} r={d} f={d} q={d} ws={d} fx={d}\n", .{ keys, resizes, focus, quits, width_sum, focus_xor });
+}

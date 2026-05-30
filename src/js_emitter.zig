@@ -499,6 +499,14 @@ const Emitter = struct {
                 // closure path's `_auto_N` naming.
                 const tid = self.nextId();
                 try self.writeFmt("{s}const _auto_{d} = {s};\n", .{ block_indent, tid, best_arg });
+            } else if (std.mem.eql(u8, binding, best_arg)) {
+                // Bare-identifier-collision case: the proc body has a local with
+                // the same name as the dispatch binding and passes it directly
+                // (`const c = ...; key(c)` paired with `! key c |> ...`). Emitting
+                // `const c = c;` self-references the inner const before init →
+                // ReferenceError (TDZ). The outer `c` is already in scope and IS
+                // the value the handler needs, so skip the redundant rebind.
+                // Pinned by 140_012_js_dispatch_binding_shadow.
             } else {
                 try self.writeFmt("{s}const {s} = {s};\n", .{ block_indent, binding, best_arg });
             }
