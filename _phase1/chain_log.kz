@@ -1,0 +1,32 @@
+// Variant of chain.kz that proves nested VOID effect dispatch WITHOUT module state.
+// Depth-3 nested chain: outer ! v -> mid ! v -> leaf ! v -> plain inc().
+// inc does a visible side effect (print) instead of a counter increment, so the
+// nesting fix is verifiable independent of module-level mutable state.
+// n: 3 at every level -> inc fires 3^3 = 27 times -> 27 lines of output.
+const std = @import("std");
+
+~pub event outer { n: u64 }
+! v u64
+~proc outer|zig { for (0..n) |i| v(i); }
+~proc outer|js  { for (let i = 0; i < n; i++) v(i); }
+
+~pub event mid { n: u64 }
+! v u64
+~proc mid|zig { for (0..n) |i| v(i); }
+~proc mid|js  { for (let i = 0; i < n; i++) v(i); }
+
+~pub event leaf { n: u64 }
+! v u64
+~proc leaf|zig { for (0..n) |i| v(i); }
+~proc leaf|js  { for (let i = 0; i < n; i++) v(i); }
+
+~pub event inc {}
+~proc inc|zig { std.debug.print("x\n", .{}); }
+~proc inc|js  { console.log("x"); }
+
+~outer(n: 3)
+! v _ |>
+    mid(n: 3)
+    ! v _ |>
+        leaf(n: 3)
+        ! v _ |> inc()

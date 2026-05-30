@@ -1,0 +1,30 @@
+// PINS A BUG (red until fixed): calling a plain (no-effect-branch) event from
+// inside a handler-bearing flow emits a 2-arg handler call to a 1-arg handler.
+//
+// `plain` has no effect branches, so its handler is `handler(input)` (1 arg).
+// But the emitter threads the flow's Handlers struct into EVERY event call in
+// the flow, producing `plain_event.handler(.{ .v = r }, Handlers_0)` — 2 args —
+// which the Zig backend rejects: "expected 1 argument(s), found 2".
+//
+// This is the canonical vaxis shape: `! key k |> quit()` calls a plain event
+// from inside an effect-handler flow. So this bug blocks the vaxis pattern.
+const std = @import("std");
+
+~pub event emit_one { }
+! step usize
+| done usize
+
+~proc emit_one|zig {
+    step(7);
+    return .{ .done = 35 };
+}
+
+~pub event plain { v: usize }
+
+~proc plain|zig {
+    std.debug.print("plain = {d}\n", .{v});
+}
+
+~emit_one()
+! step _ |> _
+| done r |> plain(v: r)

@@ -4687,10 +4687,24 @@ fn emitInvocation(
     try emitArgs(emitter, ctx, invocation.args, &invocation.path);
     try emitter.write(" }");
     // Effect-branches phase 3b: pass the synthesized Handlers struct as 2nd arg
-    // when the target event has effect (`!`) branches.
+    // ONLY when the target event actually declares effect (`!`) branches. A plain
+    // event's handler is `handler(input)` (1 arg); without this guard a plain event
+    // called from within a handler-bearing flow (e.g. `| done r |> report(...)`, or
+    // the vaxis `! key _ |> quit()` shape) gets a spurious 2nd arg and the Zig
+    // backend rejects it: "expected 1 argument(s), found 2". See test 400_109.
     if (ctx.pending_handlers_name) |hname| {
-        try emitter.write(", ");
-        try emitter.write(hname);
+        const target_has_effect = blk: {
+            const items = ctx.ast_items orelse break :blk false;
+            const ed = findEventDeclByPath(items, &invocation.path) orelse break :blk false;
+            for (ed.branches) |b| {
+                if (b.kind == .effect) break :blk true;
+            }
+            break :blk false;
+        };
+        if (target_has_effect) {
+            try emitter.write(", ");
+            try emitter.write(hname);
+        }
     }
     try emitter.write(");");
     try writeVariantComment(emitter, effective_variant);

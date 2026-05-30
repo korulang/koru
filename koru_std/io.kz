@@ -17,11 +17,21 @@ const std = @import("std");
     std.debug.print("{s}", .{text});
 }
 
+// JS variant: write without a trailing newline (console.log would add one).
+~proc print|js {
+    process.stdout.write(text);
+}
+
 // Print text with newline
 ~pub event println { text: []const u8 }
 
 ~proc println|zig {
     std.debug.print("{s}\n", .{text});
+}
+
+// JS variant: console.log appends the newline, matching println semantics.
+~proc println|js {
+    console.log(text);
 }
 
 // Print formatted text

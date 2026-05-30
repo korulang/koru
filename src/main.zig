@@ -203,6 +203,12 @@ fn generateCompilerEnvCode(allocator: std.mem.Allocator, config: *const Compiler
 
     try writer.writeAll("pub const CompilerEnv = struct {\n");
 
+    // Emission target language (--lang). Read by the Stage-C emitter (emit_zig)
+    // to choose Zig vs JS structural output. Threaded here because emit_zig runs
+    // across the metacircular boundary and only sees per-user state via this module.
+    try writer.print("    /// Default emission target language (--lang=<name>)\n", .{});
+    try writer.print("    pub const lang: []const u8 = \"{s}\";\n\n", .{config.lang});
+
     try writer.writeAll("    /// All compiler flags (for runtime checking)\n");
     try writer.writeAll("    pub const flags = &[_][]const u8{\n");
     for (config.flags.items) |flag| {
@@ -979,8 +985,14 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\    const args = try __koru_std.process.argsAlloc(allocator);
             \\    defer __koru_std.process.argsFree(allocator, args);
             \\
-            \\    // Default output names
-            \\    const emitted_file = "output_emitted.zig";
+            \\    // Default output names.
+            \\    // JS-target spike: --lang=js writes output_emitted.js instead of .zig.
+            \\    // CompilerEnv.lang is baked per-invocation in compiler_env.zig and
+            \\    // re-exported as `pub const CompilerEnv` at the top of this backend.
+            \\    const emitted_file = if (__koru_std.mem.eql(u8, CompilerEnv.lang, "js"))
+            \\        "output_emitted.js"
+            \\    else
+            \\        "output_emitted.zig";
             \\
         );
 
@@ -1079,6 +1091,11 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\    var buf: [512]u8 = undefined;
             \\    const msg = try __koru_std.fmt.bufPrint(&buf, "✓ Generated {s} ({d} bytes)\n", .{emitted_file, generated_code.len});
             \\    try stdout.writeAll(msg);
+            \\
+            \\    // JS-target spike: the JS path stops here. node runs output_emitted.js
+            \\    // directly — there is no Stage D (`zig build` of the emitted output) and
+            \\    // no a.out. Gated on CompilerEnv.lang so the Zig path below is untouched.
+            \\    if (__koru_std.mem.eql(u8, CompilerEnv.lang, "js")) return;
             \\
             \\    // Now compile the emitted code
             \\    // Check for cross-compilation target from build:config
@@ -3774,6 +3791,66 @@ fn loadFileWithCompanions(
     };
 }
 
+/// Parse the entry's Koru companion facets (siblings sharing the stem, with a
+/// different Koru extension) and fold their items + module annotations into the
+/// already-parsed `primary` program. Returns the union; `primary`'s registry,
+/// `main_module_name`, and allocator are preserved.
+///
+/// This is the entry-side mirror of `loadFileWithCompanions` (which serves
+/// imports). The difference: the entry's `primary` was already parsed with
+/// compiler-import injection and the import resolver wired in; the impl facets
+/// only contribute procs + host lines, which are opaque to import resolution,
+/// so they're parsed plainly (empty flags, null resolver). An empty companion
+/// set returns `primary` untouched, so single-file programs pay nothing.
+fn mergeEntryCompanions(
+    allocator: std.mem.Allocator,
+    parse_allocator: std.mem.Allocator,
+    primary_path: []const u8,
+    primary: ast.Program,
+) !ast.Program {
+    const companions = try module_resolver_mod.findCompanionFiles(allocator, primary_path);
+    defer {
+        for (companions) |c| allocator.free(c);
+        allocator.free(companions);
+    }
+    if (companions.len == 0) return primary;
+
+    log.debug("  Entry companion merge: {} sibling(s) for {s}\n", .{ companions.len, primary_path });
+
+    var merged_items = std.ArrayList(ast.Item){ .items = &.{}, .capacity = 0 };
+    try merged_items.appendSlice(parse_allocator, primary.items);
+    var merged_annotations = std.ArrayList([]const u8){ .items = &.{}, .capacity = 0 };
+    try merged_annotations.appendSlice(parse_allocator, primary.module_annotations);
+
+    for (companions) |companion_path| {
+        log.debug("    Companion: {s}\n", .{companion_path});
+        const file = try std.fs.cwd().openFile(companion_path, .{});
+        defer file.close();
+        const path_owned = try parse_allocator.dupe(u8, companion_path);
+        const source = try file.readToEndAlloc(parse_allocator, 1024 * 1024);
+        var parser = try Parser.init(parse_allocator, source, path_owned, &[_][]const u8{}, null);
+        parser.fail_fast = false;
+        defer parser.deinit();
+        const parsed = try parser.parse();
+        if (parser.reporter.hasErrors() or parsed.source_file.hasParseErrors()) {
+            const stderr_writer = FileWriter{ .file = std.fs.File.stderr() };
+            try parser.reporter.printErrors(stderr_writer);
+            if (!parser.reporter.hasErrors()) try printAstParseErrors(&parsed.source_file, stderr_writer);
+            std.process.exit(1);
+        }
+        try merged_items.appendSlice(parse_allocator, parsed.source_file.items);
+        try merged_annotations.appendSlice(parse_allocator, parsed.source_file.module_annotations);
+    }
+
+    return ast.Program{
+        .items = try merged_items.toOwnedSlice(parse_allocator),
+        .module_annotations = try merged_annotations.toOwnedSlice(parse_allocator),
+        .main_module_name = primary.main_module_name,
+        .allocator = parse_allocator,
+        .type_registry = primary.type_registry,
+    };
+}
+
 // Split usage into header and footer for dynamic command insertion
 const usage_header =
     \\koruc - The Koru Compiler
@@ -6119,7 +6196,20 @@ pub fn main() !void {
         return;
     }
 
-    const input = input_file.?;
+    // Resolve the input. A user may name a concrete facet (`pump.kz`) or the
+    // bare STEM (`pump`) — the stem is the real unit of compilation, since
+    // `.k`/`.kz`/`.kjs` are facets of one module (merged below). An existing
+    // explicit path is used verbatim (preserves the relative path the user
+    // passed); a bare stem is probed against the canonical extensions.
+    const input = blk: {
+        const raw = input_file.?;
+        if (file_types.isKoruFile(raw)) break :blk raw;
+        for (file_types.koru_extensions) |ext| {
+            const cand = try std.fmt.allocPrint(parse_allocator, "{s}{s}", .{ raw, ext });
+            if (std.fs.cwd().access(cand, .{})) |_| break :blk cand else |_| {}
+        }
+        break :blk raw; // no facet on disk; openFile below errors clearly
+    };
 
     // Default output file: input.kz -> backend.zig (in same directory)
     // We use "backend.zig" because build.zig expects this name
@@ -6238,6 +6328,17 @@ pub fn main() !void {
     var source_file = parse_result.source_file;
     var user_registry = parse_result.registry;
     defer user_registry.deinit();
+
+    // Fold in the entry's companion facets (same stem, sibling Koru files):
+    // `koruc pump.kz` (or `koruc pump`) compiles the WHOLE `pump` module, not
+    // just the one file. The contract (`.k`), the Zig impl (`.kz`), and the JS
+    // impl (`.kjs`) merge into one AST so events, procs, and the flow resolve
+    // against each other regardless of which facet declared them. Single-file
+    // programs (no siblings) are untouched — the merge is a no-op. This is the
+    // entry-side mirror of `loadFileWithCompanions` (used for imports).
+    if (!ast_json_mode) {
+        source_file = try mergeEntryCompanions(allocator, parse_allocator, input, source_file);
+    }
 
     // If --ast-json mode, output AST as JSON (even if there are parse errors)
     // This is crucial for IDE tooling - parse_error nodes in AST show where errors occurred
@@ -7414,10 +7515,18 @@ pub fn main() !void {
         // Backend is in zig-out/bin/main - no cleanup needed
         // Users can clean with: rm -rf zig-out
 
-        try printStdout(allocator, "✓ Built executable: {s}\n", .{exe_name});
+        // JS-target spike: the backend already wrote output_emitted.js and
+        // skipped Stage D — there is no native executable. Report the real
+        // artifact and do NOT try to exec a binary that was never built.
+        const is_js_target = std.mem.eql(u8, compiler_config.lang, "js");
+        if (is_js_target) {
+            try printStdout(allocator, "✓ Generated output_emitted.js (run with: node output_emitted.js)\n", .{});
+        } else {
+            try printStdout(allocator, "✓ Built executable: {s}\n", .{exe_name});
+        }
 
         // If run command, execute the binary
-        if (run_after_build) {
+        if (run_after_build and !is_js_target) {
             try printStdout(allocator, "Running {s}...\n\n", .{exe_name});
 
             const exe_path = try std.fs.path.join(allocator, &.{ ".", exe_name });

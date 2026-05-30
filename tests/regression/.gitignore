@@ -38,6 +38,7 @@
 !**/MUST_*
 !**/SHOULD_*
 !**/PARSER_TEST
+!**/LANGUAGES
 
 # Keep documentation and marker files (at any depth)
 !**/README.md
