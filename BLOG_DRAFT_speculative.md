@@ -149,6 +149,38 @@ of real apps — middleware, event bubbling, signal propagation — is mostly ro
 and routing is exactly the part that, in JavaScript, you cannot stop paying for.
 Unless you stop being JavaScript.
 
+## Two taxes
+
+Time is only half the story, and the other half is sharper. We measured peak
+memory and garbage-collection pressure for the same depth-16 chain, five million
+events through it:
+
+```
+  approach                 time      peak RSS    GC events
+  ───────────────────────────────────────────────────────
+  flat (hand-written)      ~80 ms     52 MB          3
+  Koru (spliced)           ~70 ms     49 MB          3
+  Koru (naive closures)   ~360 ms     59 MB       3742
+  EventEmitter (dynamic)  ~380 ms+    53 MB          4
+```
+
+(Absolute times are noisy under load; the GC column is rock-stable, and it's the
+one that matters.)
+
+The two slow ways to write this are slow for *opposite* reasons. The naive
+emitter — the one that built a tower of handler closures per item — pays in
+**garbage collection: 3742 collections** to flat's 3, because the closures hit the
+heap. The `EventEmitter` version barely allocates at all — *four* collections —
+and is slow purely on **CPU**: the dispatch machinery, the megamorphic calls, the
+per-hop overhead the optimizer can't see through.
+
+So JavaScript hands you two honest ways to write an event-driven chain, and each
+one pays a tax it cannot escape: the closures pay in GC, the emitters pay in CPU.
+The spliced Koru output pays neither. It ties a hand-written loop on time, on peak
+memory, *and* on collections — three GCs, same as if you'd written the whole thing
+by hand and given up the programming model entirely. **You get the event model for
+the price of the bare loop.**
+
 ## What this would mean, if it holds
 
 Speculate with me, because that's what this is.
