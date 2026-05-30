@@ -15,9 +15,22 @@ the thesis below is demonstrated on **real emitter output** (not hand-modeled JS
   `generateVisitorBackend` (:2911, only reachable via `--visitor`). But the user-program
   EMITTER is still `VisitorEmitter` run inside `emit_zig` (compiler.kz:1383) — that's
   where the real `JsVisitorEmitter` slots in, replacing the stub.
-- **Phase 1 — real JsVisitorEmitter: NEXT.** Mirror the AST walk in
-  `src/visitor_emitter.zig`, rewrite each `write()` site as JS. Target program: a
-  vaxis-shaped event pump (see Minimal build plan §A).
+- **Phase 1 — real AST→JS emitter: DONE + verified (2026-05-30).** `src/js_emitter.zig`
+  (~310 lines) walks `ctx.ast` and emits JS; wired into `emit_zig` (compiler.kz) when
+  `lang=="js"`, replacing the stub. `koruc --lang=js _phase1/pump.kz` → real
+  `output_emitted.js` → `node` prints `sum = 45`; AST-derived (n=10→100 propagates,
+  prints 4950). Default Zig path unchanged. Emits the static-dispatch convention
+  exactly: `handler(input,H)` for effect events, `handler(input)` for plain (the
+  400_109 fix shows here — `report` gets no H), `Handlers_N` objects, `{tag,field}`
+  unions, direct calls.
+  KNOWN NARROWNESS (next-program surface): single bare-expression resume-value effect
+  handler only; single-invocation/`_` terminal bodies only; meta-events
+  (`koru:start/end`) namespace-filtered at emit; proc-body re-indent is flat (cosmetic);
+  no taps/modules/comptime/sibling-or-guarded handlers.
+- **Phase 2 — benchmark: NEXT.** Need a *dispatch-shaped* pump (multi-kind: key/resize/
+  focus → distinct handlers, vaxis shape) emitted to JS, raced against Node EventEmitter
+  chains. The current pump is resume-value (fold) shape — proves emission, but the
+  dispatch-vs-EventEmitter number (the headline ~3.3×→~19×) needs the multi-kind pump.
 
 ## The thesis (Elm-shaped, not transpiler-shaped)
 

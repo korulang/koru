@@ -431,6 +431,16 @@ pub const CompilerContext = struct {
     visitor_emitter_module.addImport("annotation_parser", annotation_parser_module);
     visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
 
+    // JS-target emitter (spike): minimal AST→JS for pump.kz. Gated behind
+    // --lang=js in emit_zig; the default Zig path never references it.
+    const js_emitter_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/js_emitter.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    js_emitter_module.addImport("ast", ast_module);
+    js_emitter_module.addImport("log", log_module);
+
     // Build.zig emission
     const emit_build_zig_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/emit_build_zig.zig" },
@@ -487,6 +497,7 @@ pub const CompilerContext = struct {
     backend_output_module.addImport("dead_strip", dead_strip_module);
     backend_output_module.addImport("purity_analyzer", purity_analyzer_module);
     backend_output_module.addImport("visitor_emitter", visitor_emitter_module);
+    backend_output_module.addImport("js_emitter", js_emitter_module);
     backend_output_module.addImport("emit_build_zig", emit_build_zig_module);
     backend_output_module.addImport("ast_serializer", ast_serializer_module);
     backend_output_module.addImport("runtime_registry", runtime_registry_module);
@@ -1408,18 +1419,21 @@ const emitFlowWithMocks = struct {
     // Get the emitted code
     const visitor_code = code_emitter.getOutput();
 
-    // JS-target spike: when --lang=js, replace the visitor's Zig output with a
-    // hardcoded JS stub. This is the THINNEST vertical slice — it proves the
-    // --lang=js flag reaches the final emission step and produces a runnable
-    // .js artifact. Nothing here is AST-derived yet; the real JS emitter is the
-    // next phase. Gated behind CompilerEnv.lang so the default Zig path is
-    // untouched. CompilerEnv is already in scope at file level in the generated
-    // backend_output_emitted.zig (re-exported pub const) — reference it directly
-    // rather than re-importing, which would shadow that declaration.
-    const final_code = if (@import("std").mem.eql(u8, CompilerEnv.lang, "js"))
-        "console.log(\"koru-js: plumbing works\");\n"
-    else
-        visitor_code;
+    // JS-target spike: when --lang=js, replace the visitor's Zig output with the
+    // real AST→JS emitter (src/js_emitter.zig). It walks ctx.ast and emits
+    // runnable JavaScript for the event-pump subset (events, |js proc bodies,
+    // effect handlers, terminal branches, flows). Gated behind CompilerEnv.lang
+    // so the default Zig path is untouched. CompilerEnv is already in scope at
+    // file level in the generated backend_output_emitted.zig (re-exported pub
+    // const) — reference it directly rather than re-importing, which would
+    // shadow that declaration.
+    const final_code = if (@import("std").mem.eql(u8, CompilerEnv.lang, "js")) blk: {
+        const js_emitter = @import("js_emitter");
+        // Fail loud: a JS-emit failure must surface, not silently fall back to Zig.
+        break :blk js_emitter.emit(ctx.allocator, ctx.ast) catch |err| {
+            std.debug.panic("js_emitter.emit failed: {s}", .{@errorName(err)});
+        };
+    } else visitor_code;
 
     log.debug("[BUFFER DEBUG] final_code length = {d}\n", .{final_code.len});
     log.debug("[BUFFER DEBUG]   First 50 bytes of final_code: ", .{});
