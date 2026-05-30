@@ -7,6 +7,23 @@ const tap_registry_module = @import("tap_registry");
 const type_registry_module = @import("type_registry");
 const annotation_parser = @import("annotation_parser");
 const codegen_utils = @import("codegen_utils");
+const file_types = @import("file_types");
+
+/// Variant-tag string this emitter targets — same namespace as `--lang`,
+/// `proc.target`, and `file_types.hostLangOfFile`. Selects both `|zig` proc
+/// bodies and `.kz` host lines.
+const ZIG_TARGET = "zig";
+
+/// Should this host_line be emitted into Zig output?
+/// - Known non-zig host (`.kjs`, `.kc`, `.kgpu`) → false: their bytes are not
+///   Zig and would produce invalid output (the bug 140_010 pins).
+/// - `null` (synthesized `location.file == "generated"`, or pure `.k`
+///   contract) → true: host-agnostic compiler infrastructure must still emit.
+/// - `"zig"` → true.
+fn hostLineRoutesToZig(file: []const u8) bool {
+    const host = file_types.hostLangOfFile(file) orelse return true;
+    return std.mem.eql(u8, host, ZIG_TARGET);
+}
 
 // Sentinel value for tap function context (prevents infinite recursion)
 const TAP_FUNCTION_CONTEXT: usize = 9999;
@@ -982,6 +999,11 @@ pub const VisitorEmitter = struct {
             .host_line => |*line| {
                 // Host_lines (imports, type defs, constants) are MODULE-LEVEL dependencies
                 // Emit inside the appropriate module struct (module isolation)
+
+                // Route by host language: skip lines whose host isn't Zig (e.g. a
+                // `.kjs` companion in a contract-split stem). Synthesized lines
+                // (`file == "generated"`) pass through unchanged.
+                if (!hostLineRoutesToZig(line.location.file)) return;
 
                 const is_main_module = module_annotations.len == 0;
 
@@ -3145,7 +3167,11 @@ pub const VisitorEmitter = struct {
                 // Only emit host lines (including imports) at module level
                 if (module_item.* == .host_line) {
                     const line = module_item.host_line;
-                    // Emit ALL host lines from the module without filtering
+                    // Route by host language: skip lines whose host isn't Zig
+                    // (e.g. a `.kjs` facet of a contract-split module).
+                    // Synthesized lines (`file == "generated"`) pass through.
+                    if (!hostLineRoutesToZig(line.location.file)) continue;
+                    // Emit ALL remaining host lines from the module without filtering
                     // If the module shouldn't be emitted, it wouldn't be in the tree at all
                     try emitter.emitHostLine(self.code_emitter, line.content);
                 }

@@ -350,6 +350,7 @@ pub fn build(b: *std.Build) void {
     visitor_emitter_module.addImport("annotation_parser", annotation_parser_module);
     visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
     visitor_emitter_module.addImport("log", log_module);
+    visitor_emitter_module.addImport("file_types", file_types_module);
 
     // Tap Pattern Matcher module - pattern matching for tap registration
     const glob_pattern_matcher_module = b.createModule(.{
@@ -699,6 +700,7 @@ pub fn build(b: *std.Build) void {
     visitor_emitter_tests.root_module.addImport("log", log_module);
     visitor_emitter_tests.root_module.addImport("annotation_parser", annotation_parser_module);
     visitor_emitter_tests.root_module.addImport("codegen_utils", codegen_utils_module);
+    visitor_emitter_tests.root_module.addImport("file_types", file_types_module);
 
     const integration_tests = b.addTest(.{
         .name = "integration_tests",

@@ -430,6 +430,7 @@ pub const CompilerContext = struct {
     visitor_emitter_module.addImport("type_registry", type_registry_module);
     visitor_emitter_module.addImport("annotation_parser", annotation_parser_module);
     visitor_emitter_module.addImport("codegen_utils", codegen_utils_module);
+    visitor_emitter_module.addImport("file_types", file_types_module);
 
     // JS-target emitter (spike): minimal AST→JS for pump.kz. Gated behind
     // --lang=js in emit_zig; the default Zig path never references it.
