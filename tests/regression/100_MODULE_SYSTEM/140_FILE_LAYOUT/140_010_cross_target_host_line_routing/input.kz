@@ -1,0 +1,10 @@
+const std = @import("std");
+var counter: u64 = 0;
+
+~proc run|zig {
+    var i: u64 = 0;
+    while (i < n) : (i += 1) { if (i % 2 == 0) { key(i); } else { tick(i); } }
+}
+~proc bumpKey|zig { counter = counter + v; }
+~proc bumpTick|zig { counter = counter + v * 10; }
+~proc report|zig { std.debug.print("counter = {d}\n", .{counter}); }
