@@ -36,6 +36,11 @@ pub const JsEmitError = error{
     NoJsProcBody,
 };
 
+/// The variant-tag string this emitter targets. It is the SAME namespace as
+/// `--lang` / `proc.target` / `file_types.hostLangOfFile`, so it selects both
+/// a `|js` proc body and a `.kjs` host line. One vocabulary, two surfaces.
+const JS_TARGET = "js";
+
 /// Emit JS for the given program. Returns a heap-allocated string owned by the
 /// caller's allocator.
 pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitError![]const u8 {
@@ -44,15 +49,23 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
 
     var em = Emitter{ .allocator = allocator, .buf = &buf, .items = program.items };
 
-    // Phase 0: emit host lines from .kjs source files verbatim, at the TOP of
-    // the output (before main_module). This carries module-level JS state
+    // Phase 0: emit host lines whose host language is JS, verbatim, at the TOP
+    // of the output (before main_module). This carries module-level JS state
     // (`const`/`let` declarations) that the flows and proc bodies reference.
-    // Only .kjs host lines are JS; .kz host lines are Zig and must NOT leak in.
-    // Expedient cut — not the final design.
+    //
+    // Routing is by HOST LANGUAGE, not by a hardcoded extension: a host line
+    // and a |js proc body are both host bytes, so we select them the same way
+    // the proc selector does (`proc.target == "js"`). `hostLangOfFile` resolves
+    // the line's source file to the same variant-tag namespace, so a `.kz`
+    // file's Zig host line resolves to "zig" and is skipped (it would be
+    // invalid JS), while a `.kjs` line resolves to "js" and passes through.
+    // Synthesized lines (`location.file == "generated"`) resolve to null and
+    // are skipped — they're host-agnostic compiler infrastructure the JS
+    // target doesn't need.
     for (program.items) |*item| {
         if (item.* != .host_line) continue;
-        const ext = file_types.koruExtensionOf(item.host_line.location.file) orelse continue;
-        if (!std.mem.eql(u8, ext, ".kjs")) continue;
+        const host = file_types.hostLangOfFile(item.host_line.location.file) orelse continue;
+        if (!std.mem.eql(u8, host, JS_TARGET)) continue;
         try em.write(item.host_line.content);
         try em.write("\n");
     }
@@ -126,7 +139,7 @@ const Emitter = struct {
             const proc = &item.proc_decl;
             if (!pathsEqual(&proc.path, event_path)) continue;
             const target = proc.target orelse continue;
-            if (std.mem.eql(u8, target, "js")) return proc;
+            if (std.mem.eql(u8, target, JS_TARGET)) return proc;
         }
         return null;
     }

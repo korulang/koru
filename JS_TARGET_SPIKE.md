@@ -33,12 +33,27 @@ the thesis below is demonstrated on **real emitter output** (not hand-modeled JS
   (depth-3 nest, `! v _ |> mid ! v _ |> leaf ! v _ |> inc()`) emits nested static dispatch
   → `node` and Zig both print 27 lines (3³). pump.kz still `sum = 45`. This is the
   static-dispatch form of the "endless dynamic-dispatch chain."
-- **OPEN — module-level state (design question for Lars).** `var counter` is dropped by the
-  emitter, so chain.kz (counter variant) emits but throws `counter is not defined` at node.
-  Decide: per-target top-level decls, or no mutable module state (Elm-shaped — thread it).
-  Gates the counter-based chain benchmark.
-- **Phase 2 — benchmark: DONE on real emitted JS (2026-05-30).** Host lines pass through for
-  `.kjs` (module state works). Two receipts, Claude-verified:
+- **RESOLVED — module-level state via host-line routing (2026-05-30).** Module-level decls
+  (`const`/`let`) are host lines; they pass through verbatim. Routing is now a FIRST-CLASS
+  mechanism, not the old hardcoded `.kjs` filter: `file_types.hostLangOfFile(file)` maps a
+  source file to its host-language variant tag (`"zig"`/`"js"`/…) in the SAME namespace as
+  `--lang` / `proc.target`. The JS emitter emits a host line iff `hostLangOfFile == "js"` —
+  exactly how it selects a `|js` proc body (`proc.target == "js"`). One vocabulary, two
+  surfaces. A `.kz` file's Zig host line resolves to `"zig"` and is skipped (would be invalid
+  JS); a `.kjs` file's `let counter = 0;` resolves to `"js"` and passes through. Synthesized
+  lines (`location.file == "generated"`) resolve to null and are skipped. Unit-tested in
+  `file_types.zig`; verified end-to-end (pump.kz drops `@import("std")`, chain.kjs keeps
+  `let counter`).
+  STILL ASYMMETRIC (next decision): only the JS emitter routes by host. The Zig emitter emits
+  ALL host lines of any selected module unconditionally (visitor_emitter.zig:3143), so a
+  mixed-host AST emitted to ZIG would leak `.kjs` host lines. Latent (the spike skips modules,
+  so no mixed-host program reaches Zig emission today). The "full contract-file path" — split
+  one program into `.k` + `.kz` + `.kjs` and emit cleanly to BOTH targets — needs (a) the JS
+  emitter to walk imported-module host lines, and (b) the Zig emitter to route via the same
+  `hostLangOfFile` (with the `"generated"`/synthesized-line carve-out). Both are on the shared
+  main path → joint design call.
+- **Phase 2 — benchmark: DONE on real emitted JS (2026-05-30).** Module state works (host-line
+  routing above). Two receipts, Claude-verified:
   - chain.kjs (depth-3 nested, n³): koru-static ~8× faster than Node EventEmitter, ~1.5× off flat.
   - DEPTH SWEEP (pipeline, M=5e6, ns/hop): EventEmitter FLAT ~19 ns/hop across D=1..16 (V8 can't
     fuse dynamic dispatch — the structural floor). koru-static ~2 ns/hop, dyn/koru compounds
