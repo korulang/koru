@@ -1,0 +1,52 @@
+{
+    "module_annotations": [
+        "strict"
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_121_module_annotation_above_import/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_121_module_annotation_above_import/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_121_module_annotation_above_import/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_121_module_annotation_above_import/input.kz",
+                "line": 4,
+                "col": 0
+            }
+        },
+        {
+            "type": "import_decl",
+            "path": "$std/io",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_121_module_annotation_above_import/input.kz",
+                "line": 7,
+                "col": 0
+            }
+        }
+    ]
+}

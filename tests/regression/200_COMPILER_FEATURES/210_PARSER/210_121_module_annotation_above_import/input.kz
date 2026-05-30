@@ -1,0 +1,5 @@
+// A `~`-line always begins a NEW Koru construct, so a module annotation placed
+// directly above `~import` must stay module-level — no blank line required, and
+// no collapse into the import. Pins the PARSE003 bug surfaced by 330_070.
+~[strict]
+~import "$std/io"

@@ -3231,6 +3231,16 @@ fn emitInlineCodeResolvingSplices(
                     try emitter.write(cont.condition.?);
                     try emitter.write(") { ");
                 }
+                // Give the spliced body a unique `result_N` namespace, so a
+                // branched event inside it (e.g. an `if`-arm's `commit`, or a
+                // `for`-`done`'s nested call) doesn't shadow the enclosing scope's
+                // `result_0`. Mirrors the per-branch prefix swap used for loop
+                // branches (search `branch_prefix`). `prefix_buf` lives for the
+                // emit below; restored after.
+                const saved_prefix = ctx.result_prefix;
+                var prefix_buf: [64]u8 = undefined;
+                ctx.result_prefix = std.fmt.bufPrint(&prefix_buf, "result_c{d}_", .{idx}) catch "result_";
+                defer ctx.result_prefix = saved_prefix;
                 var c: usize = 0;
                 try emitContinuationBody(emitter, ctx, cont, &c);
                 if (guarded) try emitter.write(" }");

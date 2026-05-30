@@ -2062,6 +2062,19 @@ const joinPathAlloc = struct {
         return .{ .ctx = ctx };
     }
 
+    // Honor the `strict` module-level convention.
+    // `strict` is an opaque annotation word, not a fixed semantics: each pass
+    // that cares reads it and renders it into its own domain. For auto-discharge,
+    // strict means "do not guess the single cleanup — require it explicitly",
+    // so a module marked ~[strict] opts out of insertion and the phantom checker
+    // fires KORU030 for any undischarged obligation. Other passes (ours and
+    // third-party) may read the same word and honor it in their own lane.
+    for (ctx.ast.module_annotations) |ann| {
+        if (std.mem.eql(u8, ann, "strict")) {
+            return .{ .ctx = ctx };
+        }
+    }
+
     // Check if warnings are enabled for auto-discharge
     const warn_mode = CompilerEnv.hasFlag("auto-discharge=warn");
 

@@ -529,12 +529,17 @@ pub const Parser = struct {
                         const has_construct_on_next_line = if (next_line_idx < self.lines.len) blk: {
                             const next_line = self.lines[next_line_idx];
                             const next_trimmed = lexer.trim(next_line);
-                            // Check if next line starts with ~ OR looks like a construct
-                            // Constructs can be:
-                            // - Explicit: ~event, ~proc, ~import
-                            // - Implicit flow calls: identifier(args) or namespace.identifier(args)
+                            // A line starting with `~` is a fresh switch into Koru mode,
+                            // so it always begins a NEW construct. An annotation line can
+                            // never attach forward onto it — the annotation is therefore
+                            // module-level, and the `~`-line is parsed as its own item.
+                            // (This is what keeps `~[strict]` above `~import` from collapsing
+                            // into `~[strict]~import`, which produced a bogus PARSE003.)
+                            // Annotations attach forward ONLY to continuation lines that do
+                            // not re-enter Koru with `~` — e.g. `~[comptime|norun]` above a
+                            // bare `pub event ...` / `proc ...` / `ns:flow(...)` line.
                             if (next_trimmed.len > 0 and next_trimmed[0] == '~') {
-                                break :blk true;
+                                break :blk false;
                             }
                             // Check for flow call patterns: word.word:event(...) or word(...)
                             // But exclude comments and empty lines
