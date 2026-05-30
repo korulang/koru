@@ -159,12 +159,36 @@ regression_check_js_equivalence() {
     local flags=""
     [ -f "$test_dir/COMPILER_FLAGS" ] && flags=$(tr '\n' ' ' < "$test_dir/COMPILER_FLAGS")
 
+    # Durable per-target record. The collapse into SUCCESS/FAILURE below is for
+    # suite accounting; TARGETS.json is the granular truth the website reads to
+    # show each target side by side. We are the ONLY place that knows the JS
+    # result, so we own this record. zig is known-success here (guarded above).
+    # Built with node (already a dependency on this path) for correct JSON
+    # escaping of arbitrary program output. Written in every exit branch.
+    _write_targets() {
+        TGT_DIR="$test_dir" TGT_JS_STATUS="$1" TGT_JS_REASON="$2" node -e '
+            const fs = require("fs");
+            const d = process.env.TGT_DIR;
+            const rd = (f) => { try { return fs.readFileSync(d + "/" + f, "utf8"); } catch { return null; } };
+            const out = {
+                expected: rd("expected.txt"),
+                targets: [
+                    { lang: "zig", label: "Zig", status: "success", actual: rd("actual.txt") },
+                    { lang: "js", label: "JavaScript", status: process.env.TGT_JS_STATUS,
+                      reason: process.env.TGT_JS_REASON || null, actual: rd("actual.js.txt") }
+                ]
+            };
+            fs.writeFileSync(d + "/TARGETS.json", JSON.stringify(out, null, 2));
+        ' 2>/dev/null
+    }
+
     _js_equiv_fail() {
         rm -f "$test_dir/SUCCESS"
         echo "$1" > "$test_dir/FAILURE"
         FAILED_TESTS="$FAILED_TESTS $TEST_NAME($1)"
         [ "${PASSED_TESTS:-0}" -gt 0 ] && PASSED_TESTS=$((PASSED_TESTS - 1))
         echo -e "${RED}  ✗ JS equivalence: $2${NC}"
+        _write_targets "failure" "$1"
     }
 
     # Compile to JS via the full-pipeline invocation (no -o): koruc drives the
@@ -200,6 +224,7 @@ regression_check_js_equivalence() {
         diff -u "$test_dir/expected.txt" "$js_actual" 2>/dev/null | head -15 | sed 's/^/    /'
         return 0
     fi
+    _write_targets "success" ""
     echo -e "${GREEN}  ✓ JS equivalence (node output matches expected.txt)${NC}"
 }
 

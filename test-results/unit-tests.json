@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-05-30T01:54:10.207Z",
+  "timestamp": "2026-05-30T21:42:20.485Z",
   "summary": {
-    "passed": 200,
+    "passed": 203,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 212,
+    "total": 215,
     "suiteCount": 32,
     "status": "success"
   },
@@ -93,10 +93,10 @@
     },
     {
       "name": "file_extension_tests",
-      "passed": 4,
+      "passed": 7,
       "failed": 0,
       "skipped": 0,
-      "total": 4,
+      "total": 7,
       "status": "success"
     },
     {
