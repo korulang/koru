@@ -117,28 +117,37 @@ dispatch, the wider the structural gap.**
 
 ## The honest part
 
-And then, at depth 16, our number falls back to ~5×. We are not going to bury
-that.
+The first version of that table had a wrinkle: at depth 16 the number fell back
+to ~5×. The toy emitter rebuilt a tower of nested handler closures *per item*, and
+past about depth 8 that tower blew V8's inlining budget — the allocations started
+hitting the heap instead of vanishing.
 
-The cause is real: the toy emitter rebuilds a tower of nested handler closures
-*per item*, and past about depth 8 that tower blows V8's inlining and
-escape-analysis budget — the allocations start hitting the heap instead of
-vanishing. The flat floor keeps getting *cheaper* per hop as V8 fully inlines its
-trivial direct calls; our naive output can't be collapsed the same way at depth.
+So we fixed it, the same session. Koru knows the entire `stage1 → … → stageD`
+chain at compile time, so the emitter now **splices the handler bodies in-scope**
+at the call site instead of building closures: a dispatch hop becomes
+`{ const x = arg; …next… }`, straight-line, no allocation. The deep chain emits as
+plain nested blocks with zero closures, and — unlike the kinds of folds a backend
+optimizer does for us — **textual emit-time inlining survives V8.** The degradation
+is gone. Koru now holds the floor at every depth.
 
-But look at where the ceiling is. It's *ours*, not V8's. Koru knows the entire
-`stage1 → … → stageD` chain at compile time. Fusing it textually at emit time —
-collapsing the nested handlers into straight-line code, hoisting the closures out
-of the hot loop — keeps it on the ~2 ns floor at any depth. And unlike the kinds
-of folds a backend optimizer does for us, **textual emit-time inlining survives
-V8.** The afternoon's emitter doesn't do it yet. The point is that nothing stops
-it.
+But here is the honest shape of the win, because it is *not* "34× faster than
+everything," and we are not going to let it read that way. With the routing
+spliced flat, Koru **ties a hand-written loop** at every depth — it does not beat
+it. The two are equal, because for trivial pass-through stages V8 dead-code-
+eliminates the routing in both. What Koru does is *reach* the hand-written floor
+while keeping the event-driven programming model. The idiomatic JavaScript event
+system cannot reach that floor at all: an `EventEmitter` hop is opaque to the
+optimizer, so it pays its ~20 ns *every hop, forever*, and the cost compounds with
+depth. At depth 16 that is the entire gap — Koru and flat finish in ~60 ms; the
+EventEmitter version takes ~380.
 
-So the shape of the claim, stated as carefully as it deserves: against the
-idiomatic JavaScript event system, on the workload JavaScript is structurally
-worst at, Koru-emitted code runs **roughly 5–10× faster today and has headroom we
-control** — while sitting within ~1.5× of a hand-rolled loop, never leaving
-JavaScript, keeping native DOM access, and paying no WASM toll.
+State it precisely: **Koru gives you the event-driven model at hand-written-flat
+speed, and eliminates the per-hop dynamic-dispatch tax that JavaScript's own event
+system charges forever.** For stages that do real work, both pay the work and the
+absolute gap narrows toward that per-hop floor difference. But the dispatch fabric
+of real apps — middleware, event bubbling, signal propagation — is mostly routing,
+and routing is exactly the part that, in JavaScript, you cannot stop paying for.
+Unless you stop being JavaScript.
 
 ## What this would mean, if it holds
 
