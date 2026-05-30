@@ -27,6 +27,7 @@
 const std = @import("std");
 const ast = @import("ast");
 const log = @import("log");
+const file_types = @import("file_types");
 
 pub const JsEmitError = error{
     OutOfMemory,
@@ -42,6 +43,19 @@ pub fn emit(allocator: std.mem.Allocator, program: *const ast.Program) JsEmitErr
     errdefer buf.deinit(allocator);
 
     var em = Emitter{ .allocator = allocator, .buf = &buf, .items = program.items };
+
+    // Phase 0: emit host lines from .kjs source files verbatim, at the TOP of
+    // the output (before main_module). This carries module-level JS state
+    // (`const`/`let` declarations) that the flows and proc bodies reference.
+    // Only .kjs host lines are JS; .kz host lines are Zig and must NOT leak in.
+    // Expedient cut — not the final design.
+    for (program.items) |*item| {
+        if (item.* != .host_line) continue;
+        const ext = file_types.koruExtensionOf(item.host_line.location.file) orelse continue;
+        if (!std.mem.eql(u8, ext, ".kjs")) continue;
+        try em.write(item.host_line.content);
+        try em.write("\n");
+    }
 
     try em.write("const main_module = {\n");
 

@@ -1,0 +1,30 @@
+// chain.kjs — JS host. Host lines + |js proc bodies are JavaScript.
+const n = parseInt(process.argv[2] || "10");
+let counter = 0;
+
+~pub event outer { n: u64 }
+! v u64
+~proc outer|js { for (let i = 0; i < n; i++) v(i); }
+
+~pub event mid { n: u64 }
+! v u64
+~proc mid|js { for (let i = 0; i < n; i++) v(i); }
+
+~pub event leaf { n: u64 }
+! v u64
+~proc leaf|js { for (let i = 0; i < n; i++) v(i); }
+
+~pub event inc {}
+~proc inc|js { counter++; }
+
+~pub event report {}
+~proc report|js { console.log("counter = " + counter); }
+
+~outer(n)
+! v _ |>
+    mid(n)
+    ! v _ |>
+        leaf(n)
+        ! v _ |> inc()
+
+~report()
