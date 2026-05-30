@@ -37,8 +37,18 @@ the thesis below is demonstrated on **real emitter output** (not hand-modeled JS
   emitter, so chain.kz (counter variant) emits but throws `counter is not defined` at node.
   Decide: per-target top-level decls, or no mutable module state (Elm-shaped — thread it).
   Gates the counter-based chain benchmark.
-- **Phase 2 — benchmark: NEXT (after module-state call).** Race real emitted nested-chain JS
-  vs Node EventEmitter chains at sweep depth — turn the hand-modeled ~3.3×→~19× into a receipt.
+- **Phase 2 — benchmark: DONE on real emitted JS (2026-05-30).** Host lines pass through for
+  `.kjs` (module state works). Two receipts, Claude-verified:
+  - chain.kjs (depth-3 nested, n³): koru-static ~8× faster than Node EventEmitter, ~1.5× off flat.
+  - DEPTH SWEEP (pipeline, M=5e6, ns/hop): EventEmitter FLAT ~19 ns/hop across D=1..16 (V8 can't
+    fuse dynamic dispatch — the structural floor). koru-static ~2 ns/hop, dyn/koru compounds
+    8.0→9.5 through D=8, then DEGRADES to ~5× at D=16 (koru rises to ~3.7 ns/hop — V8 inline
+    budget exceeded on the per-item nested `Handlers_K` closure tower).
+  - FIX IDENTIFIED: emit-time textual chain fusion (Koru knows stage1→…→stageD statically →
+    collapse nested handlers to straight-line, hoist closures out of the hot loop). Survives V8
+    (unlike LLVM fold). The ceiling is the emitter's, not V8's.
+- **Verdict: thesis validated on real output.** Worth pursuing. Next: emit-time fusion to hold
+  ~2 ns at depth; framework-dispatch (signals) baseline; elide trivial arg-object allocation.
 
 ## The thesis (Elm-shaped, not transpiler-shaped)
 
