@@ -27,10 +27,18 @@ the thesis below is demonstrated on **real emitter output** (not hand-modeled JS
   handler only; single-invocation/`_` terminal bodies only; meta-events
   (`koru:start/end`) namespace-filtered at emit; proc-body re-indent is flat (cosmetic);
   no taps/modules/comptime/sibling-or-guarded handlers.
-- **Phase 2 — benchmark: NEXT.** Need a *dispatch-shaped* pump (multi-kind: key/resize/
-  focus → distinct handlers, vaxis shape) emitted to JS, raced against Node EventEmitter
-  chains. The current pump is resume-value (fold) shape — proves emission, but the
-  dispatch-vs-EventEmitter number (the headline ~3.3×→~19×) needs the multi-kind pump.
+- **Phase 1.5 — nested/void effect chains: DONE + verified (2026-05-30).** `js_emitter`
+  now recurses: an effect handler whose body is an invocation builds a nested `Handlers_M`
+  and calls it (void → no `return`; resume-value → `return EXPR`). `_phase1/chain_log.kz`
+  (depth-3 nest, `! v _ |> mid ! v _ |> leaf ! v _ |> inc()`) emits nested static dispatch
+  → `node` and Zig both print 27 lines (3³). pump.kz still `sum = 45`. This is the
+  static-dispatch form of the "endless dynamic-dispatch chain."
+- **OPEN — module-level state (design question for Lars).** `var counter` is dropped by the
+  emitter, so chain.kz (counter variant) emits but throws `counter is not defined` at node.
+  Decide: per-target top-level decls, or no mutable module state (Elm-shaped — thread it).
+  Gates the counter-based chain benchmark.
+- **Phase 2 — benchmark: NEXT (after module-state call).** Race real emitted nested-chain JS
+  vs Node EventEmitter chains at sweep depth — turn the hand-modeled ~3.3×→~19× into a receipt.
 
 ## The thesis (Elm-shaped, not transpiler-shaped)
 

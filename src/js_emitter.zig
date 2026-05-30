@@ -85,6 +85,15 @@ const Emitter = struct {
     allocator: std.mem.Allocator,
     buf: *std.ArrayList(u8),
     items: []const ast.Item,
+    /// Monotonic counter for unique `Handlers_<id>` / `result_<id>` names so
+    /// nested dispatch frames never collide.
+    id_counter: usize = 0,
+
+    fn nextId(self: *Emitter) usize {
+        const id = self.id_counter;
+        self.id_counter += 1;
+        return id;
+    }
 
     fn write(self: *Emitter, text: []const u8) JsEmitError!void {
         try self.buf.appendSlice(self.allocator, text);
@@ -156,10 +165,30 @@ const Emitter = struct {
         try self.write("\n    },\n  },\n");
     }
 
-    /// Emit a top-level flow as `flowN()`. Partitions continuations into effect
-    /// (`!`) and terminal (`|`), mirroring emitter_helpers.zig:emitFlow.
+    /// Emit a top-level flow as `flowN()`. The dispatch body is produced by the
+    /// recursive `emitInvocationWithContinuations` helper, which handles both the
+    /// shallow (single resume-value handler) and deep (nested void-effect chain)
+    /// shapes uniformly.
     fn emitFlow(self: *Emitter, flow: *const ast.Flow, flow_num: usize) JsEmitError!void {
-        const event = self.findEventDecl(&flow.invocation.path) orelse {
+        try self.writeFmt("  flow{d}() {{\n", .{flow_num});
+        try self.emitInvocationWithContinuations(&flow.invocation, flow.continuations, "    ");
+        try self.write("  },\n");
+    }
+
+    /// Recursively emit a dispatch: resolve `inv`'s event, build a `Handlers_<id>`
+    /// from the EFFECT continuations (each an effect-handler method), call the
+    /// event handler (passing `Handlers_<id>` iff the event has effect branches),
+    /// then drive the TERMINAL continuations. Each effect-handler method whose
+    /// body is itself an invocation recurses through this same function, so an
+    /// arbitrarily deep void-effect chain lowers to nested `Handlers_<id>`
+    /// objects. `indent` is the leading whitespace for statements at this depth.
+    fn emitInvocationWithContinuations(
+        self: *Emitter,
+        inv: *const ast.Invocation,
+        continuations: []const ast.Continuation,
+        indent: []const u8,
+    ) JsEmitError!void {
+        const event = self.findEventDecl(&inv.path) orelse {
             log.debug("[js_emitter] flow invokes unresolved event\n", .{});
             return JsEmitError.UnresolvedEvent;
         };
@@ -172,80 +201,123 @@ const Emitter = struct {
             }
         }
 
-        try self.writeFmt("  flow{d}() {{\n", .{flow_num});
-
-        // Build Handlers_N from the effect continuations.
-        const handlers_name = try std.fmt.allocPrint(self.allocator, "Handlers_{d}", .{flow_num});
-        defer self.allocator.free(handlers_name);
-
-        if (event_has_effect) {
-            try self.writeFmt("    const {s} = {{ ", .{handlers_name});
-            var first = true;
-            for (flow.continuations) |*cont| {
-                if (cont.kind != .effect) continue;
-                if (!first) try self.write(", ");
-                first = false;
-                try self.emitEffectHandlerMethod(cont);
+        // Only allocate an id (and thus a result binding) when a terminal
+        // continuation actually reads the result. Effect-only frames (the void
+        // chain) don't need a `result_<id>`.
+        var needs_result = false;
+        for (continuations) |*cont| {
+            if (cont.kind == .terminal and cont.binding != null and
+                !std.mem.eql(u8, cont.binding.?, "_"))
+            {
+                needs_result = true;
+                break;
             }
-            try self.write(" };\n");
         }
 
-        // Emit the invocation: const result_N = main_module.<ev>_event.handler({args}, Handlers_N?);
-        const ev_name = event.path.segments[event.path.segments.len - 1];
-        try self.writeFmt("    const result_{d} = main_module.{s}_event.handler(", .{ flow_num, ev_name });
-        try self.emitArgsObject(flow.invocation.args);
+        // Build Handlers_<id> from the effect continuations. The id is monotonic
+        // so nested frames get distinct names.
+        var handlers_name: ?[]const u8 = null;
+        defer if (handlers_name) |hn| self.allocator.free(hn);
+
         if (event_has_effect) {
-            try self.writeFmt(", {s}", .{handlers_name});
+            const hid = self.nextId();
+            handlers_name = try std.fmt.allocPrint(self.allocator, "Handlers_{d}", .{hid});
+            // The Handlers object opens here; its method bodies are emitted at a
+            // deeper indent, then it closes before the handler call below.
+            try self.writeFmt("{s}const {s} = {{\n", .{ indent, handlers_name.? });
+            const inner_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+            defer self.allocator.free(inner_indent);
+            for (continuations) |*cont| {
+                if (cont.kind != .effect) continue;
+                try self.emitEffectHandlerMethod(cont, inner_indent);
+            }
+            try self.writeFmt("{s}}};\n", .{indent});
+        }
+
+        const ev_name = event.path.segments[event.path.segments.len - 1];
+        const result_name: ?[]const u8 = if (needs_result) blk: {
+            const rid = self.nextId();
+            break :blk try std.fmt.allocPrint(self.allocator, "result_{d}", .{rid});
+        } else null;
+        defer if (result_name) |rn| self.allocator.free(rn);
+
+        if (result_name) |rn| {
+            try self.writeFmt("{s}const {s} = main_module.{s}_event.handler(", .{ indent, rn, ev_name });
+        } else {
+            try self.writeFmt("{s}main_module.{s}_event.handler(", .{ indent, ev_name });
+        }
+        try self.emitArgsObject(inv.args);
+        if (event_has_effect) {
+            try self.writeFmt(", {s}", .{handlers_name.?});
         }
         try self.write(");\n");
 
         // Drive terminal continuations: read `.branch` off the result, emit body.
-        for (flow.continuations) |*cont| {
+        for (continuations) |*cont| {
             if (cont.kind != .terminal) continue;
-            try self.emitTerminalContinuation(cont, flow_num);
+            try self.emitTerminalContinuation(cont, result_name, indent);
         }
-
-        try self.write("  },\n");
     }
 
-    /// Emit one effect-handler method inside the Handlers_N object literal.
-    /// `! tick t |> EXPR` → `tick(t) { return EXPR; }`. The body is a bare
-    /// expression (resume value), so it lowers to `return <expr>;`.
-    fn emitEffectHandlerMethod(self: *Emitter, cont: *const ast.Continuation) JsEmitError!void {
+    /// Emit one effect-handler method inside a `Handlers_<id>` object literal.
+    /// Body shape depends on the continuation's node:
+    ///   - `.expression` (resume value, e.g. `! tick t |> t.acc + t.i`) →
+    ///     `tick(t) { return <expr>; }`.
+    ///   - `.invocation` (void effect whose body invokes the next event, e.g.
+    ///     `! v _ |> mid(...)`) → recurse into the sub-flow, building this
+    ///     handler's nested `Handlers_<id>` from the continuation's own
+    ///     continuations.
+    ///   - null / `.terminal` → empty body.
+    fn emitEffectHandlerMethod(self: *Emitter, cont: *const ast.Continuation, indent: []const u8) JsEmitError!void {
         const param = cont.binding orelse "_";
-        try self.writeFmt("{s}({s}) {{ ", .{ cont.branch, param });
 
         const node = cont.node orelse {
-            // No body — emit an empty method. (pump.kz always has a body.)
-            try self.write("}");
+            // No body — emit an empty method.
+            try self.writeFmt("{s}{s}({s}) {{}},\n", .{ indent, cont.branch, param });
             return;
         };
         switch (node) {
             .expression => |expr| {
-                try self.writeFmt("return {s}; }}", .{expr});
+                try self.writeFmt("{s}{s}({s}) {{ return {s}; }},\n", .{ indent, cont.branch, param, expr });
+            },
+            .invocation => |*inv| {
+                // VOID effect handler whose body is the nested sub-flow. No
+                // `return` — recurse to emit the nested dispatch.
+                try self.writeFmt("{s}{s}({s}) {{\n", .{ indent, cont.branch, param });
+                const inner_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+                defer self.allocator.free(inner_indent);
+                try self.emitInvocationWithContinuations(inv, cont.continuations, inner_indent);
+                try self.writeFmt("{s}}},\n", .{indent});
+            },
+            .terminal => {
+                try self.writeFmt("{s}{s}({s}) {{}},\n", .{ indent, cont.branch, param });
             },
             else => {
-                log.debug("[js_emitter] effect handler body is not a bare expression\n", .{});
+                log.debug("[js_emitter] effect handler body is neither expression nor invocation\n", .{});
                 return JsEmitError.UnsupportedConstruct;
             },
         }
     }
 
     /// Emit a terminal continuation: `| done r |> BODY`.
-    /// `const r = result_N.done;` then emit BODY.
-    fn emitTerminalContinuation(self: *Emitter, cont: *const ast.Continuation, flow_num: usize) JsEmitError!void {
+    /// `const r = <result>.done;` then emit BODY.
+    fn emitTerminalContinuation(self: *Emitter, cont: *const ast.Continuation, result_name: ?[]const u8, indent: []const u8) JsEmitError!void {
         if (cont.binding) |binding| {
             if (!std.mem.eql(u8, binding, "_")) {
-                try self.writeFmt("    const {s} = result_{d}.{s};\n", .{ binding, flow_num, cont.branch });
+                const rn = result_name orelse {
+                    log.debug("[js_emitter] terminal continuation binds a result but no result binding was emitted\n", .{});
+                    return JsEmitError.UnsupportedConstruct;
+                };
+                try self.writeFmt("{s}const {s} = {s}.{s};\n", .{ indent, binding, rn, cont.branch });
             }
         }
 
         const node = cont.node orelse return;
         switch (node) {
             .invocation => |*inv| {
-                try self.write("    ");
-                try self.emitInvocationCall(inv);
-                try self.write(";\n");
+                // A terminal body is itself a dispatch — recurse so terminal
+                // bodies that fire further effects are handled uniformly.
+                try self.emitInvocationWithContinuations(inv, cont.continuations, indent);
             },
             .terminal => {}, // `_` — flow ends, nothing to emit.
             else => {
@@ -253,20 +325,6 @@ const Emitter = struct {
                 return JsEmitError.UnsupportedConstruct;
             },
         }
-    }
-
-    /// Emit a call to an event from a terminal body:
-    /// `main_module.<ev>_event.handler({args}, Handlers?)`.
-    /// pump.kz's terminal calls a PLAIN event (report) → no Handlers arg.
-    fn emitInvocationCall(self: *Emitter, inv: *const ast.Invocation) JsEmitError!void {
-        const event = self.findEventDecl(&inv.path) orelse {
-            log.debug("[js_emitter] terminal body invokes unresolved event\n", .{});
-            return JsEmitError.UnresolvedEvent;
-        };
-        const ev_name = event.path.segments[event.path.segments.len - 1];
-        try self.writeFmt("main_module.{s}_event.handler(", .{ev_name});
-        try self.emitArgsObject(inv.args);
-        try self.write(")");
     }
 
     /// Emit the args as a JS object literal: `{ name: value, ... }`. Arg values
