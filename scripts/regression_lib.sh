@@ -136,6 +136,73 @@ expect_has_assertions() {
     grep -qE '^(CONTAINS |NOT_CONTAINS |STDOUT_CONTAINS:)' "$expect_file"
 }
 
+# Cross-target equivalence check. If a test's LANGUAGES marker lists `js`, the
+# JS emitter must produce a program whose output matches the SAME expected.txt
+# the Zig target just satisfied — one test, two targets, one source of truth.
+#
+# DEFAULT-OFF: no LANGUAGES file (or one that doesn't list js) → immediate
+# no-op, so the entire existing Zig-only suite is byte-identical. Only runs for
+# positive MUST_RUN tests that already PASSED the Zig baseline (SUCCESS, no
+# FAILURE). On any JS divergence it flips SUCCESS→FAILURE so the test fails iff
+# all listed languages don't agree. First increment scope: positive-run tests
+# only; MUST_FAIL / EXPECT-error tests stay Zig-only.
+regression_check_js_equivalence() {
+    local test_dir="$1"
+    local TEST_NAME
+    TEST_NAME=$(basename "$test_dir")
+
+    [ -f "$test_dir/LANGUAGES" ] || return 0
+    grep -qiw 'js' "$test_dir/LANGUAGES" || return 0
+    [ -f "$test_dir/SUCCESS" ] && [ ! -f "$test_dir/FAILURE" ] || return 0
+    [ -f "$test_dir/MUST_RUN" ] && [ -f "$test_dir/expected.txt" ] || return 0
+
+    local flags=""
+    [ -f "$test_dir/COMPILER_FLAGS" ] && flags=$(tr '\n' ' ' < "$test_dir/COMPILER_FLAGS")
+
+    _js_equiv_fail() {
+        rm -f "$test_dir/SUCCESS"
+        echo "$1" > "$test_dir/FAILURE"
+        FAILED_TESTS="$FAILED_TESTS $TEST_NAME($1)"
+        [ "${PASSED_TESTS:-0}" -gt 0 ] && PASSED_TESTS=$((PASSED_TESTS - 1))
+        echo -e "${RED}  ✗ JS equivalence: $2${NC}"
+    }
+
+    # Compile to JS via the full-pipeline invocation (no -o): koruc drives the
+    # metacircular backend itself and drops output_emitted.js into the input's
+    # dir (= test_dir). (-o would stop after Stage A, like the Zig path, which
+    # then needs a manual build — unnecessary here since JS skips Stage D.) The
+    # backend can die via signal on an unsupported construct, so don't trust the
+    # exit code alone — also require the emitted file to exist and be non-empty.
+    if ! ./zig-out/bin/koruc "$test_dir/input.kz" --lang=js $flags \
+            >"$test_dir/compile_js.err" 2>&1; then
+        _js_equiv_fail "js-compile" "koruc --lang=js failed (see compile_js.err)"
+        return 0
+    fi
+    local js_out="$test_dir/output_emitted.js"
+    if [ ! -s "$js_out" ]; then
+        _js_equiv_fail "js-noemit" "no output_emitted.js produced"
+        return 0
+    fi
+
+    # Run under node, compare to the SAME expected.txt (trimmed, as the Zig path).
+    local js_actual="$test_dir/actual.js.txt"
+    timeout "${REGRESSION_TEST_TIMEOUT:-30}" node "$js_out" >"$js_actual" 2>&1
+    local node_exit=$?
+    if [ "$node_exit" -ne 0 ]; then
+        _js_equiv_fail "js-runtime" "node exited $node_exit (see actual.js.txt)"
+        return 0
+    fi
+    local exp act
+    exp=$(sed 's/[[:space:]]*$//' "$test_dir/expected.txt")
+    act=$(sed 's/[[:space:]]*$//' "$js_actual")
+    if [ "$exp" != "$act" ]; then
+        _js_equiv_fail "js-mismatch" "JS output != expected.txt"
+        diff -u "$test_dir/expected.txt" "$js_actual" 2>/dev/null | head -15 | sed 's/^/    /'
+        return 0
+    fi
+    echo -e "${GREEN}  ✓ JS equivalence (node output matches expected.txt)${NC}"
+}
+
 regression_run_one_test() {
     local test_dir="$1"
     local TEST_NAME
@@ -1331,5 +1398,10 @@ EOF
             FAILED_TESTS="$FAILED_TESTS $TEST_NAME"
         fi
     fi
+
+    # Cross-target: if this test opted into JS (LANGUAGES lists js) and passed
+    # the Zig baseline, require the JS target to agree on the same expected.txt.
+    regression_check_js_equivalence "$test_dir"
+
     return 0
 }

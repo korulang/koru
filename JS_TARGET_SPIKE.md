@@ -64,6 +64,18 @@ the thesis below is demonstrated on **real emitter output** (not hand-modeled JS
   siblings). Pinned by `tests/regression/.../140_009_entry_merges_companions` (Zig target; events
   in `input.k`, flow+procs in `input.kz`, was red, now green). This is the clean "use the contract
   file" model: facets of one module, named by stem.
+- **CROSS-TARGET EQUIVALENCE TESTING — one test, run per target (2026-05-30).** A test opts in
+  with a `LANGUAGES` marker file (e.g. `zig js`); the SAME `expected.txt` must be produced by
+  every listed target, so a Zig/JS divergence is a hard failure — equivalence is the assertion
+  (the multi-variant thesis, executable). Implemented in `scripts/regression_lib.sh`:
+  `regression_check_js_equivalence` runs after the Zig baseline passes, compiles via
+  `koruc --lang=js` (no -o = full pipeline → `output_emitted.js` in the test dir), runs it under
+  `node`, compares to `expected.txt`; on divergence flips SUCCESS→FAILURE (`js-mismatch` /
+  `js-compile` / `js-runtime` / `js-noemit`). DEFAULT-OFF: no `LANGUAGES` file → instant no-op, so
+  the whole existing suite is byte-identical. First-increment scope: positive `MUST_RUN` tests
+  only (MUST_FAIL / EXPECT-error tests stay Zig-only — JS skips Stage D, so per-stage error
+  semantics need separate design). 140_009 is the first cross-target test; negative case verified
+  (corrupting only the `.kjs` facet → `js-mismatch` failure).
   REMAINING SPIKE GAPS (not blockers): JS emitter still lacks module-qualified event resolution
   (so the *import*-based split — `app.contract:pump` — hits `UnresolvedEvent`; the stem-merge model
   sidesteps it). And `koruc`'s child-process handling panics on `term.Exited` when a Stage-C
