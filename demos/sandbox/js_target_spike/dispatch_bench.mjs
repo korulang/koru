@@ -15,14 +15,22 @@
 //   3. koru switch+call         — static switch -> direct handler call
 //   4. koru str-switch+inline   — static switch on string tag, bodies inlined
 //   5. koru int-switch+inline   — static switch on integer tag, bodies inlined
-//   6. koru EMITTED (real)      — faithful copy of what js_emitter.zig produces
-//                                 for 140_011: `main_module.<ev>_event.handler({...})`
-//                                 with per-dispatch arg-object allocation
+//   6. koru EMITTED (yesterday)  — what js_emitter.zig produced before the
+//                                  plain-event inline optimization:
+//                                  `main_module.<ev>_event.handler({...})` on
+//                                  every dispatch, with arg-object allocation
+//   7. koru EMITTED (today)      — what js_emitter.zig produces NOW: handler
+//                                  bodies inlined at dispatch site, no object
+//                                  lookup, no arg-allocation. Also no events[]
+//                                  read — koru fuses producer + consumer, so
+//                                  payloads are computed from `i` inline.
 //
-// (5) is the theoretical ceiling for object-free static dispatch in JS.
-// (6) is what koru actually emits today — the gap between 5 and 6 is the
-// per-dispatch object-method indirection + arg-object allocation cost koru
-// pays for staying source-faithful to the Koru handler shape.
+// (5) is the theoretical ceiling for object-free static dispatch in JS reading
+// pre-allocated events. (6) is the cost of the closure-path lowering koru USED
+// to emit. (7) is what koru emits today — and because koru can fuse producer
+// and consumer at compile time, it can SKIP the events[] indirection entirely
+// (the producer's loop and the dispatch are in the same function). That's a
+// structural win JS can't match without losing the dynamism it's paying for.
 
 import { EventEmitter } from 'node:events';
 
@@ -119,14 +127,12 @@ function viaIntSwitchInline() {
   return c;
 }
 
-// ---------- 6. koru EMITTED (real) ----------
-// Faithful copy of what `js_emitter.zig` produces for 140_011 — same shape,
-// same object indirection (`main_module.<event>_event.handler(...)`), same
-// per-dispatch arg-object allocation (`{ width: w }`). Only difference from
-// the actual output_emitted.js: we pull payload values from `events[i]`
-// instead of computing them inline (the events array stands in for the
-// external producer a real vaxis app would have).
-function viaKoruEmitted() {
+// ---------- 6. koru EMITTED (yesterday) ----------
+// What js_emitter.zig produced before the plain-event inline optimization:
+// `main_module.<event>_event.handler({...})` on every dispatch, with arg-
+// object allocation. Reads from events[] for the same reason 1-5 do —
+// pre-allocated stream simulating an external event source.
+function viaKoruEmittedYesterday() {
   const c = freshCounts();
   const main_module = {
     onKey_event:    { handler(input) { const ch = input.ch;    c.keys++; if (ch === 113) c.quits++; } },
@@ -141,6 +147,31 @@ function viaKoruEmitted() {
       { main_module.onFocus_event.handler({ id: e.id }); }
     } else {
       { main_module.onKey_event.handler({ ch: e.ch }); }
+    }
+  }
+  return c;
+}
+
+// ---------- 7. koru EMITTED (today) ----------
+// Faithful copy of what js_emitter.zig produces NOW for 140_011 after the
+// plain-event inline optimization landed: handler bodies spliced in place at
+// each dispatch site, no `main_module.<ev>_event.handler({...})` call, no
+// arg-object allocation. ALSO no events[] read — koru fuses producer and
+// consumer at compile time so payload values are computed from `i` inline,
+// matching what flow0 of output_emitted.js does.
+function viaKoruEmittedToday() {
+  const c = freshCounts();
+  for (let i = 0; i < N; i++) {
+    const m = i % 64;
+    if (m === 63) {
+      const w = 80 + (i & 31);
+      { const width = w; c.resizes++; c.width_sum += width; }
+    } else if (m === 31) {
+      const f = i;
+      { const id = f; c.focus++; c.focus_xor ^= id; }
+    } else {
+      const ch_local = (i % 97 === 0) ? 113 : 97 + (i % 26);
+      { const ch = ch_local; c.keys++; if (ch === 113) c.quits++; }
     }
   }
   return c;
@@ -164,12 +195,13 @@ function run(label, fn) {
 
 console.log(`vaxis-shaped event dispatch, N=${N.toLocaleString()} events, median of ${REPS}\n`);
 const rows = [
-  ['1. EventEmitter (idiom)     ', viaEmitter],
-  ['2. listener-map (hand)      ', viaListenerMap],
-  ['3. koru switch+call         ', viaSwitchCall],
-  ['4. koru str-switch+inline   ', viaSwitchInline],
-  ['5. koru int-switch+inline   ', viaIntSwitchInline],
-  ['6. koru EMITTED (real)      ', viaKoruEmitted],
+  ['1. EventEmitter (idiom)        ', viaEmitter],
+  ['2. listener-map (hand)         ', viaListenerMap],
+  ['3. koru switch+call            ', viaSwitchCall],
+  ['4. koru str-switch+inline      ', viaSwitchInline],
+  ['5. koru int-switch+inline      ', viaIntSwitchInline],
+  ['6. koru EMITTED (yesterday)    ', viaKoruEmittedYesterday],
+  ['7. koru EMITTED (today)        ', viaKoruEmittedToday],
 ].map(([l, f]) => run(l, f));
 
 const key = (c) => `${c.keys}/${c.resizes}/${c.focus}/${c.quits}/${c.width_sum}/${c.focus_xor}`;
@@ -180,7 +212,9 @@ for (const r of rows) {
 }
 const em = rows[0].nsPerEv;
 const ko_ideal = rows[4].nsPerEv;
-const ko_real = rows[5].nsPerEv;
-console.log(`\n  EventEmitter / koru EMITTED     = ${(em / ko_real).toFixed(2)}x  (real-world structural win)`);
-console.log(`  EventEmitter / koru int-static  = ${(em / ko_ideal).toFixed(2)}x  (theoretical ceiling)`);
-console.log(`  koru EMITTED / koru int-static  = ${(ko_real / ko_ideal).toFixed(2)}x  (object-indirection + arg-alloc tax)`);
+const ko_yesterday = rows[5].nsPerEv;
+const ko_today = rows[6].nsPerEv;
+console.log(`\n  EventEmitter / koru TODAY          = ${(em / ko_today).toFixed(2)}x  (real-world structural win, post-inline)`);
+console.log(`  EventEmitter / koru YESTERDAY      = ${(em / ko_yesterday).toFixed(2)}x  (pre-inline baseline)`);
+console.log(`  koru YESTERDAY / koru TODAY        = ${(ko_yesterday / ko_today).toFixed(2)}x  (what inline-plain-event bought us)`);
+console.log(`  koru TODAY / koru int-static       = ${(ko_today / ko_ideal).toFixed(2)}x  (remaining tax vs ideal; <1 if producer-fusion wins)`);

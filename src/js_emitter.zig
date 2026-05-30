@@ -303,6 +303,31 @@ const Emitter = struct {
             return;
         }
 
+        // PLAIN-EVENT INLINE FAST PATH: when the invoked event has NO effect
+        // branches AND no continuations to drive AND a `|js` proc body without
+        // `return`, splice the body inline at the call site with args bound as
+        // locals. Saves the `main_module.<ev>_event.handler({...args})` lookup
+        // and the per-call arg-object allocation — same shape as
+        // emitInlineVoidProducer's input-field binding, applied to handlers.
+        //
+        // Conservative on `return`: a body with early-exit semantics can't be
+        // inlined as a plain block (there's no enclosing function to return
+        // from). Plain-event handlers in the void/side-effecting style 140_011
+        // exercises don't return; if they do, fall through to the handler-call
+        // path which preserves return semantics.
+        if (!event_has_effect and continuations.len == 0) {
+            if (self.findJsProcIn(self.items, &event.path)) |proc| {
+                if (std.mem.indexOf(u8, proc.body, "return ") == null and
+                    std.mem.indexOf(u8, proc.body, "return;") == null and
+                    std.mem.indexOf(u8, proc.body, "return\n") == null and
+                    std.mem.indexOf(u8, proc.body, "return}") == null)
+                {
+                    try self.emitInlinePlainHandler(event, proc, inv, indent);
+                    return;
+                }
+            }
+        }
+
         // Only allocate an id (and thus a result binding) when a terminal
         // continuation actually reads the result. Effect-only frames (the void
         // chain) don't need a `result_<id>`.
@@ -359,6 +384,42 @@ const Emitter = struct {
             if (cont.kind != .terminal) continue;
             try self.emitTerminalContinuation(cont, result_name, indent);
         }
+    }
+
+    /// PLAIN-EVENT INLINE. The invoked `event` has no effect branches and the
+    /// caller doesn't need a return value (no continuations to drive). Splice
+    /// the `|js` proc body inline at the call site, binding each event field
+    /// to its arg expression as a local. Saves the per-call
+    /// `main_module.<ev>_event.handler({...})` object-lookup and arg-object
+    /// allocation that the closure-path would emit.
+    ///
+    /// The collision-skip on `const <field> = <arg>` matches the dispatch-block
+    /// pattern (140_012-style): when the arg expression IS the field name as a
+    /// bare identifier, the outer scope's binding is already in scope.
+    fn emitInlinePlainHandler(
+        self: *Emitter,
+        event: *const ast.EventDecl,
+        proc: *const ast.ProcDecl,
+        inv: *const ast.Invocation,
+        indent: []const u8,
+    ) JsEmitError!void {
+        try self.writeFmt("{s}{{\n", .{indent});
+        const inner = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+        defer self.allocator.free(inner);
+
+        for (event.input.fields) |field| {
+            const arg_val = argValueByName(inv.args, field.name) orelse {
+                log.debug("[js_emitter] plain-event inline '{s}' missing arg for field '{s}'\n", .{ event.path.segments[event.path.segments.len - 1], field.name });
+                return JsEmitError.UnsupportedConstruct;
+            };
+            // Skip self-referential `const x = x;` — outer is already in scope.
+            if (std.mem.eql(u8, field.name, arg_val)) continue;
+            try self.writeFmt("{s}const {s} = {s};\n", .{ inner, field.name, arg_val });
+        }
+
+        try self.emitReindented(proc.body, inner);
+        try self.write("\n");
+        try self.writeFmt("{s}}}\n", .{indent});
     }
 
     /// VOID-EFFECT INLINE SPLICE. The invoked `event` is a producer whose effect
