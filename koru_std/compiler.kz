@@ -1406,7 +1406,20 @@ const emitFlowWithMocks = struct {
     log.debug("\n", .{});
 
     // Get the emitted code
-    const final_code = code_emitter.getOutput();
+    const visitor_code = code_emitter.getOutput();
+
+    // JS-target spike: when --lang=js, replace the visitor's Zig output with a
+    // hardcoded JS stub. This is the THINNEST vertical slice — it proves the
+    // --lang=js flag reaches the final emission step and produces a runnable
+    // .js artifact. Nothing here is AST-derived yet; the real JS emitter is the
+    // next phase. Gated behind CompilerEnv.lang so the default Zig path is
+    // untouched. CompilerEnv is already in scope at file level in the generated
+    // backend_output_emitted.zig (re-exported pub const) — reference it directly
+    // rather than re-importing, which would shadow that declaration.
+    const final_code = if (@import("std").mem.eql(u8, CompilerEnv.lang, "js"))
+        "console.log(\"koru-js: plumbing works\");\n"
+    else
+        visitor_code;
 
     log.debug("[BUFFER DEBUG] final_code length = {d}\n", .{final_code.len});
     log.debug("[BUFFER DEBUG]   First 50 bytes of final_code: ", .{});

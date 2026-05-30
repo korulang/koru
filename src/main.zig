@@ -203,6 +203,12 @@ fn generateCompilerEnvCode(allocator: std.mem.Allocator, config: *const Compiler
 
     try writer.writeAll("pub const CompilerEnv = struct {\n");
 
+    // Emission target language (--lang). Read by the Stage-C emitter (emit_zig)
+    // to choose Zig vs JS structural output. Threaded here because emit_zig runs
+    // across the metacircular boundary and only sees per-user state via this module.
+    try writer.print("    /// Default emission target language (--lang=<name>)\n", .{});
+    try writer.print("    pub const lang: []const u8 = \"{s}\";\n\n", .{config.lang});
+
     try writer.writeAll("    /// All compiler flags (for runtime checking)\n");
     try writer.writeAll("    pub const flags = &[_][]const u8{\n");
     for (config.flags.items) |flag| {
@@ -979,8 +985,14 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\    const args = try __koru_std.process.argsAlloc(allocator);
             \\    defer __koru_std.process.argsFree(allocator, args);
             \\
-            \\    // Default output names
-            \\    const emitted_file = "output_emitted.zig";
+            \\    // Default output names.
+            \\    // JS-target spike: --lang=js writes output_emitted.js instead of .zig.
+            \\    // CompilerEnv.lang is baked per-invocation in compiler_env.zig and
+            \\    // re-exported as `pub const CompilerEnv` at the top of this backend.
+            \\    const emitted_file = if (__koru_std.mem.eql(u8, CompilerEnv.lang, "js"))
+            \\        "output_emitted.js"
+            \\    else
+            \\        "output_emitted.zig";
             \\
         );
 
@@ -1079,6 +1091,11 @@ fn generateBackendCode(allocator: std.mem.Allocator, input_file: []const u8, sou
             \\    var buf: [512]u8 = undefined;
             \\    const msg = try __koru_std.fmt.bufPrint(&buf, "✓ Generated {s} ({d} bytes)\n", .{emitted_file, generated_code.len});
             \\    try stdout.writeAll(msg);
+            \\
+            \\    // JS-target spike: the JS path stops here. node runs output_emitted.js
+            \\    // directly — there is no Stage D (`zig build` of the emitted output) and
+            \\    // no a.out. Gated on CompilerEnv.lang so the Zig path below is untouched.
+            \\    if (__koru_std.mem.eql(u8, CompilerEnv.lang, "js")) return;
             \\
             \\    // Now compile the emitted code
             \\    // Check for cross-compilation target from build:config
@@ -7414,10 +7431,18 @@ pub fn main() !void {
         // Backend is in zig-out/bin/main - no cleanup needed
         // Users can clean with: rm -rf zig-out
 
-        try printStdout(allocator, "✓ Built executable: {s}\n", .{exe_name});
+        // JS-target spike: the backend already wrote output_emitted.js and
+        // skipped Stage D — there is no native executable. Report the real
+        // artifact and do NOT try to exec a binary that was never built.
+        const is_js_target = std.mem.eql(u8, compiler_config.lang, "js");
+        if (is_js_target) {
+            try printStdout(allocator, "✓ Generated output_emitted.js (run with: node output_emitted.js)\n", .{});
+        } else {
+            try printStdout(allocator, "✓ Built executable: {s}\n", .{exe_name});
+        }
 
         // If run command, execute the binary
-        if (run_after_build) {
+        if (run_after_build and !is_js_target) {
             try printStdout(allocator, "Running {s}...\n\n", .{exe_name});
 
             const exe_path = try std.fs.path.join(allocator, &.{ ".", exe_name });
