@@ -1,23 +1,47 @@
 // PIN: `~if` used as a SUBFLOW BODY whose arms emit the ENCLOSING event's own
-// branch constructors (`yes`/`no`) does not lower.
+// branch constructors (`yes ctx` / `no ctx`) does not lower to compilable Zig.
 //
-// `~if` is proven ONLY at flow-statement position dispatching to separate void
+// `~if` is proven at flow-statement position dispatching to separate void
 // events (320_002_stdlib_if). Using it as the RHS of an immediate-impl subflow
-// — `~decide = ~if(cond) | then |> yes(ctx) | else |> no(ctx)` — is the
-// untested path. Two layered gaps surface here:
+// — `~decide = ~if(cond) | then |> yes ctx | else |> no ctx` — is a deeper path.
 //
-//   1. PARSER: the subflow-RHS invocation does not strip the leading `~`, so
-//      the event name is recorded literally as `~if` (qualified `<mod>:~if`).
-//      (Even with the `~` removed, gap #2 still fires.)
-//   2. LOWERING: the per-call template render (template_processor.zig
-//      `maybeRenderPerCall`) renders `flow.invocation` for top-level flows and
-//      nested continuations, but a `~if` in subflow-body position never gets its
-//      `if|template|zig` proc rendered. `if` reaches the Stage-C coordinator as
-//      an unresolved event -> KORU040 "unknown event" / CompilerCoordinationFailed.
+// STATUS (verified 2026-05-31, this commission):
 //
-// EXPECTED (when the gap closes): this compiles, `~run` prints "YES" for the
-// flag=true,n=3 input, and this test flips to MUST_RUN + expected.txt "YES".
-// Until then it is pinned MUST_FAIL at BACKEND_EXEC_ERROR (Stage C).
+//   1. PARSER (FIXED): the subflow-RHS invocation now strips a leading `~`
+//      (parser.zig, mirrors the block-flow `trimmed[1..]` skip). Before the
+//      fix the event name was recorded literally as `~if` and failed Stage C
+//      with KORU040 "unknown event 'input:~if'". That symptom is gone.
+//
+//   2. EMITTER (REMAINING GAP — this is what the test now pins): the per-call
+//      template processor (template_processor.zig) DOES render the `if|template|zig`
+//      proc into `flow.inline_body` for this subflow — that was the original
+//      pin's stated gap #2 and it is INACCURATE; rendering works. The real gap
+//      is downstream: the subflow-impl emission path
+//      (visitor_emitter.zig ~2522, the `flow.inline_body` + named-branches case)
+//      writes `const result = <inline_body>; switch(result){...}` and dumps the
+//      template body RAW — it does NOT run the `__koru_continue_<idx>` marker
+//      resolver (emitter_helpers.zig:emitInlineCodeResolvingSplices /
+//      emitInlineBodyNode) that the flow-statement path uses. So the rendered
+//      `if (cond) { __koru_continue_0 } else { __koru_continue_1 }` reaches Stage
+//      D with the markers unsubstituted -> Zig rejects with
+//      "expected ';' after statement" on the bare `__koru_continue_0` token.
+//
+//      Closing this means unifying the subflow-impl inline_body path with the
+//      flow-statement marker-resolution path (continuation hand-off lowers the
+//      `then`/`else` arms into the enclosing event's `yes`/`no` branch returns),
+//      rather than the value-expression `const result = ...; switch` shape that
+//      path was built for ([comptime|transform] subflows like ~capture/~const).
+//
+// NOTE on syntax: the arms use the CANONICAL braceless identity-branch
+// constructor `yes ctx` / `no ctx` — NOT `yes(ctx)`. Per the locked
+// invocation-discrimination rule (parser.zig:5984), `name(args)` is ALWAYS an
+// invocation, so `yes(ctx)` would parse as an event call and fail shape-check
+// with a misleading "unknown event 'yes'". The braceless form is the correct
+// way to construct the enclosing event's identity branch here.
+//
+// EXPECTED (when the emitter gap closes): this compiles, `~run` prints "YES"
+// for the flag=true,n=3 input, and this test flips to MUST_RUN + expected.txt
+// "YES". Until then it is pinned MUST_FAIL at BACKEND_COMPILE_ERROR (Stage D).
 
 ~import "$std/io"
 
@@ -33,8 +57,8 @@ pub const Ctx = struct {
 | no Ctx
 
 ~decide = ~if(ctx.flag and ctx.n > 0)
-| then |> yes(ctx)
-| else |> no(ctx)
+| then |> yes ctx
+| else |> no ctx
 
 ~pub event report { text: []const u8 }
 
