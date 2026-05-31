@@ -1,47 +1,41 @@
-// PIN: `~if` used as a SUBFLOW BODY whose arms emit the ENCLOSING event's own
-// branch constructors (`yes ctx` / `no ctx`) does not lower to compilable Zig.
+// NEGATIVE TEST. This pins that `~` inside a Koru flow is ILLEGAL and the
+// compiler MUST reject it. It is NOT a feature awaiting a fix.
 //
-// `~if` is proven at flow-statement position dispatching to separate void
-// events (320_002_stdlib_if). Using it as the RHS of an immediate-impl subflow
-// — `~decide = ~if(cond) | then |> yes ctx | else |> no ctx` — is a deeper path.
+// The offending line is the subflow RHS below:
 //
-// STATUS (verified 2026-05-31, this commission):
+//     ~decide = ~if(ctx.flag and ctx.n > 0)
+//               ^ second `~` — ILLEGAL
 //
-//   1. PARSER (FIXED): the subflow-RHS invocation now strips a leading `~`
-//      (parser.zig, mirrors the block-flow `trimmed[1..]` skip). Before the
-//      fix the event name was recorded literally as `~if` and failed Stage C
-//      with KORU040 "unknown event 'input:~if'". That symptom is gone.
+// `~` is parser mode, not a call operator. It switches the parser from Zig
+// into Koru. Once you are in Koru you STAY in Koru until the flow ends — you
+// never write `~` again inside it. The `~decide =` already opened Koru, so the
+// `~if` on the RHS is a `~` inside a flow. This is the FIRST rule in the Koru
+// handbook ("The `~` prefix is parser mode, not a call operator"). The legal
+// form, if this were a real subflow, would drop the second tilde: `~decide =
+// if(...)`. `~if(...)` at FLOW-STATEMENT position is fine (see 320_002) — what
+// is illegal is `~if` as the RHS of a flow that is already in Koru.
 //
-//   2. EMITTER (REMAINING GAP — this is what the test now pins): the per-call
-//      template processor (template_processor.zig) DOES render the `if|template|zig`
-//      proc into `flow.inline_body` for this subflow — that was the original
-//      pin's stated gap #2 and it is INACCURATE; rendering works. The real gap
-//      is downstream: the subflow-impl emission path
-//      (visitor_emitter.zig ~2522, the `flow.inline_body` + named-branches case)
-//      writes `const result = <inline_body>; switch(result){...}` and dumps the
-//      template body RAW — it does NOT run the `__koru_continue_<idx>` marker
-//      resolver (emitter_helpers.zig:emitInlineCodeResolvingSplices /
-//      emitInlineBodyNode) that the flow-statement path uses. So the rendered
-//      `if (cond) { __koru_continue_0 } else { __koru_continue_1 }` reaches Stage
-//      D with the markers unsubstituted -> Zig rejects with
-//      "expected ';' after statement" on the bare `__koru_continue_0` token.
+// HISTORY (do not repeat): two ADD loops on 2026-05-31 mistook this rejection
+// for a bug. The first (b5a4d4de) pinned it as "should work, fix later"; the
+// second (2e986a27) made parser.zig STRIP the leading `~` so the illegal code
+// compiled — teaching the compiler to ACCEPT what the language forbids, the
+// exact lax-compiler anti-pattern. Both were premise-absorption failures: the
+// commission was never checked against the language standard. Reverted; this
+// test now correctly stands as MUST_FAIL.
 //
-//      Closing this means unifying the subflow-impl inline_body path with the
-//      flow-statement marker-resolution path (continuation hand-off lowers the
-//      `then`/`else` arms into the enclosing event's `yes`/`no` branch returns),
-//      rather than the value-expression `const result = ...; switch` shape that
-//      path was built for ([comptime|transform] subflows like ~capture/~const).
+// CURRENT REJECTION: the parser records the literal name `~if`, which Stage C
+// fails to resolve -> `error[KORU040]: unknown event 'input:~if'`
+// (BACKEND_EXEC_ERROR). That message is technically a rejection but POOR — it
+// blames an "unknown event" instead of naming the `~`-inside-flow violation.
+// Improving the diagnostic to say so directly is legitimate future work, to be
+// done by TIGHTENING (a clear early-layer parser error), NEVER by accepting the
+// code. If that work lands, update expected_error.txt to the new message; the
+// test stays MUST_FAIL either way.
 //
-// NOTE on syntax: the arms use the CANONICAL braceless identity-branch
-// constructor `yes ctx` / `no ctx` — NOT `yes(ctx)`. Per the locked
-// invocation-discrimination rule (parser.zig:5984), `name(args)` is ALWAYS an
-// invocation, so `yes(ctx)` would parse as an event call and fail shape-check
-// with a misleading "unknown event 'yes'". The braceless form is the correct
-// way to construct the enclosing event's identity branch here.
-//
-// EXPECTED (when the emitter gap closes): this compiles, `~run` prints "YES"
-// for the flag=true,n=3 input, and this test flips to MUST_RUN + expected.txt
-// "YES". Until then it is pinned MUST_FAIL at BACKEND_COMPILE_ERROR (Stage D).
+// NOTE on the arms: `yes ctx` / `no ctx` use the canonical braceless
+// identity-branch constructor (not `yes(ctx)`, which `parser.zig:5984` would
+// read as an invocation). That part is correct and incidental — the rejection
+// fires on the `~if` long before the arms matter.
 
 ~import "$std/io"
 

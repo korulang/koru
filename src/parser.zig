@@ -3894,18 +3894,7 @@ pub const Parser = struct {
             try self.context_stack.append(self.allocator, .in_subflow_impl);
             defer _ = self.context_stack.pop();
 
-            // A subflow RHS may begin with `~` to re-enter Koru-flow mode and
-            // invoke another event (e.g. `~decide = ~if(cond) | then |> ...`).
-            // The block-flow path strips this leading `~` before parsing the
-            // invocation (see the `trimmed[1..]` skip in the block branch);
-            // mirror that here so the event name is recorded as `if`, not the
-            // literal `~if`. Strip CONDITIONALLY — not every RHS starts with `~`.
-            const invocation_str = if (lexer.startsWith(body_str, "~"))
-                lexer.trim(body_str[1..])
-            else
-                body_str;
-
-            const invocation = try self.parseEventInvocation(invocation_str);
+            const invocation = try self.parseEventInvocation(body_str);
 
             // If body has an inline |> chain (e.g. `head() |> tail() | branch ...`),
             // parseEventInvocation only captured the head; route the tail through
