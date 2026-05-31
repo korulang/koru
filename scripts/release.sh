@@ -190,6 +190,17 @@ std_count=$(find "$DIST_DIR/koru_std" -type f | wc -l | tr -d ' ')
 ok "$std_count files synced."
 echo ""
 
+# ─── Step 5b: Sync skills/ -> dist/skills/ ──────────────────────────
+# Bundled agent skills, installed by `koruc skills install`. Unlike src/ and
+# koru_std/, do NOT strip *.md here — SKILL.md IS the shipped content.
+
+info "Syncing skills/ -> dist/skills/..."
+rsync -a --delete "$ROOT_DIR/skills/" "$DIST_DIR/skills/"
+find "$DIST_DIR/skills" -type d -empty -delete 2>/dev/null || true
+skills_count=$(find "$DIST_DIR/skills" -type f | wc -l | tr -d ' ')
+ok "$skills_count files synced."
+echo ""
+
 # ─── Step 6: Generate CHANGELOG.md ──────────────────────────────────
 
 info "Generating CHANGELOG.md..."

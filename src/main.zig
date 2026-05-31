@@ -5880,6 +5880,127 @@ fn checkInvocationVisibility(
     );
 }
 
+// Locate the bundled `skills/` source directory relative to the koruc
+// executable, mirroring how koru_std is resolved (npm package: binaries/../skills).
+// Returns an owned path the caller frees, or null if not found.
+fn findBundledSkills(allocator: std.mem.Allocator) !?[]const u8 {
+    var exe_path_buf: [4096]u8 = undefined;
+    const exe_path = std.fs.selfExePath(&exe_path_buf) catch return null;
+    const exe_dir = std.fs.path.dirname(exe_path) orelse return null;
+
+    const rel = [_][]const []const u8{
+        &[_][]const u8{ exe_dir, "..", "skills" }, // npm: binaries/../skills
+        &[_][]const u8{ exe_dir, "..", "..", "skills" }, // zig-out/bin/../../skills
+    };
+    for (rel) |parts| {
+        const p = try std.fs.path.join(allocator, parts);
+        if (std.fs.accessAbsolute(p, .{})) |_| {
+            return p;
+        } else |_| {
+            allocator.free(p);
+        }
+    }
+    // ./skills (running from the repo root)
+    if (std.fs.cwd().access("skills", .{})) |_| {
+        return try allocator.dupe(u8, "skills");
+    } else |_| {}
+    return null;
+}
+
+fn skillsHasFilter(args: [][:0]u8) bool {
+    for (args) |a| {
+        if (!std.mem.startsWith(u8, a, "--")) return true;
+    }
+    return false;
+}
+
+fn skillsMatches(args: [][:0]u8, name: []const u8) bool {
+    for (args) |a| {
+        if (!std.mem.startsWith(u8, a, "--") and std.mem.eql(u8, a, name)) return true;
+    }
+    return false;
+}
+
+// `koruc skills install [name...] [--global]` — copy bundled agent skills into
+// .claude/skills/ (project, default) or ~/.claude/skills/ (--global). Reinstall
+// overwrites, so it doubles as update. No name args installs every bundled skill.
+fn runSkillsInstall(allocator: std.mem.Allocator, args: [][:0]u8) !void {
+    if (args.len == 0 or !std.mem.eql(u8, args[0], "install")) {
+        try printStderr(allocator, "Usage: koruc skills install [name...] [--global]\n", .{});
+        return;
+    }
+    const rest = args[1..];
+
+    var global = false;
+    for (rest) |a| {
+        if (std.mem.eql(u8, a, "--global")) global = true;
+    }
+    const have_filter = skillsHasFilter(rest);
+
+    const src_path = (try findBundledSkills(allocator)) orelse {
+        try printStderr(allocator, "Error: could not locate the bundled skills/ directory.\n", .{});
+        return;
+    };
+    defer allocator.free(src_path);
+
+    const target_root = if (global) blk: {
+        const home = std.process.getEnvVarOwned(allocator, "HOME") catch {
+            try printStderr(allocator, "Error: --global needs HOME to be set.\n", .{});
+            return;
+        };
+        defer allocator.free(home);
+        break :blk try std.fs.path.join(allocator, &[_][]const u8{ home, ".claude", "skills" });
+    } else try std.fs.path.join(allocator, &[_][]const u8{ ".claude", "skills" });
+    defer allocator.free(target_root);
+
+    var src_dir = std.fs.cwd().openDir(src_path, .{ .iterate = true }) catch |err| {
+        try printStderr(allocator, "Error opening {s}: {}\n", .{ src_path, err });
+        return;
+    };
+    defer src_dir.close();
+
+    var installed: usize = 0;
+    var it = src_dir.iterate();
+    while (try it.next()) |entry| {
+        if (entry.kind != .directory) continue;
+        if (have_filter and !skillsMatches(rest, entry.name)) continue;
+
+        var skill_src = src_dir.openDir(entry.name, .{ .iterate = true }) catch continue;
+        defer skill_src.close();
+        // A skill directory must contain SKILL.md; skip anything else.
+        skill_src.access("SKILL.md", .{}) catch continue;
+
+        const dst_path = try std.fs.path.join(allocator, &[_][]const u8{ target_root, entry.name });
+        defer allocator.free(dst_path);
+        std.fs.cwd().makePath(dst_path) catch |err| {
+            try printStderr(allocator, "Error creating {s}: {}\n", .{ dst_path, err });
+            return;
+        };
+        var dst_dir = std.fs.cwd().openDir(dst_path, .{}) catch |err| {
+            try printStderr(allocator, "Error opening {s}: {}\n", .{ dst_path, err });
+            return;
+        };
+        defer dst_dir.close();
+
+        var fit = skill_src.iterate();
+        while (try fit.next()) |f| {
+            if (f.kind != .file) continue;
+            skill_src.copyFile(f.name, dst_dir, f.name, .{}) catch |err| {
+                try printStderr(allocator, "Error copying {s}/{s}: {}\n", .{ entry.name, f.name, err });
+                return;
+            };
+        }
+        try printStdout(allocator, "  installed {s} -> {s}/{s}/\n", .{ entry.name, target_root, entry.name });
+        installed += 1;
+    }
+
+    if (installed == 0) {
+        try printStderr(allocator, "No skills installed (no matching skill found).\n", .{});
+    } else {
+        try printStdout(allocator, "Installed {d} skill(s).\n", .{installed});
+    }
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
@@ -6052,6 +6173,14 @@ pub fn main() !void {
             }
             return;
         };
+        return;
+    }
+
+    // Check for skills command — copy bundled agent skills into .claude/skills/.
+    // The actual file work is pure Zig (below); the npm `bin` shim only forwards
+    // argv to this binary.
+    if (std.mem.eql(u8, args[1], "skills")) {
+        try runSkillsInstall(allocator, args[2..]);
         return;
     }
 
