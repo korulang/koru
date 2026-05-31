@@ -1,0 +1,3 @@
+const name = "World";
+const debug = true;
+const count = 42;

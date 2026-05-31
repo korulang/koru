@@ -2904,11 +2904,21 @@ pub const VisitorEmitter = struct {
                             }
                         }
                         if (is_foreign) {
-                            const module_for_variant_lookup = self.current_module_name orelse self.main_module_name;
-                            const event_canonical = emitter.buildCanonicalEventName(&event.path, self.allocator, module_for_variant_lookup) catch continue;
-                            defer self.allocator.free(event_canonical);
-                            const is_registered = if (emitter.getVariant(event_canonical)) |rv| eql(u8, rv, target) else false;
-                            if (!is_registered) continue;
+                            // EXCEPTION: comptime|transform procs have Zig bodies regardless
+                            // of their variant tag. The tag on a transform variant selects
+                            // what TARGET LANGUAGE the transform's OUTPUT produces
+                            // (`|js` = "emit JS output"), but the body itself executes at
+                            // Stage C as Zig and is always valid in self.lang. Always emit
+                            // these; the runtime registry check (for runtime |js / |gpu /
+                            // etc. bodies that ARE foreign code) doesn't apply.
+                            const is_transform = annotation_parser.hasPart(event.annotations, "transform");
+                            if (!is_transform) {
+                                const module_for_variant_lookup = self.current_module_name orelse self.main_module_name;
+                                const event_canonical = emitter.buildCanonicalEventName(&event.path, self.allocator, module_for_variant_lookup) catch continue;
+                                defer self.allocator.free(event_canonical);
+                                const is_registered = if (emitter.getVariant(event_canonical)) |rv| eql(u8, rv, target) else false;
+                                if (!is_registered) continue;
+                            }
                         }
 
                         // Check if this proc matches the event

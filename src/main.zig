@@ -2533,6 +2533,21 @@ fn generateTransformHandlersToEmitter(code_emitter: anytype, allocator: std.mem.
 
                     try code_emitter.write("        const __variant_opt: ?[]const u8 = blk: {\n");
                     try code_emitter.write("            if (invocation.variant) |v| break :blk v;\n");
+                    // Lang auto-select: when CompilerEnv.lang matches a variant's
+                    // base tag, prefer it. Matches the runtime emitters' tag-based
+                    // selection (js_emitter.zig:165, visitor_emitter analog). Base
+                    // tag strips `(args)`, so `|zig(optimized)` matches lang "zig".
+                    // Falls through to the platform registry below when no variant
+                    // base matches the target language.
+                    for (event.variant_targets) |target| {
+                        var base_len: usize = target.len;
+                        if (std.mem.indexOfScalar(u8, target, '(')) |paren_idx| {
+                            base_len = paren_idx;
+                        }
+                        const base = target[0..base_len];
+                        const auto_line = try std.fmt.bufPrint(&buf, "            if (__koru_std.mem.eql(u8, CompilerEnv.lang, \"{s}\")) break :blk \"{s}\";\n", .{ base, target });
+                        try code_emitter.write(auto_line);
+                    }
                     const lookup_line = try std.fmt.bufPrint(&buf, "            if (__koru_emitter_helpers.getVariant(\"{s}\")) |v| break :blk v;\n", .{canonical_name});
                     try code_emitter.write(lookup_line);
                     try code_emitter.write("            break :blk null;\n");

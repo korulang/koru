@@ -1368,6 +1368,240 @@ const std = @import("std");
 }
 
 // ============================================================================
+// PRINT.BLK|JS - JavaScript-target variant (EXPERIMENTAL STUB)
+// ============================================================================
+// What the |js tag means HERE is different from what it means on a runtime
+// proc. On runtime procs, |js = "this body is JavaScript, JS emitter splices
+// it." On a [comptime|transform] proc, the body must be Zig (the compiler's
+// host language). So |js here means: "this transform variant produces JS
+// output, body is structurally Zig."
+//
+// First-pass STUB: ignores the template content, emits a fixed `console.log`.
+// Purpose is to validate that (a) the parser accepts a |js variant alongside
+// |zig and |raw_posix on a comptime transform, and (b) some dispatch
+// mechanism actually selects it when --lang=js. Once we know the path is
+// open, the Liquid template parsing logic from |zig can be ported over and
+// only the OUTPUT shape (Zig `std.debug.print` → JS `console.log + concat`)
+// changes.
+~proc print.blk|js {
+    const ast = @import("ast");
+    const ast_functional = @import("ast_functional");
+
+    const flow = if (item.* == .flow)
+        &item.flow
+    else
+        return .{ .transformed = program };
+
+    const is_pointer_top = invocation == &flow.invocation;
+
+    // Build a JS string-concat expression mirroring |zig's format-string +
+    // arg-list shape. Each {{ var }} becomes ` + var + `; each {% if v %}body
+    // {% endif %} becomes ` + (v ? "body" : "") + `; literal chars accumulate
+    // in a `"..."` segment with standard string-literal escaping. JS's `+`
+    // promotes Numbers to strings on concat, so no per-field-spec mapping
+    // (`:s`/`:d`) is needed — :s/:d/:f/:any all lower to bare `${var}` semantics.
+    //
+    // Trailing newline behavior diverges from |zig: console.log auto-appends
+    // `\n`, so we strip ONE trailing newline from the template content (if
+    // present) to avoid the double-newline that would otherwise result. The
+    // template content's leading newline is preserved as-is.
+    const raw_content = source.text;
+    const content = if (raw_content.len > 0 and raw_content[raw_content.len - 1] == '\n')
+        raw_content[0 .. raw_content.len - 1]
+    else
+        raw_content;
+
+    var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch unreachable;
+    var first = true;
+    var in_literal = false;
+
+    const openLit = struct {
+        fn call(b: *std.ArrayList(u8), a: std.mem.Allocator, f: *bool, il: *bool) void {
+            if (!il.*) {
+                if (!f.*) b.appendSlice(a, " + ") catch unreachable;
+                b.append(a, '"') catch unreachable;
+                il.* = true;
+                f.* = false;
+            }
+        }
+    }.call;
+
+    const closeLit = struct {
+        fn call(b: *std.ArrayList(u8), a: std.mem.Allocator, il: *bool) void {
+            if (il.*) {
+                b.append(a, '"') catch unreachable;
+                il.* = false;
+            }
+        }
+    }.call;
+
+    const escapeAndAppend = struct {
+        fn call(b: *std.ArrayList(u8), a: std.mem.Allocator, c: u8) void {
+            switch (c) {
+                '"' => b.appendSlice(a, "\\\"") catch unreachable,
+                '\\' => b.appendSlice(a, "\\\\") catch unreachable,
+                '\n' => b.appendSlice(a, "\\n") catch unreachable,
+                '\r' => b.appendSlice(a, "\\r") catch unreachable,
+                '\t' => b.appendSlice(a, "\\t") catch unreachable,
+                else => b.append(a, c) catch unreachable,
+            }
+        }
+    }.call;
+
+    var i: usize = 0;
+    while (i < content.len) {
+        // {% if var %}...{% endif %} → + (var ? "body_escaped" : "") +
+        if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '%') {
+            const tag_start = i + 2;
+            var ws_start = tag_start;
+            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+
+            if (ws_start + 3 <= content.len and std.mem.eql(u8, content[ws_start..ws_start + 3], "if ")) {
+                const var_start = ws_start + 3;
+                var var_pos = var_start;
+                while (var_pos < content.len and (content[var_pos] == ' ' or content[var_pos] == '\t')) : (var_pos += 1) {}
+                var var_end = var_pos;
+                while (var_end < content.len and content[var_end] != ' ' and content[var_end] != '\t' and content[var_end] != '%') : (var_end += 1) {}
+                const cond_var = content[var_pos..var_end];
+
+                var tag_end = var_end;
+                while (tag_end + 1 < content.len and !(content[tag_end] == '%' and content[tag_end + 1] == '}')) : (tag_end += 1) {}
+
+                if (tag_end + 1 < content.len) {
+                    const body_start = tag_end + 2;
+                    const endif_marker = "{% endif %}";
+                    if (std.mem.indexOf(u8, content[body_start..], endif_marker)) |endif_offset| {
+                        const body_end = body_start + endif_offset;
+                        const body_content = content[body_start..body_end];
+
+                        closeLit(&buf, allocator, &in_literal);
+                        if (!first) buf.appendSlice(allocator, " + ") catch unreachable;
+                        first = false;
+
+                        buf.append(allocator, '(') catch unreachable;
+                        buf.appendSlice(allocator, cond_var) catch unreachable;
+                        buf.appendSlice(allocator, " ? \"") catch unreachable;
+                        for (body_content) |c| escapeAndAppend(&buf, allocator, c);
+                        buf.appendSlice(allocator, "\" : \"\")") catch unreachable;
+
+                        i = body_end + endif_marker.len;
+                        continue;
+                    }
+                }
+            }
+            // Unrecognized {% — treat as literal.
+            openLit(&buf, allocator, &first, &in_literal);
+            escapeAndAppend(&buf, allocator, content[i]);
+            i += 1;
+        }
+        // {{ var:fmt }} → + var +  (fmt ignored — JS auto-stringifies)
+        else if (i + 1 < content.len and content[i] == '{' and content[i + 1] == '{') {
+            const placeholder_start = i + 2;
+            var ws_start = placeholder_start;
+            while (ws_start < content.len and (content[ws_start] == ' ' or content[ws_start] == '\t')) : (ws_start += 1) {}
+
+            var j = ws_start;
+            while (j + 1 < content.len and !(content[j] == '}' and content[j + 1] == '}')) : (j += 1) {}
+
+            if (j + 1 < content.len) {
+                var ws_end = j;
+                while (ws_end > ws_start and (content[ws_end - 1] == ' ' or content[ws_end - 1] == '\t')) : (ws_end -= 1) {}
+
+                const placeholder = content[ws_start..ws_end];
+                var var_name: []const u8 = placeholder;
+                if (std.mem.indexOf(u8, placeholder, ":")) |colon_pos| {
+                    var_name = placeholder[0..colon_pos];
+                }
+
+                closeLit(&buf, allocator, &in_literal);
+                if (!first) buf.appendSlice(allocator, " + ") catch unreachable;
+                first = false;
+                buf.appendSlice(allocator, var_name) catch unreachable;
+
+                i = j + 2;
+            } else {
+                openLit(&buf, allocator, &first, &in_literal);
+                escapeAndAppend(&buf, allocator, content[i]);
+                i += 1;
+            }
+        } else {
+            openLit(&buf, allocator, &first, &in_literal);
+            escapeAndAppend(&buf, allocator, content[i]);
+            i += 1;
+        }
+    }
+
+    closeLit(&buf, allocator, &in_literal);
+
+    // Empty template → emit `""` so console.log gets a valid arg.
+    if (first) buf.appendSlice(allocator, "\"\"") catch unreachable;
+
+    const inline_code = std.fmt.allocPrint(
+        allocator,
+        "console.log({s});",
+        .{buf.items}
+    ) catch unreachable;
+
+    if (is_pointer_top) {
+        // Top-level case — mirror |zig's AST surgery exactly.
+        const impl_segments = allocator.alloc([]const u8, 2) catch unreachable;
+        impl_segments[0] = allocator.dupe(u8, "print") catch unreachable;
+        impl_segments[1] = allocator.dupe(u8, "blk.impl") catch unreachable;
+        const impl_path = ast.DottedPath{
+            .module_qualifier = flow.invocation.path.module_qualifier,
+            .segments = impl_segments,
+        };
+
+        const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+        for (flow.invocation.annotations, 0..) |ann, idx| {
+            new_inv_annotations[idx] = ann;
+        }
+        new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+        const new_invocation = ast.Invocation{
+            .path = impl_path,
+            .args = flow.invocation.args,
+            .annotations = new_inv_annotations,
+            .inserted_by_tap = flow.invocation.inserted_by_tap,
+            .from_opaque_tap = flow.invocation.from_opaque_tap,
+        };
+
+        const transformed_flow = ast.Flow{
+            .invocation = new_invocation,
+            .continuations = flow.continuations,
+            .annotations = flow.annotations,
+            .pre_label = flow.pre_label,
+            .post_label = flow.post_label,
+            .super_shape = flow.super_shape,
+            .inline_body = inline_code,
+            .is_pure = flow.is_pure,
+            .is_transitively_pure = flow.is_transitively_pure,
+            .location = flow.location,
+            .module = flow.module,
+            .impl_of = flow.impl_of,
+        };
+
+        const new_item = ast.Item{ .flow = transformed_flow };
+        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = result };
+        }
+        return .{ .transformed = program };
+    } else {
+        const new_node = ast.Node{ .inline_code = inline_code };
+        const maybe_new_program = ast_functional.replaceInvocationNodeRecursive(allocator, program, invocation, new_node) catch unreachable;
+        if (maybe_new_program) |new_program| {
+            const result = allocator.create(ast.Program) catch unreachable;
+            result.* = new_program;
+            return .{ .transformed = result };
+        }
+        return .{ .transformed = program };
+    }
+}
+
+// ============================================================================
 // VARIANT REGISTRATION - Platform-specific dispatch for print.blk
 // ============================================================================
 // On linux/macos, route std.io:print.blk → raw_posix variant (raw posix.write).

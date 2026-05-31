@@ -257,7 +257,18 @@ const Emitter = struct {
     /// shapes uniformly.
     fn emitFlow(self: *Emitter, flow: *const ast.Flow, flow_num: usize) JsEmitError!void {
         try self.writeFmt("  flow{d}() {{\n", .{flow_num});
-        try self.emitInvocationWithContinuations(&flow.invocation, flow.continuations, "    ");
+        // If a comptime|transform pass (e.g. std.io:print.blk|js) already produced
+        // inline output for this flow, splice it directly — the invocation path
+        // has been rewritten to an impl-stub (`print.blk.impl`) that the JS
+        // emitter doesn't need to resolve. Matches the Zig emitter's behavior
+        // at visitor_emitter.zig:1804+ and :2522+.
+        if (flow.inline_body) |inline_body_raw| {
+            const stripped = stripInlineStmtMarker(inline_body_raw);
+            try self.emitReindented(stripped, "    ");
+            try self.write("\n");
+        } else {
+            try self.emitInvocationWithContinuations(&flow.invocation, flow.continuations, "    ");
+        }
         try self.write("  },\n");
     }
 
@@ -713,6 +724,15 @@ const Emitter = struct {
         }
     }
 };
+
+/// Strip the leading `//@koru:inline_stmt\n` marker that template_processor
+/// prepends to indicate a statement-shaped (rather than expression-shaped)
+/// rendered body. For host-language splicing the marker isn't needed.
+fn stripInlineStmtMarker(text: []const u8) []const u8 {
+    const marker = "//@koru:inline_stmt\n";
+    if (std.mem.startsWith(u8, text, marker)) return text[marker.len..];
+    return text;
+}
 
 /// Look up an invocation arg's value string by field name.
 fn argValueByName(args: []const ast.Arg, name: []const u8) ?[]const u8 {
