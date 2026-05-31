@@ -30,5 +30,5 @@ const entity = Entity{
 
 ~capture(entity)
 | as acc |> for(&[_]i32{10, 20, 30})
-    | each damage |> captured { health: acc.health - damage }
+    ! each damage |> captured { health: acc.health - damage }
 | captured final |> print_health(value: final.health)

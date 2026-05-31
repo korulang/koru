@@ -2,6 +2,6 @@
 ~import "$app/fs"
 ~app.fs:open(path: "outer.txt")
 | opened f |> std.control:for(0..3)
-    | each _ |> app.fs:close(file: f)  // ERROR! Would run 3 times
+    ! each _ |> app.fs:close(file: f)  // ERROR! Would run 3 times
     | done |> _
 pub fn main() void {}

@@ -1,0 +1,22 @@
+// Test 320_048: MUST_FAIL — reject the pre-migration `for(...) | each |>` form.
+//
+// `for`'s `each` is an EFFECT branch (declared `! each *` in $std/control), so
+// handling it with a terminal `|` continuation is illegal. The compiler must
+// reject it with a clear KORU025 error whose hint points the user at the fix
+// (`! each`). This pins the rejection of the old terminal-each syntax after the
+// for→effect-branch migration; the legal form lives next door in 320_040
+// (`! each _ |> _`). Lars's requirement: the invalid form must fail with a
+// SENSIBLE message, not just fail — hence the CONTAINS assertions on the hint.
+
+~import "$std/control"
+
+const std = @import("std");
+
+~event start {}
+
+~proc start|zig {
+}
+
+~start() |> for(&[_]i32{1, 2, 3})
+| each _ |> _
+| done |> _

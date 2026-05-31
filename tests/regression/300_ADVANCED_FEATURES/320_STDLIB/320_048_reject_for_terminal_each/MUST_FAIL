@@ -1,0 +1,11 @@
+Pre-migration `for(...) | each |>` (terminal handler on an effect branch) must be
+rejected with KORU025, AND the error must carry a sensible hint telling the user
+to write `! each`.
+
+INTENTIONAL PIN — currently RED, do NOT "fix" by deleting the hint assertion.
+The rejection + message render correctly (first two CONTAINS pass). The third
+CONTAINS (`write \`! each`) FAILS because Stage-C/backend errors drop their hint:
+hints render in the Stage-A/frontend path (compile_kz.err) but NOT in the
+metacircular backend path (backend.err) — 0 of all backend.err files render a
+`hint:` line. The fix is compiler-side (plumb the hint through Stage-C error
+serialization), not a test edit. When that lands, this test goes green.

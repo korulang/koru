@@ -79,7 +79,7 @@ const allocator = std.heap.c_allocator;
 const N: usize = 10;
 
 ~for(0..N)
-| each i |>
+! each i |>
     make_resource(id: i)
     | ready r |> work_done(r) |> work_done(r) |> work_done(r) |> destroy(r)
 

@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-05-31T20:12:55.756Z",
+  "timestamp": "2026-05-31T23:20:38.659Z",
   "summary": {
-    "passed": 203,
+    "passed": 205,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 215,
+    "total": 217,
     "suiteCount": 32,
     "status": "success"
   },
@@ -189,10 +189,10 @@
     },
     {
       "name": "shape_checker_tests",
-      "passed": 7,
+      "passed": 9,
       "failed": 0,
       "skipped": 0,
-      "total": 7,
+      "total": 9,
       "status": "success"
     },
     {

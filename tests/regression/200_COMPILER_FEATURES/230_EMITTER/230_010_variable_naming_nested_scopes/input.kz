@@ -50,5 +50,5 @@ const std = @import("std");
 ~step_one()
 ~get_value()
 | value v1 |> print_value(v: v1) |> for(0..2)
-    | each |> step_two() |> get_value()
+    ! each _ |> step_two() |> get_value()
         | value v2 |> print_value(v: v2)

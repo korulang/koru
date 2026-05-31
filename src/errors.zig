@@ -16,6 +16,7 @@ pub const ErrorCode = enum(u16) {
     KORU025, // Branch kind mismatch (e.g. `!` decl handled by `|` cont, or vice versa)
     KORU026, // Pay-for-nothing catch-all (`|? |> _` or `|? Metatype _ |> _`)
     KORU027, // Incoherent obligation marker on an effect branch (0-to-N firing): payload discharge or resume issue
+    KORU028, // Duplicate unguarded handler for a terminal `|` branch (runs at most once)
 
     // Shape errors
     KORU030, // Shape mismatch

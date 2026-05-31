@@ -13,7 +13,7 @@ const std = @import("std");
 // Outer for contains inner for
 // Both should transform to Zig for loops
 ~start() |> for(&[_]i32{1, 2})
-| each |> for(&[_]i32{10, 20})
-    | each |> _
+! each _ |> for(&[_]i32{10, 20})
+    ! each _ |> _
     | done |> _
 | done |> _

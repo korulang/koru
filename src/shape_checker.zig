@@ -766,6 +766,7 @@ pub const ShapeChecker = struct {
             try declared.append(self.allocator, .{
                 .name = branch.name,
                 .is_optional = branch.is_optional,
+                .kind = if (branch.kind == .effect) .effect else .terminal,
             });
         }
 
@@ -864,6 +865,16 @@ pub const ShapeChecker = struct {
                 "(none)";
             try self.reporter.addErrorAtLocation(.KORU021, location,
                 "event '{s}' has no branch '{s}' (available: {s})", .{ event_name, branch_name, available_str });
+            has_errors = true;
+        }
+
+        // KORU028: a terminal `|` branch is a continuation that runs at most
+        // once, so it may have at most one unguarded handler. Two unconditional
+        // handlers for the same terminal branch are ambiguous. (Effect `!`
+        // branches are exempt — they may be linked any number of times.)
+        for (result.duplicate_terminal_branches) |branch_name| {
+            try self.reporter.addErrorAtLocation(.KORU028, location,
+                "terminal branch '{s}' has more than one unguarded handler — a `|` continuation runs at most once; distinguish them with `when` guards or remove the duplicate", .{branch_name});
             has_errors = true;
         }
 
@@ -1729,6 +1740,67 @@ test "branch coverage - unknown branch" {
             .location = errors.SourceLocation{ .file = "internal", .line = 0, .column = 0 },
         },
     };
-    
+
     try std.testing.expect(!try checker.checkBranchCoverage(&branches, &continuations));
+}
+
+// ============================================================================
+// `for` SHAPE CONTRACT (full pipeline, via checkBranchCoverageWithTerminals)
+//
+// `for` declares `! each *` (effect, required) and `| ?done` (terminal,
+// optional). These pin the kind-aware rules end to end: KORU028 fires for a
+// duplicated unguarded terminal handler, and the legal shape stays clean.
+// ============================================================================
+
+test "for shape: two unguarded done handlers - KORU028" {
+    const allocator = std.testing.allocator;
+    var reporter = try errors.ErrorReporter.init(allocator, "test.kz", "");
+    defer reporter.deinit();
+
+    var checker = try ShapeChecker.init(allocator, &reporter);
+    defer checker.deinit();
+
+    const branches = [_]ast.Branch{
+        .{ .name = "each", .payload = ast.Shape{ .fields = &[_]ast.Field{} }, .kind = .effect },
+        .{ .name = "done", .payload = ast.Shape{ .fields = &[_]ast.Field{} }, .is_optional = true, .kind = .terminal },
+    };
+
+    const loc = errors.SourceLocation{ .file = "internal", .line = 0, .column = 0 };
+    const continuations = [_]ast.Continuation{
+        .{ .branch = "each", .binding = null, .kind = .effect, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{}, .location = loc },
+        .{ .branch = "done", .binding = null, .kind = .terminal, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{}, .location = loc },
+        .{ .branch = "done", .binding = null, .kind = .terminal, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{}, .location = loc },
+    };
+
+    const covered = try checker.checkBranchCoverageWithTerminals("for", &branches, &continuations, loc);
+    try std.testing.expect(!covered);
+
+    var saw_koru028 = false;
+    for (reporter.errors.items) |err| {
+        if (err.code == .KORU028) saw_koru028 = true;
+    }
+    try std.testing.expect(saw_koru028);
+}
+
+test "for shape: each plus single done - valid" {
+    const allocator = std.testing.allocator;
+    var reporter = try errors.ErrorReporter.init(allocator, "test.kz", "");
+    defer reporter.deinit();
+
+    var checker = try ShapeChecker.init(allocator, &reporter);
+    defer checker.deinit();
+
+    const branches = [_]ast.Branch{
+        .{ .name = "each", .payload = ast.Shape{ .fields = &[_]ast.Field{} }, .kind = .effect },
+        .{ .name = "done", .payload = ast.Shape{ .fields = &[_]ast.Field{} }, .is_optional = true, .kind = .terminal },
+    };
+
+    const loc = errors.SourceLocation{ .file = "internal", .line = 0, .column = 0 };
+    const continuations = [_]ast.Continuation{
+        .{ .branch = "each", .binding = null, .kind = .effect, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{}, .location = loc },
+        .{ .branch = "done", .binding = null, .kind = .terminal, .condition = null, .node = null, .indent = 0, .continuations = &[_]ast.Continuation{}, .location = loc },
+    };
+
+    const covered = try checker.checkBranchCoverageWithTerminals("for", &branches, &continuations, loc);
+    try std.testing.expect(covered);
 }

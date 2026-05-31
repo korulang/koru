@@ -42,7 +42,7 @@ const Resource = struct { id: usize };
     work(r) |> work(r) |> destroy(r)
 
 ~for(0..10)
-| each _ |> run_one()
+! each _ |> run_one()
 | done |> _
 
 pub fn main() void {}

@@ -13,10 +13,17 @@ const std = @import("std");
 /// - Easily unit-testable
 
 pub const BranchChecker = struct {
+    /// Branch kind: an effect (`!`) branch may be linked any number of times
+    /// (each link fires during the event); a terminal (`|`) branch is a
+    /// continuation and may have at most one UNGUARDED handler (a `when`-guard
+    /// chain may add more, narrowing handlers, but only one unconditional one).
+    pub const Kind = enum { effect, terminal };
+
     /// A declared branch from an event definition
     pub const DeclaredBranch = struct {
         name: []const u8,
         is_optional: bool = false,
+        kind: Kind = .terminal,
     };
 
     /// A handled branch from user code (continuation)
@@ -31,6 +38,9 @@ pub const BranchChecker = struct {
         is_valid: bool,
         missing_branches: []const []const u8,
         unknown_branches: []const []const u8,
+        /// Terminal branches handled by more than one UNGUARDED handler —
+        /// ambiguous, since a terminal continuation runs at most once.
+        duplicate_terminal_branches: []const []const u8,
     };
 
     /// Check if handled branches correctly cover declared branches.
@@ -110,10 +120,35 @@ pub const BranchChecker = struct {
             }
         }
 
+        // Kind-aware cardinality: a terminal (`|`) branch is a continuation that
+        // runs at most once, so it may have at most ONE unguarded handler. A
+        // `when`-guard chain (many guarded + one unguarded fallback) is fine —
+        // guards narrow, they don't duplicate. Effect (`!`) branches are exempt:
+        // each link fires during the event, so any number is legal.
+        var duplicate_terminals = try std.ArrayList([]const u8).initCapacity(allocator, 0);
+        errdefer duplicate_terminals.deinit(allocator);
+        for (declared) |decl| {
+            if (decl.kind != .terminal) continue;
+
+            var unguarded_count: usize = 0;
+            for (handled) |h| {
+                if (h.is_catchall) continue;
+                if (h.has_when_guard) continue;
+                if (!std.mem.eql(u8, decl.name, h.name)) continue;
+                unguarded_count += 1;
+            }
+
+            if (unguarded_count > 1) {
+                try duplicate_terminals.append(allocator, decl.name);
+            }
+        }
+
         return ValidationResult{
-            .is_valid = missing.items.len == 0 and unknown.items.len == 0,
+            .is_valid = missing.items.len == 0 and unknown.items.len == 0 and
+                duplicate_terminals.items.len == 0,
             .missing_branches = try missing.toOwnedSlice(allocator),
             .unknown_branches = try unknown.toOwnedSlice(allocator),
+            .duplicate_terminal_branches = try duplicate_terminals.toOwnedSlice(allocator),
         };
     }
 
@@ -121,6 +156,7 @@ pub const BranchChecker = struct {
     pub fn freeResult(allocator: std.mem.Allocator, result: *ValidationResult) void {
         allocator.free(result.missing_branches);
         allocator.free(result.unknown_branches);
+        allocator.free(result.duplicate_terminal_branches);
     }
 };
 
@@ -229,10 +265,14 @@ test "catchall covers all required branches - valid" {
     try std.testing.expect(result.is_valid);
 }
 
-test "when guard still counts as handled - valid" {
+test "when-only handler does NOT cover a required continuation branch - invalid" {
+    // RULING (Lars): for a continuation (terminal) branch, a `when`-guarded
+    // handler with no unguarded fallback / catch-all does NOT cover it — the
+    // false-guard trajectory is left silently uncovered. (This replaces the
+    // stale "when guard still counts as handled - valid" intent.)
     const allocator = std.testing.allocator;
     const declared = [_]BranchChecker.DeclaredBranch{
-        .{ .name = "value" },
+        .{ .name = "value" }, // required, terminal
     };
     const handled = [_]BranchChecker.HandledBranch{
         .{ .name = "value", .has_when_guard = true }, // | value v when v > 10 |>
@@ -241,7 +281,9 @@ test "when guard still counts as handled - valid" {
     var result = try BranchChecker.validate(allocator, &declared, &handled);
     defer BranchChecker.freeResult(allocator, &result);
 
-    try std.testing.expect(result.is_valid);
+    try std.testing.expect(!result.is_valid);
+    try std.testing.expectEqual(@as(usize, 1), result.missing_branches.len);
+    try std.testing.expectEqualStrings("value", result.missing_branches[0]);
 }
 
 test "multiple handlers for same branch - valid" {
@@ -333,4 +375,111 @@ test "mixed valid and invalid - reports correctly" {
     try std.testing.expectEqual(@as(usize, 1), result.unknown_branches.len);
     try std.testing.expectEqualStrings("failure", result.missing_branches[0]);
     try std.testing.expectEqualStrings("donkey", result.unknown_branches[0]);
+}
+
+// ============================================================================
+// `for` SHAPE CONTRACT
+//
+// `for` declares `! each *` (effect, required ≥1, may link any number of times)
+// and `| ?done` (terminal, optional, at most one unguarded handler). These
+// tests pin that contract at the pure-checker level. The kind-aware cardinality
+// rule (terminal at-most-once-unguarded vs effect many) is what closes the
+// "BranchChecker is kind-blind" gap.
+// ============================================================================
+
+const FOR_BRANCHES = [_]BranchChecker.DeclaredBranch{
+    .{ .name = "each", .kind = .effect },
+    .{ .name = "done", .kind = .terminal, .is_optional = true },
+};
+
+test "for: each handled, done omitted - valid" {
+    const allocator = std.testing.allocator;
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "each" },
+    };
+    var result = try BranchChecker.validate(allocator, &FOR_BRANCHES, &handled);
+    defer BranchChecker.freeResult(allocator, &result);
+    try std.testing.expect(result.is_valid);
+}
+
+test "for: each missing - invalid (at least one each required)" {
+    const allocator = std.testing.allocator;
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "done" },
+    };
+    var result = try BranchChecker.validate(allocator, &FOR_BRANCHES, &handled);
+    defer BranchChecker.freeResult(allocator, &result);
+    try std.testing.expect(!result.is_valid);
+    try std.testing.expectEqual(@as(usize, 1), result.missing_branches.len);
+    try std.testing.expectEqualStrings("each", result.missing_branches[0]);
+}
+
+test "for: multiple each handlers - valid (effect links any number of times)" {
+    const allocator = std.testing.allocator;
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "each" },
+        .{ .name = "each" },
+        .{ .name = "each" },
+    };
+    var result = try BranchChecker.validate(allocator, &FOR_BRANCHES, &handled);
+    defer BranchChecker.freeResult(allocator, &result);
+    try std.testing.expect(result.is_valid);
+}
+
+test "for: each plus single done - valid" {
+    const allocator = std.testing.allocator;
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "each" },
+        .{ .name = "done" },
+    };
+    var result = try BranchChecker.validate(allocator, &FOR_BRANCHES, &handled);
+    defer BranchChecker.freeResult(allocator, &result);
+    try std.testing.expect(result.is_valid);
+}
+
+test "for: two unguarded done handlers - invalid (terminal at most once)" {
+    // PIN of the kind-blind gap. A terminal branch may have at most one
+    // UNGUARDED handler — two unconditional `| done` is ambiguous. RED until
+    // the kind-aware cardinality rule lands in validate().
+    const allocator = std.testing.allocator;
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "each" },
+        .{ .name = "done" },
+        .{ .name = "done" },
+    };
+    var result = try BranchChecker.validate(allocator, &FOR_BRANCHES, &handled);
+    defer BranchChecker.freeResult(allocator, &result);
+    try std.testing.expect(!result.is_valid);
+    try std.testing.expectEqual(@as(usize, 1), result.duplicate_terminal_branches.len);
+    try std.testing.expectEqualStrings("done", result.duplicate_terminal_branches[0]);
+}
+
+test "for: unknown branch - invalid" {
+    const allocator = std.testing.allocator;
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "each" },
+        .{ .name = "sideways" },
+    };
+    var result = try BranchChecker.validate(allocator, &FOR_BRANCHES, &handled);
+    defer BranchChecker.freeResult(allocator, &result);
+    try std.testing.expect(!result.is_valid);
+    try std.testing.expectEqual(@as(usize, 1), result.unknown_branches.len);
+    try std.testing.expectEqualStrings("sideways", result.unknown_branches[0]);
+}
+
+test "terminal: guarded chain plus one unguarded - valid" {
+    // Counterpart to the duplicate-done pin: a `when` chain on a terminal
+    // branch (many guarded + one unguarded) must stay valid.
+    const allocator = std.testing.allocator;
+    const declared = [_]BranchChecker.DeclaredBranch{
+        .{ .name = "value", .kind = .terminal },
+    };
+    const handled = [_]BranchChecker.HandledBranch{
+        .{ .name = "value", .has_when_guard = true },
+        .{ .name = "value", .has_when_guard = true },
+        .{ .name = "value" }, // single unguarded fallback
+    };
+    var result = try BranchChecker.validate(allocator, &declared, &handled);
+    defer BranchChecker.freeResult(allocator, &result);
+    try std.testing.expect(result.is_valid);
 }

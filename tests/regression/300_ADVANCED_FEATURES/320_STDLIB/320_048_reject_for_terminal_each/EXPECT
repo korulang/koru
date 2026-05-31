@@ -1,0 +1,3 @@
+CONTAINS error[KORU025]
+CONTAINS branch 'each' is declared as effect `!` but the handler uses terminal `|`
+CONTAINS write `! each
