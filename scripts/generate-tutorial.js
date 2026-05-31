@@ -26,11 +26,21 @@ const TESTS_DIR = path.join(ROOT, 'tests', 'regression');
 const OUTPUT = path.join(ROOT, 'koru-tutorial.md');
 const CONFIG = path.join(ROOT, 'koru-by-example.json');
 
+// Negative (MUST_FAIL) test basenames. They carry a SUCCESS marker (they pass
+// by being rejected) but are examples of what the compiler REJECTS — never
+// what-to-do. Excluded from the tutorial; tracked so config refs warn clearly.
+const negativeTests = new Set();
+
 function collectPassing(dir, breadcrumbs = []) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   const hasSuccess = entries.some((e) => e.isFile() && e.name === 'SUCCESS');
 
   if (hasSuccess) {
+    // A MUST_FAIL test is negative — exclude it. The tutorial is all what-to-do.
+    if (entries.some((e) => e.isFile() && e.name === 'MUST_FAIL')) {
+      negativeTests.add(path.basename(dir));
+      return [];
+    }
     // Tests split into the `.k` + host form keep the host bindings (e.g. Zig
     // consts) in input.kz and the portable Koru in input.k. Show them as a
     // single block — host consts first, then the Koru — reproducing the
@@ -119,8 +129,19 @@ for (const name of testNames) {
   }
 }
 if (missing.length > 0) {
-  console.warn('[warn] tutorial.tests not found (or not passing):');
-  for (const name of missing) console.warn(`         ${name}`);
+  const negative = missing.filter((n) => negativeTests.has(n));
+  const absent = missing.filter((n) => !negativeTests.has(n));
+  if (negative.length > 0) {
+    console.warn(
+      '[warn] tutorial.tests entries are NEGATIVE (MUST_FAIL) tests — excluded; ' +
+        'the tutorial only teaches what-to-do:'
+    );
+    for (const name of negative) console.warn(`         ${name}`);
+  }
+  if (absent.length > 0) {
+    console.warn('[warn] tutorial.tests not found (or not passing):');
+    for (const name of absent) console.warn(`         ${name}`);
+  }
 }
 
 // ----------------------------------------------------------------------

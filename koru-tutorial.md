@@ -1,6 +1,6 @@
 # Koru in a Page
 
-> Generated 2026-05-31T13:55:26.823Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
+> Generated 2026-05-31T14:41:12.495Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
 
 > **Note:** This tutorial is prose synthesis on top of the test suite. It may contain errors or drift. The compiler's actual behavior — verified by tests in `tests/regression/` and source in `src/` — is the source of truth. When you find this document saying one thing and the compiler doing another, the conflict itself is the finding: flag it, don't paper over it.
 >
@@ -57,12 +57,28 @@ A flow invocation lists each branch and what to do with it. `| branch binding |>
 ~check(value: 42)
 | positive p |> handle_positive(n: p)
 | zero |> handle_zero()
-| negative n |> handle_negative(n: n)
+| negative n |> handle_negative(n)
 ```
+
+Punning is mandatory: when a call argument's value is exactly the field name, write `handle_negative(n)` — the compiler rejects the redundant `handle_negative(n: n)`. A label is for when the value differs from the field, like `handle_positive(n: p)` above.
 
 Every branch must be handled — the compiler enforces exhaustiveness. Inline chains like `A() |> B() |> C()` compose void events on one line. `|>` never starts a line; if a chain gets long, refactor.
 
 A `when` clause narrows a handler to a subset of fires that match a predicate — `| key k when k.code == 'p' |> handle_pause()`. Multiple `when`-guarded handlers for the same branch are allowed; they're tried top-down. A guarded handler does NOT satisfy coverage on its own — every required branch needs at least one unguarded sibling. Write the predicate bare: `when k.code == 'p'`, not `when (k.code == 'p')`. The same `when` works on `!` effect-branch handlers.
+
+### `~if` — the fast conditional, a convention over `when`
+
+`~if(cond) | then |> ... | else |> ...` selects one of two terminal continuations on a condition — branch selection in pure Koru, no proc needed:
+
+```koru
+~if(value > 10)
+| then |> std.io:println(text: "big")
+| else |> std.io:println(text: "small")
+```
+
+`~if` is a *convenience, not a primitive* — it is a specialization of `when`-branches (the same selection is expressible with a guarded branch), kept because it reads clearly and lowers to fast code. It is a template proc: it runs no effects, it just *returns* the `then` or `else` continuation and the consumer dispatches on it — the same machine as `for` with the during-half empty. `~if` is available as a keyword once you import any `$std` module.
+
+This is the form Rule 3's sibling points at: when a proc body would only be selecting a branch with a host `if`, reach for `~if` and keep it in Koru.
 
 ### Phantom states are compile-time type labels
 

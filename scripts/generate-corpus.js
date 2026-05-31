@@ -33,11 +33,24 @@ const CONFIG = path.join(ROOT, 'koru-by-example.json');
 // Filesystem helpers
 // ----------------------------------------------------------------------
 
+// Basenames of negative (MUST_FAIL) tests encountered during the walk. These
+// "pass" by failing as expected, so they carry a SUCCESS marker — but they are
+// examples of what the compiler REJECTS, never what-to-do. They must not appear
+// in the corpus as examples. Tracked so config references to them can warn
+// specifically instead of silently vanishing.
+const negativeTests = new Set();
+
 function collectPassing(dir, breadcrumbs = []) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   const hasSuccess = entries.some((e) => e.isFile() && e.name === 'SUCCESS');
 
   if (hasSuccess) {
+    // A MUST_FAIL test is negative: it passes by being rejected. Exclude it
+    // from the positive example set — the corpus shows what TO do.
+    if (entries.some((e) => e.isFile() && e.name === 'MUST_FAIL')) {
+      negativeTests.add(path.basename(dir));
+      return [];
+    }
     // Tests split into the `.k` + host form keep the host bindings (e.g. Zig
     // consts) in input.kz and the portable Koru in input.k. Show them as a
     // single block — host consts first, then the Koru — which reproduces the
@@ -201,8 +214,19 @@ for (const name of includedTests) {
   }
 }
 if (missing.length > 0) {
-  console.warn('[warn] includedTests not found (or not passing):');
-  for (const name of missing) console.warn(`         ${name}`);
+  const negative = missing.filter((n) => negativeTests.has(n));
+  const absent = missing.filter((n) => !negativeTests.has(n));
+  if (negative.length > 0) {
+    console.warn(
+      '[warn] includedTests entries are NEGATIVE (MUST_FAIL) tests — excluded; ' +
+        'examples must be positive (what-to-do):'
+    );
+    for (const name of negative) console.warn(`         ${name}`);
+  }
+  if (absent.length > 0) {
+    console.warn('[warn] includedTests not found (or not passing):');
+    for (const name of absent) console.warn(`         ${name}`);
+  }
 }
 
 // Apply exclusions. Warn on stale entries.
@@ -242,7 +266,8 @@ lines.push(
 );
 lines.push('');
 lines.push(
-  'Every example below is verbatim source from a passing regression test. ' +
+  'Every example below is verbatim source from a passing POSITIVE regression ' +
+    'test (negative MUST_FAIL tests are excluded — these are all what-to-do). ' +
     'Section prose is pulled from existing `SPEC.md` / `README.md` files in ' +
     'the relevant category directories — drift is tolerated in this pass ' +
     "and cleaned in a separate sweep. Per-test prose is intentionally NOT " +

@@ -1,8 +1,8 @@
 # Koru by Example
 
-> 23 hand-picked tests from `tests/regression/`. Generated 2026-05-31T05:37:05.675Z by `scripts/generate-corpus.js`.
+> 22 hand-picked tests from `tests/regression/`. Generated 2026-05-31T14:41:12.370Z by `scripts/generate-corpus.js`.
 
-Every example below is verbatim source from a passing regression test. Section prose is pulled from existing `SPEC.md` / `README.md` files in the relevant category directories — drift is tolerated in this pass and cleaned in a separate sweep. Per-test prose is intentionally NOT pulled; tests speak for themselves.
+Every example below is verbatim source from a passing POSITIVE regression test (negative MUST_FAIL tests are excluded — these are all what-to-do). Section prose is pulled from existing `SPEC.md` / `README.md` files in the relevant category directories — drift is tolerated in this pass and cleaned in a separate sweep. Per-test prose is intentionally NOT pulled; tests speak for themselves.
 
 ---
 
@@ -139,7 +139,7 @@ tests/regression/
 - **CORE LANGUAGE / LITERALS** — 2 tests
 - **CORE LANGUAGE / CONTROL FLOW** — 5 tests
 - **ADVANCED FEATURES / COMPTIME** — 2 tests
-- **ADVANCED FEATURES / PHANTOM TYPES** — 3 tests
+- **ADVANCED FEATURES / PHANTOM TYPES** — 2 tests
 - **RUNTIME FEATURES** — 2 tests
 - **STDLIB / STRING** — 1 test
 - **STDLIB / FMT** — 1 test
@@ -2384,14 +2384,6 @@ Closing file
 ```
 Opening file: test.txt
 Closing file
-```
-
-### 330_007_use_after_disposal
-
-```koru
-~import "$app/fs"
-~app.fs:open(path: "test.txt")
-| opened f |> app.fs:close(file: f) |> app.fs:use_file(file: f)  // ERROR: f was disposed!
 ```
 
 # RUNTIME FEATURES
