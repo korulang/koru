@@ -1,6 +1,6 @@
 # Koru in a Page
 
-> Generated 2026-05-31T05:37:36.282Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
+> Generated 2026-05-31T13:55:26.823Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
 
 > **Note:** This tutorial is prose synthesis on top of the test suite. It may contain errors or drift. The compiler's actual behavior — verified by tests in `tests/regression/` and source in `src/` — is the source of truth. When you find this document saying one thing and the compiler doing another, the conflict itself is the finding: flag it, don't paper over it.
 >
@@ -31,16 +31,23 @@ The branch *names* are arbitrary identifiers — there is no privileged 'success
 
 A void event (no branches at all) is allowed and means 'this event has nothing to say beyond having happened.'
 
-### Procs implement events; subflows compose them
+### Subflows implement events in Koru; procs are the host escape hatch
 
-A proc body provides a host-language implementation. `~proc name|zig { ... }` is the Zig-variant — the body is opaque to Koru and passes straight to the host. (The `|zig` is the variant tag; the same mechanism is what would target other hosts.)
+An event is implemented by a **subflow** — pure Koru, no host code — in one of two shapes:
 
-Subflows implement events in Koru itself, with two shapes:
+- **Immediate**: `~name = branch_name payload_expr` directly emits a branch with a value. `~greet = greeting "Hello, " ++ name ++ "!"` emits `greeting` with the formatted string.
+- **Composition**: `~name = sub_event() | branch |> ... | branch |> ...` invokes another event and maps its branches into this event's outcomes. **Branch selection lives here, in Koru:**
 
-- **Immediate**: `~name = branch_name payload_expr` — directly emits a branch with a value. `~greet = greeting "Hello, " ++ name ++ "!"` emits `greeting` with the formatted string.
-- **Composition**: `~name = sub_event() | branch |> ... | branch |> ...` — invokes another event and maps its branches into this event's outcomes.
+```koru
+~run = step()
+| return |> stopped
+| break |> stopped
+| continue |> iterated
+```
 
-Subflows are the fractal heart of Koru: a program is itself a subflow, branch constructors are tiny anonymous subflows, everything follows input → transformation → output.
+Choosing which outcome to emit — including with `when`-guards on the branches (see the next rule) — is a Koru act, not a host one. Subflows are the fractal heart of Koru: a program is itself a subflow, branch constructors are tiny anonymous subflows, everything is input → transformation → output.
+
+When you genuinely need the host — an actual **side effect**, or **collecting data across a call** until Koru grows a first-class feature for it — a proc provides a host-language body: `~proc name|zig { ... }` is the Zig-variant, opaque to Koru and passed straight through. (The `|zig` is the variant tag; the same mechanism is what would target other hosts.) The proc is the escape hatch, not the default. **If a proc body is only selecting a branch with an `if`, it wants to be a subflow.**
 
 ### Flows dispatch with `|`, chain with `|>`
 
