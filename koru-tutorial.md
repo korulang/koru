@@ -1,6 +1,6 @@
 # Koru in a Page
 
-> Generated 2026-05-28T02:31:14.175Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
+> Generated 2026-05-31T05:37:36.282Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
 
 > **Note:** This tutorial is prose synthesis on top of the test suite. It may contain errors or drift. The compiler's actual behavior — verified by tests in `tests/regression/` and source in `src/` — is the source of truth. When you find this document saying one thing and the compiler doing another, the conflict itself is the finding: flag it, don't paper over it.
 >
@@ -146,14 +146,14 @@ Hello World
 ### 010_000_hello_world_koru
 
 ```koru
-// Hello World in pure Koru — no Zig required.
-// This is the frontpage example from korulang.org.
-
-~import "$std/io"
-
 const name = "World";
 const debug = true;
 const count: i32 = 42;
+
+// Hello World in pure Koru.
+// This is the frontpage example from korulang.org.
+
+~import "$std/io"
 
 ~std.io:print.blk {
     {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
@@ -234,19 +234,19 @@ const std = @import("std");
 ~check(value: 42)
 | positive p |> handle_positive(n: p)
 | zero |> handle_zero()
-| negative n |> handle_negative(n: n)
+| negative n |> handle_negative(n)
 
 // Test 2: Zero value (0)
 ~check(value: 0)
 | positive p |> handle_positive(n: p)
 | zero |> handle_zero()
-| negative n |> handle_negative(n: n)
+| negative n |> handle_negative(n)
 
 // Test 3: Negative value (-7)
 ~check(value: -7)
 | positive p |> handle_positive(n: p)
 | zero |> handle_zero()
-| negative n |> handle_negative(n: n)
+| negative n |> handle_negative(n)
 ```
 
 **Output:**

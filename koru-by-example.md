@@ -1,6 +1,6 @@
 # Koru by Example
 
-> 23 hand-picked tests from `tests/regression/`. Generated 2026-05-27T20:39:49.929Z by `scripts/generate-corpus.js`.
+> 23 hand-picked tests from `tests/regression/`. Generated 2026-05-31T05:37:05.675Z by `scripts/generate-corpus.js`.
 
 Every example below is verbatim source from a passing regression test. Section prose is pulled from existing `SPEC.md` / `README.md` files in the relevant category directories — drift is tolerated in this pass and cleaned in a separate sweep. Per-test prose is intentionally NOT pulled; tests speak for themselves.
 
@@ -460,14 +460,14 @@ pub fn main() void {
 ### 010_000_hello_world_koru
 
 ```koru
-// Hello World in pure Koru — no Zig required.
-// This is the frontpage example from korulang.org.
-
-~import "$std/io"
-
 const name = "World";
 const debug = true;
 const count: i32 = 42;
+
+// Hello World in pure Koru.
+// This is the frontpage example from korulang.org.
+
+~import "$std/io"
 
 ~std.io:print.blk {
     {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
@@ -876,19 +876,19 @@ const std = @import("std");
 ~check(value: 42)
 | positive p |> handle_positive(n: p)
 | zero |> handle_zero()
-| negative n |> handle_negative(n: n)
+| negative n |> handle_negative(n)
 
 // Test 2: Zero value (0)
 ~check(value: 0)
 | positive p |> handle_positive(n: p)
 | zero |> handle_zero()
-| negative n |> handle_negative(n: n)
+| negative n |> handle_negative(n)
 
 // Test 3: Negative value (-7)
 ~check(value: -7)
 | positive p |> handle_positive(n: p)
 | zero |> handle_zero()
-| negative n |> handle_negative(n: n)
+| negative n |> handle_negative(n)
 ```
 
 **Output:**
@@ -1131,11 +1131,11 @@ const std = @import("std");
 // Main flow with nested labels
 ~listen(port: 8080)
 | ready s |> #accept_loop accept(server: s)
-    | connected c |> #process_loop process(conn: c.conn)
-        | done d |> close(conn: d) |> @accept_loop(server: c.server)
+    | connected c |> #process_loop process(c.conn)
+        | done d |> close(conn: d) |> @accept_loop(c.server)
         | retry r |> @process_loop(conn: r)
-        | error e |> log_error(conn: e.conn, msg: e.msg)
-            | logged l |> cleanup(conn: l) |> @accept_loop(server: c.server)
+        | error e |> log_error(e.conn, e.msg)
+            | logged l |> cleanup(conn: l) |> @accept_loop(c.server)
     | failed f |> @accept_loop(server: f)
 | failed _ |> _
 ```
@@ -2413,7 +2413,7 @@ pub const Resource = struct {
 };
 
 ~pub event create_resource { name: []const u8 }
-| created *Resource[allocated!]
+| created *Resource<allocated!>
 
 ~proc create_resource|zig {
     const alloc = std.heap.page_allocator;
@@ -2423,7 +2423,7 @@ pub const Resource = struct {
     return .{ .created = res };
 }
 
-~pub event destroy_resource { res: *Resource[!allocated] }
+~pub event destroy_resource { res: *Resource<!allocated> }
 
 ~proc destroy_resource|zig {
     res.allocator.free(res.data);
@@ -2488,8 +2488,8 @@ hello effect branches
 ~import "$std/io"
 
 ~std.string:from_page(text: "hello")
-| ok s |> std.string:read(s: s)
-    | slice text |> std.io:print.ln("{{ text:s }}") |> std.string:free(s: s)
+| ok s |> std.string:read(s)
+    | slice text |> std.io:print.ln("{{ text:s }}") |> std.string:free(s)
 | err _ |> _
 ```
 

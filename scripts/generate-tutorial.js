@@ -31,13 +31,24 @@ function collectPassing(dir, breadcrumbs = []) {
   const hasSuccess = entries.some((e) => e.isFile() && e.name === 'SUCCESS');
 
   if (hasSuccess) {
-    const inputPath = path.join(dir, 'input.kz');
-    if (!fs.existsSync(inputPath)) return [];
+    // Tests split into the `.k` + host form keep the host bindings (e.g. Zig
+    // consts) in input.kz and the portable Koru in input.k. Show them as a
+    // single block — host consts first, then the Koru — reproducing the
+    // pre-split example. Tests not yet split keep all Koru in input.kz, so the
+    // kz-only path is unchanged.
+    const inputKzPath = path.join(dir, 'input.kz');
+    const inputKPath = path.join(dir, 'input.k');
+    const parts = [];
+    if (fs.existsSync(inputKzPath))
+      parts.push(fs.readFileSync(inputKzPath, 'utf-8').replace(/\n+$/, ''));
+    if (fs.existsSync(inputKPath))
+      parts.push(fs.readFileSync(inputKPath, 'utf-8').replace(/\n+$/, ''));
+    if (parts.length === 0) return [];
     const expectedPath = path.join(dir, 'expected.txt');
     return [
       {
         name: path.basename(dir),
-        input: fs.readFileSync(inputPath, 'utf-8'),
+        input: parts.join('\n\n') + '\n',
         expected: fs.existsSync(expectedPath)
           ? fs.readFileSync(expectedPath, 'utf-8')
           : null,
