@@ -43,7 +43,11 @@ These cost hours if you don't know them. Each is expanded in `CLAUDE.md` /
   you import any `$std` module). A `~proc …|zig { ... }` host body is the
   *escape hatch*, reserved for an actual side effect or collecting data across
   a call. If a proc body is only selecting a branch with an `if`, it wants to
-  be a subflow.
+  be a subflow. **Known gap:** `~if`/`~for` as a subflow-body RHS
+  (`~event = ~if(...) | then |> ... | else |> ...`) does NOT lower yet — the
+  template render only fires at flow-statement and nested-continuation
+  positions, not subflow-RHS. Pinned in `320_047`. Use `~if` at flow-statement
+  position (see `320_002`) until that closes.
 - **Punning is mandatory.** When a call argument's value is exactly the field
   name, write `f(n)` — the compiler rejects the redundant `f(n: n)`. Use a label
   only when the value differs from the field (`f(n: p)`).
@@ -84,6 +88,13 @@ A test is a directory under `tests/regression/<CLUSTER>/<NNN_name>/` with an
 `input.kz` (and/or `input.k`), plus markers: `MUST_RUN` + `expected.txt`
 (positive) or `MUST_FAIL` + `EXPECT` + `expected_error.txt` (negative).
 `MUST_FAIL` means *negative test*, NOT "a test that is currently failing."
+
+Pinning a bug as a `MUST_FAIL`: `expected_error.txt` is matched by concatenating
+all its lines (`tr -d '\n\r'`) then `grep -qF` against `backend.err` — so it must
+be a **single literal substring** of the actual error, not multi-line. `EXPECT`
+names the stage: `BACKEND_COMPILE_ERROR` catches any Stage-B failure;
+`BACKEND_EXEC_ERROR` is a Stage-C runtime/coordination error and needs the
+`expected_error.txt` substring to actually pin it. (See `320_047` for a worked pin.)
 
 ## How a compile actually runs (for reading failures)
 

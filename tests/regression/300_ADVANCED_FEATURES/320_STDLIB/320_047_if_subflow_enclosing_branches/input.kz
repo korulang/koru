@@ -1,0 +1,54 @@
+// PIN: `~if` used as a SUBFLOW BODY whose arms emit the ENCLOSING event's own
+// branch constructors (`yes`/`no`) does not lower.
+//
+// `~if` is proven ONLY at flow-statement position dispatching to separate void
+// events (320_002_stdlib_if). Using it as the RHS of an immediate-impl subflow
+// — `~decide = ~if(cond) | then |> yes(ctx) | else |> no(ctx)` — is the
+// untested path. Two layered gaps surface here:
+//
+//   1. PARSER: the subflow-RHS invocation does not strip the leading `~`, so
+//      the event name is recorded literally as `~if` (qualified `<mod>:~if`).
+//      (Even with the `~` removed, gap #2 still fires.)
+//   2. LOWERING: the per-call template render (template_processor.zig
+//      `maybeRenderPerCall`) renders `flow.invocation` for top-level flows and
+//      nested continuations, but a `~if` in subflow-body position never gets its
+//      `if|template|zig` proc rendered. `if` reaches the Stage-C coordinator as
+//      an unresolved event -> KORU040 "unknown event" / CompilerCoordinationFailed.
+//
+// EXPECTED (when the gap closes): this compiles, `~run` prints "YES" for the
+// flag=true,n=3 input, and this test flips to MUST_RUN + expected.txt "YES".
+// Until then it is pinned MUST_FAIL at BACKEND_EXEC_ERROR (Stage C).
+
+~import "$std/io"
+
+const std = @import("std");
+
+pub const Ctx = struct {
+    flag: bool,
+    n: usize,
+};
+
+~pub event decide { ctx: Ctx }
+| yes Ctx
+| no Ctx
+
+~decide = ~if(ctx.flag and ctx.n > 0)
+| then |> yes(ctx)
+| else |> no(ctx)
+
+~pub event report { text: []const u8 }
+
+~proc report|zig {
+    std.io.getStdOut().writer().print("{s}\n", .{text}) catch {};
+}
+
+~pub event run { ctx: Ctx }
+
+~run = decide(ctx)
+| yes _ |> report(text: "YES")
+| no _ |> report(text: "NO")
+
+pub fn main() void {
+    const c = Ctx{ .flag = true, .n = 3 };
+    ~run(ctx: c)
+}
