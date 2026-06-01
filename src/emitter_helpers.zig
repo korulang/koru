@@ -3313,6 +3313,18 @@ fn emitInlineCodeResolvingSplices(
                 try emitter.write(cont.condition.?);
                 try emitter.write(") { ");
             }
+            // Give the spliced effect body a unique `result_N` namespace, so a
+            // branched event inside it (e.g. `! each _ |> step() |> get()`)
+            // doesn't shadow the enclosing scope's `result_0`. The splice lands
+            // inside a nested Zig block but at the SAME function scope, where Zig
+            // forbids shadowing — so the inner calls must not reuse the outer
+            // prefix. Mirrors the CONTINUE-marker path above; the distinct `e`
+            // tag keeps effect splices and continue hand-offs from colliding
+            // when both appear in one template (a `for` with `! each` + `| done`).
+            const saved_prefix = ctx.result_prefix;
+            var prefix_buf: [64]u8 = undefined;
+            ctx.result_prefix = std.fmt.bufPrint(&prefix_buf, "result_e{d}_", .{idx}) catch "result_";
+            defer ctx.result_prefix = saved_prefix;
             var c: usize = 0;
             try emitContinuationBody(emitter, ctx, cont, &c);
             if (guarded) try emitter.write(" }");
@@ -3413,6 +3425,31 @@ fn emitInlineBodyNode(
                 } else {
                     try inline_terminal_conts.append(ctx.allocator, cont);
                 }
+            }
+
+            // Uniquify the `for`-template loop capture. The `~for` template
+            // (koru_std/control.kz) renders a hardcoded `for (..) |__koru_item|`
+            // capture and passes `__koru_item` as the splice arg. When one `for`
+            // splices another (`for(..) ! each i |> for(..) ! each j |> …`), both
+            // instances land in the SAME Zig function with the same capture name,
+            // and Zig rejects `capture '__koru_item' shadows capture from outer
+            // scope`. Give each template instance a unique capture by rewriting
+            // the bare `__koru_item` token to `__koru_item_<for_id>` throughout
+            // this rendered body (both the `|capture|` site and the splice arg).
+            // Mirrors the `__for_item_<id>` uniquification on the legacy foreach
+            // path. We rewrite a private copy; the original AST string is left
+            // untouched.
+            const KORU_ITEM = "__koru_item";
+            var inline_code_owned: ?[]u8 = null;
+            defer if (inline_code_owned) |owned| ctx.allocator.free(owned);
+            if (std.mem.indexOf(u8, inline_code, KORU_ITEM) != null) {
+                const for_id = ctx.for_counter;
+                ctx.for_counter += 1;
+                var unique_buf: [64]u8 = undefined;
+                const unique_item = std.fmt.bufPrint(&unique_buf, "__koru_item_{d}", .{for_id}) catch KORU_ITEM;
+                const rewritten = try std.mem.replaceOwned(u8, ctx.allocator, inline_code, KORU_ITEM, unique_item);
+                inline_code_owned = rewritten;
+                inline_code = rewritten;
             }
 
             // SPLICE path: a template can request a handler body be inlined
