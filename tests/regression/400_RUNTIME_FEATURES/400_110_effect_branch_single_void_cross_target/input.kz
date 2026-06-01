@@ -1,0 +1,12 @@
+const std = @import("std");
+var hits: u64 = 0;
+
+~proc ticker|zig {
+    var i: u64 = 0;
+    while (i < n) : (i += 1) {
+        tick(i);
+    }
+}
+
+~proc onTick|zig { hits = hits + 1; }
+~proc report|zig { std.debug.print("hits={d}\n", .{hits}); }

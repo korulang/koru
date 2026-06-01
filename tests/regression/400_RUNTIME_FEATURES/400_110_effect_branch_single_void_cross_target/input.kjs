@@ -1,0 +1,10 @@
+let hits = 0;
+
+~proc ticker|js {
+    for (let i = 0; i < n; i++) {
+        tick(i);
+    }
+}
+
+~proc onTick|js { hits = hits + 1; }
+~proc report|js { console.log("hits=" + hits); }
