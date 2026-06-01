@@ -1,0 +1,24 @@
+// NEGATIVE TEST — orisha:router must reject TERMINAL (`|`) pattern branches.
+//
+// The router dispatches INTO the matched route — effect semantics — so its
+// pattern branches must be effect branches (`!`). The `[GET /path]` bracket
+// syntax is just a branch-name escape, orthogonal to `|`/`!` kind. Orisha
+// predates `BranchKind` and was kind-blind, silently accepting `| [pattern]`.
+// This pins that the transform is now kind-aware and rejects `|` loudly.
+
+~import "$orisha"
+~import "$std/io"
+
+const std = @import("std");
+
+const TestRequest = struct {
+    method: []const u8,
+    path: []const u8,
+};
+
+const req = TestRequest{ .method = "GET", .path = "/" };
+
+// `|` here is WRONG — these are dispatch handlers, must be `!`.
+~orisha:router(req: &req)
+| [GET /] |> std.io:print.ln("matched GET /")
+| [*] |> std.io:print.ln("catch-all")
