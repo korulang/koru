@@ -1,0 +1,20 @@
+const std = @import("std");
+var tokens: u64 = 0;
+var warnings: u64 = 0;
+var token_sum: u64 = 0;
+
+~proc tokenize|zig {
+    var i: u64 = 0;
+    while (i < n) : (i += 1) {
+        token(i);
+        if (i % 2 == 0) {
+            warning(i);
+        }
+    }
+}
+
+~proc onToken|zig { tokens = tokens + 1; token_sum = token_sum + t; }
+~proc onWarning|zig { warnings = warnings + 1; }
+~proc report|zig {
+    std.debug.print("tokens={d} warnings={d} sum={d}\n", .{ tokens, warnings, token_sum });
+}
