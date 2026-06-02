@@ -1,9 +1,12 @@
-// Test 827: Namespace handling in nested flows
+// Test 227: Namespace handling in nested flows
 //
-// BUG: When events have namespaces (foo.bar), nested flow invocations
-// generate inconsistent code - sometimes with namespace prefix, sometimes without.
+// Verifies that namespaced events (net.connect, net.send) lower correctly
+// through a nested flow: the connect outcome is bound and threaded into the
+// send call, and both namespaced proc bodies emit and run end-to-end.
 //
-// This causes "use of undeclared identifier" errors in generated code.
+// Proc bodies access the event payload by field name (host, id, data) — the
+// `e.<field>` alias form is not part of the language and must not appear in
+// test code or examples.
 
 const std = @import("std");
 
@@ -17,18 +20,18 @@ const std = @import("std");
 | failed []const u8
 
 ~proc net.connect|zig {
-    std.debug.print("Connecting to {s}\n", .{e.host});
-    return .{ .@"connected" = .{ .id = 42 } };
+    std.debug.print("Connecting to {s}\n", .{host});
+    return .{ .@"connected" = 42 };
 }
 
 ~proc net.send|zig {
     std.debug.print("Sending {} bytes on connection {}\n", .{data.len, id});
-    return .{ .@"sent" = .{ .bytes = e.data.len } };
+    return .{ .@"sent" = data.len };
 }
 
-// Nested flow with namespaced events - this should trigger the bug
+// Nested flow with namespaced events: connect, bind the result, thread into send
 ~net.connect(host: "localhost")
-| connected c |> net.send(c.id, data: "hello")
+| connected c |> net.send(c, data: "hello")
     | sent _ |> _
     | failed _ |> _
 | failed _ |> _
