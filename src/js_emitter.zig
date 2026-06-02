@@ -264,12 +264,79 @@ const Emitter = struct {
         // at visitor_emitter.zig:1804+ and :2522+.
         if (flow.inline_body) |inline_body_raw| {
             const stripped = stripInlineStmtMarker(inline_body_raw);
-            try self.emitReindented(stripped, "    ");
+            // The rendered template (e.g. `~if`) carries `__koru_continue_N`
+            // markers where a terminal continuation's body must be spliced in.
+            // Resolve them against `flow.continuations` — the JS mirror of the
+            // Zig emitter's emitInlineCodeResolvingSplices (emitter_helpers.zig
+            // :3186). Lines with no marker are emitted verbatim, so non-template
+            // inline bodies (comptime |js transforms) lower exactly as before.
+            try self.emitInlineBodyResolvingContinuations(stripped, flow.continuations, "    ");
             try self.write("\n");
         } else {
             try self.emitInvocationWithContinuations(&flow.invocation, flow.continuations, "    ");
         }
         try self.write("  },\n");
+    }
+
+    /// Emit a rendered template body (e.g. `~if`'s `if (cond) { … } else { … }`),
+    /// resolving each `__koru_continue_N` marker into the body of
+    /// `continuations[N]`. The marker stands alone on its own line in the
+    /// templates that produce it (`{{ continuations["then"].continue }}` →
+    /// `__koru_continue_0`), so we drive line-by-line: a line that IS a marker is
+    /// replaced by the spliced continuation body; every other line is emitted
+    /// verbatim (re-indented), preserving the template's own `if`/`else`
+    /// scaffolding. JS mirror of emitter_helpers.zig:3186
+    /// `emitInlineCodeResolvingSplices` (continuation half).
+    fn emitInlineBodyResolvingContinuations(
+        self: *Emitter,
+        body: []const u8,
+        continuations: []const ast.Continuation,
+        indent: []const u8,
+    ) JsEmitError!void {
+        const body_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+        defer self.allocator.free(body_indent);
+
+        const trimmed = std.mem.trim(u8, body, " \t\r\n");
+        var it = std.mem.splitScalar(u8, trimmed, '\n');
+        var first = true;
+        while (it.next()) |line| {
+            const content = std.mem.trim(u8, line, " \t\r");
+            if (content.len == 0) continue;
+            if (!first) try self.write("\n");
+            first = false;
+
+            if (parseContinueIndex(content)) |idx| {
+                if (idx >= continuations.len) {
+                    // Marker references a continuation that doesn't exist — fail
+                    // loudly rather than leak an undefined identifier into JS.
+                    log.debug("[js_emitter] __koru_continue_{d} has no matching continuation (have {d})\n", .{ idx, continuations.len });
+                    return JsEmitError.UnsupportedConstruct;
+                }
+                try self.emitInlineContinuationBody(&continuations[idx], body_indent);
+            } else {
+                try self.write(indent);
+                try self.write(content);
+            }
+        }
+    }
+
+    /// Emit the body of a terminal continuation spliced inline by a template
+    /// marker. Unlike `emitTerminalContinuation`, there is NO tag-dispatch guard
+    /// and NO `const binding = result.branch;` — the template's own conditional
+    /// (e.g. `if (cond)`) does the branching, and a template continuation has no
+    /// result value to read a payload from. We emit only the body itself.
+    fn emitInlineContinuationBody(self: *Emitter, cont: *const ast.Continuation, indent: []const u8) JsEmitError!void {
+        const node = cont.node orelse return; // empty branch (`| else |> _`) — nothing to emit
+        switch (node) {
+            .invocation => |*inv| {
+                try self.emitInvocationWithContinuations(inv, cont.continuations, indent);
+            },
+            .terminal => {}, // `_` — the arm does nothing.
+            else => {
+                log.debug("[js_emitter] inline continuation body is neither invocation nor terminal\n", .{});
+                return JsEmitError.UnsupportedConstruct;
+            },
+        }
     }
 
     /// Recursively emit a dispatch: resolve `inv`'s event, build a `Handlers_<id>`
@@ -756,6 +823,25 @@ fn stripInlineStmtMarker(text: []const u8) []const u8 {
     const marker = "//@koru:inline_stmt\n";
     if (std.mem.startsWith(u8, text, marker)) return text[marker.len..];
     return text;
+}
+
+/// If `content` is a bare continuation marker `__koru_continue_<N>`, return N.
+/// Used to recognize template-rendered continuation hand-off points. Mirrors the
+/// prefix the Zig emitter scans for (emitter_helpers.zig:3169
+/// `INLINE_CONTINUE_PREFIX`).
+fn parseContinueIndex(content: []const u8) ?usize {
+    const prefix = "__koru_continue_";
+    if (!std.mem.startsWith(u8, content, prefix)) return null;
+    const digits = content[prefix.len..];
+    if (digits.len == 0) return null;
+    var idx: usize = 0;
+    var saw_digit = false;
+    for (digits) |c| {
+        if (c < '0' or c > '9') break;
+        idx = idx * 10 + (c - '0');
+        saw_digit = true;
+    }
+    return if (saw_digit) idx else null;
 }
 
 /// Look up an invocation arg's value string by field name.

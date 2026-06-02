@@ -1,0 +1,9 @@
+// ~if template cross-target: its body lowers to `if(){}else{}`, valid in BOTH
+// targets — so the template works on JS (unlike ~for, whose Zig for-loop syntax
+// doesn't). Uses a literal condition to avoid the separate host-const-emission
+// bug (see 140_010). PASSING here = templates are NOT Zig-only.
+~import "$std/io"
+
+~if(42 > 10)
+| then |> std.io:println(text: "big")
+| else |> std.io:println(text: "small")

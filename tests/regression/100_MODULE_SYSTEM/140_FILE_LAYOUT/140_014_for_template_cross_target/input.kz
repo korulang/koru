@@ -1,0 +1,19 @@
+// FRONTIER: ~for does NOT yet lower to JS, for two reasons distinct from the
+// continuation gap that 140_015 (~if) pinned and that is now fixed:
+//   1. The for-template body in koru_std/control.kz renders a literal Zig loop
+//      header `for ({{iterable}}) |__koru_item| { ... }` — valid Zig, but a JS
+//      SyntaxError ("Unexpected number" on `0..3`). The template body is
+//      target-specific and needs a JS variant (`for (let i=0;i<3;i++)`) or a
+//      neutral lowering.
+//   2. The per-iteration effect call renders as `__koru_inline_scoped_0(item)`
+//      (an effect-splice marker), which the JS emitter does not yet resolve —
+//      only `__koru_continue_N` resolution landed.
+// The `| done |> _` terminal's `__koru_continue_N` marker DOES now resolve
+// correctly on the JS path (it lowers to nothing, as `_` should). What's left
+// is the for-loop-body lowering, a larger task than the ~if continuation fix.
+~import "$std/control"
+~import "$std/io"
+
+~for(0..3)
+! each _ |> std.io:println(text: "tick")
+| done |> _
