@@ -19,17 +19,21 @@ const std = @import("std");
 | failed []const u8
 
 ~proc server.listen|zig {
-    return .{ .@"listening" = .{ .server_id = 1 } };
+    std.debug.print("listening on port {}\n", .{port});
+    return .{ .@"listening" = 1 };
 }
 
 ~proc server.accept|zig {
-    return .{ .@"connection" = .{ .conn_id = 100 } };
+    std.debug.print("accepted on server {}\n", .{server_id});
+    return .{ .@"connection" = 100 };
 }
 
 ~proc connection.read|zig {
-    return .{ .@"data" = .{ .bytes = "GET / HTTP/1.1" } };
+    std.debug.print("read from conn {}\n", .{conn_id});
+    return .{ .@"data" = "GET / HTTP/1.1" };
 }
 
 ~proc connection.write|zig {
-    return .{ .@"sent" = .{ .bytes_written = 100 } };
+    std.debug.print("wrote {} bytes to conn {}\n", .{ data.len, conn_id });
+    return .{ .@"sent" = 100 };
 }

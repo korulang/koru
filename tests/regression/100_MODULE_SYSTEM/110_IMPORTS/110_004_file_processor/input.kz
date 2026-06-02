@@ -13,9 +13,10 @@ const std = @import("std");
 
 // The full pipeline using directory imports
 ~app.lib.io.file:read(path: "input.txt")
-| success s |> app.lib.io.parse:lines(text: s.contents)
-    | parsed |> app.lib.io.transform:uppercase(text: s.contents)
-        | transformed t |> app.lib.io.file:write(path: "output.txt", data: t.result)
-            | ioerror |> _
-| notfound |> _
-| ioerror |> _
+| success s |> app.lib.io.parse:lines(text: s)
+    | parsed _ |> app.lib.io.transform:uppercase(text: s)
+        | transformed t |> app.lib.io.file:write(path: "output.txt", data: t)
+            | written _ |> _
+            | ioerror _ |> _
+| notfound _ |> _
+| ioerror _ |> _

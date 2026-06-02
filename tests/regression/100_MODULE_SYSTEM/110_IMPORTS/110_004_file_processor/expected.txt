@@ -1,0 +1,4 @@
+read input.txt
+parse lines (11 chars)
+uppercase (11 chars)
+write output.txt (11 bytes)

@@ -9,27 +9,31 @@ const std = @import("std");
 
 ~event outer { count: i32 }
 | continue_outer i32
+| done_outer
 
 ~event inner { count: i32 }
 | continue_inner i32
+| done_inner
 
 ~proc outer|zig {
     std.debug.print("Outer: {}\n", .{count});
     if (count < 2) {
-        return .{ .@"continue_outer" = .{ .next = count + 1 } };
+        return .{ .@"continue_outer" = count + 1 };
     }
+    return .{ .@"done_outer" = .{} };
 }
 
 ~proc inner|zig {
     std.debug.print("  Inner: {}\n", .{count});
     if (count < 2) {
-        return .{ .@"continue_inner" = .{ .next = count + 1 } };
+        return .{ .@"continue_inner" = count + 1 };
     }
+    return .{ .@"done_inner" = .{} };
 }
 
 // Nested labels: #outer contains #inner
 ~#outer outer(count: 0)
 | continue_outer o |> #inner inner(count: 0)
-    | continue_inner i |> @inner(count: i.next)
-    | done_inner |> @outer(count: o.next)
+    | continue_inner i |> @inner(count: i)
+    | done_inner |> @outer(count: o)
 | done_outer |> _

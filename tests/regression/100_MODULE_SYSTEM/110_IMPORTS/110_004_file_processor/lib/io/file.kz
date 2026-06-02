@@ -4,16 +4,19 @@ const std = @import("std");
 
 ~pub event read { path: []const u8 }
 | success []const u8
+| notfound []const u8
 | ioerror []const u8
 
 ~pub event write { path: []const u8, data: []const u8 }
+| written i32
 | ioerror []const u8
 
 ~proc read|zig {
-    // Stub implementation for test
+    std.debug.print("read {s}\n", .{path});
+    return .{ .@"success" = "hello world" };
 }
 
 ~proc write|zig {
-    // Stub implementation for test
-    return .{ .@"ioerror" = .{ .msg = "write not implemented" } };
+    std.debug.print("write {s} ({} bytes)\n", .{ path, data.len });
+    return .{ .@"written" = @intCast(data.len) };
 }

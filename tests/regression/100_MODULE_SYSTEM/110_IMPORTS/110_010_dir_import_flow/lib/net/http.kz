@@ -10,9 +10,11 @@ const std = @import("std");
 | response []const u8
 
 ~proc request.parse|zig {
+    std.debug.print("parsed request ({} bytes)\n", .{bytes.len});
     return .{ .@"request" = .{ .method = "GET", .path = "/" } };
 }
 
 ~proc response.build|zig {
-    return .{ .@"response" = .{ .bytes = "HTTP/1.1 200 OK" } };
+    std.debug.print("built response status {}\n", .{status});
+    return .{ .@"response" = "HTTP/1.1 200 OK" };
 }

@@ -1,0 +1,9 @@
+Outer: 0
+  Inner: 0
+  Inner: 1
+  Inner: 2
+Outer: 1
+  Inner: 0
+  Inner: 1
+  Inner: 2
+Outer: 2

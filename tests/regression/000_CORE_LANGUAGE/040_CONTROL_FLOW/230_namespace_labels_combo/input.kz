@@ -9,6 +9,7 @@ const std = @import("std");
 
 ~event server.accept {}
 | connection u32
+| stopped
 
 ~event server.handle { id: u32 }
 
@@ -20,8 +21,9 @@ const std = @import("std");
     };
     static.count += 1;
     if (static.count <= 2) {
-        return .{ .@"connection" = .{ .id = static.count } };
+        return .{ .@"connection" = static.count };
     }
+    return .{ .@"stopped" = .{} };
 }
 
 ~proc server.handle|zig {
@@ -30,6 +32,5 @@ const std = @import("std");
 
 // Loop with namespaced events
 ~#loop server.accept()
-| connection c |> server.handle(c.id) |> @loop()
-| failed |> @loop()
+| connection c |> server.handle(c) |> @loop()
 | stopped |> _

@@ -14,15 +14,19 @@ const std = @import("std");
 | failed []const u8
 
 ~proc z_buffer.render|zig {
-    return .{ .@"drawn" = .{ .pixels = width * height } };
+    std.debug.print("render {}x{}\n", .{ width, height });
+    return .{ .@"drawn" = width * height };
 }
 
 ~proc z_buffer.clear|zig {
+    std.debug.print("clear z-buffer\n", .{});
 }
 
 ~proc sprite.draw|zig {
+    std.debug.print("draw sprite at {},{}\n", .{ x, y });
 }
 
 ~proc texture.load|zig {
-    return .{ .@"loaded" = .{ .texture_id = 42 } };
+    std.debug.print("load texture {s}\n", .{path});
+    return .{ .@"loaded" = 42 };
 }

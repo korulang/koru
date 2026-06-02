@@ -6,6 +6,6 @@ const std = @import("std");
 | transformed []const u8
 
 ~proc uppercase|zig {
-    // Stub implementation for test
-    return .{ .@"transformed" = .{ .result = "" } };
+    std.debug.print("uppercase ({} chars)\n", .{text.len});
+    return .{ .@"transformed" = "HELLO WORLD" };
 }

@@ -1,0 +1,6 @@
+listening on port 8080
+accepted on server 1
+read from conn 100
+parsed request (14 bytes)
+built response status 200
+wrote 15 bytes to conn 100

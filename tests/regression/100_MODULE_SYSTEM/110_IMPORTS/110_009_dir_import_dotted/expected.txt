@@ -1,0 +1,4 @@
+render 1024x768
+clear z-buffer
+draw sprite at 100,200
+load texture sprite.png
