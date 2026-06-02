@@ -13,5 +13,5 @@
 ~check(x: 10, y: 5)
 | high h when h.x > 10 |> _
 | high h when h.x > 5 |> _
-| high |> _  // else case
-| low |> _
+| high _ |> _  // else case
+| low _ |> _
