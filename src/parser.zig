@@ -5210,10 +5210,7 @@ pub const Parser = struct {
                 }
             }
 
-            // FIX: Handle |> followed by newline with step on next line
-            // Pattern: | branch |>
-            //            step_on_next_line()
-            // When rest is just "|>" or "  |>" with nothing after, look at next line
+            // `|>` is inline glue — branch handler body must be on the same line.
             const after_pipe = blk: {
                 if (std.mem.indexOf(u8, full_rest, "|>")) |pipe_idx| {
                     break :blk lexer.trim(full_rest[pipe_idx + 2 ..]);
@@ -5221,86 +5218,18 @@ pub const Parser = struct {
                 break :blk full_rest;
             };
 
-            if (after_pipe.len == 0 and self.current < self.lines.len) {
-                // Nothing after |> on this line - check subsequent lines for the step
-                // Skip comment and blank lines first
-                while (self.current < self.lines.len) {
-                    const next_line = self.lines[self.current];
-                    const next_indent = lexer.getIndent(next_line);
-                    const next_trimmed = lexer.trim(next_line);
-
-                    // Must be more indented than the | line
-                    if (next_indent <= indent) break;
-
-                    // Skip comment lines
-                    if (lexer.isCommentLine(next_line)) {
-                        self.current += 1;
-                        continue;
-                    }
-
-                    // Skip blank lines
-                    if (next_trimmed.len == 0) {
-                        self.current += 1;
-                        continue;
-                    }
-
-                    // If it's a continuation line, stop - let nested continuation parsing handle it
-                    if (next_trimmed[0] == '|') break;
-
-                    // This is the step content - consume it
-                    self.current += 1;
-                    const step_indent = next_indent;
-
-                    // Build full_rest as "|> " + next line content
-                    var next_buf = try std.ArrayList(u8).initCapacity(self.allocator, 256);
-                    defer next_buf.deinit(self.allocator);
-                    try next_buf.appendSlice(self.allocator, "|> ");
-                    try next_buf.appendSlice(self.allocator, next_trimmed);
-
-                    // Also consume any subsequent |> pipeline steps at the same indent
-                    // This handles three-level chains: step(0..N) |> pairwise { } |> self { }
-                    while (self.current < self.lines.len) {
-                        const chain_line = self.lines[self.current];
-                        const chain_indent = lexer.getIndent(chain_line);
-                        const chain_trimmed = lexer.trim(chain_line);
-
-                        // Must be at the same indent level as the step line and start with |>
-                        if (chain_indent != step_indent) break;
-                        if (chain_trimmed.len < 2 or chain_trimmed[0] != '|' or chain_trimmed[1] != '>') break;
-
-                        // Consume this |> step line
-                        self.current += 1;
-
-                        // Check if this step has a Source block (opening brace without closing)
-                        // If so, we need to collect the multi-line body
-                        const step_content = lexer.trim(chain_trimmed[2..]);
-                        const has_open_brace = std.mem.indexOf(u8, step_content, "{") != null;
-                        const has_close_brace = std.mem.indexOf(u8, step_content, "}") != null;
-
-                        try next_buf.appendSlice(self.allocator, "\n");
-                        try next_buf.appendSlice(self.allocator, chain_trimmed);
-
-                        if (has_open_brace and !has_close_brace) {
-                            // Multi-line Source block - collect lines until closing brace
-                            var brace_depth: i32 = 1;
-                            while (self.current < self.lines.len and brace_depth > 0) {
-                                const body_line = self.lines[self.current];
-                                const body_trimmed = lexer.trim(body_line);
-
-                                try next_buf.appendSlice(self.allocator, "\n");
-                                try next_buf.appendSlice(self.allocator, body_line);
-                                self.current += 1;
-
-                                brace_depth += lexer.countBraceDepthChange(body_trimmed);
-                            }
-                        }
-                    }
-
-                    if (allocated_rest) |ar| self.allocator.free(ar);
-                    allocated_rest = try next_buf.toOwnedSlice(self.allocator);
-                    full_rest = allocated_rest.?;
-                    break;
-                }
+            if (after_pipe.len == 0) {
+                try self.reporter.addErrorWithHintAndSpan(
+                    .PARSE001,
+                    location.line,
+                    location.column,
+                    2,
+                    "Branch handler body must follow '|>' on the same line",
+                    .{},
+                    "Put the step inline after `|>`, e.g. `| ok x |> show(v: x)`. Multi-line argument lists may continue on following lines only when the call starts on the `|>` line.",
+                    .{},
+                );
+                return error.ParseError;
             }
 
             // Push continuation context so Source blocks can capture the binding

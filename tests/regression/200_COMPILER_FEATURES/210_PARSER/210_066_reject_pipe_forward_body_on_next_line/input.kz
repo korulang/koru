@@ -6,11 +6,6 @@
 // Dropping the body to the next line — a trailing `|>` with the body below —
 // is the "`|> _` on a new line" anti-pattern and must be a FRONTEND parse error.
 //
-// KNOWN BUG (pinned 2026-06-02): the parser currently ACCEPTS this shape and
-// compiles it (byte-identical to the inline form), so this test is RED
-// (expected-error-missing) until the parser is fixed to reject it. Surfaced
-// while migrating 330_053 — `| each i |>` with the body on the next line slipped
-// past the parser all the way to a Stage-C diagnostic.
 // ============================================================================
 
 const std = @import("std");
