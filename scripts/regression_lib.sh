@@ -209,8 +209,17 @@ regression_check_js_equivalence() {
     fi
 
     # Run under node, compare to the SAME expected.txt (trimmed, as the Zig path).
+    # Mirror the Zig path's optional ARGS passthrough so CLI-style dual-target
+    # tests feed the same argv to both runtimes. (node prepends node + script to
+    # process.argv, so a $std/args |js impl reads from process.argv[1..].)
     local js_actual="$test_dir/actual.js.txt"
-    timeout "${REGRESSION_TEST_TIMEOUT:-30}" node "$js_out" >"$js_actual" 2>&1
+    local -a RUN_ARGS=()
+    if [ -f "$test_dir/ARGS" ]; then
+        while IFS= read -r _arg || [ -n "$_arg" ]; do
+            RUN_ARGS+=("$_arg")
+        done < "$test_dir/ARGS"
+    fi
+    timeout "${REGRESSION_TEST_TIMEOUT:-30}" node "$js_out" "${RUN_ARGS[@]}" >"$js_actual" 2>&1
     local node_exit=$?
     if [ "$node_exit" -ne 0 ]; then
         _js_equiv_fail "js-runtime" "node exited $node_exit (see actual.js.txt)"
@@ -1205,7 +1214,16 @@ EOF
         # Run the program under a timeout so a runaway binary can't wedge the harness.
         # Override the default with REGRESSION_TEST_TIMEOUT (seconds).
         TEST_TIMEOUT="${REGRESSION_TEST_TIMEOUT:-30}"
-        timeout "$TEST_TIMEOUT" "$test_dir/output" > "$test_dir/actual.txt" 2>&1
+        # Optional ARGS file: one argv entry per line, passed to the binary as
+        # argv (and to node on the JS path). Lets CLI-style tests feed argv so
+        # the same .kz can be exercised with real command-line arguments.
+        local -a RUN_ARGS=()
+        if [ -f "$test_dir/ARGS" ]; then
+            while IFS= read -r _arg || [ -n "$_arg" ]; do
+                RUN_ARGS+=("$_arg")
+            done < "$test_dir/ARGS"
+        fi
+        timeout "$TEST_TIMEOUT" "$test_dir/output" "${RUN_ARGS[@]}" > "$test_dir/actual.txt" 2>&1
         RUN_EXIT=$?
         if [ $RUN_EXIT -eq 0 ]; then
             RUN_SUCCESS=true
