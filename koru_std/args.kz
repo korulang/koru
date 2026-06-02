@@ -1,7 +1,7 @@
-// $std/args - Command-line argument access
+// $std/args — Zig implementation facet.
 //
-// Simple, safe access to CLI arguments.
-// For flag parsing and CLI frameworks, see $std/cli (future).
+// Events are declared in the `args.k` companion (merged at import). This file
+// holds the Zig-side helper and the `|zig` proc bodies.
 
 const std = @import("std");
 
@@ -19,35 +19,13 @@ fn _get_argv() [][:0]u8 {
     return _cached_argv.?;
 }
 
-// ============================================================================
-// Get all arguments
-// ============================================================================
-
-~pub event all {}
-| args [][:0]u8
-
 ~proc all|zig {
     return .{ .args = _get_argv() };
 }
 
-// ============================================================================
-// Get argument count
-// ============================================================================
-
-~pub event count {}
-| count usize
-
 ~proc count|zig {
     return .{ .count = _get_argv().len };
 }
-
-// ============================================================================
-// Get argument at index
-// ============================================================================
-
-~pub event get { index: usize }
-| arg [:0]u8
-| out_of_bounds
 
 ~proc get|zig {
     const argv = _get_argv();
@@ -56,13 +34,6 @@ fn _get_argv() [][:0]u8 {
     }
     return .{ .arg = argv[index] };
 }
-
-// ============================================================================
-// Skip program name and get remaining args
-// ============================================================================
-
-~pub event rest {}
-| args [][:0]u8
 
 ~proc rest|zig {
     const argv = _get_argv();

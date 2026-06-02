@@ -343,14 +343,17 @@ const Emitter = struct {
         // continuation actually reads the result. Effect-only frames (the void
         // chain) don't need a `result_<id>`.
         var needs_result = false;
+        var terminal_count: usize = 0;
         for (continuations) |*cont| {
-            if (cont.kind == .terminal and cont.binding != null and
-                !std.mem.eql(u8, cont.binding.?, "_"))
-            {
+            if (cont.kind != .terminal) continue;
+            terminal_count += 1;
+            if (cont.binding != null and !std.mem.eql(u8, cont.binding.?, "_")) {
                 needs_result = true;
-                break;
             }
         }
+        // With 2+ terminal branches we must dispatch on the returned `.tag`,
+        // which requires the result value even when no branch binds a payload.
+        if (terminal_count >= 2) needs_result = true;
 
         // Build Handlers_<id> from the effect continuations. The id is monotonic
         // so nested frames get distinct names.
@@ -390,10 +393,12 @@ const Emitter = struct {
         }
         try self.write(");\n");
 
-        // Drive terminal continuations: read `.branch` off the result, emit body.
+        // Drive terminal continuations. With 2+ branches we dispatch on the
+        // returned `.tag`; a lone branch always fires, so no guard is needed.
+        const needs_dispatch = terminal_count >= 2;
         for (continuations) |*cont| {
             if (cont.kind != .terminal) continue;
-            try self.emitTerminalContinuation(cont, result_name, indent);
+            try self.emitTerminalContinuation(cont, result_name, indent, needs_dispatch);
         }
     }
 
@@ -664,30 +669,49 @@ const Emitter = struct {
 
     /// Emit a terminal continuation: `| done r |> BODY`.
     /// `const r = <result>.done;` then emit BODY.
-    fn emitTerminalContinuation(self: *Emitter, cont: *const ast.Continuation, result_name: ?[]const u8, indent: []const u8) JsEmitError!void {
+    fn emitTerminalContinuation(self: *Emitter, cont: *const ast.Continuation, result_name: ?[]const u8, indent: []const u8, dispatch: bool) JsEmitError!void {
+        // With 2+ sibling branches, guard the body on the returned tag so only
+        // the branch the event actually produced runs. A lone branch always
+        // fires and is emitted unguarded.
+        var body_indent = indent;
+        var guard_indent: ?[]u8 = null;
+        defer if (guard_indent) |g| self.allocator.free(g);
+        if (dispatch) {
+            const rn = result_name orelse {
+                log.debug("[js_emitter] terminal dispatch needs a result value but none was emitted\n", .{});
+                return JsEmitError.UnsupportedConstruct;
+            };
+            try self.writeFmt("{s}if ({s}.tag === \"{s}\") {{\n", .{ indent, rn, cont.branch });
+            guard_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
+            body_indent = guard_indent.?;
+        }
+
         if (cont.binding) |binding| {
             if (!std.mem.eql(u8, binding, "_")) {
                 const rn = result_name orelse {
                     log.debug("[js_emitter] terminal continuation binds a result but no result binding was emitted\n", .{});
                     return JsEmitError.UnsupportedConstruct;
                 };
-                try self.writeFmt("{s}const {s} = {s}.{s};\n", .{ indent, binding, rn, cont.branch });
+                try self.writeFmt("{s}const {s} = {s}.{s};\n", .{ body_indent, binding, rn, cont.branch });
             }
         }
 
-        const node = cont.node orelse return;
-        switch (node) {
-            .invocation => |*inv| {
-                // A terminal body is itself a dispatch — recurse so terminal
-                // bodies that fire further effects are handled uniformly.
-                try self.emitInvocationWithContinuations(inv, cont.continuations, indent);
-            },
-            .terminal => {}, // `_` — flow ends, nothing to emit.
-            else => {
-                log.debug("[js_emitter] terminal continuation body is not an invocation\n", .{});
-                return JsEmitError.UnsupportedConstruct;
-            },
+        if (cont.node) |node| {
+            switch (node) {
+                .invocation => |*inv| {
+                    // A terminal body is itself a dispatch — recurse so terminal
+                    // bodies that fire further effects are handled uniformly.
+                    try self.emitInvocationWithContinuations(inv, cont.continuations, body_indent);
+                },
+                .terminal => {}, // `_` — flow ends, nothing to emit.
+                else => {
+                    log.debug("[js_emitter] terminal continuation body is not an invocation\n", .{});
+                    return JsEmitError.UnsupportedConstruct;
+                },
+            }
         }
+
+        if (dispatch) try self.writeFmt("{s}}}\n", .{indent});
     }
 
     /// Emit the args as a JS object literal: `{ name: value, ... }`. Arg values

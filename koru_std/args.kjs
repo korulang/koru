@@ -1,0 +1,28 @@
+// $std/args — JavaScript implementation facet.
+//
+// Events are declared in the `args.k` companion (merged at import). This file
+// holds the `|js` proc bodies.
+//
+// Alignment with the Zig facet: Zig's argv is [program, ...userargs], but
+// node's process.argv is [node, script, ...userargs]. We drop node's leading
+// entry so Koru index 0 is the program/script and index i is process.argv[i+1]
+// — matching the Zig facet's indexing exactly.
+
+~proc all|js {
+    return { tag: "args", args: process.argv.slice(1) };
+}
+
+~proc count|js {
+    return { tag: "count", count: process.argv.length - 1 };
+}
+
+~proc get|js {
+    if (index + 1 >= process.argv.length) {
+        return { tag: "out_of_bounds" };
+    }
+    return { tag: "arg", arg: process.argv[index + 1] };
+}
+
+~proc rest|js {
+    return { tag: "args", args: process.argv.slice(2) };
+}

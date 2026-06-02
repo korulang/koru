@@ -1,0 +1,27 @@
+// FRONTIER: JS emitter does not dispatch on the returned continuation-branch
+// tag — it inlines ALL branch bodies unconditionally. Zig switches correctly.
+// n=4 → only the `even` branch should fire. Zig prints "even"; JS prints
+// "even\nodd" (both branches). Minimal, no $std/args dependency.
+~import "$std/io"
+
+~event pick { n: i32 }
+| even []const u8
+| odd []const u8
+
+~proc pick|zig {
+    if (@mod(n, 2) == 0) {
+        return .{ .even = "even" };
+    }
+    return .{ .odd = "odd" };
+}
+
+~proc pick|js {
+    if (n % 2 === 0) {
+        return { tag: "even", even: "even" };
+    }
+    return { tag: "odd", odd: "odd" };
+}
+
+~pick(n: 4)
+| even e |> std.io:println(text: e)
+| odd o |> std.io:println(text: o)
