@@ -1,0 +1,1 @@
+must follow '|>' on the same line

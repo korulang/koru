@@ -612,14 +612,58 @@ regression_run_one_test() {
                         fi
                         return 0
                     fi
-                    # No expected.txt or expected_patterns.txt - just check the error was expected (legacy behavior)
+                    # Check for expected_error.txt (literal substring pin) — mirror of
+                    # the backend path, so the pin mechanism is symmetric across stages.
+                    if [ -f "$test_dir/expected_error.txt" ]; then
+                        EXPECTED_ERROR=$(cat "$test_dir/expected_error.txt" | tr -d '\n\r')
+                        if [ -s "$test_dir/compile_kz.err" ] && grep -qF -- "$EXPECTED_ERROR" "$test_dir/compile_kz.err"; then
+                            if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
+                                echo -e "${RED}❌ Expected frontend error but memory leak detected ($LEAK_PHASE)${NC}"
+                                echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
+                                FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
+                                LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                            else
+                                echo -e "${GREEN}✅ PASS (error output matches expected_error.txt)${NC}"
+                                mark_test_passed "$test_dir"
+                                PASSED_TESTS=$((PASSED_TESTS + 1))
+                                if [ "$HAS_MEMORY_LEAK" = true ]; then
+                                    LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                                fi
+                            fi
+                        else
+                            echo -e "${RED}❌ Error output did not contain expected_error.txt substring${NC}"
+                            echo "  Expected substring: $test_dir/expected_error.txt"
+                            echo "  Actual:   $test_dir/compile_kz.err"
+                            echo "error-output" > "$test_dir/FAILURE"
+                            FAILED_TESTS="$FAILED_TESTS $TEST_NAME(error-output)"
+                        fi
+                        return 0
+                    fi
+                    # No pin matched above (expected.txt / expected_patterns.txt /
+                    # EXPECT CONTAINS-NOT_CONTAINS / expected_error.txt). The error was
+                    # EXPECTED, but nothing pins WHICH error. Policy: a Koru diagnostic
+                    # (error[KORU####]) is an error WE own and MUST be pinned; a raw
+                    # host/Zig error we don't control may pass on the bare marker.
                     if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
                         echo -e "${RED}❌ Expected frontend error but memory leak detected ($LEAK_PHASE)${NC}"
                         echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
                         LEAKED_TESTS=$((LEAKED_TESTS + 1))
+                    elif grep -q 'error\[KORU' "$test_dir/compile_kz.err"; then
+                        # A Koru diagnostic fired but nothing pins WHICH one. Passing here
+                        # would let the test pass on ANY Koru error — even one fired for a
+                        # different reason than it was written to catch (false defender).
+                        echo -e "${RED}❌ Koru diagnostic not pinned${NC}"
+                        echo "  A Koru diagnostic (error[KORU…]) fired, but nothing pins WHICH one."
+                        echo "  A bare FRONTEND_COMPILE_ERROR marker is not enough — pin the error WE own. Add one of:"
+                        echo "    - expected.txt (exact frontend error output)"
+                        echo "    - expected_patterns.txt (regex per line, matched against compile_kz.err)"
+                        echo "    - EXPECT with CONTAINS / NOT_CONTAINS assertions (e.g. CONTAINS error[KORU033])"
+                        echo "    - expected_error.txt (literal substring of the expected error)"
+                        echo "no-error-pin" > "$test_dir/FAILURE"
+                        FAILED_TESTS="$FAILED_TESTS $TEST_NAME(no-error-pin)"
                     else
-                        echo -e "${GREEN}✅ PASS (expected frontend compile error)${NC}"
+                        echo -e "${GREEN}✅ PASS (expected frontend compile error — non-Koru/host error, bare marker OK)${NC}"
                         mark_test_passed "$test_dir"
                         PASSED_TESTS=$((PASSED_TESTS + 1))
                         if [ "$HAS_MEMORY_LEAK" = true ]; then
@@ -1040,16 +1084,19 @@ EOF
                     fi
                 fi
 
-                # Check for EXPECT file with BACKEND_COMPILE_ERROR
+                # Check for EXPECT file with BACKEND_COMPILE_ERROR. Policy: the bare
+                # marker is sufficient ONLY for a raw host/Zig error we don't own. If a
+                # Koru diagnostic (error[KORU####]) fired, it MUST be pinned — leave
+                # BACKEND_ERROR_EXPECTED=false so it falls through to the no-error-pin guard.
                 if [ "$BACKEND_ERROR_EXPECTED" = false ] && [ -f "$test_dir/EXPECT" ]; then
-                    if grep -q "^BACKEND_COMPILE_ERROR$" "$test_dir/EXPECT"; then
+                    if grep -q "^BACKEND_COMPILE_ERROR$" "$test_dir/EXPECT" && ! grep -q 'error\[KORU' "$test_dir/backend.err"; then
                         if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
                             echo -e "${RED}❌ Expected backend compile error but memory leak detected ($LEAK_PHASE)${NC}"
                             echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
                             FAILED_TESTS="$FAILED_TESTS $TEST_NAME(leak-$LEAK_PHASE)"
                             LEAKED_TESTS=$((LEAKED_TESTS + 1))
                         else
-                            echo -e "${GREEN}✅ PASS (expected backend compile error)${NC}"
+                            echo -e "${GREEN}✅ PASS (expected backend compile error — non-Koru/host error, bare marker OK)${NC}"
                             mark_test_passed "$test_dir"
                             PASSED_TESTS=$((PASSED_TESTS + 1))
                             if [ "$HAS_MEMORY_LEAK" = true ]; then
@@ -1060,15 +1107,19 @@ EOF
                     fi
                 fi
 
-                # If error wasn't expected, mark as failure
-                if [ "$BACKEND_ERROR_EXPECTED" = false ] && [ -f "$test_dir/MUST_FAIL" ]; then
-                    echo -e "${RED}❌ MUST_FAIL test has no error pin${NC}"
-                    echo "  Backend failed, but nothing pinned which error to expect."
-                    echo "  Add one of:"
+                # If error wasn't expected, mark as failure. We reach here with a backend
+                # error and no matched pin. A test that DECLARED it expects a backend error
+                # — via MUST_FAIL, or a bare BACKEND_COMPILE_ERROR marker that did NOT pass
+                # because a Koru diagnostic fired — must pin WHICH error.
+                if [ "$BACKEND_ERROR_EXPECTED" = false ] && { [ -f "$test_dir/MUST_FAIL" ] || { [ -f "$test_dir/EXPECT" ] && grep -q "^BACKEND_COMPILE_ERROR$" "$test_dir/EXPECT"; }; }; then
+                    echo -e "${RED}❌ Backend error has no pin${NC}"
+                    echo "  Backend failed, but nothing pins WHICH error to expect."
+                    echo "  A bare BACKEND_COMPILE_ERROR marker only covers raw host/Zig"
+                    echo "  errors we don't control — a Koru diagnostic (error[KORU…]) must"
+                    echo "  be pinned. Add one of:"
                     echo "    - expected_patterns.txt (regex per line, matched against backend.err)"
-                    echo "    - EXPECT with CONTAINS / NOT_CONTAINS assertions"
-                    echo "    - expected_error.txt (substring of expected error)"
-                    echo "    - EXPECT line: BACKEND_COMPILE_ERROR (bare marker, accepts any backend failure)"
+                    echo "    - EXPECT with CONTAINS / NOT_CONTAINS assertions (e.g. CONTAINS error[KORU025])"
+                    echo "    - expected_error.txt (literal substring of the expected error)"
                     echo "no-error-pin" > "$test_dir/FAILURE"
                     FAILED_TESTS="$FAILED_TESTS $TEST_NAME(no-error-pin)"
                 elif [ "$BACKEND_ERROR_EXPECTED" = false ]; then
