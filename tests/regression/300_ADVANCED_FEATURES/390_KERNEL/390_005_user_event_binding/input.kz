@@ -22,7 +22,5 @@
     { mass: 1.0 },
     { mass: 2.0 },
 }
-| kernel k |>
-    std.kernel:self { k.mass *= 1.0 }
-| computed c |>
-    print_mass(value: c[0].mass)
+| kernel k |> std.kernel:self { k.mass *= 1.0 }
+| computed c |> print_mass(value: c[0].mass)

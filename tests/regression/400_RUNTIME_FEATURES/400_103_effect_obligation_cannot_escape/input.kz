@@ -30,8 +30,7 @@ const allocator = std.heap.c_allocator;
 }
 
 ~gen(n: 3)
-! each i |>
-    create(id: i)
+! each i |> create(id: i)
     | created r |> use(r)
 | done _ |> _
 pub fn main() void {}

@@ -38,8 +38,7 @@ const Resource = struct { id: usize };
 ~event run_one {}
 
 ~run_one = create()
-| created r |>
-    work(r) |> work(r) |> destroy(r)
+| created r |> work(r) |> work(r) |> destroy(r)
 
 ~for(0..10)
 ! each _ |> run_one()

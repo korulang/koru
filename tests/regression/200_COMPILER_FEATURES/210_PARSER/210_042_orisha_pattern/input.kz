@@ -7,7 +7,5 @@
 ~import "$std/control"
 
 ~std.control:if(cond: true)
-  | then |>
-    std.io:println(text: "then branch")
-  | else |>
-    std.io:println(text: "else branch")
+  | then |> std.io:println(text: "then branch")
+  | else |> std.io:println(text: "else branch")

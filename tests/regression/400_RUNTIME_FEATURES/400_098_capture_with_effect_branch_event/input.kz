@@ -27,7 +27,6 @@ const std = @import("std");
 }
 
 ~capture(expr: { total: @as(u64, 0) })
-| as c |>
-    yields(n: 3)
+| as c |> yields(n: 3)
     ! v x |> captured { total: c.total + x }
 | captured final |> std.io:print.ln("total = {{ final.total:d }}")

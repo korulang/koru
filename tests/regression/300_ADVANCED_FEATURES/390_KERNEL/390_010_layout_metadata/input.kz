@@ -20,9 +20,7 @@
     { x: 0.0, y: 0.0, mass: 1.0 },
     { x: 1.0, y: 0.0, mass: 2.0 },
 }
-| kernel k |>
-    std.kernel:self { k.mass *= 1.0 }
-| computed c |>
-    std.io:print.blk {
+| kernel k |> std.kernel:self { k.mass *= 1.0 }
+| computed c |> std.io:print.blk {
         slice len={{ c.len:d }}, mass[0]={{ c[0].mass:f }}
     }

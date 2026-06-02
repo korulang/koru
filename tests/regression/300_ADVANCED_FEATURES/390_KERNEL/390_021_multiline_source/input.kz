@@ -9,11 +9,9 @@
     { mass: 1.0 },
     { mass: 2.0 },
 }
-| kernel k |>
-    std.kernel:pairwise {
+| kernel k |> std.kernel:pairwise {
         k.mass += k.other.mass
     }
-| computed c |>
-    std.io:print.blk {
+| computed c |> std.io:print.blk {
         done, mass[0]={{ c[0].mass:f }}
     }

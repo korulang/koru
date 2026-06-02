@@ -9,8 +9,7 @@ const std = @import("std");
     }
 }
 ~#loop iterate(count: 0)
-| next n |>
-    app.fs:open(path: "test.txt")
+| next n |> app.fs:open(path: "test.txt")
     | opened f |> @loop(n.count)  // Auto-close f before @loop
 |> _
 pub fn main() void {}

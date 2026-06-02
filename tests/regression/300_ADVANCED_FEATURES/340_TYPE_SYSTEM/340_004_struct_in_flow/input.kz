@@ -24,5 +24,4 @@
 const p = Player{ .name = "Alice", .health = 100 };
 
 ~greet(player: p)
-| greeted msg |>
-    print.ln("Hello, {{ msg:s }}!")
+| greeted msg |> print.ln("Hello, {{ msg:s }}!")

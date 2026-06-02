@@ -20,8 +20,7 @@
 // Compute sum and max in one pass
 // Values: 3, 1, 4, 1, 5 -> sum=14, max=5
 ~compute_stats = capture(init: { sum: @as(i32, 0), max: @as(i32, 0) })
-| as c |>
-  for(&[_]i32{ 3, 1, 4, 1, 5 })
+| as c |> for(&[_]i32{ 3, 1, 4, 1, 5 })
   ! each val |> captured {
       sum: c.sum + val,
       max: if (val > c.max) val else c.max

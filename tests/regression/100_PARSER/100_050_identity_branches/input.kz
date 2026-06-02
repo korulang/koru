@@ -18,9 +18,7 @@
 
 // Test that identity values work correctly
 ~get_number()
-| value n |>
-    std.io:print.ln("Got number: {{ n:d }}")
+| value n |> std.io:print.ln("Got number: {{ n:d }}")
 
 ~get_message()
-| text msg |>
-    std.io:print.ln("{{ msg:s }}")
+| text msg |> std.io:print.ln("{{ msg:s }}")

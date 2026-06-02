@@ -9,6 +9,5 @@
 ~std.kernel:init(Body) {
     { mass: 1.0 },
 }
-| kernel k |>
-    std.kernel:self { k.mass *= 2.0 }
+| kernel k |> std.kernel:self { k.mass *= 2.0 }
     |> done {}

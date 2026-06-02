@@ -2,10 +2,7 @@
 ~import "$app/fs"
 const condition = true;
 ~app.fs:open(path: "test.txt")
-| opened f |>
-    std.control:if(condition)
-    | then |>
-        app.fs:close(file: f)
-    | else |>
-        app.fs:close(file: f)
+| opened f |> std.control:if(condition)
+    | then |> app.fs:close(file: f)
+    | else |> app.fs:close(file: f)
 pub fn main() void {}

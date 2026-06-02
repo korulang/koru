@@ -18,6 +18,5 @@ const File = struct { handle: i32 };
 ~get_resource = open(path)
 | opened f |> got f
 ~get_resource(path: "test.txt")
-| got r |>
-    close(file: r)
+| got r |> close(file: r)
 pub fn main() void {}

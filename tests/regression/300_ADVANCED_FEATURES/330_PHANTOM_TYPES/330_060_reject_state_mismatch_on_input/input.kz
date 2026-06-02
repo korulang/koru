@@ -3,6 +3,5 @@ const Connection = struct { id: i32 };
 ~proc query|zig {
 }
 ~pub event get_raw_connection {}
-| ok c |>
-    query(conn: c, sql: "SELECT 1")
+| ok c |> query(conn: c, sql: "SELECT 1")
 pub fn main() void {}

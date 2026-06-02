@@ -1,8 +1,6 @@
 ~import "$app/fs"
 const std = @import("std");
 ~app.fs:open(path: "first.txt")
-| opened _ |>
-    app.fs:open(path: "second.txt")
-    | opened f2 |>
-        app.fs:close(file: f2)
+| opened _ |> app.fs:open(path: "second.txt")
+    | opened f2 |> app.fs:close(file: f2)
 pub fn main() void {}

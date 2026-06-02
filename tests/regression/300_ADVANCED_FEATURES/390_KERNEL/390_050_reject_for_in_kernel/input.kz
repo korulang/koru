@@ -10,7 +10,5 @@
     { mass: 1.0 },
     { mass: 2.0 },
 }
-| kernel k |>
-    for(0..2)
-    | each _ |>
-        std.kernel:self { k.mass *= 2.0 }
+| kernel k |> for(0..2)
+    | each _ |> std.kernel:self { k.mass *= 2.0 }

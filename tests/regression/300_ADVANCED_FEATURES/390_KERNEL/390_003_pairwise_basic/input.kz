@@ -19,9 +19,7 @@
     { mass: 2.0 },
     { mass: 3.0 },
 }
-| kernel k |>
-    std.kernel:pairwise { k.mass += k.other.mass }
-| computed c |>
-    std.io:print.blk {
+| kernel k |> std.kernel:pairwise { k.mass += k.other.mass }
+| computed c |> std.io:print.blk {
         pairwise complete, mass[0]={{ c[0].mass:f }}
     }

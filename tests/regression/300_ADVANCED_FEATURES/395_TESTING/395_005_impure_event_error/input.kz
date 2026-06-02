@@ -27,8 +27,7 @@
 // Test: Should FAIL - calls impure events without overrides
 ~test(Impure events should error) {
     ~fetch_user(id: 1)
-    | found u |>
-        save_log(message: u.name)
+    | found u |> save_log(message: u.name)
         | saved |> assert.ok()
 }
 

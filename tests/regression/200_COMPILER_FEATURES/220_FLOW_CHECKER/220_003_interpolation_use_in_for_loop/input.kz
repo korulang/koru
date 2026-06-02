@@ -21,8 +21,7 @@
 ~import "$app/source"
 
 ~std.control:for(0..3)
-| each _ |>
-    source:maybe_str()
+| each _ |> source:maybe_str()
     | none |> std.io:print.ln("nothing")
     | some val |> std.io:print.ln("got: {{ val:s }}")
 |> _

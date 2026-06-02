@@ -4,8 +4,7 @@
 
 // Get argument count
 ~std.args:count()
-| count n |>
-    std.io:print.ln("arg count: {{ n:d }}")
+| count n |> std.io:print.ln("arg count: {{ n:d }}")
 
 // Get program name (index 0) - just verify we can access it
 ~std.args:get(index: 0)
@@ -14,5 +13,4 @@
 
 // Get rest (skipping program name)
 ~std.args:rest()
-| args r |>
-    std.io:print.ln("rest count: {{ r.len:d }}")
+| args r |> std.io:print.ln("rest count: {{ r.len:d }}")

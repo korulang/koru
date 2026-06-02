@@ -57,11 +57,8 @@ var grand_total: u64 = 0;
 const N: usize = 1_000_000;
 
 ~for(0..N)
-| each i |>
-    create(id: i)
-    | created r |>
-        work(r) |> work(r) |> work(r) |> work(r) |> work(r) |> destroy(r)
-|>
-    print_result()
+| each i |> create(id: i)
+    | created r |> work(r) |> work(r) |> work(r) |> work(r) |> work(r) |> destroy(r)
+print_result()
 
 pub fn main() void {}
