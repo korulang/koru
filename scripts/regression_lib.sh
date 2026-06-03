@@ -9,6 +9,17 @@
 : "${CYAN:=\033[0;36m}"
 : "${NC:=\033[0m}"
 
+# Resolve a test's module entry file: input.kz (host-impl entry) if present,
+# else input.k (pure-Koru entry — no host facet). Lets the harness run a
+# self-contained `.k` program, not just `.kz`-rooted modules.
+test_entry() {
+    if [ -f "$1/input.kz" ]; then
+        echo "$1/input.kz"
+    else
+        echo "$1/input.k"
+    fi
+}
+
 : "${CHECK_LEAKS:=true}"
 : "${VERBOSE:=false}"
 : "${ZIG_GLOBAL_CACHE:=${TMPDIR:-/tmp}/koru-regression-cache}"
@@ -197,7 +208,7 @@ regression_check_js_equivalence() {
     # then needs a manual build — unnecessary here since JS skips Stage D.) The
     # backend can die via signal on an unsupported construct, so don't trust the
     # exit code alone — also require the emitted file to exist and be non-empty.
-    if ! ./zig-out/bin/koruc "$test_dir/input.kz" --lang=js $flags \
+    if ! ./zig-out/bin/koruc "$(test_entry "$test_dir")" --lang=js $flags \
             >"$test_dir/compile_js.err" 2>&1; then
         _js_equiv_fail "js-compile" "koruc --lang=js failed (see compile_js.err)"
         return 0
@@ -407,14 +418,16 @@ regression_run_one_test() {
         return 0
     fi
 
-    # Check for input file
-    if [ ! -f "$test_dir/input.kz" ]; then
-        echo -e "${RED}❌ Missing input.kz${NC}"
+    # Check for input file: input.kz (host entry) or input.k (pure-Koru entry).
+    if [ ! -f "$test_dir/input.kz" ] && [ ! -f "$test_dir/input.k" ]; then
+        echo -e "${RED}❌ Missing input.kz / input.k${NC}"
         rm -f "$test_dir/SUCCESS" "$test_dir/FAILURE"
         echo "no-input" > "$test_dir/FAILURE"
         FAILED_TESTS="$FAILED_TESTS $TEST_NAME(no-input)"
         return 0
     fi
+    local ENTRY
+    ENTRY="$(test_entry "$test_dir")"
 
     # Check for inconsistent test configuration
     # CRITICAL: Tests that define expected output MUST run to validate it
@@ -474,7 +487,7 @@ regression_run_one_test() {
     if [ -f "$test_dir/PARSER_TEST" ]; then
         # Generate AST JSON (allow non-zero exit for lenient parse error tests)
         # Use COMPILER_FLAGS if present (needed for conditional imports)
-        ./zig-out/bin/koruc "$test_dir/input.kz" --ast-json $COMPILER_FLAGS > "$test_dir/actual.json" 2>"$test_dir/ast.err"
+        ./zig-out/bin/koruc "$ENTRY" --ast-json $COMPILER_FLAGS > "$test_dir/actual.json" 2>"$test_dir/ast.err"
         AST_GEN_EXIT=$?
 
         # Check if AST JSON was actually generated
@@ -516,7 +529,7 @@ regression_run_one_test() {
 
     # TWO-PASS COMPILATION
     # Pass 1: Frontend - Parse .kz -> backend.zig (serialized AST + code generator)
-    if ./zig-out/bin/koruc "$test_dir/input.kz" -o "$test_dir/backend.zig" $COMPILER_FLAGS 2>"$test_dir/compile_kz.err"; then
+    if ./zig-out/bin/koruc "$ENTRY" -o "$test_dir/backend.zig" $COMPILER_FLAGS 2>"$test_dir/compile_kz.err"; then
         COMPILE_KZ_SUCCESS=true
     else
         COMPILE_KZ_SUCCESS=false

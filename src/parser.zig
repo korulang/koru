@@ -530,6 +530,27 @@ pub const Parser = struct {
                     );
                     return error.ParseError;
                 }
+                // Host declarations (Zig/JS) have no place in a pure-Koru file.
+                // Catch the common ones explicitly so the failure names the
+                // boundary at the offending line instead of mis-parsing into a
+                // cryptic downstream validation error. The "no native constant"
+                // gap this names is exactly the aspiration: a self-contained `.k`
+                // program needs Koru-native constants/functions to exist.
+                // NOTE: `const` is NOT here — it is a Koru keyword (control.kz),
+                // not host syntax. It lowers per-target and is legal in `.k`.
+                const host_decls = [_][]const u8{ "var ", "comptime ", "pub fn ", "fn ", "inline fn ", "export fn ", "extern fn " };
+                for (host_decls) |kw| {
+                    if (std.mem.startsWith(u8, trimmed, kw)) {
+                        try self.reporter.addError(
+                            .PARSE003,
+                            self.current + 1,
+                            lexer.getIndent(line) + 1,
+                            "host syntax '{s}' is not valid in a pure-Koru '.k' file — constants, functions, and types live in a '.kz'/'.kjs' companion (Koru has no native constant/function declaration yet)",
+                            .{lexer.trim(kw)},
+                        );
+                        return error.ParseError;
+                    }
+                }
                 // Branch/continuation lines (`|`, `!`) belong to a construct and
                 // are consumed by it; anything else at top level is a construct.
                 // Synthesize the leading `~` the surface no longer writes so the

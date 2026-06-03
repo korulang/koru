@@ -315,7 +315,7 @@ if [ "$1" = "--list" ]; then
 
         # Check if this is a test directory (has input.kz or TODO or SKIP or BROKEN)
         # Note: Tests can have README.md for documentation - that doesn't make them category directories
-        if [ ! -f "$test_dir/input.kz" ] && [ ! -f "$test_dir/TODO" ] && [ ! -f "$test_dir/SKIP" ] && [ ! -f "$test_dir/BROKEN" ]; then
+        if [ ! -f "$test_dir/input.kz" ] && [ ! -f "$test_dir/input.k" ] && [ ! -f "$test_dir/TODO" ] && [ ! -f "$test_dir/SKIP" ] && [ ! -f "$test_dir/BROKEN" ]; then
             # Not a test directory - skip it (might be category/docs directory)
             continue
         fi
@@ -637,7 +637,7 @@ if [ "$PARALLEL_JOBS" -gt 1 ]; then
     while IFS= read -r -d '' dir; do
         TEST_NAME=$(basename "$dir")
         if [[ "$TEST_NAME" =~ ^[0-9]+[a-z]?_ ]]; then
-            if [ -f "$dir/input.kz" ] || [ -f "$dir/TODO" ] || [ -f "$dir/SKIP" ] || [ -f "$dir/BROKEN" ] || [ -f "$dir/BENCHMARK" ]; then
+            if [ -f "$dir/input.kz" ] || [ -f "$dir/input.k" ] || [ -f "$dir/TODO" ] || [ -f "$dir/SKIP" ] || [ -f "$dir/BROKEN" ] || [ -f "$dir/BENCHMARK" ]; then
                 printf '%s\0' "$dir" >> "$FILTERED_LIST"
             fi
         fi
@@ -837,7 +837,7 @@ while IFS= read -r -d '' test_dir; do
 
     # Check if this is a test directory (has input.kz or TODO or SKIP or BROKEN or BENCHMARK)
     # Note: Tests can have README.md for documentation - that doesn't make them category directories
-    if [ ! -f "$test_dir/input.kz" ] && [ ! -f "$test_dir/TODO" ] && [ ! -f "$test_dir/SKIP" ] && [ ! -f "$test_dir/BROKEN" ] && [ ! -f "$test_dir/BENCHMARK" ]; then
+    if [ ! -f "$test_dir/input.kz" ] && [ ! -f "$test_dir/input.k" ] && [ ! -f "$test_dir/TODO" ] && [ ! -f "$test_dir/SKIP" ] && [ ! -f "$test_dir/BROKEN" ] && [ ! -f "$test_dir/BENCHMARK" ]; then
         # Not a test directory - skip it (might be category/docs directory)
         continue
     fi

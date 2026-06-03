@@ -423,24 +423,27 @@ const std = @import("std");
         }
     }
 
-    if (as_cont == null) {
-        std.debug.print("ERROR: ~const requires | as binding |> continuation\n", .{});
-        return .{ .transformed = program };
-    }
-
-    // Step 2: Convert init expression (Koru struct -> Zig struct)
-    // { field: value } becomes .{ .field = value }
-    const init_value = if (std.mem.startsWith(u8, std.mem.trim(u8, expr, " \t\n\r"), "{"))
-        codegen_utils.koruStructToZig(allocator, expr) catch expr
-    else
-        expr;
-
-    // Step 3: Build JUST the const declaration as preamble_code
-    // The continuations will be processed NORMALLY by the emitter!
-    // This preserves AST structure for phantom checking, optimization, tap injection.
-    const preamble = std.fmt.allocPrint(allocator, "const {s} = {s};", .{
-        as_binding, init_value
-    }) catch unreachable;
+    // Build the preamble. `const` has two forms:
+    //   - `| as cfg |>` present → ONE struct binding (`const cfg = .{...};`),
+    //     config-capture for the continuation (`cfg.field`).
+    //   - no `| as`            → MODULE-DECLARATION: each field becomes an
+    //     in-scope constant (`const name = ...; const count = ...;`), so the
+    //     following flow can reference the bare names directly. This is the
+    //     self-contained-`.k` form; the continuations are empty.
+    const preamble = if (as_cont) |_| blk: {
+        const init_value = if (std.mem.startsWith(u8, std.mem.trim(u8, expr, " \t\n\r"), "{"))
+            codegen_utils.koruStructToZig(allocator, expr) catch expr
+        else
+            expr;
+        break :blk std.fmt.allocPrint(allocator, "const {s} = {s};", .{ as_binding, init_value }) catch unreachable;
+    } else blk: {
+        const decls = codegen_utils.koruStructToConstDecls(allocator, expr) catch "";
+        if (decls.len == 0) {
+            std.debug.print("ERROR: ~const block must be a struct literal: const {{ name: value, ... }}\n", .{});
+            return .{ .transformed = program };
+        }
+        break :blk decls;
+    };
 
     // Step 4: Create new invocation with @pass_ran annotation (keep original path)
     const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
