@@ -4493,7 +4493,7 @@ pub const Parser = struct {
                 2,
                 "'|>' cannot start a line",
                 .{},
-                "'|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.",
+                "'|>' is inline glue, never a line start — it joins a branch handler to its body and chains steps on one line.\n        • Keep the chain inline regardless of length.\n        • If a step ends in a multi-line {{ }} block, put the next |> on the same line as that block's closing }} :  pairwise {{ ... }} |> self {{ ... }}\n        • Void chains may instead split into separate top-level statements (~A() then ~B()).\n        • Drop a trailing |> _ if the head already suffices.",
                 .{},
             );
             return error.ParseError;
@@ -4532,7 +4532,7 @@ pub const Parser = struct {
                 2,
                 "'|>' cannot start a line",
                 .{},
-                "'|>' is inline glue only — it joins a body to its branch handler, or chains void events on one line. Three legal layouts: (1) fold inline `~A() |> B()`; (2) split into separate top-level statements `~A()` then `~B()`; (3) delete the redundant `|> _` if the head suffices.",
+                "'|>' is inline glue, never a line start — it joins a branch handler to its body and chains steps on one line.\n        • Keep the chain inline regardless of length.\n        • If a step ends in a multi-line {{ }} block, put the next |> on the same line as that block's closing }} :  pairwise {{ ... }} |> self {{ ... }}\n        • Void chains may instead split into separate top-level statements (~A() then ~B()).\n        • Drop a trailing |> _ if the head already suffices.",
                 .{},
             );
             return error.ParseError;

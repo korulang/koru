@@ -1,18 +1,11 @@
-// TEST: Parser bug — multi-line Source body at end of |> chain
+// TEST: multi-line Source body at the end of a |> chain
 //
-// When the LAST kernel op in a |> chain has a multi-line Source body,
-// the parser nests | computed c |> inside the kernel continuation
-// instead of making it a sibling at the init level.
+// When the LAST kernel op in an inline |> chain has a multi-line Source
+// body, the parser detects the body's end and treats the following
+// | computed handler as a sibling at the init level (not nested inside
+// the kernel continuation).
 //
-// Works:
-//   pairwise { multi-line } |> self { single-line }  → computed is sibling
-//   pairwise { multi-line } (no chain)               → computed is sibling
-//
-// Fails:
-//   pairwise { single } |> self { multi-line }        → computed is nested
-//
-// Root cause: parser doesn't detect Source body end when body spans
-// multiple lines AND is at the end of a |> chain.
+//   pairwise { single } |> self { multi-line }  → computed is sibling
 
 ~import "$std/kernel"
 ~import "$std/io"
@@ -26,8 +19,7 @@
     { mass: 2.0 },
     { mass: 3.0 },
 }
-| kernel k |> std.kernel:pairwise { k.mass += k.other.mass * 0.1 }
-    |> std.kernel:self {
+| kernel k |> std.kernel:pairwise { k.mass += k.other.mass * 0.1 } |> std.kernel:self {
         k.mass *= 2.0
     }
 | computed c |> std.io:print.blk {

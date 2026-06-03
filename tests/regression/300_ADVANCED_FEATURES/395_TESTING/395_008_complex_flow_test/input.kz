@@ -44,32 +44,32 @@
 ~process_payment = db.get_user(id: user_id)
 | found u |> validate.amount(amount, u.balance)
     | valid |> payment.charge(user_id: u.id, amount)
-        | success tx |> success tx
-        | failed _ |> insufficient_funds
-    | insufficient |> insufficient_funds
-| not_found |> user_not_found
+        | success tx => success tx
+        | failed _ => insufficient_funds
+    | insufficient => insufficient_funds
+| not_found => user_not_found
 
 // ============================================
 // THE TESTS
 // ============================================
 
 ~test(Successful payment) {
-    ~db.get_user = found { id: 42, balance: 100 }
-    ~payment.charge = success "tx123"
+    ~db.get_user => found { id: 42, balance: 100 }
+    ~payment.charge => success "tx123"
 
     ~process_payment(user_id: 42, amount: 50)
     | success s |> assert(s.len == 5)  // "tx123" has 5 chars
 }
 
 ~test(Insufficient funds rejected) {
-    ~db.get_user = found { id: 42, balance: 30 }
+    ~db.get_user => found { id: 42, balance: 30 }
 
     ~process_payment(user_id: 42, amount: 50)
     | insufficient_funds |> assert.ok()
 }
 
 ~test(User not found) {
-    ~db.get_user = not_found
+    ~db.get_user => not_found
 
     ~process_payment(user_id: 999, amount: 50)
     | user_not_found |> assert.ok()

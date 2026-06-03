@@ -21,12 +21,12 @@ const Program = ast.Program;
       | ctx c3 |> std.compiler:test_generation(ctx: c3)
         | ctx c4 |> std.optimizer:optimize(ctx: c4)
           | ctx c5 |> std.compiler:emission(ctx: c5)
-            | ctx c6 |> coordinated {
+            | ctx c6 => coordinated {
                 c6.ctx.ast,
                 c6.code,
                 metrics: "Custom coordinator ran!"
               }
-      | failed f |> error f.message
+      | failed f => error f.message
 
 // Helper event to print marker (must be comptime since it's called from coordinate handler)
 ~[comptime] event custom_marker {}

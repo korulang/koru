@@ -2,5 +2,5 @@
 | ok []const u8
 
 ~test(Should fail clearly) {
-    ~match = ok { path: "/", pattern: "/" }
+    ~match => ok { path: "/", pattern: "/" }
 }

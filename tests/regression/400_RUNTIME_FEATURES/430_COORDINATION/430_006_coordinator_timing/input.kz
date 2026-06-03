@@ -12,11 +12,11 @@ const std = @import("std");
 // This should fail: allocPrint is a function call in a branch constructor
 ~std.compiler:coordinate =
     std.compiler:coordinate.default(program_ast, allocator)
-    | coordinated c |> coordinated {
+    | coordinated c => coordinated {
         c.ast,
         c.code,
         metrics: std.fmt.allocPrint(allocator, "done in {d}ms", .{}) catch "error"
     }
-    | error e |> error { e.message }
+    | error e => error { e.message }
 
 ~std.io:print.ln("should not compile")

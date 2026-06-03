@@ -13,7 +13,7 @@
 | point { x: i32, y: i32 }
 
 // Explicit labels `x: x, y: y` are redundant — punning produces the same names.
-~make_point = point { x: x, y: y }
+~make_point => point { x: x, y: y }
 
 ~make_point(x: 10, y: 20)
 | point p |> std.io:print.ln("x={{ p.x:d }}")
