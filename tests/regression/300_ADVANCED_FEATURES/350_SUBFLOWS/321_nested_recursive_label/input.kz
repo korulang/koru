@@ -43,8 +43,8 @@
         | processed p |> @inner_start(p.i, j: p.j + 1)
     | done_inner done_i |> outer_step(i: done_i + 1)
         | continue_outer co2 |> @inner_start(i: co2, j: 0)
-        | done_outer done_o |> done done_o
-| done_outer done_o |> done done_o
+        | done_outer done_o => done done_o
+| done_outer done_o => done done_o
 
 ~nested_loop(start: 0)
 | done _ |> _

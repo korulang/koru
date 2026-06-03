@@ -31,7 +31,7 @@
 ~event to_fahrenheit { c: f32<celsius> }
 | result f32<fahrenheit>
 
-~to_fahrenheit = result c * 9.0 / 5.0 + 32.0
+~to_fahrenheit => result c * 9.0 / 5.0 + 32.0
 
 ~to_fahrenheit(c: 22.5<celsius>)
 | result f |> std.io:print.ln("{{ f:f }} F")

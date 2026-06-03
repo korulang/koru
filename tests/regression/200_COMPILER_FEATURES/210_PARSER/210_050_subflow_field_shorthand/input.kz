@@ -28,7 +28,7 @@ const Entity = struct {
 | result Entity
 
 // Identity branch syntax - result IS the Entity
-~test_event = result e
+~test_event => result e
 
 ~event print_result { e: Entity }
 ~proc print_result|zig {

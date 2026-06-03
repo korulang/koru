@@ -13,7 +13,7 @@
 | greeting []const u8
 
 // Subflow implementation: maps input directly to output
-~greet = greeting name
+~greet => greeting name
 
 // Test: call greet with "World" and print the resulting message
 ~greet(name: "World")

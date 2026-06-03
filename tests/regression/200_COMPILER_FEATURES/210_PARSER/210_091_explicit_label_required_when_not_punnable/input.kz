@@ -18,7 +18,7 @@
 ~event echo { v: i32 }
 | out i32
 
-~echo = out v
+~echo => out v
 
 ~event get_box { }
 | got { v: i32, other: i32 }

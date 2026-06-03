@@ -14,12 +14,12 @@
 ~pub event get_input {}
 | line []const u8<unsanitized!>
 
-~get_input = line "user input data"
+~get_input => line "user input data"
 
 ~event sanitize { input: []const u8<!unsanitized> }
 | clean []const u8
 
-~sanitize = clean input
+~sanitize => clean input
 
 ~get_input()
 | line s |> sanitize(input: s)

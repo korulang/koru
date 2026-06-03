@@ -12,17 +12,17 @@
 ~event read_distance { trip_id: u8 }
 | traveled i32<meter>
 
-~read_distance = traveled 100
+~read_distance => traveled 100
 
 ~event read_time { trip_id: u8 }
 | elapsed i32<second>
 
-~read_time = elapsed 4
+~read_time => elapsed 4
 
 ~event compute_velocity { d: i32<meter>, t: i32<second> }
 | result i32<meter/second>
 
-~compute_velocity = result d / t
+~compute_velocity => result d / t
 
 ~read_distance(trip_id: 1)
 | traveled m |> read_time(trip_id: 1)

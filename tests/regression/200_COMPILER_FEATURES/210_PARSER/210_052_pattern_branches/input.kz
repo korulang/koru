@@ -16,12 +16,12 @@
 // Test that pattern branches parse correctly
 // The branch names are [GET /users/:id] etc - opaque to the compiler
 ~test_patterns()
-| [GET /users/:id] |> ok {}
-| [POST /users] |> ok {}
-| [nested [brackets] work] |> ok {}
-| [* -> stopped] |> ok {}  // State machine style
+| [GET /users/:id] => ok {}
+| [POST /users] => ok {}
+| [nested [brackets] work] => ok {}
+| [* -> stopped] => ok {}  // State machine style
 
 // Verify nested patterns work
 ~test_patterns()
 | [/admin/*] |> test_patterns()
-    | [GET /dashboard] |> ok {}
+    | [GET /dashboard] => ok {}

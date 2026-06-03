@@ -16,7 +16,7 @@ const File = struct { handle: i32 };
 ~event get_resource { path: []const u8 }
 | got *File<opened!>
 ~get_resource = open(path)
-| opened f |> got f
+| opened f => got f
 ~get_resource(path: "test.txt")
 | got r |> close(file: r)
 pub fn main() void {}

@@ -16,7 +16,7 @@
 }
 
 ~transform(payload: 7)
-! squarify n |> n
+! squarify n => n
 | done result |> std.io:print.blk {
     result is {{ result:d }}
 }

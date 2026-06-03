@@ -31,4 +31,4 @@
 // Default optimization pipeline - chains all optimization passes
 ~optimize = std.optimizations.kernels:optimize(ctx)
 | ctx c1 |> std.optimizations.loops:optimize(ctx: c1)
-  | ctx c2 |> ctx c2
+  | ctx c2 => ctx c2

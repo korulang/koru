@@ -3762,8 +3762,11 @@ pub const Parser = struct {
 
         const event_path = try lexer.parseQualifiedPath(self.allocator, event_path_str, ast);
 
-        // The flow body follows the = sign
-        const body_str = lexer.trim(after_tilde[eq_idx + 1 ..]);
+        // `=>` (construct glyph) introduces an immediate branch construction;
+        // a plain `=` opens an implementation flow. The glyph is authoritative.
+        const is_arrow = eq_idx + 1 < after_tilde.len and after_tilde[eq_idx + 1] == '>';
+        const body_start = if (is_arrow) eq_idx + 2 else eq_idx + 1;
+        const body_str = lexer.trim(after_tilde[body_start..]);
 
         // Check if it's a branch constructor (immediate return syntax)
         if (body_str.len > 0) {
@@ -3784,8 +3787,8 @@ pub const Parser = struct {
             const brace_idx = std.mem.indexOf(u8, body_str, "{");
             if (brace_idx) |b_idx| {
                 const before_brace = lexer.trim(body_str[0..b_idx]);
-                // If there's no dot or paren before the brace, it's a branch constructor
-                if (std.mem.indexOf(u8, before_brace, ".") == null and
+                // `=>` body with `name {` → immediate branch constructor.
+                if (is_arrow and std.mem.indexOf(u8, before_brace, ".") == null and
                     !std.mem.containsAtLeast(u8, before_brace, 1, "("))
                 {
                     // It's an immediate branch constructor!
@@ -3850,7 +3853,7 @@ pub const Parser = struct {
             const has_parens = std.mem.indexOf(u8, body_str, "(") != null;
             const has_colon = std.mem.indexOf(u8, body_str, ":") != null;
 
-            if (!has_brace and !has_parens and !has_colon) {
+            if (is_arrow and !has_brace and !has_parens and !has_colon) {
                 const first_space = std.mem.indexOfAny(u8, body_str, &[_]u8{ ' ', '\t' });
                 const branch_name = if (first_space) |idx| lexer.trim(body_str[0..idx]) else body_str;
 
@@ -4896,8 +4899,8 @@ pub const Parser = struct {
         var rest = parts.rest();
 
         if (parts.peek()) |next| {
-            if (!std.mem.startsWith(u8, next, "|>") and !std.mem.startsWith(u8, next, "@") and
-                !std.mem.eql(u8, next, "when"))
+            if (!std.mem.startsWith(u8, next, "|>") and !std.mem.startsWith(u8, next, "=>") and
+                !std.mem.startsWith(u8, next, "@") and !std.mem.eql(u8, next, "when"))
             {
                 // Check if binding has annotations: identifier[ann1|ann2|...]
                 var identifier: []const u8 = next;
@@ -5046,10 +5049,11 @@ pub const Parser = struct {
             };
         }
 
-        // Parse step if present
+        // Parse step if present. A body is introduced by `|>` (invocation/void
+        // chain) or `=>` (terminal construction) — both must enter here.
         var step: ?ast.Step = null;
 
-        if (std.mem.indexOf(u8, rest, "|>")) |_| {
+        if (std.mem.indexOf(u8, rest, "|>") != null or std.mem.indexOf(u8, rest, "=>") != null) {
             // Check for multi-line branch constructor in the pipeline
             var full_rest = rest;
             var allocated_rest: ?[]u8 = null;
@@ -5704,14 +5708,62 @@ pub const Parser = struct {
             working_content = lexer.withoutLabel(content);
         }
 
-        // Split on |> and parse each step
-        var iter = std.mem.splitSequence(u8, working_content, "|>");
-        while (iter.next()) |step_str| {
-            const trimmed = lexer.trim(step_str);
-            if (trimmed.len == 0) continue;
-
-            const step = try self.parseStep(trimmed);
-            try steps.append(self.allocator, step);
+        // Split on `|>` AND `=>` at brace/paren/bracket depth 0 (outside strings
+        // and line comments), tagging each segment with the delimiter that
+        // preceded it: `=>` → construction, `|>`/first → ordinary step. The
+        // delimiter is authoritative; parseStepKind never guesses from content.
+        {
+            var seg_start: usize = 0;
+            var seg_is_ctor = false; // first segment is never `=>`-introduced
+            var depth: i32 = 0;
+            var in_str = false;
+            var scan_end: usize = working_content.len;
+            var k: usize = 0;
+            while (k < working_content.len) {
+                const c = working_content[k];
+                if (in_str) {
+                    if (c == '"' and (k == 0 or working_content[k - 1] != '\\')) in_str = false;
+                    k += 1;
+                    continue;
+                }
+                if (c == '"') {
+                    in_str = true;
+                    k += 1;
+                    continue;
+                }
+                if (c == '/' and k + 1 < working_content.len and working_content[k + 1] == '/') {
+                    scan_end = k; // line comment — stop here, emit final segment up to it
+                    break;
+                }
+                if (c == '{' or c == '(' or c == '[') {
+                    depth += 1;
+                    k += 1;
+                    continue;
+                }
+                if (c == '}' or c == ')' or c == ']') {
+                    depth -= 1;
+                    k += 1;
+                    continue;
+                }
+                if (depth == 0 and k + 1 < working_content.len) {
+                    const arrow = working_content[k + 1] == '>';
+                    if (arrow and (c == '|' or c == '=')) {
+                        const seg = lexer.trim(working_content[seg_start..k]);
+                        if (seg.len > 0) {
+                            try steps.append(self.allocator, try self.parseStepKind(seg, seg_is_ctor));
+                        }
+                        seg_is_ctor = (c == '=');
+                        k += 2;
+                        seg_start = k;
+                        continue;
+                    }
+                }
+                k += 1;
+            }
+            const last = lexer.trim(working_content[seg_start..scan_end]);
+            if (last.len > 0) {
+                try steps.append(self.allocator, try self.parseStepKind(last, seg_is_ctor));
+            }
         }
 
         // Add trailing label if present
@@ -5757,7 +5809,16 @@ pub const Parser = struct {
         return steps.toOwnedSlice(self.allocator);
     }
 
-    fn parseStep(self: *Parser, content: []const u8) !ast.Step {
+    fn parseStep(self: *Parser, content: []const u8) anyerror!ast.Step {
+        // Default: a `|>`-introduced (or first/void) step — never a construction.
+        return self.parseStepKind(content, false);
+    }
+
+    /// Parse one pipeline step. `force_ctor` is set by the splitter when the
+    /// step was introduced by `=>` (the construct glyph). Construction-vs-
+    /// invocation is decided by the DELIMITER, never guessed from content —
+    /// that is the whole point of the `=>` design.
+    fn parseStepKind(self: *Parser, content: []const u8, force_ctor: bool) anyerror!ast.Step {
         // Strip comments first (everything after //)
         var clean_content = content;
         if (std.mem.indexOf(u8, content, "//")) |comment_idx| {
@@ -5866,75 +5927,43 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
-        // Check for branch constructor: identifier { field: value, ... }
-        // Also recognize .{ as shorthand branch constructor (immediate return)
-        const brace_idx = std.mem.indexOf(u8, clean_content, "{");
-        if (brace_idx) |b_idx| {
-            const before_brace = lexer.trim(clean_content[0..b_idx]);
-
-            // Check for .{ pattern (immediate branch constructor)
-            const is_immediate_bc = std.mem.eql(u8, before_brace, ".");
-
-            // Check if this is a Source block invocation: eventName <Type>{
-            // Look for < > pattern before the {
-            const has_angle_brackets = std.mem.indexOf(u8, before_brace, "<") != null and
-                std.mem.indexOf(u8, before_brace, ">") != null;
-
-            // Branch constructor requires a NAMED branch before the brace —
-            // `name { ... }` or `.{ ... }`. Anonymous `{ ... }` is NOT a branch
-            // constructor; it's a Zig expression at body position (struct
-            // literal, block expression).
-            const is_regular_bc = before_brace.len > 0 and
-                std.mem.indexOf(u8, before_brace, ".") == null and
-                !std.mem.containsAtLeast(u8, before_brace, 1, "(") and
-                !has_angle_brackets; // Not a Source block!
-
-            if (is_immediate_bc or is_regular_bc) {
-                // It's a branch constructor!
-                // Check if we're in a proc context
-                return ast.Step{ .branch_constructor = try self.parseBranchConstructorWithContext(clean_content) };
-            }
+        // `=>`-introduced step: a branch construction. The delimiter is
+        // authoritative — we do NOT guess from content (no `is_regular_bc`,
+        // no newline-sensitivity). Layout is irrelevant.
+        if (force_ctor) {
+            return try self.parseConstructionStep(clean_content);
         }
 
-        // Invocation discrimination: an invocation always has `(args)` after
-        // the identifier path (or `{block}` for Source-block invocations).
-        // Locked 2026-05-24.
+        // `|>`-introduced (or first/void) step: invocation or Zig expression,
+        // NEVER a branch constructor. A construction here requires `=>`.
         if (looksLikeInvocation(clean_content)) {
             return ast.Step{ .invocation = try self.parseEventInvocation(clean_content) };
         }
 
-        // Braceless branch constructor: `IDENT` rebroadcast (`| ok |> ok`)
-        // or `IDENT VALUE` payload form (`| ctx c5 |> ctx c5`). The bare
-        // single-identifier case stays as BranchConstructor for backward
-        // compatibility with subflow rebroadcasts — emitters that want it
-        // as a Zig expression (effect-branch resume value) recognize that
-        // shape and route accordingly.
+        // Anything else at body position is a Zig expression node: string
+        // literal, numeric literal, anonymous struct literal, arithmetic
+        // expression, effect-branch resume value, etc.
+        return ast.Step{ .expression = try self.allocator.dupe(u8, clean_content) };
+    }
+
+    /// Parse the content after `=>` into a branch-constructor step. Handles the
+    /// brace form (`name { ... }`, `.{ ... }`) and the braceless identity form
+    /// (`name`, `name value`). No content heuristics — the `=>` already told us
+    /// this is a construction.
+    fn parseConstructionStep(self: *Parser, clean_content: []const u8) !ast.Step {
+        if (std.mem.indexOf(u8, clean_content, "{") != null) {
+            return ast.Step{ .branch_constructor = try self.parseBranchConstructorWithContext(clean_content) };
+        }
         const trimmed_content = lexer.trim(clean_content);
         const first_space = std.mem.indexOfAny(u8, trimmed_content, &[_]u8{ ' ', '\t' });
         const candidate_name = if (first_space) |idx| lexer.trim(trimmed_content[0..idx]) else trimmed_content;
-        if (candidate_name.len > 0 and isValidIdentifier(candidate_name)) {
-            if (first_space) |idx| {
-                const expr_part = lexer.trim(trimmed_content[idx..]);
-                return ast.Step{ .branch_constructor = .{
-                    .branch_name = try self.allocator.dupe(u8, candidate_name),
-                    .fields = &.{},
-                    .plain_value = if (expr_part.len > 0) try self.allocator.dupe(u8, expr_part) else null,
-                    .has_expressions = expr_part.len > 0,
-                } };
-            } else {
-                return ast.Step{ .branch_constructor = .{
-                    .branch_name = try self.allocator.dupe(u8, candidate_name),
-                    .fields = &.{},
-                    .plain_value = null,
-                    .has_expressions = false,
-                } };
-            }
-        }
-
-        // Anything else at body position is a Zig expression node: string
-        // literal, numeric literal, anonymous struct literal, arithmetic
-        // expression, etc.
-        return ast.Step{ .expression = try self.allocator.dupe(u8, clean_content) };
+        const expr_part = if (first_space) |idx| lexer.trim(trimmed_content[idx..]) else "";
+        return ast.Step{ .branch_constructor = .{
+            .branch_name = try self.allocator.dupe(u8, candidate_name),
+            .fields = &.{},
+            .plain_value = if (expr_part.len > 0) try self.allocator.dupe(u8, expr_part) else null,
+            .has_expressions = expr_part.len > 0,
+        } };
     }
 
     /// Returns true iff `content` starts with an identifier path followed
@@ -6043,6 +6072,20 @@ pub const Parser = struct {
 
         var branch_name = lexer.trim(content[0..brace_idx]);
         var fields_content: []const u8 = content[brace_idx + 1 .. closing_idx];
+
+        // A regular `name { ... }` construction requires a valid single-identifier
+        // branch name (`.` is the `.{ ... }` immediate shorthand, handled below).
+        // Rejects malformed names like `invalid name { ... }` (space in name).
+        if (!std.mem.eql(u8, branch_name, ".") and !isValidIdentifier(branch_name)) {
+            try self.reporter.addError(
+                .PARSE003,
+                self.current + 1,
+                1,
+                "invalid branch constructor name '{s}' — must be a single identifier",
+                .{branch_name},
+            );
+            return error.ParseError;
+        }
 
         // Check for .{ shorthand (immediate return)
         // Format: .{ .branch_name = .{ fields } }
@@ -7786,8 +7829,8 @@ test "parser validates branch constructors" {
             \\~event test {}
             \\| ok []const u8
             \\
-            \\~test() 
-            \\| ok |> ok { msg: "success" }
+            \\~test()
+            \\| ok => ok { msg: "success" }
         ;
 
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -7805,8 +7848,8 @@ test "parser validates branch constructors" {
             \\~event test {}
             \\| ok []const u8
             \\
-            \\~test() 
-            \\| ok |> invalid name { msg: "fail" }
+            \\~test()
+            \\| ok => invalid name { msg: "fail" }
         ;
 
         var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -7827,7 +7870,7 @@ test "parser handles shorthand notation in branch constructors" {
         \\~event test {}
         \\| ok { id: i32, value: i32 }
         \\
-        \\~test = ok { r.user.id, 0 }
+        \\~test => ok { r.user.id, 0 }
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);

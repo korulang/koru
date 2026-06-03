@@ -8,12 +8,12 @@
 ~event read_raw { sensor_id: u8 }
 | reading f32                          // BARE f32 — no phantom label
 
-~read_raw = reading 22.5
+~read_raw => reading 22.5
 
 ~event to_fahrenheit { c: f32<celsius> }   // requires [celsius]
 | result f32<fahrenheit>
 
-~to_fahrenheit = result c * 9.0 / 5.0 + 32.0
+~to_fahrenheit => result c * 9.0 / 5.0 + 32.0
 
 ~read_raw(sensor_id: 1)
 | reading t |> to_fahrenheit(c: t)     // ERROR: f32 cannot satisfy f32[celsius]

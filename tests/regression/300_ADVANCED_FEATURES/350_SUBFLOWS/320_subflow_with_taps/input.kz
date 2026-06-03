@@ -22,7 +22,7 @@ const std = @import("std");
 | result i32
 
 ~double = add_five(value)
-| result r |> result r
+| result r => result r
 
 // Observer that should be called by the tap
 ~event observer {}

@@ -31,7 +31,7 @@ const File = struct { handle: i32 };
 | created *File<opened!>
 
 ~create = open(path)
-| opened f |> created { f.file }
+| opened f => created { f.file }
 
 ~create(path: "test.txt")
 | created r |> use(r.file) |> use(r.file) |> use(r.file) |> close(r.file)

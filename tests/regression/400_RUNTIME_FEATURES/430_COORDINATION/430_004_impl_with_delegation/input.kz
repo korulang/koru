@@ -13,11 +13,11 @@
 | result []const u8
 
 // Default implementation: just returns the name
-~process = result { message: name }
+~process => result { message: name }
 
 // Override: EXPLICITLY calls process.default, then passes through
 // Note: process.default - not process! No magic, no confusion.
-~process = process.default(name) | result r |> result { r.message }
+~process = process.default(name) | result r => result { r.message }
 
 // Test it
 ~process(name: "delegation works!")

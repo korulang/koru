@@ -16,7 +16,7 @@
 ~event echo { v: i32 }
 | out i32
 
-~echo = out v
+~echo => out v
 
 ~echo(v: v)
 | out r |> std.io:print.ln("{{ r:d }}")

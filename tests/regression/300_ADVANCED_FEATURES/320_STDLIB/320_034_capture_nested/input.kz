@@ -21,6 +21,6 @@ const std = @import("std");
 // The bindings must actually be used in captured { } blocks
 ~capture(expr: { outer: @as(i32, 0) })
 | as outer |> capture(expr: { inner: @as(i32, 0) })
-    | as inner |> captured { inner: inner.inner + 42 }
-    | captured result |> captured { outer: outer.outer + result.inner }
+    | as inner => captured { inner: inner.inner + 42 }
+    | captured result => captured { outer: outer.outer + result.inner }
 | captured final |> print_int(value: final.outer)

@@ -11,7 +11,7 @@
 | config { timeout: u32, retries: u32 }
 
 // Constant implementation - always returns the same value
-~get_config = config { timeout: 30, retries: 3 }
+~get_config => config { timeout: 30, retries: 3 }
 
 // Test: NO MOCK NEEDED - constant is auto-detected and inlined!
 // Verify the constant values are correct

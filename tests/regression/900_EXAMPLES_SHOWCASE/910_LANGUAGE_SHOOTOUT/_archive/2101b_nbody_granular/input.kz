@@ -134,7 +134,7 @@ const Body = struct {
         | created sat |> create_uranus()
             | created u |> create_neptune()
                 | created n |> assemble_solar_system(s.sun, j.jupiter, sat.saturn, u.uranus, n.neptune)
-                    | assembled a |> initialized { a.bodies }
+                    | assembled a => initialized { a.bodies }
 
 // ============================================================================
 // MOMENTUM OFFSET - Granular decomposition
@@ -192,7 +192,7 @@ const Body = struct {
 | computed cx |> calculate_momentum_y(cx.bodies)
     | computed cy |> calculate_momentum_z(cy.bodies)
         | computed cz |> apply_sun_offset(cz.bodies, cx.px, cy.py, cz.pz)
-            | adjusted a |> adjusted { a.bodies }
+            | adjusted a => adjusted { a.bodies }
 
 // ============================================================================
 // ENERGY CALCULATION - Ultra granular
@@ -241,7 +241,7 @@ const Body = struct {
 ~calculate_total_energy = sum_kinetic_energies(bodies)
 | computed ke |> sum_potential_energies(ke.bodies)
     | computed pe |> combine_energies(ke: ke.total_ke, pe: pe.total_pe, pe.bodies)
-        | computed c |> result { energy: c.total, c.bodies }
+        | computed c => result { energy: c.total, c.bodies }
 
 // ============================================================================
 // GRAVITATIONAL INTERACTIONS - Maximum granularity
@@ -306,7 +306,7 @@ const Body = struct {
 | computed dv |> calculate_distance_scalar(dv.dx, dv.dy, dv.dz)
     | computed ds |> calculate_gravitational_magnitude(ds.distance, dt)
         | computed gm |> update_body_pair_velocities(dv.b1, dv.b2, ds.dx, ds.dy, ds.dz, gm.mag)
-            | updated u |> updated { u.b1, u.b2 }
+            | updated u => updated { u.b1, u.b2 }
 
 ~event calculate_all_interactions { bodies: [5]Body, dt: f64 }
 | updated { bodies: [5]Body, dt: f64 }

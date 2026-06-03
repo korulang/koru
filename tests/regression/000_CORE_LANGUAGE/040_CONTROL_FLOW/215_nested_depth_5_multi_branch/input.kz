@@ -44,12 +44,12 @@
     | ok b |> validate(value: b)
         | ok c |> double(value: c)
             | ok d |> validate(value: d)
-                | ok final_ok |> success final_ok
-                | failure e_err |> failed e_err
-            | failure d_err |> failed d_err
-        | failure c_err |> failed c_err
-    | failure b_err |> failed b_err
-| failure a_err |> failed a_err
+                | ok final_ok => success final_ok
+                | failure e_err => failed e_err
+            | failure d_err => failed d_err
+        | failure c_err => failed c_err
+    | failure b_err => failed b_err
+| failure a_err => failed a_err
 
 ~process(input: 1)
 | success s |> std.io:print.ln("Success: {{ s:d }}")

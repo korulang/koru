@@ -51,8 +51,8 @@ pub const Ctx = struct {
 | no Ctx
 
 ~decide = ~if(ctx.flag and ctx.n > 0)
-| then |> yes ctx
-| else |> no ctx
+| then => yes ctx
+| else => no ctx
 
 ~pub event report { text: []const u8 }
 

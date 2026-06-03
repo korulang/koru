@@ -18,7 +18,7 @@ pub const Point = struct { x: i32, y: i32 };
 | result { x: i32, y: i32 }
 
 // Shorthand: { p.x, p.y } should become { x: p.x, y: p.y }
-~use_point = result { p.x, p.y }
+~use_point => result { p.x, p.y }
 
 // Test it
 ~make_point(x: 10, y: 20)

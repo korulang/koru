@@ -142,7 +142,7 @@ const std = @import("std");
 
 ~compiler.coordinate =
     compiler.coordinate.default(ast)
-    | coordinated c |> c
+    | coordinated c => c
 
 // ================================================================
 // Simple Test Event (verifies basic compilation works)

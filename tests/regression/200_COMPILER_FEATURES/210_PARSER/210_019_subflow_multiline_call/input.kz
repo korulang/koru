@@ -54,7 +54,7 @@ const std = @import("std");
     c: 30
 )
     | done b |> step_c(x: b)
-        | done c |> final c
+        | done c => final c
 
 // Main flow
 ~test_multiline_call()

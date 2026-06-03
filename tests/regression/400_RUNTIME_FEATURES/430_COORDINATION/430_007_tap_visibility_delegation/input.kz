@@ -17,10 +17,10 @@ const std = @import("std");
 | result i32
 
 // Default implementation: double the value
-~process = result { output: value * 2 }
+~process => result { output: value * 2 }
 
 // Override: delegate to default, then add 10
-~process = process.default(value) | result r |> result { output: r.output + 10 }
+~process = process.default(value) | result r => result { output: r.output + 10 }
 
 // Tap on the PUBLIC handler (override)
 ~tap(* -> process)

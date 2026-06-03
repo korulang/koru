@@ -70,7 +70,7 @@ const allocator = std.heap.c_allocator;
 
 // BUG #3: f.r -> resource field name mismatch
 ~make_resource = create(id)
-| created f |> ready f
+| created f => ready f
 
 // ============================================================
 // COMBINED TEST: Bugs #2 and #3 (void chaining is parser issue)

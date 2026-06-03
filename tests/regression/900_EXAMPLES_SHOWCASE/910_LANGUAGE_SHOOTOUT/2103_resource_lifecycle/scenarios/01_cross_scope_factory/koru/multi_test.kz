@@ -32,7 +32,7 @@ const File = struct { handle: i32 };
 | created *File<opened!>
 
 ~create = open(path)
-| opened f |> created { resource: f.file }
+| opened f => created { resource: f.file }
 
 // Main flow: create -> use -> use -> use -> cleanup
 ~create(path: "test.txt")

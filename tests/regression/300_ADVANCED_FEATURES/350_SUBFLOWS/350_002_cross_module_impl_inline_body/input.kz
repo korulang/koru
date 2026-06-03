@@ -46,8 +46,8 @@ const std = @import("std");
 // classify_num is [expand] so it sets inline_body on the flow
 // The emitter must use inline_body instead of trying to call classify_num_event.handler
 ~input:categorize = classify_num(expr: value)
-| positive p |> result p
-| non_positive |> result 0
+| positive p => result p
+| non_positive => result 0
 
 // Helper to print
 ~event print_num { n: i32 }

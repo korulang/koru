@@ -14,7 +14,7 @@
 ~pub event get_input {}
 | line []const u8<unsanitized!>
 
-~get_input = line "user input data"
+~get_input => line "user input data"
 
 ~get_input()
 | line s |> std.io:print.ln(s)

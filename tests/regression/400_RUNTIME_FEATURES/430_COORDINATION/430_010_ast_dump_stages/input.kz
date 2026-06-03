@@ -17,15 +17,15 @@
 // ============================================================================
 
 ~std.compiler:frontend = std.compiler:frontend.default(ctx)
-| ctx c |> std.compiler:ast_dump(ctx: c, flag: "post-frontend") |> ctx c
+| ctx c |> std.compiler:ast_dump(ctx: c, flag: "post-frontend") => ctx c
 
 // ============================================================================
 // DUMP AST AFTER ANALYSIS
 // ============================================================================
 
 ~std.compiler:analysis = std.compiler:analysis.default(ctx)
-| ctx c |> std.compiler:ast_dump(ctx: c, flag: "post-analysis") |> ctx c
-| failed f |> failed { f.ctx, f.message }
+| ctx c |> std.compiler:ast_dump(ctx: c, flag: "post-analysis") => ctx c
+| failed f => failed { f.ctx, f.message }
 
 // ============================================================================
 // THE PROGRAM

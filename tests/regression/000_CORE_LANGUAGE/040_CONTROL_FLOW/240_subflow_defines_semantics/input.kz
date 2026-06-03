@@ -20,7 +20,7 @@
 | break
 | continue
 
-~step = continue
+~step => continue
 
 // Outer event: its own outcome vocabulary
 ~pub event run {}
@@ -31,9 +31,9 @@
 // mapped to `run`'s. The meaning of `return`, `break`, `continue`
 // lives HERE — in user code, not in the compiler.
 ~run = step()
-| return |> stopped
-| break |> stopped
-| continue |> iterated
+| return => stopped
+| break => stopped
+| continue => iterated
 
 ~std.io:print.ln("Testing subflow-defined semantics:")
 ~run()

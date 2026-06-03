@@ -22,5 +22,5 @@ const std = @import("std");
 // INVALID subflow: references 'tripled' branch but double event has no such branch!
 // This should fail shape checking with "Event 'double' has no branch 'tripled'"
 ~process = double(value: input)
-| doubled d |> final { output: d.value }
-| tripled t |> final { output: t.value }  // ERROR: 'tripled' doesn't exist!
+| doubled d => final { output: d.value }
+| tripled t => final { output: t.value }  // ERROR: 'tripled' doesn't exist!

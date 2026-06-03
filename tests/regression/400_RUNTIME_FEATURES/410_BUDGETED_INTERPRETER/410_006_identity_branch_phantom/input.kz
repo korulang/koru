@@ -8,7 +8,7 @@
 ~pub event create {}
 | handle []const u8<active!>
 
-~create = handle "resource_1"
+~create => handle "resource_1"
 
 // Discharge event
 ~pub event destroy { h: []const u8<!active> }

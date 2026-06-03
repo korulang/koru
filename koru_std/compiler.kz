@@ -662,9 +662,9 @@ pub const CompilerContext = struct {
                 c4,
                 c5.ctx
               ])
-              | launched |> coordinated { c5.ctx.ast, c5.code, metrics: m }
-              | skipped |> coordinated { c5.ctx.ast, c5.code, metrics: m }
-    | failed f |> error f.message
+              | launched => coordinated { c5.ctx.ast, c5.code, metrics: m }
+              | skipped => coordinated { c5.ctx.ast, c5.code, metrics: m }
+    | failed f => error f.message
 
 // Composable pipeline segments - users can mix and match!
 
@@ -751,7 +751,7 @@ pub const CompilerContext = struct {
 ~frontend = process_ccp_commands(ctx)
 | ctx c1 |> process_template_procs(ctx: c1)
   | ctx c2 |> evaluate_comptime(ctx: c2)
-    | ctx c3 |> ctx c3
+    | ctx c3 => ctx c3
 
 // Analysis segment: Validation passes (abstract, can be overridden)
 ~[comptime|abstract] pub event analysis { ctx: CompilerContext }
@@ -763,12 +763,12 @@ pub const CompilerContext = struct {
   | ctx c2 |> check_flow(ctx: c2)
     | ctx c3 |> check_phantom_semantic(ctx: c3)
       | ctx c4 |> check_purity(ctx: c4)
-        | ctx c5 |> ctx c5
-        | failed f |> failed { f.ctx, f.message }
-      | failed f |> failed { f.ctx, f.message }
-    | failed f |> failed { f.ctx, f.message }
-  | failed f |> failed { f.ctx, f.message }
-| failed f |> failed { f.ctx, f.message }
+        | ctx c5 => ctx c5
+        | failed f => failed { f.ctx, f.message }
+      | failed f => failed { f.ctx, f.message }
+    | failed f => failed { f.ctx, f.message }
+  | failed f => failed { f.ctx, f.message }
+| failed f => failed { f.ctx, f.message }
 
 // Tap transformation segment: Insert tap invocations into AST
 // This converts taps from emission-time code injection to AST nodes,
@@ -1297,7 +1297,7 @@ const emitFlowWithMocks = struct {
 ~emission = inject_ccp(ctx)
 | ctx c1 |> pass_dead_strip(ctx: c1)
   | ctx c2 |> emit_zig(ctx: c2)
-    | ctx c3 |> ctx { c3.ctx, c3.code }
+    | ctx c3 => ctx { c3.ctx, c3.code }
 
 // Parser service - makes the Koru parser available at backend comptime
 // This enables dynamic module loading during compilation passes

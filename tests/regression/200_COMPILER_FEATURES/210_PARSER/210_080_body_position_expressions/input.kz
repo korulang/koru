@@ -20,6 +20,6 @@
 ~sample()
 ! one _ |> "Alice"
 ! two _ |> 42
-! three q |> q
+! three q => q
 ! four _ |> 1 + 2
 | done |> _

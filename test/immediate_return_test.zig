@@ -12,7 +12,7 @@ test "parse immediate return syntax" {
         \\| failure
         \\
         \\// Immediate return - just return success
-        \\~test.mock = success { value: 42 }
+        \\~test.mock => success { value: 42 }
     ;
     
     var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -48,7 +48,7 @@ test "parse immediate return with multiple fields" {
         \\~event user.get { id: i32 }
         \\| found { name: []const u8, email: []const u8 }
         \\
-        \\~user.get = found { name: "Alice", email: "alice@test.com" }
+        \\~user.get => found { name: "Alice", email: "alice@test.com" }
     ;
     
     var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -78,7 +78,7 @@ test "parse regular subflow still works" {
         \\| done { result: i32 }
         \\
         \\~process.data = compute.run(value: input)
-        \\| success s |> done { result: s.output }
+        \\| success s => done { result: s.output }
     ;
     
     var p = try parser.Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);

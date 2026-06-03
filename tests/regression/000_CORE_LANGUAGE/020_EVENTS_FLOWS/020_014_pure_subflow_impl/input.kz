@@ -6,7 +6,7 @@
 ~event greet { name: []const u8 }
 | greeting []const u8
 
-~greet = greeting "Hello, " ++ name ++ "!"
+~greet => greeting "Hello, " ++ name ++ "!"
 
 ~greet ("World")
 | greeting msg |> std.io:print.ln(msg)

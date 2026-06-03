@@ -9,7 +9,7 @@
 | success i32
 
 // Subflow impl using braceless syntax with value
-~value_result = success 42
+~value_result => success 42
 
 // Main entry point
 ~std.io:print.ln("Testing value braceless:")

@@ -17,7 +17,7 @@ var bridge_pool = HandlePool.init(std.heap.page_allocator);
 ~pub event open { path: []const u8 }
 | opened []const u8<opened!>
 
-~open = opened "file_1"
+~open => opened "file_1"
 
 ~pub event close { handle: []const u8<!opened> }
 

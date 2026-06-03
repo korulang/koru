@@ -12,7 +12,7 @@
 | greeted []const u8
 
 // Provide the ONLY implementation (this becomes the handler)
-~greet = greeted { message: name }
+~greet => greeted { message: name }
 
 // Use it
 ~greet(name: "world")

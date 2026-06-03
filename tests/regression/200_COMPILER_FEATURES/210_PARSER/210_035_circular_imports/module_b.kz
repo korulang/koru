@@ -7,4 +7,4 @@
 | relayed []const u8
 
 ~from_b = app.input:from_a(msg)
-    | received r |> relayed r
+    | received r => relayed r

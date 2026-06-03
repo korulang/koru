@@ -25,6 +25,6 @@ const std = @import("std");
 // Each captured block only updates its OWN capture's field
 ~capture(init: { outer_val: @as(i32, 0) })
 | as outer |> capture(init: { inner_val: @as(i32, 0) })
-    | as inner |> captured { inner_val: inner.inner_val + 10 }
-    | captured inner_result |> captured { outer_val: outer.outer_val + inner_result.inner_val }
+    | as inner => captured { inner_val: inner.inner_val + 10 }
+    | captured inner_result => captured { outer_val: outer.outer_val + inner_result.inner_val }
 | captured final |> print_results(final.outer_val, inner_val: 10)

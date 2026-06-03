@@ -21,7 +21,7 @@
 ~orisha:static(name: "site", root: "testdata")
 
 ~orisha:handler = orisha:router(req)
-! [GET /api/health] |> response { status: 200, body: "ok", content_type: "application/json" }
+! [GET /api/health] => response { status: 200, body: "ok", content_type: "application/json" }
 ! [*] |> orisha:static_router(name: "site")
 
 ~orisha:serve(port: 3099)

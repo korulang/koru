@@ -1,0 +1,229 @@
+{
+    "module_annotations": [
+
+    ],
+    "items": [
+        {
+            "type": "import_decl",
+            "path": "$std/compiler",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 2,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 3,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 4,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 5,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 6,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 7,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 8,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 9,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 10,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 11,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 12,
+                "col": 0
+            }
+        },
+        {
+            "type": "host_line",
+            "module": "input",
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 13,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "render",
+            "path": ["render"],
+            "module": "input",
+            "input": {
+                "fields": [
+                    {
+                        "name": "source",
+                        "type": "Source<HTML>",
+                        "is_source": true,
+                        "is_file": false,
+                        "is_embed_file": false,
+                        "is_expression": false,
+                        "is_invocation_meta": false,
+                        "phantom": null
+                    }
+                ]
+            },
+            "branches": [
+
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 15,
+                "col": 0
+            }
+        },
+        {
+            "type": "event_decl",
+            "name": "setup",
+            "path": ["setup"],
+            "module": "input",
+            "input": {
+                "fields": [
+
+                ]
+            },
+            "branches": [
+
+            ],
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 16,
+                "col": 0
+            }
+        },
+        {
+            "type": "flow",
+            "invocation": {
+                "event": ["setup"],
+                "args": [
+
+                ],
+                "variant": null
+            },
+            "continuations": [
+                {
+                    "branch": "",
+                    "kind": "terminal",
+                    "is_catchall": false,
+                    "binding": null,
+                    "binding_type": "branch_payload",
+                    "condition": null,
+                    "step":                     {
+                        "type": "invocation",
+                        "invocation": {
+                            "event": ["render"],
+                            "args": [
+                                {
+                                    "name": "source",
+                                    "value": "x: 1",
+                                    "source_value": {
+                                        "text": "x: 1",
+                                        "location": {
+                                            "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                                            "line": 17,
+                                            "col": 0
+                                        },
+                                        "scope": {
+                                            "bindings": [
+
+                                            ]
+                                        },
+                                        "phantom_type": null
+                                    }
+                                }
+                            ],
+                            "variant": null
+                        }
+                    },
+                    "continuations": [
+
+                    ]
+                }
+            ],
+            "pre_label": null,
+            "post_label": null,
+            "impl_of": null,
+            "location": {
+                "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
+                "line": 16,
+                "col": 0
+            }
+        }
+    ]
+}
