@@ -11,7 +11,7 @@
 //   - Enable data-oriented patterns (ECS, etc.)
 //
 // USAGE:
-//   ~import "$std/types"
+//   ~import "std/types"
 //
 //   ~std.types:struct(Player) { name: []const u8, health: i32 }
 //   ~[pub]std.types:struct(Position) { x: f32, y: f32 }

@@ -5,7 +5,7 @@
     "items": [
         {
             "type": "import_decl",
-            "path": "$std/compiler",
+            "path": "std/compiler",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_076_optional_effect_branch_decl/input.kz",
                 "line": 2,

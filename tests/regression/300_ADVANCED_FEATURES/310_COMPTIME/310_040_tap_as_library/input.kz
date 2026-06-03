@@ -2,7 +2,7 @@
 // This proves taps don't need special syntax - they're just metaprogramming!
 
 const std = @import("std");
-~import "$std/taps"
+~import "std/taps"
 
 // An event with an identity branch that can be tapped.
 // Taps work by observing TRANSITIONS (branches), not void events!

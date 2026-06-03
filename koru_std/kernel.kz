@@ -6,7 +6,7 @@
 // The compiler decides optimal data layout and iteration strategy.
 //
 // USAGE:
-//   ~import "$std/kernel"
+//   ~import "std/kernel"
 //
 //   // 1. Declare the shape (structure with explicit types)
 //   ~std.kernel:shape(Body) { x: f64, y: f64, z: f64, vx: f64, vy: f64, vz: f64, mass: f64 }

@@ -29,7 +29,7 @@
 
 ~[comptime]
 
-~import "$std/compiler"
+~import "std/compiler"
 
 // Event: Run loop optimization on AST
 ~pub event optimize { ctx: std.compiler:CompilerContext }

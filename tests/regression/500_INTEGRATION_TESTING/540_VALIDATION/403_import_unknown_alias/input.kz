@@ -4,7 +4,7 @@
 // Test 403: Unknown import aliases must produce clear errors
 // Only $std, $lib, and $root are valid aliases
 
-~import "$unknown/module"
+~import "unknown/module"
 
 // This should never compile
 const std = @import("std");

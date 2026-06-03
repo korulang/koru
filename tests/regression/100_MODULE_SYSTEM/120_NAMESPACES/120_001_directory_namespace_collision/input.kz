@@ -12,7 +12,7 @@
 
 const std = @import("std");
 
-~import "$app/engine"
+~import "app/engine"
 
 // Initialize all subsystems - same event name, different namespaces!
 ~app.engine.graphics:init()

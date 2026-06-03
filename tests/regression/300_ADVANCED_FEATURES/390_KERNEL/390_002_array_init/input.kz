@@ -5,7 +5,7 @@
 
 const std = @import("std");
 
-~import "$std/kernel"
+~import "std/kernel"
 
 // Declare the shape
 ~std.kernel:shape(Body) {

@@ -9,8 +9,8 @@
 
 const std = @import("std");
 
-~import "$std/io"
-~import "$std/taps"
+~import "std/io"
+~import "std/taps"
 
 // Logger to observe taps
 ~event log { msg: []const u8 }

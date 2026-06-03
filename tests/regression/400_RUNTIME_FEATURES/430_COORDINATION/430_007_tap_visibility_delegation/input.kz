@@ -8,7 +8,7 @@
 //
 // This ensures the `.default` rename doesn't hide calls from the tap system!
 
-~import "$std/io"
+~import "std/io"
 
 const std = @import("std");
 

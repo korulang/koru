@@ -7,9 +7,9 @@
 // and access the Profile metadata (source, branch, destination).
 
 const std = @import("std");
-~import "$std/taps"
+~import "std/taps"
 
-~import "$app/test_lib/logger"
+~import "app/test_lib/logger"
 
 ~event compute { x: i32 }
 | result i32

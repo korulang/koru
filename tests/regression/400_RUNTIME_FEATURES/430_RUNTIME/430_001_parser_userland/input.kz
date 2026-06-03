@@ -1,8 +1,8 @@
 // Test: User-land parser access
 // Verify that $std/parser is available at runtime for dynamic parsing
 
-~import "$std/parser"
-~import "$std/io"
+~import "std/parser"
+~import "std/io"
 
 const std = @import("std");
 

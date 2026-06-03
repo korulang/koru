@@ -5,8 +5,8 @@
 //
 // This should emit IDENTICAL Zig code to input.kz (explicit disconnect).
 
-~import "$app/pq"
-~import "$std/io"
+~import "app/pq"
+~import "std/io"
 
 ~app.pq:connect(conninfo: "host=localhost dbname=test")
 | ok conn |> std.io:print.ln("Connected!")

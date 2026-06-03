@@ -8,7 +8,7 @@
 // - Matches Zig expression syntax for parity
 //
 // Usage:
-//   ~import "$std/eval"
+//   ~import "std/eval"
 //
 //   ~std.eval:eval(expression: score > 50, bindings: env)
 //   | bool b |> ~if(b) ...
@@ -23,7 +23,7 @@
 
 ~[runtime]
 
-~import "$std/build"
+~import "std/build"
 
 ~std.build:requires {
     const REL_TO_ROOT = "/usr/local/lib/koru";

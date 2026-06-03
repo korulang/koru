@@ -10,7 +10,7 @@
 //
 // This is the foundation for powerful code generation.
 
-~import "$std/liquid_template"
+~import "std/liquid_template"
 
 // The emit event: first arg is template, named args are context
 // {{ name }} resolves to "Alice", {{ health }} to "100"

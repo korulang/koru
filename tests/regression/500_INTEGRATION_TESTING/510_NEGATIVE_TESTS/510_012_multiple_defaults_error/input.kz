@@ -4,8 +4,8 @@
 // This is a STDLIB BUG - only one default per name is allowed
 // Expected: Compilation error "Multiple default implementations for 'test'"
 
-~import "$std/build"
-~import "$app/lib/extra_build"
+~import "std/build"
+~import "app/lib/extra_build"
 
 // This file defines ONE default
 ~[default]

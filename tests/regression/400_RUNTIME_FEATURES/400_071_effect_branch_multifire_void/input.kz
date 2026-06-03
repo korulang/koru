@@ -5,7 +5,7 @@
 // the proc returns implicit void. This is the "fire-and-forget pump"
 // shape — single yielding kind, multi-fire, no completion signal.
 
-~import "$std/io"
+~import "std/io"
 
 ~pub event ticker { n: usize }
 ! tick usize

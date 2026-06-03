@@ -3,8 +3,8 @@
 // Verifies scope lookup works with names like "api.v1" and that
 // numeric arguments are parsed into typed inputs.
 
-~import "$std/runtime"
-~import "$std/io"
+~import "std/runtime"
+~import "std/io"
 
 const std = @import("std");
 

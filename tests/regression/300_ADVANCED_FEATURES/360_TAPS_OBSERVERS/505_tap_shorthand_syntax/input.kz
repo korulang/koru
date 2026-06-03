@@ -5,8 +5,8 @@
 // Tests that `~tap(event)` is equivalent to `~tap(event -> *)`
 // The shorthand omits `-> *` when observing all branches.
 
-~import "$std/io"
-~import "$std/taps"
+~import "std/io"
+~import "std/taps"
 
 // Simple event with one branch we care about
 ~event ping {}

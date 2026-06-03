@@ -4,7 +4,7 @@
 // - my_if: comptime transform captures Expression
 // - my_if_impl: runtime implementation handles branching
 
-~import "$std/io"
+~import "std/io"
 
 const std = @import("std");
 

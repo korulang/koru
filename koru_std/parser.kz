@@ -3,7 +3,7 @@
 // Makes the Zig parser available as Koru events at RUNTIME.
 //
 // Usage:
-//   ~import "$std/parser"
+//   ~import "std/parser"
 //   ~std.parser:parse.source(source: code, file_name: "test.kz", allocator: allocator)
 //   | parsed p |> use(p.ast)
 //   | parse_error e |> handle(e.message)
@@ -14,7 +14,7 @@
 //   - Dynamic code loading and evaluation
 //   - AI agents that can parse and understand Koru
 
-~import "$std/build"
+~import "std/build"
 
 const std = @import("std");
 const parser_impl = @import("parser");

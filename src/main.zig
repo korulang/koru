@@ -3315,51 +3315,20 @@ const ImportedModule = struct {
 /// - "lib/io" → "io" (directory import: last component only)
 /// - "helper" → "helper" (single file)
 fn deriveCanonicalName(allocator: std.mem.Allocator, import_path: []const u8) ![]const u8 {
-    var path_to_convert = import_path;
-    var has_alias = false;
-
-    // Handle $alias imports: $std/io → std.io (preserve BOTH parts!)
-    if (import_path.len > 0 and import_path[0] == '$') {
-        has_alias = true;
-        // Find the first slash
-        if (std.mem.indexOfScalar(u8, import_path, '/')) |_| {
-            // Skip the $ and get everything: $std/io → std/io
-            path_to_convert = import_path[1..]; // Remove $
-        } else {
-            // Just $package with no path - use package name without $
-            return try allocator.dupe(u8, import_path[1..]); // Remove $
-        }
-    }
-
     // Remove Koru extension if present
-    const without_ext = if (file_types.koruExtensionOf(path_to_convert)) |ext|
-        path_to_convert[0 .. path_to_convert.len - ext.len]
+    const without_ext = if (file_types.koruExtensionOf(import_path)) |ext|
+        import_path[0 .. import_path.len - ext.len]
     else
-        path_to_convert;
+        import_path;
 
-    // Different logic based on whether this was an alias import
-    if (has_alias) {
-        // Alias import: Replace / with . to create dotted name
-        // "std/io" → "std.io"
-        // "std/compiler" → "std.compiler"
-        var result = try allocator.alloc(u8, without_ext.len);
-        for (without_ext, 0..) |c, i| {
-            result[i] = if (c == '/') '.' else c;
-        }
-        return result;
-    } else {
-        // Regular import: Use LAST component only
-        // "lib/io" → "io"
-        // "vendor/raylib" → "raylib"
-        // "helper" → "helper"
-        const last_slash = std.mem.lastIndexOfScalar(u8, without_ext, '/');
-        const package_name = if (last_slash) |pos|
-            without_ext[pos + 1 ..]
-        else
-            without_ext;
-
-        return try allocator.dupe(u8, package_name);
+    // Replace / with . to create dotted name
+    // "std/io" → "std.io"
+    // "std/compiler" → "std.compiler"
+    var result = try allocator.alloc(u8, without_ext.len);
+    for (without_ext, 0..) |c, i| {
+        result[i] = if (c == '/') '.' else c;
     }
+    return result;
 }
 
 /// Probe each Koru extension on `stem` (an alias-prefixed module path stem
@@ -3401,20 +3370,20 @@ fn queueParentImports(
 ) !void {
     const import_path = import_decl.path;
 
-    // Only process aliased imports (starting with $)
-    if (import_path.len == 0 or import_path[0] != '$') return;
+    // If import_path starts with `./` or `/`, it's not an aliased import
+    if (std.mem.startsWith(u8, import_path, "./") or std.mem.startsWith(u8, import_path, "/") or import_path.len == 0) return;
 
     // Find the alias and path parts
     const slash_pos = std.mem.indexOf(u8, import_path, "/") orelse return;
-    const alias = import_path[0..slash_pos]; // e.g., "$std"
+    const alias = import_path[0..slash_pos]; // e.g., "std"
     const subpath = import_path[slash_pos + 1 ..]; // e.g., "io/file"
 
     // If subpath is empty or has no further segments, nothing to queue
     if (subpath.len == 0) return;
     const last_slash = std.mem.lastIndexOf(u8, subpath, "/") orelse return;
 
-    // Build parent stem and probe each Koru extension (e.g., $std/io.kz,
-    // $std/io.kjs, ...). Append an extension so we only consider the FILE,
+    // Build parent stem and probe each Koru extension (e.g., std/io.kz,
+    // std/io.kjs, ...). Append an extension so we only consider the FILE,
     // not the directory (which would include submodules). First hit wins.
     const parent_subpath = subpath[0..last_slash];
     const parent_stem = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ alias, parent_subpath });
@@ -3427,7 +3396,7 @@ fn queueParentImports(
     defer allocator.free(parent_path);
 
     // Build namespace for parent: alias.parent (e.g., "std.io")
-    const alias_name = alias[1..]; // Remove $
+    const alias_name = alias;
     var parent_namespace = try std.ArrayList(u8).initCapacity(allocator, 64);
     defer parent_namespace.deinit(allocator);
     try parent_namespace.appendSlice(allocator, alias_name);
@@ -3473,15 +3442,15 @@ fn queueIndexImport(
 ) !void {
     const import_path = import_decl.path;
 
-    // Only process aliased imports (starting with $)
-    if (import_path.len == 0 or import_path[0] != '$') return;
+    // If import_path starts with `./` or `/`, it's not an aliased import
+    if (std.mem.startsWith(u8, import_path, "./") or std.mem.startsWith(u8, import_path, "/") or import_path.len == 0) return;
 
     // Find the alias part
     const slash_pos = std.mem.indexOf(u8, import_path, "/") orelse return;
-    const alias = import_path[0..slash_pos]; // e.g., "$std"
+    const alias = import_path[0..slash_pos]; // e.g., "std"
 
-    // Build index stem and probe each Koru extension ($alias/index.kz,
-    // $alias/index.kjs, ...). First hit wins.
+    // Build index stem and probe each Koru extension (alias/index.kz,
+    // alias/index.kjs, ...). First hit wins.
     const index_stem = try std.fmt.allocPrint(allocator, "{s}/index", .{alias});
     defer allocator.free(index_stem);
 
@@ -3506,7 +3475,7 @@ fn queueIndexImport(
     }
 
     // Namespace is just the alias name (e.g., "std")
-    const alias_name = alias[1..]; // Remove $
+    const alias_name = alias;
     const index_path_owned = try allocator.dupe(u8, index_path);
     const index_local_name = try allocator.dupe(u8, alias_name);
 
@@ -6411,10 +6380,10 @@ pub fn main() !void {
     // Inject compiler bootstrap import (unless --compiler=disable or user already imported it)
     // Note: compiler.kz itself has ~[comptime] annotation, so it will be emitted to backend_output
     const inject_compiler = !compiler_config.hasFlag("compiler=disable");
-    const user_already_imported_compiler = std.mem.indexOf(u8, source, "$std/compiler") != null;
+    const user_already_imported_compiler = std.mem.indexOf(u8, source, "std/compiler") != null;
     const final_source = if (inject_compiler and !user_already_imported_compiler) blk: {
         log.debug("DEBUG: Auto-injecting compiler import\n", .{});
-        const import_line = "~import \"$std/compiler\"\n";
+        const import_line = "~import \"std/compiler\"\n";
         const injected = try parse_allocator.alloc(u8, import_line.len + source.len);
         @memcpy(injected[0..import_line.len], import_line);
         @memcpy(injected[import_line.len..], source);

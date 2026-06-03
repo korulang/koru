@@ -2,6 +2,6 @@
 // When --profile flag is NOT passed, the import should be skipped entirely
 // The AST should NOT contain any import_decl for this line
 
-~[profile]import "$std/profiler"
+~[profile]import "std/profiler"
 
 ~event test {}

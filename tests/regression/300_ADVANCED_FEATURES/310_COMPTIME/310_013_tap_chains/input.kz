@@ -1,7 +1,7 @@
 // Test tap chains - tap invokes event that also has taps
 // This verifies TAP_FUNCTION_CONTEXT prevents infinite recursion
 const std = @import("std");
-~import "$std/taps"
+~import "std/taps"
 
 ~event main_flow {}
 

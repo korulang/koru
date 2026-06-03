@@ -3,6 +3,6 @@
 // partial-program tenet means it compiles fine as long as no call site
 // reaches the unimplemented event.
 
-~import "$app/contract"
+~import "app/contract"
 
 // No call site for contract.compute — partial program is valid.

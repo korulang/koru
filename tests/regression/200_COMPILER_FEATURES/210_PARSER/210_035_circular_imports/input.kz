@@ -8,7 +8,7 @@
 // event, which prints. If any link in the cycle breaks, the expected
 // output disappears and the test fails loudly.
 
-~import "$app/module_b"
+~import "app/module_b"
 
 const std = @import("std");
 

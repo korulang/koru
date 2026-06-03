@@ -6,7 +6,7 @@
 // Verifies: Scope capture for template metaprogramming
 // ============================================================================
 
-~import "$std/io"
+~import "std/io"
 
 // Event that provides user data
 ~event getUserData { }

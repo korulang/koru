@@ -5,7 +5,7 @@
     "items": [
         {
             "type": "import_decl",
-            "path": "$std/compiler",
+            "path": "std/compiler",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_121_module_annotation_above_import/input.kz",
                 "line": 2,
@@ -41,7 +41,7 @@
         },
         {
             "type": "import_decl",
-            "path": "$std/io",
+            "path": "std/io",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_121_module_annotation_above_import/input.kz",
                 "line": 7,

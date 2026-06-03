@@ -7,8 +7,8 @@
 //
 // Minimal shape: one event, two subflow variants, build:variants picks one.
 
-~import "$std/io"
-~import "$std/build"
+~import "std/io"
+~import "std/build"
 
 const std = @import("std");
 

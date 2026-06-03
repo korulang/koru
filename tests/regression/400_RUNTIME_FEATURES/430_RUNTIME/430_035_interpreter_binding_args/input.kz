@@ -6,9 +6,9 @@
 // The interpreter evaluates x.field against the environment,
 // NOT passing the literal string "x.field".
 
-~import "$std/runtime"
-~import "$std/interpreter"
-~import "$std/io"
+~import "std/runtime"
+~import "std/interpreter"
+~import "std/io"
 
 const std = @import("std");
 

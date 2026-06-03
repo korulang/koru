@@ -15,7 +15,7 @@
 // Expected (when fixed): proc yields 0, 1, 2 via `! v`. Capture
 // accumulates them into `total`. Output is `total = 3`.
 
-~import "$std/io"
+~import "std/io"
 
 const std = @import("std");
 

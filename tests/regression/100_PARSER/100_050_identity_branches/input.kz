@@ -1,6 +1,6 @@
 // Test identity branch syntax: | branch Type instead of | branch { field: Type }
 // MUST_RUN: Verify identity values flow correctly at runtime
-~import "$std/io"
+~import "std/io"
 
 ~pub event get_number {}
 | value i32

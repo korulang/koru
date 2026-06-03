@@ -4,7 +4,7 @@
 // `q` at body position IS the resume value (after the parser fix that
 // recognizes invocations always have parens, locked 2026-05-24).
 
-~import "$std/io"
+~import "std/io"
 
 ~pub event transform { payload: i32 }
 ! squarify i32 -> i32

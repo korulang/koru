@@ -4,7 +4,7 @@
 // rendered output is identical to the input — proves the pipeline runs
 // (template tag consumed) without changing the program.
 
-~import "$std/io"
+~import "std/io"
 
 const std = @import("std");
 

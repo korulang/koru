@@ -3,7 +3,7 @@
 // Demonstrates HTTP-style routing dispatch using Koru events and procs.
 // Uses named parameters instead of Zig struct literals.
 
-~import "$std/io"
+~import "std/io"
 
 const std = @import("std");
 

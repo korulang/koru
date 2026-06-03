@@ -1,7 +1,7 @@
 // Test: print.ln with Koru-scoped bindings (from capture/for)
 
-~import "$std/io"
-~import "$std/control"
+~import "std/io"
+~import "std/control"
 
 // Use ~capture to create a Koru binding, then print it
 ~capture(expr: { total: @as(i32, 0) })

@@ -6,7 +6,7 @@
 // The test expects `ok` but the mock returns `error_result`.
 // This should cause a test failure due to union field access mismatch.
 
-~import "$std/testing"
+~import "std/testing"
 
 ~event get_data {}
 | ok u32

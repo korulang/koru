@@ -8,8 +8,8 @@
 
 ~[comptime|runtime]
 
-~import "$std/compiler_types"
-~import "$std/interpreter"
+~import "std/compiler_types"
+~import "std/interpreter"
 
 const std = @import("std");
 const ast_mod = @import("ast");

@@ -1,5 +1,5 @@
 // Helper module sitting in a .kjs file. Phase 2 file-discovery should
-// resolve `~import "$app/helper"` to this file just as it would for
+// resolve `~import "app/helper"` to this file just as it would for
 // `helper.kz`.
 
 const std = @import("std");

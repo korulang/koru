@@ -13,9 +13,9 @@
 // - Entities 1 and 3 (has_damage=false) are filtered out
 // - Entities 2 and 4 (has_damage=true) trigger the tap handler
 
-~import "$std/io"
-~import "$std/control"
-~import "$std/taps"
+~import "std/io"
+~import "std/control"
+~import "std/taps"
 
 const std = @import("std");
 

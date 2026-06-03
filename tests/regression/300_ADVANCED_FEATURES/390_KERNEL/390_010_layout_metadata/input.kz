@@ -7,8 +7,8 @@
 // NOTE: layout is currently stubbed to "aos" until analysis is implemented.
 // This test verifies that computed branch receives correct slice length.
 
-~import "$std/kernel"
-~import "$std/io"
+~import "std/kernel"
+~import "std/io"
 
 ~std.kernel:shape(Body) {
     x: f64,

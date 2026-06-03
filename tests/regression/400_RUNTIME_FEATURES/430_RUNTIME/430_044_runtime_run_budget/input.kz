@@ -1,7 +1,7 @@
 // Test: std.runtime:run enforces budget via scope cost
 
-~import "$std/runtime"
-~import "$std/io"
+~import "std/runtime"
+~import "std/io"
 
 ~pub event expensive {}
 

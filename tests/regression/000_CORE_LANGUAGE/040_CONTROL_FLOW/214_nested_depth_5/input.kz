@@ -1,6 +1,6 @@
 // Depth 5 test: Maximum stress test (10+1+2+3+4+5 = 25)
 const std = @import("std");
-~import "$std/io"
+~import "std/io"
 
 ~event add_one { value: i32 }
 | done i32

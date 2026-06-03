@@ -9,7 +9,7 @@
 // one event source emitting multiple kinds of signals, one consumer
 // dispatching cleanly with type-safe exhaustiveness.
 
-~import "$std/io"
+~import "std/io"
 
 ~pub event tokenize { source: []const u8 }
 ! token []const u8

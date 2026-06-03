@@ -8,7 +8,7 @@
 // Run: koruc input.kz --help
 // Expected: Help shows --my-custom-flag in Backend Compiler Flags
 
-~import "$std/compiler"
+~import "std/compiler"
 
 // User-defined flag
 ~std.compiler:flag.declare {

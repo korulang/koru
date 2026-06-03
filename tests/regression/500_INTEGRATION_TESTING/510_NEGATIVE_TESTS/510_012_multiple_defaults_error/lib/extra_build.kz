@@ -1,6 +1,6 @@
 // This module ALSO defines a default "test" - this is the error!
 
-~import "$std/build"
+~import "std/build"
 
 ~[default]
 std.build:step(name: "test") {

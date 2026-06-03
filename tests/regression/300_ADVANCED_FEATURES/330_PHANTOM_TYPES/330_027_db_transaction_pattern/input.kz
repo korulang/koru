@@ -1,5 +1,5 @@
-~import "$std/control"
-~import "$app/db"
+~import "std/control"
+~import "app/db"
 const query_succeeded = true;
 ~app.db:connect(url: "postgres://localhost/test")
 | connected c |> app.db:query(conn: c, sql: "SELECT * FROM users")

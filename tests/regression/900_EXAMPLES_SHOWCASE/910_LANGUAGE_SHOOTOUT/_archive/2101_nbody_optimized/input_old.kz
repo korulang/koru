@@ -22,7 +22,7 @@
 
 const std = @import("std");
 
-~import "$std/control"
+~import "std/control"
 
 const PI = 3.141592653589793;
 const SOLAR_MASS = 4 * PI * PI;

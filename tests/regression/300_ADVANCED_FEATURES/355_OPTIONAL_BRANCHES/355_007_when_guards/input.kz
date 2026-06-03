@@ -9,7 +9,7 @@
 // The |? catch-all does NOT substitute for the else case — it catches
 // entirely unhandled optional branches, not unmatched when-guards.
 
-~import "$std/io"
+~import "std/io"
 
 // Event with required + optional branches
 // success is REQUIRED, warning/debug are OPTIONAL

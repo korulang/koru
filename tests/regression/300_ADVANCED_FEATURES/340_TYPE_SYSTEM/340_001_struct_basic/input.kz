@@ -1,7 +1,7 @@
 // Test: Basic struct declaration via types module
 
-~import "$std/types"
-~import "$std/io"
+~import "std/types"
+~import "std/io"
 
 // Declare a struct type
 ~std.types:struct(Player) {

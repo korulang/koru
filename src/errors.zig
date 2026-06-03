@@ -139,7 +139,7 @@ pub const ErrorReporter = struct {
     bootstrap_source_lines: ?[][]const u8 = null,
     file_name: []const u8,
     /// Number of injected lines prepended to the parsed source before parsing
-    /// (e.g. the `~import "$std/compiler"` bootstrap line). The parser sees
+    /// (e.g. the `~import "std/compiler"` bootstrap line). The parser sees
     /// line numbers in INJECTED coordinates; we translate to user coordinates
     /// (subtract this count) when storing errors so user output is correct.
     /// 0 means no injection — translation is a no-op.

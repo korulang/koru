@@ -8,7 +8,7 @@
 //
 // Both should generate io.println.handler() but only #2 does!
 
-~import "$std/io"
+~import "std/io"
 
 ~event probe {}
 

@@ -4,7 +4,7 @@
 // REQUIRES you to be explicit. This catches logic bugs where you
 // might have chosen the wrong disposal path.
 
-~import "$std/control"
+~import "std/control"
 
 const std = @import("std");
 

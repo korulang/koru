@@ -2,8 +2,8 @@
 // Interpreted code can optionally be validated against an event signature
 // This ensures responses conform to a known shape
 
-~import "$std/runtime"
-~import "$std/io"
+~import "std/runtime"
+~import "std/io"
 
 const std = @import("std");
 

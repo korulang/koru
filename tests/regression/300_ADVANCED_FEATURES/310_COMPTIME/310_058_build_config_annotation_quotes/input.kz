@@ -4,7 +4,7 @@
 // the worst-case shape for a string-escape bug since both inner quotes
 // AND the comma must round-trip into the emitted Zig annotation array.
 
-~import "$std/build"
+~import "std/build"
 
 ~[build("debug", "trace")]std.build:config {
     "target": "x86_64-linux-gnu"

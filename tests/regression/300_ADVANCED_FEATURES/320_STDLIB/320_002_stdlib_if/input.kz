@@ -1,7 +1,7 @@
 // Test: Stdlib if keyword
 // Verifies that ~if is available as a keyword when importing any $std module
 
-~import "$std/io"
+~import "std/io"
 
 const std = @import("std");
 

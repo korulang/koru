@@ -5,8 +5,8 @@
 // 2. computed branch receives the kernel data
 // 3. user-defined events can consume values from computed data
 
-~import "$std/kernel"
-~import "$std/io"
+~import "std/kernel"
+~import "std/io"
 
 ~std.kernel:shape(Body) {
     mass: f64,

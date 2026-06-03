@@ -9,7 +9,7 @@
 // This enables type-safe integration with runtime libraries without
 // needing a redundant Zig @import.
 
-~import "$std/parser"
+~import "std/parser"
 
 const std = @import("std");
 

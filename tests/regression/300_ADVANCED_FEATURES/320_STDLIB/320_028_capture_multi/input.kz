@@ -15,8 +15,8 @@
 //
 // Koru is MORE READABLE with the same purity guarantees!
 
-~import "$std/io"
-~import "$std/control"
+~import "std/io"
+~import "std/control"
 
 ~event compute_stats {}
 | result { sum: i32, max: i32 }

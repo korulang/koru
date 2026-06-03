@@ -9,7 +9,7 @@
 //     | false |> rejected { reason: "score too low" }
 // | invalid e |> error { message: e.reason }
 
-~import "$std/runtime"
+~import "std/runtime"
 
 
 const std = @import("std");

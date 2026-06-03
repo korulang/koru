@@ -12,7 +12,7 @@
 //
 // USAGE:
 //   const std = @import("std");
-//   ~import "$std/rings"
+//   ~import "std/rings"
 //
 //   // Instantiate with your type (Zig generics - fully specialized at comptime)
 //   const MyRing = std.rings.MpmcRing(u64, 1024);

@@ -1,6 +1,6 @@
 // Test namespace wildcards - observe all events in a namespace
 const std = @import("std");
-~import "$std/taps"
+~import "std/taps"
 
 ~event http.request {}
 

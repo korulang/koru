@@ -5,7 +5,7 @@
 //
 // Expected: Compiles and emits a concrete Zig struct
 
-~import "$std/types"
+~import "std/types"
 
 const std = @import("std");
 

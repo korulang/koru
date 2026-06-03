@@ -3,7 +3,7 @@
 //
 // Input types work correctly, branch types don't.
 
-~import "$std/compiler"
+~import "std/compiler"
 
 // Event using qualified type in branch output
 ~pub event passthrough { ctx: std.compiler:CompilerContext }

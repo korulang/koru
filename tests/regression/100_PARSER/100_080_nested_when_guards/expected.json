@@ -5,7 +5,7 @@
     "items": [
         {
             "type": "import_decl",
-            "path": "$std/compiler",
+            "path": "std/compiler",
             "location": {
                 "file": "tests/regression/100_PARSER/100_080_nested_when_guards/input.kz",
                 "line": 2,

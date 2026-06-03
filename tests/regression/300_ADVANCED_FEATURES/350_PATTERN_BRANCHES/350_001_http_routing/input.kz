@@ -3,7 +3,7 @@
 // Koru does not support Zig anonymous struct literals (.{ .field = value })
 // in flow call parameters. Use named parameters instead.
 
-~import "$std/io"
+~import "std/io"
 
 const std = @import("std");
 

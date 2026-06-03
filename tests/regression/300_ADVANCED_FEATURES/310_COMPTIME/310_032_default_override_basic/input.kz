@@ -5,7 +5,7 @@
 // User code can override by defining the same name without [default]
 // Expected: User's version wins, diagnostic shows "overridden by main"
 
-~import "$std/build"
+~import "std/build"
 
 // User overrides the default "run" step
 ~std.build:step(name: "run") {

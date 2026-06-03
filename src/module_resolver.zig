@@ -398,89 +398,87 @@ pub const ModuleResolver = struct {
         // Handle $alias path prefixes
         const resolved_import_path = import_path;
 
-        if (import_path.len > 0 and import_path[0] == '$') {
-            const slash_pos = std.mem.indexOf(u8, import_path, "/");
-            const alias_end = slash_pos orelse import_path.len;
-            const alias = import_path[1..alias_end];
+        const slash_pos = std.mem.indexOf(u8, import_path, "/");
+        const alias_end = slash_pos orelse import_path.len;
+        const alias = import_path[0..alias_end];
 
-            log.debug("  Resolving alias: ${s}\n", .{alias});
+        log.debug("  Resolving alias: {s}\n", .{alias});
 
-            if (self.config.paths.get(alias)) |alias_paths| {
-                // Iterate through fallback chain - try each path until one exists
-                for (alias_paths, 0..) |alias_path_raw, path_idx| {
-                    // Interpolate {{ ENTRY }}, {{ KORU_HOME }} if present
-                    const alias_path = if (try self.interpolate(alias_path_raw)) |interpolated|
-                        interpolated
-                    else
-                        alias_path_raw;
-                    defer if (alias_path.ptr != alias_path_raw.ptr) self.allocator.free(alias_path);
+        if (self.config.paths.get(alias)) |alias_paths| {
+            // Iterate through fallback chain - try each path until one exists
+            for (alias_paths, 0..) |alias_path_raw, path_idx| {
+                // Interpolate {{ ENTRY }}, {{ KORU_HOME }} if present
+                const alias_path = if (try self.interpolate(alias_path_raw)) |interpolated|
+                    interpolated
+                else
+                    alias_path_raw;
+                defer if (alias_path.ptr != alias_path_raw.ptr) self.allocator.free(alias_path);
 
-                    log.debug("  [FALLBACK {}/{}] Trying: {s}\n", .{ path_idx + 1, alias_paths.len, alias_path });
+                log.debug("  [FALLBACK {}/{}] Trying: {s}\n", .{ path_idx + 1, alias_paths.len, alias_path });
 
-                    // Build the path to check (alias + remainder if any)
-                    const path_to_resolve = if (slash_pos) |pos| blk: {
-                        const remainder = import_path[pos + 1..];
-                        break :blk try std.fs.path.join(
-                            self.allocator,
-                            &[_][]const u8{ alias_path, remainder }
-                        );
-                    } else blk: {
-                        break :blk try self.allocator.dupe(u8, alias_path);
-                    };
-                    defer self.allocator.free(path_to_resolve);
+                // Build the path to check (alias + remainder if any)
+                const path_to_resolve = if (slash_pos) |pos| blk: {
+                    const remainder = import_path[pos + 1..];
+                    break :blk try std.fs.path.join(
+                        self.allocator,
+                        &[_][]const u8{ alias_path, remainder }
+                    );
+                } else blk: {
+                    break :blk try self.allocator.dupe(u8, alias_path);
+                };
+                defer self.allocator.free(path_to_resolve);
 
-                    // Alias paths are RELATIVE TO PROJECT ROOT (where koru.json is)
-                    // Resolve them absolutely using project_root as base
-                    const absolute_path = if (std.fs.path.isAbsolute(path_to_resolve))
-                        try self.allocator.dupe(u8, path_to_resolve)
-                    else
-                        try std.fs.path.resolve(self.allocator, &[_][]const u8{ self.project_root, path_to_resolve });
-                    defer self.allocator.free(absolute_path);
+                // Alias paths are RELATIVE TO PROJECT ROOT (where koru.json is)
+                // Resolve them absolutely using project_root as base
+                const absolute_path = if (std.fs.path.isAbsolute(path_to_resolve))
+                    try self.allocator.dupe(u8, path_to_resolve)
+                else
+                    try std.fs.path.resolve(self.allocator, &[_][]const u8{ self.project_root, path_to_resolve });
+                defer self.allocator.free(absolute_path);
 
-                    log.debug("    Resolved to: {s}\n", .{absolute_path});
+                log.debug("    Resolved to: {s}\n", .{absolute_path});
 
-                    // Check for BOTH file and directory
-                    var found_something = false;
+                // Check for BOTH file and directory
+                var found_something = false;
 
-                    // Check directory
-                    if (isDirectory(absolute_path)) {
-                        const dir_resolved = try std.fs.path.resolve(
-                            self.allocator,
-                            &[_][]const u8{absolute_path}
-                        );
-                        result.dir_path = dir_resolved;
-                        log.debug("    ✓ FOUND directory: {s}\n", .{dir_resolved});
-                        found_something = true;
-                    }
-
-                    // Check file (probe all Koru extensions if base doesn't carry one)
-                    if (try resolveKoruFile(self.allocator, absolute_path)) |file_resolved| {
-                        result.file_path = file_resolved;
-                        log.debug("    ✓ FOUND file: {s}\n", .{file_resolved});
-                        found_something = true;
-                    }
-
-                    // If we found something at this fallback path, return it
-                    if (found_something) {
-                        log.debug("  ✓ Resolved via fallback {}/{}\n", .{ path_idx + 1, alias_paths.len });
-                        return result;
-                    }
-
-                    log.debug("    ✗ Nothing found, trying next fallback...\n", .{});
+                // Check directory
+                if (isDirectory(absolute_path)) {
+                    const dir_resolved = try std.fs.path.resolve(
+                        self.allocator,
+                        &[_][]const u8{absolute_path}
+                    );
+                    result.dir_path = dir_resolved;
+                    log.debug("    ✓ FOUND directory: {s}\n", .{dir_resolved});
+                    found_something = true;
                 }
 
-                // None of the fallback paths worked
-                log.debug("\n✗✗✗ FATAL: Alias ${s} - all {} fallback paths exhausted ✗✗✗\n", .{ alias, alias_paths.len });
-                return error.ModuleNotFound;
-            } else {
-                log.debug("✗✗✗ FATAL: Unknown import alias: ${s}\n", .{alias});
-                log.debug("Available aliases from koru.json:\n", .{});
-                var iter = self.config.paths.iterator();
-                while (iter.next()) |entry| {
-                    log.debug("  ${s} -> [{} paths]\n", .{ entry.key_ptr.*, entry.value_ptr.*.len });
+                // Check file (probe all Koru extensions if base doesn't carry one)
+                if (try resolveKoruFile(self.allocator, absolute_path)) |file_resolved| {
+                    result.file_path = file_resolved;
+                    log.debug("    ✓ FOUND file: {s}\n", .{file_resolved});
+                    found_something = true;
                 }
-                return error.UnknownImportAlias;
+
+                // If we found something at this fallback path, return it
+                if (found_something) {
+                    log.debug("  ✓ Resolved via fallback {}/{}\n", .{ path_idx + 1, alias_paths.len });
+                    return result;
+                }
+
+                log.debug("    ✗ Nothing found, trying next fallback...\n", .{});
             }
+
+            // None of the fallback paths worked
+            log.debug("\n✗✗✗ FATAL: Alias {s} - all {} fallback paths exhausted ✗✗✗\n", .{ alias, alias_paths.len });
+            return error.ModuleNotFound;
+        } else if (!std.mem.startsWith(u8, import_path, "./") and !std.mem.startsWith(u8, import_path, "../") and !std.fs.path.isAbsolute(import_path)) {
+            log.debug("✗✗✗ FATAL: Unknown import alias: {s}\n", .{alias});
+            log.debug("Available aliases from koru.json:\n", .{});
+            var iter = self.config.paths.iterator();
+            while (iter.next()) |entry| {
+                log.debug("  {s} -> [{} paths]\n", .{ entry.key_ptr.*, entry.value_ptr.*.len });
+            }
+            return error.UnknownImportAlias;
         }
 
         // Helper to check both file and dir at a given base path
@@ -569,79 +567,76 @@ pub const ModuleResolver = struct {
         // Handle $alias path prefixes
         const resolved_import_path = import_path;
 
-        if (import_path.len > 0 and import_path[0] == '$') {
-            // Find the end of the alias (first '/' or end of string)
-            const slash_pos = std.mem.indexOf(u8, import_path, "/");
-            const alias_end = slash_pos orelse import_path.len;
-            const alias = import_path[1..alias_end]; // Skip the '$'
+        const slash_pos = std.mem.indexOf(u8, import_path, "/");
+        const alias_end = slash_pos orelse import_path.len;
+        const alias = import_path[0..alias_end];
 
-            log.debug("  Resolving alias: ${s}\n", .{alias});
+        log.debug("  Resolving alias: {s}\n", .{alias});
 
-            // Look up alias in config.paths (now returns array of fallback paths)
-            if (self.config.paths.get(alias)) |alias_paths| {
-                // Iterate through fallback chain - try each path until one exists
-                for (alias_paths) |alias_path_raw| {
-                    // Interpolate {{ ENTRY }}, {{ KORU_HOME }} if present
-                    const alias_path = if (try self.interpolate(alias_path_raw)) |interpolated|
-                        interpolated
-                    else
-                        alias_path_raw;
-                    defer if (alias_path.ptr != alias_path_raw.ptr) self.allocator.free(alias_path);
+        // Look up alias in config.paths (now returns array of fallback paths)
+        if (self.config.paths.get(alias)) |alias_paths| {
+            // Iterate through fallback chain - try each path until one exists
+            for (alias_paths) |alias_path_raw| {
+                // Interpolate {{ ENTRY }}, {{ KORU_HOME }} if present
+                const alias_path = if (try self.interpolate(alias_path_raw)) |interpolated|
+                    interpolated
+                else
+                    alias_path_raw;
+                defer if (alias_path.ptr != alias_path_raw.ptr) self.allocator.free(alias_path);
 
-                    log.debug("  ✓ Trying fallback: {s}\n", .{alias_path});
+                log.debug("  ✓ Trying fallback: {s}\n", .{alias_path});
 
-                    // Build the path to check (alias + remainder if any)
-                    const path_to_resolve = if (slash_pos) |pos| blk: {
-                        const remainder = import_path[pos + 1..];
-                        break :blk try std.fs.path.join(
-                            self.allocator,
-                            &[_][]const u8{ alias_path, remainder }
-                        );
-                    } else blk: {
-                        break :blk try self.allocator.dupe(u8, alias_path);
-                    };
-                    defer self.allocator.free(path_to_resolve);
+                // Build the path to check (alias + remainder if any)
+                const path_to_resolve = if (slash_pos) |pos| blk: {
+                    const remainder = import_path[pos + 1..];
+                    break :blk try std.fs.path.join(
+                        self.allocator,
+                        &[_][]const u8{ alias_path, remainder }
+                    );
+                } else blk: {
+                    break :blk try self.allocator.dupe(u8, alias_path);
+                };
+                defer self.allocator.free(path_to_resolve);
 
-                    // Alias paths are RELATIVE TO PROJECT ROOT (where koru.json is)
-                    const absolute_path = if (std.fs.path.isAbsolute(path_to_resolve))
-                        try self.allocator.dupe(u8, path_to_resolve)
-                    else
-                        try std.fs.path.resolve(self.allocator, &[_][]const u8{ self.project_root, path_to_resolve });
-                    defer self.allocator.free(absolute_path);
+                // Alias paths are RELATIVE TO PROJECT ROOT (where koru.json is)
+                const absolute_path = if (std.fs.path.isAbsolute(path_to_resolve))
+                    try self.allocator.dupe(u8, path_to_resolve)
+                else
+                    try std.fs.path.resolve(self.allocator, &[_][]const u8{ self.project_root, path_to_resolve });
+                defer self.allocator.free(absolute_path);
 
-                    log.debug("    Resolved to (absolute): {s}\n", .{absolute_path});
+                log.debug("    Resolved to (absolute): {s}\n", .{absolute_path});
 
-                    // Check if it's a directory
-                    if (isDirectory(absolute_path)) {
-                        const resolved = try std.fs.path.resolve(
-                            self.allocator,
-                            &[_][]const u8{absolute_path}
-                        );
-                        log.debug("    ✓ FOUND directory: {s}\n", .{resolved});
-                        return resolved;
-                    }
-
-                    // Check if it's a file (probe all Koru extensions if base doesn't carry one)
-                    if (try resolveKoruFile(self.allocator, absolute_path)) |resolved| {
-                        log.debug("    ✓ FOUND file: {s}\n", .{resolved});
-                        return resolved;
-                    } else {
-                        log.debug("    ✗ Not found, trying next fallback...\n", .{});
-                    }
+                // Check if it's a directory
+                if (isDirectory(absolute_path)) {
+                    const resolved = try std.fs.path.resolve(
+                        self.allocator,
+                        &[_][]const u8{absolute_path}
+                    );
+                    log.debug("    ✓ FOUND directory: {s}\n", .{resolved});
+                    return resolved;
                 }
-                // None of the fallback paths worked
-                log.debug("\n✗✗✗ FATAL: Alias ${s} - all fallback paths exhausted ✗✗✗\n", .{alias});
-                return error.ModuleNotFound;
-            } else {
-                // Alias not found in config
-                log.debug("✗✗✗ FATAL: Unknown import alias: ${s}\n", .{alias});
-                log.debug("Available aliases from koru.json:\n", .{});
-                var iter = self.config.paths.iterator();
-                while (iter.next()) |entry| {
-                    log.debug("  ${s} -> [{} paths]\n", .{ entry.key_ptr.*, entry.value_ptr.*.len });
+
+                // Check if it's a file (probe all Koru extensions if base doesn't carry one)
+                if (try resolveKoruFile(self.allocator, absolute_path)) |resolved| {
+                    log.debug("    ✓ FOUND file: {s}\n", .{resolved});
+                    return resolved;
+                } else {
+                    log.debug("    ✗ Not found, trying next fallback...\n", .{});
                 }
-                return error.UnknownImportAlias;
             }
+            // None of the fallback paths worked
+            log.debug("\n✗✗✗ FATAL: Alias {s} - all fallback paths exhausted ✗✗✗\n", .{alias});
+            return error.ModuleNotFound;
+        } else if (!std.mem.startsWith(u8, import_path, "./") and !std.mem.startsWith(u8, import_path, "../") and !std.fs.path.isAbsolute(import_path)) {
+            // Alias not found in config
+            log.debug("✗✗✗ FATAL: Unknown import alias: {s}\n", .{alias});
+            log.debug("Available aliases from koru.json:\n", .{});
+            var iter = self.config.paths.iterator();
+            while (iter.next()) |entry| {
+                log.debug("  {s} -> [{} paths]\n", .{ entry.key_ptr.*, entry.value_ptr.*.len });
+            }
+            return error.UnknownImportAlias;
         }
 
         // 1. If it's an absolute path, use it directly

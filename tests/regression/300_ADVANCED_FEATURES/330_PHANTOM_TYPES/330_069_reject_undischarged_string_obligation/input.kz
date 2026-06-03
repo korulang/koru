@@ -9,7 +9,7 @@
 //
 // Positive twin: 330_068.
 
-~import "$std/io"
+~import "std/io"
 
 ~pub event get_input {}
 | line []const u8<unsanitized!>

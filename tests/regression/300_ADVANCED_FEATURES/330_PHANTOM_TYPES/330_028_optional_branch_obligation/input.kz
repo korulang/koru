@@ -1,4 +1,4 @@
-~import "$app/resource"
+~import "app/resource"
 ~app.resource:risky()
 | success _ |> _
 pub fn main() void {}

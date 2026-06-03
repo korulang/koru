@@ -2,8 +2,8 @@
 //
 // Pub annotation should still work with keyword syntax.
 
-~import "$std/types"
-~import "$std/io"
+~import "std/types"
+~import "std/io"
 
 // Private struct
 ~struct(Internal) {

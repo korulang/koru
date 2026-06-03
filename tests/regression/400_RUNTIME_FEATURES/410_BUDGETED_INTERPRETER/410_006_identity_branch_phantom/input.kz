@@ -1,8 +1,8 @@
 // Test: Identity branches with phantom types in runtime dispatcher
 // The runtime dispatcher must handle identity branches (bare types, not structs)
 
-~import "$std/runtime"
-~import "$std/io"
+~import "std/runtime"
+~import "std/io"
 
 // Identity branch with phantom annotation
 ~pub event create {}

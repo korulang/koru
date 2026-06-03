@@ -2,7 +2,7 @@
 // Validates that ~tap() observes and reacts to event transitions
 
 const std = @import("std");
-~import "$std/taps"
+~import "std/taps"
 
 // Event with an identity branch — taps work by observing TRANSITIONS,
 // so the event needs a real branch to fire on.

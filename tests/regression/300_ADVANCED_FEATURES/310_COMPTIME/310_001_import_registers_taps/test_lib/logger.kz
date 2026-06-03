@@ -2,7 +2,7 @@
 // When imported, these taps automatically register and intercept matching events
 
 const std = @import("std");
-~import "$std/taps"
+~import "std/taps"
 
 // Define a logging event
 ~pub event log { event_name: []const u8 }
