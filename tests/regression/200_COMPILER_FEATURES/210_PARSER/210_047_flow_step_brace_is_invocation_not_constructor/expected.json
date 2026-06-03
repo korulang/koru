@@ -5,7 +5,7 @@
     "items": [
         {
             "type": "import_decl",
-            "path": "$std/compiler",
+            "path": "std/compiler",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_047_flow_step_brace_is_invocation_not_constructor/input.kz",
                 "line": 2,
