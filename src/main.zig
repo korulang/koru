@@ -5957,7 +5957,7 @@ fn runSkillsInstall(allocator: std.mem.Allocator, args: [][:0]u8) !void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer {
         const leak_status = gpa.deinit();
         if (leak_status == .leak) {

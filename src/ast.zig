@@ -1588,7 +1588,7 @@ pub const ASTNode = union(enum) {
                     },
                 }
             },
-            .invocation => |_| blk: {
+            .invocation => blk: {
                 // Invocation is a leaf node (args are data, not traversable nodes)
                 break :blk try allocator.alloc(ASTNode, 0);
             },

@@ -1,6 +1,6 @@
 # Koru in a Page
 
-> Generated 2026-06-03T05:03:01.800Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
+> Generated 2026-06-03T10:58:00.507Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
 
 > **Note:** This tutorial is prose synthesis on top of the test suite. It may contain errors or drift. The compiler's actual behavior — verified by tests in `tests/regression/` and source in `src/` — is the source of truth. When you find this document saying one thing and the compiler doing another, the conflict itself is the finding: flag it, don't paper over it.
 >
@@ -176,7 +176,7 @@ const count: i32 = 42;
 // Hello World in pure Koru.
 // This is the frontpage example from korulang.org.
 
-~import "$std/io"
+~import "std/io"
 
 ~std.io:print.blk {
     {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
@@ -197,12 +197,12 @@ The answer is 42.
 // Test: Pure subflow implementation (no proc needed)
 // From the README example - this is idiomatic Koru
 // This is the default authoring model for ordinary event behavior.
-~import "$std/io"
+~import "std/io"
 
 ~event greet { name: []const u8 }
 | greeting []const u8
 
-~greet = greeting "Hello, " ++ name ++ "!"
+~greet => greeting "Hello, " ++ name ++ "!"
 
 ~greet ("World")
 | greeting msg |> std.io:print.ln(msg)
@@ -297,7 +297,7 @@ Negative branch works: -7
 // other languages" trap is re-introduced at parser.zig parseStep,
 // this test fails. That is the point.
 
-~import "$std/io"
+~import "std/io"
 
 // Lower-level event: arbitrary outcome names
 ~pub event step {}
@@ -305,7 +305,7 @@ Negative branch works: -7
 | break
 | continue
 
-~step = continue
+~step => continue
 
 // Outer event: its own outcome vocabulary
 ~pub event run {}
@@ -316,9 +316,9 @@ Negative branch works: -7
 // mapped to `run`'s. The meaning of `return`, `break`, `continue`
 // lives HERE — in user code, not in the compiler.
 ~run = step()
-| return |> stopped
-| break |> stopped
-| continue |> iterated
+| return => stopped
+| break => stopped
+| continue => iterated
 
 ~std.io:print.ln("Testing subflow-defined semantics:")
 ~run()
@@ -336,7 +336,7 @@ Testing subflow-defined semantics:
 ### 330_005_cleanup_obligation_satisfied
 
 ```koru
-~import "$app/fs"
+~import "app/fs"
 ~app.fs:open(path: "test.txt")
 | opened f |> app.fs:close(file: f)
 ```
@@ -358,7 +358,7 @@ Closing file
 // runs it, then returns. No terminal `|` branches — this is a void event
 // with one effect operation.
 
-~import "$std/io"
+~import "std/io"
 
 const std = @import("std");
 

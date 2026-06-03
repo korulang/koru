@@ -1,6 +1,6 @@
 # Koru by Example
 
-> 22 hand-picked tests from `tests/regression/`. Generated 2026-06-03T05:03:01.662Z by `scripts/generate-corpus.js`.
+> 22 hand-picked tests from `tests/regression/`. Generated 2026-06-03T10:58:00.379Z by `scripts/generate-corpus.js`.
 
 Every example below is verbatim source from a passing POSITIVE regression test (negative MUST_FAIL tests are excluded — these are all what-to-do). Section prose is pulled from existing `SPEC.md` / `README.md` files in the relevant category directories — drift is tolerated in this pass and cleaned in a separate sweep. Per-test prose is intentionally NOT pulled; tests speak for themselves.
 
@@ -467,7 +467,7 @@ const count: i32 = 42;
 // Hello World in pure Koru.
 // This is the frontpage example from korulang.org.
 
-~import "$std/io"
+~import "std/io"
 
 ~std.io:print.blk {
     {% if debug %}[DEBUG] {% endif %}Hello, {{ name:s }}!
@@ -701,12 +701,12 @@ Void events work correctly
 // Test: Pure subflow implementation (no proc needed)
 // From the README example - this is idiomatic Koru
 // This is the default authoring model for ordinary event behavior.
-~import "$std/io"
+~import "std/io"
 
 ~event greet { name: []const u8 }
 | greeting []const u8
 
-~greet = greeting "Hello, " ++ name ++ "!"
+~greet => greeting "Hello, " ++ name ++ "!"
 
 ~greet ("World")
 | greeting msg |> std.io:print.ln(msg)
@@ -965,7 +965,7 @@ const std = @import("std");
 // Previously: emitter would generate |name| capture even for empty payloads
 // Fixed: emitter now generates => { without capture for empty payloads
 
-~import "$std/io"
+~import "std/io"
 
 // Event with two branches, BOTH empty (no payload fields)
 ~event check_value { n: i32 }
@@ -1019,7 +1019,7 @@ const std = @import("std");
 // other languages" trap is re-introduced at parser.zig parseStep,
 // this test fails. That is the point.
 
-~import "$std/io"
+~import "std/io"
 
 // Lower-level event: arbitrary outcome names
 ~pub event step {}
@@ -1027,7 +1027,7 @@ const std = @import("std");
 | break
 | continue
 
-~step = continue
+~step => continue
 
 // Outer event: its own outcome vocabulary
 ~pub event run {}
@@ -1038,9 +1038,9 @@ const std = @import("std");
 // mapped to `run`'s. The meaning of `return`, `break`, `continue`
 // lives HERE — in user code, not in the compiler.
 ~run = step()
-| return |> stopped
-| break |> stopped
-| continue |> iterated
+| return => stopped
+| break => stopped
+| continue => iterated
 
 ~std.io:print.ln("Testing subflow-defined semantics:")
 ~run()
@@ -1854,7 +1854,7 @@ pub const Comparison = struct {
 const std = @import("std");
 
 // Import the logger module (which defines universal taps)
-~import "$app/test_lib/logger"
+~import "app/test_lib/logger"
 
 // Define some events to test with
 ~event compute { x: i32 }
@@ -2359,7 +2359,7 @@ The phantom annotation `[fs:open]` exists only during compilation.
 ### 330_005_cleanup_obligation_satisfied
 
 ```koru
-~import "$app/fs"
+~import "app/fs"
 ~app.fs:open(path: "test.txt")
 | opened f |> app.fs:close(file: f)
 ```
@@ -2374,7 +2374,7 @@ Closing file
 ### 330_006_cleanup_consumed_by_disposal
 
 ```koru
-~import "$app/fs"
+~import "app/fs"
 ~app.fs:open(path: "test.txt")
 | opened f |> app.fs:close(file: f)
 ```
@@ -2395,7 +2395,7 @@ Closing file
 //
 // Tests that [allocated!] obligation can be discharged with [!allocated]
 
-~import "$std/io"
+~import "std/io"
 
 const std = @import("std");
 
@@ -2445,7 +2445,7 @@ Test done
 // runs it, then returns. No terminal `|` branches — this is a void event
 // with one effect operation.
 
-~import "$std/io"
+~import "std/io"
 
 const std = @import("std");
 
@@ -2476,8 +2476,8 @@ hello effect branches
 
 ```koru
 // Test: Basic string creation and read
-~import "$std/string"
-~import "$std/io"
+~import "std/string"
+~import "std/io"
 
 ~std.string:from_page(text: "hello")
 | ok s |> std.string:read(s)
@@ -2497,14 +2497,14 @@ hello
 
 ```koru
 // TEST: fmt:ln basic - format a string and get it back via | line continuation
-~import "$std/fmt"
-~import "$std/io"
+~import "std/fmt"
+~import "std/io"
 
 ~event greet { name: []const u8 }
 | greeted []const u8
 
 ~greet = std.fmt:ln("Hello, {{ name:s }}!")
-| line l |> greeted l.text
+| line l => greeted l.text
 
 ~greet(name: "World")
 | greeted g |> std.io:println(text: g)
