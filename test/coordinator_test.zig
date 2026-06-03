@@ -74,7 +74,7 @@ test "metrics computation" {
     try items.append(allocator, .{
         .proc_decl = .{
             .path = .{ .segments = @constCast(&[_][]const u8{"event1"}) },
-            .body = "// handler code",
+            .body = .{ .text = "// handler code", .scope = .{ .bindings = &.{} } },
         },
     });
     

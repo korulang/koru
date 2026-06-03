@@ -265,7 +265,7 @@ fn renderTemplateInvocation(
     try filters.put("parse_range", parseRangeFilter);
 
     var comp_err: ?[]const u8 = null;
-    const rendered = liquid.renderWithEnv(allocator, proc.body, &ctx, &comp_err, .{ .filters = &filters }) catch |err| {
+    const rendered = liquid.renderWithEnv(allocator, proc.body.text, &ctx, &comp_err, .{ .filters = &filters }) catch |err| {
         if (err == error.CompError) {
             emitCompErrorAndExit(location, comp_err orelse "template comp error");
         }
@@ -604,17 +604,18 @@ fn processProc(pd: *ast.ProcDecl, allocator: std.mem.Allocator) !void {
     try ctx.put("proc_name", .{ .string = proc_name });
 
     var comp_err: ?[]const u8 = null;
-    const rendered = liquid.renderCollectCompError(allocator, pd.body, &ctx, &comp_err) catch |err| {
+    const rendered = liquid.renderCollectCompError(allocator, pd.body.text, &ctx, &comp_err) catch |err| {
         if (err == error.CompError) {
             emitCompErrorAndExit(pd.location, comp_err orelse "template comp error");
         }
         return err;
     };
 
-    // Replace body with rendered output. NOTE: do NOT free the old slice —
+    // Replace body text with rendered output, preserving the Source's
+    // location/scope/phantom_type provenance. NOTE: do NOT free the old slice —
     // the backend's AST lives in program_ast.zig as a static const value
     // and isn't allocator-owned. Leak is acceptable here (one-shot compile).
-    pd.body = rendered;
+    pd.body.text = rendered;
 
     // Strip the `template|` prefix from the variant chain. Same ownership
     // caveat — don't free the old target slice.

@@ -379,7 +379,9 @@ pub const HostTypeDecl = struct {
 
 pub const ProcDecl = struct {
     path: DottedPath,
-    body: []const u8, // Opaque code (language determined by target)
+    body: Source, // Opaque code as a typed Source (text + location + scope + phantom_type).
+                  // Carrying location/phantom_type lets filter-based parsing of the body
+                  // (e.g. parse_fields) report diagnostics at real .kz line:col and stay target-aware.
     inline_flows: []const Flow = &.{}, // Flows extracted from host-language proc bodies
     annotations: []const []const u8 = &[_][]const u8{}, // Proc annotations like [pure|async]
     target: ?[]const u8 = null, // Language target: "gpu", "js", "python", null = Zig
@@ -396,7 +398,7 @@ pub const ProcDecl = struct {
 
     pub fn deinit(self: *ProcDecl, allocator: std.mem.Allocator) void {
         self.path.deinit(allocator);
-        allocator.free(self.body);
+        self.body.deinit(allocator);
         for (self.inline_flows) |*flow| {
             var mutable_flow = flow.*;
             mutable_flow.deinit(allocator);

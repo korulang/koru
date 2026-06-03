@@ -25,10 +25,10 @@ test "parser captures .call suffix in proc body" {
         switch (item) {
             .proc_decl => |proc| {
                 // The proc body should contain the full ".call;" suffix
-                std.debug.print("\n=== PROC BODY ===\n{s}\n=== END ===\n", .{proc.body});
+                std.debug.print("\n=== PROC BODY ===\n{s}\n=== END ===\n", .{proc.body.text});
                 
                 // This should pass but currently fails!
-                try std.testing.expect(std.mem.indexOf(u8, proc.body, ".call;") != null);
+                try std.testing.expect(std.mem.indexOf(u8, proc.body.text, ".call;") != null);
                 return;
             },
             else => {},
@@ -61,10 +61,10 @@ test "parser captures multiline .call suffix" {
     for (result.source_file.items) |item| {
         switch (item) {
             .proc_decl => |proc| {
-                std.debug.print("\n=== MULTILINE PROC BODY ===\n{s}\n=== END ===\n", .{proc.body});
+                std.debug.print("\n=== MULTILINE PROC BODY ===\n{s}\n=== END ===\n", .{proc.body.text});
                 
                 // Check that it ends with .call;
-                const trimmed = std.mem.trimRight(u8, proc.body, " \n\r\t");
+                const trimmed = std.mem.trimRight(u8, proc.body.text, " \n\r\t");
                 try std.testing.expect(std.mem.endsWith(u8, trimmed, ".call;"));
                 return;
             },

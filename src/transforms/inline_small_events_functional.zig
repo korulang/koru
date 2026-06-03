@@ -54,10 +54,10 @@ fn inlineSmallEvents(
         switch (item.*) {
             .proc_decl => |proc| {
                 const path_str = try pathToString(allocator, proc.path.segments);
-                const body_copy = try allocator.dupe(u8, proc.body);
+                const body_copy = try allocator.dupe(u8, proc.body.text);
                 try proc_map.put(path_str, ProcData{
                     .body = body_copy,
-                    .line_count = countLines(proc.body),
+                    .line_count = countLines(proc.body.text),
                 });
             },
             .event_decl => |*event| {
@@ -260,7 +260,7 @@ pub fn countInlineCandidates(
         switch (item.*) {
             .proc_decl => |proc| {
                 const path_str = try pathToString(allocator, proc.path.segments);
-                const line_count = countLines(proc.body);
+                const line_count = countLines(proc.body.text);
                 try proc_map.put(path_str, line_count);
             },
             else => {},
@@ -325,7 +325,7 @@ pub fn getInlineMetrics(
         switch (item.*) {
             .proc_decl => |proc| {
                 const path_str = try pathToString(allocator, proc.path.segments);
-                const line_count = countLines(proc.body);
+                const line_count = countLines(proc.body.text);
                 try proc_map.put(path_str, line_count);
                 metrics.total_proc_lines += line_count;
             },

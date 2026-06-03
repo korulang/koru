@@ -375,7 +375,7 @@ pub const ProgramAnalysis = struct {
             switch (item) {
                 .proc_decl => |p| {
                     // Simple heuristic: small body suggests inlineable
-                    if (p.body.len < 200) {
+                    if (p.body.text.len < 200) {
                         return true;
                     }
                 },

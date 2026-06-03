@@ -96,9 +96,9 @@ pub const InlineSmallEventsTransform = struct {
                     const path_str = try localPathToString(self.allocator, proc.path.segments);
                     defer self.allocator.free(path_str);
                     const path_copy = try self.allocator.dupe(u8, path_str);
-                    const body_copy = try self.allocator.dupe(u8, proc.body);
-                    
-                    std.debug.print("DEBUG: Storing proc {s} with body len={}, copy len={}\n", .{path_str, proc.body.len, body_copy.len});
+                    const body_copy = try self.allocator.dupe(u8, proc.body.text);
+
+                    std.debug.print("DEBUG: Storing proc {s} with body len={}, copy len={}\n", .{path_str, proc.body.text.len, body_copy.len});
                     
                     try proc_map.put(path_copy, ProcData{ .body = body_copy });
                 },

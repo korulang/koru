@@ -8567,9 +8567,9 @@ fn emitEventDeclForModule(
     // Then check for proc_decl (Zig inline implementation)
     if (!found_impl) {
         if (findProcDeclByPath(all_items, &event.path)) |proc| {
-            if (proc.body.len > 0) {
+            if (proc.body.text.len > 0) {
                 try code_emitter.writeIndent();
-                try code_emitter.write(proc.body);
+                try code_emitter.write(proc.body.text);
                 try code_emitter.write("\n");
             }
             found_impl = true;
@@ -8654,9 +8654,9 @@ fn emitEventDeclForModule(
         try code_emitter.writeIndent();
         try code_emitter.write("_ = &__koru_event_input;\n");
 
-        if (variant_proc.body.len > 0) {
+        if (variant_proc.body.text.len > 0) {
             try code_emitter.writeIndent();
-            try code_emitter.write(variant_proc.body);
+            try code_emitter.write(variant_proc.body.text);
             try code_emitter.write("\n");
         }
 

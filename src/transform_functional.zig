@@ -240,7 +240,7 @@ pub const SymbolTable = struct {
                         info.has_proc = true;
                     }
 
-                    const body_size = proc.body.len;
+                    const body_size = proc.body.text.len;
                     try self.procs.put(try self.allocator.dupe(u8, path_str), ProcInfo{
                         .body_size = body_size,
                     });

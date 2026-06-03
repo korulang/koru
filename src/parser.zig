@@ -1943,7 +1943,12 @@ pub const Parser = struct {
 
         return ast.ProcDecl{
             .path = path,
-            .body = extraction_result.modified_body,
+            .body = ast.Source{
+                .text = extraction_result.modified_body,
+                .location = self.getCurrentLocation(),
+                .scope = ast.CapturedScope{ .bindings = &[_]ast.ScopeBinding{} },
+                .phantom_type = null,
+            },
             .inline_flows = extraction_result.flows,
             .annotations = annotations_copy,
             .target = target,
@@ -2071,7 +2076,12 @@ pub const Parser = struct {
 
         const proc_decl = ast.ProcDecl{
             .path = path,
-            .body = extraction_result.modified_body,
+            .body = ast.Source{
+                .text = extraction_result.modified_body,
+                .location = self.getCurrentLocation(),
+                .scope = ast.CapturedScope{ .bindings = &[_]ast.ScopeBinding{} },
+                .phantom_type = null,
+            },
             .inline_flows = extraction_result.flows,
             .annotations = try annotations.toOwnedSlice(self.allocator),
             .target = target,
@@ -7724,7 +7734,7 @@ test "parser handles proc declaration" {
     const proc = item.proc_decl;
     try std.testing.expectEqualStrings(proc.path.segments[0], "compute");
     // ProcDecl only stores the body as opaque Zig code
-    try std.testing.expect(proc.body.len > 0);
+    try std.testing.expect(proc.body.text.len > 0);
 }
 
 test "parser handles complex nested proc body extraction" {
@@ -7769,8 +7779,8 @@ test "parser handles complex nested proc body extraction" {
     try std.testing.expectEqualStrings(proc.path.segments[1], "test");
 
     // The body should contain all the nested code
-    try std.testing.expect(std.mem.indexOf(u8, proc.body, "const str1") != null);
-    try std.testing.expect(std.mem.indexOf(u8, proc.body, "return result") != null);
+    try std.testing.expect(std.mem.indexOf(u8, proc.body.text, "const str1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, proc.body.text, "return result") != null);
 
     // Make sure the flow after the proc was parsed
     const flow_item = parse_result.source_file.items[1];

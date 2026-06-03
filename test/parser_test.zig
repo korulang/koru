@@ -292,7 +292,7 @@ test "complex proc body extraction with nested braces" {
     const proc = proc_item.proc_decl;
     
     // Check that the proc body contains all expected content
-    const body = proc.body;
+    const body = proc.body.text;
     
     // The body should contain all our nested code
     try testing.expect(std.mem.indexOf(u8, body, "const str1") != null);
@@ -342,7 +342,7 @@ test "proc body extraction with strings containing braces" {
     
     // Check the proc
     const proc = result.source_file.items[0].proc_decl;
-    const body = proc.body;
+    const body = proc.body.text;
     
     // All lines should be in the body
     try testing.expect(std.mem.indexOf(u8, body, "const msg1") != null);

@@ -1250,7 +1250,7 @@ fn cloneProcDecl(allocator: std.mem.Allocator, proc: *const ast.ProcDecl) !ast.P
 
     return .{
         .path = try cloneDottedPath(allocator, &proc.path),
-        .body = try allocator.dupe(u8, proc.body),
+        .body = try cloneSource(allocator, &proc.body),
         .annotations = annotations,
         .target = if (proc.target) |t| try allocator.dupe(u8, t) else null,
         .is_impl = proc.is_impl,
@@ -1382,6 +1382,23 @@ fn cloneField(allocator: std.mem.Allocator, field: *const ast.Field) !ast.Field 
         .expression = field.expression, // Pointer copy - original persists
         .expression_str = if (field.expression_str) |e| try allocator.dupe(u8, e) else null,
         .owns_expression = false, // Cloned fields don't own the expression
+    };
+}
+
+pub fn cloneSource(allocator: std.mem.Allocator, source: *const ast.Source) !ast.Source {
+    const bindings = try allocator.alloc(ast.ScopeBinding, source.scope.bindings.len);
+    for (source.scope.bindings, 0..) |b, i| {
+        bindings[i] = .{
+            .name = try allocator.dupe(u8, b.name),
+            .type = try allocator.dupe(u8, b.type),
+            .value_ref = try allocator.dupe(u8, b.value_ref),
+        };
+    }
+    return .{
+        .text = try allocator.dupe(u8, source.text),
+        .location = source.location,
+        .scope = .{ .bindings = bindings },
+        .phantom_type = if (source.phantom_type) |pt| try allocator.dupe(u8, pt) else null,
     };
 }
 

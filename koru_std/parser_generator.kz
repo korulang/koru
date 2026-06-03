@@ -181,7 +181,7 @@ const std = @import("std");
             .segments = parse_segments, // Reuse same segments
             .module_qualifier = event_decl.path.module_qualifier,
         },
-        .body = proc_body_str,
+        .body = ast.Source{ .text = proc_body_str, .location = event_decl.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
         .target = allocator.dupe(u8, "zig") catch unreachable,
         .module = event_decl.module,
         .location = event_decl.location,

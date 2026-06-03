@@ -127,7 +127,7 @@ test "visitor pattern - collecting visitor" {
     try items.append(allocator, .{
         .proc_decl = .{
             .path = .{ .segments = proc1_segments },
-            .body = try allocator.dupe(u8, "return .{ .done = .{} };"),
+            .body = .{ .text = try allocator.dupe(u8, "return .{ .done = .{} };"), .scope = .{ .bindings = &.{} } },
         },
     });
     var flow1_segments = try allocator.alloc([]const u8, 1);
@@ -197,7 +197,7 @@ test "inline small events - detection" {
     try items.append(allocator, .{
         .proc_decl = .{
             .path = .{ .segments = @constCast(&[_][]const u8{"small"}) },
-            .body = "return .{ .result = .{ .value = e.x + 1 } };",
+            .body = .{ .text = "return .{ .result = .{ .value = e.x + 1 } };", .scope = .{ .bindings = &.{} } },
         },
     });
     var flow_args = try allocator.alloc(ast.Arg, 1);

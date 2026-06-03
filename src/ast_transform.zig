@@ -121,12 +121,12 @@ pub const SymbolTable = struct {
                     // Mark that this event has a proc
                     if (self.events.getPtr(path_str)) |info| {
                         info.has_proc = true;
-                        info.size_estimate = estimateProcSize(proc.body);
+                        info.size_estimate = estimateProcSize(proc.body.text);
                     }
-                    
+
                     try self.procs.put(path_str, ProcInfo{
                         .path = proc.path,
-                        .body = proc.body,
+                        .body = proc.body.text,
                     });
                 },
                 .flow => |flow| {
@@ -234,9 +234,22 @@ fn cloneProc(allocator: std.mem.Allocator, proc: ast.ProcDecl) !ast.ProcDecl {
         annotations[i] = try allocator.dupe(u8, ann);
     }
 
+    const body_bindings = try allocator.alloc(ast.ScopeBinding, proc.body.scope.bindings.len);
+    for (proc.body.scope.bindings, 0..) |b, i| {
+        body_bindings[i] = .{
+            .name = try allocator.dupe(u8, b.name),
+            .type = try allocator.dupe(u8, b.type),
+            .value_ref = try allocator.dupe(u8, b.value_ref),
+        };
+    }
     return .{
         .path = try clonePath(allocator, proc.path),
-        .body = try allocator.dupe(u8, proc.body),
+        .body = ast.Source{
+            .text = try allocator.dupe(u8, proc.body.text),
+            .location = proc.body.location,
+            .scope = .{ .bindings = body_bindings },
+            .phantom_type = if (proc.body.phantom_type) |pt| try allocator.dupe(u8, pt) else null,
+        },
         .inline_flows = try cloneFlows(allocator, proc.inline_flows),
         .annotations = annotations,
         .target = if (proc.target) |t| try allocator.dupe(u8, t) else null,

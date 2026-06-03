@@ -119,7 +119,9 @@ const std = @import("std");
     // Create runtime ProcDecl that implements renderHTML
     const runtime_proc = ast.ProcDecl{
         .path = renderHTML_path,
-        .body = proc_body,
+        // Proc bodies are Source-typed: the synthesized proc carries the
+        // provenance of the Source block it was rendered from.
+        .body = ast.Source{ .text = proc_body, .location = source_location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
         .annotations = &[_][]const u8{},
         .target = allocator.dupe(u8, "zig") catch unreachable,
         .is_impl = true,

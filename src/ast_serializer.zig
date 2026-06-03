@@ -480,17 +480,11 @@ pub const AstSerializer = struct {
         try self.serializeDottedPath(proc.path);
         try self.write(",\n");
 
-        // Body (Zig code as multiline string)
+        // Body is a typed Source (text + location + scope + phantom_type).
         try self.writeIndent();
         try self.write(".body = ");
-
-        if (std.mem.indexOf(u8, proc.body, "\n") != null) {
-            try self.writeMultilineString(proc.body);
-            try self.write(",\n");
-        } else {
-            try self.writeString(proc.body);
-            try self.write(",\n");
-        }
+        try self.serializeSource(&proc.body);
+        try self.write(",\n");
 
 
         // Serialize annotations

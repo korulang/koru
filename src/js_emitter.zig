@@ -229,7 +229,7 @@ const Emitter = struct {
         }
 
         // Splice the |js proc body verbatim (opaque host code), re-indented.
-        try self.emitReindented(proc.body, "      ");
+        try self.emitReindented(proc.body.text, "      ");
         try self.write("\n    },\n  },\n");
     }
 
@@ -498,10 +498,10 @@ const Emitter = struct {
         // path which preserves return semantics.
         if (!event_has_effect and continuations.len == 0) {
             if (self.findJsProcIn(self.items, &event.path)) |proc| {
-                if (std.mem.indexOf(u8, proc.body, "return ") == null and
-                    std.mem.indexOf(u8, proc.body, "return;") == null and
-                    std.mem.indexOf(u8, proc.body, "return\n") == null and
-                    std.mem.indexOf(u8, proc.body, "return}") == null)
+                if (std.mem.indexOf(u8, proc.body.text, "return ") == null and
+                    std.mem.indexOf(u8, proc.body.text, "return;") == null and
+                    std.mem.indexOf(u8, proc.body.text, "return\n") == null and
+                    std.mem.indexOf(u8, proc.body.text, "return}") == null)
                 {
                     try self.emitInlinePlainHandler(event, proc, inv, indent);
                     return;
@@ -603,7 +603,7 @@ const Emitter = struct {
             try self.writeFmt("{s}const {s} = {s};\n", .{ inner, field.name, arg_val });
         }
 
-        try self.emitReindented(proc.body, inner);
+        try self.emitReindented(proc.body.text, inner);
         try self.write("\n");
         try self.writeFmt("{s}}}\n", .{indent});
     }
@@ -674,7 +674,7 @@ const Emitter = struct {
         // recursively-emitted handler body. We iterate the body once, handling
         // ALL of the producer's void effect ops (pump.kz-shaped producers have a
         // single effect op, but the loop generalizes cleanly).
-        try self.emitProcBodyWithSplicedEffectCalls(proc.body, event, continuations, inner);
+        try self.emitProcBodyWithSplicedEffectCalls(proc.body.text, event, continuations, inner);
 
         try self.writeFmt("{s}}}\n", .{indent});
     }

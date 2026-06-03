@@ -1720,7 +1720,7 @@ pub const VisitorEmitter = struct {
                             try self.code_emitter.write("_ = &__koru_event_input;\n");
 
                             // Rewrite _ = field to _ = &field (see main handler comment)
-                            var default_proc_body: []const u8 = proc.body;
+                            var default_proc_body: []const u8 = proc.body.text;
                             for (event.input.fields) |field| {
                                 const discard_old = try std.fmt.allocPrint(self.allocator, "_ = {s}", .{field.name});
                                 const discard_new = try std.fmt.allocPrint(self.allocator, "_ = &{s}", .{field.name});
@@ -2312,7 +2312,7 @@ pub const VisitorEmitter = struct {
                             try self.code_emitter.write("_ = &__koru_event_input;\n");
 
                             // Rewrite proc body: replace shadowed field names with __koru_event_input.field
-                            var proc_body: []const u8 = proc.body;
+                            var proc_body: []const u8 = proc.body.text;
                             for (event.input.fields) |field| {
                                 if (nameIsShadowed(field.name, declared_names.items)) {
                                     const replacement = try std.fmt.allocPrint(self.allocator, "__koru_event_input.{s}", .{field.name});
@@ -2974,7 +2974,7 @@ pub const VisitorEmitter = struct {
                             try self.code_emitter.write("unreachable; // |template| proc — inlined at call sites\n");
                         } else {
                             // Rewrite _ = field to _ = &field (see main handler comment)
-                            var variant_proc_body: []const u8 = proc.body;
+                            var variant_proc_body: []const u8 = proc.body.text;
                             for (event.input.fields) |field| {
                                 const discard_old = try std.fmt.allocPrint(self.allocator, "_ = {s}", .{field.name});
                                 const discard_new = try std.fmt.allocPrint(self.allocator, "_ = &{s}", .{field.name});

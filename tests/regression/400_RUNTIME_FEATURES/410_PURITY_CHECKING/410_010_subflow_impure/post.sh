@@ -25,7 +25,12 @@ if [ -z "$PROC_LINE" ]; then
     exit 1
 fi
 
-PROC=$(sed -n "$((PROC_LINE)),$((PROC_LINE + 15))p" _combined_emit.zig)
+# The ProcDecl block now spans more lines (body is a Source literal: text +
+# location + scope + phantom_type). Bound the block at its own `.module =` field
+# rather than a fixed window — robust to body length, and won't bleed into a
+# neighbouring proc (which would falsely match is_pure on negative tests).
+PROC_END=$(awk -v s="$PROC_LINE" 'NR>s && /\.module = /{print NR; exit}' _combined_emit.zig)
+PROC=$(sed -n "$((PROC_LINE)),$((PROC_END))p" _combined_emit.zig)
 
 if echo "$PROC" | grep -q 'is_pure = false'; then
     echo "✓ log proc: is_pure = false (unmarked, defaults to impure)"

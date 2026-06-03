@@ -946,7 +946,7 @@ const std = @import("std");
             const local_init_proc = ast.Item{
                 .proc_decl = ast.ProcDecl{
                     .path = ast.DottedPath{ .module_qualifier = proc_module, .segments = proc_segments },
-                    .body = proc_body,
+                    .body = ast.Source{ .text = proc_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                     .annotations = &[_][]const u8{},
                     .target = allocator.dupe(u8, "zig") catch unreachable,
                     .location = flow.location,
@@ -1039,7 +1039,7 @@ const std = @import("std");
         const local_init_proc = ast.Item{
             .proc_decl = ast.ProcDecl{
                 .path = ast.DottedPath{ .module_qualifier = proc_module, .segments = proc_segments },
-                .body = proc_body,
+                .body = ast.Source{ .text = proc_body, .location = flow.location, .scope = .{ .bindings = &[_]ast.ScopeBinding{} }, .phantom_type = null },
                 .annotations = &[_][]const u8{},
                 .target = allocator.dupe(u8, "zig") catch unreachable,
                 .location = flow.location,

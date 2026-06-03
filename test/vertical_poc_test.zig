@@ -69,7 +69,7 @@ fn generateCode(allocator: std.mem.Allocator, source_file: *const ast.SourceFile
                 try buffer.appendSlice(allocator, "Output {\n    ");
                 
                 // Insert proc body (already contains Zig code)
-                try buffer.appendSlice(allocator, proc.body);
+                try buffer.appendSlice(allocator, proc.body.text);
                 
                 try buffer.appendSlice(allocator, "\n}\n\n");
             },
