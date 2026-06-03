@@ -22,6 +22,13 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  collectPassing,
+  resolveClusters,
+  demoteHeadings,
+  humanize,
+  emitTest,
+} from './lib/corpus.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -32,62 +39,6 @@ const CONFIG = path.join(ROOT, 'koru-by-example.json');
 // ----------------------------------------------------------------------
 // Filesystem helpers
 // ----------------------------------------------------------------------
-
-// Basenames of negative (MUST_FAIL) tests encountered during the walk. These
-// "pass" by failing as expected, so they carry a SUCCESS marker — but they are
-// examples of what the compiler REJECTS, never what-to-do. They must not appear
-// in the corpus as examples. Tracked so config references to them can warn
-// specifically instead of silently vanishing.
-const negativeTests = new Set();
-
-function collectPassing(dir, breadcrumbs = []) {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  const hasSuccess = entries.some((e) => e.isFile() && e.name === 'SUCCESS');
-
-  if (hasSuccess) {
-    // A MUST_FAIL test is negative: it passes by being rejected. Exclude it
-    // from the positive example set — the corpus shows what TO do.
-    if (entries.some((e) => e.isFile() && e.name === 'MUST_FAIL')) {
-      negativeTests.add(path.basename(dir));
-      return [];
-    }
-    // Tests split into the `.k` + host form keep the host bindings (e.g. Zig
-    // consts) in input.kz and the portable Koru in input.k. Show them as a
-    // single block — host consts first, then the Koru — which reproduces the
-    // pre-split example. Tests not yet split keep all their Koru in input.kz,
-    // so the kz-only path is unchanged.
-    const inputKzPath = path.join(dir, 'input.kz');
-    const inputKPath = path.join(dir, 'input.k');
-    const parts = [];
-    if (fs.existsSync(inputKzPath))
-      parts.push(fs.readFileSync(inputKzPath, 'utf-8').replace(/\n+$/, ''));
-    if (fs.existsSync(inputKPath))
-      parts.push(fs.readFileSync(inputKPath, 'utf-8').replace(/\n+$/, ''));
-    if (parts.length === 0) return [];
-    const expectedPath = path.join(dir, 'expected.txt');
-    return [
-      {
-        breadcrumbs: breadcrumbs.slice(0, -1),
-        name: path.basename(dir),
-        dir,
-        input: parts.join('\n\n') + '\n',
-        expected: fs.existsSync(expectedPath)
-          ? fs.readFileSync(expectedPath, 'utf-8')
-          : null,
-      },
-    ];
-  }
-
-  const out = [];
-  for (const e of entries) {
-    if (e.isDirectory()) {
-      out.push(
-        ...collectPassing(path.join(dir, e.name), [...breadcrumbs, e.name])
-      );
-    }
-  }
-  return out;
-}
 
 // SPEC.md is preferred (substantial framing). README.md is fallback.
 // Returns { content, relPath, source } or null.
@@ -108,53 +59,9 @@ function categoryProse(segments) {
   return null;
 }
 
-// Demote every markdown heading by one level so pulled prose nests
-// cleanly under our H1/H2 structure. H6 is the floor — don't go past it.
-// Skip lines inside fenced code blocks so bash comments (`# foo`) and
-// other `#`-prefixed code don't get clobbered.
-function demoteHeadings(md) {
-  const lines = md.split('\n');
-  let inFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (/^```/.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    lines[i] = line.replace(/^(#{1,5}) /, '$1# ');
-  }
-  return lines.join('\n');
-}
-
-function humanize(slug) {
-  return slug.replace(/^(\d+_)+/, '').replace(/_/g, ' ');
-}
-
 // ----------------------------------------------------------------------
 // Emission
 // ----------------------------------------------------------------------
-
-function emitTest(t, lines) {
-  lines.push(`### ${t.name}`);
-  lines.push('');
-  lines.push('```koru');
-  for (const line of t.input.replace(/\n+$/, '').split('\n')) {
-    lines.push(line);
-  }
-  lines.push('```');
-  lines.push('');
-  if (t.expected !== null && t.expected.trim() !== '') {
-    lines.push('**Output:**');
-    lines.push('');
-    lines.push('```');
-    for (const line of t.expected.replace(/\n+$/, '').split('\n')) {
-      lines.push(line);
-    }
-    lines.push('```');
-    lines.push('');
-  }
-}
 
 function emitProse(prose, lines) {
   lines.push(`*Prose source: \`${prose.relPath}\` — may be drifted.*`);
@@ -174,31 +81,16 @@ const categories = config.categories ?? [];
 const includedTests = config.includedTests ?? [];
 const excludedTests = new Set(config.excludedTests ?? []);
 
-const allTests = collectPassing(TESTS_DIR);
+const { tests: allTests, negativeTests } = collectPassing(TESTS_DIR);
 const byName = new Map(allTests.map((t) => [t.name, t]));
 
 // Resolve `categories` to passing tests. A category entry is a raw
 // breadcrumb path like "300_ADVANCED_FEATURES" or "300_ADVANCED_FEATURES /
 // 330_PHANTOM_TYPES". Tests under that subtree (at any depth) match.
-const fromCategories = new Map(); // name -> test
-const unknownCategories = [];
-for (const cat of categories) {
-  const catSegments = cat.split(' / ').map((s) => s.trim()).filter(Boolean);
-  let matched = 0;
-  for (const t of allTests) {
-    const tPath = t.breadcrumbs;
-    if (tPath.length < catSegments.length) continue;
-    let isMatch = true;
-    for (let i = 0; i < catSegments.length; i++) {
-      if (tPath[i] !== catSegments[i]) { isMatch = false; break; }
-    }
-    if (isMatch) {
-      fromCategories.set(t.name, t);
-      matched++;
-    }
-  }
-  if (matched === 0) unknownCategories.push(cat);
-}
+const { matched: fromCategories, unknown: unknownCategories } = resolveClusters(
+  allTests,
+  categories
+);
 if (unknownCategories.length > 0) {
   console.warn('[warn] categories with no matching passing tests:');
   for (const c of unknownCategories) console.warn(`         ${c}`);

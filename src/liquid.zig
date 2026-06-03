@@ -19,17 +19,26 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-/// Value type for template context
+/// Value type for template context.
+///
+/// `record` is a walkable tree node: a `Context` whose entries are the node's
+/// named fields (`op`, `value`, `kind`, …), with sub-nodes stored as further
+/// `record` values and ordered children stored under an `array` entry. This is
+/// the template-facing projection of the `WalkNode` spine (see
+/// docs/PARSER_PALETTE.md): one generic shape every parser produces, walked by
+/// `{% case node.kind %}` / `{{ node.field }}` / `{% render … %}`.
 pub const Value = union(enum) {
     string: []const u8,
     boolean: bool,
     array: []const *Context,
+    record: *const Context,
 
     pub fn truthy(self: Value) bool {
         return switch (self) {
             .string => |s| s.len > 0,
             .boolean => |b| b,
             .array => |a| a.len > 0,
+            .record => true,
         };
     }
 };
@@ -65,18 +74,30 @@ pub const Context = struct {
     }
 
     pub fn get(self: *const Context, key: []const u8) ?Value {
-        // Scoped dotted access: `<scope_name>.field` → look `field` up in `scope`.
-        if (self.scope_name) |sn| {
-            if (self.scope) |sc| {
-                if (key.len > sn.len + 1 and
-                    std.mem.startsWith(u8, key, sn) and
-                    key[sn.len] == '.')
-                {
-                    return sc.get(key[sn.len + 1 ..]);
+        // Exact full-key match FIRST. Callers (template_processor) store literal
+        // dotted keys like `continuations["done"].continue` whole and rely on
+        // exact-match — so this must win before any `.`-splitting, or those keys
+        // would resolve to the wrong head segment.
+        if (self.data.get(key)) |v| return v;
+
+        // Dotted access: split `head.tail` and walk one step.
+        if (std.mem.indexOfScalar(u8, key, '.')) |dot| {
+            const head = key[0..dot];
+            const tail = key[dot + 1 ..];
+
+            // `<scope_name>.field` → resolve `field` (itself possibly dotted) in scope.
+            if (self.scope_name) |sn| {
+                if (std.mem.eql(u8, head, sn)) {
+                    if (self.scope) |sc| return sc.get(tail);
                 }
             }
+            // `<record_var>.field` → recurse into the record node. This is what
+            // lets a walker descend named child fields: `node.left.op`, etc.
+            if (self.data.get(head)) |hv| {
+                if (hv == .record) return hv.record.get(tail);
+            }
         }
-        if (self.data.get(key)) |v| return v;
+
         // Bare access into the bound loop scope (back-compat: `{% for c in xs %}`
         // bodies may reference item fields unprefixed as `{{ name }}`).
         if (self.scope) |sc| {
@@ -87,9 +108,46 @@ pub const Context = struct {
     }
 };
 
+/// A registry of named sub-templates, keyed by name, that `{% render "name" %}`
+/// resolves against. This is what makes recursive tree walks expressible: a
+/// walker template descends by rendering itself (or a sibling) on a child node.
+pub const TemplateRegistry = std.StringHashMap([]const u8);
+
+/// A callable parser/transform invoked from `{% const x = name(args) %}`. Takes
+/// the resolved argument values and returns a `Value` — typically a `.record`
+/// tree node (e.g. `parse_json`, `parse_expr`). The smartness lives here, in
+/// Zig; the template only orchestrates the walk (docs/PARSER_PALETTE.md §2).
+pub const Filter = *const fn (allocator: Allocator, args: []const Value) anyerror!Value;
+
+/// A registry of callable filters, keyed by name.
+pub const FilterRegistry = std.StringHashMap(Filter);
+
+/// Render-time environment: the registries a template can call out to. Bundled
+/// so the render signatures stay stable as we add capabilities.
+pub const RenderEnv = struct {
+    templates: ?*const TemplateRegistry = null,
+    filters: ?*const FilterRegistry = null,
+};
+
 /// Render a template with the given context.
 pub fn render(allocator: Allocator, template: []const u8, ctx: *const Context) ![]u8 {
     return renderCollectCompError(allocator, template, ctx, null);
+}
+
+/// Like `renderCollectCompError`, but with a `RenderEnv` (named sub-templates +
+/// callable filters) so `{% render %}` can recurse and `{% const x = f(a) %}`
+/// can call parsers. The tree-walker path.
+pub fn renderWithEnv(
+    allocator: Allocator,
+    template: []const u8,
+    ctx: *const Context,
+    comp_error_out: ?*?[]const u8,
+    env: RenderEnv,
+) ![]u8 {
+    var output = try std.ArrayList(u8).initCapacity(allocator, template.len);
+    errdefer output.deinit(allocator);
+    try renderTo(template, ctx, output.writer(allocator), comp_error_out, env);
+    return try output.toOwnedSlice(allocator);
 }
 
 /// Like `render`, but if a `{% comp error %}` is reached during rendering, the
@@ -106,16 +164,31 @@ pub fn renderCollectCompError(
     var output = try std.ArrayList(u8).initCapacity(allocator, template.len);
     errdefer output.deinit(allocator);
 
-    try renderTo(template, ctx, output.writer(allocator), comp_error_out);
+    try renderTo(template, ctx, output.writer(allocator), comp_error_out, .{});
 
     return try output.toOwnedSlice(allocator);
 }
 
 /// Render a template directly to a writer. `comp_error` is an optional sink for
 /// a `{% comp error %}` message; when null, reaching one panics (no caller is
-/// positioned to render a located diagnostic).
-pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype, comp_error: ?*?[]const u8) !void {
+/// positioned to render a located diagnostic). `env` carries the named-template
+/// and filter registries the template can call out to.
+pub fn renderTo(
+    template: []const u8,
+    ctx: *const Context,
+    writer: anytype,
+    comp_error: ?*?[]const u8,
+    env: RenderEnv,
+) anyerror!void {
     var pos: usize = 0;
+
+    // `{% const %}` bindings live in a lazily-created overlay scope whose parent
+    // is `ctx`, so they're visible to the rest of THIS block (and nested blocks,
+    // which get `cur` as parent) but die when this render returns — lexical
+    // scoping for free. `cur` is what every lookup/recursion uses.
+    var locals: ?Context = null;
+    defer if (locals) |*l| l.deinit();
+    var cur: *const Context = ctx;
 
     while (pos < template.len) {
         // Look for next tag - find whichever comes first: {{ or {%
@@ -145,11 +218,12 @@ pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype, comp
                     const tag_content = std.mem.trim(u8, template[tag.start + 2 .. end], " \t");
 
                     // Output variable value
-                    if (ctx.get(tag_content)) |value| {
+                    if (cur.get(tag_content)) |value| {
                         switch (value) {
                             .string => |s| try writer.writeAll(s),
                             .boolean => |b| try writer.writeAll(if (b) "true" else "false"),
                             .array => try writer.writeAll("[array]"),
+                            .record => try writer.writeAll("[node]"),
                         }
                     }
 
@@ -191,11 +265,11 @@ pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype, comp
                         else
                             .{ inner, inner[inner.len..] };
 
-                        const cond = if (ctx.get(key)) |value| value.truthy() else false;
+                        const cond = if (cur.get(key)) |value| value.truthy() else false;
                         if (cond) {
-                            try renderTo(then_part, ctx, writer, comp_error);
+                            try renderTo(then_part, cur, writer, comp_error, env);
                         } else {
-                            try renderTo(else_part, ctx, writer, comp_error);
+                            try renderTo(else_part, cur, writer, comp_error, env);
                         }
 
                         pos = block_end.end;
@@ -208,9 +282,9 @@ pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype, comp
                         const inner = template[end + 2 .. block_end.start];
 
                         // Render if falsy or missing
-                        const should_render = if (ctx.get(key)) |value| !value.truthy() else true;
+                        const should_render = if (cur.get(key)) |value| !value.truthy() else true;
                         if (should_render) {
-                            try renderTo(inner, ctx, writer, comp_error);
+                            try renderTo(inner, cur, writer, comp_error, env);
                         }
 
                         pos = block_end.end;
@@ -230,16 +304,20 @@ pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype, comp
                         // Iterate over array. Each item is bound under `item_name`
                         // (so the body references fields as `{{ item_name.field }}`)
                         // with the enclosing ctx as parent (so outer vars resolve).
-                        if (ctx.get(array_name)) |value| {
+                        if (cur.get(array_name)) |value| {
                             switch (value) {
                                 .array => |items| {
                                     for (items) |item_ctx| {
-                                        var loop_ctx = Context.init(ctx.allocator);
+                                        var loop_ctx = Context.init(cur.allocator);
                                         defer loop_ctx.deinit();
-                                        loop_ctx.parent = ctx;
+                                        loop_ctx.parent = cur;
                                         loop_ctx.scope_name = item_name;
                                         loop_ctx.scope = item_ctx;
-                                        try renderTo(inner, &loop_ctx, writer, comp_error);
+                                        // Also bind the item by name as a record,
+                                        // so it can be passed whole to `{% render
+                                        // …, x: item %}`, not just dotted into.
+                                        try loop_ctx.put(item_name, .{ .record = item_ctx });
+                                        try renderTo(inner, &loop_ctx, writer, comp_error, env);
                                     }
                                 },
                                 else => {},
@@ -247,6 +325,62 @@ pub fn renderTo(template: []const u8, ctx: *const Context, writer: anytype, comp
                         }
 
                         pos = block_end.end;
+                        continue;
+                    }
+
+                    // `{% case KEY %}{% when "LIT" %}…{% else %}…{% endcase %}` —
+                    // many-way dispatch on a string value (typically `node.kind`).
+                    // Renders the first `when` whose literal equals KEY's string
+                    // value, else the `else` clause if present. This is the
+                    // walker's node-kind dispatch.
+                    if (std.mem.startsWith(u8, tag_content, "case ")) {
+                        const key = std.mem.trim(u8, tag_content[5..], " \t");
+                        const block_end = findEndTag(template, end + 2, "endcase") orelse return error.UnmatchedCase;
+                        const inner = template[end + 2 .. block_end.start];
+
+                        const target: ?[]const u8 = if (cur.get(key)) |v|
+                            (if (v == .string) v.string else null)
+                        else
+                            null;
+
+                        try renderCase(inner, target, cur, writer, comp_error, env);
+                        pos = block_end.end;
+                        continue;
+                    }
+
+                    // `{% const NAME = RHS %}` — bind-once. RHS is a single
+                    // filter call `f(args)`, a bare variable, or a string literal
+                    // — NEVER an expression (navigation happens at use-site). This
+                    // is parse-once-walk-many: `{% const tree = parse_json(src) %}`.
+                    // See docs/PARSER_PALETTE.md §4.
+                    if (std.mem.startsWith(u8, tag_content, "const ")) {
+                        const decl = std.mem.trim(u8, tag_content[6..], " \t");
+                        const eq = std.mem.indexOfScalar(u8, decl, '=') orelse return error.InvalidConst;
+                        const name = std.mem.trim(u8, decl[0..eq], " \t");
+                        const rhs = std.mem.trim(u8, decl[eq + 1 ..], " \t");
+
+                        if (locals == null) {
+                            locals = Context.init(ctx.allocator);
+                            locals.?.parent = ctx;
+                            cur = &locals.?;
+                        }
+                        if (try evalConstRhs(rhs, cur, ctx.allocator, env.filters)) |val| {
+                            try locals.?.put(name, val);
+                        }
+
+                        pos = end + 2;
+                        continue;
+                    }
+
+                    // `{% render "NAME", VAR: PATH %}` — render the named
+                    // sub-template with PATH (which must resolve to a record node)
+                    // bound under VAR. Recursing on a child node is how the walker
+                    // descends the tree; the strict-sub-node discipline (a render
+                    // target should be a child of the current node) keeps walks
+                    // total. See docs/PARSER_PALETTE.md §6.
+                    if (std.mem.startsWith(u8, tag_content, "render ")) {
+                        try renderInclude(tag_content[7..], cur, writer, comp_error, env);
+                        pos = end + 2;
                         continue;
                     }
 
@@ -280,12 +414,14 @@ fn findElseTag(template: []const u8) ?BlockEnd {
         if (std.mem.startsWith(u8, tc, "if ") or
             std.mem.startsWith(u8, tc, "for ") or
             std.mem.startsWith(u8, tc, "unless ") or
+            std.mem.startsWith(u8, tc, "case ") or
             std.mem.startsWith(u8, tc, "comp error"))
         {
             depth += 1;
         } else if (std.mem.eql(u8, tc, "endif") or
             std.mem.eql(u8, tc, "endfor") or
             std.mem.eql(u8, tc, "endunless") or
+            std.mem.eql(u8, tc, "endcase") or
             std.mem.eql(u8, tc, "endcomp"))
         {
             if (depth > 0) depth -= 1;
@@ -310,6 +446,8 @@ fn findEndTag(template: []const u8, start_pos: usize, end_tag: []const u8) ?Bloc
         "for "
     else if (std.mem.eql(u8, end_tag, "endcomp"))
         "comp error"
+    else if (std.mem.eql(u8, end_tag, "endcase"))
+        "case "
     else
         return null;
 
@@ -338,6 +476,179 @@ fn findEndTag(template: []const u8, start_pos: usize, end_tag: []const u8) ?Bloc
     }
 
     return null;
+}
+
+const ClauseKind = enum { when_clause, else_clause };
+const Clause = struct {
+    tag_start: usize,
+    body_start: usize,
+    kind: ClauseKind,
+    literal: []const u8, // meaningful only for `when_clause`
+};
+
+/// Strip a single pair of surrounding double quotes, if present.
+fn stripQuotes(s: []const u8) []const u8 {
+    if (s.len >= 2 and s[0] == '"' and s[s.len - 1] == '"') return s[1 .. s.len - 1];
+    return s;
+}
+
+/// Find the next depth-0 `{% when "LIT" %}` or `{% else %}` clause in a case
+/// block's inner text, starting at `from`. Nested blocks increment depth so
+/// only clauses belonging to THIS case match.
+fn findNextClause(inner: []const u8, from: usize) ?Clause {
+    var pos = from;
+    var depth: usize = 0;
+    while (std.mem.indexOfPos(u8, inner, pos, "{%")) |tag_start| {
+        const tag_end = std.mem.indexOfPos(u8, inner, tag_start + 2, "%}") orelse break;
+        const tc = std.mem.trim(u8, inner[tag_start + 2 .. tag_end], " \t");
+        if (std.mem.startsWith(u8, tc, "if ") or
+            std.mem.startsWith(u8, tc, "for ") or
+            std.mem.startsWith(u8, tc, "unless ") or
+            std.mem.startsWith(u8, tc, "case ") or
+            std.mem.startsWith(u8, tc, "comp error"))
+        {
+            depth += 1;
+        } else if (std.mem.eql(u8, tc, "endif") or
+            std.mem.eql(u8, tc, "endfor") or
+            std.mem.eql(u8, tc, "endunless") or
+            std.mem.eql(u8, tc, "endcase") or
+            std.mem.eql(u8, tc, "endcomp"))
+        {
+            if (depth > 0) depth -= 1;
+        } else if (depth == 0 and std.mem.startsWith(u8, tc, "when ")) {
+            return .{
+                .tag_start = tag_start,
+                .body_start = tag_end + 2,
+                .kind = .when_clause,
+                .literal = stripQuotes(std.mem.trim(u8, tc[5..], " \t")),
+            };
+        } else if (depth == 0 and std.mem.eql(u8, tc, "else")) {
+            return .{ .tag_start = tag_start, .body_start = tag_end + 2, .kind = .else_clause, .literal = "" };
+        }
+        pos = tag_end + 2;
+    }
+    return null;
+}
+
+/// Render the body of the first `{% when %}` whose literal equals `target`, or
+/// the `{% else %}` body if no `when` matches. `target` null (KEY missing or
+/// non-string) matches only `else`.
+fn renderCase(
+    inner: []const u8,
+    target: ?[]const u8,
+    ctx: *const Context,
+    writer: anytype,
+    comp_error: ?*?[]const u8,
+    env: RenderEnv,
+) anyerror!void {
+    var pos: usize = 0;
+    var else_body: ?[]const u8 = null;
+    while (findNextClause(inner, pos)) |clause| {
+        const next = findNextClause(inner, clause.body_start);
+        const body_end = if (next) |n| n.tag_start else inner.len;
+        const body = inner[clause.body_start..body_end];
+        switch (clause.kind) {
+            .when_clause => {
+                if (target) |t| {
+                    if (std.mem.eql(u8, clause.literal, t)) {
+                        try renderTo(body, ctx, writer, comp_error, env);
+                        return;
+                    }
+                }
+            },
+            .else_clause => else_body = body,
+        }
+        pos = clause.body_start;
+    }
+    if (else_body) |eb| try renderTo(eb, ctx, writer, comp_error, env);
+}
+
+/// Evaluate a `{% const %}` right-hand side. Per the discipline, the RHS is
+/// exactly one of: a filter call `name(arg, …)`, a bare variable reference, or a
+/// string literal — NEVER an arithmetic/operator expression. Returns null when a
+/// bare reference doesn't resolve (the binding is then skipped).
+fn evalConstRhs(
+    rhs: []const u8,
+    ctx: *const Context,
+    allocator: Allocator,
+    filters: ?*const FilterRegistry,
+) anyerror!?Value {
+    const s = std.mem.trim(u8, rhs, " \t");
+    if (s.len == 0) return null;
+
+    // String literal.
+    if (s.len >= 2 and s[0] == '"' and s[s.len - 1] == '"') {
+        return Value{ .string = s[1 .. s.len - 1] };
+    }
+
+    // Filter call: `name(arg, arg, …)`.
+    if (std.mem.indexOfScalar(u8, s, '(')) |lp| {
+        if (s[s.len - 1] != ')') return error.InvalidConst;
+        const name = std.mem.trim(u8, s[0..lp], " \t");
+        const args_str = s[lp + 1 .. s.len - 1];
+
+        const reg = filters orelse return error.NoFilters;
+        const f = reg.get(name) orelse return error.UnknownFilter;
+
+        var args = try std.ArrayList(Value).initCapacity(allocator, 0);
+        defer args.deinit(allocator);
+        var it = std.mem.splitScalar(u8, args_str, ',');
+        while (it.next()) |raw| {
+            const a = std.mem.trim(u8, raw, " \t");
+            if (a.len == 0) continue;
+            if (a.len >= 2 and a[0] == '"' and a[a.len - 1] == '"') {
+                try args.append(allocator, .{ .string = a[1 .. a.len - 1] });
+            } else if (ctx.get(a)) |v| {
+                try args.append(allocator, v);
+            } else {
+                // An unresolved bare argument is a contract violation, not a
+                // silent empty — fail loud.
+                return error.UnresolvedArgument;
+            }
+        }
+        return try f(allocator, args.items);
+    }
+
+    // Bare variable reference (navigation lives at the use-site, not here).
+    return ctx.get(s);
+}
+
+/// Handle `{% render "NAME", VAR: PATH %}`: render the registered template NAME
+/// with PATH (which must resolve to a record node) bound under VAR as the scope.
+/// The bare form `{% render "NAME" %}` renders in the current context.
+fn renderInclude(
+    args: []const u8,
+    ctx: *const Context,
+    writer: anytype,
+    comp_error: ?*?[]const u8,
+    env: RenderEnv,
+) anyerror!void {
+    const reg = env.templates orelse return; // no registry → nothing to render
+    const trimmed = std.mem.trim(u8, args, " \t");
+    if (trimmed.len == 0 or trimmed[0] != '"') return error.InvalidRender;
+    const name_end = std.mem.indexOfScalarPos(u8, trimmed, 1, '"') orelse return error.InvalidRender;
+    const name = trimmed[1..name_end];
+
+    const body = reg.get(name) orelse return error.UnknownTemplate;
+
+    var rest = std.mem.trim(u8, trimmed[name_end + 1 ..], " \t");
+    if (rest.len > 0 and rest[0] == ',') {
+        rest = std.mem.trim(u8, rest[1..], " \t");
+        const colon = std.mem.indexOfScalar(u8, rest, ':') orelse return error.InvalidRender;
+        const var_name = std.mem.trim(u8, rest[0..colon], " \t");
+        const path = std.mem.trim(u8, rest[colon + 1 ..], " \t");
+
+        const pv = ctx.get(path) orelse return; // unresolved path → render nothing
+        if (pv != .record) return; // only record nodes are walkable
+        var sub = Context.init(ctx.allocator);
+        defer sub.deinit();
+        sub.parent = ctx;
+        sub.scope_name = var_name;
+        sub.scope = pv.record;
+        try renderTo(body, &sub, writer, comp_error, env);
+    } else {
+        try renderTo(body, ctx, writer, comp_error, env);
+    }
 }
 
 // Tests
@@ -421,4 +732,147 @@ test "for loop" {
     defer allocator.free(result);
 
     try std.testing.expectEqualStrings("red, green, blue, ", result);
+}
+
+// --- Tree-walker primitives (docs/PARSER_PALETTE.md) ---
+
+test "case dispatch on node.kind + record field access" {
+    const allocator = std.testing.allocator;
+
+    // node = number{ value: "42" }
+    var num = Context.init(allocator);
+    defer num.deinit();
+    try num.put("kind", .{ .string = "number" });
+    try num.put("value", .{ .string = "42" });
+
+    var ctx = Context.init(allocator);
+    defer ctx.deinit();
+    try ctx.put("node", .{ .record = &num });
+
+    const tmpl = "{% case node.kind %}" ++
+        "{% when \"number\" %}{{ node.value }}" ++
+        "{% when \"string\" %}\"{{ node.value }}\"" ++
+        "{% else %}?{% endcase %}";
+
+    const result = try render(allocator, tmpl, &ctx);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("42", result);
+}
+
+test "recursive render walks a binary expression tree" {
+    const allocator = std.testing.allocator;
+
+    // Build 1 + 2 * 3  →  binary(+, num(1), binary(*, num(2), num(3)))
+    var one = Context.init(allocator);
+    defer one.deinit();
+    try one.put("kind", .{ .string = "number" });
+    try one.put("value", .{ .string = "1" });
+
+    var two = Context.init(allocator);
+    defer two.deinit();
+    try two.put("kind", .{ .string = "number" });
+    try two.put("value", .{ .string = "2" });
+
+    var three = Context.init(allocator);
+    defer three.deinit();
+    try three.put("kind", .{ .string = "number" });
+    try three.put("value", .{ .string = "3" });
+
+    var mul = Context.init(allocator);
+    defer mul.deinit();
+    try mul.put("kind", .{ .string = "binary" });
+    try mul.put("op", .{ .string = "*" });
+    try mul.put("left", .{ .record = &two });
+    try mul.put("right", .{ .record = &three });
+
+    var add = Context.init(allocator);
+    defer add.deinit();
+    try add.put("kind", .{ .string = "binary" });
+    try add.put("op", .{ .string = "+" });
+    try add.put("left", .{ .record = &one });
+    try add.put("right", .{ .record = &mul });
+
+    var ctx = Context.init(allocator);
+    defer ctx.deinit();
+    try ctx.put("node", .{ .record = &add });
+
+    var registry = TemplateRegistry.init(allocator);
+    defer registry.deinit();
+    // The walker: dispatch on kind, recurse on named child fields. Note this
+    // emits always-flat (no precedence parens yet) — L2; inherited-attribute
+    // precedence is the L3 follow-up (docs/PARSER_PALETTE.md §6).
+    const expr_tmpl = "{% case node.kind %}" ++
+        "{% when \"number\" %}{{ node.value }}" ++
+        "{% when \"binary\" %}{% render \"expr\", node: node.left %} {{ node.op }} {% render \"expr\", node: node.right %}" ++
+        "{% endcase %}";
+    try registry.put("expr", expr_tmpl);
+
+    const result = try renderWithEnv(
+        allocator,
+        "{% render \"expr\", node: node %}",
+        &ctx,
+        null,
+        .{ .templates = &registry },
+    );
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("1 + 2 * 3", result);
+}
+
+// A test filter: `parse_pair("a:b")` → record node{ kind:"pair", left:"a", right:"b" }.
+// Stands in for a real parser (parse_json/parse_expr) to exercise the const +
+// filter + walk path end to end on the arena allocator.
+fn testParsePair(allocator: Allocator, args: []const Value) anyerror!Value {
+    if (args.len != 1 or args[0] != .string) return error.BadArgs;
+    const s = args[0].string;
+    const colon = std.mem.indexOfScalar(u8, s, ':') orelse return error.BadPair;
+
+    const node = try allocator.create(Context);
+    node.* = Context.init(allocator);
+    try node.put("kind", .{ .string = "pair" });
+    try node.put("left", .{ .string = s[0..colon] });
+    try node.put("right", .{ .string = s[colon + 1 ..] });
+    return Value{ .record = node };
+}
+
+test "const binds a filter call result, then the body walks it" {
+    // Arena: the filter allocates a node tree that must outlive the call.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var filters = FilterRegistry.init(allocator);
+    defer filters.deinit();
+    try filters.put("parse_pair", testParsePair);
+
+    var ctx = Context.init(allocator);
+    defer ctx.deinit();
+    try ctx.put("src", .{ .string = "key:value" });
+
+    const tmpl = "{% const p = parse_pair(src) %}" ++
+        "{% case p.kind %}{% when \"pair\" %}{{ p.left }}={{ p.right }}{% endcase %}";
+
+    const result = try renderWithEnv(allocator, tmpl, &ctx, null, .{ .filters = &filters });
+    try std.testing.expectEqualStrings("key=value", result);
+}
+
+test "const is lexically scoped to its block" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var filters = FilterRegistry.init(allocator);
+    defer filters.deinit();
+    try filters.put("parse_pair", testParsePair);
+
+    var ctx = Context.init(allocator);
+    defer ctx.deinit();
+    try ctx.put("flag", .{ .boolean = true });
+    try ctx.put("src", .{ .string = "in:ner" });
+
+    // `p` is declared inside the if-body; referencing it outside resolves to
+    // nothing (empty), proving the binding died with the block.
+    const tmpl = "{% if flag %}{% const p = parse_pair(src) %}{{ p.left }}{% endif %}[{{ p.left }}]";
+
+    const result = try renderWithEnv(allocator, tmpl, &ctx, null, .{ .filters = &filters });
+    try std.testing.expectEqualStrings("in[]", result);
 }

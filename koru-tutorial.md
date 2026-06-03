@@ -1,6 +1,6 @@
 # Koru in a Page
 
-> Generated 2026-06-02T05:58:04.610Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
+> Generated 2026-06-02T20:26:39.272Z by `scripts/generate-tutorial.js` from `koru-by-example.json`.
 
 > **Note:** This tutorial is prose synthesis on top of the test suite. It may contain errors or drift. The compiler's actual behavior — verified by tests in `tests/regression/` and source in `src/` — is the source of truth. When you find this document saying one thing and the compiler doing another, the conflict itself is the finding: flag it, don't paper over it.
 >

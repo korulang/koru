@@ -19,84 +19,13 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { collectPassing, emitTest } from './lib/corpus.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const TESTS_DIR = path.join(ROOT, 'tests', 'regression');
 const OUTPUT = path.join(ROOT, 'koru-tutorial.md');
 const CONFIG = path.join(ROOT, 'koru-by-example.json');
-
-// Negative (MUST_FAIL) test basenames. They carry a SUCCESS marker (they pass
-// by being rejected) but are examples of what the compiler REJECTS — never
-// what-to-do. Excluded from the tutorial; tracked so config refs warn clearly.
-const negativeTests = new Set();
-
-function collectPassing(dir, breadcrumbs = []) {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  const hasSuccess = entries.some((e) => e.isFile() && e.name === 'SUCCESS');
-
-  if (hasSuccess) {
-    // A MUST_FAIL test is negative — exclude it. The tutorial is all what-to-do.
-    if (entries.some((e) => e.isFile() && e.name === 'MUST_FAIL')) {
-      negativeTests.add(path.basename(dir));
-      return [];
-    }
-    // Tests split into the `.k` + host form keep the host bindings (e.g. Zig
-    // consts) in input.kz and the portable Koru in input.k. Show them as a
-    // single block — host consts first, then the Koru — reproducing the
-    // pre-split example. Tests not yet split keep all Koru in input.kz, so the
-    // kz-only path is unchanged.
-    const inputKzPath = path.join(dir, 'input.kz');
-    const inputKPath = path.join(dir, 'input.k');
-    const parts = [];
-    if (fs.existsSync(inputKzPath))
-      parts.push(fs.readFileSync(inputKzPath, 'utf-8').replace(/\n+$/, ''));
-    if (fs.existsSync(inputKPath))
-      parts.push(fs.readFileSync(inputKPath, 'utf-8').replace(/\n+$/, ''));
-    if (parts.length === 0) return [];
-    const expectedPath = path.join(dir, 'expected.txt');
-    return [
-      {
-        name: path.basename(dir),
-        input: parts.join('\n\n') + '\n',
-        expected: fs.existsSync(expectedPath)
-          ? fs.readFileSync(expectedPath, 'utf-8')
-          : null,
-      },
-    ];
-  }
-
-  const out = [];
-  for (const e of entries) {
-    if (e.isDirectory()) {
-      out.push(
-        ...collectPassing(path.join(dir, e.name), [...breadcrumbs, e.name])
-      );
-    }
-  }
-  return out;
-}
-
-function emitTest(t, lines) {
-  lines.push(`### ${t.name}`);
-  lines.push('');
-  lines.push('```koru');
-  for (const line of t.input.replace(/\n+$/, '').split('\n')) {
-    lines.push(line);
-  }
-  lines.push('```');
-  lines.push('');
-  if (t.expected !== null && t.expected.trim() !== '') {
-    lines.push('**Output:**');
-    lines.push('');
-    lines.push('```');
-    for (const line of t.expected.replace(/\n+$/, '').split('\n')) {
-      lines.push(line);
-    }
-    lines.push('```');
-    lines.push('');
-  }
-}
 
 // ----------------------------------------------------------------------
 
@@ -116,7 +45,7 @@ if (!title && !intro && rules.length === 0 && testNames.length === 0) {
   );
 }
 
-const allTests = collectPassing(TESTS_DIR);
+const { tests: allTests, negativeTests } = collectPassing(TESTS_DIR);
 const byName = new Map(allTests.map((t) => [t.name, t]));
 
 const picked = [];

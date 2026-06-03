@@ -40,6 +40,21 @@ const std = @import("std");
     }
 }
 
+// JS variant of ~if. The per-call render is target-blind to the EMITTER (the
+// body is spliced inline before variant selection), so the RENDERER selects
+// THIS variant when --lang=js. The body is byte-identical to the Zig one — JS
+// `if/else` shares the same surface — but it is now HONESTLY the JS variant,
+// not a Zig-body leak that happened to also be valid JS. The
+// `__koru_continue_N` markers it mints are resolved by js_emitter's
+// emitInlineBodyResolvingContinuations.
+~proc if|template|js {
+    if ({{ cond }}) {
+        {{ continuations["then"].continue }}
+    } else {
+        {{ continuations["else"].continue }}
+    }
+}
+
 // ============================================================================
 // FOR - Iteration as a template over the effect-branch engine (ZERO OVERHEAD)
 // ============================================================================
@@ -66,6 +81,33 @@ const std = @import("std");
 
 ~proc for|template|zig {
     for ({{ iterable }}) |__koru_item| {
+        {% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item);
+        {% endfor %}
+    }
+    {{ continuations["done"].continue }}
+}
+
+// JS variant of ~for. Same Liquid context surface as the Zig variant —
+// `{{ iterable }}`, `effects["each"]`, `h.inlined_link[scope]`,
+// `continuations["done"].continue` — but a JS-native `for…of` loop header
+// instead of the Zig `for (…) |x| {}` capture form. The per-iteration
+// `{{ h.inlined_link[scope] }}(__koru_item)` mints a `__koru_inline_scoped_N`
+// effect-splice marker, resolved on the JS path by js_emitter's
+// emitInlineBodyResolvingContinuations (mirrors the Zig
+// emitInlineCodeResolvingSplices). The `| done` terminal is continued via the
+// `__koru_continue_N` marker, resolved the same way.
+//
+// CROSS-TARGET (140_014): the iterable expression is classified by the
+// `parse_range` filter (template_processor.zig). A Zig range `0..N` becomes a JS
+// counting loop `for (let i = 0; i < N; i++)` — the performance-correct form
+// (NOT `Array.from`); anything else (e.g. a JS array literal `[1,2,3]`) flows
+// through verbatim as a `for…of`. Only the loop HEADER differs between the two;
+// the body (effect-handler calls) is shared. The richer Zig-subset expression
+// translator (array literals, `@builtins`, …) is the deferred follow-up
+// (docs/PARSER_PALETTE.md §8.4); for now JS `~for` supports ranges + JS-shaped
+// iterables.
+~proc for|template|js {
+    {% const __koru_range = parse_range(iterable) %}{% if __koru_range.is_range %}for (let __koru_item = {{ __koru_range.lo }}; __koru_item < {{ __koru_range.hi }}; __koru_item++) {% else %}for (const __koru_item of {{ iterable }}) {% endif %}{
         {% for h in effects["each"] %}{{ h.inlined_link[scope] }}(__koru_item);
         {% endfor %}
     }

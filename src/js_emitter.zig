@@ -278,15 +278,22 @@ const Emitter = struct {
         try self.write("  },\n");
     }
 
-    /// Emit a rendered template body (e.g. `~if`'s `if (cond) { … } else { … }`),
-    /// resolving each `__koru_continue_N` marker into the body of
-    /// `continuations[N]`. The marker stands alone on its own line in the
-    /// templates that produce it (`{{ continuations["then"].continue }}` →
-    /// `__koru_continue_0`), so we drive line-by-line: a line that IS a marker is
-    /// replaced by the spliced continuation body; every other line is emitted
-    /// verbatim (re-indented), preserving the template's own `if`/`else`
-    /// scaffolding. JS mirror of emitter_helpers.zig:3186
-    /// `emitInlineCodeResolvingSplices` (continuation half).
+    /// Emit a rendered template body (e.g. `~if`'s `if (cond) { … } else { … }`
+    /// or `~for`'s `for (const x of …) { … }`), resolving the two splice-marker
+    /// kinds the template_processor mints:
+    ///
+    ///   - `__koru_continue_N`            — a terminal continuation hand-off
+    ///                                      (`| done`, `| then`, `| else`).
+    ///   - `__koru_inline[_scoped]_N(arg)` — an EFFECT-handler splice (`! each`):
+    ///                                      bind `arg` to the handler's parameter
+    ///                                      and run the handler body in a block.
+    ///
+    /// We scan by marker POSITION (not line), mirroring the Zig reference
+    /// emitter_helpers.zig:3186 `emitInlineCodeResolvingSplices`: find the
+    /// earliest remaining marker of either kind, emit the verbatim text before it
+    /// (preserving the template's own `if`/`for` scaffolding), resolve it, repeat.
+    /// Text with no markers passes through unchanged, so non-template inline
+    /// bodies (comptime `|js` transforms) lower exactly as before.
     fn emitInlineBodyResolvingContinuations(
         self: *Emitter,
         body: []const u8,
@@ -296,28 +303,124 @@ const Emitter = struct {
         const body_indent = try std.fmt.allocPrint(self.allocator, "{s}  ", .{indent});
         defer self.allocator.free(body_indent);
 
-        const trimmed = std.mem.trim(u8, body, " \t\r\n");
-        var it = std.mem.splitScalar(u8, trimmed, '\n');
-        var first = true;
-        while (it.next()) |line| {
-            const content = std.mem.trim(u8, line, " \t\r");
-            if (content.len == 0) continue;
-            if (!first) try self.write("\n");
-            first = false;
+        const SPLICE_PREFIX = "__koru_inline_";
+        const CONTINUE_PREFIX = "__koru_continue_";
+        const SCOPED_INFIX = "scoped_";
 
-            if (parseContinueIndex(content)) |idx| {
+        const trimmed = std.mem.trim(u8, body, " \t\r\n");
+        var pos: usize = 0;
+        while (true) {
+            const splice_at = std.mem.indexOfPos(u8, trimmed, pos, SPLICE_PREFIX);
+            const continue_at = std.mem.indexOfPos(u8, trimmed, pos, CONTINUE_PREFIX);
+            var m: usize = undefined;
+            var is_continue: bool = undefined;
+            if (splice_at) |s| {
+                if (continue_at) |r| {
+                    is_continue = r < s;
+                    m = if (is_continue) r else s;
+                } else {
+                    is_continue = false;
+                    m = s;
+                }
+            } else if (continue_at) |r| {
+                is_continue = true;
+                m = r;
+            } else {
+                break; // no more markers
+            }
+
+            try self.write(trimmed[pos..m]);
+
+            if (is_continue) {
+                // CONTINUATION hand-off — splice the terminal body once, here,
+                // wrapped in a block so any `const` it introduces is scoped.
+                var i = m + CONTINUE_PREFIX.len;
+                var idx: usize = 0;
+                var saw_digit = false;
+                while (i < trimmed.len and trimmed[i] >= '0' and trimmed[i] <= '9') : (i += 1) {
+                    idx = idx * 10 + (trimmed[i] - '0');
+                    saw_digit = true;
+                }
+                if (!saw_digit) {
+                    // Malformed marker — fail loudly rather than leak it into JS.
+                    log.debug("[js_emitter] malformed __koru_continue marker\n", .{});
+                    return JsEmitError.UnsupportedConstruct;
+                }
                 if (idx >= continuations.len) {
-                    // Marker references a continuation that doesn't exist — fail
-                    // loudly rather than leak an undefined identifier into JS.
                     log.debug("[js_emitter] __koru_continue_{d} has no matching continuation (have {d})\n", .{ idx, continuations.len });
                     return JsEmitError.UnsupportedConstruct;
                 }
-                try self.emitInlineContinuationBody(&continuations[idx], body_indent);
-            } else {
-                try self.write(indent);
-                try self.write(content);
+                const cont = &continuations[idx];
+                const guarded = cont.condition != null;
+                try self.write("{ ");
+                if (guarded) {
+                    try self.writeFmt("if ({s}) {{ ", .{cont.condition.?});
+                }
+                try self.emitInlineContinuationBody(cont, body_indent);
+                if (guarded) try self.write(" }");
+                try self.write(" }");
+                pos = i;
+                continue;
             }
+
+            // EFFECT splice — `__koru_inline[_scoped]_N(arg)`: bind `arg` to the
+            // handler's parameter, then run the handler body in a block. The
+            // optional `scoped_` infix carries no JS-emission meaning (scope is an
+            // obligation-checker concept, already stamped on the continuation), so
+            // skip past it to the digits — same as the Zig reference.
+            var i = m + SPLICE_PREFIX.len;
+            if (std.mem.startsWith(u8, trimmed[i..], SCOPED_INFIX)) i += SCOPED_INFIX.len;
+            var idx: usize = 0;
+            var saw_digit = false;
+            while (i < trimmed.len and trimmed[i] >= '0' and trimmed[i] <= '9') : (i += 1) {
+                idx = idx * 10 + (trimmed[i] - '0');
+                saw_digit = true;
+            }
+
+            // Read the `(arg)` immediately following (balanced parens).
+            var arg: []const u8 = "";
+            if (saw_digit and i < trimmed.len and trimmed[i] == '(') {
+                const arg_start = i + 1;
+                var depth: usize = 1;
+                var j = arg_start;
+                while (j < trimmed.len and depth > 0) : (j += 1) {
+                    if (trimmed[j] == '(') {
+                        depth += 1;
+                    } else if (trimmed[j] == ')') {
+                        depth -= 1;
+                    }
+                }
+                arg = std.mem.trim(u8, trimmed[arg_start .. j - 1], " \t");
+                i = j; // past the closing ')'
+                // The marker resolves to a block statement; swallow a trailing `;`
+                // the template wrote in call-statement shape (`marker(arg);`).
+                if (i < trimmed.len and trimmed[i] == ';') i += 1;
+            }
+
+            if (!saw_digit) {
+                log.debug("[js_emitter] malformed __koru_inline marker\n", .{});
+                return JsEmitError.UnsupportedConstruct;
+            }
+            if (idx >= continuations.len) {
+                log.debug("[js_emitter] __koru_inline_{d} has no matching continuation (have {d})\n", .{ idx, continuations.len });
+                return JsEmitError.UnsupportedConstruct;
+            }
+            const cont = &continuations[idx];
+            const binding = cont.binding orelse "_";
+            try self.write("{ ");
+            if (!std.mem.eql(u8, binding, "_")) {
+                try self.writeFmt("const {s} = {s}; ", .{ binding, arg });
+            }
+            const guarded = cont.condition != null;
+            if (guarded) {
+                try self.writeFmt("if ({s}) {{ ", .{cont.condition.?});
+            }
+            try self.emitInlineContinuationBody(cont, body_indent);
+            if (guarded) try self.write(" }");
+            try self.write(" }");
+            pos = i;
         }
+        try self.write(trimmed[pos..]);
     }
 
     /// Emit the body of a terminal continuation spliced inline by a template
@@ -823,25 +926,6 @@ fn stripInlineStmtMarker(text: []const u8) []const u8 {
     const marker = "//@koru:inline_stmt\n";
     if (std.mem.startsWith(u8, text, marker)) return text[marker.len..];
     return text;
-}
-
-/// If `content` is a bare continuation marker `__koru_continue_<N>`, return N.
-/// Used to recognize template-rendered continuation hand-off points. Mirrors the
-/// prefix the Zig emitter scans for (emitter_helpers.zig:3169
-/// `INLINE_CONTINUE_PREFIX`).
-fn parseContinueIndex(content: []const u8) ?usize {
-    const prefix = "__koru_continue_";
-    if (!std.mem.startsWith(u8, content, prefix)) return null;
-    const digits = content[prefix.len..];
-    if (digits.len == 0) return null;
-    var idx: usize = 0;
-    var saw_digit = false;
-    for (digits) |c| {
-        if (c < '0' or c > '9') break;
-        idx = idx * 10 + (c - '0');
-        saw_digit = true;
-    }
-    return if (saw_digit) idx else null;
 }
 
 /// Look up an invocation arg's value string by field name.

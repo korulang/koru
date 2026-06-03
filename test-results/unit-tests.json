@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-06-02T09:36:32.939Z",
+  "timestamp": "2026-06-02T23:45:26.410Z",
   "summary": {
-    "passed": 205,
+    "passed": 216,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 217,
-    "suiteCount": 32,
+    "total": 228,
+    "suiteCount": 34,
     "status": "success"
   },
   "suites": [
@@ -140,11 +140,27 @@
       "status": "success"
     },
     {
+      "name": "json_parser_tests",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "total": 2,
+      "status": "success"
+    },
+    {
       "name": "lexer_tests",
       "passed": 4,
       "failed": 0,
       "skipped": 0,
       "total": 4,
+      "status": "success"
+    },
+    {
+      "name": "liquid_tests",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "total": 9,
       "status": "success"
     },
     {

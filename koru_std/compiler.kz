@@ -719,7 +719,12 @@ pub const CompilerContext = struct {
 
 ~proc process_template_procs|zig {
     const tp = @import("template_processor");
-    tp.processTemplateProcs(ctx.ast, ctx.allocator) catch unreachable;
+    // Thread the build language into the per-call template pass. Per-call
+    // (`|template|`) procs are spliced inline HERE, upstream of the emitter's
+    // variant pick — so the renderer, not the emitter, must select the
+    // `|zig` vs `|js` body. CompilerEnv.lang is the user's `--lang` flag
+    // ("zig" default, "js" for JS builds), globally available in the backend.
+    tp.processTemplateProcs(ctx.ast, ctx.allocator, CompilerEnv.lang) catch unreachable;
 
     var updated_ctx = ctx;
     updated_ctx.passes_completed += 1;

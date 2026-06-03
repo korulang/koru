@@ -80,6 +80,7 @@ pub const ErrorCode = enum(u16) {
 
     // Template / metaprogramming errors
     KORU120, // Template-asserted contract violation (`{% comp error %}` reached)
+    KORU121, // Per-call template construct has no variant for the build target
 };
 
 pub const SourceLocation = struct {

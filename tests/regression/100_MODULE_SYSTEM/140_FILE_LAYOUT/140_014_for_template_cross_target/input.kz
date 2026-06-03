@@ -1,16 +1,20 @@
-// FRONTIER: ~for does NOT yet lower to JS, for two reasons distinct from the
-// continuation gap that 140_015 (~if) pinned and that is now fixed:
-//   1. The for-template body in koru_std/control.kz renders a literal Zig loop
-//      header `for ({{iterable}}) |__koru_item| { ... }` — valid Zig, but a JS
-//      SyntaxError ("Unexpected number" on `0..3`). The template body is
-//      target-specific and needs a JS variant (`for (let i=0;i<3;i++)`) or a
-//      neutral lowering.
-//   2. The per-iteration effect call renders as `__koru_inline_scoped_0(item)`
-//      (an effect-splice marker), which the JS emitter does not yet resolve —
-//      only `__koru_continue_N` resolution landed.
-// The `| done |> _` terminal's `__koru_continue_N` marker DOES now resolve
-// correctly on the JS path (it lowers to nothing, as `_` should). What's left
-// is the for-loop-body lowering, a larger task than the ~if continuation fix.
+// FRONTIER: ~for now HONESTLY selects `for|template|js` on a --lang=js build
+// (koru_std/control.kz), and the JS emitter resolves BOTH splice-marker kinds
+// the template mints:
+//   - the per-iteration `! each` effect splice (`__koru_inline_scoped_0(item)`)
+//     lowers to `{ const _x = item; <handler body> }` — RESOLVED, no longer a
+//     leaked, unresolved marker; and
+//   - the `| done |> _` terminal's `__koru_continue_N` lowers to an empty block,
+//     as `_` should.
+// Proven with a JS-array iterable: `~for([1,2,3]) ! each _ |> println(...)`
+// emits a runnable `for (const x of [1,2,3]) { … }` that prints tick×3.
+//
+// The ONE remaining gap is the iterable EXPRESSION: `{{ iterable }}` substitutes
+// `0..3` verbatim, so the JS body becomes `for (const x of 0..3)` — `0..3` is
+// Zig range syntax, not a JS iterable, and node rejects it. Closing this needs
+// range→JS lowering (`0..N` → a counting loop or `Array.from`/generator), a
+// target-aware transform of the iterable expression that does not exist yet.
+// That is the whole of what's left; the for-body + effect-splice lowering is done.
 ~import "$std/control"
 ~import "$std/io"
 

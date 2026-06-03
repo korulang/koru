@@ -590,6 +590,16 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("liquid", liquid_module);
 
+    // JSON → liquid record tree. One entry in the parser palette; produces the
+    // walkable `record` nodes the template engine consumes (docs/PARSER_PALETTE.md).
+    const json_parser_module = b.createModule(.{
+        .root_source_file = b.path("src/json_parser.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    json_parser_module.addImport("liquid", liquid_module);
+    exe.root_module.addImport("json_parser", json_parser_module);
+
     // Template processor: walks AST, renders `|template|...` proc bodies
     // through Liquid, strips the `template` tag from the variant chain.
     const template_processor_module = b.createModule(.{
@@ -980,6 +990,30 @@ pub fn build(b: *std.Build) void {
     expression_parser_tests.root_module.addImport("ast", ast_module);
     const run_expression_parser_tests = b.addRunArtifact(expression_parser_tests);
 
+    // Liquid template engine — inline tests (interpolation, if/for, and the
+    // tree-walker primitives: case / render / const / filters).
+    const liquid_tests = b.addTest(.{
+        .name = "liquid_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/liquid.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_liquid_tests = b.addRunArtifact(liquid_tests);
+
+    // JSON parser — parse real JSON into liquid records and walk it.
+    const json_parser_tests = b.addTest(.{
+        .name = "json_parser_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/json_parser.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    json_parser_tests.root_module.addImport("liquid", liquid_module);
+    const run_json_parser_tests = b.addRunArtifact(json_parser_tests);
+
     // Expression purity tests
     const expression_purity_tests = b.addTest(.{
         .name = "expression_purity_tests",
@@ -1243,6 +1277,8 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_file_extension_tests.step);
     test_step.dependOn(&run_where_clause_tests.step);
     test_step.dependOn(&run_expression_parser_tests.step);
+    test_step.dependOn(&run_liquid_tests.step);
+    test_step.dependOn(&run_json_parser_tests.step);
     test_step.dependOn(&run_expression_purity_tests.step);
     test_step.dependOn(&run_expression_codegen_tests.step);
     test_step.dependOn(&run_expression_codegen_compile_tests.step);

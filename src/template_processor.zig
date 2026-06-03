@@ -43,6 +43,46 @@ fn emitCompErrorAndExit(location: errors.SourceLocation, message: []const u8) no
     std.process.exit(1);
 }
 
+/// Index of a top-level `..` (range operator) in `s` — one not nested inside
+/// `()`/`[]`/`{}` (so a slice like `buf[0..n]` is NOT seen as a range). Null if
+/// there is no top-level range. The "simplified ranges for JS" classifier; the
+/// richer Zig-subset translator is the deferred follow-up (docs/PARSER_PALETTE.md §8.4).
+fn findTopLevelRange(s: []const u8) ?usize {
+    var depth: i32 = 0;
+    var i: usize = 0;
+    while (i + 1 < s.len) : (i += 1) {
+        switch (s[i]) {
+            '(', '[', '{' => depth += 1,
+            ')', ']', '}' => depth -= 1,
+            '.' => if (depth == 0 and s[i + 1] == '.') return i,
+            else => {},
+        }
+    }
+    return null;
+}
+
+/// `parse_range(expr)` filter: classify an iterable expression as a range.
+/// Returns a record node `{ is_range, lo, hi }` the `for|template|js` body
+/// branches on — a range becomes a JS counting loop, anything else stays a
+/// `for…of`. This is the simplified-range path that unblocks cross-target `~for`
+/// (140_014); it deliberately handles only `LO..HI`, leaving array literals etc.
+/// to flow through verbatim (which already works for JS-shaped iterables).
+fn parseRangeFilter(allocator: std.mem.Allocator, args: []const liquid.Value) anyerror!liquid.Value {
+    if (args.len != 1 or args[0] != .string) return error.BadArgs;
+    const s = std.mem.trim(u8, args[0].string, " \t");
+
+    const node = try allocator.create(liquid.Context);
+    node.* = liquid.Context.init(allocator);
+    if (findTopLevelRange(s)) |idx| {
+        try node.put("is_range", .{ .boolean = true });
+        try node.put("lo", .{ .string = std.mem.trim(u8, s[0..idx], " \t") });
+        try node.put("hi", .{ .string = std.mem.trim(u8, s[idx + 2 ..], " \t") });
+    } else {
+        try node.put("is_range", .{ .boolean = false });
+    }
+    return liquid.Value{ .record = node };
+}
+
 /// Walk the AST and process every proc whose variant chain begins with
 /// `template(once)|...`. Mutates ProcDecl.body and ProcDecl.target in place.
 /// Also runs the per-call template pass for bare `|template|...` procs:
@@ -52,10 +92,11 @@ fn emitCompErrorAndExit(location: errors.SourceLocation, message: []const u8) no
 pub fn processTemplateProcs(
     program: *const ast.Program,
     allocator: std.mem.Allocator,
+    build_lang: []const u8,
 ) !void {
     const items = @constCast(program.items);
     try processItems(items, allocator);
-    try processPerCallInvocations(items, items, allocator);
+    try processPerCallInvocations(items, items, build_lang, allocator);
 }
 
 fn processItems(items: []ast.Item, allocator: std.mem.Allocator) !void {
@@ -74,12 +115,13 @@ fn processItems(items: []ast.Item, allocator: std.mem.Allocator) !void {
 fn processPerCallInvocations(
     all_items: []ast.Item,
     items: []ast.Item,
+    build_lang: []const u8,
     allocator: std.mem.Allocator,
 ) !void {
     for (items) |*item| {
         switch (item.*) {
-            .flow => |*flow| try maybeRenderPerCall(all_items, flow, allocator),
-            .module_decl => |*md| try processPerCallInvocations(all_items, @constCast(md.items), allocator),
+            .flow => |*flow| try maybeRenderPerCall(all_items, flow, build_lang, allocator),
+            .module_decl => |*md| try processPerCallInvocations(all_items, @constCast(md.items), build_lang, allocator),
             else => {},
         }
     }
@@ -94,15 +136,18 @@ fn renderTemplateInvocation(
     invocation: *const ast.Invocation,
     continuations: []const ast.Continuation,
     location: errors.SourceLocation,
+    build_lang: []const u8,
     allocator: std.mem.Allocator,
 ) !?[]const u8 {
-    const proc = findMatchingProc(all_items, &invocation.path) orelse return null;
-    const target = proc.target orelse return null;
-    const first_sep = firstTagEnd(target);
-    const parts = parseTag(target[0..first_sep]);
-
-    if (!std.mem.eql(u8, parts.name, TEMPLATE_TAG)) return null;
-    if (parts.args.len != 0) return null; // Skip `template(once)` etc.; only bare `template` is per-call.
+    // The per-call inline render happens UPSTREAM of the emitter's variant pick
+    // (the template is spliced inline, not left as a surviving proc), so the
+    // selection of `|zig` vs `|js` must happen HERE, keyed on the build language.
+    // selectPerCallTemplateProc returns the bare-`|template|<build_lang>` proc,
+    // or null if the invocation isn't a per-call template at all. A missing
+    // lang variant for an event that DOES have a per-call template is a loud
+    // compile error (never a silent fall-through to the `|zig` body on a JS
+    // build — that is the leak this whole pass exists to kill).
+    const proc = selectPerCallTemplateProc(all_items, &invocation.path, build_lang, location) orelse return null;
 
     // Build context from invocation args. Named args (`name: value`) key on the
     // arg name; positional args (`~for(&items)`, which parse with name == value)
@@ -213,8 +258,14 @@ fn renderTemplateInvocation(
         }
     }
 
+    // Per-call templates can call filters (e.g. `parse_range` for cross-target
+    // `~for`). Build the registry and render through it.
+    var filters = liquid.FilterRegistry.init(allocator);
+    defer filters.deinit();
+    try filters.put("parse_range", parseRangeFilter);
+
     var comp_err: ?[]const u8 = null;
-    const rendered = liquid.renderCollectCompError(allocator, proc.body, &ctx, &comp_err) catch |err| {
+    const rendered = liquid.renderWithEnv(allocator, proc.body, &ctx, &comp_err, .{ .filters = &filters }) catch |err| {
         if (err == error.CompError) {
             emitCompErrorAndExit(location, comp_err orelse "template comp error");
         }
@@ -232,10 +283,11 @@ fn renderTemplateInvocation(
 fn maybeRenderPerCall(
     all_items: []ast.Item,
     flow: *ast.Flow,
+    build_lang: []const u8,
     allocator: std.mem.Allocator,
 ) !void {
     if (flow.inline_body == null) {
-        if (try renderTemplateInvocation(all_items, &flow.invocation, flow.continuations, flow.location, allocator)) |rendered| {
+        if (try renderTemplateInvocation(all_items, &flow.invocation, flow.continuations, flow.location, build_lang, allocator)) |rendered| {
             flow.inline_body = rendered;
             log.debug("[TEMPLATE/per-call] rendered '{s}' at top-level call site\n", .{
                 if (flow.invocation.path.segments.len > 0) flow.invocation.path.segments[0] else "<?>",
@@ -254,7 +306,7 @@ fn maybeRenderPerCall(
     // get the same per-call rendering, depth-first. The inline_body lands on
     // the continuation's invocation node; emitContinuationBody honors it via the
     // shared emitInlineBodyNode — the SAME path as a top-level flow.
-    try renderNestedTemplates(all_items, @constCast(flow.continuations), allocator);
+    try renderNestedTemplates(all_items, @constCast(flow.continuations), build_lang, allocator);
 }
 
 /// Scope is declared at the SPLICE SITE, not the event. When a template splices
@@ -308,13 +360,14 @@ fn stampScope(cont: *ast.Continuation, allocator: std.mem.Allocator) !void {
 fn renderNestedTemplates(
     all_items: []ast.Item,
     continuations: []ast.Continuation,
+    build_lang: []const u8,
     allocator: std.mem.Allocator,
 ) !void {
     for (continuations) |*cont| {
         if (cont.node) |*node| {
             if (node.* == .invocation) {
                 if (node.invocation.inline_body == null) {
-                    if (try renderTemplateInvocation(all_items, &node.invocation, cont.continuations, .{ .file = "generated", .line = 0, .column = 0 }, allocator)) |rendered| {
+                    if (try renderTemplateInvocation(all_items, &node.invocation, cont.continuations, .{ .file = "generated", .line = 0, .column = 0 }, build_lang, allocator)) |rendered| {
                         node.invocation.inline_body = rendered;
                         log.debug("[TEMPLATE/per-call] rendered nested '{s}'\n", .{
                             if (node.invocation.path.segments.len > 0) node.invocation.path.segments[0] else "<?>",
@@ -327,7 +380,7 @@ fn renderNestedTemplates(
                 }
             }
         }
-        try renderNestedTemplates(all_items, @constCast(cont.continuations), allocator);
+        try renderNestedTemplates(all_items, @constCast(cont.continuations), build_lang, allocator);
     }
 }
 
@@ -352,25 +405,121 @@ fn findEventDeclByLastSegment(items: []ast.Item, path: *const ast.DottedPath) ?*
     return null;
 }
 
-/// Resolve a flow's invocation path to its target ProcDecl. Searches the
-/// whole program (top-level + module_decl recursively). Returns the first
-/// proc whose path's last segment matches the invocation's last segment
-/// — sufficient for first-cut single-module test programs.
-fn findMatchingProc(items: []ast.Item, path: *const ast.DottedPath) ?*ast.ProcDecl {
+/// The build-language variant of a bare `|template|<lang>` proc, e.g. `zig`
+/// for `for|template|zig` or `js` for `for|template|js`. Returns null if the
+/// proc is not a bare per-call template (no `template` tag, OR `template(once)`
+/// per-decl, OR a `template|` with no trailing lang segment).
+fn perCallTemplateLang(proc: *const ast.ProcDecl) ?[]const u8 {
+    const target = proc.target orelse return null;
+    const first_sep = firstTagEnd(target);
+    const parts = parseTag(target[0..first_sep]);
+    if (!std.mem.eql(u8, parts.name, TEMPLATE_TAG)) return null;
+    if (parts.args.len != 0) return null; // `template(once)` is per-decl, not per-call.
+    if (first_sep >= target.len) return null; // bare `template` with no lang segment.
+    // Lang is the segment immediately after `template|`, up to the next `|`.
+    const rest = target[first_sep + 1 ..];
+    const lang_end = firstTagEnd(rest);
+    const lang = parseTag(rest[0..lang_end]).name;
+    if (lang.len == 0) return null;
+    return lang;
+}
+
+/// Surface a missing-target-variant as a fantastic, located Koru diagnostic
+/// (KORU121), then fail the compile. This is the loud failure that replaces the
+/// old silent `|zig`-body leak onto a non-Zig target: a per-call template
+/// construct (`~for`, `~if`, …) was invoked on a `--lang=<build_lang>` build,
+/// but the construct only declares `<event>|template|<other-lang>` variants.
+fn emitMissingVariantAndExit(
+    location: errors.SourceLocation,
+    event_name: []const u8,
+    build_lang: []const u8,
+) noreturn {
+    std.debug.print(
+        \\error[{s}]: control-flow construct `~{s}` has no `|template|{s}` variant for the `--lang={s}` build
+        \\  --> {s}:{d}:{d}
+        \\  `~{s}` is a per-call template: its body is spliced inline at the call
+        \\  site BEFORE the emitter picks a target, so the variant must be chosen
+        \\  here, by build language. This build is `{s}`, but `{s}|template|{s}`
+        \\  is not declared.
+        \\  fix: add `~proc {s}|template|{s} {{ ... }}` next to the existing
+        \\  variants in the construct's source (e.g. koru_std/control.kz), emitting
+        \\  a {s}-native body.
+        \\
+    , .{
+        @tagName(errors.ErrorCode.KORU121),
+        event_name,
+        build_lang,
+        build_lang,
+        location.file,
+        location.line,
+        location.column,
+        event_name,
+        build_lang,
+        event_name,
+        build_lang,
+        event_name,
+        build_lang,
+        build_lang,
+    });
+    std.process.exit(1);
+}
+
+/// Select the per-call template proc for an invocation, keyed on build language.
+///
+/// Per-call template selection happens UPSTREAM of the emitter's variant pick,
+/// so it must be target-aware HERE — STRICT, with no cross-lang fallback. Walk
+/// every proc whose path last-segment matches the invocation's, classify each
+/// via `perCallTemplateLang`:
+///   - If NONE are per-call templates → return null (ordinary invocation; the
+///     caller leaves it untouched).
+///   - If a per-call template variant matches `build_lang` exactly → return it.
+///   - If per-call template variants exist but NONE match `build_lang` → loud
+///     KORU121 (never fall back to `|zig` on a JS build).
+fn selectPerCallTemplateProc(
+    items: []ast.Item,
+    path: *const ast.DottedPath,
+    build_lang: []const u8,
+    location: errors.SourceLocation,
+) ?*ast.ProcDecl {
     if (path.segments.len == 0) return null;
     const target_name = path.segments[path.segments.len - 1];
-    for (items) |*item| {
-        switch (item.*) {
-            .proc_decl => |*pd| {
-                if (pd.path.segments.len == 0) continue;
-                const pd_name = pd.path.segments[pd.path.segments.len - 1];
-                if (std.mem.eql(u8, pd_name, target_name)) return pd;
-            },
-            .module_decl => |*md| {
-                if (findMatchingProc(@constCast(md.items), path)) |found| return found;
-            },
-            else => {},
+
+    const Walker = struct {
+        fn search(
+            its: []ast.Item,
+            name: []const u8,
+            blang: []const u8,
+            saw_any_template: *bool,
+        ) ?*ast.ProcDecl {
+            for (its) |*item| {
+                switch (item.*) {
+                    .proc_decl => |*pd| {
+                        if (pd.path.segments.len == 0) continue;
+                        const pd_name = pd.path.segments[pd.path.segments.len - 1];
+                        if (!std.mem.eql(u8, pd_name, name)) continue;
+                        const lang = perCallTemplateLang(pd) orelse continue;
+                        saw_any_template.* = true;
+                        if (std.mem.eql(u8, lang, blang)) return pd;
+                    },
+                    .module_decl => |*md| {
+                        if (search(@constCast(md.items), name, blang, saw_any_template)) |found| return found;
+                    },
+                    else => {},
+                }
+            }
+            return null;
         }
+    };
+
+    var saw_any_template = false;
+    if (Walker.search(items, target_name, build_lang, &saw_any_template)) |pd| return pd;
+
+    // A per-call template construct exists for this event name, but no variant
+    // matches the build language — fail loudly rather than leak a wrong-target
+    // body. (If `saw_any_template` is false, this wasn't a template invocation
+    // at all; leave it for normal handling.)
+    if (saw_any_template) {
+        emitMissingVariantAndExit(location, target_name, build_lang);
     }
     return null;
 }
