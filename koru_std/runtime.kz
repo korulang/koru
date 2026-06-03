@@ -140,7 +140,8 @@ const koru_parser = @import("koru_parser");
                 for (seg) |c| {
                     if (c == '*') {
                         out.appendSlice(alloc, "_star_") catch continue;
-                    } else if (c == '.') {
+                    } else if (c == '.' or c == '-') {
+                        // `.` and kebab `-` both lower to `_` in the Zig symbol.
                         out.append(alloc, '_') catch continue;
                     } else {
                         out.append(alloc, c) catch continue;

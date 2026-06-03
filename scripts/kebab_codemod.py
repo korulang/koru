@@ -48,26 +48,36 @@ def kebab(name):
 
 
 def proc_body_mask(lines):
-    """Return a list[bool]: True where the line is inside a ~proc {...} Zig body."""
+    """Return a list[bool]: True where the line is inside a ~proc {...} Zig body.
+
+    The proc DECLARATION line (and any signature lines before the opening `{`)
+    are NOT masked — the proc name lives there and is Koru, so it must convert.
+    Only the body interior (lines after the line bearing the opening `{`, up to
+    the balancing `}`) is masked as Zig.
+    """
     mask = [False] * len(lines)
-    depth = 0
-    in_body = False
-    pending_proc = False  # saw a ~proc line, waiting for its first `{`
-    for i, line in enumerate(lines):
-        if not in_body and not pending_proc and PROC_RE.match(line):
-            pending_proc = True
-        if pending_proc or in_body:
-            opens = line.count('{')
-            closes = line.count('}')
-            if pending_proc and opens > 0:
-                pending_proc = False
-                in_body = True
-                depth = 0
-            if in_body:
-                mask[i] = True  # the `{` line and body lines are Zig
-                depth += opens - closes
-                if depth <= 0 and (opens > 0 or closes > 0):
-                    in_body = False
+    i = 0
+    n = len(lines)
+    while i < n:
+        if not PROC_RE.match(lines[i]):
+            i += 1
+            continue
+        # Walk signature lines (not masked) until we find the opening `{`.
+        j = i
+        while j < n and '{' not in lines[j]:
+            j += 1
+        if j >= n:
+            i += 1
+            continue
+        # lines[j] holds the opening `{` — it's the decl/signature line, NOT
+        # masked (proc name may be on it). Body interior starts at j+1.
+        depth = lines[j].count('{') - lines[j].count('}')
+        k = j + 1
+        while k < n and depth > 0:
+            mask[k] = True
+            depth += lines[k].count('{') - lines[k].count('}')
+            k += 1
+        i = k
     return mask
 
 
