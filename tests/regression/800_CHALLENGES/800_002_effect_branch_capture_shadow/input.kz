@@ -1,0 +1,65 @@
+// FRONTIER (pinned RED): effect-branch binding name collides with a
+// continuation-branch capture name when an effect handler body chains into a
+// branched-event dispatch.
+//
+// Reduced from 800_001_scoreboard. The natural shape — name the effect binding
+// and the branch capture the same thing, because they ARE the same value
+// flowing through (the score goes into `classify` and comes back out) — is
+// rejected by the Zig backend:
+//
+//   ~run(n: 1)
+//   ! item x |> classify(v: x)   <- effect handler fn param is `x`
+//       | lo x |> sink(v: x)     <- branch capture is ALSO `x`
+//       | hi x |> sink(v: x)
+//
+// The emitter lowers the effect handler to `fn item(x: u64) void { ... }` and
+// then, INSIDE that function, emits `.lo => |x| { ... }` — a switch capture
+// named `x` that shadows the `x` function parameter. Zig rejects this:
+//
+//   error: capture 'x' shadows function parameter from outer scope
+//
+// EXPECTED: the effect binding and a branch capture deeper in the same handler
+// should be able to share a name (they denote the same logical value, and Koru
+// has no rule against it). The emitter should alpha-rename one of them — e.g.
+// give switch captures a unique suffix, or rename the effect handler param.
+//
+// ACTUAL: Stage-D zig build of output_emitted.zig fails with the shadow error
+// (see expected_error.txt). 800_001 works ONLY because it sidesteps this by
+// naming the captures `m`/`s`/`b` instead of reusing the effect binding name.
+//
+// FIX SHAPE: in the emitter path that wraps an effect handler around a branched
+// continuation (the Handlers_N struct fn), alpha-rename colliding switch
+// captures (or the effect param) so nested captures never shadow the param.
+
+const std = @import("std");
+
+~pub event run { n: u64 }
+! item u64
+
+~pub event classify { v: u64 }
+| lo u64
+| hi u64
+
+~pub event sink { v: u64 }
+
+~proc run|zig {
+    var i: u64 = 0;
+    while (i < n) : (i += 1) {
+        item(i);
+    }
+}
+
+~proc classify|zig {
+    if (v < 10) return .{ .lo = v };
+    return .{ .hi = v };
+}
+
+~proc sink|zig {
+    std.debug.print("sink {d}\n", .{v});
+}
+
+// The collision: effect binding `x` and branch captures `x` share a name.
+~run(n: 1)
+! item x |> classify(v: x)
+    | lo x |> sink(v: x)
+    | hi x |> sink(v: x)

@@ -1523,16 +1523,6 @@ fn bindingIsUsedInContinuations(binding_name: []const u8, continuations: []const
                         }
                     }
                 },
-                .capture => |cap| {
-                    if (valueReferencesBinding(cap.init_expr, binding_name)) {
-                        return true;
-                    }
-                    for (cap.branches) |*branch| {
-                        if (bindingIsUsedInContinuations(binding_name, branch.body)) {
-                            return true;
-                        }
-                    }
-                },
                 .assignment => |asgn| {
                     for (asgn.fields) |field| {
                         if (field.expression_str) |expr| {
@@ -7476,163 +7466,6 @@ fn emitStep(
 
             try emitter.write("}\n");
         },
-        .capture => |cap| {
-            // Emit capture with comptime type transformation
-            const as_binding = ast.NamedBranch.getBinding(cap.branches, "as") orelse "__capture";
-            const as_body = ast.NamedBranch.getBody(cap.branches, "as");
-            const captured_binding = ast.NamedBranch.getBinding(cap.branches, "captured");
-            const captured_body = ast.NamedBranch.getBody(cap.branches, "captured");
-
-            // Detect existing struct mode: init_expr doesn't start with ".{"
-            const trimmed_init = std.mem.trim(u8, cap.init_expr, " \t\n\r");
-            const is_existing_struct = !std.mem.startsWith(u8, trimmed_init, ".{");
-
-            if (is_existing_struct) {
-                // Existing struct mode: just bind to the variable, let Zig infer type
-                try emitter.writeIndent();
-                try emitter.write("var ");
-                try emitter.write(as_binding);
-                try emitter.write(" = ");
-                try emitter.write(cap.init_expr);
-                try emitter.write(";\n");
-            } else {
-                // Struct literal mode: generate comptime type transformation
-                // Use counter to create unique TYPE name (avoids type collision in nested captures)
-                // Variable bindings must be unique - user must provide explicit names for nested captures
-                const capture_id = ctx.capture_counter;
-                ctx.capture_counter += 1;
-                const type_name_buf = std.fmt.allocPrint(ctx.allocator, "__CaptureT_{s}_{d}", .{ as_binding, capture_id }) catch "__CaptureT";
-                defer ctx.allocator.free(type_name_buf);
-
-                // First, generate the runtime struct type using comptime metaprogramming
-                try emitter.writeIndent();
-                try emitter.write("const ");
-                try emitter.write(type_name_buf);
-                try emitter.write(" = comptime blk: {\n");
-                emitter.indent();
-                try emitter.writeIndent();
-                try emitter.write("const info = @typeInfo(@TypeOf(");
-                try emitter.write(cap.init_expr); // Already in Zig syntax: .{ .field = value }
-                try emitter.write("));\n");
-                try emitter.writeIndent();
-                try emitter.write("var fields: [info.@\"struct\".fields.len]@import(\"std\").builtin.Type.StructField = undefined;\n");
-                try emitter.writeIndent();
-                try emitter.write("for (info.@\"struct\".fields, 0..) |f, i| {\n");
-                emitter.indent();
-                try emitter.writeIndent();
-                try emitter.write("fields[i] = .{\n");
-                emitter.indent();
-                try emitter.writeIndent();
-                try emitter.write(".name = f.name,\n");
-                try emitter.writeIndent();
-                try emitter.write(".type = f.type,\n");
-                try emitter.writeIndent();
-                try emitter.write(".default_value_ptr = null,\n");
-                try emitter.writeIndent();
-                try emitter.write(".is_comptime = false,\n");
-                try emitter.writeIndent();
-                try emitter.write(".alignment = f.alignment,\n");
-                emitter.dedent();
-                try emitter.writeIndent();
-                try emitter.write("};\n");
-                emitter.dedent();
-                try emitter.writeIndent();
-                try emitter.write("}\n");
-                try emitter.writeIndent();
-                try emitter.write("break :blk @Type(.{ .@\"struct\" = .{\n");
-                emitter.indent();
-                try emitter.writeIndent();
-                try emitter.write(".layout = .auto,\n");
-                try emitter.writeIndent();
-                try emitter.write(".fields = &fields,\n");
-                try emitter.writeIndent();
-                try emitter.write(".decls = &.{},\n");
-                try emitter.writeIndent();
-                try emitter.write(".is_tuple = false,\n");
-                emitter.dedent();
-                try emitter.writeIndent();
-                try emitter.write("}});\n");
-                emitter.dedent();
-                try emitter.writeIndent();
-                try emitter.write("};\n");
-
-                // Initialize the capture variable with explicit type
-                try emitter.writeIndent();
-                try emitter.write("var ");
-                try emitter.write(as_binding);
-                try emitter.write(": ");
-                try emitter.write(type_name_buf);
-                try emitter.write(" = ");
-                try emitter.write(cap.init_expr); // Already in Zig syntax: .{ .field = value }
-                try emitter.write(";\n");
-            }
-
-            // Suppress unused warning
-            try emitter.writeIndent();
-            try emitter.write("_ = &");
-            try emitter.write(as_binding);
-            try emitter.write(";\n");
-
-            // Emit as_body continuations
-            var step_idx: usize = 0;
-            for (as_body) |*cont| {
-                if (cont.node) |node| {
-                    var result_buf: [64]u8 = undefined;
-                    const inner_result = std.fmt.bufPrint(&result_buf, "as_result_{d}", .{step_idx}) catch "_";
-                    try emitStep(emitter, ctx, &node, inner_result);
-                    if (node == .invocation) {
-                        try emitter.writeIndent();
-                        try emitter.write("_ = &");
-                        try emitter.write(inner_result);
-                        try emitter.write(";\n");
-                    }
-                    step_idx += 1;
-
-                    if (cont.continuations.len > 0) {
-                        try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
-                    }
-                }
-            }
-
-            // Bind final value and emit captured_body
-            if (captured_binding) |captured_bind| {
-                try emitter.writeIndent();
-                try emitter.write("const ");
-                try emitter.write(captured_bind);
-                try emitter.write(" = ");
-                try emitter.write(as_binding);
-                try emitter.write(";\n");
-
-                // Suppress unused warning
-                try emitter.writeIndent();
-                try emitter.write("_ = &");
-                try emitter.write(captured_bind);
-                try emitter.write(";\n");
-            }
-
-            // Emit captured_body continuations
-            for (captured_body) |*cont| {
-                if (cont.node) |node| {
-                    // If in_handler and the node is a branch_constructor, use "_" to trigger return
-                    // This handles subflow handlers like: ~my_event = capture(...) | captured |> result { ... }
-                    const is_return_node = ctx.in_handler and node == .branch_constructor;
-                    var result_buf: [64]u8 = undefined;
-                    const inner_result = if (is_return_node) "_" else std.fmt.bufPrint(&result_buf, "done_result_{d}", .{step_idx}) catch "_";
-                    try emitStep(emitter, ctx, &node, inner_result);
-                    if (node == .invocation) {
-                        try emitter.writeIndent();
-                        try emitter.write("_ = &");
-                        try emitter.write(inner_result);
-                        try emitter.write(";\n");
-                    }
-                    step_idx += 1;
-
-                    if (cont.continuations.len > 0) {
-                        try emitContinuationList(emitter, ctx, cont.continuations, inner_result, &step_idx, false);
-                    }
-                }
-            }
-        },
         .switch_result => |sr| {
             // Emit switch on union result type (e.g., from query transform)
             // Expression is inline code block that produces the union value
@@ -8343,20 +8176,6 @@ fn continuationUsesBinding(cont: *const ast.Continuation, binding: []const u8) b
                 }
                 // Check all branches recursively
                 for (cond.branches) |*branch| {
-                    for (branch.body) |*body_cont| {
-                        if (continuationUsesBinding(body_cont, binding)) {
-                            return true;
-                        }
-                    }
-                }
-            },
-            .capture => |cap| {
-                // Check init expression
-                if (containsIdentifier(cap.init_expr, binding)) {
-                    return true;
-                }
-                // Check all branches recursively (as, captured, etc.)
-                for (cap.branches) |*branch| {
                     for (branch.body) |*body_cont| {
                         if (continuationUsesBinding(body_cont, binding)) {
                             return true;

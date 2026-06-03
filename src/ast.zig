@@ -1019,13 +1019,6 @@ pub const Node = union(enum) {
         branches: []const NamedBranch,  // Uniform branch structure (typically "then" and optionally "else")
     },
 
-    /// State capture/accumulator with proper AST bodies
-    /// Used by ~capture for pure state threading
-    /// Uses uniform branches structure: [{ name: "as", body: [...], binding: "acc" }, { name: "done", body: [...], binding: "result" }]
-    capture: struct {
-        init_expr: []const u8,            // Initialization expression "{ sum: 0, max: 0 }"
-        branches: []const NamedBranch,    // Uniform branch structure ("as" with current binding, "done" with final binding)
-    },
 
     /// Union/result switch with proper AST bodies
     /// Used by transforms like query for switching on union result types
@@ -1108,14 +1101,6 @@ pub const Node = union(enum) {
                     mutable_branch.deinit(allocator);
                 }
                 allocator.free(@constCast(cond.branches));
-            },
-            .capture => |*cap| {
-                allocator.free(cap.init_expr);
-                for (cap.branches) |*branch| {
-                    var mutable_branch = branch.*;
-                    mutable_branch.deinit(allocator);
-                }
-                allocator.free(@constCast(cap.branches));
             },
             .switch_result => |*sr| {
                 allocator.free(sr.expression);
@@ -1596,9 +1581,9 @@ pub const ASTNode = union(enum) {
                     .expression => {
                         break :blk try allocator.alloc(ASTNode, 0);
                     },
-                    // Foreach, conditional, capture, switch_result have bodies handled via continuation traversal
+                    // Foreach, conditional, switch_result have bodies handled via continuation traversal
                     // Assignment is a leaf node
-                    .foreach, .conditional, .capture, .switch_result, .assignment => {
+                    .foreach, .conditional, .switch_result, .assignment => {
                         break :blk try allocator.alloc(ASTNode, 0);
                     },
                 }

@@ -1583,13 +1583,6 @@ fn cloneStep(allocator: std.mem.Allocator, step: *const ast.Step) CloneError!ast
                 },
             };
         },
-        .capture => |cap| {
-            // Clone capture - uses uniform NamedBranch structure
-            return .{ .capture = .{
-                .init_expr = try allocator.dupe(u8, cap.init_expr),
-                .branches = try cloneNamedBranches(allocator, cap.branches),
-            } };
-        },
         .switch_result => |sr| {
             // Clone switch_result - uses uniform NamedBranch structure
             return .{ .switch_result = .{
@@ -2500,15 +2493,6 @@ fn walkLexicalNodeInner(
         },
         .conditional => |*cond| {
             for (cond.branches) |*branch| {
-                for (branch.body) |*cont| {
-                    if (try walkLexicalContinuationSubtreeInner(Context, cont, context, visitor)) {
-                        return true;
-                    }
-                }
-            }
-        },
-        .capture => |*cap| {
-            for (cap.branches) |*branch| {
                 for (branch.body) |*cont| {
                     if (try walkLexicalContinuationSubtreeInner(Context, cont, context, visitor)) {
                         return true;

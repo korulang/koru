@@ -1,3 +1,7 @@
+// FRONTIER (deferred 2026-06-03): binding-qualified routing
+// (`captured { inner.count: ... }` / `{ outer.count: ... }`) to specific named cells
+// = MULTI-CELL store territory. New model is single-cell. Old brace form.
+// See project_capture_dissolves_into_effect_cell.
 // Test: Binding-qualified capture field syntax
 //
 // When captures are nested, both may have the SAME field name.

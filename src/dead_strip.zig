@@ -123,11 +123,6 @@ pub const DeadStripPass = struct {
                     try self.collectFromContinuations(branch.body);
                 }
             },
-            .capture => |n| {
-                for (n.branches) |branch| {
-                    try self.collectFromContinuations(branch.body);
-                }
-            },
             .switch_result => |n| {
                 for (n.branches) |branch| {
                     try self.collectFromContinuations(branch.body);

@@ -600,6 +600,16 @@ pub fn build(b: *std.Build) void {
     json_parser_module.addImport("liquid", liquid_module);
     exe.root_module.addImport("json_parser", json_parser_module);
 
+    // Koru struct-literal → liquid record tree. Parser-palette entry feeding the
+    // capture rework: `captured({...})` lowers via this record (docs/PARSER_PALETTE.md).
+    const struct_literal_module = b.createModule(.{
+        .root_source_file = b.path("src/struct_literal.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    struct_literal_module.addImport("liquid", liquid_module);
+    exe.root_module.addImport("struct_literal", struct_literal_module);
+
     // Template processor: walks AST, renders `|template|...` proc bodies
     // through Liquid, strips the `template` tag from the variant chain.
     const template_processor_module = b.createModule(.{
@@ -1014,6 +1024,18 @@ pub fn build(b: *std.Build) void {
     json_parser_tests.root_module.addImport("liquid", liquid_module);
     const run_json_parser_tests = b.addRunArtifact(json_parser_tests);
 
+    // Struct-literal projector — parse Koru `{ name: expr }` into liquid records.
+    const struct_literal_tests = b.addTest(.{
+        .name = "struct_literal_tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/struct_literal.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    struct_literal_tests.root_module.addImport("liquid", liquid_module);
+    const run_struct_literal_tests = b.addRunArtifact(struct_literal_tests);
+
     // Expression purity tests
     const expression_purity_tests = b.addTest(.{
         .name = "expression_purity_tests",
@@ -1279,6 +1301,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_expression_parser_tests.step);
     test_step.dependOn(&run_liquid_tests.step);
     test_step.dependOn(&run_json_parser_tests.step);
+    test_step.dependOn(&run_struct_literal_tests.step);
     test_step.dependOn(&run_expression_purity_tests.step);
     test_step.dependOn(&run_expression_codegen_tests.step);
     test_step.dependOn(&run_expression_codegen_compile_tests.step);

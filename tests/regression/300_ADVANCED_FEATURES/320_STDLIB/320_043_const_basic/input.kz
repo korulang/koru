@@ -1,3 +1,7 @@
+// FRONTIER (deferred 2026-06-03): nests ~capture as a PIPELINE STEP inside ~const's
+// `| as cfg` body — capture is NOT the top-level flow here. The new capture model
+// (320_042) only transforms top-level captures; the nested-step path was deleted.
+// Old brace `captured { }` form too. See project_capture_dissolves_into_effect_cell.
 // Test: Basic ~const for immutable bindings in pipelines
 // Demonstrates pure Koru with named constants
 

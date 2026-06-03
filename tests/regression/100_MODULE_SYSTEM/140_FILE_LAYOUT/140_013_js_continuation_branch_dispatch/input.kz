@@ -1,7 +1,7 @@
-// FRONTIER: JS emitter does not dispatch on the returned continuation-branch
-// tag — it inlines ALL branch bodies unconditionally. Zig switches correctly.
-// n=4 → only the `even` branch should fire. Zig prints "even"; JS prints
-// "even\nodd" (both branches). Minimal, no $std/args dependency.
+// JS continuation-branch dispatch: the JS emitter switches on the returned
+// branch tag (as Zig does), firing only the matched branch — not all of them.
+// n=4 → only the `even` branch fires; byte-identical on both targets. Minimal,
+// no $std/args dependency.
 ~import "$std/io"
 
 ~event pick { n: i32 }

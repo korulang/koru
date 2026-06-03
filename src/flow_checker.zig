@@ -439,14 +439,6 @@ pub const FlowChecker = struct {
                     }
                 }
             },
-            .capture => |cap| {
-                if (containsIdentifier(cap.init_expr, binding)) return true;
-                for (cap.branches) |*branch| {
-                    for (branch.body) |*body_cont| {
-                        if (self.continuationUsesBindingRecursive(body_cont, binding)) return true;
-                    }
-                }
-            },
             .assignment => |asgn| {
                 if (std.mem.eql(u8, asgn.target, binding)) return true;
                 for (asgn.fields) |field| {

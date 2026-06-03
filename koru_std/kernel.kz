@@ -253,7 +253,6 @@ const std = @import("std");
                             .branch_constructor => return self.fail(info.continuation, "branch constructor"),
                             .foreach => return self.fail(info.continuation, "for"),
                             .conditional => return self.fail(info.continuation, "if"),
-                            .capture => return self.fail(info.continuation, "capture"),
                             .switch_result => return self.fail(info.continuation, "switch_result"),
                             .label_apply => return self.fail(info.continuation, "label_apply"),
                             .label_with_invocation => return self.fail(info.continuation, "label_with_invocation"),

@@ -149,598 +149,211 @@ const std = @import("std");
 ~proc capture|zig {
     const ast = @import("ast");
     const ast_functional = @import("ast_functional");
-    const codegen_utils = @import("codegen_utils");
+    const struct_literal = @import("struct_literal");
 
     const flow = if (item.* == .flow)
         &item.flow
     else
         return .{ .transformed = program };
 
-    // Check if this is a top-level capture (flow.invocation IS the capture being transformed)
-    // vs a pipeline case (capture is a step inside the flow's continuations)
-    // findContainingItem returns the parent flow — only pointer comparison is valid.
-    const is_pointer_top = @intFromPtr(&flow.invocation) == @intFromPtr(invocation);
-    const is_virtual_top = false; // removed with virtual sub-flows
+    // Only the top-level capture transforms here (flow.invocation IS the capture
+    // being transformed). Nested/pipeline captures are migration debt from the
+    // old `captured { }` brace form — pass through (they are being retired).
+    const is_top = @intFromPtr(&flow.invocation) == @intFromPtr(invocation);
+    if (!is_top) return .{ .transformed = program };
 
-    // Helper struct for transforming captured blocks
-    // Defined early so both nested and top-level cases can use it
-    const TransformHelper = struct {
-        fn parseFieldNames(alloc: std.mem.Allocator, expr_str: []const u8) []const []const u8 {
-            var fields = std.ArrayList([]const u8).initCapacity(alloc, 8) catch unreachable;
-            const trimmed = std.mem.trim(u8, expr_str, " \t\n\r");
+    // Idempotency: a prior run already set preamble_code.
+    if (flow.preamble_code != null) return .{ .transformed = program };
 
-            // Must start with {
-            if (trimmed.len == 0 or trimmed[0] != '{') return fields.toOwnedSlice(alloc) catch &[_][]const u8{};
-
-            var i: usize = 1; // Skip opening {
-            while (i < trimmed.len) {
-                // Skip whitespace
-                while (i < trimmed.len and (trimmed[i] == ' ' or trimmed[i] == '\t' or trimmed[i] == '\n' or trimmed[i] == '\r')) : (i += 1) {}
-
-                if (i >= trimmed.len or trimmed[i] == '}') break;
-
-                // Read field name (identifier before :)
-                const name_start = i;
-                while (i < trimmed.len and trimmed[i] != ':' and trimmed[i] != '}' and trimmed[i] != ',') : (i += 1) {}
-
-                if (i > name_start) {
-                    const name = std.mem.trim(u8, trimmed[name_start..i], " \t\n\r");
-                    if (name.len > 0) {
-                        fields.append(alloc, alloc.dupe(u8, name) catch unreachable) catch unreachable;
-                    }
-                }
-
-                // Skip the type part (handle nested parens/braces)
-                if (i < trimmed.len and trimmed[i] == ':') {
-                    i += 1; // Skip :
-                    var depth: usize = 0;
-                    while (i < trimmed.len) : (i += 1) {
-                        const c = trimmed[i];
-                        if (c == '(' or c == '{' or c == '[') {
-                            depth += 1;
-                        } else if (c == ')' or c == '}' or c == ']') {
-                            if (depth == 0 and c == '}') break; // End of struct
-                            if (depth > 0) depth -= 1;
-                        } else if (c == ',' and depth == 0) {
-                            i += 1; // Skip comma
-                            break;
-                        }
-                    }
-                }
-            }
-
-            return fields.toOwnedSlice(alloc) catch &[_][]const u8{};
-        }
-
-        // Parse a field name that may be binding-qualified (e.g., "outer.count" -> binding="outer", field="count")
-        // Returns: { binding_or_null, actual_field_name }
-        const QualifiedField = struct {
-            binding: ?[]const u8,
-            field_name: []const u8,
-        };
-
-        fn parseQualifiedFieldName(field_name: []const u8) QualifiedField {
-            // Look for a dot separator
-            if (std.mem.indexOf(u8, field_name, ".")) |dot_idx| {
-                return .{
-                    .binding = field_name[0..dot_idx],
-                    .field_name = field_name[dot_idx + 1..],
-                };
-            } else {
-                return .{
-                    .binding = null,
-                    .field_name = field_name,
-                };
-            }
-        }
-
-        fn fieldBelongsToCapture(field_name: []const u8, my_fields: []const []const u8) bool {
-            // Extract base name (before '[' if present) for indexed field matching
-            // e.g., "arr[i]" -> "arr" to match capture field "arr"
-            const base_name = if (std.mem.indexOf(u8, field_name, "[")) |bracket_idx|
-                field_name[0..bracket_idx]
-            else
-                field_name;
-
-            for (my_fields) |mf| {
-                if (std.mem.eql(u8, base_name, mf)) return true;
-            }
-            return false;
-        }
-
-        // Walk continuations recursively, transforming `captured { ... }` blocks
-        // Only processes fields belonging to THIS capture, leaves others for other captures
-        // Supports binding-qualified syntax: captured { outer.count: value } explicitly targets 'outer' capture
-        // When is_existing_struct is true, ALL unqualified fields belong to this capture
-        fn transformCaptured(
-            alloc: std.mem.Allocator,
-            cont: *const ast.Continuation,
-            binding_name: []const u8,
-            my_fields: []const []const u8,
-            is_existing_struct: bool,
-        ) *const ast.Continuation {
-            // Transform the single node if present
-            var new_node: ?ast.Node = null;
-
-            if (cont.node) |step| {
-                switch (step) {
-                    .branch_constructor => |bc| {
-                        if (std.mem.eql(u8, bc.branch_name, "captured")) {
-                            // Separate fields into "mine" and "others"
-                            // Now supports binding-qualified syntax: outer.count explicitly targets 'outer' capture
-                            var my_field_list = std.ArrayList(ast.Field).initCapacity(alloc, bc.fields.len) catch unreachable;
-                            var other_field_list = std.ArrayList(ast.Field).initCapacity(alloc, bc.fields.len) catch unreachable;
-
-                            for (bc.fields) |field| {
-                                const qualified = parseQualifiedFieldName(field.name);
-
-                                if (qualified.binding) |explicit_binding| {
-                                    // Binding-qualified: outer.count explicitly targets 'outer' capture
-                                    if (std.mem.eql(u8, explicit_binding, binding_name)) {
-                                        // This field targets OUR capture - create a new field with just the field name
-                                        var fixed_field = field;
-                                        fixed_field.name = alloc.dupe(u8, qualified.field_name) catch unreachable;
-                                        my_field_list.append(alloc, fixed_field) catch unreachable;
-                                    } else {
-                                        // This field targets a DIFFERENT capture - leave for them
-                                        other_field_list.append(alloc, field) catch unreachable;
-                                    }
-                                } else {
-                                    // Unqualified: use implicit field name matching (original behavior)
-                                    // In existing struct mode, ALL unqualified fields belong to this capture
-                                    if (is_existing_struct or fieldBelongsToCapture(field.name, my_fields)) {
-                                        my_field_list.append(alloc, field) catch unreachable;
-                                    } else {
-                                        other_field_list.append(alloc, field) catch unreachable;
-                                    }
-                                }
-                            }
-
-                            const my_field_slice = my_field_list.toOwnedSlice(alloc) catch &[_]ast.Field{};
-                            const other_field_slice = other_field_list.toOwnedSlice(alloc) catch &[_]ast.Field{};
-
-                            // Create assignment for MY fields
-                            if (my_field_slice.len > 0) {
-                                new_node = .{ .assignment = .{
-                                    .target = binding_name,
-                                    .fields = my_field_slice,
-                                } };
-                            }
-
-                            // Keep a `captured` block for OTHER fields (for other captures to process)
-                            // TODO: Handle the case where we have both - need to chain nodes somehow
-                            // If we have "other" fields but no "my" fields, use the captured block
-                            if (my_field_slice.len == 0 and other_field_slice.len > 0) {
-                                new_node = .{ .branch_constructor = .{
-                                    .branch_name = bc.branch_name,
-                                    .fields = other_field_slice,
-                                } };
-                            }
-                        } else {
-                            new_node = step;
-                        }
-                    },
-                    .foreach => |fe| {
-                        // Recurse into foreach branches to transform captured blocks inside
-                        var new_branches = alloc.alloc(ast.NamedBranch, fe.branches.len) catch unreachable;
-                        for (fe.branches, 0..) |*branch, bi| {
-                            var new_body = alloc.alloc(ast.Continuation, branch.body.len) catch unreachable;
-                            for (branch.body, 0..) |*body_cont, ci| {
-                                const transformed = transformCaptured(alloc, body_cont, binding_name, my_fields, is_existing_struct);
-                                new_body[ci] = transformed.*;
-                            }
-                            new_branches[bi] = .{
-                                .name = branch.name,
-                                .body = new_body,
-                                .binding = branch.binding,
-                                .annotations = branch.annotations,  // Preserve @scope and other annotations
-                            };
-                        }
-
-                        new_node = .{ .foreach = .{
-                            .iterable = fe.iterable,
-                            .element_type = fe.element_type,
-                            .branches = new_branches,
-                        } };
-                    },
-                    .conditional => |cond_node| {
-                        // Recurse into conditional branches to transform captured blocks inside
-                        var new_branches = alloc.alloc(ast.NamedBranch, cond_node.branches.len) catch unreachable;
-                        for (cond_node.branches, 0..) |*branch, bi| {
-                            var new_body = alloc.alloc(ast.Continuation, branch.body.len) catch unreachable;
-                            for (branch.body, 0..) |*body_cont, ci| {
-                                const transformed = transformCaptured(alloc, body_cont, binding_name, my_fields, is_existing_struct);
-                                new_body[ci] = transformed.*;
-                            }
-                            new_branches[bi] = .{
-                                .name = branch.name,
-                                .body = new_body,
-                                .binding = branch.binding,
-                                .annotations = branch.annotations,  // Preserve annotations
-                            };
-                        }
-
-                        new_node = .{ .conditional = .{
-                            .condition = cond_node.condition,
-                            .condition_expr = cond_node.condition_expr,
-                            .branches = new_branches,
-                        } };
-                    },
-                    .capture => |cap| {
-                        // Recurse into capture branches to transform captured blocks belonging to OUTER captures
-                        var new_branches = alloc.alloc(ast.NamedBranch, cap.branches.len) catch unreachable;
-                        for (cap.branches, 0..) |*branch, bi| {
-                            var new_body = alloc.alloc(ast.Continuation, branch.body.len) catch unreachable;
-                            for (branch.body, 0..) |*body_cont, ci| {
-                                const transformed = transformCaptured(alloc, body_cont, binding_name, my_fields, is_existing_struct);
-                                new_body[ci] = transformed.*;
-                            }
-                            new_branches[bi] = .{
-                                .name = branch.name,
-                                .body = new_body,
-                                .binding = branch.binding,
-                            };
-                        }
-
-                        new_node = .{ .capture = .{
-                            .init_expr = cap.init_expr,
-                            .branches = new_branches,
-                        } };
-                    },
-                    else => {
-                        new_node = step;
-                    },
-                }
-            }
-
-            // CRITICAL: Recurse into continuations!
-            var new_continuations = alloc.alloc(ast.Continuation, cont.continuations.len) catch unreachable;
-            for (cont.continuations, 0..) |*nested_cont, ni| {
-                const transformed_nested = transformCaptured(alloc, nested_cont, binding_name, my_fields, is_existing_struct);
-                new_continuations[ni] = transformed_nested.*;
-            }
-
-            const new_cont = alloc.create(ast.Continuation) catch unreachable;
-            new_cont.* = ast.Continuation{
-                .branch = cont.branch,
-                .binding = cont.binding,
-                .binding_type = cont.binding_type,
-                .node = new_node,
-                .continuations = new_continuations,
-                .indent = cont.indent,
-                .condition = cont.condition,
-                .binding_annotations = cont.binding_annotations,
-            };
-            return new_cont;
-        }
-    };
-
-    // Find the continuations that belong to THIS capture invocation
-    // For top-level: flow.continuations
-    // For nested: the parent continuation's nested continuations
-    const capture_continuations: []const ast.Continuation = if (is_pointer_top or is_virtual_top) blk: {
-        // Check if already transformed
-        if (flow.inline_body != null) {
-            return .{ .transformed = program };
-        }
-        break :blk flow.continuations;
-    } else {
-        // Pipeline case: nested capture inside a continuation
-        // 1. Find path to the capture invocation
-        // 2. Build CaptureNode from parent continuation's nested continuations
-        // 3. Replace invocation with CaptureNode
-        // 4. Filter out consumed | as |> and | captured |> branches
-
-        // Helper to find path to invocation
-        const findCaptureWithPath = struct {
-            const SearchResult = struct {
-                path: []const usize,
-                as_cont: ?*const ast.Continuation,
-                captured_cont: ?*const ast.Continuation,
-            };
-
-            fn search(alloc: std.mem.Allocator, continuations: []const ast.Continuation, current_path: []const usize, target_inv: *const ast.Invocation) ?SearchResult {
-                for (continuations, 0..) |*cont, cont_idx| {
-                    // Build path to this continuation
-                    var path = alloc.alloc(usize, current_path.len + 1) catch return null;
-                    @memcpy(path[0..current_path.len], current_path);
-                    path[current_path.len] = cont_idx;
-
-                    // Check if this continuation's node is the target invocation
-                    if (cont.node) |*node| {
-                        if (node.* == .invocation) {
-                            if (&node.invocation == target_inv) {
-                                // Found it! Extract | as |> and | captured |> from this continuation's nested continuations
-                                var found_as: ?*const ast.Continuation = null;
-                                var found_captured: ?*const ast.Continuation = null;
-
-                                for (cont.continuations) |*nested| {
-                                    if (std.mem.eql(u8, nested.branch, "as")) {
-                                        found_as = nested;
-                                    } else if (std.mem.eql(u8, nested.branch, "captured")) {
-                                        found_captured = nested;
-                                    }
-                                }
-
-                                return SearchResult{
-                                    .path = path,
-                                    .as_cont = found_as,
-                                    .captured_cont = found_captured,
-                                };
-                            }
-                        }
-                    }
-
-                    // Recurse into nested continuations
-                    if (search(alloc, cont.continuations, path, target_inv)) |result| {
-                        return result;
-                    }
-
-                    // Free path if not used
-                    alloc.free(path);
-                }
-                return null;
-            }
-        }.search;
-
-        const empty_path = &[_]usize{};
-        const search_result = findCaptureWithPath(allocator, flow.continuations, empty_path, invocation) orelse {
-            std.debug.print("[CAPTURE TRANSFORM] WARNING: Could not find nested capture invocation\n", .{});
-            return .{ .transformed = program };
-        };
-
-        // Get bindings
-        const nested_as_binding = if (search_result.as_cont) |ac| (ac.binding orelse "c") else "c";
-        const nested_captured_binding = if (search_result.captured_cont) |cc| cc.binding else null;
-
-        // Detect existing struct mode: no '{' means binding to existing variable
-        const trimmed_expr = std.mem.trim(u8, expr, " \t\n\r");
-        const nested_is_existing_struct = !std.mem.startsWith(u8, trimmed_expr, "{");
-
-        // Parse field names to know which fields THIS nested capture owns
-        const nested_my_fields = TransformHelper.parseFieldNames(allocator, expr);
-
-        // Transform captured { } blocks in the as_cont and captured_cont
-        const transformed_as_cont = if (search_result.as_cont) |ac|
-            TransformHelper.transformCaptured(allocator, ac, nested_as_binding, nested_my_fields, nested_is_existing_struct)
-        else
-            null;
-
-        const transformed_captured_cont = if (search_result.captured_cont) |cc|
-            TransformHelper.transformCaptured(allocator, cc, nested_as_binding, nested_my_fields, nested_is_existing_struct)
-        else
-            null;
-
-        // Build branches for CaptureNode using uniform NamedBranch structure
-        // Count branches (as + optional captured)
-        const branch_count: usize = if (transformed_captured_cont != null) 2 else if (transformed_as_cont != null) 1 else 0;
-        const branches = allocator.alloc(ast.NamedBranch, branch_count) catch unreachable;
-
-        var branch_idx: usize = 0;
-        if (transformed_as_cont) |tc| {
-            const as_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
-            as_body[0] = tc.*;
-            branches[branch_idx] = .{
-                .name = "as",
-                .body = as_body,
-                .binding = nested_as_binding,
-            };
-            branch_idx += 1;
-        }
-
-        if (transformed_captured_cont) |tc| {
-            const captured_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
-            captured_body[0] = tc.*;
-            branches[branch_idx] = .{
-                .name = "captured",
-                .body = captured_body,
-                .binding = nested_captured_binding,
-                .is_optional = true,  // captured branch is optional - often discarded in nested captures
-            };
-        }
-
-        // Convert init expression from Koru struct syntax to Zig syntax
-        const init_value = if (std.mem.startsWith(u8, std.mem.trim(u8, expr, " \t\n\r"), "{"))
-            codegen_utils.koruStructToZig(allocator, expr) catch expr
-        else
-            expr;
-
-        // Build the CaptureNode with uniform branches
-        const capture_node = ast.Node{ .capture = .{
-            .init_expr = init_value,
-            .branches = branches,
-        }};
-
-        // Replace the invocation at the path with the CaptureNode
-        var modified_flow = ast_functional.replacePipelineStepAtPath(
-            allocator,
-            flow,
-            search_result.path,
-            0, // step_idx - the node is at position 0
-            capture_node,
-        ) catch unreachable;
-
-        // Filter out | as |> and | captured |> from the nested continuations (they're now inside the CaptureNode)
-        const keepNotCaptureBranch = struct {
-            fn check(branch: []const u8) bool {
-                return !std.mem.eql(u8, branch, "as") and !std.mem.eql(u8, branch, "captured");
-            }
-        }.check;
-
-        modified_flow = ast_functional.filterNestedContinuationsAtPath(
-            allocator,
-            &modified_flow,
-            search_result.path,
-            &keepNotCaptureBranch,
-        ) catch unreachable;
-
-        const new_item = ast.Item{ .flow = modified_flow };
-
-        // Replace in program
-        const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
-        if (maybe_new_program) |new_program| {
-            const result = allocator.create(ast.Program) catch unreachable;
-            result.* = new_program;
-            return .{ .transformed = result };
-        } else {
-            std.debug.print("ERROR: ~capture transform (pipeline case) failed - flow not found in program\n", .{});
-            @panic("capture transform: flow not found");
-        }
-    };
-
-    // =====================================================================
-    // TOP-LEVEL CASE: Create a CaptureNode and put it in a void-chain
-    // continuation. The emitter will process the node via .capture =>
-    // in emitter_helpers.zig, which handles the proper sequencing.
-    // This keeps AST analyzable for shape checking, tap injection, etc.
-    // =====================================================================
-
-    // Find | as binding |> and | captured final |> continuations
+    // --- Find `! as <cell>` (the mutable cell) and `| captured <result>` (the
+    //     after-read). Mirrors ~const's `| as` lookup. ---
     var as_cont: ?*const ast.Continuation = null;
     var captured_cont: ?*const ast.Continuation = null;
-    var as_binding: []const u8 = "c"; // default
-    var captured_binding: []const u8 = "result"; // default
-
-    for (capture_continuations) |*cont| {
+    var cell_name: []const u8 = "acc";
+    var result_name: []const u8 = "result";
+    for (flow.continuations) |*cont| {
         if (std.mem.eql(u8, cont.branch, "as")) {
             as_cont = cont;
-            if (cont.binding) |b| {
-                as_binding = b;
-            }
+            if (cont.binding) |b| cell_name = b;
         } else if (std.mem.eql(u8, cont.branch, "captured")) {
             captured_cont = cont;
-            if (cont.binding) |b| {
-                captured_binding = b;
-            }
+            if (cont.binding) |b| result_name = b;
         }
     }
-
     if (as_cont == null) {
-        std.debug.print("ERROR: ~capture missing | as |> branch\n", .{});
+        std.debug.print("ERROR: ~capture missing `! as` cell binding\n", .{});
         return .{ .transformed = program };
     }
 
-    // Detect existing struct mode: no '{' means binding to existing variable
-    const trimmed_expr = std.mem.trim(u8, expr, " \t\n\r");
-    const is_existing_struct = !std.mem.startsWith(u8, trimmed_expr, "{");
+    // The cell's fields, in declaration order, parsed ONCE via the struct-literal
+    // projector (the walker foundation). Used for the `var` seed below and to map
+    // positional `captured({ a, b })` values onto field names by index.
+    const cell_fields = struct_literal.parseFields(allocator, expr) catch &[_]struct_literal.StructField{};
 
-    // Step 1: Parse field names from expr to know what THIS capture owns
-    const my_fields = TransformHelper.parseFieldNames(allocator, expr);
-
-    // Step 2: Transform `captured { }` blocks into assignment nodes
-    const transformed_as_cont = TransformHelper.transformCaptured(allocator, as_cont.?, as_binding, my_fields, is_existing_struct);
-
-    // Step 3: Convert init expression from Koru struct syntax to Zig
-    const init_value = if (!is_existing_struct)
-        codegen_utils.koruStructToZig(allocator, expr) catch expr
-    else
-        expr;
-
-    // Step 4: Build CaptureNode with NamedBranch array
-    // The emitter's .capture => handler will emit var decl, bodies, and aliases
-    const branch_count: usize = if (captured_cont != null) 2 else 1;
-    const branches = allocator.alloc(ast.NamedBranch, branch_count) catch unreachable;
-
-    // As branch - wrap transformed continuation in array for NamedBranch.body
-    const as_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
-    as_body[0] = transformed_as_cont.*;
-    branches[0] = .{
-        .name = "as",
-        .body = as_body,
-        .binding = as_binding,
+    // --- Rewrite `captured(...)` invocations into general `.assignment` nodes
+    //     that write field-wise into the cell. The opaque `{...}` payload is
+    //     interpreted by the projector; positional values map onto the cell's
+    //     fields by index. No `.capture` node, no emitter concession. ---
+    const Rewriter = struct {
+        fn rewrite(
+            alloc: std.mem.Allocator,
+            cont: *const ast.Continuation,
+            target: []const u8,
+            cells: []const struct_literal.StructField,
+        ) *const ast.Continuation {
+            var new_node: ?ast.Node = cont.node;
+            if (cont.node) |step| {
+                if (step == .invocation) {
+                    const segs = step.invocation.path.segments;
+                    if (segs.len > 0 and std.mem.eql(u8, segs[segs.len - 1], "captured")) {
+                        const payload = if (step.invocation.args.len > 0) step.invocation.args[0].value else "{}";
+                        const parsed = struct_literal.parseFields(alloc, payload) catch &[_]struct_literal.StructField{};
+                        const asgn_fields = alloc.alloc(ast.Field, parsed.len) catch unreachable;
+                        for (parsed, 0..) |pf, i| {
+                            const fname = if (pf.name.len > 0)
+                                pf.name
+                            else if (i < cells.len)
+                                cells[i].name
+                            else
+                                pf.name;
+                            asgn_fields[i] = .{
+                                .name = alloc.dupe(u8, fname) catch unreachable,
+                                .type = "",
+                                .expression_str = alloc.dupe(u8, pf.value) catch unreachable,
+                            };
+                        }
+                        new_node = .{ .assignment = .{
+                            .target = target,
+                            .fields = asgn_fields,
+                        } };
+                    }
+                }
+            }
+            const new_conts = alloc.alloc(ast.Continuation, cont.continuations.len) catch unreachable;
+            for (cont.continuations, 0..) |*nc, i| {
+                new_conts[i] = rewrite(alloc, nc, target, cells).*;
+            }
+            const out = alloc.create(ast.Continuation) catch unreachable;
+            out.* = cont.*;
+            out.node = new_node;
+            out.continuations = new_conts;
+            return out;
+        }
     };
 
-    // Captured branch if present - wrap entire continuation in array
-    if (captured_cont) |cc| {
-        const captured_body = allocator.alloc(ast.Continuation, 1) catch unreachable;
-        captured_body[0] = cc.*;
-        branches[1] = .{
-            .name = "captured",
-            .body = captured_body,
-            .binding = captured_binding,
-            .is_optional = true,  // captured branch is optional - often discarded in nested captures
-        };
-    }
+    const rewritten_as = Rewriter.rewrite(allocator, as_cont.?, cell_name, cell_fields);
 
-    const capture_node = ast.Node{ .capture = .{
-        .init_expr = init_value,
-        .branches = branches,
-    }};
+    // --- Assemble the new flow continuations: void chains so the REAL ~for / ~if
+    //     templates run over the cell (no degradation). ---
+    var new_conts = std.ArrayList(ast.Continuation).initCapacity(allocator, 2) catch unreachable;
 
-    if (is_virtual_top) {
-        const keepNotCaptureBranch = struct {
-            fn check(branch: []const u8) bool {
-                return !std.mem.eql(u8, branch, "as") and !std.mem.eql(u8, branch, "captured");
-            }
-        }.check;
-
-        var filtered_count: usize = 0;
-        for (flow.continuations) |*cont| {
-            if (keepNotCaptureBranch(cont.branch)) filtered_count += 1;
-        }
-
-        const filtered = allocator.alloc(ast.Continuation, filtered_count) catch unreachable;
-        var out_idx: usize = 0;
-        for (flow.continuations) |*cont| {
-            if (keepNotCaptureBranch(cont.branch)) {
-                filtered[out_idx] = cont.*;
-                out_idx += 1;
-            }
-        }
-
-        const maybe_new_program = ast_functional.replaceInvocationNodeAndContinuationsRecursive(
-            allocator,
-            program,
-            invocation,
-            capture_node,
-            filtered,
-        ) catch unreachable;
-
-        if (maybe_new_program) |new_program| {
-            const result = allocator.create(ast.Program) catch unreachable;
-            result.* = new_program;
-            return .{ .transformed = result };
-        }
-
-        return .{ .transformed = program };
-    }
-
-    // Create void-chain continuation containing the CaptureNode
-    const void_continuation = allocator.alloc(ast.Continuation, 1) catch unreachable;
-    void_continuation[0] = ast.Continuation{
-        .branch = "",  // void chain
+    // (1) The `! as` body, flattened to a void chain. The cell is in scope from
+    //     the preamble, so its binding is already satisfied.
+    new_conts.append(allocator, .{
+        .branch = "",
         .binding = null,
         .condition = null,
-        .node = capture_node,
+        .node = rewritten_as.node,
         .indent = 0,
-        .continuations = &[_]ast.Continuation{},
-    };
+        .continuations = rewritten_as.continuations,
+    }) catch unreachable;
 
-    // Step 5: Create new invocation with @pass_ran annotation (keep original path)
-    const new_inv_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
-    for (flow.invocation.annotations, 0..) |ann, i| {
-        new_inv_annotations[i] = ann;
+    // (2) `| captured result` → `const result = cell;` (the after-read) then the
+    //     captured body. A plain inline_code binding + the body as its child.
+    if (captured_cont) |cc| {
+        const bind_code = std.fmt.allocPrint(allocator, "const {s} = {s};", .{ result_name, cell_name }) catch unreachable;
+        const body_inner = allocator.alloc(ast.Continuation, 1) catch unreachable;
+        body_inner[0] = .{
+            .branch = "",
+            .binding = null,
+            .condition = null,
+            .node = cc.node,
+            .indent = 0,
+            .continuations = cc.continuations,
+        };
+        new_conts.append(allocator, .{
+            .branch = "",
+            .binding = null,
+            .condition = null,
+            .node = .{ .inline_code = bind_code },
+            .indent = 0,
+            .continuations = body_inner,
+        }) catch unreachable;
     }
-    new_inv_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
+
+    // --- The cell seed: `var <cell> = .{ .name = value, ... };`, built from the
+    //     projector's fields (no koruStructToZig text surgery). For existing-var
+    //     captures (`~capture(myVar)`) the expr is not a struct literal, so emit
+    //     it verbatim. `_ = &cell;` keeps it live even if the loop never writes. ---
+    const is_struct_init = std.mem.startsWith(u8, std.mem.trim(u8, expr, " \t\n\r"), "{");
+    const init_zig = if (is_struct_init) blk: {
+        var seed = std.ArrayList(u8).initCapacity(allocator, 64) catch unreachable;
+        seed.appendSlice(allocator, ".{ ") catch unreachable;
+        for (cell_fields, 0..) |cf, i| {
+            if (i > 0) seed.appendSlice(allocator, ", ") catch unreachable;
+            if (cf.name.len > 0) {
+                seed.append(allocator, '.') catch unreachable;
+                seed.appendSlice(allocator, cf.name) catch unreachable;
+                seed.appendSlice(allocator, " = ") catch unreachable;
+            }
+            seed.appendSlice(allocator, cf.value) catch unreachable;
+        }
+        seed.appendSlice(allocator, " }") catch unreachable;
+        break :blk seed.toOwnedSlice(allocator) catch unreachable;
+    } else expr;
+    // An anonymous struct literal is comptime, so a bare `var cell = .{...}` is a
+    // comptime var and runtime field writes fail. Give the cell an explicit struct
+    // type built from the seed's fields (made non-comptime) so it is a runtime
+    // value. Existing-var captures already have a concrete type — seed verbatim.
+    const preamble = if (is_struct_init) blk2: {
+        const type_name = std.fmt.allocPrint(allocator, "__KoruCaptureT_{s}", .{cell_name}) catch unreachable;
+        var p = std.ArrayList(u8).initCapacity(allocator, 512) catch unreachable;
+        p.appendSlice(allocator, "const ") catch unreachable;
+        p.appendSlice(allocator, type_name) catch unreachable;
+        p.appendSlice(allocator, " = comptime blk: {\n") catch unreachable;
+        p.appendSlice(allocator, "    const __info = @typeInfo(@TypeOf(") catch unreachable;
+        p.appendSlice(allocator, init_zig) catch unreachable;
+        p.appendSlice(allocator, "));\n") catch unreachable;
+        p.appendSlice(allocator, "    var __fields: [__info.@\"struct\".fields.len]@import(\"std\").builtin.Type.StructField = undefined;\n") catch unreachable;
+        p.appendSlice(allocator, "    for (__info.@\"struct\".fields, 0..) |__f, __i| {\n") catch unreachable;
+        p.appendSlice(allocator, "        __fields[__i] = .{ .name = __f.name, .type = __f.type, .default_value_ptr = null, .is_comptime = false, .alignment = __f.alignment };\n") catch unreachable;
+        p.appendSlice(allocator, "    }\n") catch unreachable;
+        p.appendSlice(allocator, "    break :blk @Type(.{ .@\"struct\" = .{ .layout = .auto, .fields = &__fields, .decls = &.{}, .is_tuple = false } });\n") catch unreachable;
+        p.appendSlice(allocator, "};\n") catch unreachable;
+        p.appendSlice(allocator, "var ") catch unreachable;
+        p.appendSlice(allocator, cell_name) catch unreachable;
+        p.appendSlice(allocator, ": ") catch unreachable;
+        p.appendSlice(allocator, type_name) catch unreachable;
+        p.appendSlice(allocator, " = ") catch unreachable;
+        p.appendSlice(allocator, init_zig) catch unreachable;
+        p.appendSlice(allocator, ";\n_ = &") catch unreachable;
+        p.appendSlice(allocator, cell_name) catch unreachable;
+        p.appendSlice(allocator, ";") catch unreachable;
+        break :blk2 p.toOwnedSlice(allocator) catch unreachable;
+    } else std.fmt.allocPrint(allocator, "var {s} = {s};\n_ = &{s};", .{ cell_name, init_zig, cell_name }) catch unreachable;
+
+    // --- @pass_ran annotation + skip-invocation flow (mirrors ~const). ---
+    const new_annotations = allocator.alloc([]const u8, flow.invocation.annotations.len + 1) catch unreachable;
+    for (flow.invocation.annotations, 0..) |ann, i| new_annotations[i] = ann;
+    new_annotations[flow.invocation.annotations.len] = allocator.dupe(u8, "@pass_ran(\"transform\")") catch unreachable;
 
     const new_invocation = ast.Invocation{
-        .path = flow.invocation.path,  // Keep original path
+        .path = flow.invocation.path,
         .args = flow.invocation.args,
-        .annotations = new_inv_annotations,
+        .annotations = new_annotations,
         .inserted_by_tap = flow.invocation.inserted_by_tap,
         .from_opaque_tap = flow.invocation.from_opaque_tap,
     };
 
-    // Step 6: Create new flow with preamble_code (triggers skip-invocation mode)
     const transformed_flow = ast.Flow{
         .invocation = new_invocation,
-        .continuations = void_continuation,
+        .continuations = new_conts.toOwnedSlice(allocator) catch unreachable,
         .annotations = flow.annotations,
         .pre_label = flow.pre_label,
         .post_label = flow.post_label,
         .super_shape = flow.super_shape,
         .inline_body = null,
-        .preamble_code = allocator.dupe(u8, "// ~capture transformed") catch unreachable,
+        .preamble_code = preamble,
         .is_pure = flow.is_pure,
         .is_transitively_pure = flow.is_transitively_pure,
         .impl_of = flow.impl_of,
@@ -749,8 +362,6 @@ const std = @import("std");
     };
 
     const new_item = ast.Item{ .flow = transformed_flow };
-
-    // Use replaceFlowRecursive to handle flows inside module_decls
     const maybe_new_program = ast_functional.replaceFlowRecursive(allocator, program, flow, new_item) catch unreachable;
     if (maybe_new_program) |new_program| {
         const result = allocator.create(ast.Program) catch unreachable;

@@ -5694,13 +5694,6 @@ fn populateInvocationSourceInNode(
                 }
             }
         },
-        .capture => |*cap| {
-            for (cap.branches) |*branch| {
-                for (branch.body) |*body_cont| {
-                    try populateInvocationSourceInContinuation(@constCast(body_cont), allocator, module_name);
-                }
-            }
-        },
         .switch_result => |*sr| {
             for (sr.branches) |*branch| {
                 for (branch.body) |*body_cont| {
@@ -5820,13 +5813,6 @@ fn enforceInvocationVisibilityInNode(
         },
         .conditional => |cond| {
             for (cond.branches) |branch| {
-                for (branch.body) |body_cont| {
-                    try enforceInvocationVisibilityInContinuation(&body_cont, all_items, reporter, allocator, module_name);
-                }
-            }
-        },
-        .capture => |cap| {
-            for (cap.branches) |branch| {
                 for (branch.body) |body_cont| {
                     try enforceInvocationVisibilityInContinuation(&body_cont, all_items, reporter, allocator, module_name);
                 }

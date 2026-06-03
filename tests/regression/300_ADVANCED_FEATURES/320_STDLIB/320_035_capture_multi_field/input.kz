@@ -1,3 +1,7 @@
+// FRONTIER (deferred 2026-06-03): one `captured` block updating MULTIPLE cells =
+// store territory (the new model is single-cell). Old brace form. NOTE: still green
+// coincidentally — the new transform ignores brace-form captured, so this survives;
+// it is slated for store rework. See project_capture_dissolves_into_effect_cell.
 // Test: Single `captured` block updates multiple captures simultaneously
 // This demonstrates that captures create a combined state space where
 // field names must be unique, and `captured { a: X, b: Y }` updates

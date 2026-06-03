@@ -1,7 +1,7 @@
 // Test: Capture from existing struct (no { } literal)
 //
 // ~capture(existing_var) binds to existing struct instead of creating new one
-// captured { field: expr } updates just that field, preserves others
+// captured({ field: expr }) updates just that field, preserves others
 //
 // Key: No { } in capture() → bind to existing variable
 
@@ -29,6 +29,6 @@ const entity = Entity{
 };
 
 ~capture(entity)
-| as acc |> for(&[_]i32{10, 20, 30})
-    ! each damage |> captured { health: acc.health - damage }
+! as acc |> for(&[_]i32{10, 20, 30})
+    ! each damage |> captured({ health: acc.health - damage })
 | captured final |> print_health(value: final.health)

@@ -188,14 +188,6 @@ fn canonicalizeStep(ctx: *Context, step: *ast.Step) CanonicalizeError!void {
                 }
             }
         },
-        .capture => |*cap| {
-            // Recursively canonicalize all branches
-            for (cap.branches) |*branch| {
-                for (branch.body) |*cont| {
-                    try canonicalizeContinuation(ctx, @constCast(cont));
-                }
-            }
-        },
         .switch_result => |*sr| {
             // Recursively canonicalize all branches
             for (sr.branches) |*branch| {

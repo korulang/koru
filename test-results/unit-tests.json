@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-06-02T23:45:26.410Z",
+  "timestamp": "2026-06-03T04:46:42.205Z",
   "summary": {
-    "passed": 216,
+    "passed": 221,
     "failed": 0,
     "skipped": 12,
     "leaked": 0,
     "compileErrors": 0,
-    "total": 228,
-    "suiteCount": 34,
+    "total": 233,
+    "suiteCount": 35,
     "status": "success"
   },
   "suites": [
@@ -209,6 +209,14 @@
       "failed": 0,
       "skipped": 0,
       "total": 9,
+      "status": "success"
+    },
+    {
+      "name": "struct_literal_tests",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "total": 5,
       "status": "success"
     },
     {

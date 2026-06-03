@@ -1,3 +1,7 @@
+// FRONTIER (deferred 2026-06-03): nested ~capture (capture inside a capture) =
+// MULTI-CELL store territory. The new model (320_042) is top-level single-cell;
+// multi-cell + qualified routing is the deferred store question. Old brace form.
+// See project_capture_dissolves_into_effect_cell.
 // Test: Nested ~capture - outer capture's `captured` inside inner capture's continuation
 
 ~import "$std/io"

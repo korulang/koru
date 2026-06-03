@@ -1057,30 +1057,6 @@ pub const ShapeChecker = struct {
                     continue;
                 }
 
-                // Handle capture nodes - recurse into their branches
-                if (step == .capture) {
-                    for (step.capture.branches) |*branch| {
-                        // Recursively validate the continuations inside each branch
-                        const branch_valid = try self.validateNestedContinuations(
-                            branch.body,
-                            location,
-                        );
-                        if (!branch_valid) {
-                            has_errors = true;
-                        }
-                    }
-                    // Also check this continuation's nested continuations
-                    if (cont.continuations.len > 0) {
-                        const nested_valid = try self.validateNestedContinuations(
-                            cont.continuations,
-                            location,
-                        );
-                        if (!nested_valid) {
-                            has_errors = true;
-                        }
-                    }
-                    continue;
-                }
             }
         }
 
@@ -1137,12 +1113,6 @@ pub const ShapeChecker = struct {
                 }
                 if (step == .conditional) {
                     for (step.conditional.branches) |*branch| {
-                        const valid = try self.validateNestedContinuations(branch.body, location);
-                        if (!valid) all_valid = false;
-                    }
-                }
-                if (step == .capture) {
-                    for (step.capture.branches) |*branch| {
                         const valid = try self.validateNestedContinuations(branch.body, location);
                         if (!valid) all_valid = false;
                     }

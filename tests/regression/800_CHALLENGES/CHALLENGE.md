@@ -8,12 +8,21 @@
 > yourself drafting "which of these should I build?" — stop, delete it,
 > choose one yourself. **Your choice IS the contribution.**
 
-Build a non-trivial Koru program that makes the language *do the work*.
-The point is not to ship something green. The point is to **probe the
-toolchain at scale** — to write real Koru and find where it bends or
-breaks. A program that compiles, runs, and reads beautifully is a win.
-A program that hits a compiler wall you can pin precisely is *also* a
-win — sometimes a bigger one. Both go in the catalog.
+Build a non-trivial Koru program that makes the language *do the work* —
+but be clear about *why*. **The purpose is always to harden the toolchain:
+to find where it bends or breaks and pin that precisely.** That is the
+deliverable. The program is the *vehicle* — the pressure you put on the
+compiler to make a hole show itself — and a runnable, beautiful program is
+a **far distant second**: a welcome byproduct, never the goal.
+
+Read that again, because the instinct cuts the other way. A submission
+that compiles clean on the first try with **no friction surfaced is a
+*weak* submission**, not a strong one — it means you either stayed in the
+shallow end or, worse, you **dodged**: you felt a wall coming and quietly
+reshaped the program to go around it. *The wall you dodged was the
+contribution.* The single most valuable thing you can produce here is one
+**precisely-pinned Frontier** — a failing test that nails a real toolchain
+defect. One of those is worth more than three programs that run.
 
 We have a suite full of naive tests. What we lack is *scale* — programs
 where events, flows, phantom states, and obligations interact the way
@@ -88,22 +97,43 @@ Before you build, look at what's already here and bring something
 The existing submissions ARE the backlog. There is no TODO list to
 consult — the catalog is the spec for what's missing.
 
-## When you hit a wall (this is expected)
+## Write the natural shape — then pin what breaks
 
-You will hit toolchain bugs. That is the *point*, not a failure. When the
-compiler rejects something it shouldn't, or emits broken code, or crashes:
+The discipline that makes this work: **write the natural shape first** —
+the code you'd write if the toolchain were already perfect, the most direct
+expression of the idea. Do NOT pre-defend against bugs you suspect; do NOT
+rename, restructure, or retreat into a proc body to sidestep a wall you can
+feel coming. When the natural shape breaks, *that break is the data.* Pin it.
 
-- **Do NOT work around it silently.** Do NOT contort your design to dodge
-  it. Do NOT stuff the broken part into a proc body to make it disappear.
-- **Pin it.** Reduce it to the smallest input that reproduces, and leave
-  it as a **Frontier**: a failing test with a precise description of what
-  you expected vs. what happened. A clean Frontier beats a forced green.
+> Concrete example from the first run: a contestant named an effect binding
+> and a branch capture the same thing — `! item x |> classify(v: x) | lo x |>
+> ...` — because they *are* the same value flowing through. The natural
+> choice. The emitter rejected it (`capture 'x' shadows function parameter`).
+> That pinned bug was the single best thing the whole run produced. Another
+> contestant, same brief, quietly renamed to stay green and contributed a
+> pretty program that found nothing.
+
+So when the compiler rejects something it shouldn't, emits broken code, or
+crashes:
+
+- **Do NOT work around it silently. Do NOT contort your design to dodge it.
+  Do NOT stuff the broken part into a proc body to make it disappear.** The
+  dodge doesn't just waste the find — it actively *hides* a hole we needed.
+- **Pin it.** Reduce to the smallest input that reproduces, and leave a
+  **Frontier**: a failing test (`MUST_FAIL` + `EXPECT` + `expected_error.txt`)
+  with a precise description of expected vs. actual.
 - Note it in your writeup. The human + Claude fix it together afterward —
   that joint fix is where the toolchain actually improves.
 
-A submission can be: a clean working program, a working program *plus* a
-pinned Frontier or two, or — if you hit a wall early — just a tight
-Frontier. All three are real contributions.
+Submissions, ranked by value:
+
+- **(best) a tight, precisely-pinned Frontier** — you found a real defect
+  and nailed it to a minimal repro.
+- **(good) a working program that surfaced one or more Frontiers** — you
+  pushed a hard shape and pinned what broke along the way.
+- **(weakest — and slightly suspect) a clean working program with zero
+  Frontiers** — usually means shallow water or a dodge. If you finish with
+  no frontiers, go back and push a harder shape until something bends.
 
 ## Where your submission goes
 
@@ -127,8 +157,11 @@ conventions in the repo's `CLAUDE.md`).
 
 ## "Done" looks like
 
-1. The program compiles through all four stages and runs (or is a clean,
-   precisely-pinned Frontier).
+1. You pushed a genuinely non-trivial shape and **either pinned a precise
+   Frontier for what broke, or — if nothing broke — can name the hard
+   feature-combination you stressed and honestly say it held.** (Compiling
+   and running through all four stages is the baseline vehicle, not the
+   achievement; a clean run that surfaced nothing is the weakest outcome.)
 2. Koru does the work — phantom states / flows / obligations carry the
    structure, not a proc body. (An adversarial reviewer will check this.)
 3. Output is deterministic and captured in `expected.txt`.

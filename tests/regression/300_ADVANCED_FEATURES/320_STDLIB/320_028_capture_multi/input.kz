@@ -1,3 +1,7 @@
+// FRONTIER (deferred 2026-06-03): old-form capture-as-subflow-impl
+// (`~compute_stats = capture(...)`) + brace `captured { }`. The new capture model
+// (320_042) is top-level single-cell; capture-as-a-pipeline/subflow-RHS needs the
+// nested-step path (deleted). See project_capture_dissolves_into_effect_cell.
 // Test: ~capture with multiple accumulated fields
 //
 // This demonstrates the power of struct accumulators:

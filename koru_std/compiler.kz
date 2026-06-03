@@ -336,6 +336,16 @@ pub const CompilerContext = struct {
         .optimize = optimize,
     });
 
+    // Struct-literal projector - parses Koru `{ name: expr }` into ordered field
+    // pairs / a liquid record. Used by the ~capture transform to interpret the
+    // opaque `captured({...})` payload (docs/PARSER_PALETTE.md).
+    const struct_literal_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/struct_literal.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    struct_literal_module.addImport("liquid", liquid_module);
+
     // Compiler config
     const compiler_config_module = b.createModule(.{
         .root_source_file = .{ .cwd_relative = REL_TO_ROOT ++ "/src/compiler_config.zig" },
@@ -510,6 +520,7 @@ pub const CompilerContext = struct {
     backend_output_module.addImport("continuation_codegen", continuation_codegen_module);
     backend_output_module.addImport("template_utils", template_utils_module);
     backend_output_module.addImport("liquid", liquid_module);
+    backend_output_module.addImport("struct_literal", struct_literal_module);
 
     const backend_output_obj = b.addObject(.{
         .name = "backend_output",
@@ -546,6 +557,7 @@ pub const CompilerContext = struct {
     exe.root_module.addImport("continuation_codegen", continuation_codegen_module);
     exe.root_module.addImport("template_utils", template_utils_module);
     exe.root_module.addImport("liquid", liquid_module);
+    exe.root_module.addImport("struct_literal", struct_literal_module);
 }
 
 // ============================================================
