@@ -1,0 +1,13 @@
+// PIN (kebab-stdlib-restructure): a kebab field `a-thing` must be in scope
+// inside the proc as bare snake `a_thing` (field mangle, no prefix — fields are
+// struct-scoped). RED today — `-` rejected in the field decl. Mirrors the
+// field-in-scope pattern of std/io:println (`text` field used directly).
+const std = @import("std");
+~import "std/io"
+
+~event my-stuff { a-thing: []const u8 }
+~proc my-stuff|zig {
+    std.debug.print("{s}\n", .{a_thing});
+}
+
+~my-stuff(a-thing: "field ok")
