@@ -23,11 +23,11 @@
 // POSITIONALLY (zip event.input.fields with inv.args by index) when there is
 // no name match — matching the Zig path — instead of requiring field-name
 // equality. Until then this test stays RED on JS and GREEN on Zig.
-~pub event ticker { n: u64 }
+pub event ticker { n: u64 }
 ! tick u64
-~pub event onTick { slot: u64 }
-~pub event report {}
+pub event onTick { slot: u64 }
+pub event report {}
 
-~ticker(n: 1)
+ticker(n: 1)
 ! tick i |> onTick(i)
-~report()
+report()

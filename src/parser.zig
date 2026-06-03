@@ -245,6 +245,12 @@ pub const Parser = struct {
     // When true, procs in this file cannot use inline flows (metacircular requirement)
     is_compiler_library: bool,
 
+    // True when parsing a `.k` file: pure Koru, no host lines. The `~` host->Koru
+    // switch is forbidden at line start (there is no host to switch from); every
+    // construct line is Koru. `//` comments are handled by the Koru parser itself
+    // (no host backend to forward them to).
+    is_k: bool,
+
     // FOUNDATIONAL: Module context for all parsed items
     module_name: []const u8, // Canonical module path (e.g., "input", "lib/fs")
 
@@ -357,14 +363,17 @@ pub const Parser = struct {
         //   "koru_std/profiler.kz" → "profiler"
         // This enables circular imports and consistent naming across the codebase
         const basename = std.fs.path.basename(file_name);
+        const file_ext = file_types.koruExtensionOf(basename);
         const module_name = blk: {
-            if (file_types.koruExtensionOf(basename)) |ext| {
+            if (file_ext) |ext| {
                 const name_without_ext = basename[0 .. basename.len - ext.len];
                 break :blk try allocator.dupe(u8, name_without_ext);
             } else {
                 break :blk try allocator.dupe(u8, basename);
             }
         };
+        // `.k` is the pure-Koru contract/source file: no host bytes, no `~`.
+        const is_k = if (file_ext) |ext| std.mem.eql(u8, ext, ".k") else false;
 
         return Parser{
             .allocator = allocator,
@@ -375,6 +384,7 @@ pub const Parser = struct {
             // No subflow tracking needed - events are the interface
             .registry = type_registry.TypeRegistry.init(allocator),
             .is_compiler_library = false, // Default to false, caller can set if needed
+            .is_k = is_k,
             .module_name = module_name,
             .inline_flow_counter = 0, // Global counter across all procs
             .fail_fast = false, // Default to lenient mode (continue past errors)
@@ -492,12 +502,43 @@ pub const Parser = struct {
         while (self.current < self.lines.len) {
             // Process line
 
-            const line = self.lines[self.current];
-            const trimmed = lexer.trim(line);
+            var line = self.lines[self.current];
+            var trimmed = lexer.trim(line);
 
             if (trimmed.len == 0) {
                 self.current += 1;
                 continue;
+            }
+
+            // `.k` files are pure Koru — no host lines, no `~` ceremony.
+            if (self.is_k) {
+                // Comments are the Koru parser's job here (no host backend to
+                // forward them to).
+                if (lexer.isCommentLine(line)) {
+                    self.current += 1;
+                    continue;
+                }
+                // `~` is the host->Koru switch; in a host-free file it is
+                // meaningless. One way to write things — forbid it outright.
+                if (trimmed[0] == '~') {
+                    try self.reporter.addError(
+                        .PARSE003,
+                        self.current + 1,
+                        lexer.getIndent(line) + 1,
+                        "'~' is the host->Koru switch and has no meaning in a pure-Koru '.k' file — write the construct without it",
+                        .{},
+                    );
+                    return error.ParseError;
+                }
+                // Branch/continuation lines (`|`, `!`) belong to a construct and
+                // are consumed by it; anything else at top level is a construct.
+                // Synthesize the leading `~` the surface no longer writes so the
+                // existing construct machinery runs unchanged.
+                if (trimmed[0] != '|' and trimmed[0] != '!') {
+                    self.lines[self.current] = try std.fmt.allocPrint(self.allocator, "~{s}", .{trimmed});
+                    line = self.lines[self.current];
+                    trimmed = lexer.trim(line);
+                }
             }
 
             if (lexer.startsWith(line, "~")) {

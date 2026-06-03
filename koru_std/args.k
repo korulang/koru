@@ -12,18 +12,18 @@
 // For flag parsing and CLI frameworks, see $std/cli (future).
 
 // Get all arguments (including the program name at index 0).
-~pub event all {}
+pub event all {}
 | args [][:0]u8
 
 // Get the argument count.
-~pub event count {}
+pub event count {}
 | count usize
 
 // Get the argument at an index.
-~pub event get { index: usize }
+pub event get { index: usize }
 | arg [:0]u8
 | out_of_bounds
 
 // Skip the program name and get the remaining arguments.
-~pub event rest {}
+pub event rest {}
 | args [][:0]u8
