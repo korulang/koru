@@ -1,0 +1,33 @@
+Dubious source-block-type-tag syntax — parked pending a design decision.
+
+This test exercises a Source block passed as a CONTINUATION body
+(`| data u |> renderHTML [HTML]{ ... }`) feeding a `[comptime|transform]`
+proc that rewrites the flow. It is the ONLY test using source blocks in
+continuation position; every other source-block test invokes at top level
+(`~render { ... }`), which works.
+
+OPEN DESIGN QUESTION (the reason this is parked, not fixed):
+The source-block type tag is unsettled. The event declares
+`source: Source<HTML>` using phantom-`<>` syntax — but `HTML` here is a
+compiler ANNOTATION (which source kind), NOT a phantom type. By the
+`[state]`->`<state>` migration, `[ ]` is for annotations, so this arguably
+should be `Source[HTML]`. The parser currently does the opposite: it
+REJECTS `Source[HTML]` (KORU033 invalid phantom-state syntax) and only
+accepts `Source<HTML>`. We are not sure we even want this syntax.
+
+MULTI-LAYER GAPS found while attempting a fix (2026-06-03):
+- Parser: continuation-body source-block invocations were dropped
+  (top-level/new-line `|>` paths detect them via the registry's `is_source`
+  field; the inline-body path did not). A scoped fix made it parse +
+  flow-check clean, but...
+- Auto-discharge / emitter: the next wall — the emitter panics on a
+  source-block invocation in continuation position.
+- Transform: this test's own ~470-line hand-rolled transform proc
+  (lines 32-500) walks `flow.continuations` assuming a particular flow
+  shape; when renderHTML sits as a nested continuation body it re-assembles
+  the continuations and mis-attaches the `| rendered` handler.
+
+DECISION (Lars, 2026-06-03): park as a dubious TODO. Settle the
+source-block-type-tag syntax (`<HTML>` vs `[HTML]` vs none) before
+investing in the parser/emitter/transform layers. The scoped parser fix
+was reverted (no green test exercised it; the feature is unsettled).
