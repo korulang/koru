@@ -1,7 +1,7 @@
 // Test: std.runtime:run auto-discharges on budget exhaustion
 
-~import "$std/runtime"
-~import "$std/io"
+~import "std/runtime"
+~import "std/io"
 
 const std = @import("std");
 

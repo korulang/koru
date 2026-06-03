@@ -13,7 +13,7 @@
 // See also: 210_056 (dispatch fix), 210_057 (call site fields fix)
 // Real-world reproducer: koru-libs/pq sql event
 
-~import "$app/comptime_lib"
+~import "app/comptime_lib"
 
 ~[comptime] app.comptime_lib:sql(query: "CREATE TABLE test (id int)")
 | ok |> _

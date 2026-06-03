@@ -5,17 +5,17 @@
 // deeply nested paths into their own koru.json aliases.
 //
 // Maximum allowed depth:
-//   ✅ ~import "$app"                  (0 segments)
-//   ✅ ~import "$app/module"           (1 segment)
-//   ✅ ~import "$app/module/sub"       (2 segments)
-//   ❌ ~import "$app/a/b/c"            (3 segments - TOO DEEP!)
+//   ✅ ~import "app"                  (0 segments)
+//   ✅ ~import "app/module"           (1 segment)
+//   ✅ ~import "app/module/sub"       (2 segments)
+//   ❌ ~import "app/a/b/c"            (3 segments - TOO DEEP!)
 //
 // Expected: PARSE003 error with helpful message about extracting to koru.json
 
 const std = @import("std");
 
 // This import has 3 segments after $app and should FAIL
-~import "$app/test_lib/net/tcp"
+~import "app/test_lib/net/tcp"
 
 ~event test {}
 

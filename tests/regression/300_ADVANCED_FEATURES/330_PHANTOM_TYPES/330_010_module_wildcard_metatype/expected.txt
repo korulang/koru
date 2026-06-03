@@ -1,4 +1,6 @@
+[TAP] Audit: koru:start.done
 compute(42)
 [TAP] Audit: input:compute.result
 format(84)
 [TAP] Audit: input:format.formatted
+[TAP] Audit: koru:end.done

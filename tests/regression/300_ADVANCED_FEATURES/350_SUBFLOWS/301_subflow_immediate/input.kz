@@ -6,7 +6,7 @@
 // Verifies: Input fields are accessible and mapped to output correctly
 // ============================================================================
 
-~import "$std/io"
+~import "std/io"
 
 // Event: takes a name, produces a greeting message
 ~event greet { name: []const u8 }

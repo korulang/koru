@@ -9,7 +9,7 @@
 
 const std = @import("std");
 
-~import "$std/control"
+~import "std/control"
 
 // Accumulator
 var sum: i32 = 0;

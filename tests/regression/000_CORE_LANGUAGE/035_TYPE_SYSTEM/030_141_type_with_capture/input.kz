@@ -5,9 +5,9 @@
 //
 // Expected: Compiles and runs, demonstrating types + capture integration
 
-~import "$std/types"
-~import "$std/io"
-~import "$std/control"
+~import "std/types"
+~import "std/io"
+~import "std/control"
 
 // Define a generic accumulator
 ~struct(Acc<T>) { total: T, count: i32 = 0 }

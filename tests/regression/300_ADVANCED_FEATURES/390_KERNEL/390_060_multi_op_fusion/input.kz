@@ -13,8 +13,8 @@
 // After self { k.mass *= 2.0 }:
 //   → 2.4, 4.4, 6.4
 
-~import "$std/kernel"
-~import "$std/io"
+~import "std/kernel"
+~import "std/io"
 
 ~std.kernel:shape(Body) {
     mass: f64,

@@ -8,7 +8,7 @@
 // `backend_output_emitted.zig` emission. Without escaping, the generated
 // Zig was `"build("flag")"` and failed to parse.
 
-~import "$std/build"
+~import "std/build"
 
 ~[build("native")]std.build:config {
     "target": "x86_64-linux-gnu"

@@ -5,7 +5,7 @@
 // 2. Bindings are extracted from mocked branch values
 // 3. Assert can verify actual values
 
-~import "$std/testing"
+~import "std/testing"
 
 // Impure event - needs mock in tests (no proc = impure by default)
 ~event get_balance {}

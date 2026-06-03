@@ -9,7 +9,7 @@
 // parser-rejected by the pay-for-nothing rule. The "absorbs unhandled
 // optionals" goal is achieved without any consumer marker.)
 
-~import "$std/io"
+~import "std/io"
 
 ~pub event multi {}
 ! a usize

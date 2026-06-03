@@ -2,9 +2,9 @@
 //
 // Tests that ~for(0..N) | each i |> body | done |> ... works
 
-~import "$std/runtime"
-~import "$std/interpreter"
-~import "$std/io"
+~import "std/runtime"
+~import "std/interpreter"
+~import "std/io"
 
 const std = @import("std");
 

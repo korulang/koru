@@ -4,7 +4,7 @@
 // k.X refers to kernel_k[i]
 // k.other.X refers to kernel_k[j]
 
-~import "$std/kernel"
+~import "std/kernel"
 
 // This needs to be module scoped
 ~std.kernel:shape(Body) {

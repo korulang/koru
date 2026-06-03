@@ -1055,7 +1055,7 @@ EOF
                         # exit 0 = pass, non-zero = fail. Use when the diagnostic
                         # shape is too rich for a regex pin — multiple required
                         # substrings, absence-checks, semantic assertions.
-                        if (cd "$test_dir" && bash post.sh) > "$test_dir/post.log" 2>&1; then
+                        if (cd "$test_dir" && PATH="$SCRIPT_DIR/zig-out/bin:$PATH" bash post.sh) > "$test_dir/post.log" 2>&1; then
                             echo -e "${GREEN}✅ PASS (MUST_FAIL + post.sh validated)${NC}"
                             mark_test_passed "$test_dir"
                             PASSED_TESTS=$((PASSED_TESTS + 1))
@@ -1245,7 +1245,7 @@ EOF
                 # Output matches - now check if there's also a post.sh validation
                 if [ -f "$test_dir/post.sh" ]; then
                     # Run post-validation script after output check
-                    if (cd "$test_dir" && bash post.sh) > "$test_dir/post.log" 2>&1; then
+                    if (cd "$test_dir" && PATH="$SCRIPT_DIR/zig-out/bin:$PATH" bash post.sh) > "$test_dir/post.log" 2>&1; then
                         if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
                             echo -e "${RED}❌ PASS but memory leak detected ($LEAK_PHASE)${NC}"
                             echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
@@ -1294,7 +1294,7 @@ EOF
         elif [ -f "$test_dir/expected_patterns.txt" ]; then
             if check_expected_patterns "$test_dir/expected_patterns.txt" "$test_dir/actual.txt"; then
                 if [ -f "$test_dir/post.sh" ]; then
-                    if (cd "$test_dir" && bash post.sh) > "$test_dir/post.log" 2>&1; then
+                    if (cd "$test_dir" && PATH="$SCRIPT_DIR/zig-out/bin:$PATH" bash post.sh) > "$test_dir/post.log" 2>&1; then
                         if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
                             echo -e "${RED}❌ PASS but memory leak detected ($LEAK_PHASE)${NC}"
                             echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
@@ -1362,7 +1362,7 @@ EOF
             # Run custom post-validation script
             # The script has access to: test_dir, actual.txt, output_emitted.zig, backend.zig, output (executable)
             # Script should exit 0 for pass, non-zero for fail
-            if (cd "$test_dir" && bash post.sh) > "$test_dir/post.log" 2>&1; then
+            if (cd "$test_dir" && PATH="$SCRIPT_DIR/zig-out/bin:$PATH" bash post.sh) > "$test_dir/post.log" 2>&1; then
                 if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
                     echo -e "${RED}❌ PASS but memory leak detected ($LEAK_PHASE)${NC}"
                     echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"
@@ -1417,7 +1417,7 @@ EOF
             # without needing to run the final executable
             if [ -f "$test_dir/post.sh" ]; then
                 # Run post-validation script from test directory
-                if (cd "$test_dir" && bash post.sh) > "$test_dir/post.log" 2>&1; then
+                if (cd "$test_dir" && PATH="$SCRIPT_DIR/zig-out/bin:$PATH" bash post.sh) > "$test_dir/post.log" 2>&1; then
                     if [ "$CHECK_LEAKS" = true ] && [ "$HAS_MEMORY_LEAK" = true ]; then
                         echo -e "${RED}❌ PASS but memory leak detected ($LEAK_PHASE)${NC}"
                         echo "leak-$LEAK_PHASE" > "$test_dir/FAILURE"

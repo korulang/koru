@@ -5,7 +5,7 @@
 // 2. Required branches handled explicitly, optional caught generically
 // 3. The Audit metatype is constructed with correct branch name
 
-~import "$std/io"
+~import "std/io"
 
 // Event with required + optional branches
 ~event process { value: u32 }

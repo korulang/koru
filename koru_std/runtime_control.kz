@@ -8,8 +8,8 @@
 // - For use with the interpreter when executing parsed Koru source
 //
 // Usage:
-//   ~import "$std/runtime_control"
-//   ~import "$std/runtime"
+//   ~import "std/runtime_control"
+//   ~import "std/runtime"
 //
 //   ~std.runtime:register(scope: "api") {
 //       std.runtime_control:if
@@ -22,7 +22,7 @@
 
 ~[runtime]
 
-~import "$std/build"
+~import "std/build"
 
 ~std.build:requires {
     const REL_TO_ROOT = "/usr/local/lib/koru";

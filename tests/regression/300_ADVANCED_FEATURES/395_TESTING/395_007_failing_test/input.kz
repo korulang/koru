@@ -5,7 +5,7 @@
 // the exit code: a non-zero zig-test exit means the deliberately
 // failing test was correctly detected.
 
-~import "$std/testing"
+~import "std/testing"
 
 ~event do_thing {}
 | done u32

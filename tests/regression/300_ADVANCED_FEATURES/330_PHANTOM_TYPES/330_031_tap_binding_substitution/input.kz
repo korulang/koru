@@ -1,5 +1,5 @@
-~import "$std/taps"
-~import "$app/fs"
+~import "std/taps"
+~import "app/fs"
 ~tap(app.fs:open -> *)
 | opened f |> app.fs:log_open(f.handle)
 ~app.fs:open(path: "test.txt")

@@ -7289,6 +7289,7 @@ pub const Parser = struct {
 
         // Validate import path
         // 1. Forbid ../ for security and simplicity (only allowed in koru.json)
+        // 1. Forbid ../ for security and simplicity
         if (std.mem.indexOf(u8, path, "../") != null) {
             try self.reporter.addError(
                 .PARSE003,
@@ -7300,74 +7301,66 @@ pub const Parser = struct {
             return error.ParseError;
         }
 
-        // 2. Require $alias prefix for all imports (for truly canonical module names)
-        if (path.len == 0 or path[0] != '$') {
+        // Extract the alias (first segment)
+        const slash_pos = std.mem.indexOf(u8, path, "/");
+        const alias_end = slash_pos orelse path.len;
+        const alias = path[0..alias_end];
+
+        // 2. Require path to start with a valid alias name (valid identifier)
+        const is_valid_alias = blk: {
+            if (alias.len == 0) break :blk false;
+            const first = alias[0];
+            if (!std.ascii.isAlphabetic(first) and first != '_') break :blk false;
+            for (alias[1..]) |c| {
+                if (!std.ascii.isAlphanumeric(c) and c != '_') break :blk false;
+            }
+            break :blk true;
+        };
+
+        if (!is_valid_alias) {
             try self.reporter.addError(
                 .PARSE003,
                 self.current,
                 1,
-                "import paths must start with $ alias (e.g., '$std/io', '$src/helper') - define aliases in koru.json",
+                "import paths must start with an alias (e.g., 'std/io', 'src/helper') - define aliases in koru.json",
                 .{},
             );
             return error.ParseError;
         }
 
-        // 3. Validate $alias syntax (if present)
-        if (path.len > 0 and path[0] == '$') {
-            // Find the end of the alias
-            const slash_pos = std.mem.indexOf(u8, path, "/");
-            const alias_end = slash_pos orelse path.len;
+        // 3. Enforce maximum import depth: alias/a/b (2 segments max)
+        if (slash_pos) |first_slash| {
+            const path_after_alias = path[first_slash + 1 ..];
+            var segment_count: usize = 1; // Count the first segment
+            var i: usize = 0;
+            while (i < path_after_alias.len) : (i += 1) {
+                if (path_after_alias[i] == '/') {
+                    segment_count += 1;
+                }
+            }
 
-            // Alias must have at least one character after $
-            if (alias_end <= 1) {
+            if (segment_count > 2) {
                 try self.reporter.addError(
                     .PARSE003,
                     self.current,
                     1,
-                    "invalid import alias: expected '$name' or '$name/path'",
-                    .{},
+                    "import path too deep: '{s}' has {d} segments after alias (max: 2)\n" ++
+                        "  To fix: add a new alias to koru.json, e.g.:\n" ++
+                        "    \"paths\": {{ \"mylib\": \"./path/to/lib\" }}\n" ++
+                        "  Then use: ~import \"mylib/...\" (Suggested: extract '{s}' as its own alias)",
+                    .{ path, segment_count, alias },
                 );
                 return error.ParseError;
-            }
-
-            // 4. Enforce maximum import depth: $alias/a/b (2 segments max)
-            if (slash_pos) |first_slash| {
-                const path_after_alias = path[first_slash + 1 ..];
-                var segment_count: usize = 1; // Count the first segment
-                var i: usize = 0;
-                while (i < path_after_alias.len) : (i += 1) {
-                    if (path_after_alias[i] == '/') {
-                        segment_count += 1;
-                    }
-                }
-
-                if (segment_count > 2) {
-                    const alias_name = path[1..alias_end];
-                    try self.reporter.addError(
-                        .PARSE003,
-                        self.current,
-                        1,
-                        "import path too deep: '{s}' has {d} segments after alias (max: 2)\n" ++
-                            "  To fix: add a new alias to koru.json, e.g.:\n" ++
-                            "    \"paths\": {{ \"mylib\": \"./path/to/lib\" }}\n" ++
-                            "  Then use: ~import \"$mylib/...\" (Suggested: extract '{s}' as its own alias)",
-                        .{ path, segment_count, alias_name },
-                    );
-                    return error.ParseError;
-                }
             }
         }
 
         // Derive namespace from import path
-        // For $alias/path imports: strip $ and convert / to . (e.g., "$std/build" -> "std.build")
-        // For regular imports: just use the filename (e.g., "utils/math.kz" -> "math")
-        const final_name = if (std.mem.startsWith(u8, path, "$")) blk: {
-            // Strip $ and convert / to . for aliased imports
-            const without_dollar = path[1..];
-            var namespace = try std.ArrayList(u8).initCapacity(self.allocator, without_dollar.len);
+        // For alias/path imports: convert / to . (e.g., "std/build" -> "std.build")
+        const final_name = blk: {
+            var namespace = try std.ArrayList(u8).initCapacity(self.allocator, path.len);
             defer namespace.deinit(self.allocator);
 
-            for (without_dollar) |c| {
+            for (path) |c| {
                 if (c == '/') {
                     try namespace.append(self.allocator, '.');
                 } else {
@@ -7384,16 +7377,6 @@ pub const Parser = struct {
                 break :blk final;
             }
             break :blk result;
-        } else blk: {
-            // Just use filename for non-aliased imports
-            const last_slash = std.mem.lastIndexOf(u8, path, "/") orelse 0;
-            const filename_start = if (last_slash > 0) last_slash + 1 else 0;
-            const filename = path[filename_start..];
-            const base_name = if (file_types.koruExtensionOf(filename)) |ext|
-                filename[0 .. filename.len - ext.len]
-            else
-                filename;
-            break :blk try self.allocator.dupe(u8, base_name);
         };
 
         // Parse the imported file to populate registry with public events
@@ -7422,6 +7405,19 @@ pub const Parser = struct {
         var result = resolver.resolveBoth(import_path, self.reporter.file_name) catch |err| {
             if (err == error.ModuleNotFound) {
                 try errors.moduleNotFound(&self.reporter, self.current, 1, import_path);
+            } else if (err == error.UnknownImportAlias) {
+                const slash_pos = std.mem.indexOf(u8, import_path, "/");
+                const alias_end = slash_pos orelse import_path.len;
+                const alias = import_path[0..alias_end];
+                try self.reporter.addErrorWithHint(
+                    .PARSE003,
+                    self.current,
+                    1,
+                    "unknown import alias: '{s}'",
+                    .{alias},
+                    "define alias in koru.json paths, e.g. \"paths\": {{ \"{s}\": \"./path\" }}",
+                    .{alias},
+                );
             }
             return err;
         };
@@ -7681,7 +7677,7 @@ test "parser handles import statement" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~import "$std/array"
+        \\~import "std/array"
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);
@@ -7696,7 +7692,7 @@ test "parser handles import statement" {
     try std.testing.expect(item == .import_decl);
 
     const import = item.import_decl;
-    try std.testing.expectEqualStrings(import.path, "$std/array");
+    try std.testing.expectEqualStrings(import.path, "std/array");
     try std.testing.expectEqualStrings(import.local_name.?, "std.array");
 }
 

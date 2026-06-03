@@ -3,7 +3,7 @@
 // absent and the template raises a fantastic, author-defined diagnostic
 // instead of letting a cryptic host-language error through. The template body
 // IS the contract: by checking for `done`, the template declares it required.
-~import "$std/io"
+~import "std/io"
 
 ~pub event probe2 { n: usize }
 ! each usize

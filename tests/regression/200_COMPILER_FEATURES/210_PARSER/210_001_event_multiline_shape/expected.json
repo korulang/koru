@@ -5,7 +5,7 @@
     "items": [
         {
             "type": "import_decl",
-            "path": "$std/compiler",
+            "path": "std/compiler",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/210_PARSER/210_001_event_multiline_shape/input.kz",
                 "line": 2,

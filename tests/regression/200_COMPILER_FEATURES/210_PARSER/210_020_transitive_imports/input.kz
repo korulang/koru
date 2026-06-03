@@ -10,4 +10,4 @@
 const std = @import("std");
 
 // Import helper (which itself imports base)
-~import "$app/helper"
+~import "app/helper"

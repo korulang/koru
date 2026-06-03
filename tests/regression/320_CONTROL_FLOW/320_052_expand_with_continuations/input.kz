@@ -10,8 +10,8 @@
 //
 // This enables [expand] to handle branching constructs without full [transform] procs.
 
-~import "$std/template"
-~import "$std/io"
+~import "std/template"
+~import "std/io"
 
 const std = @import("std");
 

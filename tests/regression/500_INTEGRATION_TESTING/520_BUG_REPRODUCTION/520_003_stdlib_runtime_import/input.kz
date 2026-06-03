@@ -14,7 +14,7 @@
 //
 // Related: docs/BUILD_REQUIRES.md
 
-~import "$std/parser"
+~import "std/parser"
 
 const std = @import("std");
 

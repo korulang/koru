@@ -8,8 +8,8 @@
 // - Pure semantics (compute entire next state at once)
 // - Efficient generated code
 
-~import "$std/io"
-~import "$std/control"
+~import "std/io"
+~import "std/control"
 
 const std = @import("std");
 

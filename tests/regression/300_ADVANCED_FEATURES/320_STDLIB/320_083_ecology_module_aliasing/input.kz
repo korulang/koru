@@ -7,7 +7,7 @@
 // transparently - the compiler should track the CANONICAL path, not
 // rely on the user-facing alias.
 
-~import "$std/io"
+~import "std/io"
 
 // Alias the control module
 ~import ctrl = "$std/control"

@@ -11,7 +11,7 @@
 // Actual (bug): tap fires for flow that calls other too
 
 const std = @import("std");
-~import "$std/taps"
+~import "std/taps"
 
 // Two simple events
 ~event target {}

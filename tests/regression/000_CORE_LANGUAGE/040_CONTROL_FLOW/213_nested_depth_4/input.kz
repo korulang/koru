@@ -1,6 +1,6 @@
 // Depth 4 test: start |> +1 |> +2 |> +3 |> +4 → result (10+1+2+3+4 = 20)
 const std = @import("std");
-~import "$std/io"
+~import "std/io"
 
 ~event add_one { value: i32 }
 | done i32

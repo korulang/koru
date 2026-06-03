@@ -1,7 +1,7 @@
 // Test: std.runtime:run parses and executes using scope lookup
 
-~import "$std/runtime"
-~import "$std/io"
+~import "std/runtime"
+~import "std/io"
 
 const std = @import("std");
 

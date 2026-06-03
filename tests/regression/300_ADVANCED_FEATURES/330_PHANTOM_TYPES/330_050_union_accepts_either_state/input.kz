@@ -1,4 +1,4 @@
-~import "$app/connection"
+~import "app/connection"
 ~app.connection:create()
 | created c1 |> app.connection:connect(conn: c1)
     | connected c2 |> app.connection:resume(conn: c2)  // active -> resume accepts it!

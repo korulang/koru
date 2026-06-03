@@ -5,8 +5,8 @@
 //
 // The custom coordinator prints a marker, then delegates to standard pipeline.
 
-~import "$std/compiler"
-~import "$std/optimizer"
+~import "std/compiler"
+~import "std/optimizer"
 
 const std = @import("std");
 const ast = @import("ast");

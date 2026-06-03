@@ -2,7 +2,7 @@
 // Parses Koru source code and inspects the AST at runtime
 // This proves the parser is fully usable as a library!
 
-~import "$std/parser"
+~import "std/parser"
 
 const std = @import("std");
 

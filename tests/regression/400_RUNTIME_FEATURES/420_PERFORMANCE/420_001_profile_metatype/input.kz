@@ -1,7 +1,7 @@
 // Test profile meta-type - performance profiling with timing
 // Shows profiling metadata capture with runtime timestamps
 const std = @import("std");
-~import "$std/taps"
+~import "std/taps"
 
 ~event hello {}
 

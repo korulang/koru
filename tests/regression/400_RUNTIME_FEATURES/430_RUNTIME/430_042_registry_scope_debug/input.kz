@@ -1,7 +1,7 @@
 // Test: Registry Scope - Debug Flag Enabled
 // Ensures [debug] entries are included when compiled with --debug.
 
-~import "$std/runtime"
+~import "std/runtime"
 
 const std = @import("std");
 

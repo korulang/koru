@@ -7,7 +7,7 @@
 // and the call lowers to nothing. Only the terminal `done` body should
 // produce visible output.
 
-~import "$std/io"
+~import "std/io"
 
 ~pub event maybe { count: usize }
 ! ?warn []const u8

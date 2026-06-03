@@ -12,7 +12,7 @@
 
 const std = @import("std");
 
-~import "$std/control"
+~import "std/control"
 
 // Void event (no branches)
 ~event step_one {}

@@ -1,4 +1,4 @@
-~import "$app/fs"
+~import "app/fs"
 const std = @import("std");
 ~event iterate { count: i32 }
 | next i32

@@ -3046,7 +3046,7 @@ test "serialize complete mixed program" {
         \\    log.debug("Utility function\n", .{});
         \\}
         \\
-        \\~import "$std/math"
+        \\~import "std/math"
         \\
         \\~event process { input: []const u8 }
         \\| success []const u8

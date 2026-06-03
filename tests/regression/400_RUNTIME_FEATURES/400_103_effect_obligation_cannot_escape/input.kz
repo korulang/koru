@@ -4,7 +4,7 @@
 // obligation and only USES it (no discharge, no destroy event) — so it is
 // unbalanced and MUST be rejected. (Mirror of old-for 330_053 on the new path.)
 // If this is silently accepted, obligation tracking is NOT wired through `! each`.
-~import "$std/build"
+~import "std/build"
 ~std.build:requires { exe.linkLibC(); }
 const std = @import("std");
 const Resource = struct { id: usize };

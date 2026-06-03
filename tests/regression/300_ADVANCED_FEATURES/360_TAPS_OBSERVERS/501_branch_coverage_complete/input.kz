@@ -5,7 +5,7 @@
 // Tests that shape checker validates all branches are handled
 // Demonstrates: Multi-branch event with complete coverage
 
-~import "$std/io"
+~import "std/io"
 
 // Event with two possible outcomes
 ~event divide { a: i32, b: i32 }

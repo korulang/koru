@@ -3,8 +3,8 @@
 // Parses a realistic Koru module and verifies success.
 // Run with hyperfine for accurate timing.
 
-~import "$std/parser"
-~import "$std/io"
+~import "std/parser"
+~import "std/io"
 
 const std = @import("std");
 

@@ -10,7 +10,7 @@
 
 const std = @import("std");
 
-~import "$std/control"
+~import "std/control"
 
 // Event 1: double a number
 ~event double { x: i32 }

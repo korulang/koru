@@ -14,8 +14,8 @@
 // Root cause: parser doesn't detect Source body end when body spans
 // multiple lines AND is at the end of a |> chain.
 
-~import "$std/kernel"
-~import "$std/io"
+~import "std/kernel"
+~import "std/io"
 
 ~std.kernel:shape(Body) {
     mass: f64,

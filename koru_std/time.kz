@@ -3,8 +3,8 @@
 // Timing primitives for measuring code execution.
 //
 // Usage:
-//   ~import "$std/time"
-//   ~import "$std/io"
+//   ~import "std/time"
+//   ~import "std/io"
 //
 //   ~std.time:now()
 //   | t start |> do_work()

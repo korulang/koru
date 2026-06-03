@@ -1,7 +1,7 @@
 // Test: triple nested transforms - depth-first ordering
 // Innermost should transform first, then middle, then outer
 
-~import "$std/control"
+~import "std/control"
 
 const std = @import("std");
 

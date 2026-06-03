@@ -5,7 +5,7 @@
     "items": [
         {
             "type": "import_decl",
-            "path": "$std/compiler",
+            "path": "std/compiler",
             "location": {
                 "file": "tests/regression/200_COMPILER_FEATURES/220_COMPILATION/220_001_cross_module_type_basic/input.kz",
                 "line": 2,

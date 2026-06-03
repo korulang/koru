@@ -4,7 +4,7 @@
 // `! each` handler symbol. This is the real shape of the `for` we're building —
 // 400_071 (effect_branch_multifire_void) proves the void-pump shape works; the
 // only delta here is the templated iterable.
-~import "$std/io"
+~import "std/io"
 
 ~pub event loop { r: i32 }
 ! each usize

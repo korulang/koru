@@ -11,7 +11,7 @@
 // rejected because `p.q.v` also puns to `v` — see 210_089.
 // ============================================================================
 
-~import "$std/io"
+~import "std/io"
 
 ~event echo { v: i32 }
 | out i32

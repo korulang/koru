@@ -6,7 +6,7 @@
 // (Pure `.k` contract facet.) The public events live here, in the
 // target-agnostic facet. The Zig
 // implementation is in `args.kz`; the JavaScript implementation in `args.kjs`.
-// `~import "$std/args"` merges all same-stem facets into one module, so these
+// `~import "std/args"` merges all same-stem facets into one module, so these
 // events are in scope (unqualified) for every implementation proc.
 //
 // For flag parsing and CLI frameworks, see $std/cli (future).

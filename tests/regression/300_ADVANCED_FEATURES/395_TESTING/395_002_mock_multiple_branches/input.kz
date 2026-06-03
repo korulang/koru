@@ -3,7 +3,7 @@
 // When an event has multiple branches, mocking forces ONE branch.
 // This enables compile-time flow pruning - no switch statement needed.
 
-~import "$std/testing"
+~import "std/testing"
 
 // Event with multiple possible outcomes
 ~event withdraw { amount: u32 }

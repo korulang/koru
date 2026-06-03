@@ -14,7 +14,7 @@
 // ============================================================================
 
 const std = @import("std");
-~import $std/threading
+~import std/threading
 
 // Minimal reproduction: Event that returns slice of imported type
 ~event getHandles {}

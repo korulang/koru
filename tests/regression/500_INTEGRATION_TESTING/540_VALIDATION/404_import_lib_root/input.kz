@@ -7,7 +7,7 @@
 const std = @import("std");
 
 // Test multiple $std imports
-~import "$std/io"
+~import "std/io"
 
 // Simple flow using imported module
 ~std.io:println(text: "Multiple imports work!")

@@ -7,8 +7,8 @@
 // field names must be unique, and `captured { a: X, b: Y }` updates
 // ALL captures that own those fields.
 
-~import "$std/io"
-~import "$std/control"
+~import "std/io"
+~import "std/control"
 
 const std = @import("std");
 

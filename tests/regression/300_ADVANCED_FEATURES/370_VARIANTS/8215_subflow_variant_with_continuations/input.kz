@@ -7,8 +7,8 @@
 // Currently expected to trip the @compileError marker in visitor_emitter.zig
 // because the variant emission loop only handles continuations.len == 0.
 
-~import "$std/io"
-~import "$std/build"
+~import "std/io"
+~import "std/build"
 
 const std = @import("std");
 

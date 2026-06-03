@@ -4,8 +4,8 @@
 // This is the Hollywood OS pattern - state persists across turns,
 // human or AI can act on resources created in previous turns.
 
-~import "$std/runtime"
-~import "$std/io"
+~import "std/runtime"
+~import "std/io"
 
 const std = @import("std");
 const HandlePool = @import("root").koru_std.koru_interpreter.HandlePool;

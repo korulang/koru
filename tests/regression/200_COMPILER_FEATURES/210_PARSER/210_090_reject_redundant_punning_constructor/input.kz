@@ -7,7 +7,7 @@
 // `{ x }` and `{ p.x }` respectively — the last segment names the field.
 // ============================================================================
 
-~import "$std/io"
+~import "std/io"
 
 ~event make_point { x: i32, y: i32 }
 | point { x: i32, y: i32 }

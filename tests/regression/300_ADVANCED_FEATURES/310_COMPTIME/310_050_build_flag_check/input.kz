@@ -1,7 +1,7 @@
 // Test: CompilerEnv.hasFlag() with InvocationMeta for build configuration
 // When --build=release is passed, only [release] annotated configs should activate
 
-~import "$std/io"
+~import "std/io"
 
 const std = @import("std");
 const Root = @import("root");

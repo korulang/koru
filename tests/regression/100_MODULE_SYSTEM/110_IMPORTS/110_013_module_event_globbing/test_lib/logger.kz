@@ -1,7 +1,7 @@
 // Universal logger using module-level event globbing
 // Demonstrates the power of wildcard patterns in taps
 
-~import "$std/taps"
+~import "std/taps"
 
 const std = @import("std");
 

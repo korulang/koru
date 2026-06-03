@@ -1,6 +1,6 @@
 // Test: Resource bridge - external handle pool persists handles
-~import "$std/runtime"
-~import "$std/io"
+~import "std/runtime"
+~import "std/io"
 
 const std = @import("std");
 const HandlePool = @import("root").koru_std.koru_interpreter.HandlePool;

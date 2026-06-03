@@ -1,9 +1,9 @@
 ~[comptime]
 
-~import "$std/testing"
-~import "$std/inter"
-~import "$std/deps"
-~import "$std/optimizer"
+~import "std/testing"
+~import "std/inter"
+~import "std/deps"
+~import "std/optimizer"
 
 // Compiler system dependencies
 ~std.deps:requires.system {
@@ -608,7 +608,7 @@ pub const CompilerContext = struct {
 // Commands have full AST access and run in the backend compilation phase.
 //
 // Usage (in your module, e.g. package.kz):
-//   ~import "$std/compiler"
+//   ~import "std/compiler"
 //
 //   ~std.compiler:command.declare {
 //     "name": "i",

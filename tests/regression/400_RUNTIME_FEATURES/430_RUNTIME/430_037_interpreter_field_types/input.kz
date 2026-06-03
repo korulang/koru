@@ -1,9 +1,9 @@
 // Test: Interpreter numeric FieldValue in expressions
 // Ensures FieldValue.int_val is propagated to expr bindings (no string reparse)
 
-~import "$std/runtime"
-~import "$std/interpreter"
-~import "$std/io"
+~import "std/runtime"
+~import "std/interpreter"
+~import "std/io"
 
 const std = @import("std");
 

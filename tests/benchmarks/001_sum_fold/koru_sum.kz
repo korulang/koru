@@ -3,8 +3,8 @@
 //
 // This tests whether ~capture compiles to efficient mutable accumulation
 
-~import "$std/io"
-~import "$std/control"
+~import "std/io"
+~import "std/control"
 
 const std = @import("std");
 

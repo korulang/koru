@@ -2,8 +2,8 @@
 // When --build=release, the release config should be used
 // When --build=debug, the debug config should be used
 
-~import "$std/io"
-~import "$std/build"
+~import "std/io"
+~import "std/build"
 
 // Define events that we'll configure variants for
 ~event compute { x: i32 }

@@ -458,11 +458,7 @@ fn resolveModuleAlias(alias: []const u8, items: []const ast.Item) ?[]const u8 {
 
                 if (std.mem.eql(u8, import_alias, alias)) {
                     // Found the import! Convert path to module path
-                    // "$std/build" -> "std/build" (strip $, writeModulePath will convert / to .)
-                    if (std.mem.startsWith(u8, import.path, "$")) {
-                        // Strip $ and return - writeModulePath will handle / -> . conversion
-                        return import.path[1..];
-                    }
+                    // "std/build" -> "std/build" (writeModulePath will convert / to .)
                     return import.path;
                 }
             },

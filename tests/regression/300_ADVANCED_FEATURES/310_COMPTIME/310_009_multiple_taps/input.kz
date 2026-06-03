@@ -3,7 +3,7 @@
 // NOTE: Taps fire in REVERSE declaration order (last declared = first to fire)
 
 const std = @import("std");
-~import "$std/taps"
+~import "std/taps"
 
 // Event with an identity branch for the taps to observe
 ~event hello {}

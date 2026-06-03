@@ -4,7 +4,7 @@
 // This is the "punning" pattern common in many languages.
 // The emitter should expand { c.ast, c.code } to { ast: c.ast, code: c.code }
 
-~import "$std/io"
+~import "std/io"
 
 ~event data { x: i32, y: i32 }
 | result { x: i32, y: i32 }

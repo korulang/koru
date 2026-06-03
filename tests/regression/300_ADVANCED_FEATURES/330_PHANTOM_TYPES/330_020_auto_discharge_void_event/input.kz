@@ -1,4 +1,4 @@
-~import "$app/fs"
+~import "app/fs"
 ~event log_done {}
 ~proc log_done|zig {
     std.debug.print("Done!\n", .{});
