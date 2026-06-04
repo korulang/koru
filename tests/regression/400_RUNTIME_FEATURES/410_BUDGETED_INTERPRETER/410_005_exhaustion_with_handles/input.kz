@@ -1,3 +1,4 @@
+// codemod:skip — runtime-eval blocks use internal (snake) names; flow_parser does not normalize.
 // Test: Budget exhaustion with open handles triggers auto-discharge
 // Even when exhausted, we clean up resources before returning
 
@@ -30,7 +31,7 @@ const std = @import("std");
 ~std.runtime:register(scope: "test") {
     open(10)
     close(1)
-    expensive-read(100)  // Very expensive!
+    expensive_read(100)  // Very expensive!
 }
 
 const TEST_SOURCE = "~open(path: \"x.txt\")\n| opened f |> expensive_read(handle: f.handle)\n| read r |> result { r.data }";
