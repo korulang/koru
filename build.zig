@@ -640,6 +640,29 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    // Playground diagnostics core — the WASM-bound entrypoint. Reuses the exact
+    // same parser + checker modules as koruc, but skips the metacircular backend
+    // (no `zig build` subprocess), so it can target wasm32 later. Slice 1: prove
+    // the glue natively. `zig build playground` then `./zig-out/bin/playground f.kz`.
+    const playground_exe = b.addExecutable(.{
+        .name = "playground",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/playground.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    playground_exe.root_module.addImport("ast", ast_module);
+    playground_exe.root_module.addImport("errors", errors_module);
+    playground_exe.root_module.addImport("parser", parser_module);
+    playground_exe.root_module.addImport("shape_checker", shape_checker_module);
+    playground_exe.root_module.addImport("flow_checker", flow_checker_module);
+    playground_exe.root_module.addImport("phantom_semantic_checker", phantom_semantic_checker_module);
+    const install_playground = b.addInstallArtifact(playground_exe, .{});
+
+    const playground_step = b.step("playground", "Build the playground diagnostics core");
+    playground_step.dependOn(&install_playground.step);
+
     // Create a run step
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
