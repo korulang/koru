@@ -6053,7 +6053,7 @@ pub const Parser = struct {
         // Also accept `[` `]` for Source-block type hints inside the path.
         while (i < content.len) : (i += 1) {
             const c = content[i];
-            if (std.ascii.isAlphanumeric(c) or c == '_' or c == '.' or c == ':' or c == '[' or c == ']') continue;
+            if (std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '.' or c == ':' or c == '[' or c == ']') continue;
             break;
         }
         // After the path, skip whitespace

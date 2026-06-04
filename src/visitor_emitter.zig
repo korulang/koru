@@ -181,6 +181,15 @@ fn writeMangledSegment(code_emitter: *emitter.CodeEmitter, segment: []const u8) 
             }
             try code_emitter.write("_");
             start = i + 1;
+        } else if (c == '-') {
+            // Kebab `-` → `_`: `-` is a legal Koru name-char but not a Zig
+            // identifier char (D2: snake for the Zig target). No-op for the
+            // entire snake corpus, so this cannot affect existing tests.
+            if (i > start) {
+                try code_emitter.write(segment[start..i]);
+            }
+            try code_emitter.write("_");
+            start = i + 1;
         }
     }
     // Write any remaining characters after last special char
@@ -1047,7 +1056,7 @@ pub const VisitorEmitter = struct {
                 // Emit each field
                 for (host_type.shape.fields) |field| {
                     try self.code_emitter.writeIndent();
-                    try self.code_emitter.write(field.name);
+                    try emitter.writeBranchName(self.code_emitter, field.name);
                     try self.code_emitter.write(": ");
                     try emitter.writeFieldType(self.code_emitter, field, self.main_module_name);
                     try self.code_emitter.write(",\n");
@@ -1182,7 +1191,7 @@ pub const VisitorEmitter = struct {
                     }
                     for (flow.invocation.path.segments, 0..) |seg, idx| {
                         if (idx > 0) try self.code_emitter.write(".");
-                        try self.code_emitter.write(seg);
+                        try writeMangledSegment(self.code_emitter, seg);
                     }
                     try self.code_emitter.write("()\n");
                 }
@@ -1352,7 +1361,7 @@ pub const VisitorEmitter = struct {
                         // Emit variable declaration: var {name}: u64 = {value};
                         try self.code_emitter.writeIndent();
                         try self.code_emitter.write("var ");
-                        try self.code_emitter.write(arg.name);
+                        try emitter.writeBranchName(self.code_emitter, arg.name);
                         try self.code_emitter.write(": u64 = ");
                         try self.code_emitter.write(arg.value);
                         try self.code_emitter.write(";\n");
@@ -1729,15 +1738,15 @@ pub const VisitorEmitter = struct {
                             for (event.input.fields) |field| {
                                 try self.code_emitter.writeIndent();
                                 try self.code_emitter.write("const ");
-                                try self.code_emitter.write(field.name);
+                                try emitter.writeBranchName(self.code_emitter, field.name);
                                 try self.code_emitter.write(" = __koru_event_input.");
-                                try self.code_emitter.write(field.name);
+                                try emitter.writeBranchName(self.code_emitter, field.name);
                                 try self.code_emitter.write(";\n");
                             }
                             for (event.input.fields) |field| {
                                 try self.code_emitter.writeIndent();
                                 try self.code_emitter.write("_ = &");
-                                try self.code_emitter.write(field.name);
+                                try emitter.writeBranchName(self.code_emitter, field.name);
                                 try self.code_emitter.write(";\n");
                             }
                             try self.code_emitter.writeIndent();
@@ -1810,15 +1819,15 @@ pub const VisitorEmitter = struct {
                                     for (event.input.fields) |field| {
                                         try self.code_emitter.writeIndent();
                                         try self.code_emitter.write("const ");
-                                        try self.code_emitter.write(field.name);
+                                        try emitter.writeBranchName(self.code_emitter, field.name);
                                         try self.code_emitter.write(" = __koru_event_input.");
-                                        try self.code_emitter.write(field.name);
+                                        try emitter.writeBranchName(self.code_emitter, field.name);
                                         try self.code_emitter.write(";\n");
                                     }
                                     for (event.input.fields) |field| {
                                         try self.code_emitter.writeIndent();
                                         try self.code_emitter.write("_ = &");
-                                        try self.code_emitter.write(field.name);
+                                        try emitter.writeBranchName(self.code_emitter, field.name);
                                         try self.code_emitter.write(";\n");
                                     }
                                     try self.code_emitter.writeIndent();
@@ -1886,14 +1895,14 @@ pub const VisitorEmitter = struct {
                                         }
                                         for (flow.invocation.path.segments, 0..) |seg, idx| {
                                             if (idx > 0) try self.code_emitter.write("_");
-                                            try self.code_emitter.write(seg);
+                                            try writeMangledSegment(self.code_emitter, seg);
                                         }
                                         try self.code_emitter.write("_event.handler(.{");
 
                                         for (flow.invocation.args, 0..) |arg, k| {
                                             if (k > 0) try self.code_emitter.write(", ");
                                             try self.code_emitter.write(" .");
-                                            try self.code_emitter.write(arg.name);
+                                            try emitter.writeBranchName(self.code_emitter, arg.name);
                                             try self.code_emitter.write(" = ");
                                             try self.code_emitter.write(arg.value);
                                         }
@@ -1997,16 +2006,16 @@ pub const VisitorEmitter = struct {
                                             for (event.input.fields) |field| {
                                                 try self.code_emitter.writeIndent();
                                                 try self.code_emitter.write("const ");
-                                                try self.code_emitter.write(field.name);
+                                                try emitter.writeBranchName(self.code_emitter, field.name);
                                                 try self.code_emitter.write(" = __koru_event_input.");
-                                                try self.code_emitter.write(field.name);
+                                                try emitter.writeBranchName(self.code_emitter, field.name);
                                                 try self.code_emitter.write(";\n");
                                             }
                                             // Suppress unused variable warnings
                                             for (event.input.fields) |field| {
                                                 try self.code_emitter.writeIndent();
                                                 try self.code_emitter.write("_ = &");
-                                                try self.code_emitter.write(field.name);
+                                                try emitter.writeBranchName(self.code_emitter, field.name);
                                                 try self.code_emitter.write(";\n");
                                             }
                                             if (event.input.fields.len == 0) {
@@ -2037,7 +2046,7 @@ pub const VisitorEmitter = struct {
                                                 for (bc.fields, 0..) |field, k| {
                                                     if (k > 0) try self.code_emitter.write(", ");
                                                     try self.code_emitter.write(" .");
-                                                    try self.code_emitter.write(field.name);
+                                                    try emitter.writeBranchName(self.code_emitter, field.name);
                                                     try self.code_emitter.write(" = ");
                                                     const value = if (field.expression_str) |expr| expr else field.type;
                                                     const trimmed = std.mem.trim(u8, value, " \t");
@@ -2086,16 +2095,16 @@ pub const VisitorEmitter = struct {
                                                 for (event.input.fields) |field| {
                                                     try self.code_emitter.writeIndent();
                                                     try self.code_emitter.write("const ");
-                                                    try self.code_emitter.write(field.name);
+                                                    try emitter.writeBranchName(self.code_emitter, field.name);
                                                     try self.code_emitter.write(" = __koru_event_input.");
-                                                    try self.code_emitter.write(field.name);
+                                                    try emitter.writeBranchName(self.code_emitter, field.name);
                                                     try self.code_emitter.write(";\n");
                                                 }
                                                 // Suppress unused variable warnings
                                                 for (event.input.fields) |field| {
                                                     try self.code_emitter.writeIndent();
                                                     try self.code_emitter.write("_ = &");
-                                                    try self.code_emitter.write(field.name);
+                                                    try emitter.writeBranchName(self.code_emitter, field.name);
                                                     try self.code_emitter.write(";\n");
                                                 }
                                                 try self.code_emitter.writeIndent();
@@ -2184,7 +2193,7 @@ pub const VisitorEmitter = struct {
                                                         }
                                                         for (flow.invocation.path.segments, 0..) |seg, idx| {
                                                             if (idx > 0) try self.code_emitter.write("_");
-                                                            try self.code_emitter.write(seg);
+                                                            try writeMangledSegment(self.code_emitter, seg);
                                                         }
                                                         try self.code_emitter.write("_event.handler(.{");
                                                     }
@@ -2193,7 +2202,7 @@ pub const VisitorEmitter = struct {
                                                     for (flow.invocation.args, 0..) |arg, k| {
                                                         if (k > 0) try self.code_emitter.write(", ");
                                                         try self.code_emitter.write(" .");
-                                                        try self.code_emitter.write(arg.name);
+                                                        try emitter.writeBranchName(self.code_emitter, arg.name);
                                                         try self.code_emitter.write(" = ");
                                                         try self.code_emitter.write(arg.value);
                                                     }
@@ -2292,7 +2301,7 @@ pub const VisitorEmitter = struct {
                             try self.code_emitter.write("// >>> PROC: ");
                             for (proc.path.segments, 0..) |seg, idx| {
                                 if (idx > 0) try self.code_emitter.write(".");
-                                try self.code_emitter.write(seg);
+                                try writeMangledSegment(self.code_emitter, seg);
                             }
                             // Append source location
                             if (proc.location.line > 0) {
@@ -2315,9 +2324,9 @@ pub const VisitorEmitter = struct {
                                 if (!nameIsShadowed(field.name, declared_names.items)) {
                                     try self.code_emitter.writeIndent();
                                     try self.code_emitter.write("const ");
-                                    try self.code_emitter.write(field.name);
+                                    try emitter.writeBranchName(self.code_emitter, field.name);
                                     try self.code_emitter.write(" = __koru_event_input.");
-                                    try self.code_emitter.write(field.name);
+                                    try emitter.writeBranchName(self.code_emitter, field.name);
                                     try self.code_emitter.write(";\n");
                                 }
                             }
@@ -2326,7 +2335,7 @@ pub const VisitorEmitter = struct {
                                 if (!nameIsShadowed(field.name, declared_names.items)) {
                                     try self.code_emitter.writeIndent();
                                     try self.code_emitter.write("_ = &");
-                                    try self.code_emitter.write(field.name);
+                                    try emitter.writeBranchName(self.code_emitter, field.name);
                                     try self.code_emitter.write(";\n");
                                 }
                             }
@@ -2397,16 +2406,16 @@ pub const VisitorEmitter = struct {
                             for (event.input.fields) |field| {
                                 try self.code_emitter.writeIndent();
                                 try self.code_emitter.write("const ");
-                                try self.code_emitter.write(field.name);
+                                try emitter.writeBranchName(self.code_emitter, field.name);
                                 try self.code_emitter.write(" = __koru_event_input.");
-                                try self.code_emitter.write(field.name);
+                                try emitter.writeBranchName(self.code_emitter, field.name);
                                 try self.code_emitter.write(";\n");
                             }
                             // Suppress unused variable warnings
                             for (event.input.fields) |field| {
                                 try self.code_emitter.writeIndent();
                                 try self.code_emitter.write("_ = &");
-                                try self.code_emitter.write(field.name);
+                                try emitter.writeBranchName(self.code_emitter, field.name);
                                 try self.code_emitter.write(";\n");
                             }
                             // If no input fields, suppress unused '__koru_event_input' parameter
@@ -2439,7 +2448,7 @@ pub const VisitorEmitter = struct {
                                 for (bc.fields, 0..) |field, k| {
                                     if (k > 0) try self.code_emitter.write(", ");
                                     try self.code_emitter.write(" .");
-                                    try self.code_emitter.write(field.name);
+                                    try emitter.writeBranchName(self.code_emitter, field.name);
                                     try self.code_emitter.write(" = ");
                                     // Use expression_str if present (for expressions), otherwise use type
                                     const value = if (field.expression_str) |expr| expr else field.type;
@@ -2501,16 +2510,16 @@ pub const VisitorEmitter = struct {
                                 for (event.input.fields) |field| {
                                     try self.code_emitter.writeIndent();
                                     try self.code_emitter.write("const ");
-                                    try self.code_emitter.write(field.name);
+                                    try emitter.writeBranchName(self.code_emitter, field.name);
                                     try self.code_emitter.write(" = __koru_event_input.");
-                                    try self.code_emitter.write(field.name);
+                                    try emitter.writeBranchName(self.code_emitter, field.name);
                                     try self.code_emitter.write(";\n");
                                 }
                                 // Suppress unused variable warnings
                                 for (event.input.fields) |field| {
                                     try self.code_emitter.writeIndent();
                                     try self.code_emitter.write("_ = &");
-                                    try self.code_emitter.write(field.name);
+                                    try emitter.writeBranchName(self.code_emitter, field.name);
                                     try self.code_emitter.write(";\n");
                                 }
                                 try self.code_emitter.writeIndent();
@@ -2630,7 +2639,7 @@ pub const VisitorEmitter = struct {
                                                         for (bc.fields, 0..) |field, k| {
                                                             if (k > 0) try self.code_emitter.write(",");
                                                             try self.code_emitter.write(" .");
-                                                            try self.code_emitter.write(field.name);
+                                                            try emitter.writeBranchName(self.code_emitter, field.name);
                                                             try self.code_emitter.write(" = ");
                                                             const value = if (field.expression_str) |expr| expr else field.type;
                                                             const trimmed = std.mem.trim(u8, value, " \t");
@@ -2699,7 +2708,7 @@ pub const VisitorEmitter = struct {
                                         // Join all segments with underscores
                                         for (flow.invocation.path.segments, 0..) |seg, idx| {
                                             if (idx > 0) try self.code_emitter.write("_");
-                                            try self.code_emitter.write(seg);
+                                            try writeMangledSegment(self.code_emitter, seg);
                                         }
                                         try self.code_emitter.write("_event.handler(.{");
                                     }
@@ -2867,13 +2876,13 @@ pub const VisitorEmitter = struct {
                     // Generate values for each field in the branch
                     for (first_branch.payload.fields) |field| {
                         try self.code_emitter.write(" .");
-                        try self.code_emitter.write(field.name);
+                        try emitter.writeBranchName(self.code_emitter, field.name);
                         try self.code_emitter.write(" = ");
 
                         if (can_passthrough) {
                             // Passthrough: use input value
                             try self.code_emitter.write("__koru_event_input.");
-                            try self.code_emitter.write(field.name);
+                            try emitter.writeBranchName(self.code_emitter, field.name);
                         } else if (eql(u8, field.type, "i32")) {
                             try self.code_emitter.write("0");
                         } else if (eql(u8, field.type, "[]const u8")) {
@@ -2969,16 +2978,16 @@ pub const VisitorEmitter = struct {
                         for (event.input.fields) |field| {
                             try self.code_emitter.writeIndent();
                             try self.code_emitter.write("const ");
-                            try self.code_emitter.write(field.name);
+                            try emitter.writeBranchName(self.code_emitter, field.name);
                             try self.code_emitter.write(" = __koru_event_input.");
-                            try self.code_emitter.write(field.name);
+                            try emitter.writeBranchName(self.code_emitter, field.name);
                             try self.code_emitter.write(";\n");
                         }
                         // Suppress unused variable warnings
                         for (event.input.fields) |field| {
                             try self.code_emitter.writeIndent();
                             try self.code_emitter.write("_ = &");
-                            try self.code_emitter.write(field.name);
+                            try emitter.writeBranchName(self.code_emitter, field.name);
                             try self.code_emitter.write(";\n");
                         }
                         try self.code_emitter.writeIndent();
@@ -3070,15 +3079,15 @@ pub const VisitorEmitter = struct {
                             for (event.input.fields) |field| {
                                 try self.code_emitter.writeIndent();
                                 try self.code_emitter.write("const ");
-                                try self.code_emitter.write(field.name);
+                                try emitter.writeBranchName(self.code_emitter, field.name);
                                 try self.code_emitter.write(" = __koru_event_input.");
-                                try self.code_emitter.write(field.name);
+                                try emitter.writeBranchName(self.code_emitter, field.name);
                                 try self.code_emitter.write(";\n");
                             }
                             for (event.input.fields) |field| {
                                 try self.code_emitter.writeIndent();
                                 try self.code_emitter.write("_ = &");
-                                try self.code_emitter.write(field.name);
+                                try emitter.writeBranchName(self.code_emitter, field.name);
                                 try self.code_emitter.write(";\n");
                             }
                             try self.code_emitter.writeIndent();
@@ -3098,7 +3107,7 @@ pub const VisitorEmitter = struct {
                                 }
                                 for (flow.invocation.path.segments, 0..) |seg, idx| {
                                     if (idx > 0) try self.code_emitter.write("_");
-                                    try self.code_emitter.write(seg);
+                                    try writeMangledSegment(self.code_emitter, seg);
                                 }
                                 try self.code_emitter.write("_event.handler(.{");
                                 var value_ctx = emitter.EmissionContext{
@@ -3108,7 +3117,7 @@ pub const VisitorEmitter = struct {
                                 for (flow.invocation.args, 0..) |arg, k| {
                                     if (k > 0) try self.code_emitter.write(", ");
                                     try self.code_emitter.write(" .");
-                                    try self.code_emitter.write(arg.name);
+                                    try emitter.writeBranchName(self.code_emitter, arg.name);
                                     try self.code_emitter.write(" = ");
                                     try emitter.emitValue(self.code_emitter, &value_ctx, arg.value);
                                 }

@@ -1,0 +1,13 @@
+// PIN (kebab-stdlib-restructure): a kebab event name must MANGLE to `-`→`_` on
+// emission (Zig: `my_event`), not leak raw. RED today — the name parses but
+// emission leaks `pub const my-event_event = struct` → invalid Zig. The real
+// Track-B work is the emit mangle, not parser acceptance.
+const std = @import("std");
+~import "std/io"
+
+~event my-event {}
+~proc my-event|zig {
+    std.debug.print("kebab event ok\n", .{});
+}
+
+~my-event()

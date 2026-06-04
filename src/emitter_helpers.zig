@@ -428,12 +428,31 @@ pub const CodeEmitter = struct {
 
 /// Helper: Write branch name (escaped if needed)
 pub fn writeBranchName(emitter: *CodeEmitter, name: []const u8) !void {
+    // Kebab → snake mangle on emit: `-` is a legal Koru name-char but not a Zig
+    // identifier char. The mangled result is always a valid identifier, so it
+    // never needs `@"..."` escaping. No-op for snake names (the entire pre-kebab
+    // corpus), so this cannot affect existing tests.
+    for (name) |c| {
+        if (c == '-') {
+            try writeMangledSeg(emitter, name);
+            return;
+        }
+    }
     if (codegen_utils.needsEscaping(name)) {
         try emitter.write("@\"");
         try emitter.write(name);
         try emitter.write("\"");
     } else {
         try emitter.write(name);
+    }
+}
+
+/// Write a name as a Zig identifier, mangling kebab `-` → `_` (D2: snake for the
+/// Zig target). Used both for standalone names (via writeBranchName) and for
+/// path segments joined into event/proc identifiers. No-op for snake input.
+pub fn writeMangledSeg(emitter: *CodeEmitter, seg: []const u8) !void {
+    for (seg) |c| {
+        try emitter.write(&[_]u8{if (c == '-') '_' else c});
     }
 }
 
@@ -1744,13 +1763,13 @@ fn emitSubflowContinuationsWithDepth(
                     // Join all segments with underscores to get event name
                     for (inv.path.segments, 0..) |seg, i| {
                         if (i > 0) try emitter.write("_");
-                        try emitter.write(seg);
+                        try writeMangledSeg(emitter, seg);
                     }
                     try emitter.write("_event.handler(.{ ");
                     for (inv.args, 0..) |arg, i| {
                         if (i > 0) try emitter.write(", ");
                         try emitter.write(".");
-                        try emitter.write(arg.name);
+                        try writeBranchName(emitter, arg.name);
                         try emitter.write(" = ");
                         try emitter.write(arg.value);
                     }
@@ -2215,7 +2234,7 @@ fn emitSubflowContinuationsWithDepth(
                             // Join all segments with underscores
                             for (inv.path.segments, 0..) |seg, i| {
                                 if (i > 0) try emitter.write("_");
-                                try emitter.write(seg);
+                                try writeMangledSeg(emitter, seg);
                             }
                             try emitter.write("_event.handler(.{");
 
@@ -2268,7 +2287,7 @@ fn emitSubflowContinuationsWithDepth(
                                     break :blk arg.name;
                                 } else arg.name;
 
-                                try emitter.write(param_name);
+                                try writeBranchName(emitter, param_name);
                                 try emitter.write(" = ");
 
                                 // Check for Koru array literal syntax: [a, b, c]
@@ -3667,7 +3686,7 @@ pub fn emitFlow(
             }
             try emitter.write(label);
             try emitter.write("_");
-            try emitter.write(arg.name);
+            try writeBranchName(emitter, arg.name);
 
             // Add type annotation if we found the event
             if (event_decl) |event| {
@@ -3795,11 +3814,11 @@ pub fn emitFlow(
                     try emitter.write(", ");
                 }
                 try emitter.write(".");
-                try emitter.write(arg.name);
+                try writeBranchName(emitter, arg.name);
                 try emitter.write(" = ");
                 try emitter.write(label);
                 try emitter.write("_");
-                try emitter.write(arg.name);
+                try writeBranchName(emitter, arg.name);
             }
             try emitter.write(" }");
             // Effect-branches phase 3b: pass synthesized Handlers struct as 2nd arg.
@@ -4541,14 +4560,14 @@ fn emitInvocation(
                 }
                 try emitter.writeIndent();
                 try emitter.write("const ");
-                try emitter.write(param_name);
+                try writeBranchName(emitter, param_name);
                 try emitter.write(" = ");
                 try emitValue(emitter, ctx, arg.value);
                 try emitter.write(";\n");
                 // Suppress unused variable warning (for mocks that return constants)
                 try emitter.writeIndent();
                 try emitter.write("_ = &");
-                try emitter.write(param_name);
+                try writeBranchName(emitter, param_name);
                 try emitter.write(";\n");
             }
 
@@ -4806,7 +4825,7 @@ fn emitInvocationTarget(emitter: *CodeEmitter, ctx: *EmissionContext, path: *con
         if (idx > 0) {
             try emitter.write("_");
         }
-        try emitter.write(segment);
+        try writeMangledSeg(emitter, segment);
     }
     // Don't add _event suffix for compiler.* events (they're hardcoded in main.zig)
     const is_compiler_event = path.segments.len > 0 and std.mem.eql(u8, path.segments[0], "compiler");
@@ -4859,7 +4878,7 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
             break :blk arg.name;
         } else arg.name;
 
-        try emitter.write(param_name);
+        try writeBranchName(emitter, param_name);
         try emitter.write(" = ");
 
         // Check if this argument should be emitted as a source, expression, or invocation_meta
@@ -5035,7 +5054,7 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
             }
             for (invocation_path.segments, 0..) |seg, i| {
                 if (i > 0) try emitter.write(".");
-                try emitter.write(seg);
+                try writeMangledSeg(emitter, seg);
             }
             try emitter.write("\",\n");
 
@@ -5217,7 +5236,7 @@ fn emitArgs(emitter: *CodeEmitter, ctx: *EmissionContext, args: []const ast.Arg,
                         }
                         for (invocation_path.segments, 0..) |seg, i| {
                             if (i > 0) try emitter.write(".");
-                            try emitter.write(seg);
+                            try writeMangledSeg(emitter, seg);
                         }
                         try emitter.write("\",\n");
 
@@ -6459,7 +6478,7 @@ pub fn emitContinuationBody(
             }
             try emitter.write(lwi.label);
             try emitter.write("_");
-            try emitter.write(arg.name);
+            try writeBranchName(emitter, arg.name);
 
             // Add type annotation if we found the event
             if (event_decl) |event| {
@@ -6509,11 +6528,11 @@ pub fn emitContinuationBody(
                 try emitter.write(", ");
             }
             try emitter.write(".");
-            try emitter.write(arg.name);
+            try writeBranchName(emitter, arg.name);
             try emitter.write(" = ");
             try emitter.write(lwi.label);
             try emitter.write("_");
-            try emitter.write(arg.name);
+            try writeBranchName(emitter, arg.name);
         }
         try emitter.write(" });\n");
         result_counter.* += 1;
@@ -7164,11 +7183,11 @@ fn emitStep(
                         try emitter.write(", ");
                     }
                     try emitter.write(".");
-                    try emitter.write(arg.name);
+                    try writeBranchName(emitter, arg.name);
                     try emitter.write(" = ");
                     try emitter.write(label_name);
                     try emitter.write("_");
-                    try emitter.write(arg.name);
+                    try writeBranchName(emitter, arg.name);
                 }
                 try emitter.write(" }");
                 // Effect-branches phase 3b: re-entry preserves Handlers arg.
@@ -7191,7 +7210,7 @@ fn emitStep(
                 try emitter.writeIndent();
                 try emitter.write(lj.label);
                 try emitter.write("_");
-                try emitter.write(arg.name);
+                try writeBranchName(emitter, arg.name);
                 try emitter.write(" = ");
                 try emitValue(emitter, ctx, arg.value);
                 try emitter.write(";\n");
@@ -7231,11 +7250,11 @@ fn emitStep(
                         try emitter.write(", ");
                     }
                     try emitter.write(".");
-                    try emitter.write(arg.name);
+                    try writeBranchName(emitter, arg.name);
                     try emitter.write(" = ");
                     try emitter.write(lj.label);
                     try emitter.write("_");
-                    try emitter.write(arg.name);
+                    try writeBranchName(emitter, arg.name);
                 }
                 try emitter.write(" }");
                 // Effect-branches phase 3b: if the labeled target carries a
@@ -7577,7 +7596,7 @@ fn emitStepWithBindingSubstitution(
                     try emitter.write(", ");
                 }
                 try emitter.write(".");
-                try emitter.write(arg.name);
+                try writeBranchName(emitter, arg.name);
                 try emitter.write(" = ");
                 try emitValueWithBindingSubstitution(emitter, arg.value, substitution);
             }
@@ -7660,7 +7679,7 @@ fn emitStepWithBindingSubstitution(
                         try emitter.write(", ");
                     }
                     try emitter.write(".");
-                    try emitter.write(arg.name);
+                    try writeBranchName(emitter, arg.name);
                     try emitter.write(" = ");
                     try emitValueWithBindingSubstitution(emitter, arg.value, substitution);
                 }
@@ -7682,7 +7701,7 @@ fn emitStepWithBindingSubstitution(
                     try emitter.write(", ");
                 }
                 try emitter.write(".");
-                try emitter.write(arg.name);
+                try writeBranchName(emitter, arg.name);
                 try emitter.write(" = ");
                 try emitValueWithBindingSubstitution(emitter, arg.value, substitution);
             }
@@ -7724,7 +7743,7 @@ fn emitStepWithBindingSubstitution(
                         try emitter.write(", ");
                     }
                     try emitter.write(".");
-                    try emitter.write(arg.name);
+                    try writeBranchName(emitter, arg.name);
                     try emitter.write(" = ");
                     // Build state variable name and apply substitution if needed
                     const state_var = try std.fmt.allocPrint(ctx.allocator, "{s}_{s}", .{ label_name, arg.name });
@@ -7752,7 +7771,7 @@ fn emitStepWithBindingSubstitution(
                 try emitter.writeIndent();
                 try emitter.write(lj.label);
                 try emitter.write("_");
-                try emitter.write(arg.name);
+                try writeBranchName(emitter, arg.name);
                 try emitter.write(" = ");
                 try emitValueWithBindingSubstitution(emitter, arg.value, substitution);
                 try emitter.write(";\n");
@@ -8306,7 +8325,7 @@ fn emitEventDeclForModuleFromType(
     try code_emitter.write("pub const ");
     for (event_path.segments, 0..) |segment, idx| {
         if (idx > 0) try code_emitter.write("_");
-        try code_emitter.write(segment);
+        try writeMangledSeg(code_emitter, segment);
     }
     try code_emitter.write("_event = struct {\n");
     code_emitter.indent_level += 1;
@@ -8376,15 +8395,15 @@ fn emitEventDeclForModuleFromType(
         for (shape.fields) |field| {
             try code_emitter.writeIndent();
             try code_emitter.write("const ");
-            try code_emitter.write(field.name);
+            try writeBranchName(code_emitter, field.name);
             try code_emitter.write(" = __koru_event_input.");
-            try code_emitter.write(field.name);
+            try writeBranchName(code_emitter, field.name);
             try code_emitter.write(";\n");
         }
         for (shape.fields) |field| {
             try code_emitter.writeIndent();
             try code_emitter.write("_ = &");
-            try code_emitter.write(field.name);
+            try writeBranchName(code_emitter, field.name);
             try code_emitter.write(";\n");
         }
     }
@@ -8420,7 +8439,7 @@ fn emitEventDeclForModule(
     try code_emitter.write("pub const ");
     for (event.path.segments, 0..) |segment, idx| {
         if (idx > 0) try code_emitter.write("_");
-        try code_emitter.write(segment);
+        try writeMangledSeg(code_emitter, segment);
     }
     try code_emitter.write("_event = struct {\n");
     code_emitter.indent_level += 1;
@@ -8501,9 +8520,9 @@ fn emitEventDeclForModule(
     for (event.input.fields) |field| {
         try code_emitter.writeIndent();
         try code_emitter.write("const ");
-        try code_emitter.write(field.name);
+        try writeBranchName(code_emitter, field.name);
         try code_emitter.write(" = __koru_event_input.");
-        try code_emitter.write(field.name);
+        try writeBranchName(code_emitter, field.name);
         try code_emitter.write(";\n");
     }
 
@@ -8529,7 +8548,7 @@ fn emitEventDeclForModule(
     for (event.input.fields) |field| {
         try code_emitter.writeIndent();
         try code_emitter.write("_ = &");
-        try code_emitter.write(field.name);
+        try writeBranchName(code_emitter, field.name);
         try code_emitter.write(";\n");
     }
     try code_emitter.writeIndent();
@@ -8603,7 +8622,7 @@ fn emitEventDeclForModule(
                         try code_emitter.write(",");
                     }
                     try code_emitter.write(" .");
-                    try code_emitter.write(field.name);
+                    try writeBranchName(code_emitter, field.name);
                     try code_emitter.write(" = undefined");
                 }
                 if (first_branch.payload.fields.len > 0) {
@@ -8640,15 +8659,15 @@ fn emitEventDeclForModule(
         for (event.input.fields) |field| {
             try code_emitter.writeIndent();
             try code_emitter.write("const ");
-            try code_emitter.write(field.name);
+            try writeBranchName(code_emitter, field.name);
             try code_emitter.write(" = __koru_event_input.");
-            try code_emitter.write(field.name);
+            try writeBranchName(code_emitter, field.name);
             try code_emitter.write(";\n");
         }
         for (event.input.fields) |field| {
             try code_emitter.writeIndent();
             try code_emitter.write("_ = &");
-            try code_emitter.write(field.name);
+            try writeBranchName(code_emitter, field.name);
             try code_emitter.write(";\n");
         }
         try code_emitter.writeIndent();
