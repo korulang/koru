@@ -10,8 +10,8 @@
 //       | [*] |> response { ... }       <-- inner catch-all
 // ============================================================================
 
-~import "orisha"
-~import "std/io"
+import orisha
+import std/io
 
 const std = @import("std");
 

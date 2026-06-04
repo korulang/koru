@@ -26,7 +26,7 @@
 // needed: parser extension for literal-suffix in arg-value position
 // (Implementation sketch item 6).
 
-~import "std/io"
+import std/io
 
 ~event to_fahrenheit { c: f32<celsius> }
 | result f32<fahrenheit>

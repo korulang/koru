@@ -4,7 +4,7 @@
 // are automatically inlined in tests - no mock needed!
 // This is the TOTAL FLEX - compile-time flow pruning for free.
 
-~import "std/testing"
+import std/testing
 
 // Event with constant implementation (immediate branch constructor)
 ~event get_config {}

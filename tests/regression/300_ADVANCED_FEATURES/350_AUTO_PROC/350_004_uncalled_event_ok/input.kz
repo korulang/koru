@@ -3,7 +3,7 @@
 // Events declared but never invoked should not require a proc.
 // This allows "interface" style declarations.
 
-~import "std/io"
+import std/io
 
 // Event with no proc and mismatched input/output - but never called
 ~pub event unused_event { x: i32 }

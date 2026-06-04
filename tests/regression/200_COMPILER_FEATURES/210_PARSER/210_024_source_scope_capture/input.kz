@@ -10,7 +10,7 @@
 // comptime code can inspect runtime variable bindings!
 // ============================================================================
 
-~import "std/io"
+import std/io
 
 // Event that provides user data
 ~event getUserData { }

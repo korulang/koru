@@ -1,7 +1,7 @@
 // Test: for inside if - depth-first transform ordering
 // Inner for should transform before outer if
 
-~import "std/control"
+import std/control
 
 const std = @import("std");
 

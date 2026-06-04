@@ -3,7 +3,7 @@
 // TODO: Test implicit syntax after this works
 // Validates that Source parameters work like Source with implicit parameter name
 
-~import "std/io"
+import std/io
 
 ~[comptime|transform]event capture.source {
     source: Source,

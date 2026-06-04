@@ -14,7 +14,7 @@
 const std = @import("std");
 
 // Must explicitly import the nested module (using 'domain' alias from koru.json)
-~import "domain/user"
+import domain/user
 
 // This event uses a type from an explicitly imported nested module
 ~pub event grant_access {

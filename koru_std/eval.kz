@@ -23,7 +23,7 @@
 
 ~[runtime]
 
-~import "std/build"
+import std/build
 
 ~std.build:requires {
     const REL_TO_ROOT = "/usr/local/lib/koru";

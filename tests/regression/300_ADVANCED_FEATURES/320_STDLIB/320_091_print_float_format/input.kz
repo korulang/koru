@@ -1,6 +1,6 @@
 // Test: :f format specifier for floats in print.ln and print.blk
 
-~import "std/io"
+import std/io
 
 const pi: f64 = 3.14159;
 const mass: f64 = 2.5;

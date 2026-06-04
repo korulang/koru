@@ -1,7 +1,7 @@
 // Test: std.runtime:run returns parse_error when no flow exists
 
-~import "std/runtime"
-~import "std/io"
+import std/runtime
+import std/io
 
 ~pub event ping {}
 | ok u64

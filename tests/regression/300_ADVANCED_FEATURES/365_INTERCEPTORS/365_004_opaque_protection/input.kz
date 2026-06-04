@@ -5,7 +5,7 @@
 // security-sensitive or performance-critical events.
 
 const std = @import("std");
-~import "std/interceptors"
+import std/interceptors
 
 // Opaque event - cannot be intercepted
 ~[opaque] event auth.verify { token: []const u8 }

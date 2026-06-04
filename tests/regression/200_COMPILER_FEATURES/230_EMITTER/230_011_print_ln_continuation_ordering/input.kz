@@ -7,8 +7,8 @@
 
 const std = @import("std");
 
-~import "std/control"
-~import "std/io"
+import std/control
+import std/io
 
 // Void event (like advance_velocities)
 ~event step_one {}

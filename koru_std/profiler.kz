@@ -31,7 +31,7 @@
 ~[comptime|runtime]
 
 const std = @import("std");
-~import "std/taps"
+import std/taps
 
 // File handle state - mutable globals for profiler state
 // WARNING: NOT THREAD-SAFE! Will corrupt with concurrent writes.

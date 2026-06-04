@@ -1,8 +1,8 @@
 // TEST: Single-line shape block bug
 // This fails because single-line source blocks don't capture source_value
 
-~import "std/kernel"
-~import "std/io"
+import std/kernel
+import std/io
 
 // BUG: This single-line shape doesn't work
 ~std.kernel:shape(Body) { mass: f64 }

@@ -3,8 +3,8 @@
 // With [keyword] on types.kz, ~struct(Name) should work
 // without writing ~std.types:struct(Name)
 
-~import "std/types"
-~import "std/io"
+import std/types
+import std/io
 
 // Declare a struct using keyword syntax
 ~struct(Player) {

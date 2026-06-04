@@ -1,8 +1,8 @@
 // Test: Registry Scope - Typed Arguments
 // Ensures runtime dispatch parses bool/float/int args correctly.
 
-~import "std/runtime"
-~import "std/io"
+import std/runtime
+import std/io
 
 const std = @import("std");
 

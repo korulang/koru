@@ -11,8 +11,8 @@
 // BEFORE (broken): Synthetic proc can't access 'init' - scope error
 // AFTER (working): Inlined code has direct access to 'init'
 
-~import "std/io"
-~import "std/control"
+import std/io
+import std/control
 
 const std = @import("std");
 

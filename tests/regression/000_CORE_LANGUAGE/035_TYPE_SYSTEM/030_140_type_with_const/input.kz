@@ -5,9 +5,9 @@
 //
 // Expected: Compiles and runs, demonstrating types + const integration
 
-~import "std/types"
-~import "std/io"
-~import "std/control"
+import std/types
+import std/io
+import std/control
 
 // Define a generic config container
 ~struct(Config<T>) { value: T, enabled: bool = true }

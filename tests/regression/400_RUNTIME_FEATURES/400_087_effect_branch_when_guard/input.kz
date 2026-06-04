@@ -11,7 +11,7 @@
 //
 // Expected output: even values only (0, 2, 4).
 
-~import "std/io"
+import std/io
 
 ~pub event ticker { n: usize }
 ! tick usize

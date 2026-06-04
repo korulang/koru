@@ -1,8 +1,8 @@
 // Test: Budget exhaustion with open handles triggers auto-discharge
 // Even when exhausted, we clean up resources before returning
 
-~import "std/runtime"
-~import "std/io"
+import std/runtime
+import std/io
 
 const std = @import("std");
 

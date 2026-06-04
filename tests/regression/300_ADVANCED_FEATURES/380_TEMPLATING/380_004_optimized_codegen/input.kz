@@ -11,7 +11,7 @@
 //
 // The template chooses the optimal implementation at compile time.
 
-~import "std/math"
+import std/math
 
 // Generate a 4x4 matrix type - template knows dimensions, can optimize
 ~std.math:matrix(rows: 4, cols: 4)

@@ -1,5 +1,5 @@
-~import "std/control"
-~import "app/fs"
+import std/control
+import app/fs
 ~std.control:for(0..2)
 ! each _ |> app.fs:open(path: "outer.txt")
     | opened _ |> std.control:for(0..2)

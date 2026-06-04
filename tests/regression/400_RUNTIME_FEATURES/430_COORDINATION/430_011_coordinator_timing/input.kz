@@ -3,9 +3,9 @@
 // Wraps the compilation pipeline with timing instrumentation
 // using std.time from the standard library.
 
-~import "std/compiler"
-~import "std/time"
-~import "std/io"
+import std/compiler
+import std/time
+import std/io
 
 const std = @import("std");
 

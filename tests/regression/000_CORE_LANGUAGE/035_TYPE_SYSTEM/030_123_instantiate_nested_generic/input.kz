@@ -4,7 +4,7 @@
 //
 // Expected: Compiles with nested instantiation
 
-~import "std/types"
+import std/types
 
 const std = @import("std");
 

@@ -5,7 +5,7 @@
 //
 // Expected: Compiles and emits struct with the nominal type
 
-~import "std/types"
+import std/types
 
 const std = @import("std");
 

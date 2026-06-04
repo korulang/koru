@@ -2,7 +2,7 @@
 //
 // Syntax: ok expr (branch with single value)
 
-~import "std/io"
+import std/io
 
 // Event with value branch
 ~pub event value_result {}

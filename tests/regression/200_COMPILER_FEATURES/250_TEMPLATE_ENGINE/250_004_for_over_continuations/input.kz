@@ -8,7 +8,7 @@
 // Bodies are generated outside (as handler fns); the template holds only a
 // link (`{{ h.link }}`) and emits guarded calls. No body splicing, no mixing
 // of generated code into the host template — the emit-only boundary holds.
-~import "std/io"
+import std/io
 
 ~pub event probe { n: usize }
 ! each usize

@@ -1,4 +1,4 @@
-~import "app/handle"
+import app/handle
 ~app.handle:open()
 | opened h1 |> app.handle:finalize(h: h1)
 ~app.handle:open()

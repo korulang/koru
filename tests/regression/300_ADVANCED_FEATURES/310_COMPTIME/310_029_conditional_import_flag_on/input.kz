@@ -2,6 +2,6 @@
 // When --profile flag IS passed, the import should be processed
 // The AST SHOULD contain an import_decl for this line
 
-~[profile]import "std/profiler"
+~[profile]import std/profiler
 
 ~event test {}

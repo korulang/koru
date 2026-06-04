@@ -15,7 +15,7 @@
 //
 // Related: docs/CCP.md
 
-~import "std/taps"
+import std/taps
 
 const std = @import("std");
 

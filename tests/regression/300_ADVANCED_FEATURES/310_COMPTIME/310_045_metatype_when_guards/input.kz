@@ -2,7 +2,7 @@
 // Verify that 'when' clauses work on metatype observers
 // This is a placeholder - when guard evaluation with metatypes is TBD
 
-~import "std/taps"
+import std/taps
 
 ~event hello { }
 

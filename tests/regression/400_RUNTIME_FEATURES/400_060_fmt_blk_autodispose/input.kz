@@ -2,7 +2,7 @@
 //
 // Tests that [allocated!] obligation can be discharged with [!allocated]
 
-~import "std/io"
+import std/io
 
 const std = @import("std");
 

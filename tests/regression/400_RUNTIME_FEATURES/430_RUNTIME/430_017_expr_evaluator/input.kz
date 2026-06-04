@@ -2,9 +2,9 @@
 // Tests the Value and Bindings types compile and work correctly
 // Note: Direct module import not yet supported, so we test via inline Zig
 
-~import "std/runtime"
-~import "std/build"
-~import "std/eval"
+import std/runtime
+import std/build
+import std/eval
 
 const std = @import("std");
 

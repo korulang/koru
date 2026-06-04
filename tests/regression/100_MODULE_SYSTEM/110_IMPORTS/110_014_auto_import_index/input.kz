@@ -11,7 +11,7 @@
 // Expected: Both testlib:root_hello and testlib.sub:sub_hello are available
 
 // Only import the submodule - index.kz should be auto-imported
-~import "testlib/sub"
+import testlib/sub
 
 // Use event from auto-imported index.kz (namespace: testlib)
 ~testlib:root_hello()

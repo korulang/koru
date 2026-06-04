@@ -14,7 +14,7 @@
 //   - Dynamic code loading and evaluation
 //   - AI agents that can parse and understand Koru
 
-~import "std/build"
+import std/build
 
 const std = @import("std");
 const parser_impl = @import("parser");

@@ -5,7 +5,7 @@
 // 2. Optional branch fires at runtime with no handler
 // 3. Expected: silently ignored (optional = truly optional)
 
-~import "std/io"
+import std/io
 
 // Event with required + optional branches
 ~event process { value: u32 }

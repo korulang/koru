@@ -7,7 +7,7 @@
 // redundant. Canonical form: `echo(p.q.v)`.
 // ============================================================================
 
-~import "std/io"
+import std/io
 
 ~event echo { v: i32 }
 | out i32

@@ -5,7 +5,7 @@
 // Fills the "single-fire with terminal" cell of the coverage grid that
 // 400_072 (multi-fire with terminal) doesn't cover.
 
-~import "std/io"
+import std/io
 
 ~pub event init { value: usize }
 ! ready usize

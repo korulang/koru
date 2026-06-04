@@ -6,7 +6,7 @@
 //
 // This is the "fix/recompile loop killer" - great UX!
 
-~import "std/testing"
+import std/testing
 
 // Impure event - Zig proc without ~[pure]
 ~event fetch_user { id: u32 }

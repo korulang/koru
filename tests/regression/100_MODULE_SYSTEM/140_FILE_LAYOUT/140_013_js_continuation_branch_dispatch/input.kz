@@ -2,7 +2,7 @@
 // branch tag (as Zig does), firing only the matched branch — not all of them.
 // n=4 → only the `even` branch fires; byte-identical on both targets. Minimal,
 // no $std/args dependency.
-~import "std/io"
+import std/io
 
 ~event pick { n: i32 }
 | even []const u8

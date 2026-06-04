@@ -2,9 +2,9 @@
 // Tests runtime conditionals using expression evaluation against bindings
 // Note: Uses inline types since module import not yet supported
 
-~import "std/runtime"
-~import "std/build"
-~import "std/runtime_control"
+import std/runtime
+import std/build
+import std/runtime_control
 
 const std = @import("std");
 const ast = @import("ast");

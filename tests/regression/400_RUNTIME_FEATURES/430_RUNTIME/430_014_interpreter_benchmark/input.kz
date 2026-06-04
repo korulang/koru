@@ -1,7 +1,7 @@
 // Benchmark: Koru Interpreter Performance
 // Measures parse and dispatch throughput
 
-~import "std/runtime"
+import std/runtime
 
 
 const std = @import("std");

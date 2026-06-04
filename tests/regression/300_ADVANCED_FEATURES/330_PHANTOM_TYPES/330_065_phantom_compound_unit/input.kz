@@ -7,7 +7,7 @@
 // an output and that producer's input/output declarations match physical
 // units.
 
-~import "std/io"
+import std/io
 
 ~event read_distance { trip_id: u8 }
 | traveled i32<meter>

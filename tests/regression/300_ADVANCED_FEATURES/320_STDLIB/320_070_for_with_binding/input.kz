@@ -7,7 +7,7 @@
 // EXPECTED:
 //   .result => |data| { for (data) ... }  // data is captured
 
-~import "std/control"
+import std/control
 
 const std = @import("std");
 

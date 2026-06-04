@@ -9,7 +9,7 @@
 // proving the bug is in the insertion→emission path, not multi-statement bodies
 // and not auto-discharge detection (which fires correctly). Expected output is
 // identical to the explicit-discharge version.
-~import "std/build"
+import std/build
 ~std.build:requires { exe.linkLibC(); }
 const std = @import("std");
 const Resource = struct { id: usize };

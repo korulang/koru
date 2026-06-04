@@ -5,7 +5,7 @@
 //
 // EXPECTED: Compiler error - Connection[active!] obligation not discharged
 
-~import "app/db"
+import app/db
 
 ~app.db:connect(host: "localhost")
 | ok c |> app.db:begin(conn: c)

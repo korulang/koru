@@ -1,8 +1,8 @@
 // Test: Auto-discharge cleans up undischarged handles at request end
 // With auto_discharge: true, interpreter calls discharge events automatically
 
-~import "std/runtime"
-~import "std/io"
+import std/runtime
+import std/io
 
 const std = @import("std");
 

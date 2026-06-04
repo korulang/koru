@@ -1,8 +1,8 @@
 // Test: Koru Interpreter
 // Tests the interpreter parsing and executing Koru code at runtime
 
-~import "std/runtime"
-~import "std/interpreter"
+import std/runtime
+import std/interpreter
 
 
 const std = @import("std");

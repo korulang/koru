@@ -6,6 +6,6 @@
 // corpus codemod (`.`→`/`) + eventually tightening `.` out of namespace position.
 // (Written as .kz — the harness discovers tests by input.kz; pure-`.k` entry
 // support was dropped with the const commit in the D5 rebase.)
-~import "std/io"
+import std/io
 
 ~std/io:print.ln("slash namespace ok")

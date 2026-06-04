@@ -2,8 +2,8 @@
 // Resources with [state!] are added to handle pool
 // Response includes active handles
 
-~import "std/runtime"
-~import "std/io"
+import std/runtime
+import std/io
 
 const std = @import("std");
 

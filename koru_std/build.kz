@@ -20,7 +20,7 @@ pub const getVariant = emitter_helpers.getVariant;
 pub const registerVariant = emitter_helpers.registerVariant;
 
 // Import shared compiler types (to avoid circular dependency with compiler.kz)
-~import "std/compiler_types"
+import std/compiler_types
 
 // ============================================================================
 // FLAG MATCHING - Annotation-based conditional compilation

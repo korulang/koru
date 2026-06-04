@@ -1,7 +1,7 @@
 // Test: InvocationMeta provides call site metadata for comptime introspection
 // This enables conditional compilation based on flow annotations
 
-~import "std/io"
+import std/io
 
 const std = @import("std");
 

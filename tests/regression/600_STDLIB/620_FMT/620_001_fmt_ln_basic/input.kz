@@ -1,6 +1,6 @@
 // TEST: fmt:ln basic - format a string and get it back via | line continuation
-~import "std/fmt"
-~import "std/io"
+import std/fmt
+import std/io
 
 ~event greet { name: []const u8 }
 | greeted []const u8

@@ -6,7 +6,7 @@
 // - Tests mock impure events, call real flows
 // - Pure events called directly (no mock needed)
 
-~import "std/testing"
+import std/testing
 
 // ============================================
 // THE ACTUAL PROGRAM

@@ -10,7 +10,7 @@
 
 ~[comptime|runtime]
 
-~import "std/interpreter"
+import std/interpreter
 
 const std = @import("std");
 

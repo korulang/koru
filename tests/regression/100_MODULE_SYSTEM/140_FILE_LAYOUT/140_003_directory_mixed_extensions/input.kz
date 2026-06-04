@@ -4,8 +4,8 @@
 
 const std = @import("std");
 
-~import "std/io"
-~import "app/lib"
+import std/io
+import app/lib
 
 ~app.lib.alpha:greet_alpha()
 | spoken a |> std.io:print.ln("{{ a:s }}")

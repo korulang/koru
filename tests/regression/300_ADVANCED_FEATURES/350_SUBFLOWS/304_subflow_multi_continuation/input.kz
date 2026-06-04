@@ -8,7 +8,7 @@
 
 const std = @import("std");
 
-~import "std/io"
+import std/io
 
 // Helper event: triples a number
 ~event triple { value: i32 }

@@ -3,7 +3,7 @@
 //
 // Syntax: { p.x, p.y } should expand to { x: p.x, y: p.y }
 
-~import "std/io"
+import std/io
 
 pub const Point = struct { x: i32, y: i32 };
 

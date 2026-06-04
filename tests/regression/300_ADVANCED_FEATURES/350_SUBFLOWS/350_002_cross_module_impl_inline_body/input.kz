@@ -8,7 +8,7 @@
 // Verifies: emitEventDecl's is_impl flow path respects Flow.inline_body
 // ============================================================================
 
-~import "std/template"
+import std/template
 
 const std = @import("std");
 

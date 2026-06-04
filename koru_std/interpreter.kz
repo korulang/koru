@@ -26,7 +26,7 @@
 
 ~[runtime]
 
-~import "std/build"
+import std/build
 
 const std = @import("std");
 const ast = @import("ast");

@@ -1,8 +1,8 @@
 // User code: taps tick from the counter library
 // The loop lives in counter.kz - this just observes it
 
-~import "std/taps"
-~import "app/counter"
+import std/taps
+import app/counter
 
 const std = @import("std");
 

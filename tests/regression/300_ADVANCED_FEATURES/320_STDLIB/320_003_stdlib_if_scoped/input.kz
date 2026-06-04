@@ -3,7 +3,7 @@
 // 1. It's in a pipeline (not top-level)
 // 2. The condition references a continuation binding
 
-~import "std/io"
+import std/io
 
 const std = @import("std");
 

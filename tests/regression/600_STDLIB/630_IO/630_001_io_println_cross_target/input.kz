@@ -3,6 +3,6 @@
 // across the module boundary (std.io is imported, module-qualified), and the
 // JS target uses println's |js variant (console.log) while Zig uses |zig
 // (std.debug.print). Same source, same output, two backends.
-~import "std/io"
+import std/io
 
 ~std.io:println(text: "Hello, world!")

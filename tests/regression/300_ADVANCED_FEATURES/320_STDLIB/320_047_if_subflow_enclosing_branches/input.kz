@@ -37,7 +37,7 @@
 // read as an invocation). That part is correct and incidental — the rejection
 // fires on the `~if` long before the arms matter.
 
-~import "std/io"
+import std/io
 
 const std = @import("std");
 

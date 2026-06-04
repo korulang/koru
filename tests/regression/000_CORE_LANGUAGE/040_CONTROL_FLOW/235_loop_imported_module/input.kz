@@ -7,7 +7,7 @@
 //
 // This is a regression test to track when the bug is fixed.
 
-~import "app/mylib"
+import app/mylib
 
 // The loop uses an event from the imported module
 ~#loop app.mylib:tick()

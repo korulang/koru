@@ -5,7 +5,7 @@
 //
 // Expected: Compiles and runs, IsActive is usable as a bool
 
-~import "std/types"
+import std/types
 
 const std = @import("std");
 

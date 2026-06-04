@@ -1,9 +1,9 @@
 ~[comptime]
 
-~import "std/testing"
-~import "std/inter"
-~import "std/deps"
-~import "std/optimizer"
+import std/testing
+import std/inter
+import std/deps
+import std/optimizer
 
 // Compiler system dependencies
 ~std.deps:requires.system {

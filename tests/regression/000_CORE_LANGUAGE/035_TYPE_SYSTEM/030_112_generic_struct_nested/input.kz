@@ -4,7 +4,7 @@
 //
 // Expected: Compiles and runs with Result<i32, []const u8>
 
-~import "std/types"
+import std/types
 
 const std = @import("std");
 

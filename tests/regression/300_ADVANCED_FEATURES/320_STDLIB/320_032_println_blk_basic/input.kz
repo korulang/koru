@@ -1,6 +1,6 @@
 // Test: println.blk with Source block
 
-~import "std/io"
+import std/io
 
 const total: i32 = 100;
 const max: i32 = 42;

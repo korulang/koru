@@ -8,7 +8,7 @@
 //   RIGHT:  | ok x |> compute(input: x)
 //                     | value v => result { value: v }
 
-~import "std/io"
+import std/io
 
 const std = @import("std");
 

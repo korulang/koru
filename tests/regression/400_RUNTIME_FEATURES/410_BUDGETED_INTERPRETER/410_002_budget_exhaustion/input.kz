@@ -1,8 +1,8 @@
 // Test: Budget exhaustion mid-flow
 // When budget runs out, return exhausted branch with what was used
 
-~import "std/runtime"
-~import "std/io"
+import std/runtime
+import std/io
 
 const std = @import("std");
 

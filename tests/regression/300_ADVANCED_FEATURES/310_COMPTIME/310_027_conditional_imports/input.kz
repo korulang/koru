@@ -8,10 +8,10 @@
 const std = @import("std");
 
 // This import requires --profile flag (NOT SET - will be deadstripped)
-~[profile]import "std/debug"
+~[profile]import std/debug
 
 // This import requires --test flag (NOT SET - will be deadstripped)
-~[test]import "std/testing"
+~[test]import std/testing
 
 ~event hello {}
 

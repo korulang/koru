@@ -3,7 +3,7 @@
 // Previously: emitter would generate |name| capture even for empty payloads
 // Fixed: emitter now generates => { without capture for empty payloads
 
-~import "std/io"
+import std/io
 
 // Event with two branches, BOTH empty (no payload fields)
 ~event check_value { n: i32 }

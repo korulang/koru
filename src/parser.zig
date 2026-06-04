@@ -562,6 +562,22 @@ pub const Parser = struct {
                 }
             }
 
+            // Plain `~import` is the old host-context form. Imports are bare:
+            // `import std/io`. A conditional `~[flag]import ...` keeps its `~`
+            // (the `~[flag]` is the conditional marker, a different construct),
+            // so we reject only `~import ` here, not `~[`. `.k` synthesizes its
+            // own `~` internally and is exempt.
+            if (!self.is_k and lexer.startsWith(trimmed, "~import ")) {
+                try self.reporter.addError(
+                    .PARSE003,
+                    self.current + 1,
+                    lexer.getIndent(line) + 1,
+                    "imports are bare — drop the `~`: write `import ...` (the `~` is the host->Koru switch; an import is always Koru, nothing to switch from)",
+                    .{},
+                );
+                return error.ParseError;
+            }
+
             if (lexer.startsWith(line, "~")) {
                 // Check if this is a module-level annotation: ~[annotation] on its own line
                 const after_tilde = lexer.trim(trimmed[1..]);
@@ -7403,15 +7419,25 @@ pub const Parser = struct {
             return error.ParseError;
         };
 
-        // Extract the path from quotes
+        // Plain `~import` is rejected at the line level in parse() (it never
+        // reaches here in host files). A `~` that does reach here is either the
+        // `.k` internal synthesized form or a conditional `~[flag]import`, both
+        // legitimate — so parseImportDecl only enforces the bare-path rule.
+
+        // Extract the path — bare identifier-path only. Quotes are the old form.
         var path: []const u8 = undefined;
         const path_str = after_import;
-        if (lexer.startsWith(path_str, "\"") and std.mem.endsWith(u8, path_str, "\"")) {
-            // Quoted path
-            path = path_str[1 .. path_str.len - 1];
-        } else if (lexer.startsWith(path_str, "'") and std.mem.endsWith(u8, path_str, "'")) {
-            // Single quoted path
-            path = path_str[1 .. path_str.len - 1];
+        if (lexer.startsWith(path_str, "\"") or lexer.startsWith(path_str, "'")) {
+            // An import path is an identifier-path, not a string.
+            const stripped = std.mem.trim(u8, path_str, "\"'");
+            try self.reporter.addError(
+                .PARSE003,
+                self.current,
+                1,
+                "imports take a bare path, not a string: write `import {s}` (no quotes)",
+                .{stripped},
+            );
+            return error.ParseError;
         } else {
             // Unquoted path (for simplicity)
             path = path_str;
@@ -7807,7 +7833,7 @@ test "parser handles import statement" {
     const allocator = std.testing.allocator;
 
     const source =
-        \\~import "std/array"
+        \\import std/array
     ;
 
     var parser = try Parser.init(allocator, source, "test.kz", &[_][]const u8{}, null);

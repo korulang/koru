@@ -7,7 +7,7 @@
 //
 // No special syntax needed - just composition of primitives!
 
-~import "std/taps"
+import std/taps
 
 const std = @import("std");
 

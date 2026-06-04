@@ -6,7 +6,7 @@
 
 const std = @import("std");
 
-~[profile]import "std/profiler"
+~[profile]import std/profiler
 
 // Outer counter event (counts outer iterations)
 ~event outer { x: i32, max_inner: i32 }

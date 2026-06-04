@@ -3,7 +3,7 @@
 // Uses [expand] annotation for zero-cost template expansion.
 // Zig's @TypeOf provides "free generics" - no Koru type complexity needed.
 
-~import "std/template"
+import std/template
 
 const std = @import("std");
 

@@ -1,8 +1,8 @@
 // Test: Interpreter identity branch constructor (result s) and discard (_)
 
-~import "std/runtime"
-~import "std/interpreter"
-~import "std/io"
+import std/runtime
+import std/interpreter
+import std/io
 
 const std = @import("std");
 

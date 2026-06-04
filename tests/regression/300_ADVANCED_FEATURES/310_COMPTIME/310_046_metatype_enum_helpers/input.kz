@@ -2,7 +2,7 @@
 // Verify that Transition metatype with enum-based fields compiles and works
 // The taps namespace should have eventToString() and branchToString() helpers
 
-~import "std/taps"
+import std/taps
 
 ~event process { value: i32 }
 | ok i32

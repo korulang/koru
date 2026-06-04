@@ -10,7 +10,7 @@
 const std = @import("std");
 
 // This should fail: import with legacy $ prefix
-~import "$std/io"
+import $std/io
 
 ~std.io:println(message: "World")
 | printed |> _

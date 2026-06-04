@@ -4,7 +4,7 @@
 // identifiers (lexer.zig:68,72), so no error is produced and this
 // EXPECT=FRONTEND_COMPILE_ERROR test fails. Tighten to expected_patterns.txt
 // once the G4 message text lands.
-~import "std/io"
+import std/io
 
 ~event foo_bar {}
 

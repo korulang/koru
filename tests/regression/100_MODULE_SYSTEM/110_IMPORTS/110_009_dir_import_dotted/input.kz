@@ -7,7 +7,7 @@
 
 const std = @import("std");
 
-~import "app/lib/raylib"
+import app/lib/raylib
 
 // Full hierarchy: package.module:category.event()
 ~app.lib.raylib.graphics:z_buffer.render(width: 1024, height: 768)

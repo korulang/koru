@@ -8,7 +8,7 @@
 // PINS THE GAP: today the `const` transform only implements the config-capture
 // form (`~const(...) | as cfg |> ...`); the module-declaration form is
 // unimplemented, so `name`/`count` never get declared and this fails.
-import "std/io"
+import std/io
 
 const {
     name: "Claude"

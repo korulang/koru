@@ -1,7 +1,7 @@
 // Dual-target: the SAME .kz reads argv via $std/args on both Zig and JS.
 // ARGS = "hello\nworld" → Koru argv index 1 = hello, 2 = world (both targets).
-~import "std/args"
-~import "std/io"
+import std/args
+import std/io
 
 ~std.args:get(index: 1)
 | arg a |> std.io:println(text: a)

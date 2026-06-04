@@ -4,7 +4,7 @@
 // `! each` signature carries NO `<state!>` resume, an obligation born in the
 // handler cannot escape — it MUST be settled in-firing. Here it is (create →
 // destroy), so this is balanced and should run.
-~import "std/build"
+import std/build
 ~std.build:requires { exe.linkLibC(); }
 const std = @import("std");
 const Resource = struct { id: usize };

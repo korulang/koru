@@ -1,8 +1,8 @@
 // Test: Interpreter Runtime ~if
 // Tests the interpreter executing flows with ~if conditionals
 
-~import "std/runtime"
-~import "std/interpreter"
+import std/runtime
+import std/interpreter
 
 
 const std = @import("std");
